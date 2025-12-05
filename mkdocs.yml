@@ -1,0 +1,78 @@
+site_name: pytest-gremlins
+site_description: Fast-first mutation testing for pytest
+site_author: Mike Lane
+site_url: https://pytest-gremlins.readthedocs.io
+
+repo_name: mikelane/pytest-gremlins
+repo_url: https://github.com/mikelane/pytest-gremlins
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: green
+      accent: light green
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: green
+      accent: light green
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - User Guide:
+      - Getting Started: guide/getting-started.md
+      - Configuration: guide/configuration.md
+      - Operators: guide/operators.md
+      - Reports: guide/reports.md
+  - API Reference:
+      - Overview: api/index.md
+  - Design:
+      - North Star: design/NORTH_STAR.md
+      - Operators Design: design/OPERATORS.md
+      - Agent Guidelines: design/AGENT_GUIDELINES.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/mikelane/pytest-gremlins
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pytest-gremlins/
