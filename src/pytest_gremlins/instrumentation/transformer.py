@@ -15,25 +15,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
+from pytest_gremlins.operators.comparison import ComparisonOperator
 
 
-COMPARISON_MUTATIONS: dict[type[ast.cmpop], list[type[ast.cmpop]]] = {
-    ast.Lt: [ast.LtE, ast.Gt],
-    ast.LtE: [ast.Lt, ast.Gt],
-    ast.Gt: [ast.GtE, ast.Lt],
-    ast.GtE: [ast.Gt, ast.Lt],
-    ast.Eq: [ast.NotEq],
-    ast.NotEq: [ast.Eq],
-}
+_comparison_operator = ComparisonOperator()
 
-OP_TO_SYMBOL: dict[type[ast.cmpop], str] = {
-    ast.Lt: '<',
-    ast.LtE: '<=',
-    ast.Gt: '>',
-    ast.GtE: '>=',
-    ast.Eq: '==',
-    ast.NotEq: '!=',
-}
+COMPARISON_MUTATIONS: dict[type[ast.cmpop], list[type[ast.cmpop]]] = ComparisonOperator.MUTATIONS
+
+OP_TO_SYMBOL: dict[type[ast.cmpop], str] = ComparisonOperator.OP_TO_SYMBOL
 
 
 def create_gremlins_for_compare(
@@ -57,8 +46,8 @@ def create_gremlins_for_compare(
     gremlins: list[Gremlin] = []
     mutations = generate_comparison_mutations(node)
     for mutated_node in mutations:
-        original_op = OP_TO_SYMBOL.get(type(node.ops[0]), '?')
-        mutated_op = OP_TO_SYMBOL.get(type(mutated_node.ops[0]), '?')
+        original_op = _comparison_operator.get_symbol(node.ops[0])
+        mutated_op = _comparison_operator.get_symbol(mutated_node.ops[0])
         gremlin = Gremlin(
             gremlin_id=id_generator(),
             file_path=file_path,
@@ -75,23 +64,16 @@ def create_gremlins_for_compare(
 def generate_comparison_mutations(node: ast.Compare) -> list[ast.Compare]:
     """Generate mutated variants of a comparison node.
 
+    This function delegates to the ComparisonOperator for mutation generation.
+
     Args:
         node: A comparison AST node (e.g., x < 10).
 
     Returns:
         List of mutated comparison nodes, one for each possible mutation.
     """
-    mutations: list[ast.Compare] = []
-
-    for i, op in enumerate(node.ops):
-        op_type = type(op)
-        if op_type in COMPARISON_MUTATIONS:
-            for replacement_op_type in COMPARISON_MUTATIONS[op_type]:
-                mutated = copy.deepcopy(node)
-                mutated.ops[i] = replacement_op_type()
-                mutations.append(mutated)
-
-    return mutations
+    mutations = _comparison_operator.mutate(node)
+    return [m for m in mutations if isinstance(m, ast.Compare)]
 
 
 class GremlinCollector(ast.NodeVisitor):
