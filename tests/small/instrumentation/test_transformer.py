@@ -8,8 +8,8 @@ import pytest
 
 from pytest_gremlins.instrumentation.transformer import (
     build_switching_expression,
+    collect_gremlins,
     generate_comparison_mutations,
-    instrument_source,
     transform_source,
 )
 
@@ -60,26 +60,26 @@ class TestMutationGenerator:
         assert isinstance(compare_node.ops[0], original_op_type)
 
 
-class TestInstrumentSource:
-    """Test instrumenting source code with mutation switching."""
+class TestCollectGremlins:
+    """Test collecting gremlins from source code."""
 
-    def test_instrument_returns_gremlins(self):
+    def test_collect_gremlins_returns_gremlins(self):
         source = """
 def is_adult(age):
     return age >= 18
 """
-        gremlins, _ = instrument_source(source, 'example.py')
+        gremlins, _ = collect_gremlins(source, 'example.py')
 
         assert len(gremlins) == 2
         assert all(g.file_path == 'example.py' for g in gremlins)
         assert all(g.operator_name == 'comparison' for g in gremlins)
 
-    def test_instrument_returns_modified_ast(self):
+    def test_collect_gremlins_returns_original_ast(self):
         source = """
 def is_adult(age):
     return age >= 18
 """
-        _, tree = instrument_source(source, 'example.py')
+        _, tree = collect_gremlins(source, 'example.py')
 
         assert tree is not None
         assert isinstance(tree, ast.Module)
@@ -93,7 +93,7 @@ class TestBuildSwitchingCode:
 def is_adult(age):
     return age >= 18
 """
-        gremlins, tree = instrument_source(source, 'example.py')
+        gremlins, tree = collect_gremlins(source, 'example.py')
         original_compare = tree.body[0].body[0].value
 
         switching_expr = build_switching_expression(original_compare, gremlins)
@@ -102,7 +102,7 @@ def is_adult(age):
 
     def test_switching_expression_executes_original_when_no_gremlin_active(self, monkeypatch):
         source = 'age >= 18'
-        gremlins, tree = instrument_source(source, 'example.py')
+        gremlins, tree = collect_gremlins(source, 'example.py')
         original_compare = tree.body[0].value
 
         switching_expr = build_switching_expression(original_compare, gremlins)
@@ -118,7 +118,7 @@ def is_adult(age):
 
     def test_switching_expression_executes_mutation_when_gremlin_active(self):
         source = 'age >= 18'
-        gremlins, tree = instrument_source(source, 'example.py')
+        gremlins, tree = collect_gremlins(source, 'example.py')
         original_compare = tree.body[0].value
 
         switching_expr = build_switching_expression(original_compare, gremlins)

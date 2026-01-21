@@ -8,6 +8,11 @@ from __future__ import annotations
 
 import ast
 import copy
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 
@@ -29,6 +34,42 @@ OP_TO_SYMBOL: dict[type[ast.cmpop], str] = {
     ast.Eq: '==',
     ast.NotEq: '!=',
 }
+
+
+def create_gremlins_for_compare(
+    node: ast.Compare,
+    file_path: str,
+    id_generator: Callable[[], str],
+) -> list[Gremlin]:
+    """Create gremlins for a comparison node.
+
+    This is the shared logic for creating gremlins from comparison AST nodes.
+    Used by both GremlinCollector and MutationSwitchingTransformer.
+
+    Args:
+        node: The comparison AST node.
+        file_path: Path to the source file (for gremlin metadata).
+        id_generator: Callable that returns the next gremlin ID.
+
+    Returns:
+        List of Gremlin objects for each possible mutation.
+    """
+    gremlins: list[Gremlin] = []
+    mutations = generate_comparison_mutations(node)
+    for mutated_node in mutations:
+        original_op = OP_TO_SYMBOL.get(type(node.ops[0]), '?')
+        mutated_op = OP_TO_SYMBOL.get(type(mutated_node.ops[0]), '?')
+        gremlin = Gremlin(
+            gremlin_id=id_generator(),
+            file_path=file_path,
+            line_number=node.lineno,
+            original_node=node,
+            mutated_node=mutated_node,
+            operator_name='comparison',
+            description=f'{original_op} to {mutated_op}',
+        )
+        gremlins.append(gremlin)
+    return gremlins
 
 
 def generate_comparison_mutations(node: ast.Compare) -> list[ast.Compare]:
@@ -67,32 +108,26 @@ class GremlinCollector(ast.NodeVisitor):
 
     def visit_Compare(self, node: ast.Compare) -> None:
         """Collect gremlins for comparison nodes."""
-        mutations = generate_comparison_mutations(node)
-        for mutated_node in mutations:
-            original_op = OP_TO_SYMBOL.get(type(node.ops[0]), '?')
-            mutated_op = OP_TO_SYMBOL.get(type(mutated_node.ops[0]), '?')
-            gremlin = Gremlin(
-                gremlin_id=self._next_gremlin_id(),
-                file_path=self.file_path,
-                line_number=node.lineno,
-                original_node=node,
-                mutated_node=mutated_node,
-                operator_name='comparison',
-                description=f'{original_op} to {mutated_op}',
-            )
-            self.gremlins.append(gremlin)
+        gremlins = create_gremlins_for_compare(node, self.file_path, self._next_gremlin_id)
+        self.gremlins.extend(gremlins)
         self.generic_visit(node)
 
 
-def instrument_source(source: str, file_path: str) -> tuple[list[Gremlin], ast.Module]:
-    """Instrument source code to collect gremlins.
+def collect_gremlins(source: str, file_path: str) -> tuple[list[Gremlin], ast.Module]:
+    """Collect gremlins from source code without modifying it.
+
+    This function parses the source and identifies all potential mutation
+    points, returning the gremlins found and the original (unmodified) AST.
+
+    Note: This does NOT instrument the code. For instrumentation with
+    mutation switching embedded, use transform_source() instead.
 
     Args:
-        source: The Python source code to instrument.
+        source: The Python source code to analyze.
         file_path: The path to the source file (for gremlin metadata).
 
     Returns:
-        Tuple of (list of gremlins, modified AST).
+        Tuple of (list of gremlins, original unmodified AST).
     """
     tree = ast.parse(source)
     collector = GremlinCollector(file_path)
@@ -160,22 +195,7 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
 
     def _create_gremlins_for_compare(self, node: ast.Compare) -> list[Gremlin]:
         """Create gremlins for a comparison node."""
-        gremlins: list[Gremlin] = []
-        mutations = generate_comparison_mutations(node)
-        for mutated_node in mutations:
-            original_op = OP_TO_SYMBOL.get(type(node.ops[0]), '?')
-            mutated_op = OP_TO_SYMBOL.get(type(mutated_node.ops[0]), '?')
-            gremlin = Gremlin(
-                gremlin_id=self._next_gremlin_id(),
-                file_path=self.file_path,
-                line_number=node.lineno,
-                original_node=node,
-                mutated_node=mutated_node,
-                operator_name='comparison',
-                description=f'{original_op} to {mutated_op}',
-            )
-            gremlins.append(gremlin)
-        return gremlins
+        return create_gremlins_for_compare(node, self.file_path, self._next_gremlin_id)
 
     def visit_Compare(self, node: ast.Compare) -> ast.expr:
         """Replace comparison nodes with mutation switching expressions."""
@@ -207,5 +227,6 @@ def transform_source(source: str, file_path: str) -> tuple[list[Gremlin], ast.Mo
     tree = ast.parse(source)
     transformer = MutationSwitchingTransformer(file_path)
     new_tree = transformer.visit(tree)
-    assert isinstance(new_tree, ast.Module)
+    if not isinstance(new_tree, ast.Module):
+        raise TypeError(f'Expected ast.Module, got {type(new_tree).__name__}')
     return transformer.gremlins, new_tree
