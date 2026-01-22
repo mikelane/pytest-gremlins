@@ -9,6 +9,10 @@ from __future__ import annotations
 import pytest  # noqa: TC002 - used at runtime for pytest_configure hook
 
 
+# Enable pytester fixture for plugin testing
+pytest_plugins = ['pytester']
+
+
 # Register markers for test categories
 def pytest_configure(config: pytest.Config) -> None:
     """Register custom markers for test categorization."""

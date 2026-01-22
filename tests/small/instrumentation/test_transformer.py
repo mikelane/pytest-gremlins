@@ -142,9 +142,11 @@ def is_adult(age):
 """
         gremlins, tree = transform_source(source, 'example.py')
 
-        assert len(gremlins) == 2
-        function_body = tree.body[0].body[0].value
-        assert isinstance(function_body, ast.IfExp)
+        # Now uses all 5 operators: 2 comparison + 2 boundary + 1 return = 5 gremlins
+        assert len(gremlins) >= 2
+        # The return statement is now wrapped in an If (for return mutation switching)
+        function_body = tree.body[0].body[0]
+        assert isinstance(function_body, ast.If)
 
     def test_transformed_code_executes_correctly_with_no_gremlin(self):
         source = """
@@ -180,3 +182,65 @@ def is_adult(age):
         exec(code, exec_globals)  # noqa: S102
 
         assert exec_globals['is_adult'](18) is False
+
+
+class TestMultiOperatorTransformer:
+    """Test transformer with multiple operators."""
+
+    def test_transform_source_generates_gremlins_for_arithmetic_operations(self):
+        source = """
+def calculate(x, y):
+    return x + y
+"""
+        gremlins, tree = transform_source(source, 'example.py')
+
+        assert len(gremlins) >= 1
+        assert any(g.operator_name == 'arithmetic' for g in gremlins)
+
+    def test_transform_source_generates_gremlins_for_boolean_operations(self):
+        source = """
+def check(a, b):
+    return a and b
+"""
+        gremlins, tree = transform_source(source, 'example.py')
+
+        assert len(gremlins) >= 1
+        assert any(g.operator_name == 'boolean' for g in gremlins)
+
+    def test_transform_source_generates_gremlins_for_boundary_conditions(self):
+        source = """
+def is_adult(age):
+    return age >= 18
+"""
+        gremlins, tree = transform_source(source, 'example.py')
+
+        boundary_gremlins = [g for g in gremlins if g.operator_name == 'boundary']
+        assert len(boundary_gremlins) >= 1
+
+    def test_transform_source_generates_gremlins_for_return_statements(self):
+        source = """
+def get_value():
+    return 42
+"""
+        gremlins, tree = transform_source(source, 'example.py')
+
+        assert len(gremlins) >= 1
+        assert any(g.operator_name == 'return' for g in gremlins)
+
+    def test_transform_source_uses_all_five_operators(self):
+        source = """
+def complex_function(x, y):
+    if x >= 10:
+        return x + y
+    elif x > 0 and y > 0:
+        return True
+    return False
+"""
+        gremlins, tree = transform_source(source, 'example.py')
+
+        operator_names = {g.operator_name for g in gremlins}
+        assert 'comparison' in operator_names
+        assert 'arithmetic' in operator_names
+        assert 'boolean' in operator_names
+        assert 'boundary' in operator_names
+        assert 'return' in operator_names
