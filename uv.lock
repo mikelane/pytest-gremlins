@@ -1329,6 +1329,11 @@ docs = [
     { name = "mkdocstrings", extra = ["python"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "coverage", extra = ["toml"] },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "commitizen", marker = "extra == 'dev'", specifier = ">=3.13.0" },
@@ -1352,6 +1357,9 @@ requires-dist = [
     { name = "tox-uv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
 ]
 provides-extras = ["dev", "docs"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "coverage", extras = ["toml"], specifier = ">=7.0.0" }]
 
 [[package]]
 name = "pytest-test-categories"

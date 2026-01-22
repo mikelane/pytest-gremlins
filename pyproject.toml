@@ -254,3 +254,8 @@ tag_format = "v$version"
 update_changelog_on_bump = true
 changelog_file = "CHANGELOG.md"
 changelog_incremental = true
+
+[dependency-groups]
+dev = [
+    "coverage[toml]>=7.0.0",
+]
