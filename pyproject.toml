@@ -211,6 +211,8 @@ markers = [
 ]
 filterwarnings = [
     "error",
+    # Ignore pytest-test-categories warnings - we auto-add markers via conftest.py
+    "ignore:Test has no size marker:pytest.PytestWarning",
 ]
 
 # =============================================================================
