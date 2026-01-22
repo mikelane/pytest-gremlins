@@ -1,6 +1,6 @@
 [project]
 name = "pytest-gremlins"
-version = "0.1.0"
+version = "0.1.1"
 description = "Fast-first mutation testing for pytest. Let the gremlins loose, see which ones survive."
 readme = "README.md"
 license = { text = "MIT" }
@@ -245,7 +245,7 @@ directory = "htmlcov"
 # =============================================================================
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.0"
+version = "0.1.1"
 version_files = [
     "pyproject.toml:version",
     "src/pytest_gremlins/__init__.py:__version__",
