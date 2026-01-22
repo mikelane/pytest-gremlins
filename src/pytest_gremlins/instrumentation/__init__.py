@@ -13,8 +13,10 @@ Example usage:
     ...     return age >= 18
     ... '''
     >>> gremlins, tree = transform_source(source, 'example.py')
-    >>> len(gremlins)  # Two mutations: >= to >, and >= to <
-    2
+    >>> len(gremlins) >= 2  # Multiple operators: comparison (>=) and boundary (18)
+    True
+    >>> any('comparison' in g.operator_name for g in gremlins)
+    True
 
 The transformed code will execute the original logic when __gremlin_active__ is None,
 or execute the mutation when __gremlin_active__ matches a gremlin's ID.
