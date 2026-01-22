@@ -6,7 +6,7 @@ This file is for test-specific fixtures only.
 
 from __future__ import annotations
 
-import pytest
+import pytest  # noqa: TC002 - used at runtime for pytest_configure hook
 
 
 # Register markers for test categories
