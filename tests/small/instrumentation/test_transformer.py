@@ -21,6 +21,7 @@ class TestMutationGenerator:
         source = 'x < 10'
         tree = ast.parse(source, mode='eval')
         compare_node = tree.body
+        assert isinstance(compare_node, ast.Compare)
 
         mutations = generate_comparison_mutations(compare_node)
 
@@ -100,6 +101,7 @@ def is_adult(age):
         return_stmt = func_def.body[0]
         assert isinstance(return_stmt, ast.Return)
         original_compare = return_stmt.value
+        assert original_compare is not None
 
         switching_expr = build_switching_expression(original_compare, gremlins)
 
@@ -207,7 +209,7 @@ class TestMultiOperatorTransformer:
 def calculate(x, y):
     return x + y
 """
-        gremlins, tree = transform_source(source, 'example.py')
+        gremlins, _tree = transform_source(source, 'example.py')
 
         assert len(gremlins) >= 1
         assert any(g.operator_name == 'arithmetic' for g in gremlins)
@@ -217,7 +219,7 @@ def calculate(x, y):
 def check(a, b):
     return a and b
 """
-        gremlins, tree = transform_source(source, 'example.py')
+        gremlins, _tree = transform_source(source, 'example.py')
 
         assert len(gremlins) >= 1
         assert any(g.operator_name == 'boolean' for g in gremlins)
@@ -227,7 +229,7 @@ def check(a, b):
 def is_adult(age):
     return age >= 18
 """
-        gremlins, tree = transform_source(source, 'example.py')
+        gremlins, _tree = transform_source(source, 'example.py')
 
         boundary_gremlins = [g for g in gremlins if g.operator_name == 'boundary']
         assert len(boundary_gremlins) >= 1
@@ -237,7 +239,7 @@ def is_adult(age):
 def get_value():
     return 42
 """
-        gremlins, tree = transform_source(source, 'example.py')
+        gremlins, _tree = transform_source(source, 'example.py')
 
         assert len(gremlins) >= 1
         assert any(g.operator_name == 'return' for g in gremlins)
@@ -251,7 +253,7 @@ def complex_function(x, y):
         return True
     return False
 """
-        gremlins, tree = transform_source(source, 'example.py')
+        gremlins, _tree = transform_source(source, 'example.py')
 
         operator_names = {g.operator_name for g in gremlins}
         assert 'comparison' in operator_names

@@ -92,7 +92,7 @@ class TestGremlinResultCreation:
             status=GremlinResultStatus.ZAPPED,
         )
         with pytest.raises(AttributeError):
-            result.status = GremlinResultStatus.SURVIVED
+            result.status = GremlinResultStatus.SURVIVED  # pyright: ignore[reportAttributeAccessIssue]
 
 
 class TestGremlinResultProperties:
