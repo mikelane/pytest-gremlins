@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.fixture()
+@pytest.fixture
 def pytester_isolated(pytester: pytest.Pytester) -> pytest.Pytester:
     """Create a pytester instance that disables interfering plugins.
 
@@ -48,7 +48,7 @@ def pytest_configure(config):
     return pytester
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestPluginBasicFunctionality:
     """Test basic plugin functionality."""
 
@@ -122,7 +122,7 @@ def test_add():
         assert '%' in output  # Mutation score percentage
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestPluginWithoutGremlinsFlag:
     """Test plugin behavior when --gremlins is not used."""
 
@@ -149,7 +149,7 @@ def test_is_adult():
         assert 'pytest-gremlins mutation report' not in result.stdout.str()
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestPluginOperatorSelection:
     """Test operator selection via command line."""
 
@@ -176,7 +176,7 @@ def test_is_adult():
         assert 'pytest-gremlins mutation report' in output
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestPluginReportFormats:
     """Test different report format options."""
 
