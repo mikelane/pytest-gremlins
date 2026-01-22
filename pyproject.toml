@@ -1,6 +1,6 @@
 [project]
 name = "pytest-gremlins"
-version = "0.1.0-alpha.1"
+version = "0.1.0"
 description = "Fast-first mutation testing for pytest. Let the gremlins loose, see which ones survive."
 readme = "README.md"
 license = { text = "MIT" }
@@ -255,8 +255,3 @@ update_changelog_on_bump = true
 changelog_file = "CHANGELOG.md"
 changelog_incremental = true
 
-[dependency-groups]
-dev = [
-    "commitizen>=4.10.0",
-    "coverage[toml]>=7.0.0",
-]

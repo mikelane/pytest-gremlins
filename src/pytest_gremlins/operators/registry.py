@@ -23,9 +23,11 @@ class OperatorRegistry:
     or as a group.
 
     Example:
+        >>> from pytest_gremlins.operators import ComparisonOperator
         >>> registry = OperatorRegistry()
         >>> registry.register(ComparisonOperator)
-        >>> operators = registry.get_all()
+        >>> 'comparison' in registry.available()
+        True
     """
 
     def __init__(self) -> None:

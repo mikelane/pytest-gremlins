@@ -1299,7 +1299,7 @@ wheels = [
 
 [[package]]
 name = "pytest-gremlins"
-version = "0.1.0a1"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "pytest" },
@@ -1329,12 +1329,6 @@ docs = [
     { name = "mkdocstrings", extra = ["python"] },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "commitizen" },
-    { name = "coverage", extra = ["toml"] },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "commitizen", marker = "extra == 'dev'", specifier = ">=3.13.0" },
@@ -1358,12 +1352,6 @@ requires-dist = [
     { name = "tox-uv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
 ]
 provides-extras = ["dev", "docs"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "commitizen", specifier = ">=4.10.0" },
-    { name = "coverage", extras = ["toml"], specifier = ">=7.0.0" },
-]
 
 [[package]]
 name = "pytest-test-categories"
