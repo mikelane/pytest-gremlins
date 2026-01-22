@@ -81,7 +81,12 @@ class TestBoundaryOperatorMutate:
 
         mutations = operator.mutate(node)
 
-        values = [m.comparators[0].value for m in mutations]
+        values = []
+        for m in mutations:
+            assert isinstance(m, ast.Compare)
+            comparator = m.comparators[0]
+            assert isinstance(comparator, ast.Constant)
+            values.append(comparator.value)
         assert 17 in values
         assert 19 in values
 
@@ -91,17 +96,26 @@ class TestBoundaryOperatorMutate:
 
         mutations = operator.mutate(node)
 
-        values = [m.comparators[0].value for m in mutations]
+        values = []
+        for m in mutations:
+            assert isinstance(m, ast.Compare)
+            comparator = m.comparators[0]
+            assert isinstance(comparator, ast.Constant)
+            values.append(comparator.value)
         assert -1 in values
         assert 1 in values
 
     def test_original_node_is_not_modified(self):
         operator = BoundaryOperator()
         node = ast.parse('x >= 18', mode='eval').body
-        original_value = node.comparators[0].value
+        assert isinstance(node, ast.Compare)
+        comparator = node.comparators[0]
+        assert isinstance(comparator, ast.Constant)
+        original_value = comparator.value
 
         operator.mutate(node)
 
+        assert isinstance(node.comparators[0], ast.Constant)
         assert node.comparators[0].value == original_value
 
     def test_returns_empty_list_for_unsupported_node(self):
@@ -119,6 +133,11 @@ class TestBoundaryOperatorMutate:
         mutations = operator.mutate(node)
 
         assert len(mutations) == 2
-        values = [m.left.value for m in mutations]
+        values = []
+        for m in mutations:
+            assert isinstance(m, ast.Compare)
+            left = m.left
+            assert isinstance(left, ast.Constant)
+            values.append(left.value)
         assert 17 in values
         assert 19 in values

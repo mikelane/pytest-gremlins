@@ -88,7 +88,10 @@ class TestComparisonOperatorMutate:
 
         mutations = operator.mutate(node)
 
-        mutation_ops = [m.ops[0].__class__.__name__ for m in mutations]
+        mutation_ops = []
+        for m in mutations:
+            assert isinstance(m, ast.Compare)
+            mutation_ops.append(m.ops[0].__class__.__name__)
         assert 'LtE' in mutation_ops
         assert 'Gt' in mutation_ops
 
@@ -109,12 +112,16 @@ class TestComparisonOperatorMutate:
 
         mutations = operator.mutate(node)
 
-        actual_ops = [m.ops[0].__class__.__name__ for m in mutations]
+        actual_ops = []
+        for m in mutations:
+            assert isinstance(m, ast.Compare)
+            actual_ops.append(m.ops[0].__class__.__name__)
         assert sorted(actual_ops) == sorted(expected_ops)
 
     def test_original_node_is_not_modified(self):
         operator = ComparisonOperator()
         node = ast.parse('x < 10', mode='eval').body
+        assert isinstance(node, ast.Compare)
         original_op_type = type(node.ops[0])
 
         operator.mutate(node)

@@ -92,7 +92,9 @@ class TestBooleanOperatorMutate:
         mutations = operator.mutate(node)
 
         assert len(mutations) == 1
-        assert isinstance(mutations[0].op, ast.Or)
+        mutation = mutations[0]
+        assert isinstance(mutation, ast.BoolOp)
+        assert isinstance(mutation.op, ast.Or)
 
     def test_or_mutates_to_and(self):
         operator = BooleanOperator()
@@ -101,7 +103,9 @@ class TestBooleanOperatorMutate:
         mutations = operator.mutate(node)
 
         assert len(mutations) == 1
-        assert isinstance(mutations[0].op, ast.And)
+        mutation = mutations[0]
+        assert isinstance(mutation, ast.BoolOp)
+        assert isinstance(mutation.op, ast.And)
 
     def test_not_x_mutates_to_x(self):
         operator = BooleanOperator()
@@ -136,6 +140,7 @@ class TestBooleanOperatorMutate:
     def test_original_node_is_not_modified(self):
         operator = BooleanOperator()
         node = ast.parse('x and y', mode='eval').body
+        assert isinstance(node, ast.BoolOp)
         original_op_type = type(node.op)
 
         operator.mutate(node)

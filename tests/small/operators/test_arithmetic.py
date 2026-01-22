@@ -83,7 +83,9 @@ class TestArithmeticOperatorMutate:
 
         mutations = operator.mutate(node)
 
-        assert isinstance(mutations[0].op, ast.Sub)
+        mutation = mutations[0]
+        assert isinstance(mutation, ast.BinOp)
+        assert isinstance(mutation.op, ast.Sub)
 
     @pytest.mark.parametrize(
         ('source', 'expected_ops'),
@@ -103,12 +105,16 @@ class TestArithmeticOperatorMutate:
 
         mutations = operator.mutate(node)
 
-        actual_ops = [type(m.op) for m in mutations]
+        actual_ops = []
+        for m in mutations:
+            assert isinstance(m, ast.BinOp)
+            actual_ops.append(type(m.op))
         assert actual_ops == expected_ops
 
     def test_original_node_is_not_modified(self):
         operator = ArithmeticOperator()
         node = ast.parse('x + 10', mode='eval').body
+        assert isinstance(node, ast.BinOp)
         original_op_type = type(node.op)
 
         operator.mutate(node)

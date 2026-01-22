@@ -34,7 +34,9 @@ def foo():
     return 42
 """
         tree = ast.parse(source)
-        return_node = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
 
         assert operator.can_mutate(return_node) is True
 
@@ -45,7 +47,9 @@ def foo():
     return x + y
 """
         tree = ast.parse(source)
-        return_node = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
 
         assert operator.can_mutate(return_node) is True
 
@@ -56,7 +60,9 @@ def foo():
     return
 """
         tree = ast.parse(source)
-        return_node = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
 
         assert operator.can_mutate(return_node) is False
 
@@ -67,7 +73,9 @@ def foo():
     return None
 """
         tree = ast.parse(source)
-        return_node = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
 
         assert operator.can_mutate(return_node) is False
 
@@ -88,7 +96,9 @@ def foo():
     return 42
 """
         tree = ast.parse(source)
-        return_node = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
 
         mutations = operator.mutate(return_node)
 
@@ -103,13 +113,16 @@ def foo():
     return True
 """
         tree = ast.parse(source)
-        return_node = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
 
         mutations = operator.mutate(return_node)
 
         assert len(mutations) == 2
-        mutation_values = []
+        mutation_values: list[object] = []
         for m in mutations:
+            assert isinstance(m, ast.Return)
             if m.value is None:
                 mutation_values.append(None)
             elif isinstance(m.value, ast.Constant):
@@ -125,12 +138,15 @@ def foo():
     return False
 """
         tree = ast.parse(source)
-        return_node = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
 
         mutations = operator.mutate(return_node)
 
-        mutation_values = []
+        mutation_values: list[object] = []
         for m in mutations:
+            assert isinstance(m, ast.Return)
             if m.value is None:
                 mutation_values.append(None)
             elif isinstance(m.value, ast.Constant):
@@ -146,11 +162,16 @@ def foo():
     return 42
 """
         tree = ast.parse(source)
-        return_node = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
+        assert isinstance(return_node, ast.Return)
+        assert isinstance(return_node.value, ast.Constant)
         original_value = return_node.value.value
 
         operator.mutate(return_node)
 
+        assert isinstance(return_node.value, ast.Constant)
         assert return_node.value.value == original_value
 
     def test_returns_empty_list_for_unsupported_node(self):
@@ -168,9 +189,11 @@ def foo():
     return []
 """
         tree = ast.parse(source)
-        return_node = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
 
         mutations = operator.mutate(return_node)
 
-        has_none_mutation = any(m.value is None for m in mutations)
+        has_none_mutation = any(isinstance(m, ast.Return) and m.value is None for m in mutations)
         assert has_none_mutation

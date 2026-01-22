@@ -53,6 +53,7 @@ class TestMutationGenerator:
         source = 'x < 10'
         tree = ast.parse(source, mode='eval')
         compare_node = tree.body
+        assert isinstance(compare_node, ast.Compare)
         original_op_type = type(compare_node.ops[0])
 
         generate_comparison_mutations(compare_node)
@@ -94,7 +95,11 @@ def is_adult(age):
     return age >= 18
 """
         gremlins, tree = collect_gremlins(source, 'example.py')
-        original_compare = tree.body[0].body[0].value
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_stmt = func_def.body[0]
+        assert isinstance(return_stmt, ast.Return)
+        original_compare = return_stmt.value
 
         switching_expr = build_switching_expression(original_compare, gremlins)
 
@@ -103,7 +108,9 @@ def is_adult(age):
     def test_switching_expression_executes_original_when_no_gremlin_active(self, monkeypatch):
         source = 'age >= 18'
         gremlins, tree = collect_gremlins(source, 'example.py')
-        original_compare = tree.body[0].value
+        expr_stmt = tree.body[0]
+        assert isinstance(expr_stmt, ast.Expr)
+        original_compare = expr_stmt.value
 
         switching_expr = build_switching_expression(original_compare, gremlins)
         ast.fix_missing_locations(switching_expr)
@@ -119,7 +126,9 @@ def is_adult(age):
     def test_switching_expression_executes_mutation_when_gremlin_active(self):
         source = 'age >= 18'
         gremlins, tree = collect_gremlins(source, 'example.py')
-        original_compare = tree.body[0].value
+        expr_stmt = tree.body[0]
+        assert isinstance(expr_stmt, ast.Expr)
+        original_compare = expr_stmt.value
 
         switching_expr = build_switching_expression(original_compare, gremlins)
         ast.fix_missing_locations(switching_expr)
@@ -145,7 +154,9 @@ def is_adult(age):
         # Now uses all 5 operators: 2 comparison + 2 boundary + 1 return = 5 gremlins
         assert len(gremlins) >= 2
         # The return statement is now wrapped in an If (for return mutation switching)
-        function_body = tree.body[0].body[0]
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        function_body = func_def.body[0]
         assert isinstance(function_body, ast.If)
 
     def test_transformed_code_executes_correctly_with_no_gremlin(self):
@@ -157,15 +168,17 @@ def is_adult(age):
         ast.fix_missing_locations(tree)
 
         code = compile(tree, 'example.py', 'exec')
-        exec_globals = {'__gremlin_active__': None}
+        exec_globals: dict[str, object] = {'__gremlin_active__': None}
         # NOTE: Python's exec() builtin is used intentionally here to test AST-generated code
         # This is testing mutation testing infrastructure in a controlled test environment
         # Not using shell commands - this is Python code execution
         exec(code, exec_globals)  # noqa: S102
 
-        assert exec_globals['is_adult'](21) is True
-        assert exec_globals['is_adult'](18) is True
-        assert exec_globals['is_adult'](17) is False
+        is_adult = exec_globals['is_adult']
+        assert callable(is_adult)
+        assert is_adult(21) is True
+        assert is_adult(18) is True
+        assert is_adult(17) is False
 
     def test_transformed_code_executes_mutation_when_gremlin_active(self):
         source = """
@@ -176,12 +189,14 @@ def is_adult(age):
         ast.fix_missing_locations(tree)
 
         code = compile(tree, 'example.py', 'exec')
-        exec_globals = {'__gremlin_active__': gremlins[0].gremlin_id}
+        exec_globals: dict[str, object] = {'__gremlin_active__': gremlins[0].gremlin_id}
         # NOTE: Python's exec() builtin is used intentionally here to test AST-generated code
         # This is testing mutation testing infrastructure in a controlled test environment
         exec(code, exec_globals)  # noqa: S102
 
-        assert exec_globals['is_adult'](18) is False
+        is_adult = exec_globals['is_adult']
+        assert callable(is_adult)
+        assert is_adult(18) is False
 
 
 class TestMultiOperatorTransformer:
