@@ -8,19 +8,35 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.fixture
+def pytester_with_ini(pytester: pytest.Pytester) -> pytest.Pytester:
+    """Create a pytester instance with pytest.ini that disables test-categories warnings.
+
+    The pytest-test-categories plugin raises an INTERNALERROR when tests don't have
+    size markers. We disable the plugin for nested pytester runs to avoid this issue.
+    """
+    pytester.makeini(
+        """
+        [pytest]
+        addopts = -p no:test-categories
+        """
+    )
+    return pytester
+
+
 @pytest.mark.medium
 class TestPluginBasicFunctionality:
     """Test basic plugin functionality."""
 
-    def test_gremlins_flag_enables_mutation_testing(self, pytester: pytest.Pytester):
+    def test_gremlins_flag_enables_mutation_testing(self, pytester_with_ini: pytest.Pytester):
         """Verify that --gremlins flag enables mutation testing."""
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -32,19 +48,19 @@ def test_is_adult_false_for_10():
 """
         )
 
-        result = pytester.runpytest('--gremlins', '-v')
+        result = pytester_with_ini.runpytest('--gremlins', '-v')
         result.assert_outcomes(passed=2)
         assert 'pytest-gremlins mutation report' in result.stdout.str()
 
-    def test_gremlins_flag_generates_gremlins(self, pytester: pytest.Pytester):
+    def test_gremlins_flag_generates_gremlins(self, pytester_with_ini: pytest.Pytester):
         """Verify that gremlins are generated from source code."""
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -53,21 +69,21 @@ def test_is_adult():
 """
         )
 
-        result = pytester.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
+        result = pytester_with_ini.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
         result.assert_outcomes(passed=1)
         # Should have generated gremlins
         output = result.stdout.str()
         assert 'Zapped:' in output or 'Survived:' in output
 
-    def test_mutation_score_displayed(self, pytester: pytest.Pytester):
+    def test_mutation_score_displayed(self, pytester_with_ini: pytest.Pytester):
         """Verify that mutation score is displayed at the end."""
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             target_module="""
 def add(x, y):
     return x + y
 """
         )
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             test_target="""
 from target_module import add
 
@@ -76,7 +92,7 @@ def test_add():
 """
         )
 
-        result = pytester.runpytest('--gremlins', '-v')
+        result = pytester_with_ini.runpytest('--gremlins', '-v')
         result.assert_outcomes(passed=1)
         output = result.stdout.str()
         assert '%' in output  # Mutation score percentage
@@ -86,15 +102,15 @@ def test_add():
 class TestPluginWithoutGremlinsFlag:
     """Test plugin behavior when --gremlins is not used."""
 
-    def test_no_mutation_testing_without_flag(self, pytester: pytest.Pytester):
+    def test_no_mutation_testing_without_flag(self, pytester_with_ini: pytest.Pytester):
         """Verify that tests run normally without --gremlins flag."""
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -103,7 +119,7 @@ def test_is_adult():
 """
         )
 
-        result = pytester.runpytest('-v')
+        result = pytester_with_ini.runpytest('-v')
         result.assert_outcomes(passed=1)
         # Should not have mutation report
         assert 'pytest-gremlins mutation report' not in result.stdout.str()
@@ -113,15 +129,15 @@ def test_is_adult():
 class TestPluginOperatorSelection:
     """Test operator selection via command line."""
 
-    def test_specific_operators_via_command_line(self, pytester: pytest.Pytester):
+    def test_specific_operators_via_command_line(self, pytester_with_ini: pytest.Pytester):
         """Verify that specific operators can be selected."""
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -130,7 +146,7 @@ def test_is_adult():
 """
         )
 
-        result = pytester.runpytest('--gremlins', '--gremlin-operators=comparison', '-v')
+        result = pytester_with_ini.runpytest('--gremlins', '--gremlin-operators=comparison', '-v')
         result.assert_outcomes(passed=1)
         output = result.stdout.str()
         assert 'pytest-gremlins mutation report' in output
@@ -140,15 +156,15 @@ def test_is_adult():
 class TestPluginReportFormats:
     """Test different report format options."""
 
-    def test_console_report_default(self, pytester: pytest.Pytester):
+    def test_console_report_default(self, pytester_with_ini: pytest.Pytester):
         """Verify console report is generated by default."""
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester.makepyfile(
+        pytester_with_ini.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -157,7 +173,7 @@ def test_is_adult():
 """
         )
 
-        result = pytester.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
+        result = pytester_with_ini.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
         result.assert_outcomes(passed=1)
         output = result.stdout.str()
         assert 'pytest-gremlins mutation report' in output
