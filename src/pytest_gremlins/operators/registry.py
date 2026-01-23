@@ -7,6 +7,7 @@ the discovery and instantiation of mutation operators.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+import warnings
 
 
 if TYPE_CHECKING:
@@ -102,7 +103,14 @@ class OperatorRegistry:
         """
         if enabled is None:
             return [op() for op in self._operators.values()]
-        return [self._operators[name]() for name in enabled if name in self._operators]
+
+        operators: list[GremlinOperator] = []
+        for name in enabled:
+            if name in self._operators:
+                operators.append(self._operators[name]())
+            else:
+                warnings.warn(f"Unknown operator '{name}' requested, ignoring", UserWarning, stacklevel=2)
+        return operators
 
     def available(self) -> list[str]:
         """List all registered operator names.

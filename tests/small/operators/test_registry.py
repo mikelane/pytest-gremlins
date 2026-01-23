@@ -119,10 +119,18 @@ class TestOperatorRegistry:
         registry = OperatorRegistry()
         registry.register(FakeOperator)
 
-        operators = registry.get_all(enabled=['fake', 'unknown'])
+        with pytest.warns(UserWarning, match="Unknown operator 'unknown' requested"):
+            operators = registry.get_all(enabled=['fake', 'unknown'])
 
         assert len(operators) == 1
         assert operators[0].name == 'fake'
+
+    def test_get_all_emits_warning_for_unknown_operators(self):
+        registry = OperatorRegistry()
+        registry.register(FakeOperator)
+
+        with pytest.warns(UserWarning, match="Unknown operator 'unknown_op' requested"):
+            registry.get_all(enabled=['fake', 'unknown_op'])
 
     def test_available_returns_list_of_registered_names(self):
         registry = OperatorRegistry()

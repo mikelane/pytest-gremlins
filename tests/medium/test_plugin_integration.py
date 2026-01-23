@@ -5,6 +5,8 @@ These tests verify the end-to-end plugin behavior using pytester.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 
@@ -190,3 +192,52 @@ def test_is_adult():
         output = result.stdout.str()
         assert 'pytest-gremlins mutation report' in output
         assert 'Zapped:' in output or 'Survived:' in output
+
+
+@pytest.mark.medium
+class TestMutationSwitching:
+    """Test that mutations are actually activated via import hooks."""
+
+    def test_mutation_actually_kills_when_test_covers_it(self, pytester_with_conftest: pytest.Pytester):
+        """Verify that a mutation is actually killed when a test would catch it.
+
+        This test creates a function with a >= comparison and tests that cover
+        both the boundary (age=18) and non-boundary cases. If mutation switching
+        is working, the >= to > mutation should be killed because test_boundary
+        will fail when age=18 returns False instead of True.
+        """
+        pytester_with_conftest.makepyfile(
+            target_module="""
+def is_adult(age):
+    return age >= 18
+"""
+        )
+        pytester_with_conftest.makepyfile(
+            test_target="""
+from target_module import is_adult
+
+def test_boundary():
+    # This test should kill the >= to > mutation
+    # If mutation is active, is_adult(18) returns False (18 > 18 is False)
+    assert is_adult(18) is True
+
+def test_above_boundary():
+    assert is_adult(21) is True
+
+def test_below_boundary():
+    assert is_adult(10) is False
+"""
+        )
+
+        result = pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
+        result.assert_outcomes(passed=3)
+        output = result.stdout.str()
+
+        # With proper mutation switching, at least one mutation should be zapped
+        # The >= to > mutation should definitely be killed by test_boundary
+        assert 'Zapped:' in output
+        # Extract the zapped count
+        match = re.search(r'Zapped: (\d+)', output)
+        assert match is not None, 'Could not find Zapped count in output'
+        zapped_count = int(match.group(1))
+        assert zapped_count >= 1, f'Expected at least 1 zapped gremlin, got {zapped_count}'
