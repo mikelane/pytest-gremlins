@@ -14,6 +14,8 @@ def pytester_with_conftest(pytester: pytest.Pytester) -> pytest.Pytester:
 
     The pytest-test-categories plugin requires tests to have size markers.
     We create a conftest.py that registers the marker and applies it by default.
+    The hook uses tryfirst=True to ensure markers are applied BEFORE pytest-test-categories
+    inspects them.
     """
     pytester.makeconftest(
         """
@@ -22,8 +24,10 @@ import pytest
 def pytest_configure(config):
     config.addinivalue_line('markers', 'small: marks tests as small (fast unit tests)')
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(items):
     # Apply small marker to all tests that don't have a size marker
+    # Must run BEFORE pytest-test-categories checks for markers
     for item in items:
         if not any(marker.name in ('small', 'medium', 'large') for marker in item.iter_markers()):
             item.add_marker(pytest.mark.small)
