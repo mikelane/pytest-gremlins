@@ -421,6 +421,42 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     gremlin_session.results = results
 
 
+def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
+    """Convert pytest node IDs to be relative to rootdir.
+
+    Pytest node IDs can be absolute paths in some contexts (e.g., when using
+    pytester fixture). This function converts them to relative paths so they
+    work correctly when running pytest from within rootdir.
+
+    Args:
+        node_ids: List of pytest node IDs, which may include absolute paths.
+        rootdir: The root directory of the project.
+
+    Returns:
+        List of node IDs with paths made relative to rootdir.
+    """
+    result = []
+    rootdir_str = str(rootdir)
+    for node_id in node_ids:
+        # Node IDs have format: path/to/file.py::test_name
+        # or just: file.py::test_name
+        if '::' in node_id:
+            path_part, test_part = node_id.split('::', 1)
+            if path_part.startswith(rootdir_str):
+                # Remove rootdir prefix and leading separator
+                relative_path = path_part[len(rootdir_str):].lstrip('/\\')
+                result.append(f'{relative_path}::{test_part}')
+            else:
+                result.append(node_id)
+        # No :: separator, just a path - make it relative if absolute
+        elif node_id.startswith(rootdir_str):
+            relative_path = node_id[len(rootdir_str):].lstrip('/\\')
+            result.append(relative_path)
+        else:
+            result.append(node_id)
+    return result
+
+
 def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
     """Collect coverage data by running tests with coverage.py.
 
@@ -436,23 +472,16 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
 
     test_node_ids = list(gremlin_session.test_node_ids.values())
 
-    coverage_data = _run_tests_with_coverage(test_node_ids, rootdir)
+    # Make node IDs relative to rootdir for subprocess execution
+    # Pytest node IDs can be absolute paths in some contexts (e.g., pytester)
+    relative_node_ids = _make_node_ids_relative(test_node_ids, rootdir)
 
-    # DEBUG: Print what we're working with
-    print(f'DEBUG: rootdir = {rootdir}')
-    print(f'DEBUG: Number of gremlins = {len(gremlin_session.gremlins)}')
-    for gremlin in gremlin_session.gremlins:
-        print(f'DEBUG: Gremlin file_path = {gremlin.file_path}')
-    print(f'DEBUG: Number of coverage test entries = {len(coverage_data)}')
-    for test_name, file_coverage in coverage_data.items():
-        for file_path in file_coverage:
-            print(f'DEBUG: Coverage file_path for {test_name} = {file_path}')
+    coverage_data = _run_tests_with_coverage(relative_node_ids, rootdir)
 
     gremlin_paths_map: dict[str, str] = {}
     for gremlin in gremlin_session.gremlins:
         abs_path = str(Path(gremlin.file_path).resolve())
         gremlin_paths_map[abs_path] = gremlin.file_path
-        print(f'DEBUG: gremlin_paths_map[{abs_path}] = {gremlin.file_path}')
 
     for test_name, file_coverage in coverage_data.items():
         normalized_coverage: dict[str, list[int]] = {}
@@ -463,8 +492,6 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
                 abs_path = str(coverage_path.resolve())
             else:
                 abs_path = str((rootdir / coverage_path).resolve())
-            print(f'DEBUG: coverage file_path={file_path} -> abs_path={abs_path}')
-            print(f'DEBUG: abs_path in gremlin_paths_map? {abs_path in gremlin_paths_map}')
             if abs_path in gremlin_paths_map:
                 gremlin_path = gremlin_paths_map[abs_path]
                 if gremlin_path not in normalized_coverage:
@@ -518,27 +545,21 @@ dynamic_context = test_function
     ]
 
     try:
-        proc_result = subprocess.run(  # noqa: S603
+        subprocess.run(  # noqa: S603
             cmd,
             cwd=str(rootdir),
             capture_output=True,
             timeout=120,
             check=False,
         )
-        print(f'DEBUG: coverage run returncode = {proc_result.returncode}')
-        print(f'DEBUG: coverage run stderr = {proc_result.stderr.decode()[:500]}')
     except subprocess.TimeoutExpired:
-        print('DEBUG: coverage run timed out')
         coveragerc_path.unlink(missing_ok=True)
         return {}
 
     result: dict[str, dict[str, list[int]]] = {}
 
     try:
-        print(f'DEBUG: coverage_db_path = {coverage_db_path}')
-        print(f'DEBUG: coverage_db_path.exists() = {coverage_db_path.exists()}')
         if not coverage_db_path.exists():
-            print('DEBUG: Coverage database does not exist!')
             coveragerc_path.unlink(missing_ok=True)
             return {}
 
@@ -550,7 +571,6 @@ dynamic_context = test_function
 
         cursor.execute('SELECT id, path FROM file')
         files = {row[0]: row[1] for row in cursor.fetchall()}
-        print(f'DEBUG: files from coverage db = {files}')
 
         cursor.execute('SELECT file_id, context_id, numbits FROM line_bits')
         for file_id, context_id, numbits in cursor.fetchall():
