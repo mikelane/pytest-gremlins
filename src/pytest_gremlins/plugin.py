@@ -446,7 +446,12 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
     for test_name, file_coverage in coverage_data.items():
         normalized_coverage: dict[str, list[int]] = {}
         for file_path, lines in file_coverage.items():
-            abs_path = str(Path(file_path).resolve())
+            # Coverage.py stores paths relative to rootdir, so resolve them accordingly
+            coverage_path = Path(file_path)
+            if coverage_path.is_absolute():
+                abs_path = str(coverage_path.resolve())
+            else:
+                abs_path = str((rootdir / coverage_path).resolve())
             if abs_path in gremlin_paths_map:
                 gremlin_path = gremlin_paths_map[abs_path]
                 if gremlin_path not in normalized_coverage:
