@@ -12,11 +12,13 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
 from typing import TYPE_CHECKING
 
+from pytest_gremlins.coverage import CoverageCollector, TestSelector
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
 from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
@@ -46,6 +48,10 @@ class GremlinSession:
         source_files: Mapping of file paths to their source code.
         test_files: List of test file paths that were collected.
         instrumented_dir: Temporary directory containing instrumented source files.
+        coverage_collector: Collects coverage data per-test.
+        test_selector: Selects tests based on coverage data.
+        test_node_ids: Maps test names to their pytest node IDs.
+        total_tests: Total number of tests collected.
     """
 
     enabled: bool = False
@@ -57,6 +63,10 @@ class GremlinSession:
     test_files: list[Path] = field(default_factory=list)
     target_paths: list[Path] = field(default_factory=list)
     instrumented_dir: Path | None = None
+    coverage_collector: CoverageCollector | None = None
+    test_selector: TestSelector | None = None
+    test_node_ids: dict[str, str] = field(default_factory=dict)
+    total_tests: int = 0
 
 
 _gremlin_session: GremlinSession | None = None
@@ -151,6 +161,9 @@ def pytest_collection_finish(session: pytest.Session) -> None:
 
     test_files = [Path(item.fspath) for item in session.items if hasattr(item, 'fspath')]
     gremlin_session.test_files = list(set(test_files))
+
+    gremlin_session.total_tests = len(session.items)
+    gremlin_session.test_node_ids = {item.name: item.nodeid for item in session.items}
 
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
@@ -401,8 +414,170 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     if not gremlin_session.gremlins:
         return
 
+    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    _collect_coverage(gremlin_session, rootdir)
+
     results = _run_mutation_testing(session, gremlin_session)
     gremlin_session.results = results
+
+
+def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
+    """Collect coverage data by running tests with coverage.py.
+
+    Runs the test suite with coverage collection using dynamic contexts to
+    build a coverage map that maps source lines to the tests that execute them.
+
+    Args:
+        gremlin_session: The current gremlin session.
+        rootdir: Root directory of the project.
+    """
+    collector = CoverageCollector()
+    gremlin_session.coverage_collector = collector
+
+    test_node_ids = list(gremlin_session.test_node_ids.values())
+
+    coverage_data = _run_tests_with_coverage(test_node_ids, rootdir)
+
+    gremlin_paths_map: dict[str, str] = {}
+    for gremlin in gremlin_session.gremlins:
+        abs_path = str(Path(gremlin.file_path).resolve())
+        gremlin_paths_map[abs_path] = gremlin.file_path
+
+    for test_name, file_coverage in coverage_data.items():
+        normalized_coverage: dict[str, list[int]] = {}
+        for file_path, lines in file_coverage.items():
+            abs_path = str(Path(file_path).resolve())
+            if abs_path in gremlin_paths_map:
+                gremlin_path = gremlin_paths_map[abs_path]
+                if gremlin_path not in normalized_coverage:
+                    normalized_coverage[gremlin_path] = []
+                normalized_coverage[gremlin_path].extend(lines)
+
+        if normalized_coverage:
+            collector.record_test_coverage(test_name, normalized_coverage)
+
+    gremlin_session.test_selector = TestSelector(collector.coverage_map)
+
+
+def _run_tests_with_coverage(
+    test_node_ids: list[str],
+    rootdir: Path,
+) -> dict[str, dict[str, list[int]]]:
+    """Run all tests with coverage collection using dynamic contexts.
+
+    Uses coverage.py's dynamic_context feature to track which lines are
+    covered by which test. This is much faster than running each test
+    separately.
+
+    Args:
+        test_node_ids: List of pytest node IDs to run.
+        rootdir: Root directory of the project.
+
+    Returns:
+        Dict mapping test names to their coverage data (file path -> lines).
+    """
+    coverage_db_path = rootdir / '.coverage'
+    coverage_db_path.unlink(missing_ok=True)
+
+    coveragerc_path = rootdir / '.coveragerc.gremlins'
+    coveragerc_content = """[run]
+source = .
+dynamic_context = test_function
+"""
+    coveragerc_path.write_text(coveragerc_content)
+
+    cmd = [
+        sys.executable,
+        '-m',
+        'coverage',
+        'run',
+        f'--rcfile={coveragerc_path}',
+        '-m',
+        'pytest',
+        *test_node_ids,
+        '--tb=no',
+        '-q',
+    ]
+
+    try:
+        subprocess.run(  # noqa: S603
+            cmd,
+            cwd=str(rootdir),
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        coveragerc_path.unlink(missing_ok=True)
+        return {}
+
+    result: dict[str, dict[str, list[int]]] = {}
+
+    try:
+        if not coverage_db_path.exists():
+            coveragerc_path.unlink(missing_ok=True)
+            return {}
+
+        conn = sqlite3.connect(str(coverage_db_path))
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT id, context FROM context WHERE context != ""')
+        contexts = {row[0]: row[1] for row in cursor.fetchall()}
+
+        cursor.execute('SELECT id, path FROM file')
+        files = {row[0]: row[1] for row in cursor.fetchall()}
+
+        cursor.execute('SELECT file_id, context_id, numbits FROM line_bits')
+        for file_id, context_id, numbits in cursor.fetchall():
+            if context_id not in contexts or file_id not in files:
+                continue
+
+            context = contexts[context_id]
+            test_name = context.split('|')[-1] if '|' in context else context
+            test_name = test_name.split('::')[-1] if '::' in test_name else test_name
+
+            file_path = files[file_id]
+
+            lines = _decode_numbits(numbits)
+
+            if test_name not in result:
+                result[test_name] = {}
+            if file_path not in result[test_name]:
+                result[test_name][file_path] = []
+            result[test_name][file_path].extend(lines)
+
+        conn.close()
+
+    except (sqlite3.Error, OSError):
+        pass
+    finally:
+        try:
+            coverage_db_path.unlink(missing_ok=True)
+            coveragerc_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    return result
+
+
+def _decode_numbits(numbits: bytes) -> list[int]:
+    """Decode coverage.py's numbits format to a list of line numbers.
+
+    The numbits format is a byte array where each bit represents a line number.
+    Bit N being set means line N is covered.
+
+    Args:
+        numbits: The compressed line number data from coverage.py.
+
+    Returns:
+        List of line numbers that were covered.
+    """
+    return [
+        byte_idx * 8 + bit_idx
+        for byte_idx, byte_val in enumerate(numbits)
+        for bit_idx in range(8)
+        if byte_val & (1 << bit_idx)
+    ]
 
 
 def _run_mutation_testing(
@@ -420,18 +595,107 @@ def _run_mutation_testing(
     """
     results: list[GremlinResult] = []
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
-    test_command = _build_test_command(gremlin_session.instrumented_dir)
+    base_test_command = _build_test_command(gremlin_session.instrumented_dir)
 
-    for gremlin in gremlin_session.gremlins:
-        result = _test_gremlin(
-            gremlin,
-            test_command,
-            rootdir,
-            gremlin_session.instrumented_dir,
-        )
+    for i, gremlin in enumerate(gremlin_session.gremlins, 1):
+        selected_tests = _select_tests_for_gremlin(gremlin, gremlin_session)
+        test_count = len(selected_tests)
+        total = gremlin_session.total_tests
+
+        _report_gremlin_progress(i, len(gremlin_session.gremlins), gremlin, test_count, total)
+
+        if test_count == 0:
+            result = GremlinResult(
+                gremlin=gremlin,
+                status=GremlinResultStatus.SURVIVED,
+            )
+        else:
+            test_command = _build_filtered_test_command(
+                base_test_command,
+                selected_tests,
+                gremlin_session,
+            )
+            result = _test_gremlin(
+                gremlin,
+                test_command,
+                rootdir,
+                gremlin_session.instrumented_dir,
+            )
+
         results.append(result)
 
     return results
+
+
+def _select_tests_for_gremlin(
+    gremlin: Gremlin,
+    gremlin_session: GremlinSession,
+) -> set[str]:
+    """Select tests that cover the gremlin's location.
+
+    Args:
+        gremlin: The gremlin to select tests for.
+        gremlin_session: The current gremlin session.
+
+    Returns:
+        Set of test names that cover the gremlin's location.
+    """
+    if gremlin_session.test_selector is None:
+        return set(gremlin_session.test_node_ids.keys())
+
+    return gremlin_session.test_selector.select_tests(gremlin)
+
+
+def _report_gremlin_progress(
+    index: int,
+    total_gremlins: int,
+    gremlin: Gremlin,
+    test_count: int,
+    total_tests: int,
+) -> None:
+    """Report progress for a gremlin being tested.
+
+    Args:
+        index: Current gremlin index (1-based).
+        total_gremlins: Total number of gremlins.
+        gremlin: The gremlin being tested.
+        test_count: Number of tests selected for this gremlin.
+        total_tests: Total number of tests in the suite.
+    """
+    prefix = f'Gremlin {index}/{total_gremlins}: {gremlin.gremlin_id}'
+    if test_count == 0:
+        print(f'{prefix} - 0 tests cover this gremlin, marking as survived')
+    else:
+        print(f'{prefix} - running {test_count}/{total_tests} tests')
+
+
+def _build_filtered_test_command(
+    base_command: list[str],
+    selected_tests: set[str],
+    gremlin_session: GremlinSession,
+) -> list[str]:
+    """Build a test command that runs only the selected tests.
+
+    Args:
+        base_command: The base test command.
+        selected_tests: Set of test names to run.
+        gremlin_session: The current gremlin session.
+
+    Returns:
+        Command list with test node IDs appended.
+    """
+    command = list(base_command)
+
+    node_ids = [
+        gremlin_session.test_node_ids[test_name]
+        for test_name in selected_tests
+        if test_name in gremlin_session.test_node_ids
+    ]
+
+    if node_ids:
+        command.extend(node_ids)
+
+    return command
 
 
 def _build_test_command(instrumented_dir: Path | None) -> list[str]:
