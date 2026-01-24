@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pytest_gremlins.plugin import _make_node_ids_relative
+from pytest_gremlins import plugin
 
 
 @pytest.mark.small
@@ -23,7 +23,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path('/project')
         node_ids = ['tests/test_example.py::test_something']
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -32,7 +32,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path('/project')
         node_ids = ['/project/tests/test_example.py::test_something']
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -41,7 +41,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path('/project')
         node_ids = ['/project/tests/test_example.py']
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py']
 
@@ -55,7 +55,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path('/project')
         node_ids = ['tests/test_example.py::test_something [SMALL]']
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -64,7 +64,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path('/project')
         node_ids = ['/project/tests/test_example.py::test_something [MEDIUM]']
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -77,7 +77,7 @@ class TestMakeNodeIdsRelative:
             '/project/tests/test_c.py::test_three',
         ]
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         assert result == [
             'tests/test_a.py::test_one',
@@ -90,7 +90,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path('/project')
         node_ids = ['/other/tests/test_example.py::test_something']
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         # Path doesn't start with rootdir, so it stays as-is
         assert result == ['/other/tests/test_example.py::test_something']
@@ -100,7 +100,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path('/project')
         node_ids: list[str] = []
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         assert result == []
 
@@ -109,7 +109,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path('/project')
         node_ids = ['tests/test_example.py::test_something [LARGE]']
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -119,7 +119,7 @@ class TestMakeNodeIdsRelative:
         # Lowercase [small] should NOT be stripped - only [SMALL]
         node_ids = ['tests/test_example.py::test_something [small]']
 
-        result = _make_node_ids_relative(node_ids, rootdir)
+        result = plugin._make_node_ids_relative(node_ids, rootdir)
 
         # lowercase [small] is not stripped - only uppercase
         assert result == ['tests/test_example.py::test_something [small]']
