@@ -428,6 +428,9 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     pytester fixture). This function converts them to relative paths so they
     work correctly when running pytest from within rootdir.
 
+    Also strips any suffixes added by plugins (e.g., pytest-test-categories
+    adds "[SMALL]" suffix) since these are display-only decorations.
+
     Args:
         node_ids: List of pytest node IDs, which may include absolute paths.
         rootdir: The root directory of the project.
@@ -435,25 +438,31 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     Returns:
         List of node IDs with paths made relative to rootdir.
     """
+    import re  # noqa: PLC0415
+
     result = []
     rootdir_str = str(rootdir)
     for node_id in node_ids:
+        # Strip any plugin-added suffixes like "[SMALL]", "[MEDIUM]", etc.
+        # These are display decorations, not part of the actual node ID
+        cleaned_node_id = re.sub(r'\s*\[[A-Z]+\]\s*$', '', node_id)
+
         # Node IDs have format: path/to/file.py::test_name
         # or just: file.py::test_name
-        if '::' in node_id:
-            path_part, test_part = node_id.split('::', 1)
+        if '::' in cleaned_node_id:
+            path_part, test_part = cleaned_node_id.split('::', 1)
             if path_part.startswith(rootdir_str):
                 # Remove rootdir prefix and leading separator
                 relative_path = path_part[len(rootdir_str):].lstrip('/\\')
                 result.append(f'{relative_path}::{test_part}')
             else:
-                result.append(node_id)
+                result.append(cleaned_node_id)
         # No :: separator, just a path - make it relative if absolute
-        elif node_id.startswith(rootdir_str):
-            relative_path = node_id[len(rootdir_str):].lstrip('/\\')
+        elif cleaned_node_id.startswith(rootdir_str):
+            relative_path = cleaned_node_id[len(rootdir_str):].lstrip('/\\')
             result.append(relative_path)
         else:
-            result.append(node_id)
+            result.append(cleaned_node_id)
     return result
 
 
@@ -476,10 +485,7 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
     # Pytest node IDs can be absolute paths in some contexts (e.g., pytester)
     relative_node_ids = _make_node_ids_relative(test_node_ids, rootdir)
 
-    print(f'DEBUG: original test_node_ids = {test_node_ids[:2]}...')
-    print(f'DEBUG: relative_node_ids = {relative_node_ids[:2]}...')
     coverage_data = _run_tests_with_coverage(relative_node_ids, rootdir)
-    print(f'DEBUG: coverage_data test count = {len(coverage_data)}')
 
     gremlin_paths_map: dict[str, str] = {}
     for gremlin in gremlin_session.gremlins:
