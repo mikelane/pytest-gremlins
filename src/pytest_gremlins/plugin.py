@@ -476,7 +476,10 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
     # Pytest node IDs can be absolute paths in some contexts (e.g., pytester)
     relative_node_ids = _make_node_ids_relative(test_node_ids, rootdir)
 
+    print(f'DEBUG: original test_node_ids = {test_node_ids[:2]}...')
+    print(f'DEBUG: relative_node_ids = {relative_node_ids[:2]}...')
     coverage_data = _run_tests_with_coverage(relative_node_ids, rootdir)
+    print(f'DEBUG: coverage_data test count = {len(coverage_data)}')
 
     gremlin_paths_map: dict[str, str] = {}
     for gremlin in gremlin_session.gremlins:
