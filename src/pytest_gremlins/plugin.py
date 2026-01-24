@@ -453,13 +453,13 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
             path_part, test_part = cleaned_node_id.split('::', 1)
             if path_part.startswith(rootdir_str):
                 # Remove rootdir prefix and leading separator
-                relative_path = path_part[len(rootdir_str):].lstrip('/\\')
+                relative_path = path_part[len(rootdir_str) :].lstrip('/\\')
                 result.append(f'{relative_path}::{test_part}')
             else:
                 result.append(cleaned_node_id)
         # No :: separator, just a path - make it relative if absolute
         elif cleaned_node_id.startswith(rootdir_str):
-            relative_path = cleaned_node_id[len(rootdir_str):].lstrip('/\\')
+            relative_path = cleaned_node_id[len(rootdir_str) :].lstrip('/\\')
             result.append(relative_path)
         else:
             result.append(cleaned_node_id)
