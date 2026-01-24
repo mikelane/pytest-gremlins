@@ -441,7 +441,6 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     import re  # noqa: PLC0415
 
     result = []
-    rootdir_str = str(rootdir)
     for node_id in node_ids:
         # Strip any plugin-added suffixes like "[SMALL]", "[MEDIUM]", etc.
         # These are display decorations, not part of the actual node ID
@@ -451,18 +450,21 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
         # or just: file.py::test_name
         if '::' in cleaned_node_id:
             path_part, test_part = cleaned_node_id.split('::', 1)
-            if path_part.startswith(rootdir_str):
-                # Remove rootdir prefix and leading separator
-                relative_path = path_part[len(rootdir_str) :].lstrip('/\\')
-                result.append(f'{relative_path}::{test_part}')
+            path_obj = Path(path_part)
+            if path_obj.is_absolute() and path_obj.is_relative_to(rootdir):
+                relative_path = path_obj.relative_to(rootdir)
+                # Use forward slashes for consistency in pytest node IDs
+                result.append(f'{relative_path.as_posix()}::{test_part}')
             else:
                 result.append(cleaned_node_id)
         # No :: separator, just a path - make it relative if absolute
-        elif cleaned_node_id.startswith(rootdir_str):
-            relative_path = cleaned_node_id[len(rootdir_str) :].lstrip('/\\')
-            result.append(relative_path)
         else:
-            result.append(cleaned_node_id)
+            path_obj = Path(cleaned_node_id)
+            if path_obj.is_absolute() and path_obj.is_relative_to(rootdir):
+                relative_path = path_obj.relative_to(rootdir)
+                result.append(relative_path.as_posix())
+            else:
+                result.append(cleaned_node_id)
     return result
 
 
