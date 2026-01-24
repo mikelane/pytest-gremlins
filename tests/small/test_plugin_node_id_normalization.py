@@ -9,6 +9,9 @@ import pytest
 
 from pytest_gremlins import plugin
 
+# Access private function for testing
+_make_node_ids_relative = getattr(plugin, '_make_node_ids_relative')
+
 
 def _platform_absolute_path(path_str: str) -> str:
     """Convert a Unix-style absolute path to platform-appropriate format.
@@ -38,7 +41,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path(_platform_absolute_path('/project'))
         node_ids = ['tests/test_example.py::test_something']
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -48,7 +51,7 @@ class TestMakeNodeIdsRelative:
         abs_path = _platform_absolute_path('/project/tests/test_example.py')
         node_ids = [f'{abs_path}::test_something']
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -58,7 +61,7 @@ class TestMakeNodeIdsRelative:
         abs_path = _platform_absolute_path('/project/tests/test_example.py')
         node_ids = [abs_path]
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py']
 
@@ -72,7 +75,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path(_platform_absolute_path('/project'))
         node_ids = ['tests/test_example.py::test_something [SMALL]']
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -82,7 +85,7 @@ class TestMakeNodeIdsRelative:
         abs_path = _platform_absolute_path('/project/tests/test_example.py')
         node_ids = [f'{abs_path}::test_something [MEDIUM]']
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -97,7 +100,7 @@ class TestMakeNodeIdsRelative:
             f'{abs_path_c}::test_three',
         ]
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == [
             'tests/test_a.py::test_one',
@@ -111,7 +114,7 @@ class TestMakeNodeIdsRelative:
         abs_path = _platform_absolute_path('/other/tests/test_example.py')
         node_ids = [f'{abs_path}::test_something']
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         # Path doesn't start with rootdir, so it stays as-is
         assert result == [f'{abs_path}::test_something']
@@ -121,7 +124,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path(_platform_absolute_path('/project'))
         node_ids: list[str] = []
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == []
 
@@ -130,7 +133,7 @@ class TestMakeNodeIdsRelative:
         rootdir = Path(_platform_absolute_path('/project'))
         node_ids = ['tests/test_example.py::test_something [LARGE]']
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['tests/test_example.py::test_something']
 
@@ -140,7 +143,7 @@ class TestMakeNodeIdsRelative:
         # Lowercase [small] should NOT be stripped - only [SMALL]
         node_ids = ['tests/test_example.py::test_something [small]']
 
-        result = plugin._make_node_ids_relative(node_ids, rootdir)
+        result = _make_node_ids_relative(node_ids, rootdir)
 
         # lowercase [small] is not stripped - only uppercase
         assert result == ['tests/test_example.py::test_something [small]']
