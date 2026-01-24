@@ -105,7 +105,8 @@ jobs:
             pytest-gremlins
 
       - name: Verify import
-        run: python -c "import pytest_gremlins; print(f'Version: {pytest_gremlins.__version__}')"
+        run: |
+          python -c "import pytest_gremlins; print(f'Version: {pytest_gremlins.__version__}')"
 
   # Publish to Production PyPI
   publish-pypi:
