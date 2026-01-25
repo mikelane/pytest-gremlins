@@ -25,6 +25,8 @@ from pytest_gremlins.config import load_config, merge_configs
 from pytest_gremlins.coverage import CoverageCollector, TestSelector
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
+from pytest_gremlins.parallel.aggregator import ResultAggregator
+from pytest_gremlins.parallel.pool import WorkerPool, WorkerResult
 from pytest_gremlins.reporting.html import HtmlReporter
 from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
@@ -63,6 +65,8 @@ class GremlinSession:
         test_hashes: Content hashes for test files.
         cache_hits: Number of cache hits in this session.
         cache_misses: Number of cache misses in this session.
+        parallel_enabled: Whether parallel execution is enabled.
+        parallel_workers: Number of parallel workers (None = CPU count).
     """
 
     enabled: bool = False
@@ -84,6 +88,8 @@ class GremlinSession:
     test_hashes: dict[str, str] = field(default_factory=dict)
     cache_hits: int = 0
     cache_misses: int = 0
+    parallel_enabled: bool = False
+    parallel_workers: int | None = None
 
 
 _gremlin_session: GremlinSession | None = None
@@ -145,6 +151,21 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest='gremlin_clear_cache',
         help='Clear the incremental analysis cache before running',
     )
+    group.addoption(
+        '--gremlin-parallel',
+        action='store_true',
+        default=False,
+        dest='gremlin_parallel',
+        help='Enable parallel gremlin execution across multiple workers',
+    )
+    group.addoption(
+        '--gremlin-workers',
+        action='store',
+        type=int,
+        default=None,
+        dest='gremlin_workers',
+        help='Number of parallel workers (default: CPU count)',
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -202,6 +223,10 @@ def pytest_configure(config: pytest.Config) -> None:
             cache.clear()
             print('pytest-gremlins: cache cleared')
 
+    # Read parallel execution options
+    parallel_enabled = config.option.gremlin_parallel
+    parallel_workers = config.option.gremlin_workers
+
     _set_session(
         GremlinSession(
             enabled=True,
@@ -210,6 +235,8 @@ def pytest_configure(config: pytest.Config) -> None:
             target_paths=target_paths,
             cache_enabled=cache_enabled,
             cache=cache,
+            parallel_enabled=parallel_enabled,
+            parallel_workers=parallel_workers,
         )
     )
 
@@ -487,7 +514,11 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
     _collect_coverage(gremlin_session, rootdir)
 
-    results = _run_mutation_testing(session, gremlin_session)
+    # Choose parallel or sequential execution based on configuration
+    if gremlin_session.parallel_enabled:
+        results = _run_parallel_mutation_testing(session, gremlin_session)
+    else:
+        results = _run_mutation_testing(session, gremlin_session)
     gremlin_session.results = results
 
 
@@ -704,6 +735,137 @@ def _decode_numbits(numbits: bytes) -> list[int]:
         for bit_idx in range(8)
         if byte_val & (1 << bit_idx)
     ]
+
+
+def _run_parallel_mutation_testing(  # noqa: C901, PLR0912, PLR0915
+    session: pytest.Session,
+    gremlin_session: GremlinSession,
+) -> list[GremlinResult]:
+    """Run mutation testing in parallel across multiple workers.
+
+    Uses a worker pool to execute gremlin tests concurrently for faster
+    results on multi-core machines.
+
+    Args:
+        session: The pytest session.
+        gremlin_session: The current gremlin session.
+
+    Returns:
+        List of results for each gremlin.
+    """
+    from concurrent.futures import as_completed  # noqa: PLC0415
+
+    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    base_test_command = _build_test_command(gremlin_session.instrumented_dir)
+    gremlins = gremlin_session.gremlins
+
+    # Build gremlin -> test mapping for filtering
+    gremlin_tests: dict[str, set[str]] = {}
+    for gremlin in gremlins:
+        selected_tests = _select_tests_for_gremlin(gremlin, gremlin_session)
+        gremlin_tests[gremlin.gremlin_id] = selected_tests
+
+    # Check cache and separate cached from uncached
+    cached_results: list[GremlinResult] = []
+    uncached_gremlins: list[Gremlin] = []
+
+    for gremlin in gremlins:
+        selected_tests = gremlin_tests[gremlin.gremlin_id]
+        cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
+        if cached_result is not None:
+            gremlin_session.cache_hits += 1
+            cached_results.append(cached_result)
+        else:
+            if gremlin_session.cache_enabled:
+                gremlin_session.cache_misses += 1
+            uncached_gremlins.append(gremlin)
+
+    # Report cache stats
+    if cached_results:
+        print(f'pytest-gremlins: {len(cached_results)} gremlins from cache, {len(uncached_gremlins)} to test')
+
+    if not uncached_gremlins:
+        return cached_results
+
+    # Run uncached gremlins in parallel
+    aggregator = ResultAggregator(total_gremlins=len(uncached_gremlins))
+
+    # Prepare instrumented dir path for env var
+    instrumented_dir_str = str(gremlin_session.instrumented_dir) if gremlin_session.instrumented_dir else None
+
+    # Map gremlin_id -> Gremlin for result reconstruction
+    gremlin_by_id = {g.gremlin_id: g for g in uncached_gremlins}
+
+    print(f'pytest-gremlins: Starting parallel execution with {gremlin_session.parallel_workers or "auto"} workers')
+
+    with WorkerPool(
+        max_workers=gremlin_session.parallel_workers,
+        timeout=30,
+    ) as pool:
+        # Submit all gremlins
+        futures = {}
+        for gremlin in uncached_gremlins:
+            selected_tests = gremlin_tests[gremlin.gremlin_id]
+            if not selected_tests:
+                # No tests cover this gremlin - it survives
+                worker_result = WorkerResult(
+                    gremlin_id=gremlin.gremlin_id,
+                    status=GremlinResultStatus.SURVIVED,
+                )
+                aggregator.add_result(worker_result)
+                continue
+
+            test_command = _build_filtered_test_command(
+                base_test_command,
+                selected_tests,
+                gremlin_session,
+            )
+
+            future = pool.submit(
+                gremlin_id=gremlin.gremlin_id,
+                test_command=test_command,
+                rootdir=str(rootdir),
+                instrumented_dir=instrumented_dir_str,
+                env_vars={},
+            )
+            futures[future] = gremlin.gremlin_id
+
+        # Collect results as they complete
+        for future in as_completed(futures):
+            gremlin_id = futures[future]
+            try:
+                worker_result = future.result()
+                aggregator.add_result(worker_result)
+            except Exception as e:
+                aggregator.add_error(gremlin_id, e)
+
+            # Progress reporting
+            completed, total = aggregator.get_progress()
+            print(f'\rpytest-gremlins: Progress {completed}/{total}', end='', flush=True)
+
+    print()  # New line after progress
+
+    # Convert WorkerResults to GremlinResults and cache them
+    results: list[GremlinResult] = list(cached_results)
+    for worker_result in aggregator.get_results():
+        gremlin_id = worker_result.gremlin_id
+        if gremlin_id not in gremlin_by_id:
+            continue
+
+        gremlin = gremlin_by_id[gremlin_id]
+        gremlin_result = GremlinResult(
+            gremlin=gremlin,
+            status=worker_result.status,
+            killing_test=worker_result.killing_test,
+            execution_time_ms=worker_result.execution_time_ms,
+        )
+        results.append(gremlin_result)
+
+        # Cache the result
+        selected_tests = gremlin_tests[gremlin_id]
+        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
+
+    return results
 
 
 def _run_mutation_testing(
