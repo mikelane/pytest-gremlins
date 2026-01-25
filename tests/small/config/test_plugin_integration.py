@@ -6,9 +6,13 @@ pyproject.toml configuration, with CLI arguments taking precedence.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from pytest_gremlins import plugin
 
