@@ -212,6 +212,9 @@ markers = [
 ]
 filterwarnings = [
     "error",
+    # Ignore unraisable exception during pytest.exe file finalization on Windows
+    # This is a Python/pytest issue with file handle cleanup during garbage collection
+    "ignore:Exception ignored while finalizing file.*pytest.exe:pytest.PytestUnraisableExceptionWarning",
 ]
 
 # =============================================================================
