@@ -18,6 +18,8 @@ import sys
 import tempfile
 from typing import TYPE_CHECKING
 
+from pytest_gremlins.cache.hasher import ContentHasher
+from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.coverage import CoverageCollector, TestSelector
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
@@ -52,6 +54,12 @@ class GremlinSession:
         test_selector: Selects tests based on coverage data.
         test_node_ids: Maps test names to their pytest node IDs.
         total_tests: Total number of tests collected.
+        cache_enabled: Whether incremental caching is enabled.
+        cache: The incremental cache instance (if caching is enabled).
+        source_hashes: Content hashes for source files.
+        test_hashes: Content hashes for test files.
+        cache_hits: Number of cache hits in this session.
+        cache_misses: Number of cache misses in this session.
     """
 
     enabled: bool = False
@@ -67,6 +75,12 @@ class GremlinSession:
     test_selector: TestSelector | None = None
     test_node_ids: dict[str, str] = field(default_factory=dict)
     total_tests: int = 0
+    cache_enabled: bool = False
+    cache: IncrementalCache | None = None
+    source_hashes: dict[str, str] = field(default_factory=dict)
+    test_hashes: dict[str, str] = field(default_factory=dict)
+    cache_hits: int = 0
+    cache_misses: int = 0
 
 
 _gremlin_session: GremlinSession | None = None
@@ -114,6 +128,20 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest='gremlin_targets',
         help='Comma-separated list of source directories/files to mutate',
     )
+    group.addoption(
+        '--gremlin-cache',
+        action='store_true',
+        default=False,
+        dest='gremlin_cache',
+        help='Enable incremental analysis cache (skip unchanged code)',
+    )
+    group.addoption(
+        '--gremlin-clear-cache',
+        action='store_true',
+        default=False,
+        dest='gremlin_clear_cache',
+        help='Clear the incremental analysis cache before running',
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -143,12 +171,27 @@ def pytest_configure(config: pytest.Config) -> None:
         if src_path.exists():
             target_paths.append(src_path)
 
+    # Initialize cache if enabled
+    cache: IncrementalCache | None = None
+    cache_enabled = config.option.gremlin_cache
+    if cache_enabled:
+        rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
+        cache_dir = rootdir / '.gremlins_cache'
+        cache = IncrementalCache(cache_dir)
+
+        # Clear cache if requested
+        if config.option.gremlin_clear_cache:
+            cache.clear()
+            print('pytest-gremlins: cache cleared')
+
     _set_session(
         GremlinSession(
             enabled=True,
             operators=operators,
             report_format=config.option.gremlin_report,
             target_paths=target_paths,
+            cache_enabled=cache_enabled,
+            cache=cache,
         )
     )
 
@@ -167,6 +210,16 @@ def pytest_collection_finish(session: pytest.Session) -> None:
 
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
+
+    # Compute content hashes for source and test files (for caching)
+    if gremlin_session.cache_enabled:
+        hasher = ContentHasher()
+        for file_path, source in source_files.items():
+            gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
+        import contextlib  # noqa: PLC0415
+        for test_file in gremlin_session.test_files:
+            with contextlib.suppress(FileNotFoundError):
+                gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
 
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
     all_gremlins: list[Gremlin] = []
@@ -642,6 +695,8 @@ def _run_mutation_testing(
 ) -> list[GremlinResult]:
     """Run mutation testing for all gremlins.
 
+    Uses incremental caching when enabled to skip unchanged gremlins.
+
     Args:
         session: The pytest session.
         gremlin_session: The current gremlin session.
@@ -657,6 +712,18 @@ def _run_mutation_testing(
         selected_tests = _select_tests_for_gremlin(gremlin, gremlin_session)
         test_count = len(selected_tests)
         total = gremlin_session.total_tests
+
+        # Check cache for existing result
+        cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
+        if cached_result is not None:
+            gremlin_session.cache_hits += 1
+            _report_gremlin_cache_hit(i, len(gremlin_session.gremlins), gremlin)
+            results.append(cached_result)
+            continue
+
+        if gremlin_session.cache_enabled:
+            gremlin_session.cache_misses += 1
+            _report_gremlin_cache_miss(i, len(gremlin_session.gremlins), gremlin)
 
         _report_gremlin_progress(i, len(gremlin_session.gremlins), gremlin, test_count, total)
 
@@ -678,9 +745,157 @@ def _run_mutation_testing(
                 gremlin_session.instrumented_dir,
             )
 
+        # Cache the result for next run
+        _cache_gremlin_result(gremlin, selected_tests, result, gremlin_session)
+
         results.append(result)
 
     return results
+
+
+def _check_cache_for_gremlin(
+    gremlin: Gremlin,
+    selected_tests: set[str],
+    gremlin_session: GremlinSession,
+) -> GremlinResult | None:
+    """Check cache for existing result for this gremlin.
+
+    Args:
+        gremlin: The gremlin to check cache for.
+        selected_tests: Set of tests that cover this gremlin.
+        gremlin_session: The current gremlin session.
+
+    Returns:
+        Cached GremlinResult if found and valid, None otherwise.
+    """
+    if not gremlin_session.cache_enabled or gremlin_session.cache is None:
+        return None
+
+    source_hash = gremlin_session.source_hashes.get(gremlin.file_path, '')
+    if not source_hash:
+        return None
+
+    # Build test hashes for the tests that cover this gremlin
+    test_hashes: dict[str, str] = {}
+    for test_name in selected_tests:
+        # Map test name to its file and get hash
+        # Test names can be in different formats:
+        # - 'test_add' (simple function name)
+        # - 'test_module.test_add' (module.function from coverage)
+        # - 'TestClass.test_method' (class.method)
+        # Try variations to find the node ID
+        node_id = gremlin_session.test_node_ids.get(test_name, '')
+        if not node_id:
+            # Try just the function name (last part after any dots)
+            simple_name = test_name.split('.')[-1]
+            node_id = gremlin_session.test_node_ids.get(simple_name, '')
+
+        if '::' in node_id:
+            test_file = node_id.split('::')[0]
+            # Try to find the hash by looking for a matching test file
+            for file_path, file_hash in gremlin_session.test_hashes.items():
+                if file_path.endswith(test_file) or test_file in file_path:
+                    test_hashes[test_name] = file_hash
+                    break
+
+    cached = gremlin_session.cache.get_cached_result(
+        gremlin_id=gremlin.gremlin_id,
+        source_hash=source_hash,
+        test_hashes=test_hashes,
+    )
+
+    if cached is None:
+        return None
+
+    # Reconstruct GremlinResult from cached data
+    status = GremlinResultStatus(cached['status'])
+    return GremlinResult(
+        gremlin=gremlin,
+        status=status,
+        killing_test=cached.get('killing_test'),
+        execution_time_ms=cached.get('execution_time_ms'),
+    )
+
+
+def _cache_gremlin_result(
+    gremlin: Gremlin,
+    selected_tests: set[str],
+    result: GremlinResult,
+    gremlin_session: GremlinSession,
+) -> None:
+    """Cache the result for a gremlin.
+
+    Args:
+        gremlin: The gremlin that was tested.
+        selected_tests: Set of tests that covered this gremlin.
+        result: The result to cache.
+        gremlin_session: The current gremlin session.
+    """
+    if not gremlin_session.cache_enabled or gremlin_session.cache is None:
+        return
+
+    source_hash = gremlin_session.source_hashes.get(gremlin.file_path, '')
+    if not source_hash:
+        return
+
+    # Build test hashes for the tests that cover this gremlin
+    test_hashes: dict[str, str] = {}
+    for test_name in selected_tests:
+        # Test names can be in different formats - try variations
+        node_id = gremlin_session.test_node_ids.get(test_name, '')
+        if not node_id:
+            simple_name = test_name.split('.')[-1]
+            node_id = gremlin_session.test_node_ids.get(simple_name, '')
+
+        if '::' in node_id:
+            test_file = node_id.split('::')[0]
+            for file_path, file_hash in gremlin_session.test_hashes.items():
+                if file_path.endswith(test_file) or test_file in file_path:
+                    test_hashes[test_name] = file_hash
+                    break
+
+    gremlin_session.cache.cache_result(
+        gremlin_id=gremlin.gremlin_id,
+        source_hash=source_hash,
+        test_hashes=test_hashes,
+        result={
+            'status': result.status.value,
+            'killing_test': result.killing_test,
+            'execution_time_ms': result.execution_time_ms,
+        },
+    )
+
+
+def _report_gremlin_cache_hit(
+    index: int,
+    total_gremlins: int,
+    gremlin: Gremlin,
+) -> None:
+    """Report a cache hit for a gremlin.
+
+    Args:
+        index: Current gremlin index (1-based).
+        total_gremlins: Total number of gremlins.
+        gremlin: The gremlin that had a cache hit.
+    """
+    prefix = f'Gremlin {index}/{total_gremlins}: {gremlin.gremlin_id}'
+    print(f'{prefix} - cache hit (skipping)')
+
+
+def _report_gremlin_cache_miss(
+    index: int,
+    total_gremlins: int,
+    gremlin: Gremlin,
+) -> None:
+    """Report a cache miss for a gremlin.
+
+    Args:
+        index: Current gremlin index (1-based).
+        total_gremlins: Total number of gremlins.
+        gremlin: The gremlin that had a cache miss.
+    """
+    prefix = f'Gremlin {index}/{total_gremlins}: {gremlin.gremlin_id}'
+    print(f'{prefix} - cache miss')
 
 
 def _select_tests_for_gremlin(
@@ -878,6 +1093,17 @@ def pytest_terminal_summary(
         terminalreporter.write_line(f'Zapped: {score.zapped} gremlins ({zapped_pct}%)')
         terminalreporter.write_line(f'Survived: {score.survived} gremlins ({survived_pct}%)')
 
+        # Show cache statistics if caching was enabled
+        if gremlin_session.cache_enabled:
+            total_cache = gremlin_session.cache_hits + gremlin_session.cache_misses
+            if total_cache > 0:
+                hit_rate = round(gremlin_session.cache_hits / total_cache * 100)
+                terminalreporter.write_line('')
+                terminalreporter.write_line(
+                    f'Cache: {gremlin_session.cache_hits} hits, '
+                    f'{gremlin_session.cache_misses} misses ({hit_rate}% hit rate)'
+                )
+
         survivors = score.top_survivors(limit=10)
         if survivors:
             terminalreporter.write_line('')
@@ -898,4 +1124,7 @@ def pytest_unconfigure(config: pytest.Config) -> None:  # noqa: ARG001
     gremlin_session = _get_session()
     if gremlin_session is not None:
         _cleanup_instrumented_dir(gremlin_session.instrumented_dir)
+        # Close the cache to release database connection
+        if gremlin_session.cache is not None:
+            gremlin_session.cache.close()
     _set_session(None)
