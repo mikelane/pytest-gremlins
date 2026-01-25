@@ -254,23 +254,32 @@ class TestIncrementalCache:
             cache.invalidate_file('file1')
 
             # file1 gremlins should be invalidated
-            assert cache.get_cached_result(
-                gremlin_id='file1:g001',
-                source_hash='source_hash',
-                test_hashes={'test_foo': 'test_hash'},
-            ) is None
-            assert cache.get_cached_result(
-                gremlin_id='file1:g002',
-                source_hash='source_hash',
-                test_hashes={'test_foo': 'test_hash'},
-            ) is None
+            assert (
+                cache.get_cached_result(
+                    gremlin_id='file1:g001',
+                    source_hash='source_hash',
+                    test_hashes={'test_foo': 'test_hash'},
+                )
+                is None
+            )
+            assert (
+                cache.get_cached_result(
+                    gremlin_id='file1:g002',
+                    source_hash='source_hash',
+                    test_hashes={'test_foo': 'test_hash'},
+                )
+                is None
+            )
 
             # file2 gremlins should still be cached
-            assert cache.get_cached_result(
-                gremlin_id='file2:g001',
-                source_hash='source_hash',
-                test_hashes={'test_foo': 'test_hash'},
-            ) is not None
+            assert (
+                cache.get_cached_result(
+                    gremlin_id='file2:g001',
+                    source_hash='source_hash',
+                    test_hashes={'test_foo': 'test_hash'},
+                )
+                is not None
+            )
 
     def test_clear_removes_all_cache(self, tmp_path):
         """clear removes all cached results."""
@@ -290,11 +299,14 @@ class TestIncrementalCache:
 
             cache.clear()
 
-            assert cache.get_cached_result(
-                gremlin_id='g001',
-                source_hash='hash1',
-                test_hashes={'test': 'hash'},
-            ) is None
+            assert (
+                cache.get_cached_result(
+                    gremlin_id='g001',
+                    source_hash='hash1',
+                    test_hashes={'test': 'hash'},
+                )
+                is None
+            )
 
     def test_get_stats_returns_cache_statistics(self, tmp_path):
         """get_stats returns cache hit/miss statistics."""

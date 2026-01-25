@@ -74,9 +74,7 @@ class IncrementalCache:
             A cache key string.
         """
         # Sort test hashes by name for deterministic ordering
-        sorted_test_hashes = [
-            test_hashes[name] for name in sorted(test_hashes.keys())
-        ]
+        sorted_test_hashes = [test_hashes[name] for name in sorted(test_hashes.keys())]
         combined_test_hash = self._hasher.hash_combined(sorted_test_hashes) if sorted_test_hashes else 'no_tests'
 
         return f'{gremlin_id}:{source_hash}:{combined_test_hash}'

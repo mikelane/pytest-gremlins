@@ -217,6 +217,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
         for file_path, source in source_files.items():
             gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
         import contextlib  # noqa: PLC0415
+
         for test_file in gremlin_session.test_files:
             with contextlib.suppress(FileNotFoundError):
                 gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
