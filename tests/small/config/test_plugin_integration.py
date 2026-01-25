@@ -44,6 +44,8 @@ class TestPytestConfigureWithFileConfig:
             gremlin_targets: str | None = None
             gremlin_cache = False
             gremlin_clear_cache = False
+            gremlin_parallel = False
+            gremlin_workers: int | None = None
 
         class _MockConfig:
             option = _MockOption()
@@ -86,6 +88,8 @@ class TestPytestConfigureWithFileConfig:
             gremlin_targets: str | None = None
             gremlin_cache = False
             gremlin_clear_cache = False
+            gremlin_parallel = False
+            gremlin_workers: int | None = None
 
         class _MockConfig:
             option = _MockOption()
@@ -128,6 +132,8 @@ class TestPytestConfigureWithFileConfig:
             gremlin_targets = 'lib'  # CLI overrides file
             gremlin_cache = False
             gremlin_clear_cache = False
+            gremlin_parallel = False
+            gremlin_workers: int | None = None
 
         class _MockConfig:
             option = _MockOption()
@@ -160,6 +166,8 @@ class TestPytestConfigureWithFileConfig:
             gremlin_targets: str | None = None
             gremlin_cache = False
             gremlin_clear_cache = False
+            gremlin_parallel = False
+            gremlin_workers: int | None = None
 
         class _MockConfig:
             option = _MockOption()
