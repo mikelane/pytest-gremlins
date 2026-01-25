@@ -11,6 +11,11 @@ from pathlib import Path
 import pytest
 
 
+def _has_size_marker(item: pytest.Item) -> bool:
+    """Check if an item already has a size marker."""
+    return any(marker.name in ('small', 'medium', 'large') for marker in item.iter_markers())
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(
     config: pytest.Config,  # noqa: ARG001
@@ -19,8 +24,13 @@ def pytest_collection_modifyitems(
     """Automatically apply size markers based on test location.
 
     This hook runs before pytest-test-categories checks for markers.
+    Tests that already have a size marker are not modified.
     """
     for item in items:
+        # Skip if test already has an explicit size marker
+        if _has_size_marker(item):
+            continue
+
         # Get the path parts from the item's path
         item_path = Path(str(item.fspath))
         path_parts = item_path.parts
