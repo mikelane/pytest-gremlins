@@ -34,10 +34,12 @@ class IncrementalCache:
     - test_hashes: Combined hash of all test files covering this gremlin
 
     Example:
+        >>> from pathlib import Path
         >>> cache = IncrementalCache(Path('.gremlins_cache'))
         >>> cache.cache_result('g001', 'src_hash', {'test_foo': 'hash'}, {'status': 'zapped'})
         >>> cache.get_cached_result('g001', 'src_hash', {'test_foo': 'hash'})
         {'status': 'zapped'}
+        >>> cache.close()
     """
 
     def __init__(self, cache_dir: Path) -> None:

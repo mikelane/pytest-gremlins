@@ -23,8 +23,9 @@ class ContentHasher:
 
     Example:
         >>> hasher = ContentHasher()
-        >>> hasher.hash_string('def foo(): return 42')
-        '...'  # 64-character hex string
+        >>> result = hasher.hash_string('def foo(): return 42')
+        >>> len(result) == 64  # SHA-256 produces 64 hex characters
+        True
     """
 
     def hash_string(self, content: str) -> str:

@@ -28,10 +28,12 @@ class ResultStore:
     gremlin definition.
 
     Example:
+        >>> from pathlib import Path
         >>> store = ResultStore(Path('.gremlins_cache/results.db'))
         >>> store.put('abc123', {'status': 'zapped', 'killing_test': 'test_foo'})
         >>> store.get('abc123')
         {'status': 'zapped', 'killing_test': 'test_foo'}
+        >>> store.close()
     """
 
     def __init__(self, db_path: Path) -> None:
