@@ -93,7 +93,7 @@ include = [
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-src = ["src", "tests"]
+src = ["src", "tests", "benchmarks"]
 
 [tool.ruff.lint]
 select = [
@@ -166,9 +166,27 @@ force-wrap-aliases = true
     "PT004",   # Fixtures don't need leading underscore
     "PT005",   # Fixtures don't need leading underscore
 ]
+"benchmarks/**/*.py" = [
+    "D",       # No docstrings required in benchmarks (already has module docs)
+    "ANN",     # No type annotations required in benchmarks
+    "PLR2004", # Magic values OK in benchmarks
+    "S603",    # subprocess call security - benchmarks need to run subprocesses
+    "S607",    # subprocess partial path - benchmarks use sys.executable
+]
 "docs/**/*.py" = [
     "D",       # Docs config doesn't need docstrings
 ]
+
+# =============================================================================
+# Pyright
+# =============================================================================
+[tool.pyright]
+pythonVersion = "3.11"
+include = ["src", "tests", "benchmarks"]
+extraPaths = ["benchmarks"]
+typeCheckingMode = "basic"
+reportMissingImports = "warning"
+reportMissingTypeStubs = false
 
 # =============================================================================
 # MyPy

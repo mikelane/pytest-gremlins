@@ -12,10 +12,12 @@ import tempfile
 import pytest
 
 
-# Add benchmarks directory to path for imports
-sys.path.insert(0, str(Path(__file__).parents[2] / 'benchmarks'))
+# Add benchmarks directory to path for imports (needed for runtime)
+_benchmarks_path = str(Path(__file__).parents[2] / 'benchmarks')
+if _benchmarks_path not in sys.path:
+    sys.path.insert(0, _benchmarks_path)
 
-from run_benchmarks import (
+from benchmarks.run_benchmarks import (  # noqa: E402
     BenchmarkResult,
     BenchmarkSummary,
     EnvironmentInfo,

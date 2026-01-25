@@ -174,7 +174,7 @@ def get_environment_info() -> EnvironmentInfo:
     # Get mutmut version
     mutmut_version = 'not installed'
     try:
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             [sys.executable, '-m', 'mutmut', 'version'],
             capture_output=True,
             text=True,
@@ -712,7 +712,7 @@ def run_mutmut(  # noqa: C901, PLR0912
 
     start_time = time.perf_counter()
     try:
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             cmd,
             cwd=str(project_dir),
             env=env,
@@ -739,7 +739,7 @@ def run_mutmut(  # noqa: C901, PLR0912
 
         # Try to get results from mutmut results command
         results_cmd = [sys.executable, '-m', 'mutmut', 'results']
-        results_output = subprocess.run(  # noqa: S603
+        results_output = subprocess.run(
             results_cmd,
             cwd=str(project_dir),
             capture_output=True,
@@ -828,7 +828,7 @@ def run_gremlins(  # noqa: C901
 
     start_time = time.perf_counter()
     try:
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             cmd,
             cwd=str(project_dir),
             env=env,
@@ -916,7 +916,7 @@ def run_benchmark_suite(
 
     # Verify pytest works
     verify_cmd = [sys.executable, '-m', 'pytest', 'tests/', '--collect-only', '-q']
-    verify_result = subprocess.run(  # noqa: S603
+    verify_result = subprocess.run(
         verify_cmd,
         cwd=str(project_dir),
         env=env,
