@@ -58,6 +58,7 @@ class ResultStore:
         Returns:
             An open SQLite connection with initialized schema.
         """
+        conn: sqlite3.Connection | None = None
         try:
             conn = sqlite3.connect(str(self._db_path))
             self._init_schema_on_conn(conn)
@@ -66,7 +67,8 @@ class ResultStore:
                 'Cache database corrupted at %s, recreating',
                 self._db_path,
             )
-            conn.close()
+            if conn is not None:
+                conn.close()
             self._db_path.unlink(missing_ok=True)
             conn = sqlite3.connect(str(self._db_path))
             self._init_schema_on_conn(conn)
