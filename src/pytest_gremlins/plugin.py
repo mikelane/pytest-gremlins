@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
+from pytest_gremlins.config import load_config, merge_configs
 from pytest_gremlins.coverage import CoverageCollector, TestSelector
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
@@ -146,29 +147,45 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Configure pytest-gremlins based on command-line options."""
+    """Configure pytest-gremlins based on command-line options.
+
+    Configuration precedence (highest to lowest):
+    1. CLI arguments (--gremlin-operators, --gremlin-targets)
+    2. pyproject.toml [tool.pytest-gremlins] section
+    3. Built-in defaults (all operators, src/ directory)
+    """
     if not config.option.gremlins:
         _set_session(GremlinSession(enabled=False))
         return
 
+    rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
+
+    # Load config from pyproject.toml and merge with CLI args
+    file_config = load_config(rootdir)
+    merged_config = merge_configs(
+        file_config,
+        cli_operators=config.option.gremlin_operators,
+        cli_targets=config.option.gremlin_targets,
+    )
+
     registry = get_default_registry()
 
-    operators_opt = config.option.gremlin_operators
-    if operators_opt:
-        operator_names = [name.strip() for name in operators_opt.split(',')]
-        operators = registry.get_all(enabled=operator_names)
-    else:
-        operators = registry.get_all()
+    # Use merged operators or all if none specified
+    operators = (
+        registry.get_all(enabled=merged_config.operators)
+        if merged_config.operators
+        else registry.get_all()
+    )
 
+    # Use merged paths or fall back to src/
     target_paths: list[Path] = []
-    targets_opt = config.option.gremlin_targets
-    if targets_opt:
-        for target in targets_opt.split(','):
-            path = Path(target.strip())
+    if merged_config.paths:
+        for path_str in merged_config.paths:
+            path = rootdir / path_str if not Path(path_str).is_absolute() else Path(path_str)
             if path.exists():
                 target_paths.append(path)
     else:
-        src_path = Path('src')
+        src_path = rootdir / 'src'
         if src_path.exists():
             target_paths.append(src_path)
 
@@ -176,7 +193,6 @@ def pytest_configure(config: pytest.Config) -> None:
     cache: IncrementalCache | None = None
     cache_enabled = config.option.gremlin_cache
     if cache_enabled:
-        rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
         cache_dir = rootdir / '.gremlins_cache'
         cache = IncrementalCache(cache_dir)
 
