@@ -25,11 +25,7 @@ class TestPytestConfigureWithFileConfig:
         """pytest_configure loads [tool.pytest-gremlins] from pyproject.toml."""
         # Create a pyproject.toml with gremlins config
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text(
-            '[tool.pytest-gremlins]\n'
-            'operators = ["comparison"]\n'
-            'paths = ["src/mypackage"]\n'
-        )
+        pyproject.write_text('[tool.pytest-gremlins]\noperators = ["comparison"]\npaths = ["src/mypackage"]\n')
 
         # Create a minimal src directory
         src_dir = tmp_path / 'src' / 'mypackage'
@@ -72,10 +68,7 @@ class TestPytestConfigureWithFileConfig:
     def test_cli_operators_override_file_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """CLI --gremlin-operators takes precedence over pyproject.toml."""
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text(
-            '[tool.pytest-gremlins]\n'
-            'operators = ["comparison", "arithmetic"]\n'
-        )
+        pyproject.write_text('[tool.pytest-gremlins]\noperators = ["comparison", "arithmetic"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
@@ -111,10 +104,7 @@ class TestPytestConfigureWithFileConfig:
     def test_cli_targets_override_file_paths(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """CLI --gremlin-targets takes precedence over pyproject.toml paths."""
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text(
-            '[tool.pytest-gremlins]\n'
-            'paths = ["src/original"]\n'
-        )
+        pyproject.write_text('[tool.pytest-gremlins]\npaths = ["src/original"]\n')
 
         # Create both directories
         original_dir = tmp_path / 'src' / 'original'

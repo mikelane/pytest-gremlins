@@ -41,10 +41,7 @@ class TestLoadConfig:
     def test_reads_operators_list(self, tmp_path):
         """Reads operators list from config."""
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text(
-            '[tool.pytest-gremlins]\n'
-            'operators = ["comparison", "arithmetic"]\n'
-        )
+        pyproject.write_text('[tool.pytest-gremlins]\noperators = ["comparison", "arithmetic"]\n')
 
         result = load_config(tmp_path)
 
@@ -53,10 +50,7 @@ class TestLoadConfig:
     def test_reads_paths_list(self, tmp_path):
         """Reads paths list from config."""
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text(
-            '[tool.pytest-gremlins]\n'
-            'paths = ["src", "lib"]\n'
-        )
+        pyproject.write_text('[tool.pytest-gremlins]\npaths = ["src", "lib"]\n')
 
         result = load_config(tmp_path)
 
@@ -65,10 +59,7 @@ class TestLoadConfig:
     def test_reads_exclude_list(self, tmp_path):
         """Reads exclude patterns list from config."""
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text(
-            '[tool.pytest-gremlins]\n'
-            'exclude = ["**/migrations/*", "**/test_*"]\n'
-        )
+        pyproject.write_text('[tool.pytest-gremlins]\nexclude = ["**/migrations/*", "**/test_*"]\n')
 
         result = load_config(tmp_path)
 
@@ -78,10 +69,7 @@ class TestLoadConfig:
         """Reads all config options together."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text(
-            '[tool.pytest-gremlins]\n'
-            'operators = ["boolean"]\n'
-            'paths = ["src/mypackage"]\n'
-            'exclude = ["**/conftest.py"]\n'
+            '[tool.pytest-gremlins]\noperators = ["boolean"]\npaths = ["src/mypackage"]\nexclude = ["**/conftest.py"]\n'
         )
 
         result = load_config(tmp_path)
@@ -93,11 +81,7 @@ class TestLoadConfig:
     def test_ignores_unknown_config_keys(self, tmp_path):
         """Unknown config keys are ignored."""
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text(
-            '[tool.pytest-gremlins]\n'
-            'unknown_key = "value"\n'
-            'operators = ["comparison"]\n'
-        )
+        pyproject.write_text('[tool.pytest-gremlins]\nunknown_key = "value"\noperators = ["comparison"]\n')
 
         result = load_config(tmp_path)
 

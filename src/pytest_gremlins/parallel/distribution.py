@@ -44,11 +44,12 @@ class RoundRobinDistribution:
     Assigns gremlin N to worker N % num_workers. Fast and deterministic,
     but doesn't account for varying execution times.
 
-    Example:
-        >>> strategy = RoundRobinDistribution()
-        >>> gremlins = [g0, g1, g2, g3, g4]
-        >>> result = strategy.distribute(gremlins, num_workers=3)
-        >>> # result[0] = [g0, g3], result[1] = [g1, g4], result[2] = [g2]
+    Example::
+
+        strategy = RoundRobinDistribution()
+        gremlins = [g0, g1, g2, g3, g4]
+        result = strategy.distribute(gremlins, num_workers=3)
+        # result[0] = [g0, g3], result[1] = [g1, g4], result[2] = [g2]
     """
 
     def distribute(
@@ -85,12 +86,13 @@ class WeightedDistribution:
     Uses a greedy algorithm: sort gremlins by weight descending, then assign
     each gremlin to the worker with the smallest current total weight.
 
-    Example:
-        >>> strategy = WeightedDistribution()
-        >>> gremlins = [g0, g1, g2, g3]  # g0, g1 are heavy (100 tests each)
-        >>> test_counts = {'g0': 100, 'g1': 100, 'g2': 10, 'g3': 10}
-        >>> result = strategy.distribute(gremlins, num_workers=2, test_counts=test_counts)
-        >>> # Heavy gremlins distributed to different workers for balance
+    Example::
+
+        strategy = WeightedDistribution()
+        gremlins = [g0, g1, g2, g3]  # g0, g1 are heavy (100 tests each)
+        test_counts = {'g0': 100, 'g1': 100, 'g2': 10, 'g3': 10}
+        result = strategy.distribute(gremlins, num_workers=2, test_counts=test_counts)
+        # Heavy gremlins distributed to different workers for balance
     """
 
     def distribute(

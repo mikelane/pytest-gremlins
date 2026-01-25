@@ -193,11 +193,7 @@ def pytest_configure(config: pytest.Config) -> None:
     registry = get_default_registry()
 
     # Use merged operators or all if none specified
-    operators = (
-        registry.get_all(enabled=merged_config.operators)
-        if merged_config.operators
-        else registry.get_all()
-    )
+    operators = registry.get_all(enabled=merged_config.operators) if merged_config.operators else registry.get_all()
 
     # Use merged paths or fall back to src/
     target_paths: list[Path] = []
