@@ -1,0 +1,5 @@
+# Ignore benchmark results (they are environment-specific)
+# Only the methodology and infrastructure should be committed
+*.json
+*.md
+!.gitignore
