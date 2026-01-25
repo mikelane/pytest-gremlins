@@ -25,26 +25,26 @@ class TestParallelCLIOptions:
         result = pytester.runpytest('--help')
         result.stdout.fnmatch_lines(['*--gremlin-workers*'])
 
-    def test_parallel_disabled_by_default(self, pytester: pytest.Pytester) -> None:
+    def test_parallel_disabled_by_default(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel execution is disabled by default."""
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             test_sample="""
             def test_pass():
                 assert True
             """
         )
         # Run without --gremlins flag - should work with no errors
-        result = pytester.runpytest('-v')
+        result = pytester_with_markers.runpytest('-v')
         assert result.ret == 0
 
-    def test_workers_accepts_integer(self, pytester: pytest.Pytester) -> None:
+    def test_workers_accepts_integer(self, pytester_with_markers: pytest.Pytester) -> None:
         """--gremlin-workers accepts an integer value."""
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             test_sample="""
             def test_pass():
                 assert True
             """
         )
         # Should not fail from invalid option
-        result = pytester.runpytest('--gremlin-workers=4', '-v')
+        result = pytester_with_markers.runpytest('--gremlin-workers=4', '-v')
         assert result.ret == 0

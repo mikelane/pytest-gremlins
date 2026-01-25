@@ -169,6 +169,7 @@ class TestWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.SURVIVED
 
+    @pytest.mark.medium  # Intentionally waits for timeout (>1s)
     def test_timeout_returns_timeout_status(self, tmp_path: Path) -> None:
         """When test times out, result is TIMEOUT."""
         with WorkerPool(max_workers=1, timeout=1) as pool:
