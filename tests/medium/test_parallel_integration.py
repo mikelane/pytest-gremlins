@@ -5,20 +5,42 @@ These tests verify that parallel execution works correctly end-to-end.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import pytest
 
 
-if TYPE_CHECKING:
-    import pytest
+@pytest.fixture
+def pytester_with_markers(pytester: pytest.Pytester) -> pytest.Pytester:
+    """Create a pytester instance with conftest that registers small marker.
+
+    The pytest-test-categories plugin requires tests to have size markers.
+    """
+    pytester.makeconftest(
+        """
+import pytest
+
+def pytest_configure(config):
+    config.addinivalue_line('markers', 'small: marks tests as small (fast unit tests)')
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if not any(marker.name in ('small', 'medium', 'large') for marker in item.iter_markers()):
+            item.add_marker(pytest.mark.small)
+"""
+    )
+    return pytester
 
 
+@pytest.mark.medium
 class TestParallelExecution:
     """Tests for parallel execution mode."""
 
-    def test_parallel_flag_enables_parallel_mode(self, pytester: pytest.Pytester) -> None:
+    def test_parallel_flag_enables_parallel_mode(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
         """--gremlin-parallel flag enables parallel execution."""
         # Create a simple source file
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             sample="""
             def is_positive(x):
                 return x > 0
@@ -26,7 +48,7 @@ class TestParallelExecution:
         )
 
         # Create a test that covers the source
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             test_sample="""
             from sample import is_positive
 
@@ -39,7 +61,7 @@ class TestParallelExecution:
         )
 
         # Run with parallel mode enabled
-        result = pytester.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=sample.py',
             '--gremlin-parallel',
@@ -50,16 +72,18 @@ class TestParallelExecution:
         # Verify parallel execution output
         result.stdout.fnmatch_lines(['*Starting parallel execution*'])
 
-    def test_parallel_produces_correct_results(self, pytester: pytest.Pytester) -> None:
+    def test_parallel_produces_correct_results(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
         """Parallel execution produces correct mutation results."""
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             sample="""
             def add(a, b):
                 return a + b
             """
         )
 
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             test_sample="""
             from sample import add
 
@@ -69,7 +93,7 @@ class TestParallelExecution:
             """
         )
 
-        result = pytester.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=sample.py',
             '--gremlin-parallel',
@@ -80,16 +104,18 @@ class TestParallelExecution:
         # Should show mutation report
         result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*'])
 
-    def test_parallel_with_single_worker(self, pytester: pytest.Pytester) -> None:
+    def test_parallel_with_single_worker(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
         """Parallel mode works with a single worker."""
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             sample="""
             def negate(x):
                 return -x
             """
         )
 
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             test_sample="""
             from sample import negate
 
@@ -98,7 +124,7 @@ class TestParallelExecution:
             """
         )
 
-        result = pytester.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=sample.py',
             '--gremlin-parallel',
@@ -108,16 +134,18 @@ class TestParallelExecution:
 
         result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*'])
 
-    def test_parallel_without_workers_flag_uses_auto(self, pytester: pytest.Pytester) -> None:
+    def test_parallel_without_workers_flag_uses_auto(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
         """Parallel mode without --gremlin-workers uses auto detection."""
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             sample="""
             def double(x):
                 return x * 2
             """
         )
 
-        pytester.makepyfile(
+        pytester_with_markers.makepyfile(
             test_sample="""
             from sample import double
 
@@ -126,7 +154,7 @@ class TestParallelExecution:
             """
         )
 
-        result = pytester.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=sample.py',
             '--gremlin-parallel',
@@ -137,10 +165,11 @@ class TestParallelExecution:
         result.stdout.fnmatch_lines(['*Starting parallel execution with auto workers*'])
 
 
+@pytest.mark.medium
 class TestSequentialVsParallelConsistency:
     """Tests that parallel and sequential modes produce consistent results."""
 
-    def test_same_mutations_found(self, pytester: pytest.Pytester) -> None:
+    def test_same_mutations_found(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel mode finds the same mutations as sequential mode."""
         source_code = """
 def compare(a, b):
@@ -159,17 +188,17 @@ def test_compare():
     assert compare(4, 4) == 0
 """
         # Run sequential
-        pytester.makepyfile(sample=source_code)
-        pytester.makepyfile(test_sample=test_code)
+        pytester_with_markers.makepyfile(sample=source_code)
+        pytester_with_markers.makepyfile(test_sample=test_code)
 
-        seq_result = pytester.runpytest(
+        seq_result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=sample.py',
             '-v',
         )
 
         # Run parallel (in same environment)
-        par_result = pytester.runpytest(
+        par_result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=sample.py',
             '--gremlin-parallel',
