@@ -16,6 +16,7 @@ Example:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 
@@ -47,13 +48,28 @@ class TestSelector:
     def select_tests(self, gremlin: Gremlin) -> set[str]:
         """Select tests to run for a gremlin.
 
+        Tries both the original path and resolved symlink path to handle
+        platform differences (e.g., /var -> /private/var on macOS).
+
         Args:
             gremlin: The gremlin to select tests for.
 
         Returns:
             Set of test function names that cover the gremlin's location.
         """
-        return self.select_tests_for_location(gremlin.file_path, gremlin.line_number)
+        # First try with the original path
+        result = self.select_tests_for_location(gremlin.file_path, gremlin.line_number)
+        if result:
+            return result
+
+        # If not found, try with resolved symlinks (handles /var -> /private/var on macOS)
+        path = Path(gremlin.file_path)
+        if path.exists():
+            resolved_path = str(path.resolve())
+            if resolved_path != gremlin.file_path:
+                return self.select_tests_for_location(resolved_path, gremlin.line_number)
+
+        return result
 
     def select_tests_for_location(
         self,

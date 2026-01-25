@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass, field
+from importlib.util import find_spec
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ import sys
 import tempfile
 from typing import TYPE_CHECKING
 
+from pytest_gremlins.coverage import CoverageCollector, CoverageMap, TestSelector
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
 from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
@@ -31,6 +33,8 @@ if TYPE_CHECKING:
 
 
 GREMLIN_SOURCES_ENV_VAR = 'PYTEST_GREMLINS_SOURCES_FILE'
+# Minimum number of parts in a coverage context (e.g., "module.test_function")
+MIN_CONTEXT_PARTS = 2
 
 
 @dataclass
@@ -45,7 +49,12 @@ class GremlinSession:
         results: Results from testing each gremlin.
         source_files: Mapping of file paths to their source code.
         test_files: List of test file paths that were collected.
+        target_paths: List of target paths to mutate.
         instrumented_dir: Temporary directory containing instrumented source files.
+        coverage_map: Mapping of source lines to test names for coverage-guided selection.
+        test_selector: Selector for choosing tests based on coverage.
+        total_tests: Total number of tests in the test suite.
+        verbose: Whether to show verbose output.
     """
 
     enabled: bool = False
@@ -57,6 +66,10 @@ class GremlinSession:
     test_files: list[Path] = field(default_factory=list)
     target_paths: list[Path] = field(default_factory=list)
     instrumented_dir: Path | None = None
+    coverage_map: CoverageMap | None = None
+    test_selector: TestSelector | None = None
+    total_tests: int = 0
+    verbose: bool = False
 
 
 _gremlin_session: GremlinSession | None = None
@@ -139,6 +152,7 @@ def pytest_configure(config: pytest.Config) -> None:
             operators=operators,
             report_format=config.option.gremlin_report,
             target_paths=target_paths,
+            verbose=config.option.verbose > 0,
         )
     )
 
@@ -151,6 +165,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
 
     test_files = [Path(item.fspath) for item in session.items if hasattr(item, 'fspath')]
     gremlin_session.test_files = list(set(test_files))
+    gremlin_session.total_tests = len(session.items)
 
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
@@ -392,6 +407,224 @@ def _cleanup_instrumented_dir(instrumented_dir: Path | None) -> None:
         shutil.rmtree(instrumented_dir, ignore_errors=True)
 
 
+def _collect_coverage(rootdir: Path) -> CoverageMap | None:
+    """Collect coverage data by running tests with coverage enabled.
+
+    This runs tests with coverage.py directly to collect per-test coverage data,
+    then builds a CoverageMap that maps source lines to test names.
+
+    We use coverage.py's Python API directly rather than pytest-cov to avoid
+    dependency issues in subprocess environments (e.g., pytester).
+
+    Args:
+        rootdir: Root directory of the project.
+
+    Returns:
+        CoverageMap if coverage collection succeeded, None otherwise.
+    """
+    if find_spec('coverage') is None:
+        return None
+
+    # Create a temporary directory for coverage data
+    coverage_dir = Path(tempfile.mkdtemp(prefix='pytest_gremlins_cov_'))
+    coverage_file = coverage_dir / '.coverage'
+
+    try:
+        # Create coverage runner script that collects per-test coverage
+        runner_script = coverage_dir / 'coverage_runner.py'
+        runner_script.write_text(_get_coverage_runner_script())
+
+        # Run the coverage collection via subprocess
+        coverage_cmd = [
+            sys.executable,
+            str(runner_script),
+            str(coverage_file),
+        ]
+
+        subprocess.run(  # noqa: S603
+            coverage_cmd,
+            cwd=str(rootdir),
+            capture_output=True,
+            timeout=300,  # 5 minute timeout for coverage collection
+            check=False,
+        )
+
+        # Check if coverage file was created
+        if not coverage_file.exists():
+            return None
+
+        # Parse coverage data and build the map
+        return _build_coverage_map_from_file(coverage_file, rootdir)
+
+    except subprocess.TimeoutExpired:
+        return None
+    except Exception:
+        return None
+    finally:
+        # Clean up coverage directory
+        shutil.rmtree(coverage_dir, ignore_errors=True)
+
+
+def _get_coverage_runner_script() -> str:
+    """Return a script that runs pytest with coverage and context tracking.
+
+    The script uses coverage.py directly to collect per-test coverage,
+    using dynamic_context=test_function to track coverage per test.
+
+    Returns:
+        Python script source code.
+    """
+    return '''#!/usr/bin/env python
+"""Coverage runner for pytest-gremlins.
+
+Collects per-test coverage data using coverage.py directly.
+Uses dynamic_context=test_function to associate coverage with each test.
+"""
+import sys
+import os
+import coverage
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: coverage_runner.py <coverage_file>", file=sys.stderr)
+        sys.exit(1)
+
+    coverage_file = sys.argv[1]
+    cwd = os.getcwd()
+
+    # Create coverage object with dynamic context per test function
+    cov = coverage.Coverage(
+        data_file=coverage_file,
+        source=[cwd],
+        config_file=False,
+        omit=["**/test_*.py", "**/*_test.py", "**/conftest.py"],
+    )
+    cov.set_option("run:dynamic_context", "test_function")
+    cov.start()
+
+    try:
+        import pytest
+        exit_code = pytest.main(["-x", "--tb=no", "-q"])
+    finally:
+        cov.stop()
+        cov.save()
+
+    sys.exit(exit_code)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def _build_coverage_map_from_file(coverage_file: Path, rootdir: Path) -> CoverageMap | None:
+    """Build a CoverageMap from a coverage.py data file.
+
+    Args:
+        coverage_file: Path to the .coverage SQLite database.
+        rootdir: Root directory of the project.
+
+    Returns:
+        CoverageMap if successful, None otherwise.
+    """
+    try:
+        import coverage  # noqa: PLC0415 - Optional dependency, must be guarded
+    except ImportError:
+        return None
+
+    try:
+        cov = coverage.Coverage(data_file=str(coverage_file))
+        cov.load()
+        data = cov.get_data()
+
+        collector = CoverageCollector()
+        contexts = data.measured_contexts()
+
+        for context in contexts:
+            if not context or context == '':
+                continue
+            # pytest-cov creates contexts like "test_file.py::test_function|run"
+            # Extract the test name from the context
+            test_name = _extract_test_name_from_context(context)
+            if not test_name:
+                continue
+
+            # Get files covered by this context
+            data.set_query_context(context)
+            for file_path in data.measured_files():
+                lines = data.lines(file_path)
+                if lines:
+                    # Normalize the file path relative to rootdir
+                    normalized_path = _normalize_coverage_path(file_path, rootdir)
+                    collector.record_test_coverage(test_name, {normalized_path: list(lines)})
+
+        return collector.coverage_map if len(collector.coverage_map) > 0 else None
+
+    except Exception:
+        return None
+
+
+def _extract_test_name_from_context(context: str) -> str | None:
+    """Extract test function name from coverage context.
+
+    coverage.py's dynamic_context=test_function creates contexts like:
+    - "test_module.test_function"
+    - "test_module.TestClass.test_method"
+
+    We convert these to pytest nodeids like:
+    - "test_module.py::test_function"
+    - "test_module.py::TestClass::test_method"
+
+    Args:
+        context: Coverage context string.
+
+    Returns:
+        Test name as pytest nodeid, or None if not a test context.
+    """
+    if not context:
+        return None
+
+    # Split by dots
+    parts = context.split('.')
+    if len(parts) < MIN_CONTEXT_PARTS:
+        return None
+
+    # First part is the module, rest is the test path
+    module = parts[0]
+    test_path = '::'.join(parts[1:])
+
+    # Return as pytest nodeid format
+    return f'{module}.py::{test_path}'
+
+
+def _normalize_coverage_path(file_path: str, rootdir: Path) -> str:
+    """Normalize a coverage file path to match gremlin paths.
+
+    Resolves symlinks and makes paths relative to rootdir where possible.
+    On macOS, /var is symlinked to /private/var, which causes path mismatches
+    if not handled properly.
+
+    Args:
+        file_path: File path from coverage data.
+        rootdir: Root directory of the project.
+
+    Returns:
+        Normalized path that matches gremlin file_path format.
+    """
+    # Resolve symlinks to get consistent paths (e.g., /var -> /private/var on macOS)
+    path = Path(file_path).resolve()
+    resolved_rootdir = rootdir.resolve()
+
+    try:
+        # Try to make path relative to rootdir
+        relative = path.relative_to(resolved_rootdir)
+        return str(resolved_rootdir / relative)
+    except ValueError:
+        # If not relative, return the resolved path
+        return str(path)
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
     """After all tests run, execute mutation testing."""
     gremlin_session = _get_session()
@@ -400,6 +633,13 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
 
     if not gremlin_session.gremlins:
         return
+
+    # Collect coverage data for coverage-guided test selection
+    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    coverage_map = _collect_coverage(rootdir)
+    gremlin_session.coverage_map = coverage_map
+    if coverage_map is not None:
+        gremlin_session.test_selector = TestSelector(coverage_map)
 
     results = _run_mutation_testing(session, gremlin_session)
     gremlin_session.results = results
@@ -420,9 +660,28 @@ def _run_mutation_testing(
     """
     results: list[GremlinResult] = []
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
-    test_command = _build_test_command(gremlin_session.instrumented_dir)
+    base_test_command = _build_test_command(gremlin_session.instrumented_dir)
+    total_gremlins = len(gremlin_session.gremlins)
 
-    for gremlin in gremlin_session.gremlins:
+    for idx, gremlin in enumerate(gremlin_session.gremlins, 1):
+        # Select tests for this gremlin using coverage data
+        selected_tests, test_count = _select_tests_for_gremlin(
+            gremlin,
+            gremlin_session.test_selector,
+            gremlin_session.total_tests,
+        )
+
+        # Build test command with selected tests
+        test_command = _build_filtered_test_command(base_test_command, selected_tests)
+
+        # Log progress with test selection info
+        if gremlin_session.verbose:
+            location = f'{gremlin.file_path}:{gremlin.line_number}'
+            print(
+                f'Gremlin {idx}/{total_gremlins}: {location} - '
+                f'running {test_count}/{gremlin_session.total_tests} tests'
+            )
+
         result = _test_gremlin(
             gremlin,
             test_command,
@@ -432,6 +691,73 @@ def _run_mutation_testing(
         results.append(result)
 
     return results
+
+
+def _select_tests_for_gremlin(
+    gremlin: Gremlin,
+    test_selector: TestSelector | None,
+    total_tests: int,
+) -> tuple[set[str], int]:
+    """Select which tests to run for a gremlin.
+
+    Uses coverage data to select only tests that cover the gremlin's location.
+    Falls back to running all tests if no coverage data is available.
+
+    Args:
+        gremlin: The gremlin to select tests for.
+        test_selector: The test selector with coverage data, or None.
+        total_tests: Total number of tests in the suite.
+
+    Returns:
+        Tuple of (selected test names, count of tests to run).
+    """
+    if test_selector is None:
+        # No coverage data available, run all tests
+        return set(), total_tests
+
+    selected = test_selector.select_tests(gremlin)
+
+    if not selected:
+        # No tests cover this gremlin, run all tests as fallback
+        return set(), total_tests
+
+    return selected, len(selected)
+
+
+def _build_filtered_test_command(
+    base_command: list[str],
+    selected_tests: set[str],
+) -> list[str]:
+    """Build a test command filtered to run only selected tests.
+
+    Args:
+        base_command: The base pytest command.
+        selected_tests: Set of test nodeids to run, or empty to run all.
+
+    Returns:
+        Command list with test selection applied.
+    """
+    if not selected_tests:
+        # No selection, run all tests
+        return base_command
+
+    # Use pytest's -k option to filter tests
+    # We need to build a pattern that matches any of the selected tests
+    # For nodeids like "test_file.py::test_function", we extract the function name
+    test_patterns = []
+    for test_nodeid in selected_tests:
+        # Extract the test name from nodeid (last part after ::)
+        parts = test_nodeid.split('::')
+        test_name = parts[-1] if parts else test_nodeid
+        test_patterns.append(test_name)
+
+    if not test_patterns:
+        return base_command
+
+    # Build -k expression: "test_a or test_b or test_c"
+    k_expression = ' or '.join(test_patterns)
+
+    return [*base_command, '-k', k_expression]
 
 
 def _build_test_command(instrumented_dir: Path | None) -> list[str]:
@@ -548,6 +874,18 @@ def pytest_terminal_summary(
 
     terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
     terminalreporter.write_line('')
+
+    # Show coverage collection status
+    if gremlin_session.coverage_map is not None:
+        coverage_locations = len(gremlin_session.coverage_map)
+        terminalreporter.write_line(
+            f'Coverage collected: {gremlin_session.total_tests} tests covering '
+            f'{coverage_locations} source locations'
+        )
+        terminalreporter.write_line('')
+    else:
+        terminalreporter.write_line('Coverage: Not collected (running all tests for each gremlin)')
+        terminalreporter.write_line('')
 
     if score.total == 0:
         terminalreporter.write_line('No gremlins tested.')
