@@ -35,9 +35,7 @@ def pytest_collection_modifyitems(items):
 class TestParallelExecution:
     """Tests for parallel execution mode."""
 
-    def test_parallel_flag_enables_parallel_mode(
-        self, pytester_with_markers: pytest.Pytester
-    ) -> None:
+    def test_parallel_flag_enables_parallel_mode(self, pytester_with_markers: pytest.Pytester) -> None:
         """--gremlin-parallel flag enables parallel execution."""
         # Create a simple source file
         pytester_with_markers.makepyfile(
@@ -72,9 +70,7 @@ class TestParallelExecution:
         # Verify parallel execution output
         result.stdout.fnmatch_lines(['*Starting parallel execution*'])
 
-    def test_parallel_produces_correct_results(
-        self, pytester_with_markers: pytest.Pytester
-    ) -> None:
+    def test_parallel_produces_correct_results(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel execution produces correct mutation results."""
         pytester_with_markers.makepyfile(
             sample="""
@@ -104,9 +100,7 @@ class TestParallelExecution:
         # Should show mutation report
         result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*'])
 
-    def test_parallel_with_single_worker(
-        self, pytester_with_markers: pytest.Pytester
-    ) -> None:
+    def test_parallel_with_single_worker(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel mode works with a single worker."""
         pytester_with_markers.makepyfile(
             sample="""
@@ -134,9 +128,7 @@ class TestParallelExecution:
 
         result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*'])
 
-    def test_parallel_without_workers_flag_uses_auto(
-        self, pytester_with_markers: pytest.Pytester
-    ) -> None:
+    def test_parallel_without_workers_flag_uses_auto(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel mode without --gremlin-workers uses auto detection."""
         pytester_with_markers.makepyfile(
             sample="""
