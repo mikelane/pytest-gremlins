@@ -241,3 +241,41 @@ def test_below_boundary():
         assert match is not None, 'Could not find Zapped count in output'
         zapped_count = int(match.group(1))
         assert zapped_count >= 1, f'Expected at least 1 zapped gremlin, got {zapped_count}'
+
+
+@pytest.mark.medium
+class TestHtmlReportIntegration:
+    """Test HTML report generation via CLI."""
+
+    def test_html_report_written_when_specified(self, pytester_with_conftest: pytest.Pytester):
+        """Verify that HTML report is written when --gremlin-report=html is specified."""
+        pytester_with_conftest.makepyfile(
+            target_module="""
+def is_adult(age):
+    return age >= 18
+"""
+        )
+        pytester_with_conftest.makepyfile(
+            test_target="""
+from target_module import is_adult
+
+def test_is_adult():
+    assert is_adult(21) is True
+"""
+        )
+
+        result = pytester_with_conftest.runpytest(
+            '--gremlins',
+            '--gremlin-targets=target_module.py',
+            '--gremlin-report=html',
+            '-v',
+        )
+        result.assert_outcomes(passed=1)
+
+        # The HTML report should be written to the default location
+        report_path = pytester_with_conftest.path / 'gremlin-report.html'
+        assert report_path.exists(), f'HTML report not found at {report_path}'
+
+        content = report_path.read_text()
+        assert '<!DOCTYPE html>' in content
+        assert 'pytest-gremlins' in content.lower() or 'mutation' in content.lower()

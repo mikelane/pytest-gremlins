@@ -24,6 +24,7 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.coverage import CoverageCollector, TestSelector
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
+from pytest_gremlins.reporting.html import HtmlReporter
 from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 
@@ -1059,10 +1060,26 @@ def _test_gremlin(
         )
 
 
+def _write_html_report(score: MutationScore, rootdir: Path) -> Path:
+    """Write HTML report to file.
+
+    Args:
+        score: The MutationScore to write.
+        rootdir: Root directory of the project.
+
+    Returns:
+        Path to the written HTML report.
+    """
+    reporter = HtmlReporter()
+    output_path = rootdir / 'gremlin-report.html'
+    reporter.write_report(score, output_path)
+    return output_path
+
+
 def pytest_terminal_summary(
     terminalreporter: pytest.TerminalReporter,
     exitstatus: int,  # noqa: ARG001
-    config: pytest.Config,  # noqa: ARG001
+    config: pytest.Config,
 ) -> None:
     """Add mutation testing results to terminal output."""
     gremlin_session = _get_session()
@@ -1078,6 +1095,12 @@ def pytest_terminal_summary(
         return
 
     score = MutationScore.from_results(gremlin_session.results)
+
+    # Write HTML report if requested
+    if gremlin_session.report_format == 'html':
+        rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
+        report_path = _write_html_report(score, rootdir)
+        terminalreporter.write_line(f'HTML report written to: {report_path}')
 
     terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
     terminalreporter.write_line('')
