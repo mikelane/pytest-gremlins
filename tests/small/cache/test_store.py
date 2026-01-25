@@ -206,3 +206,15 @@ class TestResultStore:
         assert file1_g001 is None
         assert file1_g002 is None
         assert file2_g001 is not None
+
+    def test_corrupted_database_is_recreated(self, tmp_path, caplog):
+        """Corrupted database file is deleted and recreated with warning."""
+        db_path = tmp_path / 'results.db'
+        db_path.write_bytes(b'not a valid sqlite database')
+
+        with ResultStore(db_path) as store:
+            store.put('key1', {'status': 'zapped'})
+            retrieved = store.get('key1')
+
+        assert retrieved == {'status': 'zapped'}
+        assert 'corrupted' in caplog.text.lower()

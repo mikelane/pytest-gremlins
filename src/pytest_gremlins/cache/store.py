@@ -8,12 +8,16 @@ reducing repeat run times.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 
 class ResultStore:
@@ -33,24 +37,54 @@ class ResultStore:
     def __init__(self, db_path: Path) -> None:
         """Initialize the result store.
 
+        If the database file is corrupted, it will be deleted and a fresh
+        database will be created. A warning will be logged in this case.
+
         Args:
             db_path: Path to the SQLite database file. Parent directories
                      will be created if they don't exist.
         """
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db_path = db_path
-        self._conn = sqlite3.connect(str(db_path))
-        self._init_schema()
+        self._conn = self._open_or_recreate_db()
 
-    def _init_schema(self) -> None:
-        """Create the results table if it doesn't exist."""
-        self._conn.execute("""
+    def _open_or_recreate_db(self) -> sqlite3.Connection:
+        """Open the database, recreating it if corrupted.
+
+        Attempts to connect to the database and initialize the schema.
+        If a DatabaseError occurs (indicating corruption), the file is
+        deleted and a fresh database is created.
+
+        Returns:
+            An open SQLite connection with initialized schema.
+        """
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+            self._init_schema_on_conn(conn)
+        except sqlite3.DatabaseError:
+            logger.warning(
+                'Cache database corrupted at %s, recreating',
+                self._db_path,
+            )
+            conn.close()
+            self._db_path.unlink(missing_ok=True)
+            conn = sqlite3.connect(str(self._db_path))
+            self._init_schema_on_conn(conn)
+        return conn
+
+    def _init_schema_on_conn(self, conn: sqlite3.Connection) -> None:
+        """Create the results table if it doesn't exist.
+
+        Args:
+            conn: The database connection to initialize.
+        """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS results (
                 cache_key TEXT PRIMARY KEY,
                 result_json TEXT NOT NULL
             )
         """)
-        self._conn.commit()
+        conn.commit()
 
     def get(self, cache_key: str) -> dict[str, Any] | None:
         """Retrieve a cached result by key.
@@ -104,9 +138,12 @@ class ResultStore:
             prefix: The key prefix to match. All keys starting with
                     this prefix will be deleted.
         """
+        # Escape LIKE metacharacters (%, _) in the prefix to treat them as literals.
+        # Use backslash as the escape character (specified in ESCAPE clause).
+        escaped_prefix = prefix.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
         self._conn.execute(
-            'DELETE FROM results WHERE cache_key LIKE ?',
-            (prefix + '%',),
+            "DELETE FROM results WHERE cache_key LIKE ? ESCAPE '\\'",
+            (escaped_prefix + '%',),
         )
         self._conn.commit()
 

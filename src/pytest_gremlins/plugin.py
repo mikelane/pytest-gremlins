@@ -7,6 +7,7 @@ into the pytest test runner.
 from __future__ import annotations
 
 import ast
+import contextlib
 from dataclasses import dataclass, field
 import json
 import os
@@ -216,8 +217,6 @@ def pytest_collection_finish(session: pytest.Session) -> None:
         hasher = ContentHasher()
         for file_path, source in source_files.items():
             gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
-        import contextlib  # noqa: PLC0415
-
         for test_file in gremlin_session.test_files:
             with contextlib.suppress(FileNotFoundError):
                 gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
@@ -754,6 +753,40 @@ def _run_mutation_testing(
     return results
 
 
+def _build_test_hashes_for_gremlin(
+    selected_tests: set[str],
+    gremlin_session: GremlinSession,
+) -> dict[str, str]:
+    """Build test hashes for the tests that cover a gremlin.
+
+    Maps test names to their file content hashes. Test names can be in different
+    formats (simple function, module.function, TestClass.method), so this function
+    tries variations to find the corresponding node ID and file hash.
+
+    Args:
+        selected_tests: Set of test names that cover the gremlin.
+        gremlin_session: The current gremlin session with test metadata.
+
+    Returns:
+        Dictionary mapping test names to their file content hashes.
+    """
+    test_hashes: dict[str, str] = {}
+    for test_name in selected_tests:
+        node_id = gremlin_session.test_node_ids.get(test_name, '')
+        if not node_id:
+            simple_name = test_name.split('.')[-1]
+            node_id = gremlin_session.test_node_ids.get(simple_name, '')
+
+        if '::' in node_id:
+            test_file = node_id.split('::')[0]
+            for file_path, file_hash in gremlin_session.test_hashes.items():
+                if file_path.endswith(test_file) or test_file in file_path:
+                    test_hashes[test_name] = file_hash
+                    break
+
+    return test_hashes
+
+
 def _check_cache_for_gremlin(
     gremlin: Gremlin,
     selected_tests: set[str],
@@ -776,28 +809,7 @@ def _check_cache_for_gremlin(
     if not source_hash:
         return None
 
-    # Build test hashes for the tests that cover this gremlin
-    test_hashes: dict[str, str] = {}
-    for test_name in selected_tests:
-        # Map test name to its file and get hash
-        # Test names can be in different formats:
-        # - 'test_add' (simple function name)
-        # - 'test_module.test_add' (module.function from coverage)
-        # - 'TestClass.test_method' (class.method)
-        # Try variations to find the node ID
-        node_id = gremlin_session.test_node_ids.get(test_name, '')
-        if not node_id:
-            # Try just the function name (last part after any dots)
-            simple_name = test_name.split('.')[-1]
-            node_id = gremlin_session.test_node_ids.get(simple_name, '')
-
-        if '::' in node_id:
-            test_file = node_id.split('::')[0]
-            # Try to find the hash by looking for a matching test file
-            for file_path, file_hash in gremlin_session.test_hashes.items():
-                if file_path.endswith(test_file) or test_file in file_path:
-                    test_hashes[test_name] = file_hash
-                    break
+    test_hashes = _build_test_hashes_for_gremlin(selected_tests, gremlin_session)
 
     cached = gremlin_session.cache.get_cached_result(
         gremlin_id=gremlin.gremlin_id,
@@ -808,7 +820,6 @@ def _check_cache_for_gremlin(
     if cached is None:
         return None
 
-    # Reconstruct GremlinResult from cached data
     status = GremlinResultStatus(cached['status'])
     return GremlinResult(
         gremlin=gremlin,
@@ -839,21 +850,7 @@ def _cache_gremlin_result(
     if not source_hash:
         return
 
-    # Build test hashes for the tests that cover this gremlin
-    test_hashes: dict[str, str] = {}
-    for test_name in selected_tests:
-        # Test names can be in different formats - try variations
-        node_id = gremlin_session.test_node_ids.get(test_name, '')
-        if not node_id:
-            simple_name = test_name.split('.')[-1]
-            node_id = gremlin_session.test_node_ids.get(simple_name, '')
-
-        if '::' in node_id:
-            test_file = node_id.split('::')[0]
-            for file_path, file_hash in gremlin_session.test_hashes.items():
-                if file_path.endswith(test_file) or test_file in file_path:
-                    test_hashes[test_name] = file_hash
-                    break
+    test_hashes = _build_test_hashes_for_gremlin(selected_tests, gremlin_session)
 
     gremlin_session.cache.cache_result(
         gremlin_id=gremlin.gremlin_id,
