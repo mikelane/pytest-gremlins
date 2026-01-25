@@ -6,12 +6,15 @@ These tests verify the worker pool lifecycle management and execution behavior.
 from __future__ import annotations
 
 import ast
-from unittest.mock import MagicMock
+from concurrent.futures import Future
+from pathlib import Path
+import sys
+import tempfile
 
 import pytest
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
-from pytest_gremlins.parallel.pool import WorkerPool, WorkerResult
+from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 
@@ -96,43 +99,39 @@ class TestWorkerPoolShutdown:
 class TestWorkerPoolSubmit:
     """Tests for submitting work to the worker pool."""
 
-    def test_submit_requires_active_context(self) -> None:
+    def test_submit_requires_active_context(self, tmp_path: Path) -> None:
         """Submit raises error when pool is not in context."""
         pool = WorkerPool(max_workers=2)
         with pytest.raises(RuntimeError, match='not active'):
             pool.submit(
                 gremlin_id='g001',
                 test_command=['pytest'],
-                rootdir='/tmp',
+                rootdir=str(tmp_path),
                 instrumented_dir=None,
                 env_vars={},
             )
 
-    def test_submit_returns_future(self) -> None:
+    def test_submit_returns_future(self, tmp_path: Path) -> None:
         """Submit returns a Future object."""
-        from concurrent.futures import Future
-
         with WorkerPool(max_workers=2) as pool:
             future = pool.submit(
                 gremlin_id='g001',
                 test_command=['python', '-c', 'pass'],
-                rootdir='/tmp',
+                rootdir=str(tmp_path),
                 instrumented_dir=None,
                 env_vars={},
             )
             assert isinstance(future, Future)
 
-    def test_submit_multiple_gremlins(self) -> None:
+    def test_submit_multiple_gremlins(self, tmp_path: Path) -> None:
         """Multiple gremlins can be submitted to pool."""
-        from concurrent.futures import Future
-
         with WorkerPool(max_workers=2) as pool:
             futures = []
             for i in range(3):
                 future = pool.submit(
                     gremlin_id=f'g{i:03d}',
                     test_command=['python', '-c', 'pass'],
-                    rootdir='/tmp',
+                    rootdir=str(tmp_path),
                     instrumented_dir=None,
                     env_vars={},
                 )
@@ -144,64 +143,60 @@ class TestWorkerPoolSubmit:
 class TestWorkerPoolExecution:
     """Tests for actual execution in worker pool."""
 
-    def test_successful_test_returns_zapped_status(self) -> None:
+    def test_successful_test_returns_zapped_status(self, tmp_path: Path) -> None:
         """When tests fail (mutation caught), result is ZAPPED."""
         with WorkerPool(max_workers=1, timeout=5) as pool:
             future = pool.submit(
                 gremlin_id='g001',
                 test_command=['python', '-c', 'import sys; sys.exit(1)'],  # Fail = mutation caught
-                rootdir='/tmp',
+                rootdir=str(tmp_path),
                 instrumented_dir=None,
                 env_vars={},
             )
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.ZAPPED
 
-    def test_failed_test_returns_survived_status(self) -> None:
+    def test_failed_test_returns_survived_status(self, tmp_path: Path) -> None:
         """When tests pass (mutation not caught), result is SURVIVED."""
         with WorkerPool(max_workers=1, timeout=5) as pool:
             future = pool.submit(
                 gremlin_id='g001',
                 test_command=['python', '-c', 'pass'],  # Pass = mutation survived
-                rootdir='/tmp',
+                rootdir=str(tmp_path),
                 instrumented_dir=None,
                 env_vars={},
             )
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.SURVIVED
 
-    def test_timeout_returns_timeout_status(self) -> None:
+    def test_timeout_returns_timeout_status(self, tmp_path: Path) -> None:
         """When test times out, result is TIMEOUT."""
         with WorkerPool(max_workers=1, timeout=1) as pool:
             future = pool.submit(
                 gremlin_id='g001',
                 test_command=['python', '-c', 'import time; time.sleep(10)'],
-                rootdir='/tmp',
+                rootdir=str(tmp_path),
                 instrumented_dir=None,
                 env_vars={},
             )
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.TIMEOUT
 
-    def test_result_includes_gremlin_id(self) -> None:
+    def test_result_includes_gremlin_id(self, tmp_path: Path) -> None:
         """Result includes the gremlin ID that was tested."""
         with WorkerPool(max_workers=1, timeout=5) as pool:
             future = pool.submit(
                 gremlin_id='g042',
                 test_command=['python', '-c', 'pass'],
-                rootdir='/tmp',
+                rootdir=str(tmp_path),
                 instrumented_dir=None,
                 env_vars={},
             )
             result = future.result(timeout=5)
             assert result.gremlin_id == 'g042'
 
-    def test_env_vars_passed_to_subprocess(self) -> None:
+    def test_env_vars_passed_to_subprocess(self, tmp_path: Path) -> None:
         """Environment variables are passed to the worker subprocess."""
-        import os
-        import sys
-        import tempfile
-
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             f.write('import os; import sys; sys.exit(0 if os.environ.get("MY_VAR") == "test_value" else 1)')
             script_path = f.name
@@ -211,7 +206,7 @@ class TestWorkerPoolExecution:
                 future = pool.submit(
                     gremlin_id='g001',
                     test_command=[sys.executable, script_path],
-                    rootdir='/tmp',
+                    rootdir=str(tmp_path),
                     instrumented_dir=None,
                     env_vars={'MY_VAR': 'test_value'},
                 )
@@ -219,4 +214,4 @@ class TestWorkerPoolExecution:
                 # If env var was passed, script exits 0 = tests passed = SURVIVED
                 assert result.status == GremlinResultStatus.SURVIVED
         finally:
-            os.unlink(script_path)
+            Path(script_path).unlink()

@@ -5,7 +5,11 @@ These tests verify that parallel execution works correctly end-to-end.
 
 from __future__ import annotations
 
-import pytest
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    import pytest
 
 
 class TestParallelExecution:

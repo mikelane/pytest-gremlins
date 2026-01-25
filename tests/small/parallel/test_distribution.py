@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import ast
 
-import pytest
-
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.parallel.distribution import (
     DistributionStrategy,

@@ -6,10 +6,6 @@ These tests verify result collection, ordering, and error handling.
 from __future__ import annotations
 
 import threading
-from concurrent.futures import Future
-from unittest.mock import MagicMock
-
-import pytest
 
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.pool import WorkerResult
@@ -205,30 +201,36 @@ class TestResultAggregatorStatusCounts:
         """Tracks count of zapped gremlins."""
         aggregator = ResultAggregator(total_gremlins=10)
         for i in range(3):
-            aggregator.add_result(WorkerResult(
-                gremlin_id=f'g{i:03d}',
-                status=GremlinResultStatus.ZAPPED,
-            ))
+            aggregator.add_result(
+                WorkerResult(
+                    gremlin_id=f'g{i:03d}',
+                    status=GremlinResultStatus.ZAPPED,
+                )
+            )
         assert aggregator.zapped_count == 3
 
     def test_counts_survived(self) -> None:
         """Tracks count of survived gremlins."""
         aggregator = ResultAggregator(total_gremlins=10)
         for i in range(4):
-            aggregator.add_result(WorkerResult(
-                gremlin_id=f'g{i:03d}',
-                status=GremlinResultStatus.SURVIVED,
-            ))
+            aggregator.add_result(
+                WorkerResult(
+                    gremlin_id=f'g{i:03d}',
+                    status=GremlinResultStatus.SURVIVED,
+                )
+            )
         assert aggregator.survived_count == 4
 
     def test_counts_timeout(self) -> None:
         """Tracks count of timed out gremlins."""
         aggregator = ResultAggregator(total_gremlins=10)
         for i in range(2):
-            aggregator.add_result(WorkerResult(
-                gremlin_id=f'g{i:03d}',
-                status=GremlinResultStatus.TIMEOUT,
-            ))
+            aggregator.add_result(
+                WorkerResult(
+                    gremlin_id=f'g{i:03d}',
+                    status=GremlinResultStatus.TIMEOUT,
+                )
+            )
         assert aggregator.timeout_count == 2
 
     def test_counts_error(self) -> None:
