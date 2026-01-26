@@ -11,7 +11,7 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.store import ResultStore
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestHasherBugs:
     """Tests for bugs in ContentHasher."""
 
@@ -50,7 +50,7 @@ class TestHasherBugs:
             hasher.hash_file(binary_file)
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestResultStoreBugs:
     """Tests for bugs in ResultStore."""
 
@@ -152,7 +152,7 @@ class TestResultStoreBugs:
                 assert store2.get('key3') is not None
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestIncrementalCacheBugs:
     """Tests for bugs in IncrementalCache."""
 

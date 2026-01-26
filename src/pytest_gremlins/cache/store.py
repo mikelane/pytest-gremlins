@@ -49,6 +49,7 @@ class ResultStore:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db_path = db_path
         self._conn = self._open_or_recreate_db()
+        self._pending_writes: list[tuple[str, str]] = []
 
     def _open_or_recreate_db(self) -> sqlite3.Connection:
         """Open the database, recreating it if corrupted.
@@ -123,6 +124,35 @@ class ResultStore:
         )
         self._conn.commit()
 
+    def put_deferred(self, cache_key: str, result: dict[str, Any]) -> None:
+        """Store a result without committing immediately.
+
+        Results are batched and committed on flush() or close(). This is
+        faster for bulk inserts as it reduces commit overhead.
+
+        Args:
+            cache_key: The content-based cache key.
+            result: The result dictionary to cache.
+        """
+        result_json = json.dumps(result)
+        self._pending_writes.append((cache_key, result_json))
+
+    def flush(self) -> None:
+        """Commit all pending deferred writes.
+
+        This commits any results added via put_deferred() in a single
+        transaction, which is much faster than individual commits.
+        """
+        if not self._pending_writes:
+            return
+
+        self._conn.executemany(
+            'INSERT OR REPLACE INTO results (cache_key, result_json) VALUES (?, ?)',
+            self._pending_writes,
+        )
+        self._conn.commit()
+        self._pending_writes.clear()
+
     def delete(self, cache_key: str) -> None:
         """Remove a result from the cache.
 
@@ -191,7 +221,11 @@ class ResultStore:
         return count
 
     def close(self) -> None:
-        """Close the database connection."""
+        """Close the database connection.
+
+        Flushes any pending deferred writes before closing.
+        """
+        self.flush()
         self._conn.close()
 
     def __enter__(self) -> ResultStore:

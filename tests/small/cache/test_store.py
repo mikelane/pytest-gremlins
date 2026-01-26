@@ -10,7 +10,7 @@ from pytest_gremlins.cache.store import ResultStore
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestResultStore:
     """Tests for ResultStore class."""
 

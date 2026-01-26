@@ -1186,7 +1186,8 @@ def _cache_gremlin_result(
 
     test_hashes = _build_test_hashes_for_gremlin(selected_tests, gremlin_session)
 
-    gremlin_session.cache.cache_result(
+    # Use deferred writes to batch commits for better performance
+    gremlin_session.cache.cache_result_deferred(
         gremlin_id=gremlin.gremlin_id,
         source_hash=source_hash,
         test_hashes=test_hashes,
