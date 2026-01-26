@@ -1,0 +1,72 @@
+{
+  "phases": [
+    {
+      "phase": "source_discovery",
+      "duration_ms": 25.617083068937063,
+      "details": {
+        "file_count": 35,
+        "total_lines": 4979
+      }
+    },
+    {
+      "phase": "ast_transformation",
+      "duration_ms": 96.6725000180304,
+      "details": {
+        "gremlin_count": 435,
+        "avg_parse_time_ms": 0.5337381336305823,
+        "avg_transform_time_ms": 2.226397435047797
+      }
+    },
+    {
+      "phase": "code_generation",
+      "duration_ms": 28.67149980738759,
+      "details": {
+        "avg_unparse_time_ms": 0.8170356840959617,
+        "total_output_bytes": 182955
+      }
+    },
+    {
+      "phase": "test_discovery",
+      "duration_ms": 1183.304375037551,
+      "details": {
+        "pytest_collect_time_ms": 1182.8448749147356,
+        "test_count": 417
+      }
+    },
+    {
+      "phase": "coverage_collection",
+      "duration_ms": 91796.23458301648,
+      "details": {
+        "coverage_run_time_ms": 91785.20879196003,
+        "context_count": 390,
+        "covered_file_count": 82,
+        "line_bits_entries": 1256,
+        "coverage_parse_time_ms": 9.505459107458591
+      }
+    },
+    {
+      "phase": "test_selector_build",
+      "duration_ms": 0.041665975004434586,
+      "details": {
+        "selector_build_time_ms": 0.0035408884286880493
+      }
+    },
+    {
+      "phase": "mutation_execution_sample",
+      "duration_ms": 7321.146416012198,
+      "details": {
+        "sample_size": 5,
+        "avg_subprocess_startup_ms": 1459.8848418332636,
+        "min_subprocess_startup_ms": 1187.1892921626568,
+        "max_subprocess_startup_ms": 1791.7018327862024,
+        "total_subprocess_time_ms": 7299.424209166318
+      }
+    }
+  ],
+  "total_time_ms": 100452.21466664225,
+  "metadata": {
+    "target_path": "/Users/mikelane/dev/pytest-gremlins/.worktrees/issue-48-profiling/src/pytest_gremlins",
+    "test_path": "/Users/mikelane/dev/pytest-gremlins/.worktrees/issue-48-profiling/tests",
+    "python_version": "3.14.0 (main, Oct 21 2025, 22:51:59) [Clang 17.0.0 (clang-1700.3.14.6)]"
+  }
+}

@@ -143,6 +143,10 @@ Thumbs.db
 .gremlins/
 *.db
 .secrets.baseline
+*.pstats
+mutants/
+.mutmut-cache/
+.mutmut/
 
 # uv
 # uv.lock  # Commented out - we want to track this for reproducible builds

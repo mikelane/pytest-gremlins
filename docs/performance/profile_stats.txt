@@ -1,0 +1,120 @@
+         591513 function calls (440334 primitive calls) in 0.248 seconds
+
+   Ordered by: cumulative time
+   List reduced from 132 to 50 due to restriction <50>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+       35    0.001    0.000    0.226    0.006 transformer.py:454(transform_source)
+ 15234/35    0.009    0.000    0.209    0.006 ast.py:502(visit)
+ 14223/35    0.021    0.000    0.208    0.006 ast.py:555(generic_visit)
+107026/1277    0.047    0.000    0.135    0.000 copy.py:110(deepcopy)
+8849/1277    0.021    0.000    0.129    0.000 copy.py:228(_reconstruct)
+8849/1277    0.021    0.000    0.121    0.000 copy.py:198(_deepcopy_dict)
+      217    0.000    0.000    0.080    0.000 transformer.py:442(visit_Return)
+     1509    0.001    0.000    0.072    0.000 transformer.py:376(_create_gremlins_for_node)
+      419    0.002    0.000    0.064    0.000 transformer.py:110(create_gremlins_for_node)
+2160/1272    0.002    0.000    0.063    0.000 copy.py:172(_deepcopy_list)
+      208    0.002    0.000    0.054    0.000 transformer.py:269(build_switching_expression)
+       39    0.000    0.000    0.041    0.001 transformer.py:411(visit_BoolOp)
+       70    0.000    0.000    0.033    0.000 ast.py:26(parse)
+       70    0.033    0.000    0.033    0.000 {built-in method builtins.compile}
+      199    0.001    0.000    0.029    0.000 transformer.py:310(build_switching_statement)
+      199    0.000    0.000    0.029    0.000 return_value.py:51(mutate)
+      199    0.001    0.000    0.029    0.000 return_value.py:78(_mutate_to_none)
+   100/90    0.000    0.000    0.023    0.000 transformer.py:400(visit_BinOp)
+        1    0.001    0.001    0.022    0.022 profile_gremlins.py:86(discover_source_files)
+       93    0.000    0.000    0.019    0.000 transformer.py:389(visit_Compare)
+      131    0.000    0.000    0.017    0.000 boolean.py:52(mutate)
+       49    0.000    0.000    0.014    0.000 transformer.py:422(visit_UnaryOp)
+    19858    0.008    0.000    0.013    0.000 copy.py:212(_keep_alive)
+       39    0.000    0.000    0.012    0.000 boolean.py:72(_mutate_boolop)
+    37679    0.008    0.000    0.011    0.000 ast.py:268(iter_fields)
+    56823    0.011    0.000    0.011    0.000 {built-in method builtins.getattr}
+    84040    0.010    0.000    0.010    0.000 {built-in method builtins.isinstance}
+     1011    0.000    0.000    0.009    0.000 transformer.py:433(visit_Constant)
+     1509    0.003    0.000    0.007    0.000 transformer.py:372(_get_operators_for_node)
+    49709    0.007    0.000    0.007    0.000 {method 'get' of 'dict' objects}
+       44    0.000    0.000    0.007    0.000 arithmetic.py:73(mutate)
+    22014    0.004    0.000    0.007    0.000 copy.py:233(<genexpr>)
+    63110    0.006    0.000    0.006    0.000 {built-in method builtins.id}
+     8849    0.004    0.000    0.004    0.000 {method '__reduce_ex__' of 'object' objects}
+       33    0.000    0.000    0.004    0.000 comparison.py:70(mutate)
+    26168    0.003    0.000    0.003    0.000 {method 'append' of 'list' objects}
+       44    0.000    0.000    0.003    0.000 boolean.py:81(_mutate_not)
+     8849    0.003    0.000    0.003    0.000 {method 'update' of 'dict' objects}
+       35    0.000    0.000    0.003    0.000 __init__.py:785(read_text)
+       12    0.000    0.000    0.002    0.000 boundary.py:63(mutate)
+       12    0.000    0.000    0.002    0.000 boundary.py:104(_mutate_comparator_constants)
+       35    0.000    0.000    0.002    0.000 __init__.py:768(open)
+       35    0.002    0.000    0.002    0.000 {built-in method _io.open}
+     1640    0.001    0.000    0.002    0.000 boolean.py:35(can_mutate)
+      435    0.001    0.000    0.002    0.000 transformer.py:191(_get_mutation_description)
+    10556    0.002    0.000    0.002    0.000 {built-in method builtins.setattr}
+     8849    0.001    0.000    0.001    0.000 {built-in method builtins.hasattr}
+     8850    0.001    0.000    0.001    0.000 {method 'items' of 'dict' objects}
+       36    0.000    0.000    0.001    0.000 glob.py:468(select_recursive)
+       39    0.000    0.000    0.001    0.000 glob.py:476(select_recursive_step)
+
+
+
+
+--- Sorted by Internal Time ---
+
+         591513 function calls (440334 primitive calls) in 0.248 seconds
+
+   Ordered by: internal time
+   List reduced from 132 to 50 due to restriction <50>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+107026/1277    0.047    0.000    0.135    0.000 copy.py:110(deepcopy)
+       70    0.033    0.000    0.033    0.000 {built-in method builtins.compile}
+ 14223/35    0.021    0.000    0.208    0.006 ast.py:555(generic_visit)
+8849/1277    0.021    0.000    0.121    0.000 copy.py:198(_deepcopy_dict)
+8849/1277    0.021    0.000    0.129    0.000 copy.py:228(_reconstruct)
+    56823    0.011    0.000    0.011    0.000 {built-in method builtins.getattr}
+    84040    0.010    0.000    0.010    0.000 {built-in method builtins.isinstance}
+ 15234/35    0.009    0.000    0.209    0.006 ast.py:502(visit)
+    19858    0.008    0.000    0.013    0.000 copy.py:212(_keep_alive)
+    37679    0.008    0.000    0.011    0.000 ast.py:268(iter_fields)
+    49709    0.007    0.000    0.007    0.000 {method 'get' of 'dict' objects}
+    63110    0.006    0.000    0.006    0.000 {built-in method builtins.id}
+    22014    0.004    0.000    0.007    0.000 copy.py:233(<genexpr>)
+     8849    0.004    0.000    0.004    0.000 {method '__reduce_ex__' of 'object' objects}
+    26168    0.003    0.000    0.003    0.000 {method 'append' of 'list' objects}
+     8849    0.003    0.000    0.003    0.000 {method 'update' of 'dict' objects}
+     1509    0.003    0.000    0.007    0.000 transformer.py:372(_get_operators_for_node)
+      208    0.002    0.000    0.054    0.000 transformer.py:269(build_switching_expression)
+       35    0.002    0.000    0.002    0.000 {built-in method _io.open}
+2160/1272    0.002    0.000    0.063    0.000 copy.py:172(_deepcopy_list)
+      419    0.002    0.000    0.064    0.000 transformer.py:110(create_gremlins_for_node)
+    10556    0.002    0.000    0.002    0.000 {built-in method builtins.setattr}
+        1    0.001    0.001    0.022    0.022 profile_gremlins.py:86(discover_source_files)
+     8849    0.001    0.000    0.001    0.000 {built-in method builtins.hasattr}
+      199    0.001    0.000    0.029    0.000 transformer.py:310(build_switching_statement)
+     8850    0.001    0.000    0.001    0.000 {method 'items' of 'dict' objects}
+     1640    0.001    0.000    0.002    0.000 boolean.py:35(can_mutate)
+     1509    0.001    0.000    0.072    0.000 transformer.py:376(_create_gremlins_for_node)
+     8849    0.001    0.000    0.001    0.000 {built-in method builtins.issubclass}
+      435    0.001    0.000    0.002    0.000 transformer.py:191(_get_mutation_description)
+      435    0.001    0.000    0.001    0.000 <string>:2(__init__)
+      435    0.001    0.000    0.001    0.000 transformer.py:364(_next_gremlin_id)
+       35    0.001    0.000    0.226    0.006 transformer.py:454(transform_source)
+       14    0.001    0.000    0.001    0.000 {built-in method posix.scandir}
+     1542    0.001    0.000    0.001    0.000 comparison.py:56(can_mutate)
+      199    0.001    0.000    0.029    0.000 return_value.py:78(_mutate_to_none)
+     1521    0.000    0.000    0.001    0.000 boundary.py:33(can_mutate)
+     1708    0.000    0.000    0.001    0.000 return_value.py:34(can_mutate)
+     1553    0.000    0.000    0.001    0.000 arithmetic.py:59(can_mutate)
+     1011    0.000    0.000    0.009    0.000 transformer.py:433(visit_Constant)
+      217    0.000    0.000    0.080    0.000 transformer.py:442(visit_Return)
+       14    0.000    0.000    0.001    0.000 glob.py:524(scandir)
+      199    0.000    0.000    0.029    0.000 return_value.py:51(mutate)
+       35    0.000    0.000    0.000    0.000 {method 'read' of '_io.TextIOWrapper' objects}
+       39    0.000    0.000    0.012    0.000 boolean.py:72(_mutate_boolop)
+      131    0.000    0.000    0.017    0.000 boolean.py:52(mutate)
+       35    0.000    0.000    0.000    0.000 {method '__exit__' of '_io._IOBase' objects}
+      131    0.000    0.000    0.000    0.000 transformer.py:164(_get_boolean_description)
+       44    0.000    0.000    0.007    0.000 arithmetic.py:73(mutate)
+      838    0.000    0.000    0.000    0.000 {method 'extend' of 'list' objects}
+
+
