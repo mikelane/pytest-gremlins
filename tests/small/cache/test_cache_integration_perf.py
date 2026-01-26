@@ -13,7 +13,7 @@ from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestPluginCachePattern:
     """Tests that simulate the actual plugin cache usage pattern."""
 
@@ -149,7 +149,7 @@ class TestPluginCachePattern:
         assert upfront_hash_time < 0.001, f'Upfront re-hashing took {upfront_hash_time * 1000:.3f}ms'
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestCacheKeyEfficiency:
     """Tests for efficient cache key computation."""
 
@@ -187,7 +187,7 @@ class TestCacheKeyEfficiency:
         assert len(keys) == 5, f'All keys should be unique: {keys}'
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestBatchOperations:
     """Tests for batch cache operations."""
 

@@ -12,7 +12,7 @@ import pytest
 from pytest_gremlins.cache.incremental import IncrementalCache
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestCacheKeyIncludesTestNames:
     """Cache key must include test names, not just hashes."""
 

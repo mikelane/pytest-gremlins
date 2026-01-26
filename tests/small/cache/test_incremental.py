@@ -9,7 +9,7 @@ import pytest
 from pytest_gremlins.cache.incremental import IncrementalCache
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestIncrementalCache:
     """Tests for IncrementalCache class."""
 

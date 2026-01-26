@@ -12,7 +12,7 @@ import pytest
 from pytest_gremlins.cache.store import ResultStore
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestStoreBatchOperations:
     """Tests for batch write support."""
 
