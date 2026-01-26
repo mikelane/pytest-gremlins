@@ -90,6 +90,8 @@ class GremlinSession:
     cache_misses: int = 0
     parallel_enabled: bool = False
     parallel_workers: int | None = None
+    batch_enabled: bool = False
+    batch_size: int = 10
 
 
 _gremlin_session: GremlinSession | None = None
@@ -166,6 +168,21 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest='gremlin_workers',
         help='Number of parallel workers (default: CPU count)',
     )
+    group.addoption(
+        '--gremlin-batch',
+        action='store_true',
+        default=False,
+        dest='gremlin_batch',
+        help='Enable batch execution to reduce subprocess overhead',
+    )
+    group.addoption(
+        '--gremlin-batch-size',
+        action='store',
+        type=int,
+        default=10,
+        dest='gremlin_batch_size',
+        help='Number of gremlins per batch (default: 10)',
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -223,6 +240,10 @@ def pytest_configure(config: pytest.Config) -> None:
     parallel_enabled = config.option.gremlin_parallel
     parallel_workers = config.option.gremlin_workers
 
+    # Read batch execution options
+    batch_enabled = config.option.gremlin_batch
+    batch_size = config.option.gremlin_batch_size
+
     _set_session(
         GremlinSession(
             enabled=True,
@@ -233,6 +254,8 @@ def pytest_configure(config: pytest.Config) -> None:
             cache=cache,
             parallel_enabled=parallel_enabled,
             parallel_workers=parallel_workers,
+            batch_enabled=batch_enabled,
+            batch_size=batch_size,
         )
     )
 
@@ -510,8 +533,10 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
     _collect_coverage(gremlin_session, rootdir)
 
-    # Choose parallel or sequential execution based on configuration
-    if gremlin_session.parallel_enabled:
+    # Choose execution mode based on configuration
+    if gremlin_session.batch_enabled:
+        results = _run_batch_mutation_testing(session, gremlin_session)
+    elif gremlin_session.parallel_enabled:
         results = _run_parallel_mutation_testing(session, gremlin_session)
     else:
         results = _run_mutation_testing(session, gremlin_session)
@@ -731,6 +756,140 @@ def _decode_numbits(numbits: bytes) -> list[int]:
         for bit_idx in range(8)
         if byte_val & (1 << bit_idx)
     ]
+
+
+def _run_batch_mutation_testing(  # noqa: C901, PLR0912
+    session: pytest.Session,
+    gremlin_session: GremlinSession,
+) -> list[GremlinResult]:
+    """Run mutation testing using batch execution for reduced overhead.
+
+    Batch execution reduces subprocess overhead by testing multiple gremlins
+    in each subprocess call. Instead of 1 subprocess per gremlin (with ~600ms
+    overhead each), we batch gremlins and spawn fewer subprocesses.
+
+    Args:
+        session: The pytest session.
+        gremlin_session: The current gremlin session.
+
+    Returns:
+        List of results for each gremlin.
+    """
+    from pytest_gremlins.parallel.batch_executor import BatchExecutor  # noqa: PLC0415
+
+    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    base_test_command = _build_test_command(gremlin_session.instrumented_dir)
+    gremlins = gremlin_session.gremlins
+
+    # Build gremlin -> test mapping for filtering
+    gremlin_tests: dict[str, set[str]] = {}
+    for gremlin in gremlins:
+        selected_tests = _select_tests_for_gremlin(gremlin, gremlin_session)
+        gremlin_tests[gremlin.gremlin_id] = selected_tests
+
+    # Check cache and separate cached from uncached
+    cached_results: list[GremlinResult] = []
+    uncached_gremlins: list[Gremlin] = []
+
+    for gremlin in gremlins:
+        selected_tests = gremlin_tests[gremlin.gremlin_id]
+        cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
+        if cached_result is not None:
+            gremlin_session.cache_hits += 1
+            cached_results.append(cached_result)
+        else:
+            if gremlin_session.cache_enabled:
+                gremlin_session.cache_misses += 1
+            uncached_gremlins.append(gremlin)
+
+    # Report cache stats
+    if cached_results:
+        print(f'pytest-gremlins: {len(cached_results)} gremlins from cache, {len(uncached_gremlins)} to test')
+
+    if not uncached_gremlins:
+        return cached_results
+
+    # Map gremlin_id -> Gremlin for result reconstruction
+    gremlin_by_id = {g.gremlin_id: g for g in uncached_gremlins}
+
+    # Prepare instrumented dir path for env var
+    instrumented_dir_str = str(gremlin_session.instrumented_dir) if gremlin_session.instrumented_dir else None
+
+    batch_size = gremlin_session.batch_size
+    num_batches = (len(uncached_gremlins) + batch_size - 1) // batch_size
+    print(
+        f'pytest-gremlins: Starting batch execution '
+        f'({len(uncached_gremlins)} gremlins, {num_batches} batches of {batch_size})'
+    )
+
+    # Build test commands for each gremlin based on coverage
+    # For batch mode, we need to handle gremlins with no covering tests
+    gremlins_to_test: list[str] = []
+    no_coverage_results: list[GremlinResult] = []
+
+    for gremlin in uncached_gremlins:
+        selected_tests = gremlin_tests[gremlin.gremlin_id]
+        if not selected_tests:
+            # No tests cover this gremlin - it survives
+            no_coverage_results.append(
+                GremlinResult(
+                    gremlin=gremlin,
+                    status=GremlinResultStatus.SURVIVED,
+                )
+            )
+        else:
+            gremlins_to_test.append(gremlin.gremlin_id)
+
+    # For batch execution, we need a unified test command that will work for all gremlins
+    # This means running all tests that cover ANY of the gremlins in the batch
+    # TODO: optimize by grouping gremlins by their covering tests
+    all_covering_tests: set[str] = set()
+    for gremlin_id in gremlins_to_test:
+        all_covering_tests.update(gremlin_tests[gremlin_id])
+
+    test_command = _build_filtered_test_command(
+        base_test_command,
+        all_covering_tests,
+        gremlin_session,
+    )
+
+    # Execute batches
+    executor = BatchExecutor(
+        batch_size=batch_size,
+        max_workers=gremlin_session.parallel_workers,
+        timeout=30,
+    )
+
+    worker_results = executor.execute(
+        gremlin_ids=gremlins_to_test,
+        test_command=test_command,
+        rootdir=str(rootdir),
+        instrumented_dir=instrumented_dir_str,
+        env_vars={},
+    )
+
+    # Convert WorkerResults to GremlinResults
+    results: list[GremlinResult] = list(cached_results) + no_coverage_results
+
+    for worker_result in worker_results:
+        gremlin_id = worker_result.gremlin_id
+        if gremlin_id not in gremlin_by_id:
+            continue
+
+        gremlin = gremlin_by_id[gremlin_id]
+        gremlin_result = GremlinResult(
+            gremlin=gremlin,
+            status=worker_result.status,
+            killing_test=worker_result.killing_test,
+            execution_time_ms=worker_result.execution_time_ms,
+        )
+        results.append(gremlin_result)
+
+        # Cache the result
+        selected_tests = gremlin_tests[gremlin_id]
+        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
+
+    return results
 
 
 def _run_parallel_mutation_testing(  # noqa: C901, PLR0912, PLR0915

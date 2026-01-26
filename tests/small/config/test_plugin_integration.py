@@ -42,6 +42,8 @@ class TestPytestConfigureWithFileConfig:
             gremlin_clear_cache = False
             gremlin_parallel = False
             gremlin_workers: int | None = None
+            gremlin_batch = False
+            gremlin_batch_size = 10
 
         class _MockConfig:
             option = _MockOption()
@@ -83,6 +85,8 @@ class TestPytestConfigureWithFileConfig:
             gremlin_clear_cache = False
             gremlin_parallel = False
             gremlin_workers: int | None = None
+            gremlin_batch = False
+            gremlin_batch_size = 10
 
         class _MockConfig:
             option = _MockOption()
@@ -124,6 +128,8 @@ class TestPytestConfigureWithFileConfig:
             gremlin_clear_cache = False
             gremlin_parallel = False
             gremlin_workers: int | None = None
+            gremlin_batch = False
+            gremlin_batch_size = 10
 
         class _MockConfig:
             option = _MockOption()
@@ -158,6 +164,8 @@ class TestPytestConfigureWithFileConfig:
             gremlin_clear_cache = False
             gremlin_parallel = False
             gremlin_workers: int | None = None
+            gremlin_batch = False
+            gremlin_batch_size = 10
 
         class _MockConfig:
             option = _MockOption()
