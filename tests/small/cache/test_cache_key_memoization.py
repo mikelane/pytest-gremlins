@@ -34,5 +34,5 @@ class TestCacheKeyMemoization:
             second_time = time.perf_counter() - start
 
         # Both should be fast (< 50ms for 100 computations)
-        assert first_time < 0.05, f'First round took {first_time*1000:.1f}ms'
-        assert second_time < 0.05, f'Second round took {second_time*1000:.1f}ms'
+        assert first_time < 0.05, f'First round took {first_time * 1000:.1f}ms'
+        assert second_time < 0.05, f'Second round took {second_time * 1000:.1f}ms'

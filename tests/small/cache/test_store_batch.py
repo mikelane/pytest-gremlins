@@ -58,8 +58,8 @@ class TestStoreBatchOperations:
 
         # Batch should be faster (fewer commits)
         assert batch_time < individual_time, (
-            f'Batch writes ({batch_time*1000:.1f}ms) should be faster than '
-            f'individual writes ({individual_time*1000:.1f}ms)'
+            f'Batch writes ({batch_time * 1000:.1f}ms) should be faster than '
+            f'individual writes ({individual_time * 1000:.1f}ms)'
         )
 
     def test_close_flushes_pending_writes(self, tmp_path: Path) -> None:

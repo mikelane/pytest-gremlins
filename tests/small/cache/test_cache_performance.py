@@ -43,7 +43,7 @@ class TestCachePerformance:
             elapsed = time.perf_counter() - start
 
             # 100 lookups should take less than 100ms (1ms per lookup)
-            assert elapsed < 0.1, f'Cache lookups took {elapsed*1000:.1f}ms for 100 entries'
+            assert elapsed < 0.1, f'Cache lookups took {elapsed * 1000:.1f}ms for 100 entries'
 
     def test_cache_write_is_fast(self, tmp_path: Path) -> None:
         """Cache writes complete in under 10ms per entry (batch)."""
@@ -63,7 +63,7 @@ class TestCachePerformance:
 
             # 100 writes should take less than 1 second (10ms per write)
             # Note: This is currently failing due to per-operation commits
-            assert elapsed < 1.0, f'Cache writes took {elapsed*1000:.1f}ms for 100 entries'
+            assert elapsed < 1.0, f'Cache writes took {elapsed * 1000:.1f}ms for 100 entries'
 
     def test_cache_key_computation_is_fast(self, tmp_path: Path) -> None:
         """Cache key computation completes in under 0.1ms per key."""
@@ -85,7 +85,7 @@ class TestCachePerformance:
             elapsed = time.perf_counter() - start
 
             # 1000 key computations should take less than 100ms (0.1ms per key)
-            assert elapsed < 0.1, f'Key computation took {elapsed*1000:.1f}ms for 1000 keys'
+            assert elapsed < 0.1, f'Key computation took {elapsed * 1000:.1f}ms for 1000 keys'
 
 
 @pytest.mark.small
@@ -105,7 +105,7 @@ class TestHasherPerformance:
         elapsed = time.perf_counter() - start
 
         # 100 hashes should take less than 100ms (1ms per hash)
-        assert elapsed < 0.1, f'String hashing took {elapsed*1000:.1f}ms for 100 hashes'
+        assert elapsed < 0.1, f'String hashing took {elapsed * 1000:.1f}ms for 100 hashes'
 
     def test_combined_hash_is_fast(self) -> None:
         """Combining multiple hashes completes in under 0.1ms."""
@@ -120,7 +120,7 @@ class TestHasherPerformance:
         elapsed = time.perf_counter() - start
 
         # 1000 combines should take less than 100ms (0.1ms per combine)
-        assert elapsed < 0.1, f'Combined hash took {elapsed*1000:.1f}ms for 1000 combines'
+        assert elapsed < 0.1, f'Combined hash took {elapsed * 1000:.1f}ms for 1000 combines'
 
 
 @pytest.mark.small
@@ -144,7 +144,7 @@ class TestStorePerformance:
         # We'll add batch write capability and compare
 
         # Individual writes should still be under 1 second for 100 entries
-        assert individual_time < 1.0, f'Individual writes took {individual_time*1000:.1f}ms'
+        assert individual_time < 1.0, f'Individual writes took {individual_time * 1000:.1f}ms'
 
     def test_lookup_with_index_is_fast(self, tmp_path: Path) -> None:
         """Cache lookups with SQLite index complete in under 1ms."""
@@ -162,4 +162,4 @@ class TestStorePerformance:
             elapsed = time.perf_counter() - start
 
             # 100 lookups should take less than 100ms
-            assert elapsed < 0.1, f'Store lookups took {elapsed*1000:.1f}ms for 100 entries'
+            assert elapsed < 0.1, f'Store lookups took {elapsed * 1000:.1f}ms for 100 entries'

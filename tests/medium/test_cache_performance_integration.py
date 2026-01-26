@@ -124,9 +124,7 @@ class TestCachePerformanceIntegration:
 
         # Warm run should be significantly faster (skipped 0.1s+ of test execution)
         # With multiple gremlins, this compounds
-        assert warm_time < cold_time, (
-            f'Warm run ({warm_time:.2f}s) was NOT faster than cold run ({cold_time:.2f}s)'
-        )
+        assert warm_time < cold_time, f'Warm run ({warm_time:.2f}s) was NOT faster than cold run ({cold_time:.2f}s)'
 
     def test_no_cache_mode_baseline(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Establish baseline for no-cache mode."""
@@ -172,6 +170,5 @@ class TestCachePerformanceIntegration:
 
         # Warm cache run should be faster than no-cache
         assert cache_warm_time < no_cache_time, (
-            f'Warm cache ({cache_warm_time:.2f}s) should be faster than '
-            f'no-cache ({no_cache_time:.2f}s)'
+            f'Warm cache ({cache_warm_time:.2f}s) should be faster than no-cache ({no_cache_time:.2f}s)'
         )

@@ -54,7 +54,7 @@ class TestUpfrontHashingOverhead:
         # This happens on EVERY run, even when cache hit rate is 100%
         # For 50 files, this should be under 50ms
         assert upfront_time < 0.05, (
-            f'Upfront hashing took {upfront_time*1000:.1f}ms for 50 files. '
+            f'Upfront hashing took {upfront_time * 1000:.1f}ms for 50 files. '
             'This overhead occurs on every run regardless of cache hits.'
         )
 
@@ -77,7 +77,7 @@ class TestSqliteCommitOverhead:
         # This should be under 500ms for 100 entries
         # If it's slow, the per-commit overhead is the culprit
         assert individual_time < 0.5, (
-            f'Individual commits took {individual_time*1000:.1f}ms for 100 entries. '
+            f'Individual commits took {individual_time * 1000:.1f}ms for 100 entries. '
             'SQLite commits are expensive - should batch them.'
         )
 
@@ -108,7 +108,7 @@ class TestCacheKeyComputationOverhead:
 
         # 100 key computations should be under 10ms
         assert key_time < 0.01, (
-            f'Cache key computation took {key_time*1000:.1f}ms for {num_gremlins} gremlins. '
+            f'Cache key computation took {key_time * 1000:.1f}ms for {num_gremlins} gremlins. '
             'This happens for both cache reads AND writes.'
         )
 
@@ -167,7 +167,7 @@ class TestTotalCacheOverhead:
         # This is acceptable if test execution saves > 50ms
         assert per_gremlin_overhead_ms < 0.5, (
             f'Cache overhead per gremlin: {per_gremlin_overhead_ms:.3f}ms '
-            f'(total: {warm_time*1000:.1f}ms for {num_gremlins} gremlins). '
+            f'(total: {warm_time * 1000:.1f}ms for {num_gremlins} gremlins). '
             'Target: < 0.5ms per gremlin.'
         )
 
@@ -203,6 +203,6 @@ class TestCacheWithBatchOperations:
 
         # Total time should be < 50ms for 100 lookups (0.5ms each)
         assert individual_time < 0.05, (
-            f'Individual lookups took {individual_time*1000:.1f}ms for {num_gremlins} entries. '
+            f'Individual lookups took {individual_time * 1000:.1f}ms for {num_gremlins} entries. '
             'Could be faster with batch queries.'
         )

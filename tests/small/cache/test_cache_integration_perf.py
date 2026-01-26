@@ -71,7 +71,9 @@ class TestPluginCachePattern:
         # Warm run should be much faster (no writes, just reads)
         # Target: warm_time < cold_time / 10 (at least 10x faster)
         speedup = cold_time / warm_time if warm_time > 0 else float('inf')
-        assert speedup >= 2.0, f'Warm run speedup was only {speedup:.1f}x (cold={cold_time*1000:.1f}ms, warm={warm_time*1000:.1f}ms)'
+        assert speedup >= 2.0, (
+            f'Warm run speedup was only {speedup:.1f}x (cold={cold_time * 1000:.1f}ms, warm={warm_time * 1000:.1f}ms)'
+        )
 
     def test_cache_overhead_per_gremlin(self, tmp_path: Path) -> None:
         """Cache overhead per gremlin is under 1ms for cache hits."""
@@ -109,9 +111,7 @@ class TestPluginCachePattern:
         src_dir.mkdir()
 
         for i in range(50):
-            (src_dir / f'module_{i}.py').write_text(
-                '\n'.join([f'def function_{j}(): return {j}' for j in range(100)])
-            )
+            (src_dir / f'module_{i}.py').write_text('\n'.join([f'def function_{j}(): return {j}' for j in range(100)]))
 
         hasher = ContentHasher()
 
@@ -123,7 +123,7 @@ class TestPluginCachePattern:
         elapsed = time.perf_counter() - start
 
         # 50 files should hash in under 50ms (1ms per file)
-        assert elapsed < 0.05, f'Hashing 50 files took {elapsed*1000:.1f}ms (target: <50ms)'
+        assert elapsed < 0.05, f'Hashing 50 files took {elapsed * 1000:.1f}ms (target: <50ms)'
 
     def test_upfront_hashing_vs_lazy_hashing(self, tmp_path: Path) -> None:
         """Lazy hashing (hash on demand) is faster when cache hit rate is high."""
@@ -148,7 +148,7 @@ class TestPluginCachePattern:
 
         # Current overhead from upfront hashing affects every run
         # even when cache hit rate is 100%
-        assert upfront_hash_time < 0.001, f'Upfront re-hashing took {upfront_hash_time*1000:.3f}ms'
+        assert upfront_hash_time < 0.001, f'Upfront re-hashing took {upfront_hash_time * 1000:.3f}ms'
 
 
 @pytest.mark.small
@@ -220,4 +220,4 @@ class TestBatchOperations:
 
         assert len(results) == num_gremlins
         # 100 lookups should be under 50ms
-        assert elapsed < 0.05, f'Batch lookups took {elapsed*1000:.1f}ms (target: <50ms)'
+        assert elapsed < 0.05, f'Batch lookups took {elapsed * 1000:.1f}ms (target: <50ms)'
