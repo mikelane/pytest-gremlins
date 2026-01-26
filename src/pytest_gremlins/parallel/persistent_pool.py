@@ -141,9 +141,13 @@ def _run_gremlin_test(
         WorkerResult with the outcome of testing.
     """
     results = _run_gremlin_batch([gremlin_id], test_command, rootdir, env_vars, timeout)
-    return results[0] if results else WorkerResult(
-        gremlin_id=gremlin_id,
-        status=GremlinResultStatus.ERROR,
+    return (
+        results[0]
+        if results
+        else WorkerResult(
+            gremlin_id=gremlin_id,
+            status=GremlinResultStatus.ERROR,
+        )
     )
 
 
