@@ -1,7 +1,7 @@
 """Tests for cache key computation memoization."""
 
-import time
 from pathlib import Path
+import time
 
 import pytest
 

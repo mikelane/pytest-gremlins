@@ -222,7 +222,7 @@ class TestIsZero:
         result.assert_outcomes(passed=25)
 
         # Print timing info for debugging
-        print(f'\n\nTiming results:')
+        print('\n\nTiming results:')
         print(f'  No cache:   {no_cache_time:.2f}s')
         print(f'  Cold cache: {cold_time:.2f}s (overhead: {cold_time - no_cache_time:.2f}s)')
         print(f'  Warm cache: {warm_time:.2f}s (speedup: {no_cache_time / warm_time:.1f}x)')

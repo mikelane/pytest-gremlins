@@ -3,8 +3,8 @@
 These tests identify why the cache makes things slower instead of faster.
 """
 
-import time
 from pathlib import Path
+import time
 
 import pytest
 

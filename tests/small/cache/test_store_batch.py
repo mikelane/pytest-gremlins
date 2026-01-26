@@ -4,8 +4,8 @@ These tests verify that batch operations are supported and faster than
 individual operations.
 """
 
-import time
 from pathlib import Path
+import time
 
 import pytest
 

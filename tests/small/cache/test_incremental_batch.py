@@ -1,7 +1,7 @@
 """Tests for batch operations in IncrementalCache."""
 
-import time
 from pathlib import Path
+import time
 
 import pytest
 

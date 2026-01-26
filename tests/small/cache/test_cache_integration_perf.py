@@ -4,8 +4,8 @@ These tests simulate the actual cache usage pattern from the plugin
 to identify where time is being lost.
 """
 
-import time
 from pathlib import Path
+import time
 
 import pytest
 
@@ -35,7 +35,7 @@ class TestPluginCachePattern:
             for i in range(num_gremlins):
                 gremlin_id = f'src/module.py:gremlin_{i}'
                 # Simulate selecting tests for this gremlin (5 tests per gremlin)
-                selected_test_hashes = {k: v for k, v in list(test_hashes.items())[:5]}
+                selected_test_hashes = dict(list(test_hashes.items())[:5])
 
                 # Check cache (miss expected)
                 result = cache.get_cached_result(gremlin_id, source_hash, selected_test_hashes)
@@ -60,7 +60,7 @@ class TestPluginCachePattern:
 
             for i in range(num_gremlins):
                 gremlin_id = f'src/module.py:gremlin_{i}'
-                selected_test_hashes = {k: v for k, v in list(test_hashes.items())[:5]}
+                selected_test_hashes = dict(list(test_hashes.items())[:5])
 
                 # Check cache (hit expected)
                 result = cache.get_cached_result(gremlin_id, source_hash, selected_test_hashes)
@@ -125,10 +125,8 @@ class TestPluginCachePattern:
         # 50 files should hash in under 50ms (1ms per file)
         assert elapsed < 0.05, f'Hashing 50 files took {elapsed * 1000:.1f}ms (target: <50ms)'
 
-    def test_upfront_hashing_vs_lazy_hashing(self, tmp_path: Path) -> None:
+    def test_upfront_hashing_vs_lazy_hashing(self) -> None:
         """Lazy hashing (hash on demand) is faster when cache hit rate is high."""
-        cache_dir = tmp_path / '.gremlins_cache'
-        num_gremlins = 100
         num_files = 20
 
         # Create file hashes (simulate upfront computation)

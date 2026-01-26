@@ -4,8 +4,8 @@ These tests verify that cache operations are fast enough to provide
 a net performance benefit during mutation testing.
 """
 
-import time
 from pathlib import Path
+import time
 
 import pytest
 
