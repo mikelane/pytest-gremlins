@@ -15,18 +15,37 @@ Architecture:
 - Main process sends (gremlin_id, test_command, env_vars) to workers
 - Workers execute and return results
 - Workers are reused for subsequent gremlins
+
+Optimizations (PR #52):
+- Configurable process start method (spawn/fork/forkserver)
+- Worker warmup to pre-warm process pools
+- Multiprocessing context support for better cross-platform behavior
 """
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ProcessPoolExecutor
+from concurrent.futures import Future, ProcessPoolExecutor, wait
+import multiprocessing  # noqa: TC003 - used at runtime for context
 import os
 import subprocess
 import time
 from typing import Self
 
 from pytest_gremlins.parallel.pool import WorkerResult
+from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
+
+
+def _warmup_noop() -> bool:
+    """No-op function for worker warmup.
+
+    This function does nothing but return True. It's used to force
+    workers to start and import necessary modules before actual work.
+
+    Returns:
+        True to indicate successful warmup.
+    """
+    return True
 
 
 def _run_gremlin_batch(
@@ -158,26 +177,75 @@ class PersistentWorkerPool:
     this pool keeps worker processes alive and reuses them. Workers import
     modules once and stay warm, dramatically reducing startup overhead.
 
+    Supports configurable process start method and worker warmup via PoolConfig.
+
     Attributes:
         max_workers: Maximum number of worker processes.
         timeout: Timeout in seconds for individual gremlin tests.
+        config: The PoolConfig used to configure this pool.
+        is_warmed_up: Whether workers have been pre-warmed.
+        warmup_completed_count: Number of workers that completed warmup.
+
+    Example:
+        >>> config = PoolConfig(max_workers=4, warmup=True)
+        >>> pool = PersistentWorkerPool.from_config(config)
+        >>> with pool:
+        ...     future = pool.submit('g001', ['pytest'], '.', None, {})
+        ...     result = future.result()
     """
 
     def __init__(
         self,
         max_workers: int | None = None,
         timeout: int = 30,
+        *,
+        config: PoolConfig | None = None,
     ) -> None:
         """Initialize the persistent worker pool.
 
         Args:
             max_workers: Maximum number of worker processes. Defaults to CPU count.
             timeout: Timeout in seconds for individual tests. Defaults to 30.
+            config: Optional PoolConfig. If provided, max_workers and timeout
+                are taken from it (unless explicitly provided).
         """
-        self._max_workers = max_workers if max_workers is not None else (os.cpu_count() or 4)
-        self._timeout = timeout
+        if config is not None:
+            self._config = config
+            # Use config values, but allow explicit overrides
+            self._max_workers = max_workers if max_workers is not None else config.max_workers
+            self._timeout = timeout if timeout != 30 else config.timeout  # noqa: PLR2004
+        else:
+            # Create a default config
+            effective_max_workers = max_workers if max_workers is not None else (os.cpu_count() or 4)
+            self._config = PoolConfig(max_workers=effective_max_workers, timeout=timeout)
+            self._max_workers = effective_max_workers
+            self._timeout = timeout
+
         self._running = False
         self._executor: ProcessPoolExecutor | None = None
+        self._mp_context: multiprocessing.context.BaseContext = self._config.get_mp_context()
+        self._is_warmed_up = False
+        self._warmup_completed_count = 0
+
+    @classmethod
+    def from_config(cls, config: PoolConfig) -> Self:
+        """Create a PersistentWorkerPool from a PoolConfig.
+
+        This is the preferred way to create a pool with custom settings.
+
+        Args:
+            config: The configuration to use.
+
+        Returns:
+            A new PersistentWorkerPool configured with the given settings.
+
+        Example:
+            >>> config = PoolConfig(max_workers=4, start_method='forkserver')
+            >>> pool = PersistentWorkerPool.from_config(config)
+            >>> pool.max_workers
+            4
+        """
+        return cls(config=config)
 
     @property
     def is_running(self) -> bool:
@@ -194,6 +262,21 @@ class PersistentWorkerPool:
         """Return the timeout in seconds."""
         return self._timeout
 
+    @property
+    def config(self) -> PoolConfig:
+        """Return the PoolConfig used by this pool."""
+        return self._config
+
+    @property
+    def is_warmed_up(self) -> bool:
+        """Return whether workers have been pre-warmed."""
+        return self._is_warmed_up
+
+    @property
+    def warmup_completed_count(self) -> int:
+        """Return the number of workers that completed warmup."""
+        return self._warmup_completed_count
+
     def __enter__(self) -> Self:
         """Enter context manager, starting workers."""
         self._start()
@@ -209,9 +292,37 @@ class PersistentWorkerPool:
         self._shutdown()
 
     def _start(self) -> None:
-        """Start the worker processes."""
-        self._executor = ProcessPoolExecutor(max_workers=self._max_workers)
+        """Start the worker processes.
+
+        Creates the ProcessPoolExecutor with the configured multiprocessing context
+        and optionally warms up workers by submitting no-op tasks.
+        """
+        self._executor = ProcessPoolExecutor(
+            max_workers=self._max_workers,
+            mp_context=self._mp_context,
+        )
         self._running = True
+
+        # Warmup workers if enabled
+        if self._config.warmup:
+            self._warmup_workers()
+
+    def _warmup_workers(self) -> None:
+        """Pre-warm workers by submitting no-op tasks.
+
+        This forces all workers to start and import necessary modules
+        before actual work arrives, reducing latency on the first batch.
+        """
+        if self._executor is None:
+            return
+
+        # Submit a no-op to each worker
+        warmup_futures = [self._executor.submit(_warmup_noop) for _ in range(self._max_workers)]
+
+        # Wait for all warmups to complete (with a reasonable timeout)
+        completed, _ = wait(warmup_futures, timeout=30)
+        self._warmup_completed_count = len(completed)
+        self._is_warmed_up = self._warmup_completed_count == self._max_workers
 
     def _shutdown(self) -> None:
         """Shutdown the worker processes."""
@@ -219,6 +330,8 @@ class PersistentWorkerPool:
             self._executor.shutdown(wait=True)
             self._executor = None
         self._running = False
+        self._is_warmed_up = False
+        self._warmup_completed_count = 0
 
     def submit(
         self,
