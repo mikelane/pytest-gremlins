@@ -149,10 +149,10 @@ SYNTHETIC_PROJECT = ProjectConfig(
     source_dir='src',
     test_dir='tests',
     setup_commands=['uv venv', 'uv pip install pytest mutmut coverage'],
-    # mutmut 3.x has limited CLI options - most config is in pyproject.toml
+    # mutmut configs - 2.x uses CLI flags, 3.x uses pyproject.toml
     mutmut_configs={
         'default': [],
-        'max-4-children': ['--max-children=4'],  # Parallel workers
+        # 'parallel': [],  # mutmut 2.x doesn't have built-in parallelism
     },
     gremlins_configs={
         'sequential': ['--gremlins', '--gremlin-targets=src/'],
@@ -647,6 +647,29 @@ pytest_add_cli_args_test_selection = ["tests/"]
     return project_dir
 
 
+def detect_mutmut_version() -> str:
+    """Detect which version of mutmut is installed.
+
+    Returns:
+        Version string like '2.x' or '3.x', or 'unknown'.
+    """
+    try:
+        # Check the 'run' subcommand help, which differs between versions
+        result = subprocess.run(
+            [sys.executable, '-m', 'mutmut', 'run', '--help'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        # mutmut 2.x has --paths-to-mutate in run --help, 3.x doesn't
+        if '--paths-to-mutate' in result.stdout:
+            return '2.x'
+        else:
+            return '3.x'
+    except Exception:
+        return 'unknown'
+
+
 def check_python_version_for_mutmut() -> str | None:
     """Check if the Python version is compatible with mutmut.
 
@@ -654,7 +677,16 @@ def check_python_version_for_mutmut() -> str | None:
         Error message if incompatible, None if compatible.
     """
     version = sys.version_info
-    if version >= (3, 14):
+    mutmut_version = detect_mutmut_version()
+
+    # mutmut 3.x has set_start_method issues on macOS with Python 3.12+
+    if mutmut_version == '3.x' and platform.system() == 'Darwin':
+        return (
+            f'mutmut 3.x has a known set_start_method bug on macOS. '
+            'Install mutmut 2.x with: pip install "mutmut<3.0.0"'
+        )
+
+    if version >= (3, 14) and mutmut_version == '3.x':
         return (
             f'mutmut 3.x has a known incompatibility with Python {version.major}.{version.minor}. '
             'The set_start_method() call fails. Use Python 3.12 or 3.13 for fair benchmarks.'
@@ -662,15 +694,16 @@ def check_python_version_for_mutmut() -> str | None:
     return None
 
 
-def run_mutmut(  # noqa: C901, PLR0912
+def run_mutmut(  # noqa: C901, PLR0912, PLR0915
     project_dir: Path,
     config_name: str,
     extra_args: list[str],
 ) -> BenchmarkResult:
     """Run mutmut benchmark.
 
-    Note: mutmut 3.x uses config from pyproject.toml, not CLI flags.
-    The old flags like --paths-to-mutate and --tests-dir don't exist.
+    Supports both mutmut 2.x (file-rewriting) and 3.x (trampoline).
+    mutmut 2.x uses --paths-to-mutate and --tests-dir CLI flags.
+    mutmut 3.x uses config from pyproject.toml.
 
     Args:
         project_dir: Path to the project directory.
@@ -691,21 +724,40 @@ def run_mutmut(  # noqa: C901, PLR0912
             error=version_error,
         )
 
-    # Clear any previous mutmut state
-    cache_dir = project_dir / '.mutmut-cache'
-    if cache_dir.exists():
-        shutil.rmtree(cache_dir)
+    mutmut_version = detect_mutmut_version()
 
-    # mutmut 3.x reads config from pyproject.toml
-    # Only pass extra_args that are valid for mutmut 3.x
-    valid_args = [arg for arg in extra_args if arg.startswith('--max-children')]
-    cmd = [
-        sys.executable,
-        '-m',
-        'mutmut',
-        'run',
-        *valid_args,
-    ]
+    # Clear any previous mutmut state
+    cache_path = project_dir / '.mutmut-cache'
+    if cache_path.exists():
+        if cache_path.is_dir():
+            shutil.rmtree(cache_path)
+        else:
+            cache_path.unlink()
+
+    # Build command based on mutmut version
+    if mutmut_version == '2.x':
+        # mutmut 2.x uses CLI flags
+        cmd = [
+            sys.executable,
+            '-m',
+            'mutmut',
+            'run',
+            '--paths-to-mutate=src/',
+            '--tests-dir=tests/',
+        ]
+        # Add parallel flag if requested
+        if config_name == 'parallel':
+            cmd.append('--runner=pytest -x')
+    else:
+        # mutmut 3.x reads config from pyproject.toml
+        valid_args = [arg for arg in extra_args if arg.startswith('--max-children')]
+        cmd = [
+            sys.executable,
+            '-m',
+            'mutmut',
+            'run',
+            *valid_args,
+        ]
 
     env = os.environ.copy()
     env['PYTHONPATH'] = str(project_dir / 'src')
@@ -730,43 +782,54 @@ def run_mutmut(  # noqa: C901, PLR0912
                 project='synthetic',
                 config=config_name,
                 wall_time_seconds=wall_time,
-                error='mutmut Python 3.14 incompatibility: set_start_method RuntimeError',
+                error='mutmut set_start_method RuntimeError',
             )
 
         # Parse mutmut results
         mutations_total = 0
         mutations_killed = 0
 
-        # Try to get results from mutmut results command
-        results_cmd = [sys.executable, '-m', 'mutmut', 'results']
-        results_output = subprocess.run(
-            results_cmd,
-            cwd=str(project_dir),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        # For mutmut 2.x, parse the output directly
+        output = result.stdout + result.stderr
+        # Look for patterns like "🎉 X" in the final line
+        import re
 
-        if results_output.returncode == 0:
-            output = results_output.stdout
-            # Parse output for counts
-            for line in output.splitlines():
-                if 'killed' in line.lower():
-                    # Try to extract numbers
-                    parts = line.split()
-                    for i, part in enumerate(parts):
-                        if part.isdigit() and 'killed' in ' '.join(parts[max(0, i - 2) : i + 2]).lower():
-                            mutations_killed = int(part)
-                if 'survived' in line.lower() or 'total' in line.lower():
-                    parts = line.split()
-                    for i, part in enumerate(parts):
-                        if part.isdigit() and 'survived' in ' '.join(parts[max(0, i - 2) : i + 2]).lower():
-                            mutations_total = mutations_killed + int(part)
+        # Pattern for mutmut 2.x final output: "⠇ 2/2  🎉 2  ⏰ 0  🤔 0  🙁 0  🔇 0"
+        match = re.search(r'(\d+)/(\d+)\s+🎉\s+(\d+).*🙁\s+(\d+)', output)
+        if match:
+            mutations_total = int(match.group(2))
+            mutations_killed = int(match.group(3))
+            survived = int(match.group(4))
+            # Verify: killed + survived should equal total
+            if mutations_killed + survived != mutations_total:
+                # Just use what we found
+                pass
 
-        # Fallback: try to count from cache
-        if mutations_total == 0 and cache_dir.exists():
-            # mutmut stores results in SQLite, but for now estimate from output
-            mutations_total = result.stdout.count('mutant') + result.stderr.count('mutant')
+        # Fallback: try to get results from mutmut results command
+        if mutations_total == 0:
+            results_cmd = [sys.executable, '-m', 'mutmut', 'results']
+            results_output = subprocess.run(
+                results_cmd,
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if results_output.returncode == 0:
+                results_text = results_output.stdout
+                # Parse output for counts
+                for line in results_text.splitlines():
+                    if 'killed' in line.lower():
+                        parts = line.split()
+                        for i, part in enumerate(parts):
+                            if part.isdigit() and 'killed' in ' '.join(parts[max(0, i - 2) : i + 2]).lower():
+                                mutations_killed = int(part)
+                    if 'survived' in line.lower() or 'total' in line.lower():
+                        parts = line.split()
+                        for i, part in enumerate(parts):
+                            if part.isdigit() and 'survived' in ' '.join(parts[max(0, i - 2) : i + 2]).lower():
+                                mutations_total = mutations_killed + int(part)
 
         return BenchmarkResult(
             tool='mutmut',
