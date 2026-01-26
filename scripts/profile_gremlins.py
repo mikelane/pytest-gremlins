@@ -243,18 +243,17 @@ def profile_mutation_testing(target_path: Path, test_path: Path) -> ProfilingRes
         t0 = time.perf_counter()
 
         try:
-            conn = sqlite3.connect(str(coverage_db))
-            cursor = conn.cursor()
-            cursor.execute('SELECT COUNT(*) FROM context WHERE context != ""')
-            context_count = cursor.fetchone()[0]
-            cursor.execute('SELECT COUNT(*) FROM file')
-            file_count = cursor.fetchone()[0]
-            cursor.execute('SELECT COUNT(*) FROM line_bits')
-            line_bits_count = cursor.fetchone()[0]
-            conn.close()
-            timer.details['context_count'] = context_count
-            timer.details['covered_file_count'] = file_count
-            timer.details['line_bits_entries'] = line_bits_count
+            with sqlite3.connect(str(coverage_db)) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT COUNT(*) FROM context WHERE context != ""')
+                context_count = cursor.fetchone()[0]
+                cursor.execute('SELECT COUNT(*) FROM file')
+                file_count = cursor.fetchone()[0]
+                cursor.execute('SELECT COUNT(*) FROM line_bits')
+                line_bits_count = cursor.fetchone()[0]
+                timer.details['context_count'] = context_count
+                timer.details['covered_file_count'] = file_count
+                timer.details['line_bits_entries'] = line_bits_count
         except Exception as e:
             timer.details['coverage_parse_error'] = str(e)
 
