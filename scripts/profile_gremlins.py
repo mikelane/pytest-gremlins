@@ -90,7 +90,7 @@ class _Timer:
         self.start_time = time.perf_counter()
         return self
 
-    def __exit__(self, *_args: object) -> None:
+    def __exit__(self, *args: object) -> None:
         duration_ms = (time.perf_counter() - self.start_time) * 1000
         self.results.add_phase(self.name, duration_ms, **self.details)
 
@@ -169,7 +169,7 @@ def profile_mutation_testing(target_path: Path, test_path: Path) -> ProfilingRes
         for file_path, source in source_files.items():
             # Time parsing
             t0 = time.perf_counter()
-            _tree = ast.parse(source)
+            ast.parse(source)
             parse_time = (time.perf_counter() - t0) * 1000
             parse_times.append(parse_time)
 
