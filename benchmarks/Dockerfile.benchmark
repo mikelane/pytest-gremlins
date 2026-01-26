@@ -1,0 +1,21 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install uv for fast dependency management
+RUN pip install --no-cache-dir uv psutil
+
+# Copy the entire project
+COPY . .
+
+# Install the project dependencies
+RUN uv pip install --system -e ".[dev]"
+
+# Install mutmut 2.x (3.x has macOS issues)
+RUN pip install --no-cache-dir "mutmut<3.0.0"
+
+# Set up the benchmark directory
+WORKDIR /app/benchmarks
+
+# Default command runs the benchmark
+CMD ["python", "run_benchmarks.py", "--project", "synthetic", "--runs", "3", "--output", "/app/benchmarks/results"]

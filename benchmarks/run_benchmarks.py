@@ -795,8 +795,12 @@ def run_mutmut(  # noqa: C901, PLR0912, PLR0915
         import re
 
         # Pattern for mutmut 2.x final output: "⠇ 2/2  🎉 2  ⏰ 0  🤔 0  🙁 0  🔇 0"
-        match = re.search(r'(\d+)/(\d+)\s+🎉\s+(\d+).*🙁\s+(\d+)', output)
-        if match:
+        # The spinner repeats many lines, so we need to find ALL matches and use the LAST one
+        pattern = r'(\d+)/(\d+)\s+🎉\s+(\d+).*🙁\s+(\d+)'
+        matches = list(re.finditer(pattern, output))
+        if matches:
+            # Use the last match (final state)
+            match = matches[-1]
             mutations_total = int(match.group(2))
             mutations_killed = int(match.group(3))
             survived = int(match.group(4))
