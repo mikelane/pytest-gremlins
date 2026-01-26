@@ -65,7 +65,7 @@ class IncrementalCache:
         The key incorporates:
         - gremlin_id: unique mutation identifier
         - source_hash: content hash of the source file
-        - test_hashes: combined hash of all relevant test files
+        - test_hashes: combined hash of all relevant test files (names AND hashes)
 
         Args:
             gremlin_id: Unique identifier for the gremlin.
@@ -75,9 +75,10 @@ class IncrementalCache:
         Returns:
             A cache key string.
         """
-        # Sort test hashes by name for deterministic ordering
-        sorted_test_hashes = [test_hashes[name] for name in sorted(test_hashes.keys())]
-        combined_test_hash = self._hasher.hash_combined(sorted_test_hashes) if sorted_test_hashes else 'no_tests'
+        # Include both test names AND hashes for correct invalidation
+        # Renaming a test file (same content) should invalidate the cache
+        sorted_test_items = [f'{name}:{test_hashes[name]}' for name in sorted(test_hashes.keys())]
+        combined_test_hash = self._hasher.hash_string('|'.join(sorted_test_items)) if sorted_test_items else 'no_tests'
 
         return f'{gremlin_id}:{source_hash}:{combined_test_hash}'
 
@@ -134,6 +135,31 @@ class IncrementalCache:
         """
         cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes)
         self._store.put(cache_key, result)
+
+    def cache_result_deferred(
+        self,
+        gremlin_id: str,
+        source_hash: str,
+        test_hashes: dict[str, str],
+        result: dict[str, Any],
+    ) -> None:
+        """Cache a gremlin test result without committing immediately.
+
+        Results are batched and committed on flush() or close(). This is
+        faster for bulk inserts during mutation testing runs.
+
+        Args:
+            gremlin_id: Unique identifier for the gremlin.
+            source_hash: SHA-256 hash of the source file.
+            test_hashes: Mapping of test name to content hash.
+            result: The result dictionary to cache.
+        """
+        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes)
+        self._store.put_deferred(cache_key, result)
+
+    def flush(self) -> None:
+        """Commit all pending deferred cache writes."""
+        self._store.flush()
 
     def invalidate_file(self, file_prefix: str) -> None:
         """Invalidate all cached results for gremlins in a file.
