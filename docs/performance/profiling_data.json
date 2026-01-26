@@ -2,7 +2,7 @@
   "phases": [
     {
       "phase": "source_discovery",
-      "duration_ms": 25.617083068937063,
+      "duration_ms": 27.97829220071435,
       "details": {
         "file_count": 35,
         "total_lines": 4979
@@ -10,63 +10,63 @@
     },
     {
       "phase": "ast_transformation",
-      "duration_ms": 96.6725000180304,
+      "duration_ms": 106.5805833786726,
       "details": {
         "gremlin_count": 435,
-        "avg_parse_time_ms": 0.5337381336305823,
-        "avg_transform_time_ms": 2.226397435047797
+        "avg_parse_time_ms": 0.6280309121523585,
+        "avg_transform_time_ms": 2.414339261927775
       }
     },
     {
       "phase": "code_generation",
-      "duration_ms": 28.67149980738759,
+      "duration_ms": 34.86191714182496,
       "details": {
-        "avg_unparse_time_ms": 0.8170356840959617,
+        "avg_unparse_time_ms": 0.9940810368529388,
         "total_output_bytes": 182955
       }
     },
     {
       "phase": "test_discovery",
-      "duration_ms": 1183.304375037551,
+      "duration_ms": 1133.3907912485301,
       "details": {
-        "pytest_collect_time_ms": 1182.8448749147356,
+        "pytest_collect_time_ms": 1133.2760420627892,
         "test_count": 417
       }
     },
     {
       "phase": "coverage_collection",
-      "duration_ms": 91796.23458301648,
+      "duration_ms": 98400.80058388412,
       "details": {
-        "coverage_run_time_ms": 91785.20879196003,
+        "coverage_run_time_ms": 98397.86725025624,
         "context_count": 390,
         "covered_file_count": 82,
         "line_bits_entries": 1256,
-        "coverage_parse_time_ms": 9.505459107458591
+        "coverage_parse_time_ms": 1.8136254511773586
       }
     },
     {
       "phase": "test_selector_build",
-      "duration_ms": 0.041665975004434586,
+      "duration_ms": 0.02816738560795784,
       "details": {
-        "selector_build_time_ms": 0.0035408884286880493
+        "selector_build_time_ms": 0.002459157258272171
       }
     },
     {
       "phase": "mutation_execution_sample",
-      "duration_ms": 7321.146416012198,
+      "duration_ms": 5355.050540994853,
       "details": {
         "sample_size": 5,
-        "avg_subprocess_startup_ms": 1459.8848418332636,
-        "min_subprocess_startup_ms": 1187.1892921626568,
-        "max_subprocess_startup_ms": 1791.7018327862024,
-        "total_subprocess_time_ms": 7299.424209166318
+        "avg_subprocess_startup_ms": 1070.3798668459058,
+        "min_subprocess_startup_ms": 938.8482919894159,
+        "max_subprocess_startup_ms": 1294.714834075421,
+        "total_subprocess_time_ms": 5351.899334229529
       }
     }
   ],
-  "total_time_ms": 100452.21466664225,
+  "total_time_ms": 105058.86958306655,
   "metadata": {
-    "target_path": "/Users/mikelane/dev/pytest-gremlins/.worktrees/issue-48-profiling/src/pytest_gremlins",
-    "test_path": "/Users/mikelane/dev/pytest-gremlins/.worktrees/issue-48-profiling/tests",
+    "target_path": "src/pytest_gremlins",
+    "test_path": "tests",
     "python_version": "3.14.0 (main, Oct 21 2025, 22:51:59) [Clang 17.0.0 (clang-1700.3.14.6)]"
   }
 }

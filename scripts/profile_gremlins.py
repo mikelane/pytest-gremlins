@@ -135,9 +135,18 @@ def profile_mutation_testing(target_path: Path, test_path: Path) -> ProfilingRes
     results = ProfilingResults()
     total_start = time.perf_counter()
 
+    # Use relative paths in metadata to avoid exposing local file system structure
+    try:
+        target_relative = target_path.relative_to(project_root)
+        test_relative = test_path.relative_to(project_root)
+    except ValueError:
+        # If paths can't be made relative, use the original
+        target_relative = target_path
+        test_relative = test_path
+
     results.metadata = {
-        'target_path': str(target_path),
-        'test_path': str(test_path),
+        'target_path': str(target_relative),
+        'test_path': str(test_relative),
         'python_version': sys.version,
     }
 
