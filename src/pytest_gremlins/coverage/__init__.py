@@ -24,7 +24,8 @@ from __future__ import annotations
 
 from pytest_gremlins.coverage.collector import CoverageCollector
 from pytest_gremlins.coverage.mapper import CoverageMap
+from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
 from pytest_gremlins.coverage.selector import TestSelector
 
 
-__all__ = ['CoverageCollector', 'CoverageMap', 'TestSelector']
+__all__ = ['CoverageCollector', 'CoverageMap', 'PrioritizedSelector', 'TestSelector']

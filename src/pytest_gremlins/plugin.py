@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.config import load_config, merge_configs
-from pytest_gremlins.coverage import CoverageCollector, TestSelector
+from pytest_gremlins.coverage import CoverageCollector, PrioritizedSelector, TestSelector
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
 from pytest_gremlins.parallel.aggregator import ResultAggregator
@@ -33,6 +33,8 @@ from pytest_gremlins.reporting.score import MutationScore
 
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import pytest
 
     from pytest_gremlins.instrumentation.gremlin import Gremlin
@@ -57,6 +59,7 @@ class GremlinSession:
         instrumented_dir: Temporary directory containing instrumented source files.
         coverage_collector: Collects coverage data per-test.
         test_selector: Selects tests based on coverage data.
+        prioritized_selector: Selects tests ordered by specificity (most specific first).
         test_node_ids: Maps test names to their pytest node IDs.
         total_tests: Total number of tests collected.
         cache_enabled: Whether incremental caching is enabled.
@@ -80,6 +83,7 @@ class GremlinSession:
     instrumented_dir: Path | None = None
     coverage_collector: CoverageCollector | None = None
     test_selector: TestSelector | None = None
+    prioritized_selector: PrioritizedSelector | None = None
     test_node_ids: dict[str, str] = field(default_factory=dict)
     total_tests: int = 0
     cache_enabled: bool = False
@@ -635,6 +639,7 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
             collector.record_test_coverage(test_name, normalized_coverage)
 
     gremlin_session.test_selector = TestSelector(collector.coverage_map)
+    gremlin_session.prioritized_selector = PrioritizedSelector(collector.coverage_map)
 
 
 def _run_tests_with_coverage(
@@ -914,10 +919,10 @@ def _run_parallel_mutation_testing(  # noqa: C901, PLR0912, PLR0915
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
     gremlins = gremlin_session.gremlins
 
-    # Build gremlin -> test mapping for filtering
-    gremlin_tests: dict[str, set[str]] = {}
+    # Build gremlin -> test mapping for filtering (prioritized order)
+    gremlin_tests: dict[str, list[str]] = {}
     for gremlin in gremlins:
-        selected_tests = _select_tests_for_gremlin(gremlin, gremlin_session)
+        selected_tests = _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
         gremlin_tests[gremlin.gremlin_id] = selected_tests
 
     # Check cache and separate cached from uncached
@@ -1043,7 +1048,7 @@ def _run_mutation_testing(
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
 
     for i, gremlin in enumerate(gremlin_session.gremlins, 1):
-        selected_tests = _select_tests_for_gremlin(gremlin, gremlin_session)
+        selected_tests = _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
         test_count = len(selected_tests)
         total = gremlin_session.total_tests
 
@@ -1088,7 +1093,7 @@ def _run_mutation_testing(
 
 
 def _build_test_hashes_for_gremlin(
-    selected_tests: set[str],
+    selected_tests: Sequence[str],
     gremlin_session: GremlinSession,
 ) -> dict[str, str]:
     """Build test hashes for the tests that cover a gremlin.
@@ -1098,7 +1103,7 @@ def _build_test_hashes_for_gremlin(
     tries variations to find the corresponding node ID and file hash.
 
     Args:
-        selected_tests: Set of test names that cover the gremlin.
+        selected_tests: Sequence of test names that cover the gremlin.
         gremlin_session: The current gremlin session with test metadata.
 
     Returns:
@@ -1123,14 +1128,14 @@ def _build_test_hashes_for_gremlin(
 
 def _check_cache_for_gremlin(
     gremlin: Gremlin,
-    selected_tests: set[str],
+    selected_tests: Sequence[str],
     gremlin_session: GremlinSession,
 ) -> GremlinResult | None:
     """Check cache for existing result for this gremlin.
 
     Args:
         gremlin: The gremlin to check cache for.
-        selected_tests: Set of tests that cover this gremlin.
+        selected_tests: Sequence of tests that cover this gremlin.
         gremlin_session: The current gremlin session.
 
     Returns:
@@ -1165,7 +1170,7 @@ def _check_cache_for_gremlin(
 
 def _cache_gremlin_result(
     gremlin: Gremlin,
-    selected_tests: set[str],
+    selected_tests: Sequence[str],
     result: GremlinResult,
     gremlin_session: GremlinSession,
 ) -> None:
@@ -1173,7 +1178,7 @@ def _cache_gremlin_result(
 
     Args:
         gremlin: The gremlin that was tested.
-        selected_tests: Set of tests that covered this gremlin.
+        selected_tests: Sequence of tests that covered this gremlin.
         result: The result to cache.
         gremlin_session: The current gremlin session.
     """
@@ -1250,6 +1255,30 @@ def _select_tests_for_gremlin(
     return gremlin_session.test_selector.select_tests(gremlin)
 
 
+def _select_tests_for_gremlin_prioritized(
+    gremlin: Gremlin,
+    gremlin_session: GremlinSession,
+) -> list[str]:
+    """Select tests for a gremlin, ordered by specificity (most specific first).
+
+    Uses the PrioritizedSelector to return tests in an order that maximizes
+    the chance of catching the mutation quickly. Tests covering fewer lines
+    are considered more specific and run first.
+
+    Args:
+        gremlin: The gremlin to select tests for.
+        gremlin_session: The current gremlin session.
+
+    Returns:
+        List of test names ordered by specificity (most specific first).
+    """
+    if gremlin_session.prioritized_selector is None:
+        # Fall back to unordered selection if prioritization is not available
+        return list(gremlin_session.test_node_ids.keys())
+
+    return gremlin_session.prioritized_selector.select_tests_prioritized(gremlin)
+
+
 def _report_gremlin_progress(
     index: int,
     total_gremlins: int,
@@ -1275,18 +1304,21 @@ def _report_gremlin_progress(
 
 def _build_filtered_test_command(
     base_command: list[str],
-    selected_tests: set[str],
+    selected_tests: Sequence[str],
     gremlin_session: GremlinSession,
 ) -> list[str]:
     """Build a test command that runs only the selected tests.
 
+    The order of selected_tests is preserved in the resulting command,
+    enabling prioritized test execution (most specific tests first).
+
     Args:
         base_command: The base test command.
-        selected_tests: Set of test names to run.
+        selected_tests: Sequence of test names to run (order is preserved).
         gremlin_session: The current gremlin session.
 
     Returns:
-        Command list with test node IDs appended.
+        Command list with test node IDs appended in the same order.
     """
     command = list(base_command)
 
