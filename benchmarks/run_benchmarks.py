@@ -31,6 +31,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import statistics
 import subprocess
@@ -152,7 +153,6 @@ SYNTHETIC_PROJECT = ProjectConfig(
     # mutmut configs - 2.x uses CLI flags, 3.x uses pyproject.toml
     mutmut_configs={
         'default': [],
-        # 'parallel': [],  # mutmut 2.x doesn't have built-in parallelism
     },
     gremlins_configs={
         'sequential': ['--gremlins', '--gremlin-targets=src/'],
@@ -664,8 +664,7 @@ def detect_mutmut_version() -> str:
         # mutmut 2.x has --paths-to-mutate in run --help, 3.x doesn't
         if '--paths-to-mutate' in result.stdout:
             return '2.x'
-        else:
-            return '3.x'
+        return '3.x'  # noqa: TRY300 - conflicts with RET505, keeping simple flow
     except Exception:
         return 'unknown'
 
@@ -682,8 +681,7 @@ def check_python_version_for_mutmut() -> str | None:
     # mutmut 3.x has set_start_method issues on macOS with Python 3.12+
     if mutmut_version == '3.x' and platform.system() == 'Darwin':
         return (
-            f'mutmut 3.x has a known set_start_method bug on macOS. '
-            'Install mutmut 2.x with: pip install "mutmut<3.0.0"'
+            'mutmut 3.x has a known set_start_method bug on macOS. Install mutmut 2.x with: pip install "mutmut<3.0.0"'
         )
 
     if version >= (3, 14) and mutmut_version == '3.x':
@@ -792,8 +790,6 @@ def run_mutmut(  # noqa: C901, PLR0912, PLR0915
         # For mutmut 2.x, parse the output directly
         output = result.stdout + result.stderr
         # Look for patterns like "🎉 X" in the final line
-        import re
-
         # Pattern for mutmut 2.x final output: "⠇ 2/2  🎉 2  ⏰ 0  🤔 0  🙁 0  🔇 0"
         # The spinner repeats many lines, so we need to find ALL matches and use the LAST one
         pattern = r'(\d+)/(\d+)\s+🎉\s+(\d+).*🙁\s+(\d+)'
