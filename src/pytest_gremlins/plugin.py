@@ -763,7 +763,7 @@ def _decode_numbits(numbits: bytes) -> list[int]:
     ]
 
 
-def _run_batch_mutation_testing(  # noqa: C901, PLR0912
+def _run_batch_mutation_testing(  # noqa: C901, PLR0912, PLR0915
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -786,10 +786,10 @@ def _run_batch_mutation_testing(  # noqa: C901, PLR0912
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
     gremlins = gremlin_session.gremlins
 
-    # Build gremlin -> test mapping for filtering
-    gremlin_tests: dict[str, set[str]] = {}
+    # Build gremlin -> test mapping for filtering (prioritized order)
+    gremlin_tests: dict[str, list[str]] = {}
     for gremlin in gremlins:
-        selected_tests = _select_tests_for_gremlin(gremlin, gremlin_session)
+        selected_tests = _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
         gremlin_tests[gremlin.gremlin_id] = selected_tests
 
     # Check cache and separate cached from uncached
@@ -847,10 +847,15 @@ def _run_batch_mutation_testing(  # noqa: C901, PLR0912
 
     # For batch execution, we need a unified test command that will work for all gremlins
     # This means running all tests that cover ANY of the gremlins in the batch
+    # We preserve prioritization order: tests appearing first in more lists are more specific
     # TODO: optimize by grouping gremlins by their covering tests
-    all_covering_tests: set[str] = set()
+    seen_tests: set[str] = set()
+    all_covering_tests: list[str] = []
     for gremlin_id in gremlins_to_test:
-        all_covering_tests.update(gremlin_tests[gremlin_id])
+        for test in gremlin_tests[gremlin_id]:
+            if test not in seen_tests:
+                seen_tests.add(test)
+                all_covering_tests.append(test)
 
     test_command = _build_filtered_test_command(
         base_test_command,
