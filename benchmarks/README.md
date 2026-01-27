@@ -159,3 +159,56 @@ See [NORTH_STAR.md](../docs/design/NORTH_STAR.md) for details.
 # Run benchmark tests
 pytest tests/benchmark/
 ```
+
+## Continuous Integration
+
+Benchmarks run automatically in CI to prevent performance regressions.
+
+### When Benchmarks Run
+
+| Event | Runs? | Purpose |
+|-------|-------|---------|
+| Push to main | Yes | Track trends, post results as commit comment |
+| Weekly (Sunday midnight) | Yes | Catch gradual regressions |
+| Manual workflow_dispatch | Yes | Investigation or baseline update |
+| Pull requests | No | Too slow, would block PRs |
+
+### Regression Detection
+
+The `check_regression.py` script compares current results against `baseline.json`:
+
+```bash
+# Check for regressions (exits non-zero if >10% slower)
+python benchmarks/check_regression.py \
+    --baseline benchmarks/baseline.json \
+    --current benchmarks/results/benchmark_YYYYMMDD.json \
+    --threshold 10
+```
+
+### Baseline Management
+
+The baseline file (`baseline.json`) contains reference times from a known-good state:
+
+```json
+{
+  "gremlins_sequential": 45.63,
+  "gremlins_parallel": 10.36,
+  "gremlins_full": 11.42,
+  "mutmut_default": 37.22
+}
+```
+
+To update the baseline after achieving performance improvements:
+1. Go to Actions > Benchmarks workflow
+2. Click "Run workflow"
+3. Check "Update baseline with current results"
+4. Click "Run workflow"
+
+The workflow will commit the new baseline automatically.
+
+### Regression Threshold
+
+The default threshold is 10%, meaning:
+- A config is flagged as regressed if it's >10% slower than baseline
+- Improvements (>10% faster) are noted but don't cause failure
+- Exact threshold changes should be discussed and documented
