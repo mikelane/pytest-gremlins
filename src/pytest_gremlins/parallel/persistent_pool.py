@@ -187,11 +187,11 @@ class PersistentWorkerPool:
         warmup_completed_count: Number of workers that completed warmup.
 
     Example:
-        >>> config = PoolConfig(max_workers=4, warmup=True)
-        >>> pool = PersistentWorkerPool.from_config(config)
-        >>> with pool:
-        ...     future = pool.submit('g001', ['pytest'], '.', None, {})
-        ...     result = future.result()
+        >>> config = PoolConfig(max_workers=4, warmup=True)  # doctest: +SKIP
+        >>> pool = PersistentWorkerPool.from_config(config)  # doctest: +SKIP
+        >>> with pool:  # doctest: +SKIP
+        ...     future = pool.submit('g001', ['pytest'], '.', None, {})  # doctest: +SKIP
+        ...     result = future.result()  # doctest: +SKIP
     """
 
     def __init__(

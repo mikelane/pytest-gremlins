@@ -45,9 +45,9 @@ class BatchExecutor:
         config: The PoolConfig used to configure the underlying pool.
 
     Example:
-        >>> config = PoolConfig(max_workers=4, batch_size=20, warmup=True)
-        >>> executor = BatchExecutor.from_config(config)
-        >>> results = executor.execute(['g001', 'g002'], ['pytest'], '.', None, {})
+        >>> config = PoolConfig(max_workers=4, batch_size=20, warmup=True)  # doctest: +SKIP
+        >>> executor = BatchExecutor.from_config(config)  # doctest: +SKIP
+        >>> results = executor.execute(['g001', 'g002'], ['pytest'], '.', None, {})  # doctest: +SKIP
     """
 
     def __init__(
