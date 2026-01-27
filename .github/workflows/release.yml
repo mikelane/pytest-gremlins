@@ -100,13 +100,14 @@ jobs:
 
       - name: Install from Test PyPI
         run: |
+          uv venv .venv
           uv pip install --index-url https://test.pypi.org/simple/ \
             --extra-index-url https://pypi.org/simple/ \
             pytest-gremlins
 
       - name: Verify import
         run: |
-          python -c "import pytest_gremlins; print(f'Version: {pytest_gremlins.__version__}')"
+          .venv/bin/python -c "import pytest_gremlins; print(f'Version: {pytest_gremlins.__version__}')"
 
   # Publish to Production PyPI
   publish-pypi:
