@@ -1,6 +1,6 @@
 {
-  "gremlins_sequential": 45.63,
-  "gremlins_parallel": 10.36,
-  "gremlins_full": 11.42,
-  "mutmut_default": 37.22
+  "gremlins_sequential": 17.79,
+  "gremlins_parallel": 3.99,
+  "gremlins_full": 1.08,
+  "mutmut_default": 14.90
 }

@@ -1,0 +1,8 @@
+# Ignore everything except what we need
+**
+
+# Include only essential files
+!src/
+!benchmarks/docker/run_comparison.py
+!pyproject.toml
+!README.md
