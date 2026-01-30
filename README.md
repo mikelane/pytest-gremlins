@@ -7,7 +7,7 @@
 [![CI](https://github.com/mikelane/pytest-gremlins/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelane/pytest-gremlins/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mikelane/pytest-gremlins/branch/main/graph/badge.svg)](https://codecov.io/gh/mikelane/pytest-gremlins)
 [![Documentation](https://readthedocs.org/projects/pytest-gremlins/badge/?version=latest)](https://pytest-gremlins.readthedocs.io)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > *Let the gremlins loose. See which ones survive.*
 
@@ -20,15 +20,13 @@
 - **Native pytest Integration** - Zero configuration to start. Just add `--gremlins` to your pytest
   command.
 - **Coverage-Guided Selection** - Only runs tests that actually cover the mutated code. 10-100x
-  fewer test executions.
+  fewer test executions in well-modularized codebases.
 - **Incremental Caching** - Results cached by content hash. Unchanged code skips re-testing entirely.
 - **Parallel Execution** - Distribute gremlins across CPU cores for linear speedup.
 
 ---
 
 ## Quick Start
-
-Install and run mutation testing in 30 seconds:
 
 ```bash
 # Install
@@ -52,12 +50,12 @@ would catch bugs.
 
 ### The Problem with Existing Tools
 
-| Tool           | Fatal Flaw                                              |
-| -------------- | ------------------------------------------------------- |
-| **mutmut**     | Single-threaded, no incremental analysis, 65+ minute runs |
-| **Cosmic Ray** | Requires Celery + RabbitMQ for parallelization          |
-| **MutPy**      | Dead (last update 2019), Python 3.4-3.7 only            |
-| **mutatest**   | Dead (last update 2022), Python <=3.8 only              |
+| Tool           | Limitation                                                 |
+| -------------- | ---------------------------------------------------------- |
+| **mutmut**     | Single-threaded by default, no incremental analysis        |
+| **Cosmic Ray** | Complex setup; distributed mode requires Celery            |
+| **MutPy**      | Unmaintained (last update 2019), Python 3.4-3.7 only       |
+| **mutatest**   | Unmaintained (last update 2022)                            |
 
 ### Our Solution: Speed Through Architecture
 
@@ -76,12 +74,13 @@ Benchmarked against [mutmut](https://github.com/boxed/mutmut) on a synthetic pro
 
 | Mode                                            | Time   | vs mutmut | Speedup           |
 | ----------------------------------------------- | ------ | --------- | ----------------- |
-| `--gremlins` (sequential)                       | 17.79s | 14.90s    | 0.84x             |
+| `--gremlins` (sequential)                       | 17.79s | 14.90s    | 0.84x (see note)  |
 | `--gremlins --gremlin-parallel`                 | 3.99s  | 14.90s    | **3.73x faster**  |
 | `--gremlins --gremlin-parallel --gremlin-cache` | 1.08s  | 14.90s    | **13.82x faster** |
 
 **Key findings:**
-- Sequential mode is ~16% slower (more mutation operators enabled by default)
+- Sequential mode is slower due to subprocess isolation overhead; detailed profiling shows
+  [1.7x slower on small targets](docs/performance/profiling-report.md)
 - Parallel mode delivers **3.73x speedup** over mutmut
 - With caching, subsequent runs are **13.82x faster**
 - pytest-gremlins found 117 mutations vs mutmut's 86, with 98% kill rate vs 86%
@@ -97,9 +96,9 @@ Zapped: 142 gremlins (89%)
 Survived: 18 gremlins (11%)
 
 Top surviving gremlins:
-  src/auth.py:42    >= -> >     (boundary not tested)
-  src/utils.py:17   + -> -      (arithmetic not verified)
-  src/api.py:88     True -> False (return value unchecked)
+  src/auth.py:42                   >= -> >               (comparison)
+  src/utils.py:17                  + -> -                (arithmetic)
+  src/api.py:88                    True -> False         (boolean)
 
 Run with --gremlin-report=html for detailed report.
 =====================================================================
