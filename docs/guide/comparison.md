@@ -1,6 +1,6 @@
 # Comparison Guide
 
-Choosing a mutation testing tool depends on your project's needs. This guide provides a fair, factual comparison of pytest-gremlins with other Python mutation testing tools.
+This guide provides a fair, factual comparison of pytest-gremlins with other Python mutation testing tools.
 
 !!! note "Data Currency"
     Tool information verified as of January 2026. Check each tool's repository for the latest updates.
@@ -14,7 +14,7 @@ Choosing a mutation testing tool depends on your project's needs. This guide pro
 | **Parallelization** | Built-in (pytest-xdist) | Built-in (v3+) | Plugin-based distributors | Built-in (Python 3.8+) |
 | **Coverage Guidance** | Yes (built-in) | Yes (optional) | Yes | Yes |
 | **Incremental Runs** | Yes (hash-based cache) | Yes | Yes (session database) | Limited |
-| **Python Support** | 3.11+ | 3.8+ | 3.9+ | 3.7-3.8 |
+| **Python Support** | 3.11+ | 3.8+ | 3.9+ | 3.7+ |
 | **Installation** | `pip install pytest-gremlins` | `pip install mutmut` | `pip install cosmic-ray` | `pip install mutatest` |
 | **Platform** | All | Unix/WSL only | All | All |
 | **Maintenance** | Active | Active | Active | Minimal |
@@ -57,7 +57,7 @@ pytest-gremlins workflow:
 5. Repeat (no I/O, no reloads)
 ```
 
-The mutation switching approach eliminates file I/O and module reload overhead, which is particularly significant for projects with slow imports (NumPy, Pandas, Django).
+The mutation switching approach eliminates file I/O and module reload overhead, which can be significant for projects with slow imports (NumPy, Pandas, Django).
 
 #### When to Choose mutmut
 
@@ -72,7 +72,7 @@ The mutation switching approach eliminates file I/O and module reload overhead, 
 
 #### Strengths
 
-- **Distributed execution**: Supports local and HTTP-based distributors
+- **Distributed execution**: Supports local, HTTP, and Celery-based distributors
 - **Session management**: Database-backed sessions for large projects
 - **Plugin architecture**: Extensible operators and distributors
 - **Build tool integration**: CI/CD pipeline friendly
@@ -121,14 +121,14 @@ pytest-gremlins workflow:
 #### Considerations
 
 - **Limited maintenance**: Last release was February 2022 (v3.1.0)
-- **Python version support**: Designed for Python 3.7-3.8
+- **Python version support**: Python 3.7+; multiprocessing requires 3.8+
 - **Random behavior**: Non-deterministic by default
 
 #### When to Choose mutatest
 
 - You need Windows support without WSL
 - You want random sampling for quick mutation score estimates
-- You're maintaining a Python 3.7/3.8 codebase
+- You're maintaining a Python 3.7+ codebase
 
 !!! warning "Maintenance Status"
     mutatest has had minimal updates since 2022. Consider this when planning long-term use.
@@ -143,7 +143,6 @@ pytest-gremlins workflow:
 | Coverage-guided test selection | Yes | Optional | Yes | Yes |
 | Incremental analysis | Hash-based | Yes | Session-based | Limited |
 | Parallel execution | pytest-xdist | Built-in | Distributors | Multiprocessing |
-| Import caching | Automatic | No | No | No |
 
 **Mutation switching** is the key architectural difference. Traditional tools modify files, reload modules, and run tests for each mutation. pytest-gremlins instruments code once and toggles mutations via environment variables, eliminating:
 
@@ -160,9 +159,9 @@ pytest-gremlins workflow:
 | Boolean (`and`/`or`, `True`/`False`) | Yes | Yes | Yes | Yes |
 | Arithmetic (`+`, `-`, `*`, `/`) | Yes | Yes | Yes | Yes |
 | Return values | Yes | Yes | Yes | Yes |
-| Statement deletion | Planned | Yes | Yes | Yes |
-| Exception handling | Planned | Limited | Yes | Yes |
-| String literals | Planned | Yes | Limited | Yes |
+| Statement deletion | No | Yes | Yes | Yes |
+| Exception handling | No | Limited | Yes | Yes |
+| String literals | No | Yes | Limited | Yes |
 
 ### pytest Integration
 
@@ -214,7 +213,7 @@ pytest-gremlins workflow:
 | Terminal summary | Yes | Yes | Yes | Yes |
 | HTML report | Yes | Yes | Yes | Yes |
 | JSON export | Yes | Yes | Yes | Limited |
-| CI annotations | Planned | No | No | No |
+| CI annotations | No | No | No | No |
 | Surviving mutant details | Yes | Yes | Yes | Yes |
 
 ## Migration Guides
@@ -233,7 +232,7 @@ If you're switching from mutmut to pytest-gremlins:
 
    | mutmut | pytest-gremlins |
    |--------|-----------------|
-   | `paths_to_mutate` | `source_paths` |
+   | `paths_to_mutate` | `paths` |
    | `tests_dir` | N/A (uses pytest collection) |
    | `runner` | N/A (native pytest) |
 
@@ -279,7 +278,7 @@ If you're switching from cosmic-ray to pytest-gremlins:
 
    | cosmic-ray | pytest-gremlins |
    |------------|-----------------|
-   | `module-path` | `source_paths` |
+   | `module-path` | `paths` |
    | `test-command` | N/A (native pytest) |
    | `distributor` | `--gremlin-workers` or pytest-xdist |
 
@@ -320,7 +319,7 @@ time pytest --gremlins
 | **pytest-gremlins** | You want speed, native pytest integration, and cross-platform support |
 | **mutmut** | You want a mature tool with interactive browsing (Unix/WSL only) |
 | **cosmic-ray** | You need distributed execution across multiple machines |
-| **mutatest** | You need random sampling or are on Python 3.7/3.8 |
+| **mutatest** | You need random sampling or are on Python 3.7+ |
 
 Each tool has valid use cases. pytest-gremlins focuses on making mutation testing fast enough for everyday TDD workflows rather than overnight CI jobs.
 
