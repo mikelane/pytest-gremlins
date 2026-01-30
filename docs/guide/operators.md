@@ -65,13 +65,6 @@ def is_adult(age: int) -> bool:
 - Rarely necessary
 - Consider disabling if you have many equality checks on strings/enums that produce false positives
 
-**Configuration:**
-
-```toml
-[tool.pytest-gremlins.operators.comparison]
-skip_mutations = ["eq_to_noteq"]  # Skip == -> != mutation
-```
-
 ---
 
 ### boundary
@@ -120,11 +113,10 @@ def validate_password(password: str) -> bool:
 - Code with many magic numbers that are not boundaries
 - Performance-sensitive mutation testing (generates many gremlins)
 
-**Configuration:**
+To exclude the boundary operator for faster runs:
 
-```toml
-[tool.pytest-gremlins]
-operators = ["comparison"]  # Exclude boundary for faster runs
+```bash
+pytest --gremlins --gremlin-operators=comparison,boolean,arithmetic,return
 ```
 
 ---
@@ -243,11 +235,14 @@ The return operator mutates return statements to verify that tests actually chec
 
 **What it mutates:**
 
-| Original       | Mutations             |
-| -------------- | --------------------- |
-| `return x`     | `return None`         |
-| `return True`  | `return False`        |
-| `return False` | `return True`         |
+| Original       | Mutations                       |
+| -------------- | ------------------------------- |
+| `return x`     | `return None`                   |
+| `return True`  | `return None`, `return False`   |
+| `return False` | `return None`, `return True`    |
+
+Note: For boolean return values, both `return None` and the opposite boolean value are generated
+as separate gremlins.
 
 **Example mutations:**
 
@@ -491,15 +486,22 @@ See the [API Reference](../api/index.md) for details on implementing custom oper
 Example third-party operator:
 
 ```python
-from pytest_gremlins import OperatorRegistry
+from pytest_gremlins.operators.registry import OperatorRegistry
 
-@OperatorRegistry.register("django-queryset")
+# Create a registry instance
+registry = OperatorRegistry()
+
+@registry.register_decorator("django-queryset")
 class DjangoQuerySetOperator:
     """Mutate Django QuerySet methods."""
 
     @property
     def name(self) -> str:
         return "django-queryset"
+
+    @property
+    def description(self) -> str:
+        return "Mutate Django QuerySet methods"
 
     def can_mutate(self, node) -> bool:
         # Check for .filter(), .exclude(), etc.

@@ -238,39 +238,39 @@ gremlin-report.json
     "survived": 18,
     "timeout": 0,
     "error": 0,
-    "score": 88.75
+    "percentage": 88.75
   },
-  "gremlins": [
+  "files": {
+    "src/auth.py": {
+      "total": 80,
+      "zapped": 72,
+      "survived": 8,
+      "percentage": 90.0
+    },
+    "src/utils.py": {
+      "total": 80,
+      "zapped": 70,
+      "survived": 10,
+      "percentage": 87.5
+    }
+  },
+  "results": [
     {
-      "id": "gremlin_001",
-      "file": "src/auth.py",
-      "line": 42,
+      "gremlin_id": "g001",
+      "file_path": "src/auth.py",
+      "line_number": 42,
       "operator": "comparison",
-      "original": ">=",
-      "mutated": ">",
       "description": ">= -> >",
-      "status": "survived",
-      "covering_tests": [
-        "test_auth.py::test_login",
-        "test_auth.py::test_permission_check"
-      ],
-      "killing_test": null,
-      "execution_time_ms": 245
+      "status": "survived"
     },
     {
-      "id": "gremlin_002",
-      "file": "src/utils.py",
-      "line": 17,
+      "gremlin_id": "g002",
+      "file_path": "src/utils.py",
+      "line_number": 17,
       "operator": "arithmetic",
-      "original": "+",
-      "mutated": "-",
       "description": "+ -> -",
       "status": "zapped",
-      "covering_tests": [
-        "test_utils.py::test_calculate"
-      ],
-      "killing_test": "test_utils.py::test_calculate",
-      "execution_time_ms": 123
+      "killing_test": "test_utils.py::test_calculate"
     }
   ]
 }
@@ -287,23 +287,30 @@ gremlin-report.json
 | `survived` | integer | Number of gremlins that escaped |
 | `timeout` | integer | Number of gremlins that caused timeouts |
 | `error` | integer | Number of gremlins that caused errors |
-| `score` | float | Mutation score percentage (0-100) |
+| `percentage` | float | Mutation score percentage (0-100) |
 
-**Gremlin Object:**
+**Files Object:**
+
+A mapping of file paths to per-file statistics:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | string | Unique identifier for this gremlin |
-| `file` | string | Source file path |
-| `line` | integer | Line number in source |
+| `total` | integer | Total gremlins in this file |
+| `zapped` | integer | Gremlins caught in this file |
+| `survived` | integer | Gremlins that escaped in this file |
+| `percentage` | float | Mutation score for this file (0-100) |
+
+**Results Array (Gremlin Objects):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `gremlin_id` | string | Unique identifier for this gremlin |
+| `file_path` | string | Source file path |
+| `line_number` | integer | Line number in source |
 | `operator` | string | Operator that created this gremlin |
-| `original` | string | Original code element |
-| `mutated` | string | Mutated code element |
 | `description` | string | Human-readable mutation description |
 | `status` | string | One of: `zapped`, `survived`, `timeout`, `error` |
-| `covering_tests` | array | List of test names that cover this code |
-| `killing_test` | string | Test that caught the mutation (if zapped) |
-| `execution_time_ms` | integer | Time to test this gremlin in milliseconds |
+| `killing_test` | string | Test that caught the mutation (only present if zapped) |
 
 ### Processing JSON Reports
 
@@ -311,16 +318,16 @@ gremlin-report.json
 
 ```bash
 # Get mutation score
-jq '.summary.score' gremlin-report.json
+jq '.summary.percentage' gremlin-report.json
 
 # List surviving gremlins
-jq '.gremlins[] | select(.status == "survived") | "\(.file):\(.line) - \(.description)"' gremlin-report.json
+jq '.results[] | select(.status == "survived") | "\(.file_path):\(.line_number) - \(.description)"' gremlin-report.json
 
 # Count gremlins by operator
-jq '.gremlins | group_by(.operator) | map({operator: .[0].operator, count: length})' gremlin-report.json
+jq '.results | group_by(.operator) | map({operator: .[0].operator, count: length})' gremlin-report.json
 
-# Get average execution time
-jq '.gremlins | map(.execution_time_ms) | add / length' gremlin-report.json
+# Get per-file breakdown
+jq '.files | to_entries[] | "\(.key): \(.value.percentage)%"' gremlin-report.json
 ```
 
 **Python script example:**
@@ -331,12 +338,12 @@ import json
 with open('gremlin-report.json') as f:
     report = json.load(f)
 
-print(f"Mutation Score: {report['summary']['score']:.1f}%")
+print(f"Mutation Score: {report['summary']['percentage']:.1f}%")
 
-survivors = [g for g in report['gremlins'] if g['status'] == 'survived']
+survivors = [g for g in report['results'] if g['status'] == 'survived']
 print(f"\nSurviving gremlins ({len(survivors)}):")
 for g in survivors:
-    print(f"  {g['file']}:{g['line']} - {g['description']}")
+    print(f"  {g['file_path']}:{g['line_number']} - {g['description']}")
 ```
 
 ### When to Use JSON Report
@@ -451,7 +458,7 @@ jobs:
 
       - name: Check mutation score
         run: |
-          SCORE=$(jq '.summary.score' gremlin-report.json)
+          SCORE=$(jq '.summary.percentage' gremlin-report.json)
           echo "Mutation score: $SCORE%"
           if (( $(echo "$SCORE < 80" | bc -l) )); then
             echo "::error::Mutation score $SCORE% is below threshold 80%"
@@ -477,7 +484,7 @@ mutation_testing:
     - pip install -e ".[dev]"
     - pytest --gremlins --gremlin-report=console,html,json
     - |
-      SCORE=$(jq '.summary.score' gremlin-report.json)
+      SCORE=$(jq '.summary.percentage' gremlin-report.json)
       echo "Mutation score: $SCORE%"
       if (( $(echo "$SCORE < 80" | bc -l) )); then
         echo "Mutation score below threshold"
@@ -506,7 +513,7 @@ pipeline {
 
                 script {
                     def report = readJSON file: 'gremlin-report.json'
-                    def score = report.summary.score
+                    def score = report.summary.percentage
 
                     echo "Mutation Score: ${score}%"
 
@@ -531,34 +538,6 @@ pipeline {
         }
     }
 }
-```
-
-## Report Customization
-
-### Console Report Options
-
-Control the number of survivors shown in console output:
-
-```toml
-[tool.pytest-gremlins]
-console_survivors = 10  # Show top 10 survivors (default)
-```
-
-Set to 0 to show all survivors:
-
-```toml
-[tool.pytest-gremlins]
-console_survivors = 0  # Show all survivors
-```
-
-### Output Directory Configuration
-
-Configure output locations in `pyproject.toml`:
-
-```toml
-[tool.pytest-gremlins]
-html_report_dir = "reports/mutations"
-json_report_file = "reports/mutations/report.json"
 ```
 
 ## Troubleshooting Reports

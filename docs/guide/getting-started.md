@@ -285,10 +285,16 @@ Add a step to your CI pipeline:
 
 ```yaml
 - name: Run mutation testing
-  run: pytest --gremlins --gremlin-min-score=80
+  run: |
+    pytest --gremlins --gremlin-report=json
+    SCORE=$(jq '.summary.percentage' gremlin-report.json)
+    if (( $(echo "$SCORE < 80" | bc -l) )); then
+      echo "Mutation score $SCORE% is below threshold 80%"
+      exit 1
+    fi
 ```
 
-The `--gremlin-min-score` option fails the build if the mutation score drops below the threshold.
+This runs mutation testing, outputs a JSON report, then checks if the mutation score meets your threshold.
 
 ### What if mutation testing is too slow?
 
@@ -317,5 +323,4 @@ Now that you understand the basics:
 | Generate HTML report | `pytest --gremlins --gremlin-report=html` |
 | Use caching | `pytest --gremlins --gremlin-cache` |
 | Parallel execution | `pytest --gremlins --gremlin-parallel` |
-| Set minimum score | `pytest --gremlins --gremlin-min-score=80` |
 | Use specific operators | `pytest --gremlins --gremlin-operators=comparison,boolean` |

@@ -1,15 +1,14 @@
 # Configuration
 
-pytest-gremlins can be configured via command-line options, `pyproject.toml`, or environment variables. This page documents all configuration options with examples.
+pytest-gremlins can be configured via command-line options or `pyproject.toml`. This page documents all configuration options with examples.
 
 ## Configuration Precedence
 
 Configuration values are resolved in this order (highest priority first):
 
 1. **Command-line options** - Flags passed to pytest
-2. **Environment variables** - `PYTEST_GREMLINS_*` variables
-3. **pyproject.toml** - `[tool.pytest-gremlins]` section
-4. **Built-in defaults** - Sensible defaults for all options
+2. **pyproject.toml** - `[tool.pytest-gremlins]` section
+3. **Built-in defaults** - Sensible defaults for all options
 
 When the same option is specified at multiple levels, the higher-priority value wins.
 
@@ -191,37 +190,9 @@ paths = ["src"]
 operators = ["comparison", "boundary"]  # Only boundary-related bugs
 ```
 
-## Environment Variables
-
-Environment variables provide an alternative way to configure pytest-gremlins, useful for CI/CD pipelines.
-
-| Variable | Equivalent Option | Description |
-|----------|-------------------|-------------|
-| `PYTEST_GREMLINS_ENABLED` | `--gremlins` | Set to `1` or `true` to enable |
-| `PYTEST_GREMLINS_OPERATORS` | `--gremlin-operators` | Comma-separated operator names |
-| `PYTEST_GREMLINS_TARGETS` | `--gremlin-targets` | Comma-separated file/directory paths |
-| `PYTEST_GREMLINS_REPORT` | `--gremlin-report` | Report format |
-| `PYTEST_GREMLINS_CACHE` | `--gremlin-cache` | Set to `1` or `true` to enable |
-| `PYTEST_GREMLINS_PARALLEL` | `--gremlin-parallel` | Set to `1` or `true` to enable |
-| `PYTEST_GREMLINS_WORKERS` | `--gremlin-workers` | Number of parallel workers |
-
-### Example: CI Environment Variables
-
-```bash
-# GitHub Actions example
-export PYTEST_GREMLINS_ENABLED=1
-export PYTEST_GREMLINS_CACHE=1
-export PYTEST_GREMLINS_PARALLEL=1
-export PYTEST_GREMLINS_WORKERS=4
-
-pytest
-```
-
 ## Excluding Code from Mutation
 
-### Via Configuration
-
-Use glob patterns in `pyproject.toml`:
+Use glob patterns in `pyproject.toml` to exclude files from mutation testing:
 
 ```toml
 [tool.pytest-gremlins]
@@ -232,35 +203,6 @@ exclude = [
     "**/__pycache__/*",     # Cache directories
     "**/vendor/*",          # Vendored dependencies
 ]
-```
-
-### Via Inline Comments
-
-Exclude specific lines or functions using pragma comments:
-
-```python
-def legacy_function():  # pragma: no gremlin
-    # This entire function is excluded from mutation
-    pass
-
-def another_function():
-    x = calculate()  # pragma: no gremlin
-    return x + 1  # This line is excluded from mutation
-```
-
-### Via File-Level Exclusion
-
-Add a pragma at the top of a file to exclude the entire file:
-
-```python
-# pragma: no gremlin
-"""This entire module is excluded from mutation testing."""
-
-def function_one():
-    pass
-
-def function_two():
-    pass
 ```
 
 ## Performance Tuning
@@ -399,25 +341,6 @@ repos:
         pass_filenames: false
         stages: [pre-push]  # Run on push, not commit
 ```
-
-## Operator-Specific Configuration
-
-Fine-tune individual operators in `pyproject.toml`:
-
-```toml
-[tool.pytest-gremlins.operators.comparison]
-# Skip specific mutations within this operator
-skip_mutations = ["eq_to_noteq"]
-
-[tool.pytest-gremlins.operators.arithmetic]
-# Only use these specific operations
-only_ops = ["add", "sub"]
-
-[tool.pytest-gremlins.operators.boolean]
-# Enable all mutations (default)
-```
-
-See [Operators](operators.md) for details on available operators and their mutations.
 
 ## Troubleshooting Configuration
 
