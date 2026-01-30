@@ -211,13 +211,15 @@ nav:
       - Reports: guide/reports.md
       - Extensibility: guide/extensibility.md
 
-  - Architecture:
-      - Overview: architecture/index.md
-      - Speed Pillars: architecture/speed.md
-      - Mutation Switching: architecture/mutation-switching.md
-      - Coverage Guidance: architecture/coverage-guidance.md
-      - Incremental Analysis: architecture/incremental-analysis.md
-      - Parallel Execution: architecture/parallelization.md
+  - Cookbook:
+      - Overview: cookbook/index.md
+      - CI/CD Integration: cookbook/ci-integration.md
+      - Monorepo Setup: cookbook/monorepo.md
+      - Django Projects: cookbook/django.md
+      - FastAPI Projects: cookbook/fastapi.md
+      - pytest Plugins: cookbook/pytest-plugins.md
+      - Pre-commit Hook: cookbook/pre-commit.md
+      - TDD Workflow: cookbook/tdd-workflow.md
 
   - API Reference:
       - Overview: api/index.md
