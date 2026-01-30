@@ -1,0 +1,138 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '*.md'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '*.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: "1"
+  UV_SYSTEM_PYTHON: "1"
+
+jobs:
+  build:
+    name: Build & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra docs
+
+      - name: Build documentation (strict mode)
+        run: uv run mkdocs build --strict
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: site/
+          retention-days: 7
+
+  lint-markdown:
+    name: Lint Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install markdownlint-cli
+        run: npm install -g markdownlint-cli
+
+      - name: Lint markdown files
+        run: markdownlint 'docs/**/*.md' '*.md' --config .markdownlint.json
+
+  check-links:
+    name: Check Links
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-site
+          path: site/
+
+      - name: Check internal links
+        uses: lycheeverse/lychee-action@v1
+        with:
+          args: >-
+            --base site
+            --offline
+            --no-progress
+            --exclude-path site/assets
+            site/**/*.html
+          fail: true
+
+  spell-check:
+    name: Spell Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install cspell
+        run: npm install -g cspell
+
+      - name: Check spelling
+        run: cspell --config cspell.json "docs/**/*.md" "*.md"
+
+  all-docs-checks:
+    name: All Docs Checks Passed
+    runs-on: ubuntu-latest
+    needs: [build, lint-markdown, check-links, spell-check]
+    if: always()
+    steps:
+      - name: Verify all jobs succeeded
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          LINT_RESULT: ${{ needs.lint-markdown.result }}
+          LINKS_RESULT: ${{ needs.check-links.result }}
+          SPELL_RESULT: ${{ needs.spell-check.result }}
+        run: |
+          if [[ "$BUILD_RESULT" != "success" ]] || \
+             [[ "$LINT_RESULT" != "success" ]] || \
+             [[ "$LINKS_RESULT" != "success" ]] || \
+             [[ "$SPELL_RESULT" != "success" ]]; then
+            echo "One or more documentation checks failed"
+            echo "Build: $BUILD_RESULT"
+            echo "Lint: $LINT_RESULT"
+            echo "Links: $LINKS_RESULT"
+            echo "Spell: $SPELL_RESULT"
+            exit 1
+          fi
+          echo "All documentation checks passed!"
