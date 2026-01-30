@@ -1,40 +1,78 @@
 # pytest-gremlins
 
+**Fast-first mutation testing for pytest. Speed that makes mutation testing practical for everyday TDD.**
+
 [![PyPI version](https://img.shields.io/pypi/v/pytest-gremlins.svg)](https://pypi.org/project/pytest-gremlins/)
 [![Python versions](https://img.shields.io/pypi/pyversions/pytest-gremlins.svg)](https://pypi.org/project/pytest-gremlins/)
-[![License](https://img.shields.io/pypi/l/pytest-gremlins.svg)](https://github.com/mikelane/pytest-gremlins/blob/main/LICENSE)
 [![CI](https://github.com/mikelane/pytest-gremlins/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelane/pytest-gremlins/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mikelane/pytest-gremlins/branch/main/graph/badge.svg)](https://codecov.io/gh/mikelane/pytest-gremlins)
 [![Documentation](https://readthedocs.org/projects/pytest-gremlins/badge/?version=latest)](https://pytest-gremlins.readthedocs.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> Let the gremlins loose. See which ones survive.
+> *Let the gremlins loose. See which ones survive.*
 
-**pytest-gremlins** is a fast-first mutation testing plugin for pytest. It helps you evaluate the
-quality of your test suite by injecting small changes (gremlins) into your code and checking if
-your tests catch them.
+---
 
-## Why Mutation Testing?
+## Key Features
 
-Code coverage tells you what code your tests *execute*, but not whether your tests would catch bugs.
-Mutation testing answers a harder question: **if I introduce a bug, will my tests fail?**
+- **Speed-First Architecture** - Mutation switching eliminates file I/O and module reloads. Run
+  gremlins in seconds, not hours.
+- **Native pytest Integration** - Zero configuration to start. Just add `--gremlins` to your pytest
+  command.
+- **Coverage-Guided Selection** - Only runs tests that actually cover the mutated code. 10-100x
+  fewer test executions.
+- **Incremental Caching** - Results cached by content hash. Unchanged code skips re-testing entirely.
+- **Parallel Execution** - Distribute gremlins across CPU cores for linear speedup.
 
-pytest-gremlins creates "gremlins" (small code mutations like changing `>=` to `>`) and runs your
-tests against each one. If your tests pass despite the gremlin, you've found a weakness in your
-test suite.
+---
+
+## Quick Start
+
+Install and run mutation testing in 30 seconds:
+
+```bash
+# Install
+pip install pytest-gremlins
+
+# Run mutation testing
+pytest --gremlins
+```
+
+That's it. pytest-gremlins will instrument your code, release the gremlins, and report which ones
+your tests zapped (good!) and which survived (test gaps!).
+
+---
 
 ## Why pytest-gremlins?
 
-Existing Python mutation testing tools are slow. pytest-gremlins is built for speed from day one:
+**Code coverage lies.** It tells you what code your tests *execute*, but not whether your tests
+would catch bugs.
 
-- **Mutation Switching** - All mutations are embedded in a single instrumentation pass, toggled via
-  environment variable. No file I/O or module reloading per mutation.
-- **Coverage-Guided Selection** - Only runs tests that actually cover the mutated code.
-- **Incremental Analysis** - Caches results. Unchanged code/tests don't get re-tested.
-- **Parallel Execution** - Distributes gremlins across CPU cores.
+**Mutation testing answers a harder question:** If I introduce a bug, will my tests fail?
+
+### The Problem with Existing Tools
+
+| Tool           | Fatal Flaw                                              |
+| -------------- | ------------------------------------------------------- |
+| **mutmut**     | Single-threaded, no incremental analysis, 65+ minute runs |
+| **Cosmic Ray** | Requires Celery + RabbitMQ for parallelization          |
+| **MutPy**      | Dead (last update 2019), Python 3.4-3.7 only            |
+| **mutatest**   | Dead (last update 2022), Python <=3.8 only              |
+
+### Our Solution: Speed Through Architecture
+
+pytest-gremlins is fast because of *how* it works, not just parallelization:
+
+1. **Mutation Switching** - Instrument once, toggle mutations via environment variable
+2. **Coverage Guidance** - Only run tests that cover the mutated code
+3. **Incremental Analysis** - Skip unchanged code on repeat runs
+4. **Parallel Execution** - Safe parallelization with no shared state
+
+---
 
 ## Performance
 
-Benchmarked against [mutmut](https://github.com/boxed/mutmut) on a synthetic project (Python 3.12, Docker):
+Benchmarked against [mutmut](https://github.com/boxed/mutmut) on a synthetic project:
 
 | Mode                                            | Time   | vs mutmut | Speedup           |
 | ----------------------------------------------- | ------ | --------- | ----------------- |
@@ -43,44 +81,12 @@ Benchmarked against [mutmut](https://github.com/boxed/mutmut) on a synthetic pro
 | `--gremlins --gremlin-parallel --gremlin-cache` | 1.08s  | 14.90s    | **13.82x faster** |
 
 **Key findings:**
-
-- Sequential mode is ~16% slower than mutmut (more mutation operators enabled by default)
+- Sequential mode is ~16% slower (more mutation operators enabled by default)
 - Parallel mode delivers **3.73x speedup** over mutmut
-- With caching enabled, subsequent runs are **13.82x faster**
-- pytest-gremlins found 117 mutations vs mutmut's 86, with a 98% kill rate vs 86%
+- With caching, subsequent runs are **13.82x faster**
+- pytest-gremlins found 117 mutations vs mutmut's 86, with 98% kill rate vs 86%
 
-Run your own benchmarks:
-
-```bash
-docker run --rm -v "$(pwd):/project" -w /benchmark python:3.12-slim bash -c \
-  "pip install pytest-gremlins mutmut && python /project/benchmarks/docker/run_comparison.py"
-```
-
-## Installation
-
-```bash
-pip install pytest-gremlins
-```
-
-Or with uv:
-
-```bash
-uv add pytest-gremlins
-```
-
-## Quick Start
-
-Run mutation testing on your project:
-
-```bash
-pytest --gremlins
-```
-
-That's it. pytest-gremlins will:
-
-1. Instrument your code with gremlins
-2. Run your tests against each gremlin
-3. Report which gremlins survived (test gaps) and which were zapped (good tests)
+---
 
 ## Example Output
 
@@ -91,13 +97,32 @@ Zapped: 142 gremlins (89%)
 Survived: 18 gremlins (11%)
 
 Top surviving gremlins:
-  src/auth.py:42    >= → >     (boundary not tested)
-  src/utils.py:17   + → -      (arithmetic not verified)
-  src/api.py:88     True → False (return value unchecked)
+  src/auth.py:42    >= -> >     (boundary not tested)
+  src/utils.py:17   + -> -      (arithmetic not verified)
+  src/api.py:88     True -> False (return value unchecked)
 
 Run with --gremlin-report=html for detailed report.
 =====================================================================
 ```
+
+---
+
+## Installation
+
+```bash
+# With pip
+pip install pytest-gremlins
+
+# With uv
+uv add pytest-gremlins
+
+# With poetry
+poetry add pytest-gremlins
+```
+
+**Requires Python 3.11+**
+
+---
 
 ## Configuration
 
@@ -118,6 +143,8 @@ exclude = ["**/migrations/*", "**/test_*"]
 min_score = 80
 ```
 
+---
+
 ## The Gremlins Theme
 
 We use Gremlins movie references as our domain language:
@@ -130,29 +157,40 @@ We use Gremlins movie references as our domain language:
 | Kill mutant            | **Zap**                 | Your test caught the mutation      |
 | Surviving mutant       | **Survivor**            | Mutation your tests missed         |
 
+---
+
 ## Documentation
 
-Full documentation is available at [pytest-gremlins.readthedocs.io](https://pytest-gremlins.readthedocs.io).
+Full documentation: [pytest-gremlins.readthedocs.io](https://pytest-gremlins.readthedocs.io)
 
 - [User Guide](https://pytest-gremlins.readthedocs.io/en/latest/guide/)
 - [Configuration Reference](https://pytest-gremlins.readthedocs.io/en/latest/configuration/)
 - [API Reference](https://pytest-gremlins.readthedocs.io/en/latest/api/)
 
+---
+
 ## Related Projects
 
-- [pytest-test-categories](https://github.com/mikelane/pytest-test-categories) - Enforce Google test size standards in Python
+- [pytest-test-categories](https://github.com/mikelane/pytest-test-categories) - Enforce Google
+  test size standards in Python
 - [dioxide](https://github.com/mikelane/dioxide) - Rust-backed dependency injection for Python
+
+---
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+Contributions welcome! See our [Contributing Guide](CONTRIBUTING.md).
 
-This project follows a strict TDD discipline and uses BDD with Gherkin scenarios. All contributions
-must include tests written *before* implementation.
+This project uses strict TDD discipline with BDD/Gherkin scenarios. All contributions must include
+tests written *before* implementation.
+
+---
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE).
+
+---
 
 ## Changelog
 
