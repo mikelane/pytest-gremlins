@@ -171,3 +171,6 @@ build/
 .env.local
 .env.*.local
 .worktrees/
+
+# MkDocs build output
+site/

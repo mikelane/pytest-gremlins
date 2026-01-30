@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Gremlin-inspired logo for pytest-gremlins -->
+  <!-- Simple, recognizable silhouette that works at small sizes -->
+
+  <!-- Background circle -->
+  <circle cx="50" cy="50" r="48" fill="#1b5e20"/>
+
+  <!-- Gremlin face outline -->
+  <ellipse cx="50" cy="55" rx="30" ry="28" fill="#4caf50"/>
+
+  <!-- Large pointed ears -->
+  <polygon points="20,45 10,15 35,35" fill="#4caf50"/>
+  <polygon points="80,45 90,15 65,35" fill="#4caf50"/>
+
+  <!-- Eyes - mischievous look -->
+  <ellipse cx="38" cy="48" rx="8" ry="10" fill="#fff"/>
+  <ellipse cx="62" cy="48" rx="8" ry="10" fill="#fff"/>
+
+  <!-- Pupils - looking slightly up -->
+  <circle cx="38" cy="46" r="4" fill="#1b5e20"/>
+  <circle cx="62" cy="46" r="4" fill="#1b5e20"/>
+
+  <!-- Eye shine -->
+  <circle cx="40" cy="44" r="1.5" fill="#fff"/>
+  <circle cx="64" cy="44" r="1.5" fill="#fff"/>
+
+  <!-- Mischievous grin -->
+  <path d="M 32 68 Q 50 82 68 68" stroke="#1b5e20" stroke-width="3" fill="none" stroke-linecap="round"/>
+
+  <!-- Small fangs -->
+  <polygon points="40,68 42,75 44,68" fill="#fff"/>
+  <polygon points="56,68 58,75 60,68" fill="#fff"/>
+</svg>

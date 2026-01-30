@@ -1,78 +1,274 @@
+# pytest-gremlins Documentation
+# MkDocs configuration with Material theme
+# https://squidfunk.github.io/mkdocs-material/
+
 site_name: pytest-gremlins
-site_description: Fast-first mutation testing for pytest
+site_description: Fast-first mutation testing for pytest - let the gremlins loose, see which ones survive
 site_author: Mike Lane
 site_url: https://pytest-gremlins.readthedocs.io
+copyright: Copyright &copy; 2024-2026 Mike Lane
 
 repo_name: mikelane/pytest-gremlins
 repo_url: https://github.com/mikelane/pytest-gremlins
+edit_uri: edit/main/docs/
 
+# Theme Configuration
 theme:
   name: material
+  custom_dir: docs/overrides
+  logo: assets/logo.svg
+
   palette:
-    - scheme: default
+    # Light mode - gremlin green theme
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       primary: green
       accent: light green
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    - scheme: slate
+
+    # Dark mode - after midnight
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       primary: green
       accent: light green
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+    view: material/eye
+    admonition:
+      note: fontawesome/solid/note-sticky
+      abstract: fontawesome/solid/book
+      info: fontawesome/solid/circle-info
+      tip: fontawesome/solid/lightbulb
+      success: fontawesome/solid/check
+      question: fontawesome/solid/circle-question
+      warning: fontawesome/solid/triangle-exclamation
+      failure: fontawesome/solid/bomb
+      danger: fontawesome/solid/skull
+      bug: fontawesome/solid/bug
+      example: fontawesome/solid/flask
+      quote: fontawesome/solid/quote-left
+
   features:
+    # Navigation
     - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
     - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.expand
+    - navigation.path
+    - navigation.indexes
     - navigation.top
+    - navigation.footer
+
+    # Search
     - search.suggest
     - search.highlight
-    - content.code.copy
-    - content.code.annotate
+    - search.share
 
+    # Content
+    - content.code.copy
+    - content.code.select
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - content.action.edit
+    - content.action.view
+
+    # Table of Contents
+    - toc.follow
+
+# Plugins
 plugins:
-  - search
+  - search:
+      separator: '[\s\-\._]+'
+      lang: en
+
   - mkdocstrings:
+      default_handler: python
       handlers:
         python:
+          paths: [src]
           options:
             docstring_style: google
+            docstring_options:
+              ignore_init_summary: true
             show_source: true
             show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            merge_init_into_class: true
+            separate_signature: true
+            signature_crossrefs: true
+            filters:
+              - "!^_"
+            heading_level: 2
 
+  # Social cards for link previews (Open Graph/Twitter)
+  # Requires: pip install "mkdocs-material[imaging]"
+  # Uncomment when dependencies are installed:
+  # - social:
+  #     cards_layout_options:
+  #       background_color: "#1b5e20"
+  #       color: "#ffffff"
+
+  # Minify HTML output for production (requires mkdocs-minify-plugin)
+  # Uncomment when plugin is installed:
+  # - minify:
+  #     minify_html: true
+  #     minify_js: true
+  #     minify_css: true
+  #     htmlmin_opts:
+  #       remove_comments: true
+
+# Markdown Extensions
 markdown_extensions:
-  - pymdownx.highlight:
-      anchor_linenums: true
-  - pymdownx.superfences
-  - pymdownx.tabbed:
-      alternate_style: true
+  # Python Markdown
+  - abbr
   - admonition
-  - pymdownx.details
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
   - tables
   - toc:
       permalink: true
+      permalink_title: Link to this section
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+      toc_depth: 3
 
+  # PyMdown Extensions
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+      auto_title: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: mikelane
+      repo: pytest-gremlins
+  - pymdownx.mark
+  - pymdownx.progressbar
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Navigation Structure
 nav:
-  - Home: index.md
+  - Home:
+      - Overview: index.md
+      - Changelog: changelog.md
+      - Contributing: contributing.md
+
   - User Guide:
       - Getting Started: guide/getting-started.md
       - Configuration: guide/configuration.md
       - Operators: guide/operators.md
       - Reports: guide/reports.md
+
   - API Reference:
-      - Overview: api/index.md
-  - Design:
+      - api/index.md
+
+  - Architecture:
       - North Star: design/NORTH_STAR.md
       - Operators Design: design/OPERATORS.md
       - Agent Guidelines: design/AGENT_GUIDELINES.md
-  - Contributing: contributing.md
-  - Changelog: changelog.md
+      - Performance Analysis: performance/profiling-report.md
 
+# Extra Configuration
 extra:
+  # Social links in footer
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/mikelane/pytest-gremlins
+      name: pytest-gremlins on GitHub
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/pytest-gremlins/
+      name: pytest-gremlins on PyPI
+
+  # Analytics (placeholder - enable when ready)
+  # analytics:
+  #   provider: google
+  #   property: G-XXXXXXXXXX
+  #   feedback:
+  #     title: Was this page helpful?
+  #     ratings:
+  #       - icon: material/emoticon-happy-outline
+  #         name: This page was helpful
+  #         data: 1
+  #         note: Thanks for your feedback!
+  #       - icon: material/emoticon-sad-outline
+  #         name: This page could be improved
+  #         data: 0
+  #         note: Thanks for your feedback!
+
+  # Version selector (for future mike integration)
+  # version:
+  #   provider: mike
+  #   default: latest
+
+  # Generator notice
+  generator: false
+
+  # Status indicators for pages
+  status:
+    new: Recently added
+    deprecated: Deprecated
+
+# Extra CSS
+extra_css:
+  - stylesheets/extra.css
+
+# Extra JavaScript
+extra_javascript:
+  - https://unpkg.com/tablesort@5.3.0/dist/tablesort.min.js
+  - javascripts/tablesort.js
+
+# Watch additional directories during development
+watch:
+  - src/pytest_gremlins
+  - includes

@@ -1,0 +1,433 @@
+/* pytest-gremlins Custom Styles
+ * Gremlin-themed documentation styling
+ * https://github.com/mikelane/pytest-gremlins
+ */
+
+/* ============================================
+   CSS Variables - Gremlin Theme
+   ============================================ */
+:root {
+  /* Gremlin greens */
+  --gremlin-green: #2e7d32;
+  --gremlin-green-light: #4caf50;
+  --gremlin-green-dark: #1b5e20;
+  --gremlin-green-pale: #c8e6c9;
+
+  /* Mogwai browns (for contrast) */
+  --mogwai-tan: #d7ccc8;
+  --mogwai-brown: #8d6e63;
+
+  /* Status colors */
+  --zap-color: #ff5722;         /* Kill/zap - orange */
+  --survivor-color: #ffc107;    /* Surviving mutant - amber warning */
+
+  /* Spacing */
+  --content-max-width: 72rem;
+}
+
+/* ============================================
+   Typography Enhancements
+   ============================================ */
+
+/* Improve code readability */
+.md-typeset code {
+  font-size: 0.85em;
+  padding: 0.1em 0.3em;
+  border-radius: 0.2em;
+}
+
+/* Inline code styling */
+.md-typeset :not(pre) > code {
+  background-color: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Code block titles */
+.md-typeset .highlight > .filename {
+  background-color: var(--gremlin-green-dark);
+  color: white;
+  font-weight: 600;
+}
+
+/* ============================================
+   Navigation Enhancements
+   ============================================ */
+
+/* Sticky tabs styling */
+.md-tabs {
+  background-color: var(--gremlin-green-dark);
+}
+
+.md-tabs__link {
+  opacity: 0.8;
+}
+
+.md-tabs__link--active,
+.md-tabs__link:hover {
+  opacity: 1;
+}
+
+/* Navigation sections */
+.md-nav__title {
+  font-weight: 600;
+}
+
+/* Current page indicator */
+.md-nav__link--active {
+  font-weight: 600;
+}
+
+/* ============================================
+   Admonition Styling - Gremlin Theme
+   ============================================ */
+
+/* Custom gremlin admonition */
+.md-typeset .admonition.gremlin,
+.md-typeset details.gremlin {
+  border-color: var(--gremlin-green);
+}
+
+.md-typeset .gremlin > .admonition-title,
+.md-typeset .gremlin > summary {
+  background-color: var(--gremlin-green-pale);
+  border-color: var(--gremlin-green);
+}
+
+.md-typeset .gremlin > .admonition-title::before,
+.md-typeset .gremlin > summary::before {
+  background-color: var(--gremlin-green);
+  -webkit-mask-image: var(--md-admonition-icon--bug);
+  mask-image: var(--md-admonition-icon--bug);
+}
+
+/* Zap (kill) admonition - for test success */
+.md-typeset .admonition.zap,
+.md-typeset details.zap {
+  border-color: var(--zap-color);
+}
+
+.md-typeset .zap > .admonition-title,
+.md-typeset .zap > summary {
+  background-color: #ffccbc;
+  border-color: var(--zap-color);
+}
+
+.md-typeset .zap > .admonition-title::before,
+.md-typeset .zap > summary::before {
+  background-color: var(--zap-color);
+  -webkit-mask-image: var(--md-admonition-icon--success);
+  mask-image: var(--md-admonition-icon--success);
+}
+
+/* Survivor admonition - for test weaknesses */
+.md-typeset .admonition.survivor,
+.md-typeset details.survivor {
+  border-color: var(--survivor-color);
+}
+
+.md-typeset .survivor > .admonition-title,
+.md-typeset .survivor > summary {
+  background-color: #fff8e1;
+  border-color: var(--survivor-color);
+}
+
+.md-typeset .survivor > .admonition-title::before,
+.md-typeset .survivor > summary::before {
+  background-color: var(--survivor-color);
+  -webkit-mask-image: var(--md-admonition-icon--warning);
+  mask-image: var(--md-admonition-icon--warning);
+}
+
+/* ============================================
+   Code Annotations
+   ============================================ */
+
+/* Make annotations more visible */
+.md-typeset .md-annotation__index {
+  background-color: var(--gremlin-green);
+}
+
+.md-typeset .md-annotation__index:hover {
+  background-color: var(--gremlin-green-dark);
+}
+
+/* Annotation tooltip */
+.md-typeset .md-annotation__content {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ============================================
+   Tables
+   ============================================ */
+
+/* Sortable table header indicator */
+.md-typeset table:not([class]) th[data-sort] {
+  cursor: pointer;
+}
+
+.md-typeset table:not([class]) th[data-sort]:hover {
+  background-color: var(--md-default-fg-color--lightest);
+}
+
+/* Striped table rows */
+.md-typeset table:not([class]) tbody tr:nth-child(even) {
+  background-color: var(--md-default-fg-color--lightest);
+}
+
+/* Table cell padding */
+.md-typeset table:not([class]) td,
+.md-typeset table:not([class]) th {
+  padding: 0.75em 1em;
+}
+
+/* ============================================
+   Content Cards (for homepage)
+   ============================================ */
+
+/* Feature cards grid */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+
+.feature-card {
+  padding: 1.5rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  background-color: var(--md-default-bg-color);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.feature-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.feature-card h3 {
+  margin-top: 0;
+  color: var(--gremlin-green);
+}
+
+.feature-card p {
+  margin-bottom: 0;
+  color: var(--md-default-fg-color--light);
+}
+
+/* ============================================
+   Domain Language Highlighting
+   ============================================ */
+
+/* Highlight gremlin terminology */
+.gremlin-term {
+  font-weight: 600;
+  color: var(--gremlin-green);
+}
+
+.mogwai-term {
+  font-weight: 600;
+  color: var(--mogwai-brown);
+}
+
+/* ============================================
+   Status Badges
+   ============================================ */
+
+/* Page status indicators */
+.md-typeset .status {
+  display: inline-block;
+  padding: 0.2em 0.6em;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 0.25em;
+  vertical-align: middle;
+  margin-left: 0.5em;
+}
+
+.md-typeset .status--new {
+  background-color: var(--gremlin-green-pale);
+  color: var(--gremlin-green-dark);
+}
+
+.md-typeset .status--beta {
+  background-color: #e3f2fd;
+  color: #1565c0;
+}
+
+.md-typeset .status--deprecated {
+  background-color: #ffebee;
+  color: #c62828;
+}
+
+/* ============================================
+   Progress Bars (for mutation scores)
+   ============================================ */
+
+/* Mutation score progress bar */
+.mutation-score {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.mutation-score__bar {
+  flex: 1;
+  height: 1.5rem;
+  background-color: var(--md-default-fg-color--lightest);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.mutation-score__fill {
+  height: 100%;
+  background-color: var(--gremlin-green);
+  transition: width 0.3s ease;
+}
+
+.mutation-score__fill--warning {
+  background-color: var(--survivor-color);
+}
+
+.mutation-score__fill--danger {
+  background-color: var(--zap-color);
+}
+
+.mutation-score__value {
+  font-weight: 600;
+  min-width: 4rem;
+  text-align: right;
+}
+
+/* ============================================
+   Terminal/Console Output Styling
+   ============================================ */
+
+/* Terminal output styling */
+.md-typeset .terminal {
+  background-color: #1a1a1a;
+  color: #f5f5f5;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  font-family: var(--md-code-font-family);
+  overflow-x: auto;
+}
+
+.md-typeset .terminal .prompt {
+  color: var(--gremlin-green-light);
+}
+
+.md-typeset .terminal .output {
+  color: #bdbdbd;
+}
+
+.md-typeset .terminal .success {
+  color: var(--gremlin-green-light);
+}
+
+.md-typeset .terminal .warning {
+  color: var(--survivor-color);
+}
+
+.md-typeset .terminal .error {
+  color: #ef5350;
+}
+
+/* ============================================
+   Mobile Responsiveness
+   ============================================ */
+
+@media screen and (max-width: 76.25em) {
+  /* Adjust navigation for tablets */
+  .md-nav__title {
+    font-size: 0.9rem;
+  }
+}
+
+@media screen and (max-width: 60em) {
+  /* Mobile adjustments */
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .md-typeset table:not([class]) {
+    font-size: 0.85rem;
+  }
+
+  .md-typeset table:not([class]) td,
+  .md-typeset table:not([class]) th {
+    padding: 0.5em;
+  }
+}
+
+/* ============================================
+   Print Styles
+   ============================================ */
+
+@media print {
+  /* Hide navigation and search for print */
+  .md-header,
+  .md-tabs,
+  .md-sidebar,
+  .md-footer {
+    display: none !important;
+  }
+
+  /* Full width content */
+  .md-content {
+    margin: 0 !important;
+  }
+
+  /* Ensure code blocks don't break poorly */
+  .md-typeset pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  /* Page breaks */
+  .md-typeset h1,
+  .md-typeset h2 {
+    page-break-after: avoid;
+  }
+
+  .md-typeset pre,
+  .md-typeset table {
+    page-break-inside: avoid;
+  }
+}
+
+/* ============================================
+   Accessibility Enhancements
+   ============================================ */
+
+/* Focus indicators */
+.md-typeset a:focus,
+.md-nav__link:focus,
+.md-tabs__link:focus {
+  outline: 2px solid var(--gremlin-green);
+  outline-offset: 2px;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .md-typeset .admonition {
+    border-width: 2px;
+  }
+
+  .md-typeset code {
+    border-width: 2px;
+  }
+}
