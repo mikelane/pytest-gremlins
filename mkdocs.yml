@@ -209,7 +209,7 @@ nav:
       - Configuration: guide/configuration.md
       - Operators: guide/operators.md
       - Reports: guide/reports.md
-      - Extensibility: guide/extensibility.md
+      - Comparison Guide: guide/comparison.md
 
   - Cookbook:
       - Overview: cookbook/index.md
