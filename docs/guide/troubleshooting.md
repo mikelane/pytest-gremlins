@@ -339,17 +339,12 @@ Common causes:
 
 **Solution:**
 
-1. Increase the timeout:
-   ```bash
-   pytest --gremlins --gremlin-timeout=60
-   ```
-
-2. Identify slow tests and optimize them:
+1. The default timeout is 30 seconds (currently not configurable). Identify slow tests and optimize them:
    ```bash
    pytest --durations=10
    ```
 
-3. Exclude specific slow tests from mutation testing using pytest marks.
+2. Exclude specific slow tests from mutation testing using pytest marks.
 
 **Prevention:** Keep individual tests fast (under 1 second when possible).
 
@@ -449,18 +444,16 @@ ValueError: timeout must be positive, got 0
 
 **Solution:**
 
-Use valid configuration values:
+Use valid configuration values via CLI arguments:
 
-- `start_method`: One of `auto`, `spawn`, `fork`, `forkserver`
-- `max_workers`: A positive integer (or omit to use CPU count)
-- `timeout`: A positive integer in seconds
-- `batch_size`: A positive integer
+- `--gremlin-workers`: A positive integer (or omit to use CPU count)
+- `--gremlin-batch-size`: A positive integer (default: 10)
 
-```toml
-[tool.pytest-gremlins]
-workers = 4  # positive integer
-timeout = 30  # positive integer
+```bash
+pytest --gremlins --gremlin-parallel --gremlin-workers=4
 ```
+
+Note: `workers` and `timeout` are not configurable via `pyproject.toml`. Use CLI arguments instead.
 
 ---
 
@@ -599,10 +592,7 @@ Mutation testing works locally but fails in CI with:
        pytest --gremlins
    ```
 
-2. **Timeout errors:** Increase timeout for slower CI runners:
-   ```bash
-   pytest --gremlins --gremlin-timeout=120
-   ```
+2. **Timeout errors:** The timeout is currently fixed at 30 seconds. If tests are timing out, optimize them or exclude slow tests from mutation testing.
 
 3. **Memory limits:** Reduce parallelism:
    ```bash
@@ -634,11 +624,11 @@ Mutation testing works locally but fails in CI with:
    pytest --gremlins --gremlin-targets=src/mymodule.py tests/test_mymodule.py
    ```
 
-3. **Check what gremlins are generated:**
+3. **Generate an HTML report for detailed results:**
    ```bash
-   pytest --gremlins --gremlin-report=json
+   pytest --gremlins --gremlin-report=html
    ```
-   Then inspect `gremlin-report.json`.
+   Then open `gremlin-report.html` in your browser for a detailed breakdown of all gremlins and their status.
 
 4. **Disable caching to rule out cache issues:**
    ```bash
