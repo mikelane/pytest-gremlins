@@ -138,8 +138,26 @@ plugins:
 
 # Markdown Extensions
 markdown_extensions:
+<<<<<<< HEAD
   # Python Markdown
   - abbr
+||||||| parent of 3e084de (docs: architecture deep-dive documentation (#62))
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+=======
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+>>>>>>> 3e084de (docs: architecture deep-dive documentation (#62))
   - admonition
   - attr_list
   - def_list
@@ -210,6 +228,14 @@ nav:
       - Operators: guide/operators.md
       - Reports: guide/reports.md
       - Extensibility: guide/extensibility.md
+
+  - Architecture:
+      - Overview: architecture/index.md
+      - Speed Pillars: architecture/speed.md
+      - Mutation Switching: architecture/mutation-switching.md
+      - Coverage Guidance: architecture/coverage-guidance.md
+      - Incremental Analysis: architecture/incremental-analysis.md
+      - Parallel Execution: architecture/parallelization.md
 
   - API Reference:
       - Overview: api/index.md
