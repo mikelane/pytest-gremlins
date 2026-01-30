@@ -74,7 +74,7 @@ repos:
 
   # Markdown linting
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.38.0
+    rev: v0.44.0
     hooks:
       - id: markdownlint
         args: [--config, .markdownlint.json]
@@ -82,7 +82,7 @@ repos:
 
   # Spell checking
   - repo: https://github.com/streetsidesoftware/cspell-cli
-    rev: v8.3.0
+    rev: v8.17.3
     hooks:
       - id: cspell
         args: [--config, cspell.json]

@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/DavidAnson/markdownlint/main/schema/markdownlint-config-schema.json",
   "default": true,
   "MD013": {
     "line_length": 120,
@@ -19,6 +20,7 @@
       "sub"
     ]
   },
+  "// MD041": "Disabled: MkDocs files use YAML frontmatter, not headings, as the first line",
   "MD041": false,
   "MD046": {
     "style": "fenced"
