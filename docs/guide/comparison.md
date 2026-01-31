@@ -41,7 +41,7 @@ This guide provides a fair, factual comparison of pytest-gremlins with other Pyt
 
 #### Architecture Comparison
 
-```
+```text
 mutmut workflow:
 1. Modify source file on disk
 2. Reload module
@@ -87,7 +87,7 @@ The mutation switching approach eliminates file I/O and module reload overhead, 
 
 cosmic-ray uses a session-based approach where mutation testing state is stored in a database. This enables distributed execution but adds operational complexity.
 
-```
+```text
 cosmic-ray workflow:
 1. Initialize session (create database)
 2. Generate mutations
