@@ -210,7 +210,8 @@ coverage_threshold = 10
 
 ### Tests with No Coverage Data
 
-If a test cannot be mapped to coverage data (perhaps it was added after coverage collection), pytest-gremlins treats it conservatively:
+If a test cannot be mapped to coverage data (perhaps it was added after coverage collection),
+pytest-gremlins treats it conservatively:
 
 ```python
 # If we cannot determine coverage, assume the test might cover anything

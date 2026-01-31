@@ -72,7 +72,8 @@ coverage data to run only the tests that actually touch the mutated code.
 
 ### 3. Incremental Analysis
 
-Cache everything. If the source file hasn't changed and the tests haven't changed, the mutation results haven't changed either.
+Cache everything. If the source file hasn't changed and the tests haven't changed,
+the mutation results haven't changed either.
 
 **Impact:** Repeat runs complete in seconds, not minutes.
 
