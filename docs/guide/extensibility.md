@@ -20,7 +20,8 @@ This guide assumes familiarity with:
 - Python's `ast` module (Abstract Syntax Trees)
 - Basic understanding of how pytest-gremlins works (see [Getting Started](getting-started.md))
 
-If you're new to Python's AST, the [official ast module documentation](https://docs.python.org/3/library/ast.html) and the [Green Tree Snakes tutorial](https://greentreesnakes.readthedocs.io/) are excellent resources.
+If you're new to Python's AST, the [official ast module documentation](https://docs.python.org/3/library/ast.html)
+and the [Green Tree Snakes tutorial](https://greentreesnakes.readthedocs.io/) are excellent resources.
 
 ## The GremlinOperator Protocol
 
@@ -54,12 +55,12 @@ class GremlinOperator(Protocol):
 
 ### Method Details
 
-| Method | Purpose |
-|--------|---------|
-| `name` | Unique string identifier used in configuration and reports |
-| `description` | Shown in reports and `--help` output |
+| Method         | Purpose                                                                         |
+| -------------- | ------------------------------------------------------------------------------- |
+| `name`         | Unique string identifier used in configuration and reports                      |
+| `description`  | Shown in reports and `--help` output                                            |
 | `can_mutate()` | Fast check - called for every AST node, return `True` only for nodes you handle |
-| `mutate()` | Generate mutation variants - called only when `can_mutate()` returns `True` |
+| `mutate()`     | Generate mutation variants - called only when `can_mutate()` returns `True`     |
 
 ## Creating Your First Operator
 
@@ -143,7 +144,8 @@ print(ast.dump(tree, indent=2))
 ```
 
 Output:
-```
+
+```text
 Expression(
   body=Constant(value='hello world'))
 ```
@@ -677,7 +679,8 @@ Creating custom operators involves:
 4. **Write thorough tests**: Unit test each method
 5. **Register properly**: Use entry points for packages, `conftest.py` for local use
 
-Custom operators let you extend pytest-gremlins to catch domain-specific bugs that generic operators miss. Start simple, test thoroughly, and iterate based on what bugs you find in your codebase.
+Custom operators let you extend pytest-gremlins to catch domain-specific bugs that generic operators
+miss. Start simple, test thoroughly, and iterate based on what bugs you find in your codebase.
 
 ## Further Reading
 

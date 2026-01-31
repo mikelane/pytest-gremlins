@@ -140,7 +140,9 @@ pytest --gremlins --gremlin-operators=comparison,boolean
 
 ## Custom Operators
 
-You can create custom operators for domain-specific mutations. See the [Extensibility Guide](extensibility.md) for a complete tutorial on creating, testing, and registering custom operators.
+You can create custom operators for domain-specific mutations. See the
+[Extensibility Guide](extensibility.md) for a complete tutorial on creating, testing, and
+registering custom operators.
 
 ## Operator Priority
 
