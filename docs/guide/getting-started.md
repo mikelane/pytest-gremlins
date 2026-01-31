@@ -44,7 +44,7 @@ pytest-gremlins will:
 
 ## Understanding the Output
 
-```
+```text
 ================== pytest-gremlins mutation report ==================
 
 Zapped: 142 gremlins (89%)

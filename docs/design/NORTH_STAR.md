@@ -4,18 +4,20 @@
 
 ## Vision
 
-pytest-gremlins is a **fast-first** mutation testing plugin for pytest. We aim to make mutation testing practical for everyday development - not an overnight CI job, but part of the normal TDD feedback loop.
+pytest-gremlins is a **fast-first** mutation testing plugin for pytest. We aim to make mutation
+testing practical for everyday development - not an overnight CI job, but part of the normal TDD
+feedback loop.
 
 ## Why Another Mutation Testing Tool?
 
 The Python mutation testing landscape is broken:
 
-| Tool | Fatal Flaw |
-|------|-----------|
-| **mutmut** | Single-threaded, no incremental analysis, 65+ minute runs on medium projects |
-| **Cosmic Ray** | Requires Celery + RabbitMQ for parallelization, complex setup |
-| **MutPy** | Dead (last update 2019), Python 3.4-3.7 only |
-| **mutatest** | Dead (last update 2022), Python ≤3.8 only, random behavior |
+| Tool           | Fatal Flaw                                                                    |
+| -------------- | ----------------------------------------------------------------------------- |
+| **mutmut**     | Single-threaded, no incremental analysis, 65+ minute runs on medium projects  |
+| **Cosmic Ray** | Requires Celery + RabbitMQ for parallelization, complex setup                 |
+| **MutPy**      | Dead (last update 2019), Python 3.4-3.7 only                                  |
+| **mutatest**   | Dead (last update 2022), Python ≤3.8 only, random behavior                    |
 
 Meanwhile, the JVM (PIT) and JavaScript (Stryker) worlds have solved these problems. We're bringing those lessons to Python.
 
@@ -53,7 +55,7 @@ No walls of text. Results should tell you:
 
 ### The Four Pillars of Speed
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    SPEED STRATEGY                           │
 ├─────────────────────────────────────────────────────────────┤
@@ -82,7 +84,8 @@ No walls of text. Results should tell you:
 
 ### Pillar 1: Mutation Switching
 
-**The Problem:** Traditional mutation testing modifies files on disk, reloads modules, runs tests, restores files. Repeat 1000x.
+**The Problem:** Traditional mutation testing modifies files on disk, reloads modules, runs tests,
+restores files. Repeat 1000x.
 
 **The Solution:** Instrument code once with ALL mutations embedded, controlled by an environment variable:
 
@@ -102,17 +105,20 @@ def is_adult(age):
 ```
 
 **Benefits:**
+
 - Zero file I/O during test runs
 - Zero module reloads
 - Single AST parse
 - Test process stays hot (no reimporting numpy 1000x)
 - Safe parallelization (workers just set different env vars)
 
-**Inspiration:** Stryker 4.0's mutation switching delivers 20-70% speedup. For Python with slow imports, gains are even larger.
+**Inspiration:** Stryker 4.0's mutation switching delivers 20-70% speedup. For Python with slow
+imports, gains are even larger.
 
 ### Pillar 2: Coverage-Guided Test Selection
 
-**The Problem:** 1,000 gremlins × 500 tests = 500,000 test runs. Most are pointless - a test that never touches the mutated code can't catch the gremlin.
+**The Problem:** 1,000 gremlins × 500 tests = 500,000 test runs. Most are pointless - a test that
+never touches the mutated code can't catch the gremlin.
 
 **The Solution:** Build a coverage map, only run tests that cover each gremlin's location:
 
@@ -126,6 +132,7 @@ coverage_map = {
 ```
 
 **Benefits:**
+
 - 10-1000x reduction in test executions
 - Scales better as project grows (more modular = more savings)
 - Identifies "incidentally tested" code (touched by many tests but not directly targeted)
@@ -150,15 +157,17 @@ else:
 ```
 
 **Invalidation Rules:**
-| Change | Action |
-|--------|--------|
-| Source file modified | Re-run gremlins in that file |
-| Test file modified | Re-run gremlins covered by those tests |
-| New test added | Re-run gremlins the new test covers |
-| Test deleted | Re-run gremlins that test was zapping |
-| Nothing changed | Return cached results instantly |
+
+| Change               | Action                                 |
+| -------------------- | -------------------------------------- |
+| Source file modified | Re-run gremlins in that file           |
+| Test file modified   | Re-run gremlins covered by those tests |
+| New test added       | Re-run gremlins the new test covers    |
+| Test deleted         | Re-run gremlins that test was zapping  |
+| Nothing changed      | Return cached results instantly        |
 
 **Benefits:**
+
 - Subsequent runs finish in seconds
 - Enables mutation testing in TDD workflow
 - CI caching works naturally
@@ -171,7 +180,7 @@ else:
 
 **The Solution:** Distribute gremlins across worker processes:
 
-```
+```text
 Main Process
     │
     ├── Worker 1: ACTIVE_GREMLIN=1,5,9...
@@ -181,11 +190,13 @@ Main Process
 ```
 
 **Why Mutation Switching Enables This:**
+
 - Traditional approach: workers fight over file modifications
 - Mutation switching: all workers read same instrumented code, just set different env vars
 - No locks, no file copies, no coordination needed
 
 **Benefits:**
+
 - Linear speedup with core count
 - Safe by design (no shared mutable state)
 - Simple implementation (ProcessPoolExecutor)
@@ -194,13 +205,13 @@ Main Process
 
 ## Combined Speedup
 
-| Optimization | Individual Gain | Cumulative |
-|--------------|-----------------|------------|
-| Baseline (naive) | 1x | 1x |
-| Mutation switching | 2-5x | 2-5x |
-| Coverage guidance | 10-100x | 20-500x |
-| Incremental analysis | 10-1000x (repeat runs) | 200-500,000x |
-| Parallel (8 cores) | 8x | 1,600-4,000,000x |
+| Optimization         | Individual Gain        | Cumulative       |
+| -------------------- | ---------------------- | ---------------- |
+| Baseline (naive)     | 1x                     | 1x               |
+| Mutation switching   | 2-5x                   | 2-5x             |
+| Coverage guidance    | 10-100x                | 20-500x          |
+| Incremental analysis | 10-1000x (repeat runs) | 200-500,000x     |
+| Parallel (8 cores)   | 8x                     | 1,600-4,000,000x |
 
 A project that took 8 hours with naive mutation testing could complete in **seconds** on repeat runs with all optimizations.
 
@@ -210,19 +221,19 @@ A project that took 8 hours with naive mutation testing could complete in **seco
 
 We use Gremlins movie references as our ubiquitous language:
 
-| Traditional Term | Gremlin Term | Description |
-|-----------------|--------------|-------------|
-| Original code | **Mogwai** | Clean, untouched source code |
-| Start mutation testing | **Feed after midnight** | Begin the mutation process |
-| Mutation engine | **Midnight feeding** | Transforms mogwai into gremlins |
-| Mutant | **Gremlin** | A mutation injected into code |
-| Kill mutant | **Zap** | Test catches the mutation |
-| Surviving mutant | **Survivor** | Mutation not caught (weak test coverage) |
-| Cleanup/reporting | **Microwave** | Eliminate gremlins, generate report |
+| Traditional Term       | Gremlin Term            | Description                              |
+| ---------------------- | ----------------------- | ---------------------------------------- |
+| Original code          | **Mogwai**              | Clean, untouched source code             |
+| Start mutation testing | **Feed after midnight** | Begin the mutation process               |
+| Mutation engine        | **Midnight feeding**    | Transforms mogwai into gremlins          |
+| Mutant                 | **Gremlin**             | A mutation injected into code            |
+| Kill mutant            | **Zap**                 | Test catches the mutation                |
+| Surviving mutant       | **Survivor**            | Mutation not caught (weak test coverage) |
+| Cleanup/reporting      | **Microwave**           | Eliminate gremlins, generate report      |
 
 ### The Workflow
 
-```
+```text
 1. MOGWAI        Your original, well-behaved source code
        │
        ▼

@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-pytest-gremlins is a **fast-first** mutation testing plugin for pytest. Speed is the primary differentiator - we aim to make mutation testing practical for everyday TDD, not just overnight CI jobs.
+pytest-gremlins is a **fast-first** mutation testing plugin for pytest. Speed is the primary
+differentiator - we aim to make mutation testing practical for everyday TDD, not just overnight
+CI jobs.
 
 ## Design Documents
 
@@ -16,27 +18,29 @@ pytest-gremlins is a **fast-first** mutation testing plugin for pytest. Speed is
 
 Four pillars drive our speed strategy:
 
-1. **Mutation Switching** - Instrument code once with all mutations embedded, toggle via environment variable. No file I/O, no module reloads during test runs.
+1. **Mutation Switching** - Instrument code once with all mutations embedded, toggle via environment
+   variable. No file I/O, no module reloads during test runs.
 
 2. **Coverage-Guided Test Selection** - Only run tests that actually cover the mutated code. 10-100x reduction in test executions.
 
 3. **Incremental Analysis** - Cache results keyed by content hashes. Skip unchanged code/tests on subsequent runs.
 
-4. **Parallel Execution** - Distribute gremlins across worker processes. Mutation switching makes this safe (no shared mutable state).
+4. **Parallel Execution** - Distribute gremlins across worker processes. Mutation switching makes
+   this safe (no shared mutable state).
 
 ## Domain Language
 
-| Traditional Term | Gremlin Term |
-|-----------------|--------------|
-| Original code | **Mogwai** |
+| Traditional Term       | Gremlin Term            |
+| ---------------------- | ----------------------- |
+| Original code          | **Mogwai**              |
 | Start mutation testing | **Feed after midnight** |
-| Mutant | **Gremlin** |
-| Kill mutant | **Zap** |
-| Surviving mutant | **Survivor** |
+| Mutant                 | **Gremlin**             |
+| Kill mutant            | **Zap**                 |
+| Surviving mutant       | **Survivor**            |
 
 ## Project Structure
 
-```
+```text
 pytest-gremlins/
 ├── src/pytest_gremlins/      # Source code
 │   ├── __init__.py           # Package init with version

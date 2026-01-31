@@ -1,6 +1,7 @@
 # Contributing
 
-See the [CONTRIBUTING.md](https://github.com/mikelane/pytest-gremlins/blob/main/CONTRIBUTING.md) file in the repository for detailed contribution guidelines.
+See the [CONTRIBUTING.md](https://github.com/mikelane/pytest-gremlins/blob/main/CONTRIBUTING.md) file in
+the repository for detailed contribution guidelines.
 
 ## Quick Summary
 

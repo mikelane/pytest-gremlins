@@ -5,14 +5,11 @@
     "line_length": 120,
     "heading_line_length": 120,
     "code_block_line_length": 150,
-    "tables": false,
-    "stern": false
+    "tables": false
   },
   "MD024": {
     "siblings_only": true
   },
-  "MD031": false,
-  "MD032": false,
   "MD033": {
     "allowed_elements": [
       "br",
@@ -23,11 +20,8 @@
       "sub"
     ]
   },
-  "MD040": false,
   "MD041": false,
   "MD046": {
     "style": "fenced"
-  },
-  "MD058": false,
-  "MD060": false
+  }
 }

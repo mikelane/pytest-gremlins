@@ -110,7 +110,7 @@ git worktree remove ../pytest-gremlins-my-feature
 
 We use [Conventional Commits](https://www.conventionalcommits.org/):
 
-```
+```text
 type(scope): description
 
 [optional body]
@@ -121,7 +121,8 @@ type(scope): description
 **Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`
 
 **Examples:**
-```
+
+```text
 feat(operators): add string mutation operator
 fix(instrumentation): handle async functions correctly
 docs(readme): add installation instructions
@@ -168,11 +169,11 @@ uv run pre-commit run --all-files
 
 We use [pytest-test-categories](https://github.com/mikelane/pytest-test-categories):
 
-| Category | Location | Characteristics | Timeout |
-|----------|----------|-----------------|---------|
-| Small | `tests/small/` | Pure functions, no I/O, mocked deps | < 100ms |
-| Medium | `tests/medium/` | Real filesystem, database, multiple components | < 10s |
-| Large | `tests/large/` | End-to-end, external services | < 60s |
+| Category | Location        | Characteristics                                | Timeout |
+| -------- | --------------- | ---------------------------------------------- | ------- |
+| Small    | `tests/small/`  | Pure functions, no I/O, mocked deps            | < 100ms |
+| Medium   | `tests/medium/` | Real filesystem, database, multiple components | < 10s   |
+| Large    | `tests/large/`  | End-to-end, external services                  | < 60s   |
 
 ### Documentation
 
