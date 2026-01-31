@@ -91,7 +91,7 @@ jobs:
         uses: lycheeverse/lychee-action@v2
         with:
           args: >-
-            --base ./site
+            --root-dir site
             --offline
             --no-progress
             --exclude-path site/assets
