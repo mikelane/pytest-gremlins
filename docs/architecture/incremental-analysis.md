@@ -1,6 +1,8 @@
 # Incremental Analysis
 
-Incremental analysis is the third pillar of pytest-gremlins' speed architecture. By caching results and only re-analyzing what actually changed, repeat runs complete in seconds instead of minutes.
+Incremental analysis is the third pillar of pytest-gremlins' speed architecture. By caching
+results and only re-analyzing what actually changed, repeat runs complete in seconds instead
+of minutes.
 
 ## The Problem: Slow Feedback Loops
 
@@ -126,7 +128,7 @@ This is the common case during development. You run gremlins, see results, think
 
 By default, pytest-gremlins stores the cache in your project:
 
-```
+```text
 .gremlins_cache/
   metadata.json        # Version, timestamps
   coverage_map.json    # Coverage data
@@ -227,7 +229,7 @@ For teams, the cache can be shared via CI artifacts:
 
 The first run has no cache benefit - everything must be analyzed:
 
-```
+```text
 First run: 5 minutes (1,000 mutations, no cache)
 ```
 
@@ -235,7 +237,7 @@ First run: 5 minutes (1,000 mutations, no cache)
 
 If nothing changed, results are instant:
 
-```
+```text
 Repeat run: < 5 seconds (cache validation only)
 ```
 
@@ -243,7 +245,7 @@ Repeat run: < 5 seconds (cache validation only)
 
 Changing one source file invalidates only its mutations:
 
-```
+```text
 Changed src/auth.py (100 mutations out of 1,000)
 Re-analyzed: 100 mutations (10% of total)
 Time: 30 seconds
@@ -300,7 +302,8 @@ pytest --gremlins --cache-stats
 ```
 
 Output:
-```
+
+```text
 Cache Statistics:
   Location: .gremlins_cache
   Total entries: 1,234
@@ -322,7 +325,8 @@ pytest --gremlins --explain-cache g_auth_42_comparison
 ```
 
 Output:
-```
+
+```text
 Mutation g_auth_42_comparison cache status: MISS
 
 Reason: source file changed
@@ -381,7 +385,9 @@ pytest --gremlins --incremental
 Incremental mutation analysis is proven technology:
 
 **PIT (Java):**
-> "PIT can complete analysis of a large codebase in under 3 minutes after an initial 31-hour run, by remembering which mutations have been killed by which tests."
+
+> "PIT can complete analysis of a large codebase in under 3 minutes after an initial
+> 31-hour run, by remembering which mutations have been killed by which tests."
 
 **Stryker (JavaScript):**
 > "Incremental mode remembers the results from the previous run and only runs the mutants that might have a different outcome."

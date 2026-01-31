@@ -1,12 +1,16 @@
 # Architecture Overview
 
-pytest-gremlins is designed from the ground up with one primary goal: **make mutation testing fast enough to use every day**.
+pytest-gremlins is designed from the ground up with one primary goal: **make mutation testing
+fast enough to use every day**.
 
-Traditional mutation testing tools have a reputation for being slow - painfully slow. A medium-sized project might take hours to analyze, relegating mutation testing to overnight CI runs that developers ignore. pytest-gremlins rejects this compromise.
+Traditional mutation testing tools have a reputation for being slow - painfully slow.
+A medium-sized project might take hours to analyze, relegating mutation testing to overnight
+CI runs that developers ignore. pytest-gremlins rejects this compromise.
 
 ## Why Speed Matters
 
-Mutation testing is incredibly valuable. It answers the question that line coverage cannot: *Do your tests actually verify anything, or do they just execute code?*
+Mutation testing is incredibly valuable. It answers the question that line coverage cannot:
+*Do your tests actually verify anything, or do they just execute code?*
 
 But value without usability is worthless. If mutation testing takes 8 hours:
 
@@ -50,7 +54,8 @@ graph TB
 
 ### 1. Mutation Switching
 
-Instead of modifying files on disk for each mutation, we instrument the code once with all mutations embedded. An environment variable controls which mutation is active.
+Instead of modifying files on disk for each mutation, we instrument the code once with all
+mutations embedded. An environment variable controls which mutation is active.
 
 **Impact:** Eliminates file I/O and module reloads - the slowest parts of traditional mutation testing.
 
@@ -58,7 +63,8 @@ Instead of modifying files on disk for each mutation, we instrument the code onc
 
 ### 2. Coverage-Guided Test Selection
 
-Why run 500 tests against a mutation when only 3 of them can possibly detect it? We use coverage data to run only the tests that actually touch the mutated code.
+Why run 500 tests against a mutation when only 3 of them can possibly detect it? We use
+coverage data to run only the tests that actually touch the mutated code.
 
 **Impact:** 10-100x reduction in test executions.
 
@@ -74,7 +80,8 @@ Cache everything. If the source file hasn't changed and the tests haven't change
 
 ### 4. Parallel Execution
 
-Distribute mutations across multiple worker processes. Mutation switching makes this safe - no file locking, no coordination needed.
+Distribute mutations across multiple worker processes. Mutation switching makes this safe -
+no file locking, no coordination needed.
 
 **Impact:** Near-linear speedup with available CPU cores.
 
@@ -92,7 +99,8 @@ These optimizations multiply together:
 | Incremental analysis | 10-1000x (repeat runs) | 200-500,000x |
 | Parallel (8 cores) | 8x | 1,600-4,000,000x |
 
-A project that would take 8 hours with naive mutation testing can complete in **seconds** on incremental runs with all optimizations active.
+A project that would take 8 hours with naive mutation testing can complete in **seconds**
+on incremental runs with all optimizations active.
 
 ## How It All Fits Together
 

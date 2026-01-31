@@ -1,26 +1,32 @@
 # Coverage-Guided Test Selection
 
-Coverage-guided test selection is the second pillar of pytest-gremlins' speed architecture. By running only the tests that can possibly detect a mutation, we achieve a 10-100x reduction in test executions.
+Coverage-guided test selection is the second pillar of pytest-gremlins' speed architecture.
+By running only the tests that can possibly detect a mutation, we achieve a 10-100x reduction
+in test executions.
 
 ## The Problem: Too Many Test Runs
 
 Consider a project with:
+
 - 1,000 mutation points
 - 500 tests
 
 Naive mutation testing runs every test against every mutation:
 
-```
+```text
 1,000 mutations x 500 tests = 500,000 test executions
 ```
 
 If each test takes 10ms, that is 83 minutes of CPU time - and that is before counting test setup/teardown overhead.
 
-But here is the insight: **most test-mutation combinations are pointless**. A test for the login module cannot possibly detect a mutation in the shipping calculator. Running it is pure waste.
+But here is the insight: **most test-mutation combinations are pointless**. A test for the
+login module cannot possibly detect a mutation in the shipping calculator. Running it is
+pure waste.
 
 ## The Solution: Run Only Relevant Tests
 
-Coverage-guided test selection builds a map from code locations to tests, then uses that map to run only tests that actually execute the mutated code.
+Coverage-guided test selection builds a map from code locations to tests, then uses that map
+to run only tests that actually execute the mutated code.
 
 ```mermaid
 graph TB
@@ -236,7 +242,8 @@ def handler(event_type):
     return handlers[event_type]()  # Which handler runs depends on input
 ```
 
-pytest-gremlins tracks the actual runtime coverage, so if `test_click` only calls `handle_click`, mutations in `handle_hover` will not trigger that test.
+pytest-gremlins tracks the actual runtime coverage, so if `test_click` only calls
+`handle_click`, mutations in `handle_hover` will not trigger that test.
 
 ## Debugging Coverage Issues
 
@@ -248,7 +255,8 @@ pytest --gremlins --show-coverage src/auth.py:42
 ```
 
 Output:
-```
+
+```text
 Line src/auth.py:42 is covered by:
   - tests/test_auth.py::test_login_success
   - tests/test_auth.py::test_login_failure
@@ -264,7 +272,8 @@ pytest --gremlins --explain-survivor g_auth_42_comparison
 ```
 
 Output:
-```
+
+```text
 Gremlin g_auth_42_comparison (src/auth.py:42)
   Mutation: >= to >
   Covering tests: test_login_success, test_login_failure
@@ -333,4 +342,5 @@ Coverage-guided test selection delivers 10-100x speedup by eliminating pointless
 2. **Build a map** from code locations to covering tests
 3. **Run only relevant tests** for each mutation
 
-Combined with mutation switching, incremental analysis, and parallel execution, coverage guidance makes mutation testing practical for everyday development.
+Combined with mutation switching, incremental analysis, and parallel execution, coverage
+guidance makes mutation testing practical for everyday development.

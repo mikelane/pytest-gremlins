@@ -1,6 +1,8 @@
 # The Four Pillars of Speed
 
-pytest-gremlins achieves its performance through four complementary architectural decisions. Each pillar addresses a different bottleneck in traditional mutation testing. Together, they make mutation testing practical for everyday development.
+pytest-gremlins achieves its performance through four complementary architectural decisions.
+Each pillar addresses a different bottleneck in traditional mutation testing. Together, they
+make mutation testing practical for everyday development.
 
 ## Understanding the Baseline Problem
 
@@ -20,6 +22,7 @@ flowchart LR
 ```
 
 For a project with 1,000 mutation points and 500 tests:
+
 - 1,000 file modifications
 - 1,000 module reloads (including transitive imports)
 - 500,000 test executions
@@ -31,7 +34,8 @@ No wonder it takes hours.
 
 **Problem solved:** File I/O and module reloads are slow.
 
-**Solution:** Instrument the code once with all mutations embedded. An environment variable selects which mutation is active at runtime.
+**Solution:** Instrument the code once with all mutations embedded. An environment variable
+selects which mutation is active at runtime.
 
 ```python
 # Original code
@@ -48,6 +52,7 @@ def is_adult(age):
 ```
 
 **Why it is faster:**
+
 - Zero file I/O during test execution
 - Zero module reloads between mutations
 - Single AST parse per file
@@ -81,11 +86,13 @@ graph TB
 ```
 
 **The math:**
+
 - 1,000 mutations x 500 tests = 500,000 test runs (naive)
 - With coverage guidance: 1,000 mutations x 5 average tests = 5,000 test runs
 - **100x reduction**
 
 **Why it works:**
+
 - A test that never executes line 42 cannot possibly detect a mutation on line 42
 - Well-modularized code has focused test coverage
 - Integration tests might touch many lines, but unit tests are targeted
@@ -98,7 +105,8 @@ graph TB
 
 **Problem solved:** Re-analyzing unchanged code is wasteful.
 
-**Solution:** Cache results keyed by content hashes. Only re-run analysis when something actually changes.
+**Solution:** Cache results keyed by content hashes. Only re-run analysis when something
+actually changes.
 
 ```python
 cache_key = hash(
@@ -126,6 +134,7 @@ else:
 | Nothing changed | Return cached results instantly |
 
 **Why it works:**
+
 - Most development changes are localized
 - Tests change less frequently than implementation
 - Content hashing catches actual changes, not just timestamps
@@ -160,12 +169,14 @@ graph TB
 ```
 
 **Why mutation switching enables this:**
+
 - Traditional approach: Workers compete for file locks
 - Mutation switching: All workers read the same instrumented code
 - Each worker just sets a different environment variable
 - No locks, no coordination, no shared mutable state
 
 **Why it works:**
+
 - Modern machines have many cores
 - Mutation testing is embarrassingly parallel
 - Each mutation is completely independent
@@ -192,16 +203,20 @@ graph LR
 ```
 
 **Mutation Switching enables Parallel Execution:**
-Without mutation switching, parallel workers would need file locking or isolated file copies. With mutation switching, parallelization is trivial.
+Without mutation switching, parallel workers would need file locking or isolated file copies.
+With mutation switching, parallelization is trivial.
 
 **Coverage Guidance reduces work for Parallel Execution:**
-With fewer test runs per mutation, workers complete faster and the overall throughput increases.
+With fewer test runs per mutation, workers complete faster and the overall throughput
+increases.
 
 **Incremental Analysis caches results from Parallel Execution:**
-Results from parallel workers are cached together, so the next run benefits regardless of which worker produced the result.
+Results from parallel workers are cached together, so the next run benefits regardless of
+which worker produced the result.
 
 **Mutation Switching provides stable keys for Incremental Analysis:**
-Because mutations are embedded at instrumentation time, they have stable identifiers that work well as cache keys.
+Because mutations are embedded at instrumentation time, they have stable identifiers that
+work well as cache keys.
 
 ## Cumulative Speedup Analysis
 
@@ -218,6 +233,7 @@ Starting from a baseline of naive mutation testing:
 **Real-world example:**
 
 A project with:
+
 - 10,000 lines of code
 - 1,000 mutation points
 - 500 tests
@@ -233,23 +249,27 @@ A project with:
 
 ## Benchmark Comparisons
 
-!!! note "Benchmarks Coming"
-    We are building a benchmark suite to provide concrete performance comparisons. The numbers above are projections based on:
-
-    - PIT's documented 10-100x speedup from incremental analysis
-    - Stryker's documented 20-70% speedup from mutation switching
-    - Standard parallel execution scaling
-
-    Real benchmarks will be published as the implementation matures.
+> **Note: Benchmarks Coming**
+>
+> We are building a benchmark suite to provide concrete performance comparisons.
+> The numbers above are projections based on:
+>
+> - PIT's documented 10-100x speedup from incremental analysis
+> - Stryker's documented 20-70% speedup from mutation switching
+> - Standard parallel execution scaling
+>
+> Real benchmarks will be published as the implementation matures.
 
 ## Performance Tuning
 
 Each pillar has configuration options for tuning performance:
 
 ### Mutation Switching
+
 No tuning needed - it is always faster than file modification.
 
 ### Coverage Guidance
+
 ```toml
 [tool.pytest-gremlins]
 # Minimum test execution threshold before coverage guidance kicks in
@@ -257,6 +277,7 @@ coverage_guidance_threshold = 10
 ```
 
 ### Incremental Analysis
+
 ```toml
 [tool.pytest-gremlins]
 # Cache location (default: .gremlins_cache)
@@ -267,6 +288,7 @@ cache_dir = ".gremlins_cache"
 ```
 
 ### Parallel Execution
+
 ```toml
 [tool.pytest-gremlins]
 # Number of worker processes (default: CPU count)
@@ -280,11 +302,14 @@ workers = "auto"
 
 Even with all optimizations, some scenarios are challenging:
 
-**Slow tests:** If individual tests take seconds, mutation testing will be slow. Consider test optimization or running gremlins only against fast tests.
+**Slow tests:** If individual tests take seconds, mutation testing will be slow. Consider
+test optimization or running gremlins only against fast tests.
 
-**Massive mutation counts:** Some files generate thousands of mutations. Consider focusing on critical paths or using mutation sampling.
+**Massive mutation counts:** Some files generate thousands of mutations. Consider focusing
+on critical paths or using mutation sampling.
 
-**Import-heavy codebases:** Heavy imports (numpy, pandas, torch) slow down worker startup. This is mitigated by worker pooling but not eliminated.
+**Import-heavy codebases:** Heavy imports (numpy, pandas, torch) slow down worker startup.
+This is mitigated by worker pooling but not eliminated.
 
 ## Summary
 

@@ -1,18 +1,20 @@
 # Parallel Execution
 
-Parallel execution is the fourth pillar of pytest-gremlins' speed architecture. By distributing mutations across multiple worker processes, we achieve near-linear speedup with available CPU cores.
+Parallel execution is the fourth pillar of pytest-gremlins' speed architecture. By
+distributing mutations across multiple worker processes, we achieve near-linear speedup
+with available CPU cores.
 
 ## The Problem: Sequential Bottleneck
 
 Even with mutation switching, coverage guidance, and caching, sequential execution has limits:
 
-```
+```text
 1,000 mutations x 10ms average per mutation = 10,000ms = 10 seconds
 ```
 
 That is reasonable. But what about larger projects?
 
-```
+```text
 10,000 mutations x 10ms = 100 seconds
 100,000 mutations x 10ms = 1,000 seconds = 16+ minutes
 ```
@@ -65,7 +67,8 @@ run_tests(tests_for_g005)
 # ...
 ```
 
-Workers share the same instrumented code but set different environment variables. This is why mutation switching is essential - without it, workers would fight over file modifications.
+Workers share the same instrumented code but set different environment variables. This is why
+mutation switching is essential - without it, workers would fight over file modifications.
 
 ### Result Collection
 
@@ -116,6 +119,7 @@ sequenceDiagram
 ```
 
 Each worker:
+
 - Reads the same instrumented code
 - Sets its own environment variable
 - Executes its own mutation path
@@ -267,12 +271,13 @@ Parallel speedup depends on:
 
 ### Actual vs. Ideal Speedup
 
-```
+```text
 Ideal: 8 cores = 8x speedup
 Actual: 8 cores = 6-7x speedup
 ```
 
 The gap comes from:
+
 - Worker startup/shutdown
 - Result collection overhead
 - Memory bandwidth limits
@@ -320,7 +325,8 @@ def test_addition():
     assert shared_calc.result == 4
 ```
 
-pytest-gremlins runs each worker with a fresh interpreter, but tests within a worker run sequentially. Shared state within the test file can cause issues.
+pytest-gremlins runs each worker with a fresh interpreter, but tests within a worker run
+sequentially. Shared state within the test file can cause issues.
 
 ### Database Tests
 
@@ -362,7 +368,8 @@ pytest --gremlins --progress
 ```
 
 Output:
-```
+
+```text
 Testing mutations: [=============>      ] 65% (650/1000)
   Worker 1: g0834 (tests/test_auth.py::test_login)
   Worker 2: g0835 (tests/test_shipping.py::test_rate)
@@ -380,7 +387,8 @@ pytest --gremlins --worker-stats
 ```
 
 Output:
-```
+
+```text
 Worker Statistics:
   Worker 1: 175 mutations, 89% killed, avg 12ms
   Worker 2: 170 mutations, 91% killed, avg 15ms
@@ -424,7 +432,7 @@ PYTEST_GREMLINS_ACTIVE=g0834 pytest tests/test_auth.py -v
 
 Each worker uses memory independently:
 
-```
+```text
 8 workers x 200MB per worker = 1.6GB total
 ```
 
@@ -434,7 +442,7 @@ On memory-constrained systems, reduce worker count.
 
 Workers take time to start and import modules:
 
-```
+```text
 Worker startup: ~500ms each
 For 8 workers: ~500ms (parallel startup)
 ```
@@ -459,6 +467,7 @@ Parallel execution provides near-linear speedup with CPU cores:
 3. **Collect results** efficiently via queues
 4. **Balance load** based on estimated test times
 
-Combined with mutation switching, coverage guidance, and incremental analysis, parallel execution makes mutation testing practical even for large codebases.
+Combined with mutation switching, coverage guidance, and incremental analysis, parallel
+execution makes mutation testing practical even for large codebases.
 
 The result: 8 cores means roughly 8x faster analysis. A 16-minute sequential run becomes 2 minutes.

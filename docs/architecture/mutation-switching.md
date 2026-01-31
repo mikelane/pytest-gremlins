@@ -1,6 +1,7 @@
 # Mutation Switching
 
-Mutation switching is the foundation of pytest-gremlins' speed architecture. It eliminates the two slowest operations in traditional mutation testing: file I/O and module reloading.
+Mutation switching is the foundation of pytest-gremlins' speed architecture. It eliminates
+the two slowest operations in traditional mutation testing: file I/O and module reloading.
 
 ## The Problem with Traditional Mutation Testing
 
@@ -27,15 +28,20 @@ sequenceDiagram
 ```
 
 For a project with 1,000 mutations, this means:
+
 - 1,000 file writes
 - 1,000 file restores
 - 1,000 module imports (including transitive dependencies)
 
-In Python, imports are expensive. Loading numpy takes hundreds of milliseconds. Loading a Django application can take seconds. Multiply that by 1,000 mutations and you understand why traditional mutation testing takes hours.
+In Python, imports are expensive. Loading numpy takes hundreds of milliseconds. Loading a
+Django application can take seconds. Multiply that by 1,000 mutations and you understand
+why traditional mutation testing takes hours.
 
 ## How Mutation Switching Works
 
-Mutation switching takes a fundamentally different approach: instrument the code once with **all mutations embedded**, then use an environment variable to select which mutation is active.
+Mutation switching takes a fundamentally different approach: instrument the code once with
+**all mutations embedded**, then use an environment variable to select which mutation
+is active.
 
 ### Instrumentation Example
 
@@ -104,27 +110,31 @@ The module is loaded exactly once. Each mutation is tested by changing an enviro
 ### No File I/O
 
 Traditional approach:
-```
+
+```text
 Write file: ~1-10ms per mutation
 Read file (Python import): ~1-5ms per file
 Total for 1000 mutations: 2-15 seconds just in file I/O
 ```
 
 Mutation switching:
-```
+
+```text
 No file operations during testing: 0ms
 ```
 
 ### No Module Reloading
 
 Traditional approach:
-```
+
+```text
 Import module with dependencies: 50-5000ms per import
 1000 mutations: 50 seconds to 83 minutes just importing
 ```
 
 Mutation switching:
-```
+
+```text
 Import once at startup: 50-5000ms total
 Environment variable check: <1 microsecond per mutation
 ```
@@ -138,7 +148,8 @@ Beyond raw import time, there are hidden costs to reloading modules:
 - **Connection pools:** Database connections get dropped
 - **Singleton state:** Application state resets
 
-With mutation switching, the Python process stays warm. Caches remain valid. Connections stay open. Everything runs at full speed.
+With mutation switching, the Python process stays warm. Caches remain valid. Connections
+stay open. Everything runs at full speed.
 
 ## Implementation Details
 
@@ -219,13 +230,14 @@ The original code is always the default path. When no gremlin is active, the cod
 
 Each mutation gets a unique identifier:
 
-```
+```text
 g_<file_hash>_<line>_<col>_<operator>_<variant>
 
 Example: g_a7b3c_42_8_comparison_gt
 ```
 
 This identifier:
+
 - Is deterministic (same code = same ID)
 - Includes location information for debugging
 - Encodes the operator and variant
@@ -242,6 +254,7 @@ CONFIG = load_config()  # <- Can we mutate this?
 ```
 
 pytest-gremlins handles this by:
+
 1. Identifying module-level expressions
 2. Wrapping them in lazy evaluation where possible
 3. Flagging unmutable module-level code in reports
@@ -311,15 +324,18 @@ pytest --gremlins --list-gremlins
 
 ### Increased Memory Usage
 
-All mutations are in memory at once. For large codebases with many mutations, this can increase memory usage. In practice, the overhead is modest - a few bytes per mutation point.
+All mutations are in memory at once. For large codebases with many mutations, this can
+increase memory usage. In practice, the overhead is modest - a few bytes per mutation point.
 
 ### Slightly Larger Bytecode
 
-Instrumented code is larger than original code. This has minimal performance impact but may affect bytecode cache sizes.
+Instrumented code is larger than original code. This has minimal performance impact but
+may affect bytecode cache sizes.
 
 ### Compilation Time
 
-Initial instrumentation takes longer than loading uninstrumented code. This is a one-time cost that pays for itself after a few mutations.
+Initial instrumentation takes longer than loading uninstrumented code. This is a one-time
+cost that pays for itself after a few mutations.
 
 ## Inspiration and Prior Art
 
@@ -328,6 +344,7 @@ Mutation switching was pioneered by [Stryker](https://stryker-mutator.io/) for J
 > "Mutation switching can give a performance boost of up to 20-70%"
 
 For Python, the gains are even larger because:
+
 - Python imports are slower than JavaScript module loading
 - Python lacks JavaScript's V8-level JIT optimization
 - Many Python projects have heavyweight dependencies (numpy, pandas, Django)
@@ -341,4 +358,6 @@ Mutation switching is the foundation that makes everything else possible:
 - **Simplicity:** No file locking, no temporary directories, no cleanup
 - **Stability:** Original files are never modified
 
-Combined with coverage guidance, incremental analysis, and parallel execution, mutation switching transforms mutation testing from an overnight CI job into a tool you can use during development.
+Combined with coverage guidance, incremental analysis, and parallel execution, mutation
+switching transforms mutation testing from an overnight CI job into a tool you can use
+during development.
