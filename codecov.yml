@@ -1,0 +1,23 @@
+# Codecov configuration
+# https://docs.codecov.com/docs/codecov-yaml
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%  # Allow 2% drop before failing
+    patch:
+      default:
+        target: 80%  # New code should have 80% coverage
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true  # Only comment when coverage changes
+
+ignore:
+  - "tests/**/*"
+  - "docs/**/*"
+  - "examples/**/*"
+  - "benchmarks/**/*"
