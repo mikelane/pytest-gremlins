@@ -72,6 +72,22 @@ repos:
     hooks:
       - id: validate-pyproject
 
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint
+        args: [--config, .markdownlint.json]
+        files: \.(md|markdown)$
+
+  # Spell checking
+  - repo: https://github.com/streetsidesoftware/cspell-cli
+    rev: v8.17.3
+    hooks:
+      - id: cspell
+        args: [--config, cspell.json]
+        files: \.(md|markdown)$
+
 ci:
   autofix_commit_msg: |
     style: auto-fix from pre-commit hooks
@@ -81,5 +97,5 @@ ci:
   autoupdate_branch: ''
   autoupdate_commit_msg: 'chore: update pre-commit hook versions'
   autoupdate_schedule: weekly
-  skip: [mypy]  # mypy needs full deps, skip in pre-commit.ci
+  skip: [mypy, cspell]  # mypy needs full deps, cspell may have dict issues in pre-commit.ci
   submodules: false

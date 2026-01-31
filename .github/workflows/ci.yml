@@ -15,9 +15,35 @@ env:
   UV_SYSTEM_PYTHON: "1"
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      src: ${{ steps.filter.outputs.src }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            src:
+              - 'src/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/ci.yml'
+            docs:
+              - 'docs/**'
+              - 'mkdocs.yml'
+              - '*.md'
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +67,8 @@ jobs:
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +89,8 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -95,6 +125,8 @@ jobs:
   docs:
     name: Documentation
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.src == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -118,6 +150,8 @@ jobs:
   security:
     name: Security Audit
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -138,23 +172,36 @@ jobs:
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, docs, security]
+    needs: [changes, lint, typecheck, test, docs, security]
     if: always()
     steps:
       - name: Verify all jobs succeeded
         env:
+          SRC_CHANGED: ${{ needs.changes.outputs.src }}
+          DOCS_CHANGED: ${{ needs.changes.outputs.docs }}
           LINT_RESULT: ${{ needs.lint.result }}
           TYPECHECK_RESULT: ${{ needs.typecheck.result }}
           TEST_RESULT: ${{ needs.test.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
         run: |
-          if [[ "$LINT_RESULT" != "success" ]] || \
-             [[ "$TYPECHECK_RESULT" != "success" ]] || \
-             [[ "$TEST_RESULT" != "success" ]] || \
-             [[ "$DOCS_RESULT" != "success" ]] || \
-             [[ "$SECURITY_RESULT" != "success" ]]; then
-            echo "One or more jobs failed"
-            exit 1
+          # For docs-only changes, skip src-related checks
+          if [[ "$SRC_CHANGED" == "true" ]]; then
+            if [[ "$LINT_RESULT" != "success" ]] || \
+               [[ "$TYPECHECK_RESULT" != "success" ]] || \
+               [[ "$TEST_RESULT" != "success" ]] || \
+               [[ "$SECURITY_RESULT" != "success" ]]; then
+              echo "Source code checks failed"
+              exit 1
+            fi
           fi
-          echo "All checks passed!"
+
+          # Docs check runs for both src and docs changes
+          if [[ "$SRC_CHANGED" == "true" ]] || [[ "$DOCS_CHANGED" == "true" ]]; then
+            if [[ "$DOCS_RESULT" != "success" ]]; then
+              echo "Documentation check failed"
+              exit 1
+            fi
+          fi
+
+          echo "All required checks passed!"
