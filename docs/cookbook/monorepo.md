@@ -4,7 +4,8 @@ Configure pytest-gremlins for multi-package monorepos with selective testing.
 
 ## Goal
 
-Run mutation testing on specific packages in a monorepo, only testing code that changed or belongs to the package being tested.
+Run mutation testing on specific packages in a monorepo, only testing code that changed
+or belongs to the package being tested.
 
 ## Prerequisites
 
