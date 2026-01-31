@@ -120,7 +120,7 @@ pytest test_calculator.py -v
 
 Expected output:
 
-```
+```text
 test_calculator.py::test_add_positive_numbers PASSED
 test_calculator.py::test_add_negative_numbers PASSED
 test_calculator.py::test_is_positive_returns_true PASSED
@@ -202,7 +202,7 @@ pytest --gremlins --gremlin-targets=calculator.py test_calculator.py
 
 Now you should see:
 
-```
+```text
 ================== pytest-gremlins mutation report ==================
 
 Zapped: 10 gremlins (100%)
@@ -217,7 +217,7 @@ All gremlins zapped - your tests are now more robust.
 
 pytest-gremlins follows this workflow for speed:
 
-```
+```text
 1. Instrument Code
    - Parse Python AST
    - Embed all mutations with switches

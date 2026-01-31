@@ -394,7 +394,7 @@ This shows:
 
 pytest-gremlins validates configuration at startup and reports errors:
 
-```
+```text
 pytest-gremlins: Invalid configuration
   - Unknown operator 'typo' in operators list
   - Path 'nonexistent/' does not exist

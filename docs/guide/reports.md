@@ -64,7 +64,7 @@ Shows the most important surviving gremlins to fix. Each line contains:
 
 **Cache Statistics (when caching enabled):**
 
-```
+```text
 Cache: 85 hits, 15 misses (85% hit rate)
 ```
 
@@ -88,13 +88,13 @@ pytest --gremlins --gremlin-report=html
 
 By default, the HTML report is written to:
 
-```
+```text
 gremlin-report.html
 ```
 
 The location is shown in the console output:
 
-```
+```text
 HTML report written to: /path/to/project/gremlin-report.html
 ```
 
@@ -224,7 +224,7 @@ pytest --gremlins --gremlin-report=json
 
 By default, the JSON report is written to:
 
-```
+```text
 gremlin-report.json
 ```
 
@@ -373,7 +373,7 @@ This produces:
 
 The mutation score is calculated as:
 
-```
+```text
 score = (zapped + timeout) / total * 100
 ```
 
@@ -404,7 +404,7 @@ Look for patterns in surviving gremlins:
 
 **Pattern: Many boundary survivors**
 
-```
+```text
 src/validation.py:12   >= -> >   (comparison)
 src/validation.py:15   <= -> <   (comparison)
 src/validation.py:23   >= -> >   (comparison)
@@ -414,7 +414,7 @@ Action: Add boundary value tests for validation functions.
 
 **Pattern: Many return survivors**
 
-```
+```text
 src/service.py:45   return x -> return None   (return)
 src/service.py:67   return x -> return None   (return)
 ```
@@ -423,7 +423,7 @@ Action: Tests are not asserting on return values.
 
 **Pattern: Boolean logic survivors**
 
-```
+```text
 src/auth.py:30   and -> or   (boolean)
 ```
 
