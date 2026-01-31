@@ -4,7 +4,8 @@ Configure pytest-gremlins for Django projects with models, views, and Django-spe
 
 ## Goal
 
-Run mutation testing on Django applications, handling Django's unique patterns like ORM models, class-based views, and settings configuration.
+Run mutation testing on Django applications, handling Django's unique patterns like ORM models,
+class-based views, and settings configuration.
 
 ## Prerequisites
 
@@ -16,7 +17,7 @@ Run mutation testing on Django applications, handling Django's unique patterns l
 
 This recipe assumes a typical Django structure:
 
-```
+```text
 myproject/
 ├── myproject/
 │   ├── __init__.py
@@ -361,16 +362,19 @@ class TestCheckoutView:
 ## Verification
 
 1. Verify pytest-django works:
+
    ```bash
    pytest tests/ -v
    ```
 
 2. Run mutation testing:
+
    ```bash
    pytest --gremlins
    ```
 
 3. Generate HTML report:
+
    ```bash
    pytest --gremlins --gremlin-report=html
    ```
@@ -379,7 +383,7 @@ class TestCheckoutView:
 
 ## Troubleshooting
 
-**Issue: "No module named 'myproject.settings'" error**
+### No module named 'myproject.settings' error
 
 Ensure the Django settings module is correctly configured:
 
@@ -395,7 +399,7 @@ And verify the settings file exists and is importable:
 python -c "import myproject.settings_test"
 ```
 
-**Issue: Database errors during mutation testing**
+### Database errors during mutation testing
 
 Mutation testing runs tests many times. Ensure database is reset properly:
 
@@ -417,7 +421,7 @@ def test_something():
     ...
 ```
 
-**Issue: Mutations in migrations causing failures**
+### Mutations in migrations causing failures
 
 Ensure migrations are excluded:
 
@@ -429,12 +433,14 @@ exclude = [
 ]
 ```
 
-**Issue: Slow mutation testing**
+### Slow mutation testing
 
 Django tests with database access are slow. Speed up with:
 
 1. Use in-memory SQLite (shown in settings_test.py above)
+
 2. Reduce test database setup:
+
    ```python
    @pytest.fixture(scope='module')
    def django_db_setup(django_db_blocker):
@@ -442,7 +448,9 @@ Django tests with database access are slow. Speed up with:
            # Setup runs once per module
            pass
    ```
+
 3. Run subset of operators first:
+
    ```bash
    pytest --gremlins --gremlin-operators=comparison,boolean
    ```

@@ -4,7 +4,8 @@ Integrate mutation testing into your Test-Driven Development workflow for strong
 
 ## Goal
 
-Extend the classic Red-Green-Refactor cycle with mutation testing to ensure tests are not just passing, but actually catching bugs.
+Extend the classic Red-Green-Refactor cycle with mutation testing to ensure tests are not just
+passing, but actually catching bugs.
 
 ## Prerequisites
 
@@ -16,13 +17,13 @@ Extend the classic Red-Green-Refactor cycle with mutation testing to ensure test
 
 Traditional TDD:
 
-```
+```text
 RED → GREEN → REFACTOR
 ```
 
 TDD with Mutation Testing:
 
-```
+```text
 RED → GREEN → REFACTOR → MUTATE
 ```
 
@@ -112,7 +113,7 @@ Run the test - it should fail:
 t  # or: pytest -x --tb=short
 ```
 
-```
+```text
 FAILED tests/test_calculator.py::TestCalculatorAdd::test_add_positive_numbers
 E   ModuleNotFoundError: No module named 'myproject.calculator'
 ```
@@ -137,7 +138,7 @@ Run the test - it should pass:
 t  # or: pytest -x --tb=short
 ```
 
-```
+```text
 PASSED tests/test_calculator.py::TestCalculatorAdd::test_add_positive_numbers
 ```
 
@@ -179,7 +180,7 @@ tm  # or: pytest --gremlins --gremlin-cache -x
 
 If gremlins survive, your test has gaps:
 
-```
+```text
 ================== pytest-gremlins mutation report ==================
 
 Zapped: 0 gremlins (0%)
@@ -235,7 +236,7 @@ Run mutation testing again:
 tm
 ```
 
-```
+```text
 ================== pytest-gremlins mutation report ==================
 
 Zapped: 2 gremlins (100%)
@@ -290,12 +291,13 @@ def is_adult(age: int) -> bool:
 tm
 ```
 
-```
+```text
 Surviving gremlins:
   src/myproject/validator.py:14    >= → >   (boundary not tested)
 ```
 
-The `>=` to `>` mutation survives. If someone changed `age >= 18` to `age > 18`, our test would still pass because we only test with age 18.
+The `>=` to `>` mutation survives. If someone changed `age >= 18` to `age > 18`, our test would
+still pass because we only test with age 18.
 
 ### RED Again - Test the Boundary
 
@@ -332,7 +334,7 @@ class TestIsAdult:
 tm
 ```
 
-```
+```text
 Zapped: 2 gremlins (100%)
 ```
 
@@ -426,6 +428,7 @@ Create run configurations:
    - Strengthen tests if needed
 
 2. Check that mutation scores stay high:
+
    ```bash
    pytest --gremlins --gremlin-report=console
    ```
@@ -434,7 +437,7 @@ Create run configurations:
 
 ## Troubleshooting
 
-**Issue: Mutation testing is too slow for TDD**
+### Mutation testing is too slow for TDD
 
 Use caching and operator subsets:
 
@@ -446,7 +449,7 @@ pytest --gremlins --gremlin-cache --gremlin-operators=comparison -x
 pytest --gremlins
 ```
 
-**Issue: Too many surviving gremlins to address**
+### Too many surviving gremlins to address
 
 Focus on one at a time:
 
@@ -458,14 +461,16 @@ pytest --gremlins --gremlin-report=html
 ```
 
 Prioritize:
+
 1. Boundary condition mutations (`>=` to `>`)
 2. Return value mutations (returning wrong value)
 3. Boolean mutations (logic errors)
 4. Arithmetic mutations (calculation errors)
 
-**Issue: Some gremlins are false positives**
+### Some gremlins are false positives
 
-Not all surviving gremlins indicate test gaps. Some mutations are equivalent (produce the same behavior). Use pragmatic judgment:
+Not all surviving gremlins indicate test gaps. Some mutations are equivalent (produce the same
+behavior). Use pragmatic judgment:
 
 ```python
 # This gremlin might survive: x = x + 0  →  x = x - 0

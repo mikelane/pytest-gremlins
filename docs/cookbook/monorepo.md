@@ -16,7 +16,7 @@ Run mutation testing on specific packages in a monorepo, only testing code that 
 
 This recipe assumes a structure like:
 
-```
+```text
 my-monorepo/
 ├── packages/
 │   ├── core/
@@ -294,11 +294,13 @@ chmod +x scripts/mutate.sh
 ## Verification
 
 1. Run mutation testing for a single package:
+
    ```bash
    ./scripts/mutate.sh core
    ```
 
 2. Run for all packages:
+
    ```bash
    ./scripts/mutate.sh all
    ```
@@ -309,7 +311,7 @@ chmod +x scripts/mutate.sh
 
 ## Troubleshooting
 
-**Issue: Tests from one package run against another package's code**
+### Tests from one package run against another package's code
 
 Ensure each package has proper pytest configuration:
 
@@ -326,7 +328,7 @@ And run pytest from the package directory:
 cd packages/core && uv run pytest --gremlins
 ```
 
-**Issue: Shared dependencies not found during mutation testing**
+### Shared dependencies not found during mutation testing
 
 Install dependencies in development mode from the root:
 
@@ -343,7 +345,7 @@ uv sync --extra dev
 uv pip install -e ../core  # Install core as editable
 ```
 
-**Issue: Cache not shared between packages**
+### Cache not shared between packages
 
 If packages share code (e.g., API uses Core), you might want shared cache:
 

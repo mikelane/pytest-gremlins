@@ -4,7 +4,8 @@ Configure pytest-gremlins for FastAPI applications with async code, dependency i
 
 ## Goal
 
-Run mutation testing on FastAPI applications, properly handling async/await patterns, dependency injection, and Pydantic models.
+Run mutation testing on FastAPI applications, properly handling async/await patterns, dependency
+injection, and Pydantic models.
 
 ## Prerequisites
 
@@ -16,7 +17,7 @@ Run mutation testing on FastAPI applications, properly handling async/await patt
 
 This recipe assumes a typical FastAPI structure:
 
-```
+```text
 myapi/
 ├── src/
 │   └── myapi/
@@ -537,16 +538,19 @@ class TestAsyncOperations:
 ## Verification
 
 1. Verify pytest-asyncio works:
+
    ```bash
    pytest tests/ -v
    ```
 
 2. Run mutation testing:
+
    ```bash
    pytest --gremlins
    ```
 
 3. Generate HTML report:
+
    ```bash
    pytest --gremlins --gremlin-report=html
    ```
@@ -555,7 +559,7 @@ class TestAsyncOperations:
 
 ## Troubleshooting
 
-**Issue: "RuntimeError: Event loop is closed" errors**
+### RuntimeError: Event loop is closed errors
 
 Ensure pytest-asyncio is configured correctly:
 
@@ -573,7 +577,7 @@ async def test_something():
     ...
 ```
 
-**Issue: Database state leaks between mutation test runs**
+### Database state leaks between mutation test runs
 
 Use transaction rollback fixtures:
 
@@ -592,7 +596,7 @@ def db_session(setup_database):
     connection.close()
 ```
 
-**Issue: Dependency injection not working in tests**
+### Dependency injection not working in tests
 
 Ensure you override dependencies before creating the test client:
 
@@ -609,18 +613,22 @@ def client(db_session):
     app.dependency_overrides.clear()
 ```
 
-**Issue: Slow async tests during mutation testing**
+### Slow async tests during mutation testing
 
 Async tests can be slow. Optimize with:
 
 1. Use synchronous TestClient when possible (it handles async internally)
+
 2. Mock external services:
+
    ```python
    @pytest.fixture
    def mock_external_api(mocker):
        return mocker.patch('myapi.services.external.fetch_data', return_value={'data': 'mocked'})
    ```
+
 3. Run subset of operators:
+
    ```bash
    pytest --gremlins --gremlin-operators=comparison
    ```

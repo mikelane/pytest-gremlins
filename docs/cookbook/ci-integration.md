@@ -105,7 +105,7 @@ exclude = [
 
 ### Troubleshooting
 
-**Issue: Workflow times out**
+#### Workflow times out
 
 Mutation testing can be slow on large codebases. Solutions:
 
@@ -129,7 +129,7 @@ jobs:
     pytest --gremlins ${{ steps.changed.outputs.all_changed_files }}
 ```
 
-**Issue: Cache not restoring properly**
+#### Cache not restoring properly
 
 Ensure the cache key includes all relevant files:
 
@@ -247,7 +247,7 @@ exclude = [
 
 ### Troubleshooting
 
-**Issue: Job fails with "no tests collected"**
+#### Job fails with no tests collected
 
 Ensure pytest-gremlins is properly installed and configured:
 
@@ -257,7 +257,7 @@ before_script:
   - pytest --gremlins --collect-only  # Verify collection
 ```
 
-**Issue: Cache not working across pipelines**
+#### Cache not working across pipelines
 
 GitLab caches are branch-specific by default. For shared cache:
 
@@ -427,7 +427,7 @@ exclude = [
 
 ### Troubleshooting
 
-**Issue: Parallelism not speeding up runs**
+#### Parallelism not speeding up runs
 
 Ensure files are split correctly:
 
@@ -439,7 +439,7 @@ Ensure files are split correctly:
       echo "This worker will test: $(cat /tmp/split.txt | wc -l) files"
 ```
 
-**Issue: Cache key too long**
+#### Cache key too long
 
 CircleCI has a 900-character limit for cache keys. Simplify:
 

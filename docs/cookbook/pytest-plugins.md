@@ -59,7 +59,7 @@ paths = ["src"]
 
 ### Running Both Tools
 
-**Option 1: Run separately (recommended)**
+#### Option 1: Run separately (recommended)
 
 ```bash
 # Run coverage first
@@ -69,7 +69,7 @@ pytest tests/ --cov=src --cov-report=html --cov-report=term
 pytest --gremlins --gremlin-report=html
 ```
 
-**Option 2: Run together**
+#### Option 2: Run together
 
 ```bash
 # Gremlins uses coverage data for test selection
@@ -138,12 +138,14 @@ jobs:
 ### Verification
 
 1. Run coverage and verify report:
+
    ```bash
    pytest tests/ --cov=src --cov-report=html
    open htmlcov/index.html
    ```
 
 2. Run mutation testing:
+
    ```bash
    pytest --gremlins --gremlin-report=html
    open gremlin-report.html
@@ -153,7 +155,7 @@ jobs:
 
 ### Troubleshooting
 
-**Issue: Coverage reports are empty when running with gremlins**
+#### Coverage reports are empty when running with gremlins
 
 pytest-gremlins may interfere with coverage collection. Run separately:
 
@@ -165,7 +167,7 @@ pytest tests/ --cov=src
 pytest --gremlins
 ```
 
-**Issue: "CoverageWarning: No data was collected"**
+#### CoverageWarning: No data was collected
 
 Ensure source paths match:
 
@@ -187,7 +189,8 @@ Use pytest-xdist for parallel test execution alongside pytest-gremlins.
 
 ### Important Note
 
-pytest-gremlins has its own parallel execution via `--gremlin-workers`. You typically don't need pytest-xdist for mutation testing, but they can coexist for regular test runs.
+pytest-gremlins has its own parallel execution via `--gremlin-workers`. You typically don't need
+pytest-xdist for mutation testing, but they can coexist for regular test runs.
 
 ### Configuration
 
@@ -242,18 +245,20 @@ jobs:
 ### Verification
 
 1. Regular tests run in parallel:
+
    ```bash
    pytest tests/ -n 4 -v
    ```
 
 2. Mutation testing uses its own workers:
+
    ```bash
    pytest --gremlins --gremlin-parallel --gremlin-workers=4
    ```
 
 ### Troubleshooting
 
-**Issue: Tests hang when using -n with --gremlins**
+#### Tests hang when using -n with --gremlins
 
 Don't combine them. pytest-gremlins manages its own parallelism:
 
@@ -265,7 +270,7 @@ pytest --gremlins -n 4
 pytest --gremlins --gremlin-parallel --gremlin-workers=4
 ```
 
-**Issue: Worker processes crash**
+#### Worker processes crash
 
 Reduce worker count or check for resource conflicts:
 
@@ -307,7 +312,7 @@ exclude = [
 
 ### Project Structure
 
-```
+```text
 myproject/
 ├── src/
 │   └── myapp/
@@ -418,18 +423,20 @@ def check_division_error(result):
 ### Verification
 
 1. Run BDD tests:
+
    ```bash
    pytest tests/ -v
    ```
 
 2. Run mutation testing:
+
    ```bash
    pytest --gremlins
    ```
 
 ### Troubleshooting
 
-**Issue: Step definitions are being mutated**
+#### Step definitions are being mutated
 
 Exclude the steps directory:
 
@@ -441,9 +448,10 @@ exclude = [
 ]
 ```
 
-**Issue: Feature file changes not detected**
+#### Feature file changes not detected
 
-Feature files are not Python code, so they don't trigger mutation testing. Only the source code (`src/`) is mutated.
+Feature files are not Python code, so they don't trigger mutation testing. Only the source code
+(`src/`) is mutated.
 
 ---
 
@@ -517,22 +525,24 @@ class TestEmailService:
 ### Verification
 
 1. Tests with mocks pass:
+
    ```bash
    pytest tests/ -v
    ```
 
 2. Mutation testing runs correctly:
+
    ```bash
    pytest --gremlins
    ```
 
 ### Troubleshooting
 
-**Issue: Mocked code is being mutated**
+#### Mocked code is being mutated
 
 Only source code is mutated. Mocked behavior in tests isn't affected.
 
-**Issue: Mutations in mock setup code**
+#### Mutations in mock setup code
 
 If you have mock factories in `src/`, exclude them:
 
@@ -608,18 +618,20 @@ class TestAsyncService:
 ### Verification
 
 1. Async tests pass:
+
    ```bash
    pytest tests/ -v
    ```
 
 2. Mutation testing works with async code:
+
    ```bash
    pytest --gremlins
    ```
 
 ### Troubleshooting
 
-**Issue: "RuntimeError: Event loop is closed"**
+#### RuntimeError: Event loop is closed
 
 Use `asyncio_mode = "auto"` in pytest config:
 
@@ -628,7 +640,7 @@ Use `asyncio_mode = "auto"` in pytest config:
 asyncio_mode = "auto"
 ```
 
-**Issue: Async fixtures not working**
+#### Async fixtures not working
 
 Ensure fixtures are marked as async:
 

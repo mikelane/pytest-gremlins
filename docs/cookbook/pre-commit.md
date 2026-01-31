@@ -168,11 +168,13 @@ SKIP=gremlins-quick git commit -m "feat: quick fix"
 ## Verification
 
 1. Make a change to source code:
+
    ```bash
    echo "# change" >> src/mymodule.py
    ```
 
 2. Stage and commit:
+
    ```bash
    git add src/mymodule.py
    git commit -m "test: verify pre-commit hook"
@@ -181,7 +183,8 @@ SKIP=gremlins-quick git commit -m "feat: quick fix"
 3. Observe the mutation testing output
 
 4. If mutations survive, review the report to understand test gaps:
-   ```
+
+   ```text
    gremlins (incremental)..............................................Passed
    - hook id: gremlins-quick
 
@@ -191,7 +194,7 @@ SKIP=gremlins-quick git commit -m "feat: quick fix"
 
 ## Troubleshooting
 
-**Issue: Hook takes too long**
+### Hook takes too long
 
 Optimize for speed by reducing scope:
 
@@ -212,7 +215,7 @@ Or skip mutation testing in pre-commit entirely and run in CI:
   stages: [manual]  # Only run when explicitly called
 ```
 
-**Issue: "No tests collected" error**
+### No tests collected error
 
 Ensure tests exist and pytest can find them:
 
@@ -229,7 +232,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 ```
 
-**Issue: Hook doesn't run on file changes**
+### Hook doesn't run on file changes
 
 Check the `files` pattern matches your source files:
 
@@ -244,7 +247,7 @@ Debug with:
 pre-commit run gremlins-quick --files src/mymodule.py --verbose
 ```
 
-**Issue: Different results than CI**
+### Different results than CI
 
 Pre-commit uses a subset of operators for speed. CI should run the full suite:
 
@@ -263,7 +266,10 @@ Run mutation testing only on staged Python files:
   hooks:
     - id: gremlins-staged
       name: gremlins (staged files)
-      entry: bash -c 'pytest --gremlins --gremlin-cache --gremlin-targets=$(git diff --cached --name-only --diff-filter=AM | grep "\.py$" | grep "^src/" | tr "\n" ",")'
+      entry: >
+        bash -c 'pytest --gremlins --gremlin-cache
+        --gremlin-targets=$(git diff --cached --name-only --diff-filter=AM
+        | grep "\.py$" | grep "^src/" | tr "\n" ",")'
       language: system
       pass_filenames: false
       stages: [pre-commit]
