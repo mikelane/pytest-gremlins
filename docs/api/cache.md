@@ -1,12 +1,14 @@
 # Cache Module
 
-The cache module implements **incremental analysis**, the third pillar of pytest-gremlins' speed strategy. Results are cached keyed by content hashes, allowing unchanged code/tests to be skipped on subsequent runs.
+The cache module implements **incremental analysis**, the third pillar of pytest-gremlins' speed
+strategy. Results are cached keyed by content hashes, allowing unchanged code/tests to be skipped
+on subsequent runs.
 
 ## Overview
 
 Traditional mutation testing runs all gremlins every time:
 
-```
+```text
 Run 1: 1000 gremlins tested (5 minutes)
 Run 2: 1000 gremlins tested (5 minutes)  # No changes
 Run 3: 1000 gremlins tested (5 minutes)  # 1 file changed
@@ -14,7 +16,7 @@ Run 3: 1000 gremlins tested (5 minutes)  # 1 file changed
 
 Incremental analysis skips unchanged code:
 
-```
+```text
 Run 1: 1000 gremlins tested (5 minutes)
 Run 2: 0 gremlins tested (0 seconds)     # Cache hit
 Run 3: 10 gremlins tested (30 seconds)   # Only changed file
@@ -164,6 +166,7 @@ CREATE TABLE results (
 ### Error Recovery
 
 If the database is corrupted, `ResultStore` automatically:
+
 1. Detects the corruption on open
 2. Logs a warning
 3. Deletes the corrupted file
@@ -197,7 +200,7 @@ Coordinates content hashing and result storage for smart cache invalidation.
 
 Cache keys incorporate three components:
 
-```
+```text
 {gremlin_id}:{source_hash}:{combined_test_hash}
 ```
 
@@ -314,7 +317,7 @@ pytest --gremlins --gremlin-cache --gremlin-clear-cache
 
 By default, cache is stored in `.gremlins_cache/` in the project root:
 
-```
+```text
 .gremlins_cache/
 └── results.db    # SQLite database
 ```
@@ -325,7 +328,7 @@ By default, cache is stored in `.gremlins_cache/` in the project root:
 
 ### Example Scenario
 
-```
+```text
 Initial run (cold cache):
   1000 gremlins x 50ms average = 50 seconds
 

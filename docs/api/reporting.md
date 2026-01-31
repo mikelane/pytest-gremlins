@@ -1,6 +1,7 @@
 # Reporting Module
 
-The reporting module provides data structures and reporters for presenting mutation testing results in various formats: console, HTML, and JSON.
+The reporting module provides data structures and reporters for presenting mutation testing results
+in various formats: console, HTML, and JSON.
 
 ## Overview
 
@@ -138,7 +139,7 @@ Aggregated mutation testing statistics.
 
 The mutation score represents test effectiveness:
 
-```
+```text
 score = (zapped + timeout) / total * 100
 ```
 
@@ -182,12 +183,12 @@ Writes human-readable output to the terminal.
       show_root_heading: true
       show_source: true
       members:
-        - __init__
+        - "__init__"
         - write_report
 
 ### Console Output Format
 
-```
+```text
 ================== pytest-gremlins mutation report ==================
 
 Zapped: 142 gremlins (89%)
@@ -239,7 +240,7 @@ Generates standalone HTML reports with embedded CSS.
 - **Responsive design**: Works on desktop and mobile
 - **Self-contained**: No external dependencies
 
-### Usage Example
+### HtmlReporter Example
 
 ```python
 from pathlib import Path
@@ -340,7 +341,7 @@ Produces machine-readable JSON for CI integration.
 }
 ```
 
-### Usage Example
+### JsonReporter Example
 
 ```python
 from pathlib import Path
@@ -397,6 +398,7 @@ pytest --gremlins --gremlin-report=console,html,json
 ### Good Score (>80%)
 
 Your tests effectively catch most mutations. Focus on:
+
 - Reviewing surviving gremlins
 - Adding tests for uncovered edge cases
 - Monitoring for regression
@@ -404,6 +406,7 @@ Your tests effectively catch most mutations. Focus on:
 ### Moderate Score (50-80%)
 
 Tests catch many mutations but gaps exist. Actions:
+
 - Review `top_survivors()` for patterns
 - Check boundary conditions
 - Add negative test cases
@@ -412,6 +415,7 @@ Tests catch many mutations but gaps exist. Actions:
 ### Low Score (<50%)
 
 Significant test gaps. Consider:
+
 - Are tests actually running?
 - Do assertions check the right things?
 - Is code coverage actually high?

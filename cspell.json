@@ -96,7 +96,16 @@
     "snakeviz",
     "Cumtime",
     "Unparsing",
-    "sessionfinish"
+    "sessionfinish",
+    "unmutated",
+    "rootdir",
+    "mypackage",
+    "addoption",
+    "exitstatus",
+    "terminalreporter",
+    "unconfigure",
+    "Stddev",
+    "mymodule"
   ],
   "flagWords": [],
   "dictionaries": [

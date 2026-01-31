@@ -1,18 +1,20 @@
 # Coverage Module
 
-The coverage module implements **coverage-guided test selection**, the second pillar of pytest-gremlins' speed strategy. Instead of running all tests for each gremlin, only tests that actually cover the mutated code are executed.
+The coverage module implements **coverage-guided test selection**, the second pillar of
+pytest-gremlins' speed strategy. Instead of running all tests for each gremlin, only tests that
+actually cover the mutated code are executed.
 
 ## Overview
 
 Traditional mutation testing runs all tests for each mutation:
 
-```
+```text
 100 gremlins x 500 tests = 50,000 test executions
 ```
 
 Coverage-guided selection runs only relevant tests:
 
-```
+```text
 100 gremlins x ~5 tests average = 500 test executions
 ```
 
@@ -205,7 +207,8 @@ print(f"Selected {stats['selected_count']} tests for {stats['coverage_location']
 
 ## PrioritizedSelector
 
-Extends test selection by ordering tests by specificity. Tests covering fewer lines are more specific and more likely to catch mutations quickly.
+Extends test selection by ordering tests by specificity. Tests covering fewer lines are more
+specific and more likely to catch mutations quickly.
 
 ::: pytest_gremlins.coverage.prioritized_selector.PrioritizedSelector
     options:
@@ -301,7 +304,7 @@ The coverage module integrates with coverage.py's dynamic context feature:
 
 ### Coverage Collection Flow
 
-```
+```text
 pytest_sessionfinish:
     1. Run: coverage run --dynamic-context=test_function pytest
     2. Open .coverage SQLite database
@@ -316,7 +319,7 @@ pytest_sessionfinish:
 
 ### Example Scenario
 
-```
+```text
 Project: 100 source files, 500 tests
 Gremlins: 1000 mutations
 

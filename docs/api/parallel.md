@@ -1,22 +1,25 @@
 # Parallel Module
 
-The parallel module implements **parallel execution**, the fourth pillar of pytest-gremlins' speed strategy. Gremlins are distributed across multiple worker processes for faster results on multi-core machines.
+The parallel module implements **parallel execution**, the fourth pillar of pytest-gremlins' speed
+strategy. Gremlins are distributed across multiple worker processes for faster results on
+multi-core machines.
 
 ## Overview
 
 Sequential execution:
 
-```
+```text
 1000 gremlins x 50ms = 50 seconds (1 worker)
 ```
 
 Parallel execution:
 
-```
+```text
 1000 gremlins x 50ms / 8 workers = 6.25 seconds
 ```
 
-The mutation switching architecture makes parallelization safe because each worker operates independently with its own `ACTIVE_GREMLIN` environment variable.
+The mutation switching architecture makes parallelization safe because each worker operates
+independently with its own `ACTIVE_GREMLIN` environment variable.
 
 ## Module Exports
 
@@ -44,7 +47,7 @@ Basic worker pool using `ProcessPoolExecutor`.
       show_root_heading: true
       show_source: true
       members:
-        - __init__
+        - "__init__"
         - max_workers
         - timeout
         - submit
@@ -168,7 +171,7 @@ Optimized worker pool that keeps workers alive across multiple gremlin tests.
       show_root_heading: true
       show_source: true
       members:
-        - __init__
+        - "__init__"
         - from_config
         - max_workers
         - timeout
@@ -182,12 +185,14 @@ Optimized worker pool that keeps workers alive across multiple gremlin tests.
 ### Why Persistent Workers?
 
 Standard approach (1 subprocess per gremlin):
-```
+
+```text
 100 gremlins x 600ms startup = 60 seconds overhead
 ```
 
 Persistent workers (reused processes):
-```
+
+```text
 4 workers x 600ms startup = 2.4 seconds overhead
 ```
 
@@ -238,7 +243,7 @@ Coordinates batch execution of gremlin tests for reduced subprocess overhead.
       show_root_heading: true
       show_source: true
       members:
-        - __init__
+        - "__init__"
         - from_config
         - batch_size
         - max_workers
@@ -249,13 +254,15 @@ Coordinates batch execution of gremlin tests for reduced subprocess overhead.
 ### Why Batch Execution?
 
 Standard approach (1 subprocess call per gremlin):
-```
+
+```text
 100 gremlins = 100 subprocess calls
 100 x 600ms overhead = 60 seconds
 ```
 
 Batch execution (batch_size=10):
-```
+
+```text
 100 gremlins / 10 = 10 subprocess calls
 10 x 600ms overhead = 6 seconds
 ```
@@ -447,7 +454,7 @@ pytest --gremlins --gremlin-parallel --gremlin-batch --gremlin-workers=8 --greml
 
 ### Example Timings
 
-```
+```text
 Project: 1000 gremlins, 8 CPU cores
 
 Sequential:           1000 x 600ms = 600 seconds

@@ -1,6 +1,7 @@
 # Plugin Module
 
-The plugin module provides the pytest integration for pytest-gremlins. It implements pytest hooks that enable mutation testing as part of the test lifecycle.
+The plugin module provides the pytest integration for pytest-gremlins. It implements pytest hooks
+that enable mutation testing as part of the test lifecycle.
 
 ## Overview
 

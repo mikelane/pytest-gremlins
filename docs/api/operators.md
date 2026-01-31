@@ -1,6 +1,7 @@
 # Operators Module
 
-The operators module provides the mutation operator system for pytest-gremlins. Operators identify AST patterns and generate mutated variants (gremlins).
+The operators module provides the mutation operator system for pytest-gremlins. Operators identify
+AST patterns and generate mutated variants (gremlins).
 
 ## Overview
 
@@ -89,7 +90,7 @@ Central registry for managing mutation operators.
       show_root_heading: true
       show_source: true
       members:
-        - __init__
+        - "__init__"
         - register
         - register_decorator
         - get

@@ -8,7 +8,8 @@
     "tables": false
   },
   "MD024": {
-    "siblings_only": true
+    "siblings_only": true,
+    "allow_different_nesting": true
   },
   "MD033": {
     "allowed_elements": [
@@ -23,5 +24,6 @@
   "MD041": false,
   "MD046": {
     "style": "fenced"
-  }
+  },
+  "MD050": false
 }

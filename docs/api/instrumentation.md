@@ -1,12 +1,14 @@
 # Instrumentation Module
 
-The instrumentation module implements **mutation switching**, the key speed optimization in pytest-gremlins. Instead of modifying source files for each mutation, code is instrumented once with all mutations embedded, and toggled via an environment variable.
+The instrumentation module implements **mutation switching**, the key speed optimization in
+pytest-gremlins. Instead of modifying source files for each mutation, code is instrumented once
+with all mutations embedded, and toggled via an environment variable.
 
 ## Overview
 
 Traditional mutation testing rewrites files for each mutant:
 
-```
+```text
 For each mutation:
     1. Modify source file
     2. Run tests
@@ -17,7 +19,7 @@ For each mutation:
 
 Mutation switching instruments once:
 
-```
+```text
 1. Transform source with ALL mutations embedded
 2. For each mutation:
     - Set ACTIVE_GREMLIN=gXXX
@@ -141,7 +143,7 @@ Internal AST transformer that replaces mutation points with switching expression
       show_root_heading: true
       show_source: true
       members:
-        - __init__
+        - "__init__"
         - visit_Compare
         - visit_BinOp
         - visit_BoolOp
@@ -154,12 +156,14 @@ Internal AST transformer that replaces mutation points with switching expression
 The transformer replaces mutation points with conditional expressions:
 
 **Original code:**
+
 ```python
 if age >= 18:
     return "adult"
 ```
 
 **Transformed code (conceptual):**
+
 ```python
 if (
     'g002' if __gremlin_active__ == 'g001' else
@@ -173,6 +177,7 @@ if (
 ```
 
 When `__gremlin_active__` is:
+
 - `None` - Original code executes
 - `'g001'` - First mutation activates (>= to >)
 - `'g002'` - Second mutation activates (>= to <)
@@ -271,7 +276,7 @@ MetaPathFinder that intercepts imports for instrumented modules.
       show_root_heading: true
       show_source: true
       members:
-        - __init__
+        - "__init__"
         - find_spec
 
 ### GremlinLoader
@@ -283,7 +288,7 @@ Loader that executes instrumented AST code.
       show_root_heading: true
       show_source: true
       members:
-        - __init__
+        - "__init__"
         - create_module
         - exec_module
 
@@ -307,7 +312,7 @@ Removes import hooks from sys.meta_path.
 
 ### Import Hook Flow
 
-```
+```text
 1. register_import_hooks({'mymodule': instrumented_ast})
 2. import mymodule  # Python calls GremlinFinder.find_spec()
 3. GremlinFinder returns ModuleSpec with GremlinLoader
@@ -399,12 +404,14 @@ Collects gremlins from source without instrumenting it.
 
 ### Memory Trade-off
 
-The transformed AST is larger because it contains all mutations embedded. For a file with N mutation points generating M mutations total:
+The transformed AST is larger because it contains all mutations embedded. For a file with N
+mutation points generating M mutations total:
 
 - Original AST: ~1x size
 - Transformed AST: ~1x + (M * switch_overhead)
 
 This trade-off is worthwhile because:
+
 1. Transformation happens once per file
 2. Test execution happens M times per file
 3. Memory is cheap; I/O is expensive

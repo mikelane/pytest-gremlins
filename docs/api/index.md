@@ -15,7 +15,7 @@ pytest-gremlins achieves speed through four architectural pillars:
 
 ## Module Map
 
-```
+```text
 pytest_gremlins/
 ├── __init__.py           # Package info, version
 ├── config.py             # Configuration loading
@@ -74,44 +74,44 @@ pytest_gremlins/
 ### Mutation Operators
 
 - [Operators Module](operators.md) - All mutation operators
-    - [GremlinOperator Protocol](operators.md#protocol)
-    - [OperatorRegistry](operators.md#registry)
-    - [Built-in Operators](operators.md#built-in-operators)
+  - [GremlinOperator Protocol](operators.md#protocol)
+  - [OperatorRegistry](operators.md#registry)
+  - [Built-in Operators](operators.md#built-in-operators)
 
 ### Instrumentation
 
 - [Instrumentation Module](instrumentation.md) - AST transformation and switching
-    - [Gremlin Dataclass](instrumentation.md#gremlin)
-    - [Source Transformation](instrumentation.md#transformer)
-    - [Import Hooks](instrumentation.md#import-hooks)
+  - [Gremlin Dataclass](instrumentation.md#gremlin)
+  - [Source Transformation](instrumentation.md#transformer)
+  - [Import Hooks](instrumentation.md#import-hooks)
 
 ### Coverage
 
 - [Coverage Module](coverage.md) - Coverage-guided test selection
-    - [CoverageMap](coverage.md#coveragemap)
-    - [TestSelector](coverage.md#testselector)
-    - [PrioritizedSelector](coverage.md#prioritizedselector)
+  - [CoverageMap](coverage.md#coveragemap)
+  - [TestSelector](coverage.md#testselector)
+  - [PrioritizedSelector](coverage.md#prioritizedselector)
 
 ### Cache
 
 - [Cache Module](cache.md) - Incremental analysis caching
-    - [ContentHasher](cache.md#contenthasher)
-    - [ResultStore](cache.md#resultstore)
-    - [IncrementalCache](cache.md#incrementalcache)
+  - [ContentHasher](cache.md#contenthasher)
+  - [ResultStore](cache.md#resultstore)
+  - [IncrementalCache](cache.md#incrementalcache)
 
 ### Parallel Execution
 
 - [Parallel Module](parallel.md) - Worker pools and distribution
-    - [WorkerPool](parallel.md#workerpool)
-    - [PersistentWorkerPool](parallel.md#persistentworkerpool)
-    - [BatchExecutor](parallel.md#batchexecutor)
+  - [WorkerPool](parallel.md#workerpool)
+  - [PersistentWorkerPool](parallel.md#persistentworkerpool)
+  - [BatchExecutor](parallel.md#batchexecutor)
 
 ### Reporting
 
 - [Reporting Module](reporting.md) - Result presentation
-    - [GremlinResult](reporting.md#gremlinresult)
-    - [MutationScore](reporting.md#mutationscore)
-    - [Reporters](reporting.md#reporters)
+  - [GremlinResult](reporting.md#gremlinresult)
+  - [MutationScore](reporting.md#mutationscore)
+  - [Reporters](reporting.md#reporters)
 
 ## Domain Language
 
