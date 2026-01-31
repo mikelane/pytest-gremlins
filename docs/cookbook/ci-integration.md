@@ -64,7 +64,7 @@ jobs:
       - name: Restore mutation cache
         uses: actions/cache@v4
         with:
-          path: .gremlin-cache
+          path: .gremlins_cache
           key: gremlins-${{ runner.os }}-${{ hashFiles('src/**/*.py', 'tests/**/*.py') }}
           restore-keys: |
             gremlins-${{ runner.os }}-
@@ -73,46 +73,15 @@ jobs:
         run: |
           pytest --gremlins \
             --gremlin-report=html \
-            --gremlin-report=json \
-            --gremlin-min-score=80 \
-            --gremlin-incremental
+            --gremlin-cache
 
       - name: Upload mutation report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mutation-report
-          path: |
-            gremlin-report.html
-            gremlin-report.json
+          path: gremlin-report.html
           retention-days: 30
-
-      - name: Comment PR with results
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            const fs = require('fs');
-            const report = JSON.parse(fs.readFileSync('gremlin-report.json', 'utf8'));
-
-            const body = `## Mutation Testing Results
-
-            | Metric | Value |
-            |--------|-------|
-            | Score | ${report.score}% |
-            | Zapped | ${report.killed} |
-            | Survived | ${report.survived} |
-            | Total | ${report.total} |
-
-            ${report.score < 80 ? '> **Warning:** Mutation score is below 80%' : '> Mutation score meets threshold'}
-            `;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
 ```
 
 Add to `pyproject.toml`:
@@ -120,9 +89,6 @@ Add to `pyproject.toml`:
 ```toml
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
-incremental = true
-report = ["console", "html", "json"]
 
 exclude = [
     "**/migrations/*",
@@ -168,7 +134,7 @@ jobs:
 Ensure the cache key includes all relevant files:
 
 ```yaml
-key: gremlins-${{ runner.os }}-${{ hashFiles('src/**/*.py', 'tests/**/*.py', 'pyproject.toml') }}
+key: gremlins-${{ hashFiles('src/**/*.py', 'tests/**/*.py', 'pyproject.toml') }}
 ```
 
 ---
@@ -203,7 +169,6 @@ stages:
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-  GREMLIN_CACHE_DIR: "$CI_PROJECT_DIR/.gremlin-cache"
 
 .python-setup: &python-setup
   image: python:3.12-slim
@@ -215,7 +180,7 @@ cache:
   key: "${CI_COMMIT_REF_SLUG}"
   paths:
     - .cache/pip
-    - .gremlin-cache
+    - .gremlins_cache
 
 # Run unit tests first
 unit-tests:
@@ -238,24 +203,12 @@ mutation-testing:
   script:
     - pytest --gremlins
         --gremlin-report=html
-        --gremlin-report=json
-        --gremlin-min-score=80
-        --gremlin-incremental
+        --gremlin-cache
   artifacts:
     paths:
       - gremlin-report.html
-      - gremlin-report.json
-    reports:
-      dotenv: gremlin-metrics.env
     expire_in: 30 days
     when: always
-  after_script:
-    # Export metrics for GitLab
-    - |
-      if [ -f gremlin-report.json ]; then
-        SCORE=$(python -c "import json; print(json.load(open('gremlin-report.json'))['score'])")
-        echo "MUTATION_SCORE=$SCORE" > gremlin-metrics.env
-      fi
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -267,8 +220,7 @@ mutation-quick:
   script:
     - pytest --gremlins
         --gremlin-operators=comparison,boolean
-        --gremlin-min-score=70
-        --gremlin-incremental
+        --gremlin-cache
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   allow_failure: true
@@ -279,8 +231,6 @@ Add to `pyproject.toml`:
 ```toml
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
-incremental = true
 
 exclude = [
     "**/migrations/*",
@@ -315,7 +265,7 @@ GitLab caches are branch-specific by default. For shared cache:
 cache:
   key: "gremlins-global"
   paths:
-    - .gremlin-cache
+    - .gremlins_cache
   policy: pull-push
 ```
 
@@ -377,7 +327,7 @@ commands:
       - save_cache:
           key: gremlin-v1-{{ checksum "src/**/*.py" }}-{{ checksum "tests/**/*.py" }}
           paths:
-            - .gremlin-cache
+            - .gremlins_cache
 
 jobs:
   test:
@@ -400,8 +350,7 @@ jobs:
           command: |
             pytest --gremlins \
               --gremlin-operators=comparison,boolean \
-              --gremlin-min-score=70 \
-              --gremlin-incremental
+              --gremlin-cache
       - save-gremlin-cache
 
   mutation-full:
@@ -416,18 +365,14 @@ jobs:
           command: |
             # Get list of source files and split across workers
             FILES=$(find src -name "*.py" | circleci tests split)
-            pytest --gremlins $FILES \
+            pytest --gremlins \
+              --gremlin-targets=$FILES \
               --gremlin-report=html \
-              --gremlin-report=json \
-              --gremlin-min-score=80 \
-              --gremlin-incremental
+              --gremlin-cache
       - save-gremlin-cache
       - store_artifacts:
           path: gremlin-report.html
           destination: mutation-report.html
-      - store_artifacts:
-          path: gremlin-report.json
-          destination: mutation-report.json
 
 workflows:
   version: 2
@@ -466,9 +411,6 @@ Add to `pyproject.toml`:
 ```toml
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
-incremental = true
-workers = 4
 
 exclude = [
     "**/migrations/*",
@@ -520,25 +462,20 @@ Apply mutation testing best practices to any CI system.
 ### Key Principles
 
 1. **Cache the mutation results**
-   - pytest-gremlins caches results in `.gremlin-cache/`
+   - pytest-gremlins caches results in `.gremlins_cache/`
    - Key cache by source and test file hashes
    - Restore cache before running, save after
 
-2. **Run incrementally**
-   - Use `--gremlin-incremental` to skip unchanged code
+2. **Use incremental caching**
+   - Use `--gremlin-cache` to skip unchanged code
    - Full runs only on main branch or nightly
 
 3. **Fail fast on PRs**
    - Use `--gremlin-operators=comparison,boolean` for quick feedback
    - Run full suite on main branch
 
-4. **Set appropriate thresholds**
-   - Start with 60-70% and increase over time
-   - Different thresholds for PR (warning) vs main (failure)
-
-5. **Store reports as artifacts**
-   - Always generate HTML reports for debugging
-   - JSON reports for metrics and dashboards
+4. **Store reports as artifacts**
+   - Always generate HTML reports for debugging with `--gremlin-report=html`
 
 ### Recommended Configuration
 
@@ -546,8 +483,6 @@ Apply mutation testing best practices to any CI system.
 # pyproject.toml
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
-incremental = true
 
 # Exclude generated and test code
 exclude = [
@@ -556,22 +491,4 @@ exclude = [
     "**/__pycache__/*",
     "**/conftest.py",
 ]
-
-# Report formats
-report = ["console", "html", "json"]
-```
-
-### Environment Variables
-
-Set these in your CI environment:
-
-```bash
-# Disable color if CI doesn't support it
-GREMLIN_NO_COLOR=1
-
-# Custom cache directory
-GREMLIN_CACHE_DIR=/custom/path/.gremlin-cache
-
-# Verbose output for debugging
-GREMLIN_VERBOSE=1
 ```

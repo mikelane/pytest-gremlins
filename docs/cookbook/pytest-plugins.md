@@ -55,8 +55,6 @@ fail_under = 80
 # Gremlins configuration
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
-incremental = true
 ```
 
 ### Running Both Tools
@@ -207,8 +205,6 @@ addopts = "-ra --strict-markers"
 
 [tool.pytest-gremlins]
 paths = ["src"]
-# Use gremlins' built-in parallelism, not xdist
-workers = 4
 ```
 
 ### Running Tests
@@ -222,7 +218,7 @@ pytest tests/ -n auto  # Uses all CPU cores
 **Mutation testing (don't use -n):**
 
 ```bash
-pytest --gremlins --gremlin-workers=4
+pytest --gremlins --gremlin-parallel --gremlin-workers=4
 ```
 
 **Combined in CI:**
@@ -240,7 +236,7 @@ jobs:
     steps:
       # Mutation testing with its own parallelism
       - name: Run mutation testing
-        run: pytest --gremlins --gremlin-workers=4
+        run: pytest --gremlins --gremlin-parallel --gremlin-workers=4
 ```
 
 ### Verification
@@ -252,7 +248,7 @@ jobs:
 
 2. Mutation testing uses its own workers:
    ```bash
-   pytest --gremlins --gremlin-workers=4
+   pytest --gremlins --gremlin-parallel --gremlin-workers=4
    ```
 
 ### Troubleshooting
@@ -266,7 +262,7 @@ Don't combine them. pytest-gremlins manages its own parallelism:
 pytest --gremlins -n 4
 
 # Correct
-pytest --gremlins --gremlin-workers=4
+pytest --gremlins --gremlin-parallel --gremlin-workers=4
 ```
 
 **Issue: Worker processes crash**
@@ -301,7 +297,6 @@ bdd_features_base_dir = "tests/features"
 
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
 
 # Exclude step definitions from mutation (they're test code)
 exclude = [
@@ -470,7 +465,6 @@ dev = [
 
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
 ```
 
 ### Example Tests with Mocking
@@ -573,7 +567,6 @@ asyncio_mode = "auto"
 
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
 ```
 
 ### Example Async Tests
@@ -681,9 +674,6 @@ fail_under = 80
 
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
-incremental = true
-workers = 4
 
 exclude = [
     "**/test_*",
@@ -729,7 +719,7 @@ jobs:
       - run: pip install -e ".[dev]"
 
       # Mutation testing (no xdist, uses own parallelism)
-      - run: pytest --gremlins --gremlin-workers=4 --gremlin-report=html
+      - run: pytest --gremlins --gremlin-parallel --gremlin-workers=4 --gremlin-report=html
 
       - uses: actions/upload-artifact@v4
         with:

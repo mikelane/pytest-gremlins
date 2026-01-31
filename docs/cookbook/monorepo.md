@@ -64,8 +64,6 @@ members = ["packages/*"]
 
 [tool.pytest-gremlins]
 # Shared settings for all packages
-min_score = 80
-incremental = true
 
 exclude = [
     "**/migrations/*",
@@ -103,9 +101,6 @@ dev = [
 # Package-specific paths
 paths = ["src/core"]
 
-# Override minimum score for critical packages
-min_score = 90
-
 # Package-specific exclusions
 exclude = [
     "src/core/generated/*",
@@ -129,11 +124,6 @@ dev = [
 
 [tool.pytest-gremlins]
 paths = ["src/api"]
-min_score = 85
-
-# API-specific: skip certain operators for endpoint code
-[tool.pytest-gremlins.operators.return]
-skip_mutations = ["none_to_value"]  # API always returns something
 ```
 
 Create `packages/cli/pyproject.toml`:
@@ -153,7 +143,6 @@ dev = [
 
 [tool.pytest-gremlins]
 paths = ["src/cli"]
-min_score = 75  # CLI is less critical
 
 # Skip mutations in argparse setup
 exclude = [
@@ -231,7 +220,7 @@ jobs:
       - name: Restore mutation cache
         uses: actions/cache@v4
         with:
-          path: packages/${{ matrix.package }}/.gremlin-cache
+          path: packages/${{ matrix.package }}/.gremlins_cache
           key: gremlins-${{ matrix.package }}-${{ hashFiles(format('packages/{0}/src/**/*.py', matrix.package)) }}
           restore-keys: |
             gremlins-${{ matrix.package }}-
@@ -241,7 +230,7 @@ jobs:
         run: |
           uv run pytest --gremlins \
             --gremlin-report=html \
-            --gremlin-incremental
+            --gremlin-cache
 
       - name: Upload report
         uses: actions/upload-artifact@v4
@@ -282,7 +271,7 @@ run_mutation() {
     local pkg=$1
     echo "Running mutation testing for $pkg..."
     cd "packages/$pkg"
-    uv run pytest --gremlins --gremlin-incremental
+    uv run pytest --gremlins --gremlin-cache
     cd ../..
 }
 
@@ -363,16 +352,8 @@ If packages share code (e.g., API uses Core), you might want shared cache:
 - name: Restore shared cache
   uses: actions/cache@v4
   with:
-    path: .gremlin-cache
+    path: .gremlins_cache
     key: gremlins-monorepo-${{ hashFiles('packages/*/src/**/*.py') }}
-```
-
-Then configure packages to use the shared cache:
-
-```toml
-# packages/core/pyproject.toml
-[tool.pytest-gremlins]
-cache_dir = "../../.gremlin-cache/core"
 ```
 
 ## Advanced: Dependency-Aware Testing

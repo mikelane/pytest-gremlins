@@ -97,8 +97,6 @@ addopts = "-ra --strict-markers"
 
 [tool.pytest-gremlins]
 paths = ["src/myapi"]
-min_score = 80
-incremental = true
 
 exclude = [
     # Pydantic models are mostly declarative
@@ -113,19 +111,6 @@ exclude = [
     # Cache and generated
     "**/__pycache__/*",
 ]
-
-# Configure operators for async code
-[tool.pytest-gremlins.operators.return]
-# FastAPI endpoints often return Response objects
-enabled = true
-
-[tool.pytest-gremlins.operators.comparison]
-# Important for validation logic
-enabled = true
-
-[tool.pytest-gremlins.operators.boolean]
-# Important for auth and permission checks
-enabled = true
 ```
 
 ### Test Fixtures

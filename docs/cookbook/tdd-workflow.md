@@ -61,8 +61,6 @@ addopts = "-ra --strict-markers -x --tb=short"
 
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 90  # High bar for TDD
-incremental = true
 
 # TDD-friendly operator selection
 operators = [
@@ -71,11 +69,6 @@ operators = [
     "boolean",       # Logic conditions
     "return",        # Return values
 ]
-
-# Quick feedback settings
-[tool.pytest-gremlins.tdd]
-timeout = 30  # Fail fast if taking too long
-fail_fast = true  # Stop on first surviving gremlin
 ```
 
 ### Shell Aliases
@@ -86,8 +79,8 @@ Add to your `.bashrc` or `.zshrc`:
 # TDD workflow aliases
 alias t='pytest -x --tb=short'                    # Quick test run
 alias tw='pytest-watch -- -x --tb=short'          # Watch mode
-alias tm='pytest --gremlins --gremlin-incremental -x'  # Mutate
-alias tdd='pytest -x && pytest --gremlins --gremlin-incremental -x'  # Full cycle
+alias tm='pytest --gremlins --gremlin-cache -x'   # Mutate
+alias tdd='pytest -x && pytest --gremlins --gremlin-cache -x'  # Full cycle
 ```
 
 ## The Workflow
@@ -181,7 +174,7 @@ t
 Now run mutation testing to see if your test would catch bugs:
 
 ```bash
-tm  # or: pytest --gremlins --gremlin-incremental -x
+tm  # or: pytest --gremlins --gremlin-cache -x
 ```
 
 If gremlins survive, your test has gaps:
@@ -375,7 +368,7 @@ tm
 Or use a keyboard shortcut in your IDE to run the full TDD cycle:
 
 ```bash
-tdd  # alias for: pytest -x && pytest --gremlins --gremlin-incremental -x
+tdd  # alias for: pytest -x && pytest --gremlins --gremlin-cache -x
 ```
 
 ## IDE Integration
@@ -398,14 +391,14 @@ Create `.vscode/tasks.json`:
     {
       "label": "TDD: Mutate",
       "type": "shell",
-      "command": "pytest --gremlins --gremlin-incremental -x",
+      "command": "pytest --gremlins --gremlin-cache -x",
       "group": "test",
       "problemMatcher": []
     },
     {
       "label": "TDD: Full Cycle",
       "type": "shell",
-      "command": "pytest -x && pytest --gremlins --gremlin-incremental -x",
+      "command": "pytest -x && pytest --gremlins --gremlin-cache -x",
       "group": "test",
       "problemMatcher": []
     }
@@ -420,7 +413,7 @@ Use `Cmd+Shift+B` (Mac) or `Ctrl+Shift+B` (Windows/Linux) to run tasks.
 Create run configurations:
 
 1. **TDD: Tests** - `pytest -x --tb=short`
-2. **TDD: Mutate** - `pytest --gremlins --gremlin-incremental -x`
+2. **TDD: Mutate** - `pytest --gremlins --gremlin-cache -x`
 3. **TDD: Full** - Compound configuration running both
 
 ## Verification
@@ -443,11 +436,11 @@ Create run configurations:
 
 **Issue: Mutation testing is too slow for TDD**
 
-Use incremental mode and operator subsets:
+Use caching and operator subsets:
 
 ```bash
 # Fast check during development
-pytest --gremlins --gremlin-incremental --gremlin-operators=comparison -x
+pytest --gremlins --gremlin-cache --gremlin-operators=comparison -x
 
 # Full check before committing
 pytest --gremlins
@@ -459,7 +452,7 @@ Focus on one at a time:
 
 ```bash
 # See detailed report
-pytest --gremlins --gremlin-report=console -v
+pytest --gremlins --gremlin-report=html
 
 # Address the most critical (e.g., boundary conditions) first
 ```

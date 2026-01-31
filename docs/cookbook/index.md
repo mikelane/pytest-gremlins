@@ -47,7 +47,6 @@ The cookbook provides complete, ready-to-use configurations for common scenarios
 # pyproject.toml
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
 ```
 
 ### Run Mutation Testing
@@ -62,24 +61,24 @@ pytest --gremlins --gremlin-report=html
 # Quick run (comparison operators only)
 pytest --gremlins --gremlin-operators=comparison
 
-# Fail if score below threshold
-pytest --gremlins --gremlin-min-score=80
+# With incremental caching
+pytest --gremlins --gremlin-cache
 ```
 
 ### Common Command Patterns
 
 ```bash
 # Development: fast feedback on changed code
-pytest --gremlins --gremlin-incremental
+pytest --gremlins --gremlin-cache
 
 # CI: full run with report
-pytest --gremlins --gremlin-report=html --gremlin-min-score=80
+pytest --gremlins --gremlin-report=html
 
 # Debug: single file
-pytest --gremlins src/mymodule.py
+pytest --gremlins --gremlin-targets=src/mymodule.py
 
 # Performance: parallel execution
-pytest --gremlins --gremlin-workers=4
+pytest --gremlins --gremlin-parallel --gremlin-workers=4
 ```
 
 ## Getting Help

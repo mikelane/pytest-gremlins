@@ -95,9 +95,6 @@ paths = [
     "myapp",
 ]
 
-min_score = 75
-incremental = true
-
 # Django-specific exclusions
 exclude = [
     # Never mutate migrations
@@ -115,15 +112,6 @@ exclude = [
     # Cache and generated files
     "**/__pycache__/*",
 ]
-
-# Django-friendly operator configuration
-[tool.pytest-gremlins.operators.return]
-# Django views often return HttpResponse - don't mutate to None
-skip_mutations = ["value_to_none"]
-
-[tool.pytest-gremlins.operators.comparison]
-# Keep all comparison mutations - important for querysets
-enabled = true
 ```
 
 ### Django Test Settings

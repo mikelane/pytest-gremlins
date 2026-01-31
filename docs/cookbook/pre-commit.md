@@ -94,9 +94,8 @@ repos:
         entry: pytest
         args:
           - --gremlins
-          - --gremlin-incremental
+          - --gremlin-cache
           - --gremlin-operators=comparison,boolean  # Fast subset
-          - --gremlin-min-score=60                  # Lower threshold for commits
           - -x
           - --tb=short
         language: system
@@ -117,17 +116,8 @@ Add configuration optimized for pre-commit:
 ```toml
 [tool.pytest-gremlins]
 paths = ["src"]
-min_score = 80
-incremental = true
-
-# Pre-commit runs should be fast
-[tool.pytest-gremlins.precommit]
-# Use fewer operators for speed
+# Use fewer operators for speed during development
 operators = ["comparison", "boolean"]
-# Lower threshold for commits (full check in CI)
-min_score = 60
-# Limit time spent
-timeout = 60  # seconds
 ```
 
 ### Install the Hooks
@@ -190,13 +180,13 @@ SKIP=gremlins-quick git commit -m "feat: quick fix"
 
 3. Observe the mutation testing output
 
-4. If mutations survive, the commit is blocked:
+4. If mutations survive, review the report to understand test gaps:
    ```
-   gremlins (incremental)..............................................Failed
+   gremlins (incremental)..............................................Passed
    - hook id: gremlins-quick
-   - exit code: 1
 
-   Mutation score 45% is below minimum 60%
+   Zapped: 8 gremlins (80%)
+   Survived: 2 gremlins (20%)
    ```
 
 ## Troubleshooting
@@ -210,9 +200,8 @@ Optimize for speed by reducing scope:
   entry: pytest
   args:
     - --gremlins
-    - --gremlin-incremental
+    - --gremlin-cache
     - --gremlin-operators=comparison  # Single operator
-    - --gremlin-timeout=30            # Hard timeout
     - -x
 ```
 
@@ -262,7 +251,7 @@ Pre-commit uses a subset of operators for speed. CI should run the full suite:
 ```yaml
 # .github/workflows/ci.yml
 - name: Full mutation testing
-  run: pytest --gremlins --gremlin-min-score=80  # Full operators, higher threshold
+  run: pytest --gremlins --gremlin-report=html  # Full operators
 ```
 
 ## Advanced: Staged Files Only
@@ -274,7 +263,7 @@ Run mutation testing only on staged Python files:
   hooks:
     - id: gremlins-staged
       name: gremlins (staged files)
-      entry: bash -c 'pytest --gremlins --gremlin-incremental $(git diff --cached --name-only --diff-filter=AM | grep "\.py$" | grep "^src/" | tr "\n" " ")'
+      entry: bash -c 'pytest --gremlins --gremlin-cache --gremlin-targets=$(git diff --cached --name-only --diff-filter=AM | grep "\.py$" | grep "^src/" | tr "\n" ",")'
       language: system
       pass_filenames: false
       stages: [pre-commit]
@@ -293,9 +282,8 @@ repos:
         entry: pytest
         args:
           - --gremlins
-          - --gremlin-incremental
+          - --gremlin-cache
           - --gremlin-operators=comparison
-          - --gremlin-min-score=50
           - -x
         language: system
         pass_filenames: false
@@ -308,9 +296,8 @@ repos:
         entry: pytest
         args:
           - --gremlins
-          - --gremlin-incremental
-          - --gremlin-min-score=70
-          - --gremlin-report=console
+          - --gremlin-cache
+          - --gremlin-report=html
         language: system
         pass_filenames: false
         stages: [pre-push]
@@ -347,8 +334,7 @@ jobs:
       - name: Full mutation testing
         run: |
           pytest --gremlins \
-            --gremlin-report=html \
-            --gremlin-min-score=80  # Higher than pre-commit threshold
+            --gremlin-report=html
 ```
 
 This catches any mutations that slipped through the faster pre-commit check.
