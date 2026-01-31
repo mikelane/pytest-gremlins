@@ -91,11 +91,11 @@ jobs:
         uses: lycheeverse/lychee-action@v2
         with:
           args: >-
-            --root-dir site
+            --root-dir ${{ github.workspace }}/site
             --offline
             --no-progress
-            --exclude-path site/assets
-            site/**/*.html
+            --exclude-path ${{ github.workspace }}/site/assets
+            ${{ github.workspace }}/site/**/*.html
           fail: true
 
   spell-check:
