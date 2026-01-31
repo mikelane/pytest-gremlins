@@ -8,7 +8,7 @@ This guide provides a fair, factual comparison of pytest-gremlins with other Pyt
 ## Quick Comparison
 
 | Feature | pytest-gremlins | mutmut | cosmic-ray | mutatest |
-|---------|-----------------|--------|------------|----------|
+| ------- | --------------- | ------ | ---------- | -------- |
 | **Speed Architecture** | Mutation switching | File modification | File modification | Cache modification |
 | **pytest Integration** | Native plugin | External wrapper | External tool | External wrapper |
 | **Parallelization** | Built-in (pytest-xdist) | Built-in (v3+) | Plugin-based distributors | Built-in (Python 3.8+) |
@@ -57,7 +57,8 @@ pytest-gremlins workflow:
 5. Repeat (no I/O, no reloads)
 ```
 
-The mutation switching approach eliminates file I/O and module reload overhead, which can be significant for projects with slow imports (NumPy, Pandas, Django).
+The mutation switching approach eliminates file I/O and module reload overhead, which can be
+significant for projects with slow imports (NumPy, Pandas, Django).
 
 #### When to Choose mutmut
 
@@ -85,7 +86,8 @@ The mutation switching approach eliminates file I/O and module reload overhead, 
 
 #### Architecture Comparison
 
-cosmic-ray uses a session-based approach where mutation testing state is stored in a database. This enables distributed execution but adds operational complexity.
+cosmic-ray uses a session-based approach where mutation testing state is stored in a database.
+This enables distributed execution but adds operational complexity.
 
 ```text
 cosmic-ray workflow:
@@ -138,13 +140,15 @@ pytest-gremlins workflow:
 ### Speed Optimizations
 
 | Optimization | pytest-gremlins | mutmut | cosmic-ray | mutatest |
-|--------------|-----------------|--------|------------|----------|
+| ------------ | --------------- | ------ | ---------- | -------- |
 | Mutation switching | Yes | No | No | No |
 | Coverage-guided test selection | Yes | Optional | Yes | Yes |
 | Incremental analysis | Hash-based | Yes | Session-based | Limited |
 | Parallel execution | pytest-xdist | Built-in | Distributors | Multiprocessing |
 
-**Mutation switching** is the key architectural difference. Traditional tools modify files, reload modules, and run tests for each mutation. pytest-gremlins instruments code once and toggles mutations via environment variables, eliminating:
+**Mutation switching** is the key architectural difference. Traditional tools modify files, reload
+modules, and run tests for each mutation. pytest-gremlins instruments code once and toggles
+mutations via environment variables, eliminating:
 
 - File I/O operations per mutation
 - Module reload time (significant for heavy imports)
@@ -153,7 +157,7 @@ pytest-gremlins workflow:
 ### Operator Coverage
 
 | Operator Type | pytest-gremlins | mutmut | cosmic-ray | mutatest |
-|---------------|-----------------|--------|------------|----------|
+| ------------- | --------------- | ------ | ---------- | -------- |
 | Comparison (`<`, `>`, `==`) | Yes | Yes | Yes | Yes |
 | Boundary (`x >= 18` to `x >= 19`) | Yes | Partial | Yes | Yes |
 | Boolean (`and`/`or`, `True`/`False`) | Yes | Yes | Yes | Yes |
@@ -166,7 +170,7 @@ pytest-gremlins workflow:
 ### pytest Integration
 
 | Integration Aspect | pytest-gremlins | mutmut | cosmic-ray | mutatest |
-|--------------------|-----------------|--------|------------|----------|
+| ------------------ | --------------- | ------ | ---------- | -------- |
 | Native plugin | Yes | No | No | No |
 | Respects fixtures | Yes | Limited | No | No |
 | Respects markers | Yes | Limited | No | No |
@@ -196,7 +200,7 @@ pytest-gremlins workflow:
     ```toml
     # cosmic-ray.toml
     [cosmic-ray]
-    module-path = "src/myproject"
+    module-path = "src/example"
     test-command = "pytest"
     ```
 
@@ -209,7 +213,7 @@ pytest-gremlins workflow:
 ### Reporting
 
 | Report Type | pytest-gremlins | mutmut | cosmic-ray | mutatest |
-|-------------|-----------------|--------|------------|----------|
+| ----------- | --------------- | ------ | ---------- | -------- |
 | Terminal summary | Yes | Yes | Yes | Yes |
 | HTML report | Yes | Yes | Yes | Yes |
 | JSON export | Yes | Yes | Yes | Limited |
@@ -223,6 +227,7 @@ pytest-gremlins workflow:
 If you're switching from mutmut to pytest-gremlins:
 
 1. **Install pytest-gremlins**:
+
    ```bash
    pip uninstall mutmut
    pip install pytest-gremlins
@@ -231,12 +236,13 @@ If you're switching from mutmut to pytest-gremlins:
 2. **Update configuration**:
 
    | mutmut | pytest-gremlins |
-   |--------|-----------------|
+   | ------ | --------------- |
    | `paths_to_mutate` | `paths` |
    | `tests_dir` | N/A (uses pytest collection) |
    | `runner` | N/A (native pytest) |
 
 3. **Run mutations**:
+
    ```bash
    # Before (mutmut)
    mutmut run
@@ -258,12 +264,14 @@ If you're switching from mutmut to pytest-gremlins:
 If you're switching from cosmic-ray to pytest-gremlins:
 
 1. **Install pytest-gremlins**:
+
    ```bash
    pip uninstall cosmic-ray
    pip install pytest-gremlins
    ```
 
 2. **Simplify workflow**:
+
    ```bash
    # Before (cosmic-ray)
    cosmic-ray init config.toml session.sqlite
@@ -277,7 +285,7 @@ If you're switching from cosmic-ray to pytest-gremlins:
 3. **Configuration mapping**:
 
    | cosmic-ray | pytest-gremlins |
-   |------------|-----------------|
+   | ---------- | --------------- |
    | `module-path` | `paths` |
    | `test-command` | N/A (native pytest) |
    | `distributor` | `--gremlin-workers` or pytest-xdist |
@@ -290,12 +298,13 @@ If you're switching from cosmic-ray to pytest-gremlins:
 ## Benchmarks
 
 !!! info "No Fabricated Numbers"
-    We do not publish benchmark numbers we cannot reproduce. Real performance depends heavily on your codebase, test suite, and hardware.
+    We do not publish benchmark numbers we cannot reproduce. Real performance depends heavily on
+    your codebase, test suite, and hardware.
 
 **Expected performance characteristics** based on architecture:
 
 | Scenario | pytest-gremlins Advantage |
-|----------|---------------------------|
+| -------- | ------------------------- |
 | Heavy imports (NumPy, Django) | Significant (no reimport per mutation) |
 | Many small mutations | Significant (no file I/O per mutation) |
 | Repeat runs on unchanged code | Significant (hash-based caching) |
@@ -315,13 +324,14 @@ time pytest --gremlins
 ## Summary
 
 | Choose | When |
-|--------|------|
+| ------ | ---- |
 | **pytest-gremlins** | You want speed, native pytest integration, and cross-platform support |
 | **mutmut** | You want a mature tool with interactive browsing (Unix/WSL only) |
 | **cosmic-ray** | You need distributed execution across multiple machines |
 | **mutatest** | You need random sampling or are on Python 3.7+ |
 
-Each tool has valid use cases. pytest-gremlins focuses on making mutation testing fast enough for everyday TDD workflows rather than overnight CI jobs.
+Each tool has valid use cases. pytest-gremlins focuses on making mutation testing fast enough for
+everyday TDD workflows rather than overnight CI jobs.
 
 ## External Resources
 
