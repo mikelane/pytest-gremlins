@@ -8,13 +8,13 @@ This guide documents common errors you may encounter when using pytest-gremlins,
 
 **Symptom:**
 
-```
+```text
 ERROR: Package 'pytest-gremlins' requires a different Python: 3.10.x not in '>=3.11'
 ```
 
 Or when using pip:
 
-```
+```text
 ERROR: Ignored the following versions that require a different python version: ...
 ```
 
@@ -23,11 +23,13 @@ ERROR: Ignored the following versions that require a different python version: .
 **Solution:**
 
 1. Check your Python version:
+
    ```bash
    python --version
    ```
 
 2. Install Python 3.11 or later:
+
    ```bash
    # macOS with Homebrew
    brew install python@3.11
@@ -41,6 +43,7 @@ ERROR: Ignored the following versions that require a different python version: .
    ```
 
 3. Create a virtual environment with the correct Python:
+
    ```bash
    python3.11 -m venv .venv
    source .venv/bin/activate
@@ -55,7 +58,7 @@ ERROR: Ignored the following versions that require a different python version: .
 
 **Symptom:**
 
-```
+```text
 ERROR: pytest-gremlins requires pytest>=7.0.0, but you have pytest 6.x.x
 ```
 
@@ -66,11 +69,13 @@ Or pip resolver errors mentioning pytest version conflicts.
 **Solution:**
 
 1. Upgrade pytest:
+
    ```bash
    pip install --upgrade pytest
    ```
 
 2. If you have version constraints in your `pyproject.toml` or `requirements.txt`, update them:
+
    ```toml
    [project]
    dependencies = [
@@ -88,20 +93,23 @@ Or pip resolver errors mentioning pytest version conflicts.
 
 **Symptom:**
 
-```
+```text
 ERROR: pytest-gremlins requires coverage>=7.12.0, but you have coverage 6.x.x
 ```
 
-**Cause:** Your project has an older version of coverage.py that doesn't support the features pytest-gremlins needs (like dynamic contexts for test selection).
+**Cause:** Your project has an older version of coverage.py that doesn't support the features
+pytest-gremlins needs (like dynamic contexts for test selection).
 
 **Solution:**
 
 1. Upgrade coverage:
+
    ```bash
    pip install --upgrade coverage
    ```
 
 2. If using pytest-cov, ensure it's also up to date:
+
    ```bash
    pip install --upgrade pytest-cov
    ```
@@ -116,13 +124,14 @@ ERROR: pytest-gremlins requires coverage>=7.12.0, but you have coverage 6.x.x
 
 **Symptom:**
 
-```
+```text
 UserWarning: Unknown operator 'comparision' requested, ignoring
 ```
 
 (Note: no gremlins found because the operator name was misspelled)
 
 **Cause:** You specified an operator name in configuration that doesn't exist. Common causes:
+
 - Typo in operator name
 - Using a deprecated operator name
 - Missing a custom operator registration
@@ -130,6 +139,7 @@ UserWarning: Unknown operator 'comparision' requested, ignoring
 **Solution:**
 
 1. Check the correct operator names. Available operators are:
+
    - `comparison` (not "comparision")
    - `arithmetic`
    - `boolean`
@@ -137,12 +147,14 @@ UserWarning: Unknown operator 'comparision' requested, ignoring
    - `return`
 
 2. Fix your configuration:
+
    ```toml
    [tool.pytest-gremlins]
    operators = ["comparison", "arithmetic", "boolean"]
    ```
 
 3. Or on the command line:
+
    ```bash
    pytest --gremlins --gremlin-operators=comparison,arithmetic
    ```
@@ -157,7 +169,7 @@ UserWarning: Unknown operator 'comparision' requested, ignoring
 
 No gremlins found, even though your code has mutable expressions.
 
-```
+```text
 ================== pytest-gremlins mutation report ==================
 
 No gremlins found in source code.
@@ -170,17 +182,20 @@ No gremlins found in source code.
 **Solution:**
 
 1. Verify the paths in your configuration:
+
    ```toml
    [tool.pytest-gremlins]
    paths = ["src"]  # Adjust to your project structure
    ```
 
 2. Check that the paths exist:
+
    ```bash
    ls -la src/
    ```
 
 3. For non-standard project layouts, specify the exact path:
+
    ```toml
    [tool.pytest-gremlins]
    paths = ["mypackage"]  # For flat layout
@@ -189,6 +204,7 @@ No gremlins found in source code.
    ```
 
 4. Use the CLI to override temporarily:
+
    ```bash
    pytest --gremlins --gremlin-targets=mypackage
    ```
@@ -201,7 +217,7 @@ No gremlins found in source code.
 
 **Symptom:**
 
-```
+```text
 tomllib.TOMLDecodeError: Expected '=' after a key in a key/value pair (at line X, column Y)
 ```
 
@@ -210,6 +226,7 @@ tomllib.TOMLDecodeError: Expected '=' after a key in a key/value pair (at line X
 **Solution:**
 
 1. Validate your TOML syntax. Common mistakes:
+
    ```toml
    # WRONG - missing quotes around string
    [tool.pytest-gremlins]
@@ -232,13 +249,14 @@ tomllib.TOMLDecodeError: Expected '=' after a key in a key/value pair (at line X
 
 **Symptom:**
 
-```
+```text
 SyntaxError: invalid syntax
 ```
 
 Or the mutation testing silently skips certain files.
 
 **Cause:** pytest-gremlins couldn't parse a Python file. This typically happens when:
+
 - The file contains syntax errors
 - The file uses Python features newer than your Python version
 - The file is not valid UTF-8
@@ -246,11 +264,13 @@ Or the mutation testing silently skips certain files.
 **Solution:**
 
 1. Run your tests without mutation testing first to catch syntax errors:
+
    ```bash
    pytest
    ```
 
 2. Check that all files can be parsed:
+
    ```bash
    python -m py_compile src/yourmodule.py
    ```
@@ -265,17 +285,19 @@ Or the mutation testing silently skips certain files.
 
 **Symptom:**
 
-```
+```text
 TypeError: Expected ast.Module, got <class 'X'>
 ```
 
 **Cause:** Internal error during AST transformation. This is rare and typically indicates:
+
 - An edge case in the code structure
 - A bug in pytest-gremlins (please report it!)
 
 **Solution:**
 
 1. Try excluding the problematic file temporarily:
+
    ```toml
    [tool.pytest-gremlins]
    exclude = ["**/problematic_file.py"]
@@ -292,25 +314,29 @@ TypeError: Expected ast.Module, got <class 'X'>
 
 **Symptom:**
 
-```
+```text
 WARNING: Cache database corrupted at .gremlins_cache/results.db, recreating
 ```
 
 **Cause:** The SQLite cache database was corrupted. This can happen due to:
+
 - Process termination during a write
 - File system issues
 - Concurrent access from multiple processes
 
 **Solution:**
 
-This warning is informational - pytest-gremlins automatically recreates the cache. No action required.
+This warning is informational - pytest-gremlins automatically recreates the cache. No action
+required.
 
 To manually clear the cache:
+
 ```bash
 pytest --gremlins --gremlin-clear-cache
 ```
 
 Or delete the cache directory:
+
 ```bash
 rm -rf .gremlins_cache/
 ```
@@ -325,13 +351,15 @@ rm -rf .gremlins_cache/
 
 Gremlin results show `TIMEOUT` status, or you see:
 
-```
+```text
 Gremlin X/Y: g001 - TIMEOUT
 ```
 
-**Cause:** A test took longer than the configured timeout (default: 30 seconds) when running with a mutation active.
+**Cause:** A test took longer than the configured timeout (default: 30 seconds) when running with a
+mutation active.
 
 Common causes:
+
 - Mutation caused an infinite loop
 - Mutation caused extremely slow computation
 - Test is inherently slow
@@ -339,7 +367,9 @@ Common causes:
 
 **Solution:**
 
-1. The default timeout is 30 seconds (currently not configurable). Identify slow tests and optimize them:
+1. The default timeout is 30 seconds (currently not configurable). Identify slow tests and optimize
+   them:
+
    ```bash
    pytest --durations=10
    ```
@@ -354,33 +384,38 @@ Common causes:
 
 **Symptom:**
 
-```
+```text
 MemoryError
 ```
 
 Or the system becomes unresponsive during mutation testing.
 
-**Cause:** pytest-gremlins instruments all source code at once, which can consume significant memory for large codebases.
+**Cause:** pytest-gremlins instruments all source code at once, which can consume significant memory
+for large codebases.
 
 **Solution:**
 
 1. Run mutation testing on specific paths:
+
    ```bash
    pytest --gremlins --gremlin-targets=src/core
    ```
 
 2. Reduce the number of parallel workers:
+
    ```bash
    pytest --gremlins --gremlin-workers=2
    ```
 
 3. Run mutation testing in batches by module:
+
    ```bash
    pytest --gremlins --gremlin-targets=src/auth
    pytest --gremlins --gremlin-targets=src/api
    ```
 
 4. Exclude non-critical code:
+
    ```toml
    [tool.pytest-gremlins]
    exclude = ["**/migrations/*", "**/generated/*"]
@@ -394,13 +429,13 @@ Or the system becomes unresponsive during mutation testing.
 
 **Symptom:**
 
-```
+```text
 RuntimeError: WorkerPool is not active. Use as context manager.
 ```
 
 Or:
 
-```
+```text
 RuntimeError: PersistentWorkerPool is not running. Use as context manager.
 ```
 
@@ -414,6 +449,7 @@ This indicates a bug in pytest-gremlins. Please:
    [https://github.com/mikelane/pytest-gremlins/issues](https://github.com/mikelane/pytest-gremlins/issues)
 
 2. As a workaround, disable parallel execution:
+
    ```bash
    pytest --gremlins  # without --gremlin-parallel
    ```
@@ -424,19 +460,19 @@ This indicates a bug in pytest-gremlins. Please:
 
 **Symptom:**
 
-```
+```text
 ValueError: Invalid start method: 'forkk'. Valid methods are: ['auto', 'fork', 'forkserver', 'spawn']
 ```
 
 Or:
 
-```
+```text
 ValueError: max_workers must be positive, got -1
 ```
 
 Or:
 
-```
+```text
 ValueError: timeout must be positive, got 0
 ```
 
@@ -470,17 +506,20 @@ Coverage numbers are incorrect or missing when running mutation testing.
 **Solution:**
 
 1. Disable pytest-cov when running mutation testing:
+
    ```bash
    pytest --gremlins --no-cov
    ```
 
 2. Or configure them to not run together:
+
    ```toml
    # pytest.ini or pyproject.toml [tool.pytest.ini_options]
    addopts = --cov=src  # only for regular test runs
    ```
 
 3. Run them separately:
+
    ```bash
    # Regular tests with coverage
    pytest --cov=src
@@ -504,11 +543,13 @@ Mutation testing hangs or produces inconsistent results when using pytest-xdist.
 **Solution:**
 
 1. Disable xdist when running mutation testing:
+
    ```bash
    pytest --gremlins -p no:xdist
    ```
 
 2. Use pytest-gremlins' built-in parallelization instead:
+
    ```bash
    pytest --gremlins --gremlin-parallel --gremlin-workers=4
    ```
@@ -521,13 +562,14 @@ Mutation testing hangs or produces inconsistent results when using pytest-xdist.
 
 **Symptom:**
 
-```
+```text
 pytest-gremlins: 0 tests cover this gremlin, marking as survived
 ```
 
 For gremlins that should be covered by tests.
 
 **Cause:** Coverage collection failed to map tests to source lines. Common causes:
+
 - Source files are outside the coverage measurement scope
 - Tests import modules before coverage starts
 - Dynamic imports that bypass coverage
@@ -535,11 +577,13 @@ For gremlins that should be covered by tests.
 **Solution:**
 
 1. Verify coverage is working normally:
+
    ```bash
    pytest --cov=src --cov-report=term-missing
    ```
 
 2. Ensure source paths match what pytest-gremlins expects:
+
    ```toml
    [tool.pytest-gremlins]
    paths = ["src/mypackage"]  # Match your coverage source
@@ -560,13 +604,16 @@ IDE shows errors or warnings about instrumented code, or debugging doesn't work 
 **Solution:**
 
 1. **For debugging:** Run without mutation testing first:
+
    ```bash
    pytest tests/test_specific.py
    ```
 
-2. **For IDE analysis:** The original source is unchanged; IDE analysis should work normally on your source files.
+2. **For IDE analysis:** The original source is unchanged; IDE analysis should work normally on
+   your source files.
 
-3. **For test discovery:** pytest-gremlins doesn't affect test discovery. If tests aren't discovered, check your IDE's pytest configuration.
+3. **For test discovery:** pytest-gremlins doesn't affect test discovery. If tests aren't
+   discovered, check your IDE's pytest configuration.
 
 ---
 
@@ -575,6 +622,7 @@ IDE shows errors or warnings about instrumented code, or debugging doesn't work 
 **Symptom:**
 
 Mutation testing works locally but fails in CI with:
+
 - Permission errors
 - Missing dependencies
 - Timeout errors
@@ -584,6 +632,7 @@ Mutation testing works locally but fails in CI with:
 **Solution:**
 
 1. **Permission errors:** Ensure the CI user can write to the cache directory:
+
    ```yaml
    # GitHub Actions
    - name: Run mutation testing
@@ -592,14 +641,17 @@ Mutation testing works locally but fails in CI with:
        pytest --gremlins
    ```
 
-2. **Timeout errors:** The timeout is currently fixed at 30 seconds. If tests are timing out, optimize them or exclude slow tests from mutation testing.
+2. **Timeout errors:** The timeout is currently fixed at 30 seconds. If tests are timing out,
+   optimize them or exclude slow tests from mutation testing.
 
 3. **Memory limits:** Reduce parallelism:
+
    ```bash
    pytest --gremlins --gremlin-workers=2
    ```
 
 4. **Cache not persisting between runs:** Store the cache as an artifact:
+
    ```yaml
    # GitHub Actions
    - uses: actions/cache@v3
@@ -615,22 +667,28 @@ Mutation testing works locally but fails in CI with:
 ### Debugging Tips
 
 1. **Enable verbose output:**
+
    ```bash
    pytest --gremlins -v
    ```
 
 2. **Run on a single file first:**
+
    ```bash
    pytest --gremlins --gremlin-targets=src/mymodule.py tests/test_mymodule.py
    ```
 
 3. **Generate an HTML report for detailed results:**
+
    ```bash
    pytest --gremlins --gremlin-report=html
    ```
-   Then open `gremlin-report.html` in your browser for a detailed breakdown of all gremlins and their status.
+
+   Then open `gremlin-report.html` in your browser for a detailed breakdown of all gremlins and
+   their status.
 
 4. **Disable caching to rule out cache issues:**
+
    ```bash
    pytest --gremlins --gremlin-clear-cache
    ```
@@ -643,6 +701,7 @@ If you encounter a bug not covered here:
    [https://github.com/mikelane/pytest-gremlins/issues](https://github.com/mikelane/pytest-gremlins/issues)
 
 2. **Create a new issue** with:
+
    - pytest-gremlins version (`pip show pytest-gremlins`)
    - Python version (`python --version`)
    - Operating system
@@ -651,14 +710,17 @@ If you encounter a bug not covered here:
    - Configuration (pyproject.toml snippet)
 
 3. **Include your environment:**
+
    ```bash
    pip freeze > requirements.txt
    ```
 
 ### Community Resources
 
-- **GitHub Discussions:** [https://github.com/mikelane/pytest-gremlins/discussions](https://github.com/mikelane/pytest-gremlins/discussions)
-- **Issue Tracker:** [https://github.com/mikelane/pytest-gremlins/issues](https://github.com/mikelane/pytest-gremlins/issues)
+- **GitHub Discussions:**
+  [https://github.com/mikelane/pytest-gremlins/discussions](https://github.com/mikelane/pytest-gremlins/discussions)
+- **Issue Tracker:**
+  [https://github.com/mikelane/pytest-gremlins/issues](https://github.com/mikelane/pytest-gremlins/issues)
 
 ### Related Documentation
 
