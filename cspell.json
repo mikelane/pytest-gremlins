@@ -99,7 +99,8 @@
     "sessionfinish",
     "pyenv",
     "tomllib",
-    "hashFiles"
+    "hashFiles",
+    "yourmodule"
   ],
   "flagWords": [],
   "dictionaries": [
