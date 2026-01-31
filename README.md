@@ -79,6 +79,7 @@ Benchmarked against [mutmut](https://github.com/boxed/mutmut) on a synthetic pro
 | `--gremlins --gremlin-parallel --gremlin-cache` | 1.08s  | 14.90s    | **13.82x faster** |
 
 **Key findings:**
+
 - Sequential mode is slower due to subprocess isolation overhead; detailed profiling shows
   [1.7x slower on small targets](docs/performance/profiling-report.md)
 - Parallel mode delivers **3.73x speedup** over mutmut
@@ -119,7 +120,7 @@ uv add pytest-gremlins
 poetry add pytest-gremlins
 ```
 
-**Requires Python 3.11+**
+Requires Python 3.11+
 
 ---
 
