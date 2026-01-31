@@ -10,6 +10,7 @@
   "MD024": {
     "siblings_only": true
   },
+  "MD026": false,
   "MD033": {
     "allowed_elements": [
       "br",
@@ -20,10 +21,10 @@
       "sub"
     ]
   },
+  "MD036": false,
   "MD041": false,
   "MD046": {
     "style": "fenced"
   },
-  "MD050": false,
   "MD060": false
 }

@@ -4,7 +4,9 @@ This guide will help you get pytest-gremlins up and running with your project in
 
 ## What is Mutation Testing?
 
-Mutation testing measures test suite quality by injecting small bugs (mutations) into your code and checking if your tests catch them. If a mutation survives (tests still pass), you have a gap in your test coverage.
+Mutation testing measures test suite quality by injecting small bugs (mutations) into your code
+and checking if your tests catch them. If a mutation survives (tests still pass), you have a gap
+in your test coverage.
 
 pytest-gremlins calls these mutations "gremlins" - and your job is to zap them with good tests.
 
@@ -175,9 +177,12 @@ Run with --gremlin-report=html for detailed report.
 
 In this example, two gremlins survived:
 
-1. **`> -> >=` on line 7** - Changing `n > 0` to `n >= 0` in `is_positive()` was not caught. This means we are not testing the boundary case `n = 0`.
+1. **`> -> >=` on line 7** - Changing `n > 0` to `n >= 0` in `is_positive()` was not caught.
+   This means we are not testing the boundary case `n = 0`.
 
-2. **`== -> !=` on line 12** - Changing `b == 0` to `b != 0` in `divide()` was not caught. This is because our test only checks that the exception is raised, not that normal division works correctly in all cases.
+2. **`== -> !=` on line 12** - Changing `b == 0` to `b != 0` in `divide()` was not caught.
+   This is because our test only checks that the exception is raised, not that normal division
+   works correctly in all cases.
 
 ### Step 6: Fix the Test Gaps
 
@@ -243,7 +248,8 @@ pytest-gremlins follows this workflow for speed:
 
 ### How long does mutation testing take?
 
-Mutation testing is computationally intensive because it runs your test suite multiple times. pytest-gremlins uses several optimizations:
+Mutation testing is computationally intensive because it runs your test suite multiple times.
+pytest-gremlins uses several optimizations:
 
 - **Coverage-guided selection**: Only runs tests that cover the mutated code
 - **Early exit**: Stops testing a gremlin as soon as one test fails
@@ -263,7 +269,8 @@ A good target depends on your project:
 | 80-90% | Good coverage for most projects |
 | > 90% | Excellent coverage (may have diminishing returns) |
 
-Some mutations are "equivalent" - they produce identical behavior to the original code. A 100% score is often impossible and not worth pursuing.
+Some mutations are "equivalent" - they produce identical behavior to the original code. A 100%
+score is often impossible and not worth pursuing.
 
 ### Which files should I mutate?
 

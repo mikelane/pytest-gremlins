@@ -1,6 +1,7 @@
 # Configuration
 
-pytest-gremlins can be configured via command-line options or `pyproject.toml`. This page documents all configuration options with examples.
+pytest-gremlins can be configured via command-line options or `pyproject.toml`. This page
+documents all configuration options with examples.
 
 ## Configuration Precedence
 

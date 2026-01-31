@@ -1,6 +1,7 @@
 # Reports
 
-pytest-gremlins generates reports in multiple formats to help you understand mutation testing results and take action on surviving gremlins.
+pytest-gremlins generates reports in multiple formats to help you understand mutation testing
+results and take action on surviving gremlins.
 
 ## Report Formats Overview
 
