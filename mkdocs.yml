@@ -211,7 +211,14 @@ nav:
       - Reports: guide/reports.md
 
   - API Reference:
-      - api/index.md
+      - Overview: api/index.md
+      - Plugin: api/plugin.md
+      - Operators: api/operators.md
+      - Instrumentation: api/instrumentation.md
+      - Coverage: api/coverage.md
+      - Cache: api/cache.md
+      - Parallel: api/parallel.md
+      - Reporting: api/reporting.md
 
   - Architecture:
       - North Star: design/NORTH_STAR.md
