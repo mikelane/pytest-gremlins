@@ -1,6 +1,7 @@
 # Operators
 
-Operators define what types of mutations pytest-gremlins can create. Each operator targets specific code patterns and generates gremlin variants.
+Operators define what types of mutations pytest-gremlins can create. Each operator targets specific
+code patterns and generates gremlin variants.
 
 ## Built-in Operators
 
@@ -8,16 +9,17 @@ Operators define what types of mutations pytest-gremlins can create. Each operat
 
 Mutates comparison operators.
 
-| Original | Mutations |
-|----------|-----------|
-| `<` | `<=`, `>` |
-| `<=` | `<`, `>` |
-| `>` | `>=`, `<` |
-| `>=` | `>`, `<` |
-| `==` | `!=` |
-| `!=` | `==` |
+| Original | Mutations  |
+| -------- | ---------- |
+| `<`      | `<=`, `>`  |
+| `<=`     | `<`, `>`   |
+| `>`      | `>=`, `<`  |
+| `>=`     | `>`, `<`   |
+| `==`     | `!=`       |
+| `!=`     | `==`       |
 
 **Example:**
+
 ```python
 # Original
 if age >= 18:
@@ -31,12 +33,13 @@ if age < 18:   # gremlin_002
 
 Shifts boundary values in comparisons.
 
-| Original | Mutations |
-|----------|-----------|
+| Original  | Mutations            |
+| --------- | -------------------- |
 | `x >= 18` | `x >= 19`, `x >= 17` |
-| `x > 0` | `x > 1`, `x > -1` |
+| `x > 0`   | `x > 1`, `x > -1`    |
 
 **Example:**
+
 ```python
 # Original
 if score > 100:
@@ -51,14 +54,15 @@ if score > 99:   # gremlin_004
 Mutates boolean operators and values.
 
 | Original | Mutations |
-|----------|-----------|
-| `and` | `or` |
-| `or` | `and` |
-| `not x` | `x` |
-| `True` | `False` |
-| `False` | `True` |
+| -------- | --------- |
+| `and`    | `or`      |
+| `or`     | `and`     |
+| `not x`  | `x`       |
+| `True`   | `False`   |
+| `False`  | `True`    |
 
 **Example:**
+
 ```python
 # Original
 if is_valid and is_active:
@@ -72,16 +76,17 @@ if is_valid or is_active:  # gremlin_005
 Mutates arithmetic operators.
 
 | Original | Mutations |
-|----------|-----------|
-| `+` | `-` |
-| `-` | `+` |
-| `*` | `/` |
-| `/` | `*` |
-| `//` | `/` |
-| `%` | `//` |
-| `**` | `*` |
+| -------- | --------- |
+| `+`      | `-`       |
+| `-`      | `+`       |
+| `*`      | `/`       |
+| `/`      | `*`       |
+| `//`     | `/`       |
+| `%`      | `//`      |
+| `**`     | `*`       |
 
 **Example:**
+
 ```python
 # Original
 total = price * quantity
@@ -94,15 +99,16 @@ total = price / quantity  # gremlin_006
 
 Mutates return statements.
 
-| Original | Mutations |
-|----------|-----------|
-| `return x` | `return None` |
-| `return True` | `return False` |
-| `return False` | `return True` |
-| `return []` | `return [None]` |
-| `return x` | `return -x` (numbers) |
+| Original       | Mutations             |
+| -------------- | --------------------- |
+| `return x`     | `return None`         |
+| `return True`  | `return False`        |
+| `return False` | `return True`         |
+| `return []`    | `return [None]`       |
+| `return x`     | `return -x` (numbers) |
 
 **Example:**
+
 ```python
 # Original
 def is_valid():

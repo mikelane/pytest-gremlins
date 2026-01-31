@@ -4,9 +4,11 @@
 
 ## Overview
 
-Gremlin operators define **what mutations** pytest-gremlins can inject into code. Each operator identifies specific AST patterns and generates mutated variants.
+Gremlin operators define **what mutations** pytest-gremlins can inject into code. Each operator
+identifies specific AST patterns and generates mutated variants.
 
 The architecture prioritizes:
+
 1. **Extensibility** - Trivial to add new operators later
 2. **Configurability** - Users enable/disable operators via config
 3. **Third-party support** - External packages can register operators
@@ -212,6 +214,7 @@ class BoundaryOperator(GremlinOperator):
 ```
 
 Targets patterns like:
+
 ```python
 if x >= 18:      # → if x >= 19:, if x >= 17:
 if len(s) > 0:   # → if len(s) > 1:, if len(s) > -1:
@@ -478,6 +481,7 @@ suppress_patterns = [
 ### V1 Scope
 
 Ship these 5 operators first:
+
 1. `comparison` - Comparison operators
 2. `boundary` - Boundary value shifts
 3. `boolean` - Boolean logic

@@ -18,7 +18,8 @@ python benchmarks/run_benchmarks.py --project synthetic --runs 3
 
 From [Issue #39](https://github.com/mikelane/pytest-gremlins/issues/39):
 
-> The entire value proposition of pytest-gremlins is **speed**. If we can't demonstrate significant speed improvements over mutmut in fair, reproducible benchmarks, we have not achieved our MLP goals.
+> The entire value proposition of pytest-gremlins is **speed**. If we can't demonstrate significant
+> speed improvements over mutmut in fair, reproducible benchmarks, we have not achieved our MLP goals.
 
 ### Fairness Principles
 
@@ -43,6 +44,7 @@ From [Issue #39](https://github.com/mikelane/pytest-gremlins/issues/39):
 ### Synthetic (Default)
 
 A small but representative Python project with:
+
 - ~150 lines of source code across 3 modules
 - ~50 test cases covering most code paths
 - Arithmetic, comparison, and boolean operations
@@ -52,29 +54,29 @@ Good for quick benchmarks and CI validation.
 
 ### Real Projects (TODO)
 
-| Project | Size | Status |
-|---------|------|--------|
-| attrs | ~2k LOC | Planned |
-| httpx | ~10k LOC | Planned |
-| rich | ~15k LOC | Planned |
+| Project | Size     | Status  |
+| ------- | -------- | ------- |
+| attrs   | ~2k LOC  | Planned |
+| httpx   | ~10k LOC | Planned |
+| rich    | ~15k LOC | Planned |
 
 ## Configurations Tested
 
 ### mutmut
 
-| Config | Description |
-|--------|-------------|
-| `default` | Standard mutmut run |
+| Config      | Description                             |
+| ----------- | --------------------------------------- |
+| `default`   | Standard mutmut run                     |
 | `no-backup` | Skip backup file creation (--no-backup) |
 
 ### pytest-gremlins
 
-| Config | Description | Expected Speedup |
-|--------|-------------|------------------|
-| `sequential` | No parallelization or caching | ~2-5x (mutation switching) |
-| `parallel` | Multiple workers | ~N x cores additional |
-| `with-cache` | Incremental analysis | ~100x on repeat runs |
-| `full` | All optimizations | Maximum speedup |
+| Config       | Description                   | Expected Speedup            |
+| ------------ | ----------------------------- | --------------------------- |
+| `sequential` | No parallelization or caching | ~2-5x (mutation switching)  |
+| `parallel`   | Multiple workers              | ~N x cores additional       |
+| `with-cache` | Incremental analysis          | ~100x on repeat runs        |
+| `full`       | All optimizations             | Maximum speedup             |
 
 ## Running Benchmarks
 
@@ -107,12 +109,12 @@ Results are saved in two formats:
 
 ## Metrics Collected
 
-| Metric | Description |
-|--------|-------------|
-| Wall time | Total execution time |
-| Mutations total | Number of mutations generated |
-| Mutations killed | Mutations caught by tests |
-| Mean/Stddev | Statistical measures across runs |
+| Metric           | Description                        |
+| ---------------- | ---------------------------------- |
+| Wall time        | Total execution time               |
+| Mutations total  | Number of mutations generated      |
+| Mutations killed | Mutations caught by tests          |
+| Mean/Stddev      | Statistical measures across runs   |
 
 ## Interpreting Results
 
@@ -166,12 +168,12 @@ Benchmarks run automatically in CI to prevent performance regressions.
 
 ### When Benchmarks Run
 
-| Event | Runs? | Purpose |
-|-------|-------|---------|
-| Push to main | Yes | Track trends, post results as commit comment |
-| Weekly (Sunday midnight) | Yes | Catch gradual regressions |
-| Manual workflow_dispatch | Yes | Investigation or baseline update |
-| Pull requests | No | Too slow, would block PRs |
+| Event                    | Runs? | Purpose                                      |
+| ------------------------ | ----- | -------------------------------------------- |
+| Push to main             | Yes   | Track trends, post results as commit comment |
+| Weekly (Sunday midnight) | Yes   | Catch gradual regressions                    |
+| Manual workflow_dispatch | Yes   | Investigation or baseline update             |
+| Pull requests            | No    | Too slow, would block PRs                    |
 
 ### Regression Detection
 
@@ -199,6 +201,7 @@ The baseline file (`baseline.json`) contains reference times from a known-good s
 ```
 
 To update the baseline after achieving performance improvements:
+
 1. Go to Actions > Benchmarks workflow
 2. Click "Run workflow"
 3. Check "Update baseline with current results"
@@ -209,6 +212,7 @@ The workflow will commit the new baseline automatically.
 ### Regression Threshold
 
 The default threshold is 10%, meaning:
+
 - A config is flagged as regressed if it's >10% slower than baseline
 - Improvements (>10% faster) are noted but don't cause failure
 - Exact threshold changes should be discussed and documented

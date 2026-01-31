@@ -27,11 +27,11 @@ First stable release of pytest-gremlins with complete mutation testing capabilit
 
 Benchmarked against mutmut (Python 3.12, Docker):
 
-| Mode | vs mutmut |
-|------|-----------|
-| Sequential | 0.84x (16% slower, more operators) |
-| Parallel | **3.73x faster** |
-| Full (parallel + cache) | **13.82x faster** |
+| Mode                    | vs mutmut                           |
+| ----------------------- | ----------------------------------- |
+| Sequential              | 0.84x (16% slower, more operators)  |
+| Parallel                | **3.73x faster**                    |
+| Full (parallel + cache) | **13.82x faster**                   |
 
 ### Documentation
 

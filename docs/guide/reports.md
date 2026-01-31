@@ -6,7 +6,7 @@ pytest-gremlins can generate reports in multiple formats to help you understand 
 
 The default console report shows a summary and top surviving gremlins:
 
-```
+```text
 ================== pytest-gremlins mutation report ==================
 
 Zapped: 142 gremlins (89%)

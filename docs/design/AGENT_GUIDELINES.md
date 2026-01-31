@@ -2,7 +2,8 @@
 
 > "Discipline is the bridge between goals and accomplishment."
 
-This document defines the guardrails, processes, and standards that all agents (and humans) must follow when developing pytest-gremlins.
+This document defines the guardrails, processes, and standards that all agents (and humans) must
+follow when developing pytest-gremlins.
 
 ---
 
@@ -38,28 +39,33 @@ This document defines the guardrails, processes, and standards that all agents (
 TDD enforcement is **ULTRA strict**. These are not guidelines—they are laws:
 
 ### Law 1: Failing Test First
+>
 > You may not write any production code unless it is to make a failing test pass.
 
-Before touching `src/`, there must be a failing test in `tests/`. No "I'll add tests later." No "this is just a small change." No exceptions.
+Before touching `src/`, there must be a failing test in `tests/`. No "I'll add tests later."
+No "this is just a small change." No exceptions.
 
 ### Law 2: Minimal Test Code
+>
 > You may only write as much test code as required to make a test fail (and build/compile failures count as test failures).
 
 Don't write a complete test suite upfront. Write ONE assertion that fails. Make it pass. Write the next assertion. Red-green-red-green.
 
 ### Law 3: Minimal Production Code
+>
 > You may only write as much production code as required to make a failing test pass.
 
 Don't gold-plate. Don't add "while I'm here" features. Write the minimum code to go from red to green.
 
 ### Law 4: Refactor
+>
 > Engage in pragmatic refactoring once tests are passing.
 
 Green means you can refactor. Improve structure, extract methods, rename things. But only when green. And stay green.
 
 ### The TDD Cycle
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
 │    ┌─────────┐     ┌─────────┐     ┌─────────────┐         │
@@ -135,7 +141,7 @@ Feature: Mutation Switching
 
 ### File Organization
 
-```
+```text
 features/
 ├── mutation_switching.feature
 ├── coverage_guidance.feature
@@ -211,7 +217,7 @@ git worktree remove ../pytest-gremlins-feature-xyz
 
 ### Branch Naming
 
-```
+```text
 feature/short-description    # New features
 fix/short-description        # Bug fixes
 docs/short-description       # Documentation only
@@ -221,7 +227,7 @@ chore/short-description      # Maintenance tasks
 
 ### Commit Messages (Conventional Commits)
 
-```
+```text
 type(scope): description
 
 [optional body]
@@ -232,7 +238,8 @@ type(scope): description
 **Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`
 
 **Examples:**
-```
+
+```text
 feat(operators): add comparison operator
 
 Implements the comparison gremlin operator that mutates
@@ -241,7 +248,7 @@ Implements the comparison gremlin operator that mutates
 Closes #42
 ```
 
-```
+```text
 fix(instrumentation): handle async functions correctly
 
 Async functions were losing their coroutine status after
@@ -283,7 +290,7 @@ git worktree remove ../pytest-gremlins-{branch-name}
 
 ### Project Structure
 
-```
+```text
 pytest-gremlins/
 ├── src/
 │   └── pytest_gremlins/
@@ -466,15 +473,15 @@ repos:
 
 We dogfood [pytest-test-categories](https://github.com/mikelane/pytest-test-categories) from day one:
 
-| Category | Characteristics | Timeout | When to Run |
-|----------|-----------------|---------|-------------|
-| **Small** | Pure functions, no I/O, no network, mocked dependencies | < 100ms | Always, every commit |
-| **Medium** | Database, filesystem, multiple components | < 10s | PR checks, pre-merge |
-| **Large** | End-to-end, real external services, full system | < 60s | Nightly, release |
+| Category   | Characteristics                                         | Timeout | When to Run          |
+| ---------- | ------------------------------------------------------- | ------- | -------------------- |
+| **Small**  | Pure functions, no I/O, no network, mocked dependencies | < 100ms | Always, every commit |
+| **Medium** | Database, filesystem, multiple components               | < 10s   | PR checks, pre-merge |
+| **Large**  | End-to-end, real external services, full system         | < 60s   | Nightly, release     |
 
 ### Test File Organization
 
-```
+```text
 tests/
 ├── conftest.py              # Shared fixtures
 ├── small/
@@ -587,6 +594,7 @@ uv run tox
 ### Documentation Is Code
 
 Documentation has the same lifecycle as code:
+
 - Lives in version control
 - Reviewed in PRs
 - Tested in CI (doctests, link checking)
@@ -605,6 +613,7 @@ Documentation has the same lifecycle as code:
 ### Docstrings
 
 All public APIs must have docstrings with:
+
 - One-line summary
 - Extended description (if needed)
 - Args with types and descriptions
@@ -643,6 +652,7 @@ def mutate(self, node: ast.Compare) -> list[ast.Compare]:
 ### Doctests
 
 **Doctests are mandatory for all public API examples.** They serve dual purpose:
+
 1. Living documentation that's always accurate
 2. Additional test coverage
 
@@ -808,7 +818,7 @@ SemVer with pre-release identifiers:
 
 For **minor and major versions**:
 
-```
+```text
 1. Feature complete on main
 2. Create RC tag: v0.2.0-rc.1
 3. Publish to Test PyPI
@@ -934,6 +944,7 @@ v1.0.0 (Minimum Loveable Product) requires:
 ### Agent Suggestions
 
 Agents may **suggest** changes to:
+
 - Architecture
 - Roadmap priorities
 - New features not in backlog
