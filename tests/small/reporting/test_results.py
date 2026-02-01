@@ -10,6 +10,7 @@ from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
 
 
+@pytest.mark.small
 class TestGremlinResultStatus:
     """Tests for GremlinResultStatus enum."""
 
@@ -39,6 +40,7 @@ def sample_gremlin():
     )
 
 
+@pytest.mark.small
 class TestGremlinResultCreation:
     """Tests for GremlinResult dataclass creation and attributes."""
 
@@ -95,6 +97,7 @@ class TestGremlinResultCreation:
             result.status = GremlinResultStatus.SURVIVED  # pyright: ignore[reportAttributeAccessIssue]
 
 
+@pytest.mark.small
 class TestGremlinResultProperties:
     """Tests for computed properties on GremlinResult."""
 
