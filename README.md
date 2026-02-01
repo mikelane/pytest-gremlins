@@ -184,6 +184,10 @@ Contributions welcome! See our [Contributing Guide](CONTRIBUTING.md).
 This project uses strict TDD discipline with BDD/Gherkin scenarios. All contributions must include
 tests written *before* implementation.
 
+> **Note on code coverage:** We target 69% coverage due to inherent limitations in measuring pytest
+> plugins (import timing, subprocess execution). See
+> [CONTRIBUTING.md](CONTRIBUTING.md#code-coverage) for details.
+
 ---
 
 ## License

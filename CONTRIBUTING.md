@@ -151,6 +151,47 @@ uv run pytest tests/small/pytest_gremlins/test_operators.py
 uv run pytest tests/small/pytest_gremlins/test_operators.py::test_comparison_mutation
 ```
 
+### Code Coverage
+
+We target **69% code coverage**, which may seem low for a TDD project. This is intentional due to
+inherent limitations of measuring coverage for pytest plugins.
+
+#### Why pytest plugins have coverage gaps
+
+When pytest loads a plugin, it imports the entire module tree *before* coverage.py starts
+instrumenting code. This creates unavoidable measurement gaps:
+
+1. **Import-time code isn't measured** - Module-level imports, constants, and function definitions
+   execute during plugin loading, before coverage starts
+2. **Multiprocessing code is difficult to measure** - Worker pool code runs in subprocesses where
+   coverage collection is complex
+3. **Integration tests run in subprocesses** - pytester (our integration test fixture) runs pytest
+   in isolated subprocesses
+
+#### What this means in practice
+
+- Files like `switcher.py`, `results.py`, and `score.py` show 0% coverage even though they have
+  comprehensive test suites
+- Function *bodies* are measured when tests call them, but function *definitions* aren't
+- The 69% threshold reflects what's actually measurable, not test quality
+
+#### Our coverage configuration
+
+We exclude from measurement files that can't be properly measured:
+
+- `__init__.py` files (re-exports only)
+- `protocol.py` (type definitions)
+- `gremlin.py` (pure dataclass)
+- Files affected by import timing (`switcher.py`, `results.py`, `score.py`)
+
+See `pyproject.toml` `[tool.coverage]` for full configuration.
+
+#### For contributors
+
+- **Don't skip tests** to improve coverage numbers
+- **Do write tests** for all new code (TDD is still mandatory)
+- If coverage drops significantly, investigate whether it's a measurement issue or missing tests
+
 ### Code Quality Checks
 
 ```bash
