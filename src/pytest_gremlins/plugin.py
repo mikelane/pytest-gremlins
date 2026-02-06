@@ -1270,6 +1270,12 @@ def _select_tests_for_gremlin_prioritized(
     the chance of catching the mutation quickly. Tests covering fewer lines
     are considered more specific and run first.
 
+    When coverage-guided selection finds no covering tests, falls back to
+    running all tests. This handles module-level code (class attribute defaults,
+    module constants) that executes at import time before any test function
+    runs. Coverage.py records these lines under the empty context, which isn't
+    associated with any specific test.
+
     Args:
         gremlin: The gremlin to select tests for.
         gremlin_session: The current gremlin session.
@@ -1278,10 +1284,13 @@ def _select_tests_for_gremlin_prioritized(
         List of test names ordered by specificity (most specific first).
     """
     if gremlin_session.prioritized_selector is None:
-        # Fall back to unordered selection if prioritization is not available
         return list(gremlin_session.test_node_ids.keys())
 
-    return gremlin_session.prioritized_selector.select_tests_prioritized(gremlin)
+    selected = gremlin_session.prioritized_selector.select_tests_prioritized(gremlin)
+    if not selected:
+        return list(gremlin_session.test_node_ids.keys())
+
+    return selected
 
 
 def _report_gremlin_progress(
