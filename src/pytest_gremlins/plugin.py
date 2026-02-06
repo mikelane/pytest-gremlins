@@ -26,7 +26,7 @@ from pytest_gremlins.coverage import CoverageCollector, PrioritizedSelector, Tes
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
 from pytest_gremlins.parallel.aggregator import ResultAggregator
-from pytest_gremlins.parallel.pool import WorkerPool, WorkerResult
+from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.html import HtmlReporter
 from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
@@ -763,7 +763,7 @@ def _decode_numbits(numbits: bytes) -> list[int]:
     ]
 
 
-def _run_batch_mutation_testing(  # noqa: C901, PLR0912, PLR0915
+def _run_batch_mutation_testing(  # noqa: C901
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -827,23 +827,7 @@ def _run_batch_mutation_testing(  # noqa: C901, PLR0912, PLR0915
         f'({len(uncached_gremlins)} gremlins, {num_batches} batches of {batch_size})'
     )
 
-    # Build test commands for each gremlin based on coverage
-    # For batch mode, we need to handle gremlins with no covering tests
-    gremlins_to_test: list[str] = []
-    no_coverage_results: list[GremlinResult] = []
-
-    for gremlin in uncached_gremlins:
-        selected_tests = gremlin_tests[gremlin.gremlin_id]
-        if not selected_tests:
-            # No tests cover this gremlin - it survives
-            no_coverage_results.append(
-                GremlinResult(
-                    gremlin=gremlin,
-                    status=GremlinResultStatus.SURVIVED,
-                )
-            )
-        else:
-            gremlins_to_test.append(gremlin.gremlin_id)
+    gremlins_to_test = [g.gremlin_id for g in uncached_gremlins]
 
     # For batch execution, we need a unified test command that will work for all gremlins
     # This means running all tests that cover ANY of the gremlins in the batch
@@ -879,7 +863,7 @@ def _run_batch_mutation_testing(  # noqa: C901, PLR0912, PLR0915
     )
 
     # Convert WorkerResults to GremlinResults
-    results: list[GremlinResult] = list(cached_results) + no_coverage_results
+    results: list[GremlinResult] = list(cached_results)
 
     for worker_result in worker_results:
         gremlin_id = worker_result.gremlin_id
@@ -902,7 +886,7 @@ def _run_batch_mutation_testing(  # noqa: C901, PLR0912, PLR0915
     return results
 
 
-def _run_parallel_mutation_testing(  # noqa: C901, PLR0912, PLR0915
+def _run_parallel_mutation_testing(  # noqa: C901
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -971,14 +955,6 @@ def _run_parallel_mutation_testing(  # noqa: C901, PLR0912, PLR0915
         futures = {}
         for gremlin in uncached_gremlins:
             selected_tests = gremlin_tests[gremlin.gremlin_id]
-            if not selected_tests:
-                # No tests cover this gremlin - it survives
-                worker_result = WorkerResult(
-                    gremlin_id=gremlin.gremlin_id,
-                    status=GremlinResultStatus.SURVIVED,
-                )
-                aggregator.add_result(worker_result)
-                continue
 
             test_command = _build_filtered_test_command(
                 base_test_command,
@@ -1071,23 +1047,17 @@ def _run_mutation_testing(
 
         _report_gremlin_progress(i, len(gremlin_session.gremlins), gremlin, test_count, total)
 
-        if test_count == 0:
-            result = GremlinResult(
-                gremlin=gremlin,
-                status=GremlinResultStatus.SURVIVED,
-            )
-        else:
-            test_command = _build_filtered_test_command(
-                base_test_command,
-                selected_tests,
-                gremlin_session,
-            )
-            result = _test_gremlin(
-                gremlin,
-                test_command,
-                rootdir,
-                gremlin_session.instrumented_dir,
-            )
+        test_command = _build_filtered_test_command(
+            base_test_command,
+            selected_tests,
+            gremlin_session,
+        )
+        result = _test_gremlin(
+            gremlin,
+            test_command,
+            rootdir,
+            gremlin_session.instrumented_dir,
+        )
 
         # Cache the result for next run
         _cache_gremlin_result(gremlin, selected_tests, result, gremlin_session)
@@ -1241,25 +1211,6 @@ def _report_gremlin_cache_miss(
     print(f'{prefix} - cache miss')
 
 
-def _select_tests_for_gremlin(
-    gremlin: Gremlin,
-    gremlin_session: GremlinSession,
-) -> set[str]:
-    """Select tests that cover the gremlin's location.
-
-    Args:
-        gremlin: The gremlin to select tests for.
-        gremlin_session: The current gremlin session.
-
-    Returns:
-        Set of test names that cover the gremlin's location.
-    """
-    if gremlin_session.test_selector is None:
-        return set(gremlin_session.test_node_ids.keys())
-
-    return gremlin_session.test_selector.select_tests(gremlin)
-
-
 def _select_tests_for_gremlin_prioritized(
     gremlin: Gremlin,
     gremlin_session: GremlinSession,
@@ -1270,6 +1221,12 @@ def _select_tests_for_gremlin_prioritized(
     the chance of catching the mutation quickly. Tests covering fewer lines
     are considered more specific and run first.
 
+    When coverage-guided selection finds no covering tests, falls back to
+    running all tests. This handles module-level code (class attribute defaults,
+    module constants) that executes at import time before any test function
+    runs. Coverage.py records these lines under the empty context, which isn't
+    associated with any specific test.
+
     Args:
         gremlin: The gremlin to select tests for.
         gremlin_session: The current gremlin session.
@@ -1278,10 +1235,13 @@ def _select_tests_for_gremlin_prioritized(
         List of test names ordered by specificity (most specific first).
     """
     if gremlin_session.prioritized_selector is None:
-        # Fall back to unordered selection if prioritization is not available
         return list(gremlin_session.test_node_ids.keys())
 
-    return gremlin_session.prioritized_selector.select_tests_prioritized(gremlin)
+    selected = gremlin_session.prioritized_selector.select_tests_prioritized(gremlin)
+    if not selected:
+        return list(gremlin_session.test_node_ids.keys())
+
+    return selected
 
 
 def _report_gremlin_progress(
@@ -1301,10 +1261,7 @@ def _report_gremlin_progress(
         total_tests: Total number of tests in the suite.
     """
     prefix = f'Gremlin {index}/{total_gremlins}: {gremlin.gremlin_id}'
-    if test_count == 0:
-        print(f'{prefix} - 0 tests cover this gremlin, marking as survived')
-    else:
-        print(f'{prefix} - running {test_count}/{total_tests} tests')
+    print(f'{prefix} - running {test_count}/{total_tests} tests')
 
 
 def _build_filtered_test_command(
