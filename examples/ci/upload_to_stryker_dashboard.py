@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload mutation testing results to Stryker Dashboard.
+r"""Upload mutation testing results to Stryker Dashboard.
 
 This script converts pytest-gremlins JSON output to Stryker format
 and uploads it to the Stryker Dashboard for badge display and
@@ -10,9 +10,9 @@ Usage:
     export STRYKER_DASHBOARD_API_KEY=your_key
 
     # Upload to dashboard
-    python upload_to_stryker_dashboard.py \\
-        --input gremlin-report.json \\
-        --project github.com/owner/repo \\
+    python upload_to_stryker_dashboard.py \
+        --input gremlin-report.json \
+        --project github.com/owner/repo \
         --version main
 
 Requirements:
@@ -27,8 +27,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
+import sys
+
 
 try:
     import requests
@@ -36,10 +37,9 @@ except ImportError:
     print('Error: requests package required. Install with: pip install requests')
     sys.exit(1)
 
-from pytest_gremlins.reporting.stryker_export import StrykerExporter
-
 
 DASHBOARD_URL = 'https://dashboard.stryker-mutator.io/api/reports'
+HTTP_OK = 200
 
 
 def convert_to_stryker_format(input_path: Path) -> str:
@@ -54,7 +54,7 @@ def convert_to_stryker_format(input_path: Path) -> str:
     Returns:
         JSON string in Stryker score-only format.
     """
-    with open(input_path) as f:
+    with input_path.open() as f:
         data = json.load(f)
 
     # Extract mutation score
@@ -94,12 +94,12 @@ def upload_to_dashboard(
 
     response = requests.put(url, data=report_json, headers=headers, timeout=30)
 
-    if response.status_code == 200:
+    if response.status_code == HTTP_OK:
         print(f'Successfully uploaded to {url}')
         return True
-    else:
-        print(f'Upload failed: {response.status_code} - {response.text}')
-        return False
+
+    print(f'Upload failed: {response.status_code} - {response.text}')
+    return False
 
 
 def main() -> int:
