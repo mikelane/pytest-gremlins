@@ -277,7 +277,17 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     gremlin_session.test_files = list(set(test_files))
 
     gremlin_session.total_tests = len(session.items)
-    gremlin_session.test_node_ids = {item.name: item.nodeid for item in session.items}
+
+    # Normalize node IDs for subprocess execution.
+    # In some contexts (e.g. pytester) node IDs can include absolute paths, and
+    # some plugins (e.g. pytest-test-categories) add display suffixes like
+    # "[SMALL]" which are not valid when passed back to pytest.
+    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    node_ids = [item.nodeid for item in session.items]
+    normalized_node_ids = _make_node_ids_relative(node_ids, rootdir)
+    gremlin_session.test_node_ids = {
+        item.name: node_id for item, node_id in zip(session.items, normalized_node_ids)
+    }
 
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
@@ -1371,7 +1381,16 @@ def _test_gremlin(
             check=False,
         )
 
-        if result.returncode != 0:
+        # pytest uses specific exit codes. Only exit code 1 means tests ran
+        # and failed (i.e. the mutation was caught). Other non-zero exit codes
+        # indicate errors (collection/import/internal) and should not be counted
+        # as zapped.
+        if result.returncode == 0:
+            return GremlinResult(
+                gremlin=gremlin,
+                status=GremlinResultStatus.SURVIVED,
+            )
+        if result.returncode == 1:
             return GremlinResult(
                 gremlin=gremlin,
                 status=GremlinResultStatus.ZAPPED,
@@ -1379,7 +1398,7 @@ def _test_gremlin(
             )
         return GremlinResult(
             gremlin=gremlin,
-            status=GremlinResultStatus.SURVIVED,
+            status=GremlinResultStatus.ERROR,
         )
     except subprocess.TimeoutExpired:  # pragma: no cover
         return GremlinResult(
