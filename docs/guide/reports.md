@@ -814,6 +814,7 @@ jobs:
 ```
 
 **Status values:**
+
 - `Killed` - Test caught the mutation (gremlin zapped)
 - `Survived` - Mutation not detected (gremlin survived)
 - `Timeout` - Test timed out
