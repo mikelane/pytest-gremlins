@@ -135,7 +135,9 @@ def is_adult(age):
         switching_expr = build_switching_expression(original_compare, gremlins)
         ast.fix_missing_locations(switching_expr)
 
-        exec_globals = {'age': 18, '__gremlin_active__': 'g001'}
+        # Use the actual gremlin ID from the first gremlin (IDs are now file-prefixed)
+        first_gremlin_id = gremlins[0].gremlin_id
+        exec_globals = {'age': 18, '__gremlin_active__': first_gremlin_id}
         # NOTE: eval is used intentionally here to test AST-generated code
         # This is a test for mutation testing infrastructure, not arbitrary user input
         result = eval(compile(ast.Expression(switching_expr), '<test>', 'eval'), exec_globals)  # noqa: S307
