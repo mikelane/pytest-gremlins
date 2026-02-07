@@ -183,6 +183,11 @@ force-wrap-aliases = true
 "docs/**/*.py" = [
     "D",       # Docs config doesn't need docstrings
 ]
+"examples/**/*.py" = [
+    "ANN101",  # No self annotation required in examples (consistency with existing code)
+    "S101",    # assert is fine in example code
+    "D",       # No docstrings required in examples (they have module docs)
+]
 
 # =============================================================================
 # Pyright
@@ -309,4 +314,3 @@ tag_format = "v$version"
 update_changelog_on_bump = true
 changelog_file = "CHANGELOG.md"
 changelog_incremental = true
-
