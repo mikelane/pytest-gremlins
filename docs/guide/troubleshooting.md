@@ -586,7 +586,11 @@ This is expected behavior, not a bug. The test suite is comprehensive:
 - The 69% coverage target reflects what's measurable, not test quality
 - Function *bodies* are measured when tests call them; only function *definitions* appear uncovered
 
-For contributors: see the [Code Coverage section in CONTRIBUTING.md](https://github.com/mikelane/pytest-gremlins/blob/main/CONTRIBUTING.md#code-coverage) for details on our coverage configuration.
+For contributors: see the
+[Code Coverage section in CONTRIBUTING.md][coverage-docs]
+for details on our coverage configuration.
+
+[coverage-docs]: https://github.com/mikelane/pytest-gremlins/blob/main/CONTRIBUTING.md#code-coverage
 
 **Related:** [Contributing Guide](https://github.com/mikelane/pytest-gremlins/blob/main/CONTRIBUTING.md)
 
