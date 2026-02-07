@@ -132,3 +132,45 @@ sys.exit(1 if gremlin == 'g002' else 0)
         assert results[0].status == GremlinResultStatus.SURVIVED
         assert results[1].gremlin_id == 'g002'
         assert results[1].status == GremlinResultStatus.ZAPPED
+
+    def test_execute_with_empty_gremlin_ids_returns_empty_list(self, tmp_path: Path) -> None:
+        """Execute returns empty list when no gremlins to test."""
+        executor = BatchExecutor(batch_size=5, max_workers=1)
+
+        results = executor.execute(
+            gremlin_ids=[],
+            test_command=['python', '-c', 'pass'],
+            rootdir=str(tmp_path),
+            instrumented_dir=None,
+            env_vars={},
+        )
+
+        assert results == []
+
+    def test_execute_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
+        """Execute sets PYTEST_GREMLINS_SOURCES_FILE when instrumented_dir is provided."""
+        script = tmp_path / 'test_script.py'
+        script.write_text("""
+import os
+import sys
+# Check that the sources file env var is set
+sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE', '')
+if 'instrumented/sources.json' not in sources_file:
+    print(f"SOURCES_FILE not set correctly: {sources_file}")
+    sys.exit(1)
+sys.exit(0)
+""")
+
+        executor = BatchExecutor(batch_size=5, max_workers=1)
+
+        results = executor.execute(
+            gremlin_ids=['g001'],
+            test_command=['python', str(script)],
+            rootdir=str(tmp_path),
+            instrumented_dir=str(tmp_path / 'instrumented'),
+            env_vars={},
+        )
+
+        # Test passes if sources file was set correctly
+        assert len(results) == 1
+        assert results[0].status == GremlinResultStatus.SURVIVED

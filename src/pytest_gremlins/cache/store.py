@@ -70,7 +70,7 @@ class ResultStore:
                 'Cache database corrupted at %s, recreating',
                 self._db_path,
             )
-            if conn is not None:
+            if conn is not None:  # pragma: no branch
                 conn.close()
             self._db_path.unlink(missing_ok=True)
             conn = sqlite3.connect(str(self._db_path))

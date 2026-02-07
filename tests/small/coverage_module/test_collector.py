@@ -69,6 +69,41 @@ class TestCoverageCollectorFromCoveragePy:
             'src/utils.py': [5, 6],
         }
 
+    def test_extract_from_coverage_data_handles_none_lines(self):
+        collector = CoverageCollector()
+
+        # Mimic coverage.py's CoverageData structure where a file has no lines
+        mock_coverage_data = MagicMock()
+        mock_coverage_data.measured_files.return_value = ['src/auth.py', 'src/empty.py']
+        mock_coverage_data.lines.side_effect = lambda f: {
+            'src/auth.py': [10, 11],
+            'src/empty.py': None,  # No lines recorded
+        }[f]
+
+        result = collector.extract_lines_from_coverage_data(mock_coverage_data)
+
+        assert result == {
+            'src/auth.py': [10, 11],
+            # src/empty.py is excluded because lines() returned None
+        }
+
+    def test_extract_from_coverage_data_handles_empty_lines(self):
+        collector = CoverageCollector()
+
+        mock_coverage_data = MagicMock()
+        mock_coverage_data.measured_files.return_value = ['src/auth.py', 'src/empty.py']
+        mock_coverage_data.lines.side_effect = lambda f: {
+            'src/auth.py': [10, 11],
+            'src/empty.py': [],  # Empty list of lines
+        }[f]
+
+        result = collector.extract_lines_from_coverage_data(mock_coverage_data)
+
+        assert result == {
+            'src/auth.py': [10, 11],
+            # src/empty.py is excluded because lines() returned empty list
+        }
+
 
 class TestCoverageCollectorTestTracking:
     """Test tracking which tests have been recorded."""

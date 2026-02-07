@@ -176,3 +176,25 @@ class TestPrioritizedSelectorStats:
         assert stats['most_specific_test'] == 'test_specific'
         assert 'specificity_range' in stats
         assert stats['specificity_range'] == (1, 10)  # min, max lines covered
+
+    def test_stats_for_uncovered_gremlin_has_none_values(self):
+        cm = CoverageMap()
+        cm.add('src/auth.py', 42, 'test_something')  # Different file
+
+        selector = PrioritizedSelector(cm)
+        gremlin = Gremlin(
+            gremlin_id='g999',
+            file_path='src/unknown.py',
+            line_number=1,
+            original_node=ast.parse('x', mode='eval').body,
+            mutated_node=ast.parse('y', mode='eval').body,
+            operator_name='test',
+            description='test',
+        )
+
+        tests, stats = selector.select_tests_with_stats(gremlin)
+
+        assert tests == []
+        assert stats['selected_count'] == 0
+        assert stats['most_specific_test'] is None
+        assert stats['specificity_range'] == (0, 0)

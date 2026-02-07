@@ -129,6 +129,17 @@ class TestArithmeticOperatorMutate:
 
         assert mutations == []
 
+    def test_returns_empty_list_for_binop_with_unsupported_operator(self):
+        operator = ArithmeticOperator()
+        # BitAnd (&) is a BinOp but not an arithmetic operator we mutate
+        node = ast.parse('x & y', mode='eval').body
+        assert isinstance(node, ast.BinOp)
+        assert isinstance(node.op, ast.BitAnd)
+
+        mutations = operator.mutate(node)
+
+        assert mutations == []
+
 
 class TestArithmeticOperatorSymbols:
     """Test the operator symbol mapping."""

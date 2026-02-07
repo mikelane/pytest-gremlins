@@ -63,6 +63,26 @@ class TestBoundaryOperatorCanMutate:
 
         assert operator.can_mutate(node) is False
 
+    def test_returns_true_for_integer_constant_on_left_side(self):
+        operator = BoundaryOperator()
+        node = ast.parse('18 <= x', mode='eval').body
+
+        assert operator.can_mutate(node) is True
+
+    def test_returns_false_for_boolean_true_on_left_side(self):
+        operator = BoundaryOperator()
+        # True is technically an int subclass but should not be mutated
+        node = ast.parse('True < x', mode='eval').body
+
+        assert operator.can_mutate(node) is False
+
+    def test_returns_false_for_boolean_false_in_comparators(self):
+        operator = BoundaryOperator()
+        # False is technically an int subclass but should not be mutated
+        node = ast.parse('x < False', mode='eval').body
+
+        assert operator.can_mutate(node) is False
+
 
 class TestBoundaryOperatorMutate:
     """Test the mutate method."""
@@ -141,3 +161,22 @@ class TestBoundaryOperatorMutate:
             values.append(left.value)
         assert 17 in values
         assert 19 in values
+
+    def test_mutates_chained_comparison_with_multiple_integer_constants(self):
+        operator = BoundaryOperator()
+        node = ast.parse('0 < x < 10', mode='eval').body
+
+        mutations = operator.mutate(node)
+
+        # Should have 4 mutations: 0->-1, 0->1, 10->9, 10->11
+        assert len(mutations) == 4
+
+    def test_mutate_chained_comparison_with_non_integer_comparator(self):
+        operator = BoundaryOperator()
+        # 10 < x < y - only left side integer constant
+        node = ast.parse('10 < x < y', mode='eval').body
+
+        mutations = operator.mutate(node)
+
+        # Only mutations for the left side (10): 10->9, 10->11
+        assert len(mutations) == 2

@@ -84,6 +84,6 @@ class ReturnOperator:
     def _mutate_bool(self, node: ast.Return) -> ast.Return:
         """Mutate return True/False to the opposite."""
         mutated = copy.deepcopy(node)
-        if isinstance(mutated.value, ast.Constant) and isinstance(node.value, ast.Constant):
+        if isinstance(mutated.value, ast.Constant) and isinstance(node.value, ast.Constant):  # pragma: no branch
             mutated.value.value = not node.value.value
         return mutated

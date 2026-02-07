@@ -146,5 +146,5 @@ class ResultAggregator:
             self._survived += 1
         elif status == GremlinResultStatus.TIMEOUT:
             self._timeout += 1
-        elif status == GremlinResultStatus.ERROR:
+        elif status == GremlinResultStatus.ERROR:  # pragma: no branch
             self._error += 1

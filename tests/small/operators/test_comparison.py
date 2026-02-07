@@ -144,6 +144,26 @@ class TestComparisonOperatorMutate:
 
         assert len(mutations) == 4
 
+    def test_mutate_skips_unsupported_operators_in_chain(self):
+        operator = ComparisonOperator()
+        # x is None has an Is operator which we don't mutate
+        # But we construct a chained comparison with both < and is
+        # by manually creating the AST
+        node = ast.Compare(
+            left=ast.Name(id='x', ctx=ast.Load()),
+            ops=[ast.Lt(), ast.Is()],
+            comparators=[
+                ast.Constant(value=10),
+                ast.Constant(value=None),
+            ],
+        )
+
+        mutations = operator.mutate(node)
+
+        # Only 2 mutations for the < operator (LtE and Gt)
+        # The Is operator is skipped
+        assert len(mutations) == 2
+
 
 class TestComparisonOperatorSymbols:
     """Test the operator symbol mapping."""

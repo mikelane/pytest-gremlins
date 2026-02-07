@@ -218,3 +218,4 @@ class TestResultStore:
 
         assert retrieved == {'status': 'zapped'}
         assert 'corrupted' in caplog.text.lower()
+
