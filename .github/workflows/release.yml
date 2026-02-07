@@ -36,11 +36,65 @@ jobs:
       - name: Run ALL tests (small, medium, large)
         run: uv run pytest --cov=pytest_gremlins -v
 
+  # Run benchmarks as part of release
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev
+          uv pip install mutmut psutil
+
+      - name: Run benchmarks
+        run: |
+          uv run python benchmarks/run_benchmarks.py \
+            --project synthetic \
+            --runs 3 \
+            --output benchmarks/results/
+
+      - name: Find latest results file
+        id: find_results
+        run: |
+          LATEST=$(ls -t benchmarks/results/benchmark_*.json | head -1)
+          echo "results_file=$LATEST" >> $GITHUB_OUTPUT
+          echo "Found results file: $LATEST"
+
+      - name: Check for regression
+        id: check_regression
+        run: |
+          uv run python benchmarks/check_regression.py \
+            --baseline benchmarks/baseline.json \
+            --current "${{ steps.find_results.outputs.results_file }}" \
+            --threshold 10 | tee regression_report.txt
+        continue-on-error: true
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmarks/results/
+            regression_report.txt
+          retention-days: 90
+
   # Build the package
   build:
     name: Build Package
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, benchmark]
     steps:
       - uses: actions/checkout@v4
 
@@ -147,6 +201,12 @@ jobs:
           name: dist
           path: dist/
 
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results/
+
       - name: Extract changelog for this version
         id: changelog
         env:
@@ -171,7 +231,9 @@ jobs:
           GIT_REF: ${{ github.ref }}
         with:
           body_path: release_notes.md
-          files: dist/*
+          files: |
+            dist/*
+            benchmark-results/**/*
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
