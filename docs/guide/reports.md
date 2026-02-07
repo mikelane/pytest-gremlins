@@ -574,3 +574,291 @@ If JSON report fails to parse:
 1. Check for incomplete writes (disk full)
 2. Verify encoding (should be UTF-8)
 3. Look for control characters in source paths
+
+## Exporting to External Services
+
+pytest-gremlins can export mutation testing results to external code quality platforms.
+
+### Stryker Dashboard Export
+
+The [Stryker Dashboard](https://dashboard.stryker-mutator.io/) is a free service for hosting
+mutation testing reports. pytest-gremlins exports results in the standardized
+[mutation-testing-report-schema](https://github.com/stryker-mutator/mutation-testing-elements)
+format.
+
+#### Using StrykerExporter
+
+```python
+from pytest_gremlins.reporting import MutationScore, StrykerExporter
+from pathlib import Path
+
+# After running mutation testing, get your score
+score: MutationScore = ...  # from test execution
+
+# Create exporter
+exporter = StrykerExporter()
+
+# Write full report (for detailed dashboard display)
+exporter.write_report(score, Path('mutation.json'))
+
+# Or generate simple score-only format (for badge display)
+simple_json = exporter.to_score_only_json(score)
+Path('mutation-score.json').write_text(simple_json)
+```
+
+#### Uploading to Stryker Dashboard
+
+1. **Enable repository on dashboard.stryker-mutator.io**
+2. **Get your API key** from the dashboard settings
+3. **Upload report** via HTTP PUT:
+
+```bash
+curl -X PUT \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: $STRYKER_DASHBOARD_API_KEY" \
+  --data-binary @mutation.json \
+  "https://dashboard.stryker-mutator.io/api/reports/github.com/$OWNER/$REPO/$BRANCH"
+```
+
+#### GitHub Actions for Stryker Dashboard
+
+```yaml
+name: Mutation Testing
+
+on: [push, pull_request]
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run mutation testing
+        run: pytest --gremlins --gremlin-report=json
+
+      - name: Convert to Stryker format
+        run: |
+          python -c "
+          from pytest_gremlins.reporting import MutationScore, StrykerExporter
+          import json
+          from pathlib import Path
+
+          # Load pytest-gremlins output
+          data = json.loads(Path('gremlin-report.json').read_text())
+
+          # Note: This requires creating MutationScore from the JSON data
+          # In practice, you would save the Stryker format during test execution
+          "
+
+      - name: Upload to Stryker Dashboard
+        if: github.ref == 'refs/heads/main'
+        run: |
+          curl -X PUT \
+            -H "Content-Type: application/json" \
+            -H "X-Api-Key: ${{ secrets.STRYKER_DASHBOARD_API_KEY }}" \
+            --data-binary @mutation.json \
+            "https://dashboard.stryker-mutator.io/api/reports/github.com/${{ github.repository }}/${{ github.ref_name }}"
+```
+
+#### Mutation Score Badge
+
+After uploading to Stryker Dashboard, add this badge to your README:
+
+```markdown
+[![Mutation Score](https://img.shields.io/endpoint?style=flat&url=https%3A%2F%2Fbadge-api.stryker-mutator.io%2Fgithub.com%2FOWNER%2FREPO%2Fmain)](https://dashboard.stryker-mutator.io/reports/github.com/OWNER/REPO/main)
+```
+
+### SonarQube Export
+
+SonarQube can import surviving mutants as [external issues](https://docs.sonarsource.com/sonarqube/latest/analyzing-source-code/importing-external-issues/generic-issue-import-format/).
+
+#### Using SonarQubeExporter
+
+```python
+from pytest_gremlins.reporting import MutationScore, SonarQubeExporter
+from pathlib import Path
+
+# After running mutation testing
+score: MutationScore = ...
+
+# Create exporter (optionally specify project root for path normalization)
+exporter = SonarQubeExporter(
+    project_root='/path/to/project',  # paths will be relative to this
+    severity='MAJOR',  # BLOCKER, CRITICAL, MAJOR, MINOR, INFO
+    effort_minutes=10,  # estimated time to fix each issue
+)
+
+# Write report
+exporter.write_report(score, Path('mutation-sonar.json'))
+```
+
+#### SonarQube Import
+
+Add the report path to your SonarQube analysis:
+
+```bash
+sonar-scanner \
+  -Dsonar.externalIssuesReportPaths=mutation-sonar.json \
+  -Dsonar.projectKey=my-project
+```
+
+#### What Gets Imported
+
+Only **survived** mutants are imported as issues:
+
+| Field | Value |
+|-------|-------|
+| Engine ID | `pytest-gremlins` |
+| Rule ID | `mutant-survived-{operator}` |
+| Severity | `MAJOR` (configurable) |
+| Type | `CODE_SMELL` |
+| Effort | `10 minutes` (configurable) |
+
+#### GitHub Actions for SonarQube
+
+```yaml
+name: Mutation Testing + SonarQube
+
+on: [push, pull_request]
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarQube needs full history
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run mutation testing
+        run: pytest --gremlins --gremlin-report=json
+
+      - name: Convert to SonarQube format
+        run: |
+          python -c "
+          from pytest_gremlins.reporting import MutationScore, SonarQubeExporter
+          import json
+          from pathlib import Path
+
+          # Note: Full implementation would create MutationScore from results
+          # exporter = SonarQubeExporter(project_root='.')
+          # exporter.write_report(score, Path('mutation-sonar.json'))
+          "
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.externalIssuesReportPaths=mutation-sonar.json
+
+      - name: SonarQube Quality Gate
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+```
+
+### Export Format Reference
+
+#### Stryker Dashboard Format (mutation-testing-report-schema)
+
+```json
+{
+  "schemaVersion": "1.0",
+  "thresholds": {
+    "high": 80,
+    "low": 60
+  },
+  "files": {
+    "src/auth.py": {
+      "language": "python",
+      "mutants": [
+        {
+          "id": "g001",
+          "mutatorName": "comparison",
+          "location": {
+            "start": {"line": 42, "column": 8},
+            "end": {"line": 42, "column": 14}
+          },
+          "status": "Killed",
+          "killedBy": ["test_auth.py::test_login"],
+          "description": ">= to >",
+          "duration": 45
+        }
+      ]
+    }
+  },
+  "framework": {
+    "name": "pytest-gremlins",
+    "version": "1.0.0"
+  }
+}
+```
+
+**Status values:**
+- `Killed` - Test caught the mutation (gremlin zapped)
+- `Survived` - Mutation not detected (gremlin survived)
+- `Timeout` - Test timed out
+- `RuntimeError` - Mutation caused an error
+
+#### SonarQube Generic Issue Format
+
+```json
+{
+  "issues": [
+    {
+      "engineId": "pytest-gremlins",
+      "ruleId": "mutant-survived-comparison",
+      "severity": "MAJOR",
+      "type": "CODE_SMELL",
+      "effortMinutes": 10,
+      "primaryLocation": {
+        "filePath": "src/auth.py",
+        "textRange": {
+          "startLine": 42
+        },
+        "message": "Mutant survived: >= to >"
+      }
+    }
+  ]
+}
+```
+
+### Combining Multiple Exports
+
+Generate multiple formats in your CI workflow:
+
+```yaml
+- name: Run mutation testing with all exports
+  run: |
+    pytest --gremlins --gremlin-report=json,html
+
+    # Generate Stryker format
+    python scripts/export_stryker.py gremlin-report.json mutation.json
+
+    # Generate SonarQube format
+    python scripts/export_sonarqube.py gremlin-report.json mutation-sonar.json
+
+- name: Upload to Stryker Dashboard
+  run: curl -X PUT ... @mutation.json
+
+- name: SonarQube Scan
+  run: sonar-scanner -Dsonar.externalIssuesReportPaths=mutation-sonar.json
