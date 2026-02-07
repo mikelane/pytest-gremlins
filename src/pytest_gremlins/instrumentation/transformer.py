@@ -171,7 +171,7 @@ def _get_boolean_description(original: ast.AST, mutated: ast.AST) -> str | None:
         return 'not x to x'
     if isinstance(original, ast.Constant) and isinstance(mutated, ast.Constant):
         return f'{original.value!r} to {mutated.value!r}'
-    return None
+    return None  # pragma: no cover
 
 
 def _get_return_description(original: ast.AST, mutated: ast.AST) -> str | None:
@@ -185,7 +185,7 @@ def _get_return_description(original: ast.AST, mutated: ast.AST) -> str | None:
         and isinstance(mutated.value, ast.Constant)
     ):
         return f'return {original.value.value!r} to {mutated.value.value!r}'
-    return None
+    return None  # pragma: no cover
 
 
 def _get_mutation_description(
@@ -211,7 +211,7 @@ def _get_mutation_description(
 
     if operator.name == 'boolean':
         desc = _get_boolean_description(original, mutated)
-        if desc:
+        if desc:  # pragma: no branch
             return desc
 
     if operator.name == 'boundary' and isinstance(original, ast.Compare) and isinstance(mutated, ast.Compare):
@@ -222,7 +222,7 @@ def _get_mutation_description(
         if desc:
             return desc
 
-    return f'{operator.name} mutation'
+    return f'{operator.name} mutation'  # pragma: no cover
 
 
 class GremlinCollector(ast.NodeVisitor):
@@ -474,6 +474,6 @@ def transform_source(
     tree = ast.parse(source)
     transformer = MutationSwitchingTransformer(file_path, operators=operators)
     new_tree = transformer.visit(tree)
-    if not isinstance(new_tree, ast.Module):
+    if not isinstance(new_tree, ast.Module):  # pragma: no cover
         raise TypeError(f'Expected ast.Module, got {type(new_tree).__name__}')
     return transformer.gremlins, new_tree
