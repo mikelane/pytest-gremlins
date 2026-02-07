@@ -6,6 +6,7 @@ PoolConfig to use optimized settings like custom start methods and warmup.
 
 from __future__ import annotations
 
+import sys
 import time
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -97,8 +98,9 @@ class TestPersistentWorkerPoolWarmup:
             pass
         elapsed = time.monotonic() - start
 
-        # Warmup should complete quickly (< 2 seconds with 2 workers)
-        assert elapsed < 2.0
+        # Windows CI runners are significantly slower; use generous threshold
+        threshold = 10.0 if sys.platform == 'win32' else 2.0
+        assert elapsed < threshold
 
 
 @pytest.mark.small

@@ -131,8 +131,13 @@ class TestPoolConfigIntegrationWithBatchExecutor:
 class TestPoolPerformanceCharacteristics:
     """Tests documenting expected performance characteristics."""
 
+    # Windows CI runners are significantly slower and more variable than Linux/macOS
+    # Use platform-specific thresholds to avoid flaky tests
+    POOL_CREATION_THRESHOLD = 0.5 if sys.platform == 'win32' else 0.1  # 500ms Windows, 100ms Unix
+    WARMUP_THRESHOLD = 10.0 if sys.platform == 'win32' else 3.0  # 10s Windows, 3s Unix
+
     def test_pool_creation_is_fast(self) -> None:
-        """Pool creation without warmup is fast (<100ms)."""
+        """Pool creation without warmup is fast (<100ms on Unix, <500ms on Windows)."""
         config = PoolConfig(max_workers=2, warmup=False)
 
         start = time.monotonic()
@@ -140,7 +145,7 @@ class TestPoolPerformanceCharacteristics:
         elapsed = time.monotonic() - start
 
         # Creating the pool object should be nearly instant
-        assert elapsed < 0.1  # 100ms
+        assert elapsed < self.POOL_CREATION_THRESHOLD
 
         # The pool is not started yet
         assert not pool.is_running
@@ -149,6 +154,7 @@ class TestPoolPerformanceCharacteristics:
         """Pool startup with warmup completes in reasonable time.
 
         Warmup should add some overhead but not be excessive.
+        Windows CI runners need more generous thresholds.
         """
         config = PoolConfig(max_workers=2, warmup=True)
         pool = PersistentWorkerPool.from_config(config)
@@ -158,9 +164,9 @@ class TestPoolPerformanceCharacteristics:
             pass
         elapsed = time.monotonic() - start
 
-        # Warmup + shutdown should complete in < 3 seconds
-        # (gives generous margin for slow CI systems)
-        assert elapsed < 3.0
+        # Warmup + shutdown threshold varies by platform
+        # Windows CI is slower and more variable
+        assert elapsed < self.WARMUP_THRESHOLD
 
     def test_pool_reuse_avoids_startup_overhead(self, tmp_path: Path) -> None:
         """Using the same pool for multiple batches avoids repeated startup."""
