@@ -72,7 +72,7 @@ jobs:
               ;;
             coverage)
               echo "path=src/pytest_gremlins/coverage" >> $GITHUB_OUTPUT
-              echo "tests=tests/small/coverage" >> $GITHUB_OUTPUT
+              echo "tests=tests/small/coverage_module" >> $GITHUB_OUTPUT
               ;;
             operators)
               echo "path=src/pytest_gremlins/operators" >> $GITHUB_OUTPUT
