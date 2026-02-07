@@ -88,14 +88,16 @@ def test_subtract_negative():
 class TestCoverageGuidedFallback:
     """Test fallback behavior when no coverage data exists."""
 
-    def test_uncovered_gremlin_shows_zero_coverage_message(
+    def test_uncovered_gremlin_survives_via_fallback(
         self,
         pytester_with_conftest: pytest.Pytester,
     ):
-        """Verify uncovered gremlins show appropriate message (AC4).
+        """Verify uncovered gremlins are tested via fallback to all tests (AC4).
 
-        Creates a function that is not covered by any test. The gremlin
-        in this function should show a message about having no coverage.
+        Creates a function not covered by any test. Coverage-guided selection
+        finds no covering tests, so the plugin falls back to running ALL tests.
+        The gremlin in the uncovered function survives because no test exercises
+        that code path.
         """
         pytester_with_conftest.makepyfile(
             target_module="""
@@ -124,6 +126,8 @@ def test_covered():
         result.assert_outcomes(passed=1)
         output = result.stdout.str()
 
-        assert '0 tests' in output.lower() or 'no coverage' in output.lower(), (
-            'Expected output to indicate gremlins with no test coverage'
+        lower_output = output.lower()
+        assert 'survived' in lower_output, (
+            'Expected uncovered gremlins to survive (fallback runs all tests, but none exercise uncovered code)'
         )
+        assert 'running' in lower_output, 'Expected uncovered gremlins to be run via fallback, not skipped'
