@@ -1,0 +1,150 @@
+name: Dogfood
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_module:
+        description: 'Module to mutation test (e.g., reporting, cache, coverage, all)'
+        required: false
+        default: 'reporting'
+        type: choice
+        options:
+          - 'reporting'
+          - 'cache'
+          - 'coverage'
+          - 'operators'
+          - 'instrumentation'
+          - 'parallel'
+          - 'all'
+      execution_mode:
+        description: 'Execution mode'
+        required: false
+        default: 'parallel'
+        type: choice
+        options:
+          - 'sequential'
+          - 'parallel'
+          - 'batch'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: "1"
+  UV_SYSTEM_PYTHON: "1"
+
+jobs:
+  dogfood:
+    name: Dogfood (${{ inputs.target_module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Determine target path
+        id: target
+        env:
+          # Using env vars for safety even though inputs are from type: choice
+          TARGET_MODULE: ${{ inputs.target_module }}
+        run: |
+          case "$TARGET_MODULE" in
+            reporting)
+              echo "path=src/pytest_gremlins/reporting" >> $GITHUB_OUTPUT
+              echo "tests=tests/small/reporting" >> $GITHUB_OUTPUT
+              ;;
+            cache)
+              echo "path=src/pytest_gremlins/cache" >> $GITHUB_OUTPUT
+              echo "tests=tests/small/cache" >> $GITHUB_OUTPUT
+              ;;
+            coverage)
+              echo "path=src/pytest_gremlins/coverage" >> $GITHUB_OUTPUT
+              echo "tests=tests/small/coverage_module" >> $GITHUB_OUTPUT
+              ;;
+            operators)
+              echo "path=src/pytest_gremlins/operators" >> $GITHUB_OUTPUT
+              echo "tests=tests/small/operators" >> $GITHUB_OUTPUT
+              ;;
+            instrumentation)
+              echo "path=src/pytest_gremlins/instrumentation" >> $GITHUB_OUTPUT
+              echo "tests=tests/small/instrumentation" >> $GITHUB_OUTPUT
+              ;;
+            parallel)
+              echo "path=src/pytest_gremlins/parallel" >> $GITHUB_OUTPUT
+              echo "tests=tests/small/parallel" >> $GITHUB_OUTPUT
+              ;;
+            all)
+              echo "path=src/pytest_gremlins" >> $GITHUB_OUTPUT
+              echo "tests=tests/small tests/medium" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Determine execution flags
+        id: flags
+        env:
+          EXECUTION_MODE: ${{ inputs.execution_mode }}
+        run: |
+          case "$EXECUTION_MODE" in
+            sequential)
+              echo "flags=" >> $GITHUB_OUTPUT
+              ;;
+            parallel)
+              echo "flags=--gremlin-parallel" >> $GITHUB_OUTPUT
+              ;;
+            batch)
+              echo "flags=--gremlin-batch --gremlin-batch-size=20" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Run mutation testing (dogfood)
+        run: |
+          echo "Dogfooding pytest-gremlins on: ${{ steps.target.outputs.path }}"
+          echo "Tests: ${{ steps.target.outputs.tests }}"
+          echo "Mode: ${{ inputs.execution_mode }}"
+          echo ""
+
+          uv run pytest \
+            --gremlins \
+            --gremlin-targets=${{ steps.target.outputs.path }} \
+            ${{ steps.flags.outputs.flags }} \
+            --gremlin-report=html \
+            ${{ steps.target.outputs.tests }} \
+            -v
+
+      - name: Upload mutation report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gremlin-report-${{ inputs.target_module }}
+          path: gremlin-report.html
+          if-no-files-found: warn
+
+      - name: Report summary
+        if: always()
+        env:
+          TARGET_PATH: ${{ steps.target.outputs.path }}
+          EXECUTION_MODE: ${{ inputs.execution_mode }}
+        run: |
+          echo "## Dogfood Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: \`$TARGET_PATH\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode**: $EXECUTION_MODE" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f gremlin-report.html ]; then
+            echo "HTML report uploaded as artifact." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No HTML report generated." >> $GITHUB_STEP_SUMMARY
+          fi

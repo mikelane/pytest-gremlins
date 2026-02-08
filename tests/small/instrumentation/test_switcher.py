@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from pytest_gremlins.instrumentation.switcher import get_active_gremlin
+import pytest
+
+from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR, get_active_gremlin
 
 
+@pytest.mark.small
 class TestActiveGremlin:
     """Test the active gremlin detection."""
 
@@ -22,3 +25,12 @@ class TestActiveGremlin:
         monkeypatch.setenv('ACTIVE_GREMLIN', '')
 
         assert get_active_gremlin() == ''
+
+
+@pytest.mark.small
+class TestActiveGremlinEnvVar:
+    """Test the ACTIVE_GREMLIN_ENV_VAR constant."""
+
+    def test_env_var_name_is_active_gremlin(self):
+        """Verifies the expected environment variable name."""
+        assert ACTIVE_GREMLIN_ENV_VAR == 'ACTIVE_GREMLIN'

@@ -558,6 +558,44 @@ Mutation testing hangs or produces inconsistent results when using pytest-xdist.
 
 ---
 
+### Low code coverage numbers for pytest-gremlins itself
+
+**Symptom:**
+
+When running coverage on pytest-gremlins itself (as a contributor), you see lower coverage than
+expected (around 69%) despite comprehensive tests.
+
+**Cause:** This is an inherent limitation of measuring code coverage for pytest plugins, not a testing
+gap. The issue occurs because:
+
+1. **Plugin import timing**: When pytest loads a plugin, it imports the entire module tree *before*
+   coverage.py starts instrumenting code. Module-level imports, constants, and function definitions
+   execute during loading, so they show as uncovered.
+
+2. **Multiprocessing code paths**: Worker pool code runs in subprocesses where coverage measurement
+   is complex to coordinate.
+
+3. **Integration tests**: pytester (the pytest integration test fixture) runs pytest in isolated
+   subprocesses, which don't share coverage data with the main process.
+
+**Solution:**
+
+This is expected behavior, not a bug. The test suite is comprehensive:
+
+- Files like `results.py` and `score.py` have full test coverage in `tests/small/reporting/`
+- The 69% coverage target reflects what's measurable, not test quality
+- Function *bodies* are measured when tests call them; only function *definitions* appear uncovered
+
+For contributors: see the
+[Code Coverage section in CONTRIBUTING.md][coverage-docs]
+for details on our coverage configuration.
+
+[coverage-docs]: https://github.com/mikelane/pytest-gremlins/blob/main/CONTRIBUTING.md#code-coverage
+
+**Related:** [Contributing Guide](https://github.com/mikelane/pytest-gremlins/blob/main/CONTRIBUTING.md)
+
+---
+
 ### Error: Coverage collection fails
 
 **Symptom:**
