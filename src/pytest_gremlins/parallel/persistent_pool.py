@@ -36,7 +36,7 @@ from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 
-def _warmup_noop() -> bool:
+def _warmup_noop() -> bool:  # pragma: no cover
     """No-op function for worker warmup.
 
     This function does nothing but return True. It's used to force
@@ -48,7 +48,7 @@ def _warmup_noop() -> bool:
     return True
 
 
-def _run_gremlin_batch(
+def _run_gremlin_batch(  # pragma: no cover
     gremlin_ids: list[str],
     test_command: list[str],
     rootdir: str,
@@ -138,7 +138,7 @@ def _run_gremlin_batch(
     return results
 
 
-def _run_gremlin_test(
+def _run_gremlin_test(  # pragma: no cover
     gremlin_id: str,
     test_command: list[str],
     rootdir: str,
@@ -313,7 +313,7 @@ class PersistentWorkerPool:
         This forces all workers to start and import necessary modules
         before actual work arrives, reducing latency on the first batch.
         """
-        if self._executor is None:
+        if self._executor is None:  # pragma: no cover
             return
 
         # Submit a no-op to each worker

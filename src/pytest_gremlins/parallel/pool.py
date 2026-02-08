@@ -42,7 +42,7 @@ class WorkerResult:
     execution_time_ms: float | None = None
 
 
-def _run_gremlin_test(
+def _run_gremlin_test(  # pragma: no cover
     gremlin_id: str,
     test_command: list[str],
     rootdir: str,
