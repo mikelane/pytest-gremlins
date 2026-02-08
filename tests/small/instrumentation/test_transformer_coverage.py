@@ -68,7 +68,7 @@ def check(a, b):
 """
         # Use only ComparisonOperator - it won't produce gremlins for BoolOp
         operators = [ComparisonOperator()]
-        gremlins, tree = transform_source(source, 'test.py', operators=operators)
+        gremlins, _tree = transform_source(source, 'test.py', operators=operators)
 
         # With only comparison operator, no gremlins from 'and' expression
         # The BoolOp should return unchanged node (line 417)
@@ -87,7 +87,7 @@ def do_nothing():
 """
         # Use only comparison operator - it won't produce gremlins for bare return
         operators = [ComparisonOperator()]
-        gremlins, tree = transform_source(source, 'test.py', operators=operators)
+        gremlins, _tree = transform_source(source, 'test.py', operators=operators)
 
         # No gremlins should be produced from bare return with comparison operator
         assert len(gremlins) == 0
