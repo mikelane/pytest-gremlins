@@ -279,23 +279,20 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
     "@abstractmethod",
-    # Dataclass definitions are type declarations
+    "^\\s*\\.\\.\\.\\s*$",
     "@dataclass",
     "class.*Protocol.*:",
 ]
 exclude_also = [
-    # Don't require coverage of type stubs
-    "\\.\\.\\.",
-    "pass",
+    # Protocol class declarations (method bodies excluded via ellipsis pattern above)
+    "class.*\\(Protocol\\):",
 ]
-# Target 69% coverage (issue #88)
-# Note: pytest plugins have inherent coverage limitations - module-level code
-# executes when pytest loads the plugin, before coverage starts measuring.
-# This affects imports, constants, and function definitions. Additionally,
-# multiprocessing code paths (worker pool execution) are difficult to measure.
-fail_under = 69
+# Subprocess code (pool workers, parallel/batch execution) is marked with
+# pragma: no cover since coverage.py cannot track code running in subprocesses.
+# See issue #111 for full coverage improvement details.
+fail_under = 97
 show_missing = true
-skip_covered = false  # Show all files for visibility
+skip_covered = true
 
 [tool.coverage.html]
 directory = "htmlcov"

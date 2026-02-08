@@ -9,9 +9,11 @@ import pytest
 from pytest_gremlins.instrumentation.transformer import (
     build_switching_expression,
     collect_gremlins,
+    create_gremlins_for_node,
     generate_comparison_mutations,
     transform_source,
 )
+from pytest_gremlins.operators.comparison import ComparisonOperator
 
 
 class TestMutationGenerator:
@@ -261,3 +263,121 @@ def complex_function(x, y):
         assert 'boolean' in operator_names
         assert 'boundary' in operator_names
         assert 'return' in operator_names
+
+    def test_transform_source_generates_gremlins_for_not_operator(self):
+        source = """
+def negate(x):
+    return not x
+"""
+        gremlins, _tree = transform_source(source, 'example.py')
+
+        assert any(g.operator_name == 'boolean' for g in gremlins)
+        assert any('not' in g.description.lower() for g in gremlins)
+
+    def test_transform_source_handles_return_true_false_mutations(self):
+        source = """
+def check():
+    return True
+"""
+        gremlins, _tree = transform_source(source, 'example.py')
+
+        # True/False mutations come from boolean operator, not return
+        boolean_gremlins = [g for g in gremlins if g.operator_name == 'boolean']
+        assert any('True' in g.description or 'False' in g.description for g in boolean_gremlins)
+
+    def test_transform_source_handles_unsupported_binop(self):
+        source = """
+def bitwise(x, y):
+    return x & y
+"""
+        gremlins, _tree = transform_source(source, 'example.py')
+
+        # BitAnd is not a supported arithmetic operator
+        # But return mutation should still work
+        return_gremlins = [g for g in gremlins if g.operator_name == 'return']
+        assert len(return_gremlins) >= 1
+
+    def test_transform_source_handles_unsupported_boolop(self):
+        source = """
+def check(x):
+    return x
+"""
+        # No boolean operations, just testing that visitor handles code without them
+        gremlins, _tree = transform_source(source, 'example.py')
+        # Should have at least return gremlins
+        assert any(g.operator_name == 'return' for g in gremlins)
+
+
+class TestTransformerEdgeCases:
+    """Test edge cases in the transformer."""
+
+    def test_transform_source_handles_bitwise_binop(self):
+        """BitAnd is a BinOp but not mutated by arithmetic operator."""
+        source = """
+def bitwise(x, y):
+    a = x & y
+    return a
+"""
+        gremlins, _tree = transform_source(source, 'example.py')
+
+        # Should have return gremlins but no arithmetic for bitwise
+        arithmetic_gremlins = [g for g in gremlins if g.operator_name == 'arithmetic']
+        assert len(arithmetic_gremlins) == 0  # & is not an arithmetic operator
+
+    def test_transform_source_handles_unary_minus(self):
+        """Unary minus is a UnaryOp but not mutated by boolean operator."""
+        source = """
+def negate(x):
+    return -x
+"""
+        gremlins, _tree = transform_source(source, 'example.py')
+
+        # Should have return gremlins but no boolean for unary minus
+        boolean_gremlins = [g for g in gremlins if g.operator_name == 'boolean']
+        assert len(boolean_gremlins) == 0  # -x is not a boolean operator
+
+    def test_transform_source_handles_unsupported_comparison(self):
+        """Is/IsNot comparisons are not mutated."""
+        source = """
+def check(x):
+    return x is None
+"""
+        gremlins, _tree = transform_source(source, 'example.py')
+
+        # Is operator is not mutated by comparison operator
+        comparison_gremlins = [g for g in gremlins if g.operator_name == 'comparison']
+        assert len(comparison_gremlins) == 0
+
+    def test_transform_source_handles_non_boolean_constant(self):
+        """Non-boolean constants are not mutated by boolean operator."""
+        source = """
+def get_value():
+    return 42
+"""
+        gremlins, _tree = transform_source(source, 'example.py')
+
+        # 42 is not a boolean constant
+        boolean_gremlins = [g for g in gremlins if g.operator_name == 'boolean']
+        assert len(boolean_gremlins) == 0
+
+
+class TestCreateGremlinsForNode:
+    """Test create_gremlins_for_node function directly."""
+
+    def test_returns_empty_list_when_operator_cannot_mutate_node(self):
+        """Returns empty list when operator.can_mutate returns False."""
+        # BinOp node that ComparisonOperator cannot mutate
+        node = ast.parse('x + 10', mode='eval').body
+        assert isinstance(node, ast.BinOp)
+
+        operator = ComparisonOperator()
+        counter = [0]
+
+        def id_gen():
+            counter[0] += 1
+            return f'g{counter[0]:03d}'
+
+        gremlins = create_gremlins_for_node(node, operator, 'test.py', id_gen)
+
+        assert gremlins == []
+        assert counter[0] == 0  # No IDs were generated

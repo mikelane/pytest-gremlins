@@ -116,6 +116,11 @@ class TestResultAggregatorProgress:
 
         assert aggregator.progress_percentage == 50.0
 
+    def test_progress_percentage_zero_total_returns_zero(self) -> None:
+        """progress_percentage returns 0.0 when total_gremlins is 0."""
+        aggregator = ResultAggregator(total_gremlins=0)
+        assert aggregator.progress_percentage == 0.0
+
 
 class TestResultAggregatorErrorHandling:
     """Tests for error handling."""

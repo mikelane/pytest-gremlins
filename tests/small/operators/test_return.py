@@ -182,6 +182,36 @@ def foo():
 
         assert mutations == []
 
+    def test_returns_empty_list_for_bare_return(self):
+        operator = ReturnOperator()
+        source = """
+def foo():
+    return
+"""
+        tree = ast.parse(source)
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
+
+        mutations = operator.mutate(return_node)
+
+        assert mutations == []
+
+    def test_returns_empty_list_for_return_none(self):
+        operator = ReturnOperator()
+        source = """
+def foo():
+    return None
+"""
+        tree = ast.parse(source)
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
+
+        mutations = operator.mutate(return_node)
+
+        assert mutations == []
+
     def test_return_empty_list_mutates_to_list_with_none(self):
         operator = ReturnOperator()
         source = """

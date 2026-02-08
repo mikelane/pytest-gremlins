@@ -55,8 +55,8 @@ def get_optimal_start_method() -> Literal['spawn', 'fork', 'forkserver']:
     if 'forkserver' in available:
         return 'forkserver'
 
-    # Fall back to spawn (always available)
-    return 'spawn'
+    # Fall back to spawn (always available, Windows-only path)
+    return 'spawn'  # pragma: no cover
 
 
 def _default_max_workers() -> int:

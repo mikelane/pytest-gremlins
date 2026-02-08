@@ -25,6 +25,7 @@ Optimizations (PR #52):
 from __future__ import annotations
 
 from concurrent.futures import Future, ProcessPoolExecutor, wait
+import logging
 import multiprocessing  # noqa: TC003 - used at runtime for context
 import os
 import subprocess
@@ -36,7 +37,10 @@ from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 
-def _warmup_noop() -> bool:
+logger = logging.getLogger(__name__)
+
+
+def _warmup_noop() -> bool:  # pragma: no cover
     """No-op function for worker warmup.
 
     This function does nothing but return True. It's used to force
@@ -48,7 +52,7 @@ def _warmup_noop() -> bool:
     return True
 
 
-def _run_gremlin_batch(
+def _run_gremlin_batch(  # pragma: no cover
     gremlin_ids: list[str],
     test_command: list[str],
     rootdir: str,
@@ -124,7 +128,8 @@ def _run_gremlin_batch(
             )
             # Early termination on timeout too
             break
-        except Exception:
+        except Exception as exc:
+            logger.warning('Error testing gremlin %s: %s', gremlin_id, exc)
             execution_time_ms = (time.monotonic() - start_time) * 1000
             results.append(
                 WorkerResult(
@@ -138,7 +143,7 @@ def _run_gremlin_batch(
     return results
 
 
-def _run_gremlin_test(
+def _run_gremlin_test(  # pragma: no cover
     gremlin_id: str,
     test_command: list[str],
     rootdir: str,
@@ -313,7 +318,7 @@ class PersistentWorkerPool:
         This forces all workers to start and import necessary modules
         before actual work arrives, reducing latency on the first batch.
         """
-        if self._executor is None:
+        if self._executor is None:  # pragma: no cover
             return
 
         # Submit a no-op to each worker

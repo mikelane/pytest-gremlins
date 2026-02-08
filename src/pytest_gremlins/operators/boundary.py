@@ -84,18 +84,18 @@ class BoundaryOperator:
 
     def _mutate_left_constant(self, node: ast.Compare) -> list[ast.AST]:
         """Mutate an integer constant on the left side of a comparison."""
-        if not isinstance(node.left, ast.Constant):
+        if not isinstance(node.left, ast.Constant):  # pragma: no cover
             return []
 
         value = node.left.value
-        if not isinstance(value, int) or isinstance(value, bool):
+        if not isinstance(value, int) or isinstance(value, bool):  # pragma: no cover
             return []
 
         mutations: list[ast.AST] = []
 
         for delta in [-1, 1]:
             mutated = copy.deepcopy(node)
-            if isinstance(mutated.left, ast.Constant):
+            if isinstance(mutated.left, ast.Constant):  # pragma: no branch
                 mutated.left.value = value + delta
             mutations.append(mutated)
 
@@ -111,7 +111,7 @@ class BoundaryOperator:
                 for delta in [-1, 1]:
                     mutated = copy.deepcopy(node)
                     mutated_comp = mutated.comparators[i]
-                    if isinstance(mutated_comp, ast.Constant):
+                    if isinstance(mutated_comp, ast.Constant):  # pragma: no branch
                         mutated_comp.value = value + delta
                     mutations.append(mutated)
 

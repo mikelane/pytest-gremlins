@@ -148,3 +148,6 @@ class ResultAggregator:
             self._timeout += 1
         elif status == GremlinResultStatus.ERROR:
             self._error += 1
+        else:  # pragma: no cover
+            msg = f'Unexpected gremlin status: {status}'
+            raise ValueError(msg)
