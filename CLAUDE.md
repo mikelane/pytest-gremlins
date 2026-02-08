@@ -66,6 +66,10 @@ pytest-gremlins/
 # Install dependencies
 uv sync --dev
 
+# Install git hooks (required for local linting/formatting on commit)
+uv run pre-commit install
+uv run pre-commit install --hook-type commit-msg
+
 # Run small tests only (fast, always safe)
 uv run pytest tests/small -m small
 
