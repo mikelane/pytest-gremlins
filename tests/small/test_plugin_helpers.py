@@ -11,7 +11,9 @@ import pytest
 
 from pytest_gremlins.plugin import (
     _add_source_file,
+    _build_test_command,
     _make_node_ids_relative,
+    _path_to_module_name,
     _should_include_file,
 )
 
@@ -147,3 +149,62 @@ class TestMakeNodeIdsRelative:
         result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['/some/other/path/test.py::test_func']
+
+
+@pytest.mark.small
+class TestPathToModuleName:
+    """Tests for _path_to_module_name function."""
+
+    def test_converts_relative_path_to_module(self, tmp_path: Path) -> None:
+        """Converts relative path to module name."""
+        file_path = tmp_path / 'package' / 'module.py'
+        result = _path_to_module_name(file_path, tmp_path)
+        assert result == 'package.module'
+
+    def test_strips_src_prefix(self, tmp_path: Path) -> None:
+        """Strips src/ prefix from path since it's a layout convention."""
+        file_path = tmp_path / 'src' / 'mypackage' / 'module.py'
+        result = _path_to_module_name(file_path, tmp_path)
+        assert result == 'mypackage.module'
+
+    def test_file_not_relative_to_rootdir(self, tmp_path: Path) -> None:
+        """When file is not under rootdir, uses just the filename.
+
+        Covers lines 426-427: ValueError catch for relative_to.
+        """
+        rootdir = tmp_path / 'project'
+        rootdir.mkdir()
+        file_path = Path('/some/other/path/module.py')
+
+        result = _path_to_module_name(file_path, rootdir)
+
+        # Just returns the filename without .py extension
+        assert result == 'module'
+
+
+@pytest.mark.small
+class TestBuildTestCommand:
+    """Tests for _build_test_command function."""
+
+    def test_with_instrumented_dir(self, tmp_path: Path) -> None:
+        """When instrumented_dir provided, uses bootstrap script."""
+        instrumented_dir = tmp_path / 'instrumented'
+        instrumented_dir.mkdir()
+
+        result = _build_test_command(instrumented_dir)
+
+        assert 'gremlin_bootstrap.py' in result[1]
+        assert '-x' in result
+        assert '--tb=no' in result
+
+    def test_without_instrumented_dir(self) -> None:
+        """When instrumented_dir is None, runs pytest directly.
+
+        Covers line 1321: return branch when instrumented_dir is None.
+        """
+        result = _build_test_command(None)
+
+        assert '-m' in result
+        assert 'pytest' in result
+        assert '-x' in result
+        assert '--tb=no' in result

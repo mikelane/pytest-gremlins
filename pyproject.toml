@@ -264,7 +264,7 @@ exclude_lines = [
     "^\\s*\\.\\.\\.\\s*$",
 ]
 exclude_also = [
-    # Protocol method stubs cannot be covered
+    # Protocol class declarations (method bodies excluded via ellipsis pattern above)
     "class.*\\(Protocol\\):",
 ]
 # Subprocess code (pool workers, parallel/batch execution) is marked with

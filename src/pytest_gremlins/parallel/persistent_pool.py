@@ -25,6 +25,7 @@ Optimizations (PR #52):
 from __future__ import annotations
 
 from concurrent.futures import Future, ProcessPoolExecutor, wait
+import logging
 import multiprocessing  # noqa: TC003 - used at runtime for context
 import os
 import subprocess
@@ -34,6 +35,9 @@ from typing import Self
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
+
+
+logger = logging.getLogger(__name__)
 
 
 def _warmup_noop() -> bool:  # pragma: no cover
@@ -124,7 +128,8 @@ def _run_gremlin_batch(  # pragma: no cover
             )
             # Early termination on timeout too
             break
-        except Exception:
+        except Exception as exc:
+            logger.warning('Error testing gremlin %s: %s', gremlin_id, exc)
             execution_time_ms = (time.monotonic() - start_time) * 1000
             results.append(
                 WorkerResult(

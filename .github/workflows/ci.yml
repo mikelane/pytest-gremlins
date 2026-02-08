@@ -114,7 +114,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           uv run coverage run -m pytest tests/small tests/medium -v
-          uv run coverage combine --quiet || true
+          uv run coverage combine --quiet || echo "::warning::No coverage data to combine (expected in some environments)"
           uv run coverage report --show-missing
           uv run coverage xml
 

@@ -13,12 +13,16 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ProcessPoolExecutor
 from dataclasses import dataclass
+import logging
 import os
 import subprocess
 import time
 from typing import Self
 
 from pytest_gremlins.reporting.results import GremlinResultStatus
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -101,7 +105,8 @@ def _run_gremlin_test(  # pragma: no cover
             status=GremlinResultStatus.TIMEOUT,
             execution_time_ms=execution_time_ms,
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning('Error testing gremlin %s: %s', gremlin_id, exc)
         execution_time_ms = (time.monotonic() - start_time) * 1000
         return WorkerResult(
             gremlin_id=gremlin_id,

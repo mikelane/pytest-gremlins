@@ -10,6 +10,7 @@ import ast
 import contextlib
 from dataclasses import dataclass, field
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -40,6 +41,8 @@ if TYPE_CHECKING:
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.operators import GremlinOperator
 
+
+logger = logging.getLogger(__name__)
 
 GREMLIN_SOURCES_ENV_VAR = 'PYTEST_GREMLINS_SOURCES_FILE'
 
@@ -361,8 +364,10 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
         source = path.read_text()
         ast.parse(source)
         source_files[str(path)] = source
-    except (SyntaxError, OSError):
-        pass
+    except SyntaxError:
+        logger.debug('Skipping %s: syntax error', path)
+    except OSError as exc:
+        logger.debug('Skipping %s: %s', path, exc)
 
 
 def _write_instrumented_sources(
@@ -731,14 +736,14 @@ dynamic_context = test_function
 
         conn.close()
 
-    except (sqlite3.Error, OSError):  # pragma: no cover
-        pass
+    except (sqlite3.Error, OSError) as exc:  # pragma: no cover
+        logger.warning('Failed to read coverage data: %s', exc)
     finally:
         try:
             coverage_db_path.unlink(missing_ok=True)
             coveragerc_path.unlink(missing_ok=True)
-        except OSError:  # pragma: no cover
-            pass
+        except OSError as exc:  # pragma: no cover
+            logger.debug('Failed to clean up coverage files: %s', exc)
 
     return result
 
@@ -763,7 +768,7 @@ def _decode_numbits(numbits: bytes) -> list[int]:
     ]
 
 
-def _run_batch_mutation_testing(  # noqa: C901 pragma: no cover
+def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -886,7 +891,7 @@ def _run_batch_mutation_testing(  # noqa: C901 pragma: no cover
     return results
 
 
-def _run_parallel_mutation_testing(  # noqa: C901 pragma: no cover
+def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -1381,7 +1386,8 @@ def _test_gremlin(
             gremlin=gremlin,
             status=GremlinResultStatus.TIMEOUT,
         )
-    except Exception:  # pragma: no cover
+    except Exception as exc:  # pragma: no cover
+        logger.warning('Error testing gremlin %s: %s', gremlin.gremlin_id, exc)
         return GremlinResult(
             gremlin=gremlin,
             status=GremlinResultStatus.ERROR,
