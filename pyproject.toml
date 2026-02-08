@@ -267,10 +267,10 @@ exclude_also = [
     # Protocol method stubs cannot be covered
     "class.*\\(Protocol\\):",
 ]
-# NOTE: Temporarily lowered from 90 to 60 for E2E integration tests (issue #11).
-# pytester runs plugin code in subprocesses where coverage.py can't measure.
-# TODO: Add unit tests for plugin.py code paths or set up subprocess coverage.
-fail_under = 60
+# Subprocess code (pool workers, parallel/batch execution) is marked with
+# pragma: no cover since coverage.py cannot track code running in subprocesses.
+# See issue #111 for full coverage improvement details.
+fail_under = 97
 show_missing = true
 skip_covered = true
 
