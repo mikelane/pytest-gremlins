@@ -580,7 +580,7 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     Returns:
         List of node IDs with paths made relative to rootdir.
     """
-    import re
+    import re  # noqa: PLC0415
 
     result = []
     for node_id in node_ids:
@@ -807,7 +807,7 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901
     Returns:
         List of results for each gremlin.
     """
-    from pytest_gremlins.parallel.batch_executor import BatchExecutor
+    from pytest_gremlins.parallel.batch_executor import BatchExecutor  # noqa: PLC0415
 
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
@@ -929,7 +929,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
     Returns:
         List of results for each gremlin.
     """
-    from concurrent.futures import as_completed
+    from concurrent.futures import as_completed  # noqa: PLC0415
 
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)

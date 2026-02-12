@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestCoverageSubprocessClearsAddopts:
     """Verify the coverage subprocess includes -o addopts= to clear user config."""
 
@@ -73,7 +73,7 @@ class TestCoverageSubprocessClearsAddopts:
             assert addopts_idx < pos
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestEmptyCoverageWarning:
     """Verify a warning is emitted when coverage collection returns empty data."""
 
