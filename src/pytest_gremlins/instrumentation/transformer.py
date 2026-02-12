@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import ast
 import copy
+import hashlib
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 
@@ -232,10 +234,25 @@ class GremlinCollector(ast.NodeVisitor):
         self.file_path = file_path
         self.gremlins: list[Gremlin] = []
         self._gremlin_counter = 0
+        # Create a short unique prefix from file path to avoid ID collisions
+        # when processing multiple files
+        self._file_prefix = self._make_file_prefix(file_path)
+
+    @staticmethod
+    def _make_file_prefix(file_path: str) -> str:
+        """Create a short unique prefix from file path.
+
+        Uses the file stem (name without extension) combined with a short hash
+        to ensure uniqueness even for files with the same name in different dirs.
+        """
+        stem = Path(file_path).stem
+        # Use first 4 chars of MD5 hash for uniqueness
+        path_hash = hashlib.md5(file_path.encode(), usedforsecurity=False).hexdigest()[:4]
+        return f'{stem}_{path_hash}'
 
     def _next_gremlin_id(self) -> str:
         self._gremlin_counter += 1
-        return f'g{self._gremlin_counter:03d}'
+        return f'{self._file_prefix}_g{self._gremlin_counter:03d}'
 
     def visit_Compare(self, node: ast.Compare) -> None:
         """Collect gremlins for comparison nodes."""
@@ -360,10 +377,25 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
         self.gremlins: list[Gremlin] = []
         self._gremlin_counter = 0
         self._operators = operators if operators is not None else get_default_registry().get_all()
+        # Create a short unique prefix from file path to avoid ID collisions
+        # when processing multiple files in parallel
+        self._file_prefix = self._make_file_prefix(file_path)
+
+    @staticmethod
+    def _make_file_prefix(file_path: str) -> str:
+        """Create a short unique prefix from file path.
+
+        Uses the file stem (name without extension) combined with a short hash
+        to ensure uniqueness even for files with the same name in different dirs.
+        """
+        stem = Path(file_path).stem
+        # Use first 4 chars of MD5 hash for uniqueness
+        path_hash = hashlib.md5(file_path.encode(), usedforsecurity=False).hexdigest()[:4]
+        return f'{stem}_{path_hash}'
 
     def _next_gremlin_id(self) -> str:
         self._gremlin_counter += 1
-        return f'g{self._gremlin_counter:03d}'
+        return f'{self._file_prefix}_g{self._gremlin_counter:03d}'
 
     def _create_gremlins_for_compare(self, node: ast.Compare) -> list[Gremlin]:
         """Create gremlins for a comparison node."""
