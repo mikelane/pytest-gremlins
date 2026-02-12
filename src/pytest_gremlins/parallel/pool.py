@@ -86,7 +86,16 @@ def _run_gremlin_test(  # pragma: no cover
 
         execution_time_ms = (time.monotonic() - start_time) * 1000
 
-        if result.returncode != 0:
+        # Only return code 1 (tests failed) should be treated as a mutation
+        # being zapped. Other non-zero return codes indicate pytest errors
+        # (collection/import/internal) and should not inflate the score.
+        if result.returncode == 0:
+            return WorkerResult(
+                gremlin_id=gremlin_id,
+                status=GremlinResultStatus.SURVIVED,
+                execution_time_ms=execution_time_ms,
+            )
+        if result.returncode == 1:
             return WorkerResult(
                 gremlin_id=gremlin_id,
                 status=GremlinResultStatus.ZAPPED,
@@ -95,7 +104,7 @@ def _run_gremlin_test(  # pragma: no cover
             )
         return WorkerResult(
             gremlin_id=gremlin_id,
-            status=GremlinResultStatus.SURVIVED,
+            status=GremlinResultStatus.ERROR,
             execution_time_ms=execution_time_ms,
         )
     except subprocess.TimeoutExpired:

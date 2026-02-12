@@ -169,6 +169,19 @@ class TestWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.SURVIVED
 
+    def test_non_test_exit_code_returns_error_status(self, tmp_path: Path) -> None:
+        """Non-test failures (e.g., import/collection errors) are ERROR, not ZAPPED."""
+        with WorkerPool(max_workers=1, timeout=5) as pool:
+            future = pool.submit(
+                gremlin_id='g001',
+                test_command=['python', '-c', 'import sys; sys.exit(2)'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            result = future.result(timeout=5)
+            assert result.status == GremlinResultStatus.ERROR
+
     @pytest.mark.medium  # Intentionally waits for timeout (>1s)
     def test_timeout_returns_timeout_status(self, tmp_path: Path) -> None:
         """When test times out, result is TIMEOUT."""
