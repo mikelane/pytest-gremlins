@@ -36,6 +36,7 @@ jobs:
       - name: Run ALL tests (small, medium, large)
         run: |
           uv run coverage run -m pytest -v
+          uv run coverage combine --quiet || true
           uv run coverage report --show-missing
 
   # Run benchmarks as part of release
