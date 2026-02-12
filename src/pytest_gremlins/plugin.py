@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 from typing import TYPE_CHECKING
+import warnings
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
@@ -579,7 +580,7 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     Returns:
         List of node IDs with paths made relative to rootdir.
     """
-    import re  # noqa: PLC0415
+    import re
 
     result = []
     for node_id in node_ids:
@@ -629,6 +630,15 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
     relative_node_ids = _make_node_ids_relative(test_node_ids, rootdir)
 
     coverage_data = _run_tests_with_coverage(relative_node_ids, rootdir)
+
+    if not coverage_data:
+        warnings.warn(
+            'Coverage collection returned no data. '
+            'If you have --cov in pytest addopts, this may interfere with '
+            "gremlins' coverage-guided test selection. "
+            'See https://github.com/mikelane/pytest-gremlins/issues/113',
+            stacklevel=1,
+        )
 
     gremlin_paths_map: dict[str, str] = {}
     for gremlin in gremlin_session.gremlins:
@@ -692,6 +702,8 @@ dynamic_context = test_function
         f'--rcfile={coveragerc_path}',
         '-m',
         'pytest',
+        '-o',
+        'addopts=',
         *test_node_ids,
         '--tb=no',
         '-q',
@@ -795,7 +807,7 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901
     Returns:
         List of results for each gremlin.
     """
-    from pytest_gremlins.parallel.batch_executor import BatchExecutor  # noqa: PLC0415
+    from pytest_gremlins.parallel.batch_executor import BatchExecutor
 
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
@@ -917,7 +929,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
     Returns:
         List of results for each gremlin.
     """
-    from concurrent.futures import as_completed  # noqa: PLC0415
+    from concurrent.futures import as_completed
 
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
