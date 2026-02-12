@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.1.0 (2026-02-12)
+
+### Feat
+
+- Add export to Stryker Dashboard and SonarQube (#110)
+
+### Fix
+
+- sync __init__.py version with pyproject.toml
+- prevent pytest-cov from hijacking coverage subprocess (#114)
+- don't count pytest collection/import errors as zapped (#106)
+- make gremlin IDs globally unique across files (#90)
+- boolean mutations in class defaults falsely survive (#91)
+- **docs**: add mylib to spell check dictionary
+- **docs**: fix markdown linting issues across all documentation (#81)
+
 ## v1.0.0 (2026-01-26)
 
 First stable release of pytest-gremlins with complete mutation testing capabilities.
