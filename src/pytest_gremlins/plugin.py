@@ -286,7 +286,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     node_ids = [item.nodeid for item in session.items]
     normalized_node_ids = _make_node_ids_relative(node_ids, rootdir)
     gremlin_session.test_node_ids = {
-        item.name: node_id for item, node_id in zip(session.items, normalized_node_ids)
+        item.name: node_id for item, node_id in zip(session.items, normalized_node_ids, strict=True)
     }
 
     source_files = _discover_source_files(session, gremlin_session)
