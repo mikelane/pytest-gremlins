@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 from typing import TYPE_CHECKING
+import warnings
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
@@ -630,6 +631,15 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
 
     coverage_data = _run_tests_with_coverage(relative_node_ids, rootdir)
 
+    if not coverage_data:
+        warnings.warn(
+            'Coverage collection returned no data. '
+            'If you have --cov in pytest addopts, this may interfere with '
+            "gremlins' coverage-guided test selection. "
+            'See https://github.com/mikelane/pytest-gremlins/issues/113',
+            stacklevel=1,
+        )
+
     gremlin_paths_map: dict[str, str] = {}
     for gremlin in gremlin_session.gremlins:
         abs_path = str(Path(gremlin.file_path).resolve())
@@ -692,6 +702,8 @@ dynamic_context = test_function
         f'--rcfile={coveragerc_path}',
         '-m',
         'pytest',
+        '-o',
+        'addopts=',
         *test_node_ids,
         '--tb=no',
         '-q',
