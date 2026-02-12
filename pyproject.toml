@@ -45,7 +45,7 @@ dev = [
     "mkdocs-material[imaging]>=9.0.0",
     "mkdocs-minify-plugin>=0.7.0",
     "mkdocstrings[python]>=0.24.0",
-    "pillow>=12.1.1",
+    "pillow>=10.0.0",
     "mypy>=1.7.0",
     "pip>=26.0",
     "pip-audit>=2.6.0",
@@ -64,7 +64,7 @@ docs = [
     "mkdocs-material[imaging]>=9.0.0",
     "mkdocs-minify-plugin>=0.7.0",
     "mkdocstrings[python]>=0.24.0",
-    "pillow>=12.1.1",
+    "pillow>=10.0.0",
 ]
 
 [project.urls]
