@@ -59,7 +59,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --extra dev
-          uv pip install mutmut psutil
+          uv pip install --python .venv/bin/python mutmut psutil
 
       - name: Run benchmarks
         run: |
