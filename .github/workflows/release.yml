@@ -34,7 +34,9 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run ALL tests (small, medium, large)
-        run: uv run pytest --cov=pytest_gremlins -v
+        run: |
+          uv run coverage run -m pytest -v
+          uv run coverage report --show-missing
 
   # Run benchmarks as part of release
   benchmark:
