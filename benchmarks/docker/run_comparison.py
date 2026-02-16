@@ -7,6 +7,7 @@ and a compatible Python version (3.12) to avoid mutmut's macOS issues.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import (
     asdict,
     dataclass,
@@ -614,10 +615,8 @@ def run_gremlins(project_dir: Path, config_name: str, extra_args: list[str], run
                     parts = line.split()
                     for i, part in enumerate(parts):
                         if part == 'Zapped:' and i + 1 < len(parts):
-                            try:
+                            with contextlib.suppress(ValueError):
                                 mutations_killed = int(parts[i + 1])
-                            except ValueError:
-                                pass
                 if 'Survived:' in line:
                     parts = line.split()
                     for i, part in enumerate(parts):

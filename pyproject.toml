@@ -183,8 +183,20 @@ ensure_newline_before_comments = true
     "D",       # No docstrings required in benchmarks (already has module docs)
     "ANN",     # No type annotations required in benchmarks
     "PLR2004", # Magic values OK in benchmarks
+    "PLC0415", # Import at top - benchmarks use conditional imports
+    "C901",    # Complexity - benchmarks can be complex
+    "PLR0912", # Too many branches - benchmarks can have many branches
+    "PLR0915", # Too many statements - benchmarks can be long
     "S603",    # subprocess call security - benchmarks need to run subprocesses
     "S607",    # subprocess partial path - benchmarks use sys.executable
+]
+"src/pytest_gremlins/parallel/*.py" = [
+    "S603",    # subprocess call security - parallel execution intentionally runs test commands
+    "ANN101",  # Self annotations - will address in separate PR
+]
+"src/pytest_gremlins/plugin.py" = [
+    "S603",    # subprocess call security - plugin intentionally runs test commands
+    "ANN101",  # Self annotations - will address in separate PR
 ]
 "docs/**/*.py" = [
     "D",       # Docs config doesn't need docstrings
