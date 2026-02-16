@@ -56,7 +56,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync
 
       - name: Run ruff check
         run: uv run ruff check src tests
@@ -81,7 +81,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync
 
       - name: Run mypy
         run: uv run mypy src/pytest_gremlins
@@ -109,7 +109,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync
 
       - name: Run tests with coverage
         run: |
@@ -143,7 +143,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync
 
       - name: Run doctests
         run: uv run pytest --doctest-modules src/pytest_gremlins
@@ -168,7 +168,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync
 
       - name: Run pip-audit
         run: uv run pip-audit

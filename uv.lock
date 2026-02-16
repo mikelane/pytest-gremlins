@@ -1334,14 +1334,14 @@ wheels = [
 
 [[package]]
 name = "pytest-gremlins"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "coverage" },
     { name = "pytest" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "commitizen" },
     { name = "coverage", extra = ["toml"] },
@@ -1370,31 +1370,36 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "commitizen", marker = "extra == 'dev'", specifier = ">=3.13.0" },
     { name = "coverage", specifier = ">=7.12.0" },
-    { name = "coverage", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "mkdocs", marker = "extra == 'dev'", specifier = ">=1.5.0" },
-    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.5.0" },
-    { name = "mkdocs-material", marker = "extra == 'dev'", specifier = ">=9.0.0" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.0.0" },
-    { name = "mkdocs-minify-plugin", marker = "extra == 'dev'", specifier = ">=0.7.0" },
-    { name = "mkdocs-minify-plugin", marker = "extra == 'docs'", specifier = ">=0.7.0" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7.0" },
-    { name = "pip", marker = "extra == 'dev'", specifier = ">=26.0" },
-    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.6.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.6.0" },
     { name = "pytest", specifier = ">=7.0.0" },
-    { name = "pytest-bdd", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "pytest-test-categories", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.6" },
-    { name = "tox", marker = "extra == 'dev'", specifier = ">=4.11.0" },
-    { name = "tox-uv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
 ]
-provides-extras = ["dev", "docs"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "commitizen", specifier = ">=3.13.0" },
+    { name = "coverage", extras = ["toml"], specifier = ">=7.0.0" },
+    { name = "mkdocs", specifier = ">=1.5.0" },
+    { name = "mkdocs-material", specifier = ">=9.0.0" },
+    { name = "mkdocs-minify-plugin", specifier = ">=0.7.0" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
+    { name = "mypy", specifier = ">=1.7.0" },
+    { name = "pip", specifier = ">=26.0" },
+    { name = "pip-audit", specifier = ">=2.6.0" },
+    { name = "pre-commit", specifier = ">=3.6.0" },
+    { name = "pytest-bdd", specifier = ">=7.0.0" },
+    { name = "pytest-cov", specifier = ">=4.1.0" },
+    { name = "pytest-test-categories", specifier = ">=1.0.0" },
+    { name = "pytest-xdist", specifier = ">=3.5.0" },
+    { name = "ruff", specifier = ">=0.1.6" },
+    { name = "tox", specifier = ">=4.11.0" },
+    { name = "tox-uv", specifier = ">=1.0.0" },
+]
+docs = [
+    { name = "mkdocs", specifier = ">=1.5.0" },
+    { name = "mkdocs-material", specifier = ">=9.0.0" },
+    { name = "mkdocs-minify-plugin", specifier = ">=0.7.0" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
+]
 
 [[package]]
 name = "pytest-test-categories"
