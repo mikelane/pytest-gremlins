@@ -354,9 +354,17 @@ repos:
 
 **No gremlins found:**
 
-```bash
+```text
 $ pytest --gremlins
-pytest-gremlins: No gremlins found in source code.
+No gremlins found: no source paths were discovered.
+
+pytest-gremlins looks for source code in this order:
+  1. --gremlin-targets CLI option
+  2. [tool.pytest-gremlins] paths in pyproject.toml
+  3. [tool.setuptools] package config in pyproject.toml
+  4. src/ directory
+
+If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_package
 ```
 
 The plugin auto-discovers source paths in this order: `--gremlin-targets` CLI option,

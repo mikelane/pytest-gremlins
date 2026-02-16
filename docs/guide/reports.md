@@ -494,7 +494,7 @@ mutation_testing:
   stage: test
   script:
     - pip install uv && uv sync
-    - pytest --gremlins --gremlin-report=console,html,json
+    - uv run pytest --gremlins --gremlin-report=console,html,json
     - |
       SCORE=$(jq '.summary.percentage' gremlin-report.json)
       echo "Mutation score: $SCORE%"
@@ -521,7 +521,7 @@ pipeline {
         stage('Mutation Testing') {
             steps {
                 sh 'pip install uv && uv sync'
-                sh 'pytest --gremlins --gremlin-report=json,html'
+                sh 'uv run pytest --gremlins --gremlin-report=json,html'
 
                 script {
                     def report = readJSON file: 'gremlin-report.json'

@@ -163,7 +163,7 @@ UserWarning: Unknown operator 'comparision' requested, ignoring
 
 ---
 
-### Error: Invalid path in configuration
+### Error: No source paths discovered
 
 **Symptom:**
 
@@ -172,38 +172,28 @@ No gremlins found, even though your code has mutable expressions.
 ```text
 ================== pytest-gremlins mutation report ==================
 
-No gremlins found in source code.
+No gremlins found: no source paths were discovered.
+
+pytest-gremlins looks for source code in this order:
+  1. --gremlin-targets CLI option
+  2. [tool.pytest-gremlins] paths in pyproject.toml
+  3. [tool.setuptools] package config in pyproject.toml
+  4. src/ directory
+
+If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_package
 
 =====================================================================
 ```
 
-**Cause:** The configured `paths` don't point to your source code, or the paths don't exist.
+**Cause:** pytest-gremlins could not auto-discover your source code. This happens when:
+
+- You don't have a `pyproject.toml` (e.g., using `requirements.txt`)
+- Your `pyproject.toml` doesn't have `[tool.setuptools]` configuration
+- Your source code is not in a `src/` directory
 
 **Solution:**
 
-1. Verify the paths in your configuration:
-
-   ```toml
-   [tool.pytest-gremlins]
-   paths = ["src"]  # Adjust to your project structure
-   ```
-
-2. Check that the paths exist:
-
-   ```bash
-   ls -la src/
-   ```
-
-3. For non-standard project layouts, specify the exact path:
-
-   ```toml
-   [tool.pytest-gremlins]
-   paths = ["mypackage"]  # For flat layout
-   # or
-   paths = ["lib/python"]  # For custom structure
-   ```
-
-4. Use the CLI to override temporarily:
+1. Point directly at your source code:
 
    ```bash
    pytest --gremlins --gremlin-targets=mypackage
