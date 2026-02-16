@@ -140,6 +140,11 @@ ignore = [
     "D104",     # Missing docstring in public package
     "D107",     # Missing docstring in __init__ (we document class instead)
     "TRY003",   # Avoid specifying long messages outside exception class - too strict
+    "ANN101",   # Missing type annotation for self - not required by convention
+    "ANN102",   # Missing type annotation for cls - not required by convention
+    "S603",     # subprocess call without shell=True - acceptable for pytest execution
+    "PT001",    # Use @pytest.fixture() with parens - consistency with existing test code
+    "TCH003",   # Move stdlib import into type-checking block - not beneficial for runtime code
 ]
 
 [tool.ruff.lint.pydocstyle]

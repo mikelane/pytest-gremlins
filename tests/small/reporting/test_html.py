@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture
+@pytest.fixture()
 def make_gremlin():
     """Factory fixture for creating test gremlins."""
     counter = 0
@@ -43,7 +43,7 @@ def make_gremlin():
     return _make_gremlin
 
 
-@pytest.fixture
+@pytest.fixture()
 def make_result(make_gremlin):
     """Factory fixture for creating test results."""
 
@@ -193,3 +193,101 @@ class TestHtmlReporterEmpty:
         assert '<!DOCTYPE html>' in html
         # Should indicate no results rather than crash
         assert 'no' in html.lower() or '0' in html
+
+
+class TestHtmlReporterAllOutcomeCategories:
+    """Tests for displaying all mutation outcome categories in HTML."""
+
+    def test_displays_timeout_card_when_timeouts_present(self, make_result):
+        """It displays a timeout stat card when there are timeout results."""
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.TIMEOUT),
+            make_result(GremlinResultStatus.TIMEOUT),
+        ]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        # Should have timeout card with count
+        assert 'stat-timeout' in html
+        assert 'Timeout' in html
+        assert '>2<' in html  # 2 timeouts
+
+    def test_displays_error_card_when_errors_present(self, make_result):
+        """It displays an error stat card when there are error results."""
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.ERROR),
+        ]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        # Should have error card with count
+        assert 'stat-error' in html
+        assert 'Error' in html
+        assert '>1<' in html  # 1 error
+
+    def test_omits_timeout_card_when_no_timeouts(self, make_result):
+        """It omits the timeout card when there are no timeout results."""
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.SURVIVED),
+            make_result(GremlinResultStatus.ERROR),
+        ]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        # Should not have timeout card
+        assert 'stat-timeout' not in html
+        # But should have zapped, survived, and error
+        assert 'stat-zapped' in html
+        assert 'stat-survived' in html
+        assert 'stat-error' in html
+
+    def test_omits_error_card_when_no_errors(self, make_result):
+        """It omits the error card when there are no error results."""
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.SURVIVED),
+            make_result(GremlinResultStatus.TIMEOUT),
+        ]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        # Should not have error card
+        assert 'stat-error' not in html
+        # But should have zapped, survived, and timeout
+        assert 'stat-zapped' in html
+        assert 'stat-survived' in html
+        assert 'stat-timeout' in html
+
+    def test_displays_all_four_outcome_cards_when_mixed_results(self, make_result):
+        """It displays all four stat cards (zapped, survived, timeout, error) when all outcomes present."""
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.SURVIVED),
+            make_result(GremlinResultStatus.TIMEOUT),
+            make_result(GremlinResultStatus.ERROR),
+        ]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        # Should have all four stat cards
+        assert 'stat-zapped' in html
+        assert 'stat-survived' in html
+        assert 'stat-timeout' in html
+        assert 'stat-error' in html
+        # Verify counts
+        assert '>2<' in html  # 2 zapped
+        assert '>1<' in html  # 1 survived, 1 timeout, 1 error

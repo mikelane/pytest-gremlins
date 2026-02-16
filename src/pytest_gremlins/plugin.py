@@ -7,12 +7,14 @@ into the pytest test runner.
 from __future__ import annotations
 
 import ast
+from concurrent.futures import as_completed
 import contextlib
 from dataclasses import dataclass, field
 import json
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -28,6 +30,7 @@ from pytest_gremlins.coverage import CoverageCollector, PrioritizedSelector, Tes
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
 from pytest_gremlins.parallel.aggregator import ResultAggregator
+from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.html import HtmlReporter
 from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
@@ -580,8 +583,6 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     Returns:
         List of node IDs with paths made relative to rootdir.
     """
-    import re  # noqa: PLC0415
-
     result = []
     for node_id in node_ids:
         # Strip any plugin-added suffixes like "[SMALL]", "[MEDIUM]", etc.
@@ -710,7 +711,7 @@ dynamic_context = test_function
     ]
 
     try:
-        subprocess.run(  # noqa: S603
+        subprocess.run(
             cmd,
             cwd=str(rootdir),
             capture_output=True,
@@ -807,8 +808,6 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901
     Returns:
         List of results for each gremlin.
     """
-    from pytest_gremlins.parallel.batch_executor import BatchExecutor  # noqa: PLC0415
-
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
     gremlins = gremlin_session.gremlins
@@ -929,8 +928,6 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
     Returns:
         List of results for each gremlin.
     """
-    from concurrent.futures import as_completed  # noqa: PLC0415
-
     rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
     gremlins = gremlin_session.gremlins
@@ -1384,7 +1381,7 @@ def _test_gremlin(
         env[GREMLIN_SOURCES_ENV_VAR] = str(sources_file)
 
     try:
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             test_command,
             cwd=str(rootdir),
             env=env,
@@ -1441,7 +1438,7 @@ def _write_html_report(score: MutationScore, rootdir: Path) -> Path:
     return output_path
 
 
-def pytest_terminal_summary(
+def pytest_terminal_summary(  # noqa: C901
     terminalreporter: pytest.TerminalReporter,
     exitstatus: int,  # noqa: ARG001
     config: pytest.Config,
@@ -1473,11 +1470,17 @@ def pytest_terminal_summary(
     if score.total == 0:
         terminalreporter.write_line('No gremlins tested.')
     else:
-        zapped_pct = round(score.percentage)
-        survived_pct = 100 - zapped_pct if score.total > 0 else 0
+        zapped_pct = round(score.zapped / score.total * 100)
+        survived_pct = round(score.survived / score.total * 100)
+        timeout_pct = round(score.timeout / score.total * 100)
+        error_pct = round(score.error / score.total * 100)
 
         terminalreporter.write_line(f'Zapped: {score.zapped} gremlins ({zapped_pct}%)')
         terminalreporter.write_line(f'Survived: {score.survived} gremlins ({survived_pct}%)')
+        if score.timeout > 0:
+            terminalreporter.write_line(f'Timeout: {score.timeout} gremlins ({timeout_pct}%)')
+        if score.error > 0:
+            terminalreporter.write_line(f'Error: {score.error} gremlins ({error_pct}%)')
 
         # Show cache statistics if caching was enabled
         if gremlin_session.cache_enabled:

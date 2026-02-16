@@ -87,6 +87,38 @@ repos:
         args: [--config, cspell.json]
         files: \.(md|markdown)$
 
+  # Pre-push quality gate - run full CI checks before push
+  - repo: local
+    hooks:
+      - id: ruff-check-all
+        name: ruff check (full codebase)
+        entry: uv run ruff check src tests
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+      - id: ruff-format-check
+        name: ruff format --check
+        entry: uv run ruff format --check src tests
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+      - id: mypy-strict
+        name: mypy (strict)
+        entry: uv run mypy src/pytest_gremlins
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+      - id: pytest-fast
+        name: pytest (small tests)
+        entry: uv run pytest tests/small -q
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
+
 ci:
   autofix_commit_msg: |
     style: auto-fix from pre-commit hooks

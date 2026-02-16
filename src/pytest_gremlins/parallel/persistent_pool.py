@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ProcessPoolExecutor, wait
 import logging
-import multiprocessing  # noqa: TC003 - used at runtime for context
+import multiprocessing  # - used at runtime for context
 import os
 import subprocess
 import time
@@ -85,7 +85,7 @@ def _run_gremlin_batch(  # pragma: no cover
         env['ACTIVE_GREMLIN'] = gremlin_id
 
         try:
-            result = subprocess.run(  # noqa: S603
+            result = subprocess.run(
                 test_command,
                 cwd=rootdir,
                 env=env,

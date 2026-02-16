@@ -118,6 +118,22 @@ class HtmlReporter:
 
     def _render_summary(self, score: MutationScore) -> str:
         """Render the summary section."""
+        timeout_card = ''
+        if score.timeout > 0:
+            timeout_card = f"""
+            <div class="stat-card stat-timeout">
+                <div class="stat-value">{score.timeout}</div>
+                <div class="stat-label">Timeout</div>
+            </div>"""
+
+        error_card = ''
+        if score.error > 0:
+            error_card = f"""
+            <div class="stat-card stat-error">
+                <div class="stat-value">{score.error}</div>
+                <div class="stat-label">Error</div>
+            </div>"""
+
         return f"""
         <div class="summary">
             <div class="stat-card">
@@ -131,7 +147,7 @@ class HtmlReporter:
             <div class="stat-card stat-survived">
                 <div class="stat-value">{score.survived}</div>
                 <div class="stat-label">Survived</div>
-            </div>
+            </div>{timeout_card}{error_card}
             <div class="stat-card">
                 <div class="stat-value">{score.percentage:.0f}%</div>
                 <div class="stat-label">Mutation Score</div>
@@ -166,14 +182,14 @@ class HtmlReporter:
         """Render a single result row."""
         gremlin = result.gremlin
         status_class = f'status-{result.status.value}'
-        return f'''
+        return f"""
                 <tr>
                     <td>{self._escape_html(gremlin.file_path)}</td>
                     <td>{gremlin.line_number}</td>
                     <td>{self._escape_html(gremlin.operator_name)}</td>
                     <td>{self._escape_html(gremlin.description)}</td>
                     <td class="{status_class}">{result.status.value}</td>
-                </tr>'''
+                </tr>"""
 
     def _escape_html(self, text: str) -> str:
         """Escape HTML special characters."""
