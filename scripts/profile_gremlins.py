@@ -7,13 +7,16 @@ timing information for each phase of execution.
 Note: This is a diagnostic script, not part of the main library. Some lint
 rules are relaxed for convenience (subprocess calls, dynamic imports, etc.)
 """
-# ruff: noqa: S603, ANN401, PLR0915
+# ruff: noqa: ANN401, PLR0915
 
 from __future__ import annotations
 
 import ast
 import cProfile
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 import json
 import os
 from pathlib import Path
@@ -24,7 +27,11 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import TYPE_CHECKING, Any, Self
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Self,
+)
 
 
 # Ensure the local package is importable
@@ -32,8 +39,14 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / 'src'))
 
 # E402 is expected here - we need to modify sys.path before importing
-from pytest_gremlins.coverage import CoverageCollector, TestSelector  # noqa: E402
-from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source  # noqa: E402
+from pytest_gremlins.coverage import (  # noqa: E402
+    CoverageCollector,
+    TestSelector,
+)
+from pytest_gremlins.instrumentation.transformer import (  # noqa: E402
+    get_default_registry,
+    transform_source,
+)
 
 
 if TYPE_CHECKING:

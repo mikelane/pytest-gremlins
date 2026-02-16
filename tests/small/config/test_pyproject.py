@@ -6,7 +6,10 @@ provides defaults when configuration is absent.
 
 import pytest
 
-from pytest_gremlins.config import GremlinConfig, load_config
+from pytest_gremlins.config import (
+    GremlinConfig,
+    load_config,
+)
 
 
 @pytest.mark.small

@@ -7,7 +7,10 @@ module imports and inject instrumented code during mutation testing.
 from __future__ import annotations
 
 import ast
-from importlib.abc import Loader, MetaPathFinder
+from importlib.abc import (
+    Loader,
+    MetaPathFinder,
+)
 from importlib.machinery import ModuleSpec
 import sys
 import types
@@ -185,7 +188,7 @@ class TestImportHookIntegration:
         register_import_hooks(instrumented_modules)
 
         try:
-            import _gremlin_test_module  # noqa: PLC0415
+            import _gremlin_test_module  # Intentional: testing import hooks
 
             assert _gremlin_test_module.test_value == 'instrumented'
         finally:

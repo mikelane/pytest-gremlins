@@ -23,11 +23,7 @@ from __future__ import annotations
 
 import ast
 import copy
-from typing import TYPE_CHECKING, ClassVar
-
-
-if TYPE_CHECKING:
-    pass
+from typing import ClassVar
 
 
 # =============================================================================
@@ -327,9 +323,7 @@ class ListMethodOperator:
             # Check if reverse is already specified
             has_reverse = any(kw.arg == 'reverse' for kw in node.keywords)
             if not has_reverse:
-                mutated.keywords.append(
-                    ast.keyword(arg='reverse', value=ast.Constant(value=True))
-                )
+                mutated.keywords.append(ast.keyword(arg='reverse', value=ast.Constant(value=True)))
                 mutations.append(mutated)
 
         elif method == 'reverse':
@@ -358,7 +352,7 @@ def register_all_examples() -> None:
             register_all_examples()
     """
     # Import here to avoid circular imports
-    from pytest_gremlins.operators import OperatorRegistry
+    from pytest_gremlins.operators import OperatorRegistry  # noqa: PLC0415
 
     registry = OperatorRegistry()
     registry.register(StringEmptyOperator)
@@ -379,7 +373,7 @@ def _run_example_tests() -> None:
     This is for documentation/example purposes. In a real project,
     use pytest with proper test files.
     """
-    import ast
+    import ast  # noqa: PLC0415
 
     # Test StringEmptyOperator
     print('Testing StringEmptyOperator...')

@@ -22,7 +22,10 @@ Example:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 import multiprocessing
 import os
 from typing import Literal

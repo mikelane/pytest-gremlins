@@ -497,6 +497,15 @@ wheels = [
 ]
 
 [[package]]
+name = "isort"
+version = "7.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/53/4f3c058e3bace40282876f9b553343376ee687f3c35a525dc79dbd450f88/isort-7.0.0.tar.gz", hash = "sha256:5513527951aadb3ac4292a41a16cbc50dd1642432f5e8c20057d414bdafb4187", size = 805049, upload-time = "2025-10-11T13:30:59.107Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/ed/e3705d6d02b4f7aea715a353c8ce193efd0b5db13e204df895d38734c244/isort-7.0.0-py3-none-any.whl", hash = "sha256:1bcabac8bc3c36c7fb7b98a76c8abb18e0f841a3ba81decac7691008592499c1", size = 94672, upload-time = "2025-10-11T13:30:57.665Z" },
+]
+
+[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1341,10 +1350,11 @@ dependencies = [
     { name = "pytest" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "commitizen" },
     { name = "coverage", extra = ["toml"] },
+    { name = "isort" },
     { name = "mkdocs" },
     { name = "mkdocs-material" },
     { name = "mkdocs-minify-plugin" },
@@ -1370,31 +1380,37 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "commitizen", marker = "extra == 'dev'", specifier = ">=3.13.0" },
     { name = "coverage", specifier = ">=7.12.0" },
-    { name = "coverage", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "mkdocs", marker = "extra == 'dev'", specifier = ">=1.5.0" },
-    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.5.0" },
-    { name = "mkdocs-material", marker = "extra == 'dev'", specifier = ">=9.0.0" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.0.0" },
-    { name = "mkdocs-minify-plugin", marker = "extra == 'dev'", specifier = ">=0.7.0" },
-    { name = "mkdocs-minify-plugin", marker = "extra == 'docs'", specifier = ">=0.7.0" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7.0" },
-    { name = "pip", marker = "extra == 'dev'", specifier = ">=26.0" },
-    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.6.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.6.0" },
     { name = "pytest", specifier = ">=7.0.0" },
-    { name = "pytest-bdd", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "pytest-test-categories", marker = "extra == 'dev'", specifier = ">=1.0.0" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.6" },
-    { name = "tox", marker = "extra == 'dev'", specifier = ">=4.11.0" },
-    { name = "tox-uv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
 ]
-provides-extras = ["dev", "docs"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "commitizen", specifier = ">=3.13.0" },
+    { name = "coverage", extras = ["toml"], specifier = ">=7.0.0" },
+    { name = "isort", specifier = ">=5.13.0" },
+    { name = "mkdocs", specifier = ">=1.5.0" },
+    { name = "mkdocs-material", specifier = ">=9.0.0" },
+    { name = "mkdocs-minify-plugin", specifier = ">=0.7.0" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
+    { name = "mypy", specifier = ">=1.7.0" },
+    { name = "pip", specifier = ">=26.0" },
+    { name = "pip-audit", specifier = ">=2.6.0" },
+    { name = "pre-commit", specifier = ">=3.6.0" },
+    { name = "pytest-bdd", specifier = ">=7.0.0" },
+    { name = "pytest-cov", specifier = ">=4.1.0" },
+    { name = "pytest-test-categories", specifier = ">=1.0.0" },
+    { name = "pytest-xdist", specifier = ">=3.5.0" },
+    { name = "ruff", specifier = ">=0.1.6" },
+    { name = "tox", specifier = ">=4.11.0" },
+    { name = "tox-uv", specifier = ">=1.0.0" },
+]
+docs = [
+    { name = "mkdocs", specifier = ">=1.5.0" },
+    { name = "mkdocs-material", specifier = ">=9.0.0" },
+    { name = "mkdocs-minify-plugin", specifier = ">=0.7.0" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
+]
 
 [[package]]
 name = "pytest-test-categories"

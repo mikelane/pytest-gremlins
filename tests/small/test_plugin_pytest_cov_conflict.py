@@ -16,7 +16,11 @@ import warnings
 
 import pytest
 
-from pytest_gremlins.plugin import GremlinSession, _collect_coverage, _run_tests_with_coverage
+from pytest_gremlins.plugin import (
+    GremlinSession,
+    _collect_coverage,
+    _run_tests_with_coverage,
+)
 
 
 if TYPE_CHECKING:

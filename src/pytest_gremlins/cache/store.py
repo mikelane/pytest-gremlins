@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from typing import TYPE_CHECKING, Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 
 if TYPE_CHECKING:
@@ -83,12 +86,14 @@ class ResultStore:
         Args:
             conn: The database connection to initialize.
         """
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS results (
                 cache_key TEXT PRIMARY KEY,
                 result_json TEXT NOT NULL
             )
-        """)
+        """
+        )
         conn.commit()
 
     def get(self, cache_key: str) -> dict[str, Any] | None:

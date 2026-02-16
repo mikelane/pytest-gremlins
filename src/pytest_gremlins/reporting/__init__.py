@@ -11,7 +11,10 @@ Export formats for external services:
 from pytest_gremlins.reporting.console import ConsoleReporter
 from pytest_gremlins.reporting.html import HtmlReporter
 from pytest_gremlins.reporting.json_reporter import JsonReporter
-from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.reporting.sonarqube_export import SonarQubeExporter
 from pytest_gremlins.reporting.stryker_export import StrykerExporter

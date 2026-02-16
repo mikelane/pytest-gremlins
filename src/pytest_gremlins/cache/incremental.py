@@ -6,7 +6,10 @@ to implement smart cache invalidation based on content changes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore

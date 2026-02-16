@@ -22,11 +22,17 @@ from __future__ import annotations
 
 from concurrent.futures import as_completed
 import os
-from typing import Self
+from typing import (
+    TYPE_CHECKING,
+    Self,
+)
 
 from pytest_gremlins.parallel.persistent_pool import PersistentWorkerPool
-from pytest_gremlins.parallel.pool import WorkerResult  # noqa: TC001 - used at runtime
 from pytest_gremlins.parallel.pool_config import PoolConfig
+
+
+if TYPE_CHECKING:
+    from pytest_gremlins.parallel.pool import WorkerResult
 
 
 class BatchExecutor:

@@ -108,13 +108,15 @@ class TestBatchExecutorExecution:
     def test_execute_with_early_termination_batch(self, tmp_path: Path) -> None:
         """Execute handles early termination within batches."""
         script = tmp_path / 'test_script.py'
-        script.write_text("""
+        script.write_text(
+            """
 import os
 import sys
 gremlin = os.environ.get('ACTIVE_GREMLIN')
 # g002 is detected (killed)
 sys.exit(1 if gremlin == 'g002' else 0)
-""")
+"""
+        )
 
         executor = BatchExecutor(batch_size=5, max_workers=1)
 
@@ -150,7 +152,8 @@ sys.exit(1 if gremlin == 'g002' else 0)
     def test_execute_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """Execute sets PYTEST_GREMLINS_SOURCES_FILE when instrumented_dir is provided."""
         script = tmp_path / 'test_script.py'
-        script.write_text("""
+        script.write_text(
+            """
 import os
 import sys
 # Check that the sources file env var is set
@@ -159,7 +162,8 @@ if 'instrumented/sources.json' not in sources_file:
     print(f"SOURCES_FILE not set correctly: {sources_file}")
     sys.exit(1)
 sys.exit(0)
-""")
+"""
+        )
 
         executor = BatchExecutor(batch_size=5, max_workers=1)
 

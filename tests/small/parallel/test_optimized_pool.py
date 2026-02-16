@@ -9,7 +9,10 @@ from __future__ import annotations
 import sys
 import time
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 
 import pytest
 

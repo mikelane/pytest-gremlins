@@ -16,7 +16,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
-from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.reporting.sonarqube_export import SonarQubeExporter
 

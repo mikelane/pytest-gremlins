@@ -13,7 +13,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.parallel.persistent_pool import PersistentWorkerPool
-from pytest_gremlins.parallel.pool_config import PoolConfig, get_optimal_start_method
+from pytest_gremlins.parallel.pool_config import (
+    PoolConfig,
+    get_optimal_start_method,
+)
 
 
 if TYPE_CHECKING:

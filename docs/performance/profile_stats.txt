@@ -116,5 +116,3 @@
       131    0.000    0.000    0.000    0.000 transformer.py:164(_get_boolean_description)
        44    0.000    0.000    0.007    0.000 arithmetic.py:73(mutate)
       838    0.000    0.000    0.000    0.000 {method 'extend' of 'list' objects}
-
-

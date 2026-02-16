@@ -6,7 +6,10 @@ to achieve balanced workloads and efficient parallel execution.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import (
+    TYPE_CHECKING,
+    Protocol,
+)
 
 
 if TYPE_CHECKING:

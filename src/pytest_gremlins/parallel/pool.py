@@ -11,7 +11,10 @@ content is ever deserialized.
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ProcessPoolExecutor
+from concurrent.futures import (
+    Future,
+    ProcessPoolExecutor,
+)
 from dataclasses import dataclass
 import logging
 import os
@@ -75,7 +78,7 @@ def _run_gremlin_test(  # pragma: no cover
     env['ACTIVE_GREMLIN'] = gremlin_id
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # Intentional: runs pytest test commands
             test_command,
             cwd=rootdir,
             env=env,

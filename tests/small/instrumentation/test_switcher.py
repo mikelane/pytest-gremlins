@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR, get_active_gremlin
+from pytest_gremlins.instrumentation.switcher import (
+    ACTIVE_GREMLIN_ENV_VAR,
+    get_active_gremlin,
+)
 
 
 @pytest.mark.small

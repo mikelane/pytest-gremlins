@@ -10,7 +10,10 @@ import pytest
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.reporting.json_reporter import JsonReporter
-from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
 
 

@@ -21,7 +21,7 @@ import re
 import pytest
 
 
-@pytest.fixture
+@pytest.fixture()
 def pytester_with_conftest(pytester: pytest.Pytester) -> pytest.Pytester:
     """Create a pytester instance with conftest that registers small marker for nested tests."""
     pytester.makeconftest(

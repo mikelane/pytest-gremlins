@@ -7,20 +7,25 @@ and a compatible Python version (3.12) to avoid mutmut's macOS issues.
 
 from __future__ import annotations
 
+import contextlib
+from dataclasses import (
+    asdict,
+    dataclass,
+)
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import asdict, dataclass
-from pathlib import Path
 
 
 @dataclass
 class BenchmarkResult:
     """Result from a benchmark run."""
+
     tool: str
     config: str
     wall_time_seconds: float
@@ -42,7 +47,8 @@ def create_synthetic_project(work_dir: Path) -> Path:
     (src_dir / '__init__.py').write_text('"""Synthetic benchmark package."""\n')
 
     # Create calculator.py - arithmetic operations
-    (src_dir / 'calculator.py').write_text('''\
+    (src_dir / 'calculator.py').write_text(
+        '''\
 """Basic calculator with arithmetic operations."""
 
 
@@ -76,10 +82,12 @@ def power(base: int, exponent: int) -> int:
     for _ in range(exponent):
         result *= base
     return result
-''')
+'''
+    )
 
     # Create validator.py - comparison and boolean operations
-    (src_dir / 'validator.py').write_text('''\
+    (src_dir / 'validator.py').write_text(
+        '''\
 """Validation functions with comparisons and booleans."""
 
 
@@ -117,10 +125,12 @@ def is_negative(number: int) -> bool:
 def is_zero(number: int) -> bool:
     """Check if number is zero."""
     return number == 0
-''')
+'''
+    )
 
     # Create processor.py - more complex logic
-    (src_dir / 'processor.py').write_text('''\
+    (src_dir / 'processor.py').write_text(
+        '''\
 """Data processing functions."""
 
 
@@ -177,12 +187,14 @@ def count_evens(numbers: list[int]) -> int:
         if num % 2 == 0:
             count += 1
     return count
-''')
+'''
+    )
 
     # Create comprehensive tests
     (test_dir / '__init__.py').write_text('')
 
-    (test_dir / 'test_calculator.py').write_text('''\
+    (test_dir / 'test_calculator.py').write_text(
+        '''\
 """Tests for calculator module."""
 import pytest
 from synthetic.calculator import add, subtract, multiply, divide, power
@@ -249,9 +261,11 @@ class TestPower:
     def test_power_negative_exponent_raises(self):
         with pytest.raises(ValueError, match="Negative exponents"):
             power(2, -1)
-''')
+'''
+    )
 
-    (test_dir / 'test_validator.py').write_text('''\
+    (test_dir / 'test_validator.py').write_text(
+        '''\
 """Tests for validator module."""
 from synthetic.validator import (
     is_adult,
@@ -351,9 +365,11 @@ class TestIsZero:
 
     def test_negative_not_zero(self):
         assert is_zero(-1) is False
-''')
+'''
+    )
 
-    (test_dir / 'test_processor.py').write_text('''\
+    (test_dir / 'test_processor.py').write_text(
+        '''\
 """Tests for processor module."""
 import pytest
 from synthetic.processor import clamp, grade_score, factorial, fibonacci, count_evens
@@ -440,15 +456,18 @@ class TestCountEvens:
 
     def test_count_evens_empty(self):
         assert count_evens([]) == 0
-''')
+'''
+    )
 
     # Create pyproject.toml for mutmut 2.x
-    (project_dir / 'pyproject.toml').write_text("""\
+    (project_dir / 'pyproject.toml').write_text(
+        """\
 [project]
 name = "synthetic-benchmark"
 version = "0.1.0"
 requires-python = ">=3.11"
-""")
+"""
+    )
 
     return project_dir
 
@@ -461,7 +480,7 @@ def run_mutmut(project_dir: Path, runs: int = 3) -> list[BenchmarkResult]:
     env['PYTHONPATH'] = str(project_dir / 'src')
 
     for run in range(1, runs + 1):
-        print(f"  mutmut run {run}/{runs}...", end=" ", flush=True)
+        print(f'  mutmut run {run}/{runs}...', end=' ', flush=True)
 
         # Clear cache
         cache_path = project_dir / '.mutmut-cache'
@@ -472,7 +491,10 @@ def run_mutmut(project_dir: Path, runs: int = 3) -> list[BenchmarkResult]:
                 cache_path.unlink()
 
         cmd = [
-            sys.executable, '-m', 'mutmut', 'run',
+            sys.executable,
+            '-m',
+            'mutmut',
+            'run',
             '--paths-to-mutate=src/',
             '--tests-dir=tests/',
         ]
@@ -496,6 +518,7 @@ def run_mutmut(project_dir: Path, runs: int = 3) -> list[BenchmarkResult]:
 
             # mutmut 2.x output pattern
             import re
+
             output = result.stdout + result.stderr
             pattern = r'(\d+)/(\d+)\s+🎉\s+(\d+)'
             matches = list(re.finditer(pattern, output))
@@ -504,36 +527,42 @@ def run_mutmut(project_dir: Path, runs: int = 3) -> list[BenchmarkResult]:
                 mutations_total = int(match.group(2))
                 mutations_killed = int(match.group(3))
 
-            print(f"{wall_time:.2f}s ({mutations_killed}/{mutations_total} killed)")
+            print(f'{wall_time:.2f}s ({mutations_killed}/{mutations_total} killed)')
 
-            results.append(BenchmarkResult(
-                tool='mutmut',
-                config='default',
-                wall_time_seconds=wall_time,
-                mutations_total=mutations_total,
-                mutations_killed=mutations_killed,
-            ))
+            results.append(
+                BenchmarkResult(
+                    tool='mutmut',
+                    config='default',
+                    wall_time_seconds=wall_time,
+                    mutations_total=mutations_total,
+                    mutations_killed=mutations_killed,
+                )
+            )
 
         except subprocess.TimeoutExpired:
-            print("TIMEOUT")
-            results.append(BenchmarkResult(
-                tool='mutmut',
-                config='default',
-                wall_time_seconds=600,
-                mutations_total=0,
-                mutations_killed=0,
-                error='Timeout',
-            ))
+            print('TIMEOUT')
+            results.append(
+                BenchmarkResult(
+                    tool='mutmut',
+                    config='default',
+                    wall_time_seconds=600,
+                    mutations_total=0,
+                    mutations_killed=0,
+                    error='Timeout',
+                )
+            )
         except Exception as e:
-            print(f"ERROR: {e}")
-            results.append(BenchmarkResult(
-                tool='mutmut',
-                config='default',
-                wall_time_seconds=0,
-                mutations_total=0,
-                mutations_killed=0,
-                error=str(e),
-            ))
+            print(f'ERROR: {e}')
+            results.append(
+                BenchmarkResult(
+                    tool='mutmut',
+                    config='default',
+                    wall_time_seconds=0,
+                    mutations_total=0,
+                    mutations_killed=0,
+                    error=str(e),
+                )
+            )
 
     return results
 
@@ -546,7 +575,7 @@ def run_gremlins(project_dir: Path, config_name: str, extra_args: list[str], run
     env['PYTHONPATH'] = str(project_dir / 'src')
 
     for run in range(1, runs + 1):
-        print(f"  gremlins {config_name} run {run}/{runs}...", end=" ", flush=True)
+        print(f'  gremlins {config_name} run {run}/{runs}...', end=' ', flush=True)
 
         # Clear cache
         cache_dir = project_dir / '.gremlins_cache'
@@ -554,7 +583,9 @@ def run_gremlins(project_dir: Path, config_name: str, extra_args: list[str], run
             shutil.rmtree(cache_dir)
 
         cmd = [
-            sys.executable, '-m', 'pytest',
+            sys.executable,
+            '-m',
+            'pytest',
             'tests/',
             '--gremlins',
             '--gremlin-targets=src/',
@@ -584,10 +615,8 @@ def run_gremlins(project_dir: Path, config_name: str, extra_args: list[str], run
                     parts = line.split()
                     for i, part in enumerate(parts):
                         if part == 'Zapped:' and i + 1 < len(parts):
-                            try:
+                            with contextlib.suppress(ValueError):
                                 mutations_killed = int(parts[i + 1])
-                            except ValueError:
-                                pass
                 if 'Survived:' in line:
                     parts = line.split()
                     for i, part in enumerate(parts):
@@ -598,36 +627,42 @@ def run_gremlins(project_dir: Path, config_name: str, extra_args: list[str], run
                             except ValueError:
                                 pass
 
-            print(f"{wall_time:.2f}s ({mutations_killed}/{mutations_total} killed)")
+            print(f'{wall_time:.2f}s ({mutations_killed}/{mutations_total} killed)')
 
-            results.append(BenchmarkResult(
-                tool='gremlins',
-                config=config_name,
-                wall_time_seconds=wall_time,
-                mutations_total=mutations_total,
-                mutations_killed=mutations_killed,
-            ))
+            results.append(
+                BenchmarkResult(
+                    tool='gremlins',
+                    config=config_name,
+                    wall_time_seconds=wall_time,
+                    mutations_total=mutations_total,
+                    mutations_killed=mutations_killed,
+                )
+            )
 
         except subprocess.TimeoutExpired:
-            print("TIMEOUT")
-            results.append(BenchmarkResult(
-                tool='gremlins',
-                config=config_name,
-                wall_time_seconds=600,
-                mutations_total=0,
-                mutations_killed=0,
-                error='Timeout',
-            ))
+            print('TIMEOUT')
+            results.append(
+                BenchmarkResult(
+                    tool='gremlins',
+                    config=config_name,
+                    wall_time_seconds=600,
+                    mutations_total=0,
+                    mutations_killed=0,
+                    error='Timeout',
+                )
+            )
         except Exception as e:
-            print(f"ERROR: {e}")
-            results.append(BenchmarkResult(
-                tool='gremlins',
-                config=config_name,
-                wall_time_seconds=0,
-                mutations_total=0,
-                mutations_killed=0,
-                error=str(e),
-            ))
+            print(f'ERROR: {e}')
+            results.append(
+                BenchmarkResult(
+                    tool='gremlins',
+                    config=config_name,
+                    wall_time_seconds=0,
+                    mutations_total=0,
+                    mutations_killed=0,
+                    error=str(e),
+                )
+            )
 
     return results
 
@@ -636,29 +671,29 @@ def main() -> int:
     """Run the benchmark comparison."""
     import statistics
 
-    print("=" * 60)
-    print("pytest-gremlins vs mutmut Benchmark Comparison")
-    print("=" * 60)
+    print('=' * 60)
+    print('pytest-gremlins vs mutmut Benchmark Comparison')
+    print('=' * 60)
     print()
 
     # Show versions
-    print("Environment:")
-    print(f"  Python: {sys.version.split()[0]}")
+    print('Environment:')
+    print(f'  Python: {sys.version.split()[0]}')
 
     try:
         result = subprocess.run(
-            [sys.executable, '-m', 'mutmut', 'version'],
-            capture_output=True, text=True, check=False
+            [sys.executable, '-m', 'mutmut', 'version'], capture_output=True, text=True, check=False
         )
-        print(f"  mutmut: {result.stdout.strip()}")
+        print(f'  mutmut: {result.stdout.strip()}')
     except Exception:
-        print("  mutmut: unknown")
+        print('  mutmut: unknown')
 
     try:
         import pytest_gremlins
-        print(f"  pytest-gremlins: {pytest_gremlins.__version__}")
+
+        print(f'  pytest-gremlins: {pytest_gremlins.__version__}')
     except Exception:
-        print("  pytest-gremlins: unknown")
+        print('  pytest-gremlins: unknown')
 
     print()
 
@@ -669,7 +704,7 @@ def main() -> int:
         project_dir = create_synthetic_project(work_dir)
 
         # Verify tests work
-        print("Verifying test suite...")
+        print('Verifying test suite...')
         env = os.environ.copy()
         env['PYTHONPATH'] = str(project_dir / 'src')
         result = subprocess.run(
@@ -681,37 +716,35 @@ def main() -> int:
             check=False,
         )
         if result.returncode != 0:
-            print(f"Test suite failed:\n{result.stdout}\n{result.stderr}")
+            print(f'Test suite failed:\n{result.stdout}\n{result.stderr}')
             return 1
-        print("  Tests pass ✓")
+        print('  Tests pass ✓')
         print()
 
         all_results: list[BenchmarkResult] = []
 
         # Run mutmut
-        print("Running mutmut benchmarks...")
+        print('Running mutmut benchmarks...')
         all_results.extend(run_mutmut(project_dir, runs=runs))
         print()
 
         # Run gremlins - sequential
-        print("Running pytest-gremlins benchmarks...")
+        print('Running pytest-gremlins benchmarks...')
         all_results.extend(run_gremlins(project_dir, 'sequential', [], runs=runs))
 
         # Run gremlins - parallel
         all_results.extend(run_gremlins(project_dir, 'parallel', ['--gremlin-parallel'], runs=runs))
 
         # Run gremlins - full
-        all_results.extend(run_gremlins(
-            project_dir, 'full',
-            ['--gremlin-parallel', '--gremlin-cache', '--gremlin-batch'],
-            runs=runs
-        ))
+        all_results.extend(
+            run_gremlins(project_dir, 'full', ['--gremlin-parallel', '--gremlin-cache', '--gremlin-batch'], runs=runs)
+        )
         print()
 
     # Compute summaries
-    print("=" * 60)
-    print("RESULTS SUMMARY")
-    print("=" * 60)
+    print('=' * 60)
+    print('RESULTS SUMMARY')
+    print('=' * 60)
     print()
 
     groups: dict[tuple[str, str], list[BenchmarkResult]] = {}
@@ -730,26 +763,28 @@ def main() -> int:
         stddev = statistics.stdev(times) if len(times) > 1 else 0
         mutations = group[-1].mutations_total
         killed = group[-1].mutations_killed
-        summaries.append({
-            'tool': tool,
-            'config': config,
-            'mean': mean_time,
-            'stddev': stddev,
-            'mutations': mutations,
-            'killed': killed,
-        })
-        print(f"{tool:12} {config:12} {mean_time:8.2f}s (+/- {stddev:.2f}s)  {killed}/{mutations} killed")
+        summaries.append(
+            {
+                'tool': tool,
+                'config': config,
+                'mean': mean_time,
+                'stddev': stddev,
+                'mutations': mutations,
+                'killed': killed,
+            }
+        )
+        print(f'{tool:12} {config:12} {mean_time:8.2f}s (+/- {stddev:.2f}s)  {killed}/{mutations} killed')
 
     print()
 
     # Compute speedups
     mutmut_time = next((s['mean'] for s in summaries if s['tool'] == 'mutmut'), None)
     if mutmut_time:
-        print("Speedup vs mutmut:")
+        print('Speedup vs mutmut:')
         for s in summaries:
             if s['tool'] == 'gremlins':
                 speedup = mutmut_time / s['mean'] if s['mean'] > 0 else 0
-                print(f"  {s['config']:12} {speedup:.2f}x faster")
+                print(f'  {s["config"]:12} {speedup:.2f}x faster')
 
     print()
 
@@ -758,7 +793,7 @@ def main() -> int:
         'results': [asdict(r) for r in all_results],
         'summaries': summaries,
     }
-    print("JSON Output:")
+    print('JSON Output:')
     print(json.dumps(output, indent=2))
 
     return 0
