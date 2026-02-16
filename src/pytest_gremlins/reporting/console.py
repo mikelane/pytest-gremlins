@@ -78,11 +78,20 @@ class ConsoleReporter:
 
     def _write_summary(self, score: MutationScore) -> None:
         """Write the summary statistics."""
-        zapped_pct = round(score.percentage)
-        survived_pct = 100 - zapped_pct if score.total > 0 else 0
+        if score.total == 0:
+            return
+
+        zapped_pct = round(score.zapped / score.total * 100)
+        survived_pct = round(score.survived / score.total * 100)
+        timeout_pct = round(score.timeout / score.total * 100)
+        error_pct = round(score.error / score.total * 100)
 
         self._write_line(f'Zapped: {score.zapped} gremlins ({zapped_pct}%)')
         self._write_line(f'Survived: {score.survived} gremlins ({survived_pct}%)')
+        if score.timeout > 0:
+            self._write_line(f'Timeout: {score.timeout} gremlins ({timeout_pct}%)')
+        if score.error > 0:
+            self._write_line(f'Error: {score.error} gremlins ({error_pct}%)')
 
     def _write_survivors(self, score: MutationScore) -> None:
         """Write the top surviving gremlins."""

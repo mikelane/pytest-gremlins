@@ -13,7 +13,7 @@ from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 
 
-@pytest.fixture
+@pytest.fixture()
 def make_gremlin():
     """Factory fixture for creating test gremlins."""
     counter = 0
@@ -39,7 +39,7 @@ def make_gremlin():
     return _make_gremlin
 
 
-@pytest.fixture
+@pytest.fixture()
 def make_result(make_gremlin):
     """Factory fixture for creating test results."""
 
@@ -197,3 +197,98 @@ class TestConsoleReporterFormatting:
 
         output_text = output.getvalue()
         assert '--gremlin-report=html' in output_text or 'html' in output_text.lower()
+
+
+class TestConsoleReporterAllOutcomeCategories:
+    """Tests for all mutation outcome categories (zapped, survived, timeout, error)."""
+
+    def test_report_with_mixed_results_displays_all_four_categories(self, make_result):
+        """It displays zapped, survived, timeout, and error with correct counts and percentages."""
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.ZAPPED),  # 4 zapped = 40%
+            make_result(GremlinResultStatus.SURVIVED),
+            make_result(GremlinResultStatus.SURVIVED),  # 2 survived = 20%
+            make_result(GremlinResultStatus.TIMEOUT),
+            make_result(GremlinResultStatus.TIMEOUT),
+            make_result(GremlinResultStatus.TIMEOUT),  # 3 timeout = 30%
+            make_result(GremlinResultStatus.ERROR),  # 1 error = 10%
+        ]
+        score = MutationScore.from_results(results)
+        output = StringIO()
+        reporter = ConsoleReporter(output=output)
+
+        reporter.write_report(score)
+
+        output_text = output.getvalue()
+        assert 'Zapped: 4 gremlins (40%)' in output_text
+        assert 'Survived: 2 gremlins (20%)' in output_text
+        assert 'Timeout: 3 gremlins (30%)' in output_text
+        assert 'Error: 1 gremlins (10%)' in output_text
+
+    def test_report_omits_timeout_line_when_zero_timeouts(self, make_result):
+        """It omits the timeout line when there are no timeouts."""
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.SURVIVED),
+            make_result(GremlinResultStatus.ERROR),
+        ]
+        score = MutationScore.from_results(results)
+        output = StringIO()
+        reporter = ConsoleReporter(output=output)
+
+        reporter.write_report(score)
+
+        output_text = output.getvalue()
+        assert 'Zapped:' in output_text
+        assert 'Survived:' in output_text
+        assert 'Error:' in output_text
+        assert 'Timeout:' not in output_text
+
+    def test_report_omits_error_line_when_zero_errors(self, make_result):
+        """It omits the error line when there are no errors."""
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.SURVIVED),
+            make_result(GremlinResultStatus.TIMEOUT),
+        ]
+        score = MutationScore.from_results(results)
+        output = StringIO()
+        reporter = ConsoleReporter(output=output)
+
+        reporter.write_report(score)
+
+        output_text = output.getvalue()
+        assert 'Zapped:' in output_text
+        assert 'Survived:' in output_text
+        assert 'Timeout:' in output_text
+        assert 'Error:' not in output_text
+
+    def test_percentages_computed_from_own_counts_not_complement(self, make_result):
+        """It computes each percentage from its own count, not as 100 - other_percent."""
+        # 5 zapped (50%), 1 survived (10%), 2 timeout (20%), 2 error (20%) = 10 total
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.ZAPPED),  # 5 = 50%
+            make_result(GremlinResultStatus.SURVIVED),  # 1 = 10%
+            make_result(GremlinResultStatus.TIMEOUT),
+            make_result(GremlinResultStatus.TIMEOUT),  # 2 = 20%
+            make_result(GremlinResultStatus.ERROR),
+            make_result(GremlinResultStatus.ERROR),  # 2 = 20%
+        ]
+        score = MutationScore.from_results(results)
+        output = StringIO()
+        reporter = ConsoleReporter(output=output)
+
+        reporter.write_report(score)
+
+        output_text = output.getvalue()
+        # Verify survived is 10%, not 100 - 50 = 50%
+        assert 'Survived: 1 gremlins (10%)' in output_text
+        assert 'Timeout: 2 gremlins (20%)' in output_text
+        assert 'Error: 2 gremlins (20%)' in output_text
