@@ -18,7 +18,7 @@ from pytest_gremlins.instrumentation.transformer import (
 from pytest_gremlins.operators import ComparisonOperator
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestReturnDescriptionConstantToConstant:
     """Tests for _get_return_description with constant-to-constant mutations."""
 
@@ -51,7 +51,7 @@ class TestReturnDescriptionConstantToConstant:
         assert result == 'return True to False'
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestTransformerEdgeCasesForCoverage:
     """Tests for transformer visitor edge cases."""
 
@@ -93,7 +93,7 @@ def do_nothing():
         assert len(gremlins) == 0
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestMutationSwitchingTransformerPrivateMethods:
     """Tests for MutationSwitchingTransformer internal methods."""
 

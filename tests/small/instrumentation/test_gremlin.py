@@ -9,7 +9,7 @@ import pytest
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_gremlin():
     return Gremlin(
         gremlin_id='g001',

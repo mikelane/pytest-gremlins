@@ -14,7 +14,7 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.store import ResultStore
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCachePerformance:
     """Performance tests for cache operations."""
 
@@ -90,7 +90,7 @@ class TestCachePerformance:
             assert elapsed < 0.1, f'Key computation took {elapsed * 1000:.1f}ms for 1000 keys'
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestStorePerformance:
     """Performance tests for result store."""
 

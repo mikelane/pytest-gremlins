@@ -12,7 +12,7 @@ from pytest_gremlins.config import (
 )
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestMergeConfigs:
     """Tests for merging CLI args with pyproject.toml config."""
 

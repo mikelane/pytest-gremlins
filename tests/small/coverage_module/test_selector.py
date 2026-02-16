@@ -11,7 +11,7 @@ from pytest_gremlins.coverage.selector import TestSelector as Selector
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_gremlin():
     """Create a sample gremlin for testing."""
     return Gremlin(
@@ -25,7 +25,7 @@ def sample_gremlin():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def coverage_map():
     """Create a CoverageMap with test data."""
     cm = CoverageMap()
@@ -36,7 +36,7 @@ def coverage_map():
     return cm
 
 
-@pytest.fixture()
+@pytest.fixture
 def selector(coverage_map):
     """Create a Selector with the test coverage map."""
     return Selector(coverage_map)

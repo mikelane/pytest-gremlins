@@ -18,7 +18,7 @@ from pytest_gremlins.instrumentation.gremlin import Gremlin
 class TestPrioritizedSelectorCompatibility:
     """Test that PrioritizedSelector can replace TestSelector in plugin usage."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def coverage_map(self):
         """Create a coverage map with tests of varying specificity."""
         cm = CoverageMap()
@@ -32,7 +32,7 @@ class TestPrioritizedSelectorCompatibility:
             cm.add('src/auth.py', line, 'test_broad')
         return cm
 
-    @pytest.fixture()
+    @pytest.fixture
     def sample_gremlin(self):
         """Create a sample gremlin at line 42."""
         return Gremlin(

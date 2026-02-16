@@ -16,7 +16,7 @@ from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_gremlin():
     """Create a sample gremlin for testing."""
     return Gremlin(
@@ -30,7 +30,7 @@ def sample_gremlin():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def coverage_map_with_specificity():
     """Create a CoverageMap where tests have different coverage breadths.
 

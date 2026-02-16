@@ -18,7 +18,7 @@ from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_gremlin() -> Gremlin:
     """Create a sample gremlin for testing."""
     return Gremlin(
@@ -182,7 +182,7 @@ class TestWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.ERROR
 
-    @pytest.mark.medium()  # Intentionally waits for timeout (>1s)
+    @pytest.mark.medium  # Intentionally waits for timeout (>1s)
     def test_timeout_returns_timeout_status(self, tmp_path: Path) -> None:
         """When test times out, result is TIMEOUT."""
         with WorkerPool(max_workers=1, timeout=1) as pool:

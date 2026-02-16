@@ -126,7 +126,7 @@ class TestGremlinLoader:
 class TestImportHookRegistration:
     """Tests for registering and unregistering import hooks."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def clean_meta_path(self) -> Generator[None, None, None]:
         """Ensure sys.meta_path is cleaned up after tests."""
         original_meta_path = sys.meta_path.copy()
@@ -154,14 +154,14 @@ class TestImportHookRegistration:
 class TestImportHookIntegration:
     """Integration tests for import hooks with actual module imports."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def clean_meta_path(self) -> Generator[None, None, None]:
         """Ensure sys.meta_path is cleaned up after tests."""
         original_meta_path = sys.meta_path.copy()
         yield
         sys.meta_path[:] = original_meta_path
 
-    @pytest.fixture()
+    @pytest.fixture
     def clean_modules(self) -> Generator[None, None, None]:
         """Ensure test modules are removed from sys.modules."""
         test_module_name = '_gremlin_test_module'

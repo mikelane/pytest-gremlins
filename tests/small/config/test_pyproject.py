@@ -12,7 +12,7 @@ from pytest_gremlins.config import (
 )
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestLoadConfig:
     """Tests for load_config function."""
 
@@ -103,7 +103,7 @@ class TestLoadConfig:
         assert result.exclude is None
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestGremlinConfig:
     """Tests for GremlinConfig dataclass."""
 

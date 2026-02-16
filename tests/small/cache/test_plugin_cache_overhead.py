@@ -13,7 +13,7 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.store import ResultStore
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestUpfrontHashingOverhead:
     """Tests for upfront file hashing overhead."""
 
@@ -59,7 +59,7 @@ class TestUpfrontHashingOverhead:
         )
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestSqliteCommitOverhead:
     """Tests for SQLite commit overhead."""
 
@@ -84,7 +84,7 @@ class TestSqliteCommitOverhead:
         )
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCacheKeyComputationOverhead:
     """Tests for cache key computation overhead."""
 
@@ -115,7 +115,7 @@ class TestCacheKeyComputationOverhead:
         )
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestTotalCacheOverhead:
     """Tests measuring total cache overhead vs no-cache baseline."""
 
@@ -174,7 +174,7 @@ class TestTotalCacheOverhead:
         )
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCacheWithBatchOperations:
     """Tests demonstrating potential for batch optimization."""
 

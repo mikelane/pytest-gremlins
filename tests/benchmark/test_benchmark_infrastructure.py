@@ -27,7 +27,7 @@ from benchmarks.run_benchmarks import (  # noqa: E402
 )
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestBenchmarkResult:
     def test_benchmark_result_creation(self):
         result = BenchmarkResult(
@@ -58,7 +58,7 @@ class TestBenchmarkResult:
         assert result.wall_time_seconds == 0
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestBenchmarkSummary:
     def test_benchmark_summary_creation(self):
         summary = BenchmarkSummary(
@@ -79,7 +79,7 @@ class TestBenchmarkSummary:
         assert summary.runs == 3
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestEnvironmentInfo:
     def test_environment_info_creation(self):
         info = EnvironmentInfo(
@@ -96,7 +96,7 @@ class TestEnvironmentInfo:
         assert info.gremlins_version == 'unknown'
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestComputeSummaries:
     def test_compute_summaries_single_config(self):
         results = [
@@ -199,7 +199,7 @@ class TestComputeSummaries:
         assert summaries[0].mean_time == 10.0
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestGenerateMarkdownReport:
     def test_generate_report_includes_environment(self):
         env_info = EnvironmentInfo(
@@ -300,7 +300,7 @@ class TestGenerateMarkdownReport:
         assert '2.0x' in report  # 20 / 10 = 2x speedup
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCreateSyntheticProject:
     def test_create_synthetic_project_structure(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

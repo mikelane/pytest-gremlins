@@ -25,7 +25,7 @@ from benchmarks.check_regression import (  # noqa: E402
 )
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestRegressionDetail:
     def test_regression_detail_creation(self):
         detail = RegressionDetail(
@@ -63,7 +63,7 @@ class TestRegressionDetail:
         assert '-20.0%' in result
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestRegressionCheckResult:
     def test_check_result_no_regressions(self):
         result = RegressionCheckResult(
@@ -109,7 +109,7 @@ class TestRegressionCheckResult:
         assert len(result.improvements) == 1
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestCheckRegression:
     def test_no_regression_within_threshold(self):
         baseline = {
@@ -234,7 +234,7 @@ class TestCheckRegression:
         assert result.has_regressions
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestLoadBenchmarkResults:
     def test_load_valid_json_file(self):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:

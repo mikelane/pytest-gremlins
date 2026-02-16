@@ -14,7 +14,7 @@ from pytest_gremlins.reporting.results import (
 from pytest_gremlins.reporting.score import MutationScore
 
 
-@pytest.fixture()
+@pytest.fixture
 def make_gremlin():
     """Factory fixture for creating test gremlins."""
     counter = 0
@@ -35,7 +35,7 @@ def make_gremlin():
     return _make_gremlin
 
 
-@pytest.fixture()
+@pytest.fixture
 def make_result(make_gremlin):
     """Factory fixture for creating test results."""
 

@@ -13,7 +13,7 @@ from pytest_gremlins.reporting.results import (
 )
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestGremlinResultStatus:
     """Tests for GremlinResultStatus enum."""
 
@@ -30,7 +30,7 @@ class TestGremlinResultStatus:
         assert GremlinResultStatus.ERROR.value == 'error'
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_gremlin():
     return Gremlin(
         gremlin_id='g001',
@@ -43,7 +43,7 @@ def sample_gremlin():
     )
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestGremlinResultCreation:
     """Tests for GremlinResult dataclass creation and attributes."""
 
@@ -100,7 +100,7 @@ class TestGremlinResultCreation:
             result.status = GremlinResultStatus.SURVIVED  # pyright: ignore[reportAttributeAccessIssue]
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestGremlinResultProperties:
     """Tests for computed properties on GremlinResult."""
 

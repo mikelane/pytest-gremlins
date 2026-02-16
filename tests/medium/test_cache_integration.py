@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.fixture()
+@pytest.fixture
 def pytester_with_conftest(pytester: pytest.Pytester) -> pytest.Pytester:
     """Create a pytester instance with conftest that registers small marker for nested tests.
 
@@ -37,7 +37,7 @@ def pytest_collection_modifyitems(items):
     return pytester
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCacheIntegration:
     """Tests for cache integration with the mutation testing plugin."""
 

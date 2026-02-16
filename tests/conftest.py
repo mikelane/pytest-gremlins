@@ -21,7 +21,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line('markers', 'large: End-to-end system tests (< 60s)')
 
 
-@pytest.fixture()
+@pytest.fixture
 def pytester_with_markers(pytester: pytest.Pytester) -> pytest.Pytester:
     """Create a pytester instance that auto-applies small marker to tests.
 

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestBatchExecutorCreation:
     """Tests for BatchExecutor instantiation."""
 
@@ -40,7 +40,7 @@ class TestBatchExecutorCreation:
         assert executor.max_workers == 4
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestBatchExecutorPartitioning:
     """Tests for how BatchExecutor partitions gremlins into batches."""
 
@@ -84,7 +84,7 @@ class TestBatchExecutorPartitioning:
         assert batches[0] == ['g001', 'g002', 'g003']
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestBatchExecutorExecution:
     """Tests for BatchExecutor execution."""
 

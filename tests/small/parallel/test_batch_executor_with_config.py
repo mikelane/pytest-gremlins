@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestBatchExecutorWithConfig:
     """Tests for BatchExecutor using PoolConfig."""
 
@@ -48,7 +48,7 @@ class TestBatchExecutorWithConfig:
         assert executor.max_workers >= 1
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestBatchExecutorConfigIntegration:
     """Integration tests for BatchExecutor with PoolConfig."""
 

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from pytest_gremlins import plugin
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestPytestConfigureWithFileConfig:
     """Tests for pytest_configure loading file config."""
 

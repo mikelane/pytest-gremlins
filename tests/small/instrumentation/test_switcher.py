@@ -10,7 +10,7 @@ from pytest_gremlins.instrumentation.switcher import (
 )
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestActiveGremlin:
     """Test the active gremlin detection."""
 
@@ -30,7 +30,7 @@ class TestActiveGremlin:
         assert get_active_gremlin() == ''
 
 
-@pytest.mark.small()
+@pytest.mark.small
 class TestActiveGremlinEnvVar:
     """Test the ACTIVE_GREMLIN_ENV_VAR constant."""
 

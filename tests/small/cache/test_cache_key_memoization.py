@@ -8,7 +8,7 @@ import pytest
 from pytest_gremlins.cache.incremental import IncrementalCache
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCacheKeyMemoization:
     """Tests for memoized cache key computation."""
 

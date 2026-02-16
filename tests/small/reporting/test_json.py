@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture()
+@pytest.fixture
 def make_gremlin():
     """Factory fixture for creating test gremlins."""
     counter = 0
@@ -47,7 +47,7 @@ def make_gremlin():
     return _make_gremlin
 
 
-@pytest.fixture()
+@pytest.fixture
 def make_result(make_gremlin):
     """Factory fixture for creating test results."""
 
