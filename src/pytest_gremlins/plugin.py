@@ -29,6 +29,7 @@ import warnings
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.config import (
+    discover_source_paths,
     load_config,
     merge_configs,
 )
@@ -239,7 +240,7 @@ def pytest_configure(config: pytest.Config) -> None:
     # Use merged operators or all if none specified
     operators = registry.get_all(enabled=merged_config.operators) if merged_config.operators else registry.get_all()
 
-    # Use merged paths or fall back to src/
+    # Use merged paths, then try setuptools discovery, then fall back to src/
     target_paths: list[Path] = []
     if merged_config.paths:
         for path_str in merged_config.paths:
@@ -247,9 +248,13 @@ def pytest_configure(config: pytest.Config) -> None:
             if path.exists():
                 target_paths.append(path)
     else:
-        src_path = rootdir / 'src'
-        if src_path.exists():
-            target_paths.append(src_path)
+        discovered = discover_source_paths(rootdir)
+        if discovered:
+            target_paths.extend(rootdir / p for p in discovered)
+        else:
+            src_path = rootdir / 'src'
+            if src_path.exists():
+                target_paths.append(src_path)
 
     # Initialize cache if enabled
     cache: IncrementalCache | None = None
@@ -1454,7 +1459,7 @@ def _write_html_report(score: MutationScore, rootdir: Path) -> Path:
     return output_path
 
 
-def pytest_terminal_summary(  # noqa: C901
+def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     terminalreporter: pytest.TerminalReporter,
     exitstatus: int,  # noqa: ARG001
     config: pytest.Config,
@@ -1467,7 +1472,15 @@ def pytest_terminal_summary(  # noqa: C901
     if not gremlin_session.gremlins:
         terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
         terminalreporter.write_line('')
-        terminalreporter.write_line('No gremlins found in source code.')
+        if gremlin_session.target_paths:
+            terminalreporter.write_line('No gremlins found in source code. Searched paths:')
+            for searched_path in gremlin_session.target_paths:
+                terminalreporter.write_line(f'  - {searched_path}')
+        else:
+            terminalreporter.write_line('No gremlins found: no source paths were discovered.')
+            terminalreporter.write_line(
+                'Configure [tool.pytest-gremlins] paths in pyproject.toml or use --gremlin-targets.'
+            )
         terminalreporter.write_line('')
         terminalreporter.write_sep('=', '')
         return

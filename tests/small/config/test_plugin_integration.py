@@ -147,7 +147,6 @@ class TestPytestConfigureWithFileConfig:
 
     def test_falls_back_to_src_when_no_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Falls back to src/ when neither CLI nor pyproject.toml specifies paths."""
-        # No pyproject.toml config
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[project]\nname = "test"\n')
 
@@ -180,3 +179,108 @@ class TestPytestConfigureWithFileConfig:
         assert session is not None
         assert len(session.target_paths) == 1
         assert session.target_paths[0].name == 'src'
+
+    def test_discovers_paths_from_setuptools_packages(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Falls back to setuptools packages when no explicit paths and no src/."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.setuptools]\npackages = ["cogapp"]\n')
+
+        pkg_dir = tmp_path / 'cogapp'
+        pkg_dir.mkdir()
+        (pkg_dir / '__init__.py').write_text('')
+
+        class _MockOption:
+            gremlins = True
+            gremlin_operators: str | None = None
+            gremlin_report = 'console'
+            gremlin_targets: str | None = None
+            gremlin_cache = False
+            gremlin_clear_cache = False
+            gremlin_parallel = False
+            gremlin_workers: int | None = None
+            gremlin_batch = False
+            gremlin_batch_size = 10
+
+        class _MockConfig:
+            option = _MockOption()
+            rootdir = tmp_path
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert len(session.target_paths) == 1
+        assert session.target_paths[0].name == 'cogapp'
+
+    def test_explicit_config_takes_precedence_over_discovery(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Explicit [tool.pytest-gremlins].paths beats setuptools discovery."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\npaths = ["mylib"]\n\n[tool.setuptools]\npackages = ["cogapp"]\n')
+
+        (tmp_path / 'mylib').mkdir()
+        (tmp_path / 'cogapp').mkdir()
+
+        class _MockOption:
+            gremlins = True
+            gremlin_operators: str | None = None
+            gremlin_report = 'console'
+            gremlin_targets: str | None = None
+            gremlin_cache = False
+            gremlin_clear_cache = False
+            gremlin_parallel = False
+            gremlin_workers: int | None = None
+            gremlin_batch = False
+            gremlin_batch_size = 10
+
+        class _MockConfig:
+            option = _MockOption()
+            rootdir = tmp_path
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert len(session.target_paths) == 1
+        assert session.target_paths[0].name == 'mylib'
+
+    def test_discovery_preferred_over_src_fallback(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Setuptools discovery is tried before falling back to src/."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.setuptools]\npackages = ["cogapp"]\n')
+
+        (tmp_path / 'src').mkdir()
+        (tmp_path / 'cogapp').mkdir()
+
+        class _MockOption:
+            gremlins = True
+            gremlin_operators: str | None = None
+            gremlin_report = 'console'
+            gremlin_targets: str | None = None
+            gremlin_cache = False
+            gremlin_clear_cache = False
+            gremlin_parallel = False
+            gremlin_workers: int | None = None
+            gremlin_batch = False
+            gremlin_batch_size = 10
+
+        class _MockConfig:
+            option = _MockOption()
+            rootdir = tmp_path
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert len(session.target_paths) == 1
+        assert session.target_paths[0].name == 'cogapp'

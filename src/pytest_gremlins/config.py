@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import tomllib
+from tomllib import TOMLDecodeError
 from typing import TYPE_CHECKING
 
 
@@ -61,6 +62,87 @@ def load_config(rootdir: Path) -> GremlinConfig:
         paths=tool_config.get('paths'),
         exclude=tool_config.get('exclude'),
     )
+
+
+def _collect_setuptools_candidates(setuptools_config: dict[str, object]) -> list[str]:
+    """Extract candidate source paths from setuptools configuration.
+
+    Args:
+        setuptools_config: The parsed [tool.setuptools] dictionary.
+
+    Returns:
+        List of candidate path strings (not yet validated against disk).
+    """
+    candidates: list[str] = []
+
+    packages = setuptools_config.get('packages')
+    if isinstance(packages, list):
+        candidates.extend(pkg.split('.')[0] for pkg in packages)
+    elif isinstance(packages, dict):
+        find_config = packages.get('find', {})
+        if isinstance(find_config, dict):
+            where = find_config.get('where')
+            if isinstance(where, list):
+                candidates.extend(where)
+            elif isinstance(where, str):
+                candidates.append(where)
+
+    package_dir = setuptools_config.get('package-dir')
+    if isinstance(package_dir, dict):
+        candidates.extend(v for v in package_dir.values() if v)
+
+    return candidates
+
+
+def discover_source_paths(rootdir: Path) -> list[str]:
+    """Discover source paths from setuptools packaging metadata in pyproject.toml.
+
+    Reads setuptools configuration as a fallback when [tool.pytest-gremlins].paths
+    is not configured. Checks three locations in order:
+
+    1. ``[tool.setuptools].packages`` -- explicit package list
+    2. ``[tool.setuptools].package-dir`` -- directory mapping values
+    3. ``[tool.setuptools.packages.find].where`` -- find-packages search roots
+
+    Only paths that exist on disk are returned. Duplicates are removed while
+    preserving discovery order.
+
+    Args:
+        rootdir: Directory containing pyproject.toml.
+
+    Returns:
+        List of discovered source path strings, or empty list if none found.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> discover_source_paths(Path('/nonexistent'))
+        []
+    """
+    pyproject_path = rootdir / 'pyproject.toml'
+
+    if not pyproject_path.exists():
+        return []
+
+    try:
+        with pyproject_path.open('rb') as f:
+            data = tomllib.load(f)
+    except TOMLDecodeError:
+        return []
+
+    setuptools_config = data.get('tool', {}).get('setuptools', {})
+    if not setuptools_config:
+        return []
+
+    candidates = _collect_setuptools_candidates(setuptools_config)
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen and (rootdir / candidate).is_dir():
+            seen.add(candidate)
+            result.append(candidate)
+
+    return result
 
 
 def merge_configs(
