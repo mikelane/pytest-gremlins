@@ -263,7 +263,8 @@ class TestLoadBenchmarkResults:
         # The benchmark runner outputs a more complex format with summaries
         # We need to extract just the timing data
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write("""
+            f.write(
+                """
             {
                 "environment": {"platform": "Linux"},
                 "summaries": [
@@ -273,7 +274,8 @@ class TestLoadBenchmarkResults:
                 ],
                 "results": []
             }
-            """)
+            """
+            )
             f.flush()
 
             result = load_benchmark_results(Path(f.name))

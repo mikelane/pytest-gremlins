@@ -127,7 +127,7 @@ def test_covered():
         output = result.stdout.str()
 
         lower_output = output.lower()
-        assert 'survived' in lower_output, (
-            'Expected uncovered gremlins to survive (fallback runs all tests, but none exercise uncovered code)'
-        )
+        assert (
+            'survived' in lower_output
+        ), 'Expected uncovered gremlins to survive (fallback runs all tests, but none exercise uncovered code)'
         assert 'running' in lower_output, 'Expected uncovered gremlins to be run via fallback, not skipped'

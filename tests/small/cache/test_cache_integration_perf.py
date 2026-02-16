@@ -71,9 +71,9 @@ class TestPluginCachePattern:
         # Warm run should be much faster (no writes, just reads)
         # Target: warm_time < cold_time / 10 (at least 10x faster)
         speedup = cold_time / warm_time if warm_time > 0 else float('inf')
-        assert speedup >= 2.0, (
-            f'Warm run speedup was only {speedup:.1f}x (cold={cold_time * 1000:.1f}ms, warm={warm_time * 1000:.1f}ms)'
-        )
+        assert (
+            speedup >= 2.0
+        ), f'Warm run speedup was only {speedup:.1f}x (cold={cold_time * 1000:.1f}ms, warm={warm_time * 1000:.1f}ms)'
 
     def test_cache_overhead_per_gremlin(self, tmp_path: Path) -> None:
         """Cache overhead per gremlin is under 1ms for cache hits."""

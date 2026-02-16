@@ -67,7 +67,7 @@ repos:
 
   # Validate pyproject.toml
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.15
+    rev: v0.25
     hooks:
       - id: validate-pyproject
 

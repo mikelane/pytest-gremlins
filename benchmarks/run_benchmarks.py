@@ -169,7 +169,7 @@ def get_environment_info() -> EnvironmentInfo:
     Returns:
         EnvironmentInfo with system details.
     """
-    import psutil  # noqa: PLC0415
+    import psutil
 
     # Get mutmut version
     mutmut_version = 'not installed'
@@ -188,7 +188,7 @@ def get_environment_info() -> EnvironmentInfo:
     # Get gremlins version
     gremlins_version = 'not installed'
     try:
-        import pytest_gremlins  # noqa: PLC0415
+        import pytest_gremlins
 
         gremlins_version = pytest_gremlins.__version__
     except Exception:  # noqa: S110
@@ -231,7 +231,8 @@ def create_synthetic_project(work_dir: Path) -> Path:
     (src_dir / '__init__.py').write_text('"""Synthetic benchmark package."""\n')
 
     # Create calculator.py - arithmetic operations
-    (src_dir / 'calculator.py').write_text('''\
+    (src_dir / 'calculator.py').write_text(
+        '''\
 """Basic calculator with arithmetic operations."""
 
 
@@ -265,10 +266,12 @@ def power(base: int, exponent: int) -> int:
     for _ in range(exponent):
         result *= base
     return result
-''')
+'''
+    )
 
     # Create validator.py - comparison and boolean operations
-    (src_dir / 'validator.py').write_text('''\
+    (src_dir / 'validator.py').write_text(
+        '''\
 """Validation functions with comparisons and booleans."""
 
 
@@ -306,10 +309,12 @@ def is_negative(number: int) -> bool:
 def is_zero(number: int) -> bool:
     """Check if number is zero."""
     return number == 0
-''')
+'''
+    )
 
     # Create processor.py - more complex logic
-    (src_dir / 'processor.py').write_text('''\
+    (src_dir / 'processor.py').write_text(
+        '''\
 """Data processing functions."""
 
 
@@ -366,12 +371,14 @@ def count_evens(numbers: list[int]) -> int:
         if num % 2 == 0:
             count += 1
     return count
-''')
+'''
+    )
 
     # Create comprehensive tests
     (test_dir / '__init__.py').write_text('')
 
-    (test_dir / 'test_calculator.py').write_text('''\
+    (test_dir / 'test_calculator.py').write_text(
+        '''\
 """Tests for calculator module."""
 import pytest
 from synthetic.calculator import add, subtract, multiply, divide, power
@@ -438,9 +445,11 @@ class TestPower:
     def test_power_negative_exponent_raises(self):
         with pytest.raises(ValueError, match="Negative exponents"):
             power(2, -1)
-''')
+'''
+    )
 
-    (test_dir / 'test_validator.py').write_text('''\
+    (test_dir / 'test_validator.py').write_text(
+        '''\
 """Tests for validator module."""
 from synthetic.validator import (
     is_adult,
@@ -540,9 +549,11 @@ class TestIsZero:
 
     def test_negative_not_zero(self):
         assert is_zero(-1) is False
-''')
+'''
+    )
 
-    (test_dir / 'test_processor.py').write_text('''\
+    (test_dir / 'test_processor.py').write_text(
+        '''\
 """Tests for processor module."""
 import pytest
 from synthetic.processor import clamp, grade_score, factorial, fibonacci, count_evens
@@ -629,11 +640,13 @@ class TestCountEvens:
 
     def test_count_evens_empty(self):
         assert count_evens([]) == 0
-''')
+'''
+    )
 
     # Create pyproject.toml
     # Note: mutmut 3.x uses different config keys than 2.x
-    (project_dir / 'pyproject.toml').write_text("""\
+    (project_dir / 'pyproject.toml').write_text(
+        """\
 [project]
 name = "synthetic-benchmark"
 version = "0.1.0"
@@ -642,7 +655,8 @@ requires-python = ">=3.11"
 [tool.mutmut]
 paths_to_mutate = ["src/synthetic/"]
 pytest_add_cli_args_test_selection = ["tests/"]
-""")
+"""
+    )
 
     return project_dir
 
@@ -1220,7 +1234,7 @@ def main() -> int:  # noqa: PLR0915
 
     # Check for required dependencies
     try:
-        import psutil  # noqa: F401, PLC0415
+        import psutil  # noqa: F401
     except ImportError:
         print('Error: psutil is required. Install with: pip install psutil')
         return 1

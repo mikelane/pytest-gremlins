@@ -36,14 +36,17 @@ dependencies = [
     "pytest>=7.0.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "commitizen>=3.13.0",
-    "coverage[toml]>=7.0.0",
+[dependency-groups]
+docs = [
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.0.0",
     "mkdocs-minify-plugin>=0.7.0",
     "mkdocstrings[python]>=0.24.0",
+]
+dev = [
+    {include-group = "docs"},
+    "commitizen>=3.13.0",
+    "coverage[toml]>=7.0.0",
     "mypy>=1.7.0",
     "pip>=26.0",
     "pip-audit>=2.6.0",
@@ -55,12 +58,6 @@ dev = [
     "ruff>=0.1.6",
     "tox>=4.11.0",
     "tox-uv>=1.0.0",
-]
-docs = [
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.0.0",
-    "mkdocs-minify-plugin>=0.7.0",
-    "mkdocstrings[python]>=0.24.0",
 ]
 
 [project.urls]

@@ -171,7 +171,8 @@ class TestPersistentWorkerPoolSubmit:
     def test_submit_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """submit sets PYTEST_GREMLINS_SOURCES_FILE when instrumented_dir is provided."""
         script = tmp_path / 'test_script.py'
-        script.write_text("""
+        script.write_text(
+            """
 import os
 import sys
 # Check that the sources file env var is set
@@ -179,7 +180,8 @@ sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE', '')
 if 'instrumented/sources.json' not in sources_file:
     sys.exit(1)
 sys.exit(0)
-""")
+"""
+        )
 
         with PersistentWorkerPool(max_workers=1, timeout=5) as pool:
             future = pool.submit(
@@ -288,13 +290,15 @@ class TestBatchExecution:
         # First gremlin survives (tests pass), second fails (tests fail)
         # When using the test command that checks ACTIVE_GREMLIN env var
         script = tmp_path / 'test_script.py'
-        script.write_text("""
+        script.write_text(
+            """
 import os
 import sys
 gremlin = os.environ.get('ACTIVE_GREMLIN')
 # g002 is detected (killed), others survive
 sys.exit(1 if gremlin == 'g002' else 0)
-""")
+"""
+        )
 
         with PersistentWorkerPool(max_workers=1, timeout=10) as pool:
             future = pool.submit_batch(
@@ -316,7 +320,8 @@ sys.exit(1 if gremlin == 'g002' else 0)
     def test_submit_batch_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """submit_batch sets PYTEST_GREMLINS_SOURCES_FILE when instrumented_dir is provided."""
         script = tmp_path / 'test_script.py'
-        script.write_text("""
+        script.write_text(
+            """
 import os
 import sys
 # Check that the sources file env var is set
@@ -324,7 +329,8 @@ sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE', '')
 if 'instrumented/sources.json' not in sources_file:
     sys.exit(1)
 sys.exit(0)
-""")
+"""
+        )
 
         with PersistentWorkerPool(max_workers=1, timeout=10) as pool:
             future = pool.submit_batch(

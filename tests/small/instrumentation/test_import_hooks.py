@@ -185,7 +185,7 @@ class TestImportHookIntegration:
         register_import_hooks(instrumented_modules)
 
         try:
-            import _gremlin_test_module  # noqa: PLC0415
+            import _gremlin_test_module
 
             assert _gremlin_test_module.test_value == 'instrumented'
         finally:

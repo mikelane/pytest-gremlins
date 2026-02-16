@@ -23,11 +23,7 @@ from __future__ import annotations
 
 import ast
 import copy
-from typing import TYPE_CHECKING, ClassVar
-
-
-if TYPE_CHECKING:
-    pass
+from typing import ClassVar
 
 
 # =============================================================================
@@ -327,9 +323,7 @@ class ListMethodOperator:
             # Check if reverse is already specified
             has_reverse = any(kw.arg == 'reverse' for kw in node.keywords)
             if not has_reverse:
-                mutated.keywords.append(
-                    ast.keyword(arg='reverse', value=ast.Constant(value=True))
-                )
+                mutated.keywords.append(ast.keyword(arg='reverse', value=ast.Constant(value=True)))
                 mutations.append(mutated)
 
         elif method == 'reverse':

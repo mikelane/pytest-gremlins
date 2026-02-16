@@ -38,7 +38,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --extra dev
+          uv sync
           uv pip install mutmut psutil
 
       - name: Run benchmarks
