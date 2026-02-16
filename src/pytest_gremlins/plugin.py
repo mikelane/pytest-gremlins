@@ -1478,8 +1478,15 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
                 terminalreporter.write_line(f'  - {searched_path}')
         else:
             terminalreporter.write_line('No gremlins found: no source paths were discovered.')
+            terminalreporter.write_line('')
+            terminalreporter.write_line('pytest-gremlins looks for source code in this order:')
+            terminalreporter.write_line('  1. --gremlin-targets CLI option')
+            terminalreporter.write_line('  2. [tool.pytest-gremlins] paths in pyproject.toml')
+            terminalreporter.write_line('  3. [tool.setuptools] package config in pyproject.toml')
+            terminalreporter.write_line('  4. src/ directory')
+            terminalreporter.write_line('')
             terminalreporter.write_line(
-                'Configure [tool.pytest-gremlins] paths in pyproject.toml or use --gremlin-targets.'
+                'If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_package'
             )
         terminalreporter.write_line('')
         terminalreporter.write_sep('=', '')
