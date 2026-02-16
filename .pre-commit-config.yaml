@@ -64,7 +64,6 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .secrets.baseline]
-        exclude: package.lock.json
 
   # Validate pyproject.toml
   - repo: https://github.com/abravalheri/validate-pyproject
