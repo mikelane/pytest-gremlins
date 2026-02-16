@@ -63,6 +63,68 @@ def load_config(rootdir: Path) -> GremlinConfig:
     )
 
 
+def discover_source_paths(rootdir: Path) -> list[str]:
+    """Discover source paths from setuptools packaging metadata in pyproject.toml.
+
+    Reads setuptools configuration as a fallback when [tool.pytest-gremlins].paths
+    is not configured. Checks three locations in order:
+
+    1. ``[tool.setuptools].packages`` -- explicit package list
+    2. ``[tool.setuptools].package-dir`` -- directory mapping values
+    3. ``[tool.setuptools.packages.find].where`` -- find-packages search roots
+
+    Only paths that exist on disk are returned. Duplicates are removed while
+    preserving discovery order.
+
+    Args:
+        rootdir: Directory containing pyproject.toml.
+
+    Returns:
+        List of discovered source path strings, or empty list if none found.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> discover_source_paths(Path('/nonexistent'))
+        []
+    """
+    pyproject_path = rootdir / 'pyproject.toml'
+
+    if not pyproject_path.exists():
+        return []
+
+    with pyproject_path.open('rb') as f:
+        data = tomllib.load(f)
+
+    setuptools_config = data.get('tool', {}).get('setuptools', {})
+    if not setuptools_config:
+        return []
+
+    candidates: list[str] = []
+
+    packages = setuptools_config.get('packages')
+    if isinstance(packages, list):
+        candidates.extend(packages)
+    elif isinstance(packages, dict):
+        find_config = packages.get('find', {})
+        if isinstance(find_config, dict):
+            where = find_config.get('where')
+            if isinstance(where, list):
+                candidates.extend(where)
+
+    package_dir = setuptools_config.get('package-dir')
+    if isinstance(package_dir, dict):
+        candidates.extend(package_dir.values())
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen and (rootdir / candidate).is_dir():
+            seen.add(candidate)
+            result.append(candidate)
+
+    return result
+
+
 def merge_configs(
     file_config: GremlinConfig,
     cli_operators: str | None = None,
