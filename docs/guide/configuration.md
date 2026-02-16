@@ -7,11 +7,14 @@ documents all configuration options with examples.
 
 Configuration values are resolved in this order (highest priority first):
 
-1. **Command-line options** - Flags passed to pytest
+1. **Command-line options** - Flags passed to pytest (e.g., `--gremlin-targets`)
 2. **pyproject.toml** - `[tool.pytest-gremlins]` section
-3. **Built-in defaults** - Sensible defaults for all options
+3. **Setuptools metadata** - `[tool.setuptools]` package config in `pyproject.toml`
+4. **Built-in defaults** - Falls back to `src/` directory
 
-When the same option is specified at multiple levels, the higher-priority value wins.
+When the same option is specified at multiple levels, the higher-priority value wins. For most
+projects with a standard `pyproject.toml`, source paths are auto-discovered and no configuration
+is needed.
 
 ## Command-Line Options Reference
 
@@ -23,7 +26,7 @@ All command-line options are prefixed with `--gremlin` or `--gremlins`.
 |--------|------|---------|-------------|
 | `--gremlins` | flag | `false` | Enable mutation testing |
 | `--gremlin-operators` | string | all | Comma-separated list of operators to use |
-| `--gremlin-targets` | string | `src/` | Comma-separated list of files/directories to mutate |
+| `--gremlin-targets` | string | auto-discovered | Comma-separated list of files/directories to mutate (see [precedence](#configuration-precedence)) |
 | `--gremlin-report` | string | `console` | Report format: `console`, `html`, or `json` |
 
 ### Performance Options
@@ -119,7 +122,7 @@ Configure pytest-gremlins in your `pyproject.toml` file under the `[tool.pytest-
 ```toml
 [tool.pytest-gremlins]
 # Paths to scan for source files to mutate
-# Default: ["src"]
+# Optional: auto-discovered from setuptools metadata, falling back to src/
 paths = ["src", "lib"]
 
 # Glob patterns for files to exclude from mutation
@@ -146,7 +149,7 @@ operators = [
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `paths` | list[string] | `["src"]` | Directories or files to scan for source code |
+| `paths` | list[string] | auto-discovered | Directories or files to scan for source code (falls back to `src/`) |
 | `exclude` | list[string] | `[]` | Glob patterns for files to exclude |
 | `operators` | list[string] | all | Operators to enable, in priority order |
 
@@ -288,18 +291,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
+        run: uv sync
 
       - name: Run mutation testing
         run: |
-          pytest --gremlins \
+          uv run pytest --gremlins \
             --gremlin-cache \
             --gremlin-parallel \
             --gremlin-report=json
@@ -317,8 +322,8 @@ jobs:
 mutation_testing:
   stage: test
   script:
-    - pip install -e ".[dev]"
-    - pytest --gremlins --gremlin-cache --gremlin-parallel --gremlin-report=json
+    - pip install uv && uv sync
+    - uv run pytest --gremlins --gremlin-cache --gremlin-parallel --gremlin-report=json
   artifacts:
     reports:
       junit: gremlin-report.json
@@ -354,11 +359,14 @@ $ pytest --gremlins
 pytest-gremlins: No gremlins found in source code.
 ```
 
-Solutions:
+The plugin auto-discovers source paths in this order: `--gremlin-targets` CLI option,
+`[tool.pytest-gremlins] paths` in `pyproject.toml`, `[tool.setuptools]` package config,
+then `src/` as a last resort. If none of these find your code:
 
-1. Check `--gremlin-targets` points to actual Python files
+1. Use `--gremlin-targets=your_package` to point at your source directly
 2. Verify files are not excluded by `exclude` patterns
 3. Ensure source files contain mutable code (not just imports/constants)
+4. If you don't have a `pyproject.toml`, you must use `--gremlin-targets`
 
 **Cache not working:**
 

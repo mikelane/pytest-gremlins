@@ -286,6 +286,17 @@ Skip:
 - **Migration scripts** - One-time database operations
 - **Generated code** - Auto-generated files
 
+### Why does it say "No gremlins found"?
+
+The plugin auto-discovers source paths from your `pyproject.toml`. It checks (in order):
+`--gremlin-targets` CLI option, `[tool.pytest-gremlins] paths`, `[tool.setuptools]` package
+metadata, and finally `src/` as a fallback. If none of these match your project layout, pass
+the path explicitly:
+
+```bash
+pytest --gremlins --gremlin-targets=my_package
+```
+
 ### How do I run mutation testing in CI?
 
 Add a step to your CI pipeline:

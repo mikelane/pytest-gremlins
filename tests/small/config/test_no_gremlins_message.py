@@ -60,6 +60,48 @@ class TestNoGremlinsMessage:
         assert '[tool.pytest-gremlins]' in output
         assert 'paths' in output
 
+    def test_no_paths_message_shows_discovery_chain(self) -> None:
+        """Error message lists the full discovery chain when no paths found."""
+        session = GremlinSession(
+            enabled=True,
+            target_paths=[],
+        )
+
+        lines = self._run_terminal_summary(session)
+        output = '\n'.join(lines)
+
+        assert '--gremlin-targets' in output
+        assert '[tool.pytest-gremlins]' in output
+        assert '[tool.setuptools]' in output
+        assert 'src/' in output
+
+    def test_no_paths_message_shows_numbered_steps(self) -> None:
+        """Error message presents discovery chain as numbered steps."""
+        session = GremlinSession(
+            enabled=True,
+            target_paths=[],
+        )
+
+        lines = self._run_terminal_summary(session)
+        output = '\n'.join(lines)
+
+        assert '1.' in output
+        assert '2.' in output
+        assert '3.' in output
+        assert '4.' in output
+
+    def test_no_paths_message_suggests_gremlin_targets_flag(self) -> None:
+        """Error message tells user how to specify targets explicitly."""
+        session = GremlinSession(
+            enabled=True,
+            target_paths=[],
+        )
+
+        lines = self._run_terminal_summary(session)
+        output = '\n'.join(lines)
+
+        assert 'pytest --gremlins --gremlin-targets=' in output
+
     def test_message_differs_for_searched_paths_vs_no_paths(self) -> None:
         """Message with searched paths differs from message with no paths."""
         session_with_paths = GremlinSession(

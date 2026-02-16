@@ -34,8 +34,10 @@ pytest --gremlins --gremlin-report=console
 ```text
 ================== pytest-gremlins mutation report ==================
 
-Zapped: 142 gremlins (89%)
+Zapped: 142 gremlins (85%)
 Survived: 18 gremlins (11%)
+Timeout: 5 gremlins (3%)
+Error: 2 gremlins (1%)
 
 Top surviving gremlins:
   src/auth.py:42    >= to >     (boundary not tested)
@@ -46,6 +48,8 @@ Run with --gremlin-report=html for detailed report.
 =====================================================================
 ```
 
+Timeout and Error lines only appear when their count is greater than zero.
+
 ### Console Output Sections
 
 **Summary Section:**
@@ -54,6 +58,8 @@ Run with --gremlin-report=html for detailed report.
 |-------|-------------|
 | Zapped | Number and percentage of gremlins caught by tests |
 | Survived | Number and percentage of gremlins that escaped tests |
+| Timeout | Number and percentage of gremlins that caused test timeouts (shown when > 0) |
+| Error | Number and percentage of gremlins that caused errors (shown when > 0) |
 
 **Top Surviving Gremlins:**
 
@@ -108,6 +114,8 @@ The HTML report includes:
 - Total gremlins tested
 - Zapped count (with percentage)
 - Survived count (with percentage)
+- Timeout count (with percentage)
+- Error count (with percentage)
 - Overall mutation score
 
 **Results Table:**
@@ -445,17 +453,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: uv sync
 
       - name: Run mutation testing
         run: |
-          pytest --gremlins --gremlin-report=json
+          uv run pytest --gremlins --gremlin-report=json
 
       - name: Check mutation score
         run: |
@@ -482,7 +493,7 @@ jobs:
 mutation_testing:
   stage: test
   script:
-    - pip install -e ".[dev]"
+    - pip install uv && uv sync
     - pytest --gremlins --gremlin-report=console,html,json
     - |
       SCORE=$(jq '.summary.percentage' gremlin-report.json)
@@ -509,7 +520,7 @@ pipeline {
     stages {
         stage('Mutation Testing') {
             steps {
-                sh 'pip install -e ".[dev]"'
+                sh 'pip install uv && uv sync'
                 sh 'pytest --gremlins --gremlin-report=json,html'
 
                 script {
@@ -633,16 +644,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: uv sync
 
       - name: Run mutation testing
-        run: pytest --gremlins --gremlin-report=json
+        run: uv run pytest --gremlins --gremlin-report=json
 
       - name: Convert to Stryker format
         run: |
@@ -737,16 +751,19 @@ jobs:
         with:
           fetch-depth: 0  # SonarQube needs full history
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: uv sync
 
       - name: Run mutation testing
-        run: pytest --gremlins --gremlin-report=json
+        run: uv run pytest --gremlins --gremlin-report=json
 
       - name: Convert to SonarQube format
         run: |

@@ -93,8 +93,10 @@ Benchmarked against [mutmut](https://github.com/boxed/mutmut) on a synthetic pro
 ```text
 ================== pytest-gremlins mutation report ==================
 
-Zapped: 142 gremlins (89%)
+Zapped: 142 gremlins (85%)
 Survived: 18 gremlins (11%)
+Timeout: 5 gremlins (3%)
+Error: 2 gremlins (1%)
 
 Top surviving gremlins:
   src/auth.py:42                   >= -> >               (comparison)
@@ -104,6 +106,8 @@ Top surviving gremlins:
 Run with --gremlin-report=html for detailed report.
 =====================================================================
 ```
+
+Timeout and Error categories are only shown when their count is greater than zero.
 
 ---
 
@@ -126,14 +130,16 @@ Requires Python 3.11+
 
 ## Configuration
 
-Configure in `pyproject.toml`:
+Zero configuration required for most projects. The plugin auto-discovers source paths from your
+`pyproject.toml` setuptools config (e.g., `[tool.setuptools.packages.find]`). If auto-discovery
+doesn't find your code, configure paths explicitly:
 
 ```toml
 [tool.pytest-gremlins]
 # Operators to use (default: all)
 operators = ["comparison", "arithmetic", "boolean"]
 
-# Paths to mutate
+# Paths to mutate (optional -- auto-discovered from setuptools metadata)
 paths = ["src"]
 
 # Patterns to exclude
