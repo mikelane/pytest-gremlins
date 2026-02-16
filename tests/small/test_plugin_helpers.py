@@ -18,7 +18,7 @@ from pytest_gremlins.plugin import (
 )
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestShouldIncludeFile:
     """Tests for _should_include_file function."""
 
@@ -56,7 +56,7 @@ class TestShouldIncludeFile:
         assert _should_include_file(source_file) is True
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestAddSourceFile:
     """Tests for _add_source_file function."""
 
@@ -91,7 +91,7 @@ class TestAddSourceFile:
         assert str(missing_file) not in source_files
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestMakeNodeIdsRelative:
     """Tests for _make_node_ids_relative function."""
 
@@ -151,7 +151,7 @@ class TestMakeNodeIdsRelative:
         assert result == ['/some/other/path/test.py::test_func']
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPathToModuleName:
     """Tests for _path_to_module_name function."""
 
@@ -182,7 +182,7 @@ class TestPathToModuleName:
         assert result == 'module'
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestBuildTestCommand:
     """Tests for _build_test_command function."""
 

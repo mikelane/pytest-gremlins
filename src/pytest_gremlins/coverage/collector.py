@@ -13,7 +13,11 @@ Example:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Protocol,
+)
 
 from pytest_gremlins.coverage.mapper import CoverageMap
 

@@ -25,7 +25,10 @@ or execute the mutation when __gremlin_active__ matches a gremlin's ID.
 from __future__ import annotations
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
-from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR, get_active_gremlin
+from pytest_gremlins.instrumentation.switcher import (
+    ACTIVE_GREMLIN_ENV_VAR,
+    get_active_gremlin,
+)
 from pytest_gremlins.instrumentation.transformer import transform_source
 
 

@@ -7,7 +7,10 @@ and a compatible Python version (3.12) to avoid mutmut's macOS issues.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import (
+    asdict,
+    dataclass,
+)
 import json
 import os
 from pathlib import Path

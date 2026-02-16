@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.medium
+@pytest.mark.medium()
 class TestParallelExecution:
     """Tests for parallel execution mode."""
 
@@ -134,7 +134,7 @@ class TestParallelExecution:
         result.stdout.fnmatch_lines(['*Starting parallel execution with auto workers*'])
 
 
-@pytest.mark.medium
+@pytest.mark.medium()
 class TestSequentialVsParallelConsistency:
     """Tests that parallel and sequential modes produce consistent results."""
 

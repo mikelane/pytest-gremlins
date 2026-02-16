@@ -24,12 +24,19 @@ Optimizations (PR #52):
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ProcessPoolExecutor, wait
+from concurrent.futures import (
+    Future,
+    ProcessPoolExecutor,
+    wait,
+)
 import logging
 import os
 import subprocess
 import time
-from typing import TYPE_CHECKING, Self
+from typing import (
+    TYPE_CHECKING,
+    Self,
+)
 
 
 if TYPE_CHECKING:
@@ -88,7 +95,7 @@ def _run_gremlin_batch(  # pragma: no cover
         env['ACTIVE_GREMLIN'] = gremlin_id
 
         try:
-            result = subprocess.run(  # noqa: S603  # Intentional: runs pytest test commands
+            result = subprocess.run(  # Intentional: runs pytest test commands
                 test_command,
                 cwd=rootdir,
                 env=env,

@@ -9,7 +9,10 @@ from __future__ import annotations
 import ast
 from concurrent.futures import as_completed
 import contextlib
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 import json
 import logging
 import os
@@ -25,15 +28,28 @@ import warnings
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
-from pytest_gremlins.config import load_config, merge_configs
-from pytest_gremlins.coverage import CoverageCollector, PrioritizedSelector, TestSelector
+from pytest_gremlins.config import (
+    load_config,
+    merge_configs,
+)
+from pytest_gremlins.coverage import (
+    CoverageCollector,
+    PrioritizedSelector,
+    TestSelector,
+)
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
-from pytest_gremlins.instrumentation.transformer import get_default_registry, transform_source
+from pytest_gremlins.instrumentation.transformer import (
+    get_default_registry,
+    transform_source,
+)
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.html import HtmlReporter
-from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
 
 
@@ -711,7 +727,7 @@ dynamic_context = test_function
     ]
 
     try:
-        subprocess.run(  # noqa: S603  # Intentional: runs pytest test commands
+        subprocess.run(  # Intentional: runs pytest test commands
             cmd,
             cwd=str(rootdir),
             capture_output=True,
@@ -1381,7 +1397,7 @@ def _test_gremlin(
         env[GREMLIN_SOURCES_ENV_VAR] = str(sources_file)
 
     try:
-        result = subprocess.run(  # noqa: S603  # Intentional: runs pytest test commands
+        result = subprocess.run(  # Intentional: runs pytest test commands
             test_command,
             cwd=str(rootdir),
             env=env,

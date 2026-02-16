@@ -13,7 +13,7 @@ import pytest
 from pytest_gremlins.cache.hasher import ContentHasher
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestHasherPerformance:
     """Performance tests for content hashing."""
 

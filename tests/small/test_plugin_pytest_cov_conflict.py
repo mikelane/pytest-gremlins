@@ -16,14 +16,18 @@ import warnings
 
 import pytest
 
-from pytest_gremlins.plugin import GremlinSession, _collect_coverage, _run_tests_with_coverage
+from pytest_gremlins.plugin import (
+    GremlinSession,
+    _collect_coverage,
+    _run_tests_with_coverage,
+)
 
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestCoverageSubprocessClearsAddopts:
     """Verify the coverage subprocess includes -o addopts= to clear user config."""
 
@@ -73,7 +77,7 @@ class TestCoverageSubprocessClearsAddopts:
             assert addopts_idx < pos
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestEmptyCoverageWarning:
     """Verify a warning is emitted when coverage collection returns empty data."""
 

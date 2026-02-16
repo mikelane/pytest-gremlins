@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR, get_active_gremlin
+from pytest_gremlins.instrumentation.switcher import (
+    ACTIVE_GREMLIN_ENV_VAR,
+    get_active_gremlin,
+)
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestActiveGremlin:
     """Test the active gremlin detection."""
 
@@ -27,7 +30,7 @@ class TestActiveGremlin:
         assert get_active_gremlin() == ''
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestActiveGremlinEnvVar:
     """Test the ACTIVE_GREMLIN_ENV_VAR constant."""
 

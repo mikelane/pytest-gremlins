@@ -6,10 +6,13 @@ pytest_configure and that CLI arguments properly override file config.
 
 import pytest
 
-from pytest_gremlins.config import GremlinConfig, merge_configs
+from pytest_gremlins.config import (
+    GremlinConfig,
+    merge_configs,
+)
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestMergeConfigs:
     """Tests for merging CLI args with pyproject.toml config."""
 

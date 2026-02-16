@@ -9,7 +9,10 @@ from __future__ import annotations
 import sys
 import time
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 
 import pytest
 
@@ -21,7 +24,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPersistentWorkerPoolWithConfig:
     """Tests for PersistentWorkerPool using PoolConfig."""
 
@@ -57,7 +60,7 @@ class TestPersistentWorkerPoolWithConfig:
         assert pool.timeout == 120
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPersistentWorkerPoolWarmup:
     """Tests for worker warmup functionality."""
 
@@ -103,7 +106,7 @@ class TestPersistentWorkerPoolWarmup:
         assert elapsed < threshold
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPersistentWorkerPoolMpContext:
     """Tests for multiprocessing context usage."""
 
@@ -136,7 +139,7 @@ class TestPersistentWorkerPoolMpContext:
             assert call_kwargs['mp_context'].get_start_method() == 'spawn'
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPersistentWorkerPoolIntegration:
     """Integration tests for optimized pool with actual execution."""
 

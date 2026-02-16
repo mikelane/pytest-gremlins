@@ -7,7 +7,7 @@ import pytest
 from pytest_gremlins.coverage.mapper import CoverageMap
 
 
-@pytest.fixture
+@pytest.fixture()
 def coverage_map():
     """Create an empty CoverageMap for testing."""
     return CoverageMap()

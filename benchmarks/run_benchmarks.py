@@ -25,7 +25,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-from dataclasses import asdict, dataclass, field
+from dataclasses import (
+    asdict,
+    dataclass,
+    field,
+)
 from datetime import datetime
 import json
 import os

@@ -26,7 +26,10 @@ Example:
 
 from __future__ import annotations
 
-from importlib.abc import Loader, MetaPathFinder
+from importlib.abc import (
+    Loader,
+    MetaPathFinder,
+)
 from importlib.machinery import ModuleSpec
 import os
 import sys

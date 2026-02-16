@@ -9,7 +9,10 @@ See: https://docs.sonarsource.com/sonarqube/latest/analyzing-source-code/importi
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 from pytest_gremlins.reporting.results import GremlinResultStatus
 

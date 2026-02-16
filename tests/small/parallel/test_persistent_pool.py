@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPersistentWorkerPoolCreation:
     """Tests for PersistentWorkerPool instantiation."""
 
@@ -78,7 +78,7 @@ class TestPersistentWorkerPoolCreation:
         assert pool.max_workers == 2
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPersistentWorkerPoolContextManager:
     """Tests for PersistentWorkerPool context manager protocol."""
 
@@ -124,7 +124,7 @@ class TestPersistentWorkerPoolContextManager:
         assert not pool.is_running
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPersistentWorkerPoolSubmit:
     """Tests for submitting work to the persistent pool."""
 
@@ -196,7 +196,7 @@ sys.exit(0)
             assert result.status == GremlinResultStatus.SURVIVED
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPersistentWorkerPoolExecution:
     """Tests for actual execution in persistent pool."""
 
@@ -240,7 +240,7 @@ class TestPersistentWorkerPoolExecution:
             assert result.gremlin_id == 'g042'
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestBatchExecution:
     """Tests for batch execution - running multiple gremlins in one subprocess."""
 

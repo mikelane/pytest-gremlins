@@ -7,7 +7,10 @@ module imports and inject instrumented code during mutation testing.
 from __future__ import annotations
 
 import ast
-from importlib.abc import Loader, MetaPathFinder
+from importlib.abc import (
+    Loader,
+    MetaPathFinder,
+)
 from importlib.machinery import ModuleSpec
 import sys
 import types
@@ -123,7 +126,7 @@ class TestGremlinLoader:
 class TestImportHookRegistration:
     """Tests for registering and unregistering import hooks."""
 
-    @pytest.fixture
+    @pytest.fixture()
     def clean_meta_path(self) -> Generator[None, None, None]:
         """Ensure sys.meta_path is cleaned up after tests."""
         original_meta_path = sys.meta_path.copy()
@@ -151,14 +154,14 @@ class TestImportHookRegistration:
 class TestImportHookIntegration:
     """Integration tests for import hooks with actual module imports."""
 
-    @pytest.fixture
+    @pytest.fixture()
     def clean_meta_path(self) -> Generator[None, None, None]:
         """Ensure sys.meta_path is cleaned up after tests."""
         original_meta_path = sys.meta_path.copy()
         yield
         sys.meta_path[:] = original_meta_path
 
-    @pytest.fixture
+    @pytest.fixture()
     def clean_modules(self) -> Generator[None, None, None]:
         """Ensure test modules are removed from sys.modules."""
         test_module_name = '_gremlin_test_module'
@@ -185,7 +188,7 @@ class TestImportHookIntegration:
         register_import_hooks(instrumented_modules)
 
         try:
-            import _gremlin_test_module  # noqa: PLC0415  # Intentional: testing import hooks
+            import _gremlin_test_module  # Intentional: testing import hooks
 
             assert _gremlin_test_module.test_value == 'instrumented'
         finally:

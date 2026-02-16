@@ -9,7 +9,7 @@ import pytest
 from pytest_gremlins.plugin import _path_to_module_name
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPathToModuleName:
     """Tests for _path_to_module_name function."""
 

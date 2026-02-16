@@ -13,14 +13,17 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.parallel.persistent_pool import PersistentWorkerPool
-from pytest_gremlins.parallel.pool_config import PoolConfig, get_optimal_start_method
+from pytest_gremlins.parallel.pool_config import (
+    PoolConfig,
+    get_optimal_start_method,
+)
 
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestStartMethodOptimization:
     """Tests verifying start method optimization."""
 
@@ -41,7 +44,7 @@ class TestStartMethodOptimization:
         assert method == 'spawn'
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestWarmupBenefits:
     """Tests demonstrating warmup benefits."""
 
@@ -82,7 +85,7 @@ class TestWarmupBenefits:
             assert pool.warmup_completed_count == 0
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestMpContextOptimization:
     """Tests verifying multiprocessing context optimization."""
 
@@ -104,7 +107,7 @@ class TestMpContextOptimization:
         assert pool._mp_context.get_start_method() == optimal
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPoolConfigIntegrationWithBatchExecutor:
     """Tests verifying PoolConfig works with BatchExecutor patterns."""
 
@@ -127,7 +130,7 @@ class TestPoolConfigIntegrationWithBatchExecutor:
         assert config.batch_size == 15
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPoolPerformanceCharacteristics:
     """Tests documenting expected performance characteristics."""
 

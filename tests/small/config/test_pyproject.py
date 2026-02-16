@@ -6,10 +6,13 @@ provides defaults when configuration is absent.
 
 import pytest
 
-from pytest_gremlins.config import GremlinConfig, load_config
+from pytest_gremlins.config import (
+    GremlinConfig,
+    load_config,
+)
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestLoadConfig:
     """Tests for load_config function."""
 
@@ -100,7 +103,7 @@ class TestLoadConfig:
         assert result.exclude is None
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestGremlinConfig:
     """Tests for GremlinConfig dataclass."""
 

@@ -10,7 +10,7 @@ import re
 import pytest
 
 
-@pytest.fixture
+@pytest.fixture()
 def pytester_with_conftest(pytester: pytest.Pytester) -> pytest.Pytester:
     """Create a pytester instance with conftest that registers small marker for nested tests.
 
@@ -38,7 +38,7 @@ def pytest_collection_modifyitems(items):
     return pytester
 
 
-@pytest.mark.medium
+@pytest.mark.medium()
 class TestPluginBasicFunctionality:
     """Test basic plugin functionality."""
 
@@ -112,7 +112,7 @@ def test_add():
         assert '%' in output  # Mutation score percentage
 
 
-@pytest.mark.medium
+@pytest.mark.medium()
 class TestPluginWithoutGremlinsFlag:
     """Test plugin behavior when --gremlins is not used."""
 
@@ -139,7 +139,7 @@ def test_is_adult():
         assert 'pytest-gremlins mutation report' not in result.stdout.str()
 
 
-@pytest.mark.medium
+@pytest.mark.medium()
 class TestPluginOperatorSelection:
     """Test operator selection via command line."""
 
@@ -166,7 +166,7 @@ def test_is_adult():
         assert 'pytest-gremlins mutation report' in output
 
 
-@pytest.mark.medium
+@pytest.mark.medium()
 class TestPluginReportFormats:
     """Test different report format options."""
 
@@ -194,7 +194,7 @@ def test_is_adult():
         assert 'Zapped:' in output or 'Survived:' in output
 
 
-@pytest.mark.medium
+@pytest.mark.medium()
 class TestMutationSwitching:
     """Test that mutations are actually activated via import hooks."""
 
@@ -243,7 +243,7 @@ def test_below_boundary():
         assert zapped_count >= 1, f'Expected at least 1 zapped gremlin, got {zapped_count}'
 
 
-@pytest.mark.medium
+@pytest.mark.medium()
 class TestHtmlReportIntegration:
     """Test HTML report generation via CLI."""
 

@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from typing import TYPE_CHECKING, Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 
 if TYPE_CHECKING:

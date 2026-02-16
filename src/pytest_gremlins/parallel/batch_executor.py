@@ -22,7 +22,10 @@ from __future__ import annotations
 
 from concurrent.futures import as_completed
 import os
-from typing import TYPE_CHECKING, Self
+from typing import (
+    TYPE_CHECKING,
+    Self,
+)
 
 from pytest_gremlins.parallel.persistent_pool import PersistentWorkerPool
 from pytest_gremlins.parallel.pool_config import PoolConfig

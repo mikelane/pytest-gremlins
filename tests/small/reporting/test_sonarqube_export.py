@@ -16,7 +16,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
-from pytest_gremlins.reporting.results import GremlinResult, GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.reporting.sonarqube_export import SonarQubeExporter
 
@@ -25,7 +28,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture
+@pytest.fixture()
 def make_gremlin():
     """Factory fixture for creating test gremlins."""
     counter = 0
@@ -54,7 +57,7 @@ def make_gremlin():
     return _make_gremlin
 
 
-@pytest.fixture
+@pytest.fixture()
 def make_result(make_gremlin):
     """Factory fixture for creating test results."""
 

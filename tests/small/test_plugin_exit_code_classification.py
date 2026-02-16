@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.fixture
+@pytest.fixture()
 def sample_gremlin() -> Gremlin:
     """Create a sample gremlin for testing."""
     return Gremlin(
@@ -34,7 +34,7 @@ def sample_gremlin() -> Gremlin:
     )
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestTestGremlinExitCodeClassification:
     """Tests for _test_gremlin exit code handling."""
 

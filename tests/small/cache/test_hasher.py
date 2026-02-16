@@ -9,7 +9,7 @@ import pytest
 from pytest_gremlins.cache.hasher import ContentHasher
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestContentHasher:
     """Tests for ContentHasher class."""
 

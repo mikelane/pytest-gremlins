@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 import json
-from typing import TYPE_CHECKING, Any, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    cast,
+)
 
 import pytest_gremlins
 from pytest_gremlins.reporting.results import GremlinResultStatus

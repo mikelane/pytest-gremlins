@@ -17,7 +17,7 @@ from pytest_gremlins.parallel.pool_config import (
 )
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPoolConfigCreation:
     """Tests for PoolConfig instantiation."""
 
@@ -73,7 +73,7 @@ class TestPoolConfigCreation:
         assert config.batch_size == 10
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPoolConfigValidation:
     """Tests for PoolConfig validation."""
 
@@ -107,7 +107,7 @@ class TestPoolConfigValidation:
             PoolConfig(batch_size=0)
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestGetOptimalStartMethod:
     """Tests for get_optimal_start_method function."""
 
@@ -135,7 +135,7 @@ class TestGetOptimalStartMethod:
             assert method == 'spawn'
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPoolConfigMpContext:
     """Tests for PoolConfig multiprocessing context creation."""
 
@@ -160,7 +160,7 @@ class TestPoolConfigMpContext:
         assert ctx.get_start_method() == optimal
 
 
-@pytest.mark.small
+@pytest.mark.small()
 class TestPoolConfigEquality:
     """Tests for PoolConfig equality and hashing."""
 
