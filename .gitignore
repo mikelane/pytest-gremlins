@@ -142,7 +142,6 @@ Thumbs.db
 # Project specific
 .gremlins/
 *.db
-.secrets.baseline
 *.pstats
 mutants/
 .mutmut-cache/
