@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.2.0 (2026-02-15)
+
+### Feat
+
+- auto-discover source paths from setuptools metadata (#123)
+
+### Fix
+
+- migrate from optional-dependencies to dependency-groups (PEP 735) (#121)
+- display all mutation outcome categories in reports (#115) (#120)
+- commit .secrets.baseline to fix pre-commit hook blocking (#118)
+
 ## v1.1.0 (2026-02-12)
 
 ### Feat
