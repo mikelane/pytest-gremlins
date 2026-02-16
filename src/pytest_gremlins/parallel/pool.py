@@ -75,7 +75,7 @@ def _run_gremlin_test(  # pragma: no cover
     env['ACTIVE_GREMLIN'] = gremlin_id
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603  # Intentional: runs pytest test commands
             test_command,
             cwd=rootdir,
             env=env,

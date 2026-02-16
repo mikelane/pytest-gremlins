@@ -711,7 +711,7 @@ dynamic_context = test_function
     ]
 
     try:
-        subprocess.run(
+        subprocess.run(  # noqa: S603  # Intentional: runs pytest test commands
             cmd,
             cwd=str(rootdir),
             capture_output=True,
@@ -1381,7 +1381,7 @@ def _test_gremlin(
         env[GREMLIN_SOURCES_ENV_VAR] = str(sources_file)
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603  # Intentional: runs pytest test commands
             test_command,
             cwd=str(rootdir),
             env=env,
