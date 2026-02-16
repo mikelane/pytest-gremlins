@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import tomllib
+from tomllib import TOMLDecodeError
 from typing import TYPE_CHECKING
 
 
@@ -63,6 +64,36 @@ def load_config(rootdir: Path) -> GremlinConfig:
     )
 
 
+def _collect_setuptools_candidates(setuptools_config: dict[str, object]) -> list[str]:
+    """Extract candidate source paths from setuptools configuration.
+
+    Args:
+        setuptools_config: The parsed [tool.setuptools] dictionary.
+
+    Returns:
+        List of candidate path strings (not yet validated against disk).
+    """
+    candidates: list[str] = []
+
+    packages = setuptools_config.get('packages')
+    if isinstance(packages, list):
+        candidates.extend(pkg.split('.')[0] for pkg in packages)
+    elif isinstance(packages, dict):
+        find_config = packages.get('find', {})
+        if isinstance(find_config, dict):
+            where = find_config.get('where')
+            if isinstance(where, list):
+                candidates.extend(where)
+            elif isinstance(where, str):
+                candidates.append(where)
+
+    package_dir = setuptools_config.get('package-dir')
+    if isinstance(package_dir, dict):
+        candidates.extend(v for v in package_dir.values() if v)
+
+    return candidates
+
+
 def discover_source_paths(rootdir: Path) -> list[str]:
     """Discover source paths from setuptools packaging metadata in pyproject.toml.
 
@@ -92,28 +123,17 @@ def discover_source_paths(rootdir: Path) -> list[str]:
     if not pyproject_path.exists():
         return []
 
-    with pyproject_path.open('rb') as f:
-        data = tomllib.load(f)
+    try:
+        with pyproject_path.open('rb') as f:
+            data = tomllib.load(f)
+    except TOMLDecodeError:
+        return []
 
     setuptools_config = data.get('tool', {}).get('setuptools', {})
     if not setuptools_config:
         return []
 
-    candidates: list[str] = []
-
-    packages = setuptools_config.get('packages')
-    if isinstance(packages, list):
-        candidates.extend(packages)
-    elif isinstance(packages, dict):
-        find_config = packages.get('find', {})
-        if isinstance(find_config, dict):
-            where = find_config.get('where')
-            if isinstance(where, list):
-                candidates.extend(where)
-
-    package_dir = setuptools_config.get('package-dir')
-    if isinstance(package_dir, dict):
-        candidates.extend(package_dir.values())
+    candidates = _collect_setuptools_candidates(setuptools_config)
 
     seen: set[str] = set()
     result: list[str] = []

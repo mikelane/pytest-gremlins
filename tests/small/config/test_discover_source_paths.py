@@ -136,3 +136,41 @@ class TestDiscoverSourcePaths:
         result = discover_source_paths(tmp_path)
 
         assert result == ['src/mypkg']
+
+    def test_nested_dotted_package_resolves_to_top_level_directory(self, tmp_path):
+        """Resolves dotted package name to its top-level directory."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.setuptools]\npackages = ["cogapp.utils"]\n')
+        (tmp_path / 'cogapp' / 'utils').mkdir(parents=True)
+
+        result = discover_source_paths(tmp_path)
+
+        assert result == ['cogapp']
+
+    def test_find_where_as_string_discovered(self, tmp_path):
+        """Discovers source path when find.where is a string instead of a list."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.setuptools.packages.find]\nwhere = "src"\n')
+        (tmp_path / 'src').mkdir()
+
+        result = discover_source_paths(tmp_path)
+
+        assert result == ['src']
+
+    def test_malformed_toml_returns_empty_list(self, tmp_path):
+        """Returns empty list when pyproject.toml contains invalid TOML."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.setuptools\npackages = ["broken"')
+
+        result = discover_source_paths(tmp_path)
+
+        assert result == []
+
+    def test_package_dir_empty_string_value_excluded(self, tmp_path):
+        """Excludes empty string values from package-dir mapping."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.setuptools.package-dir]\nmypackage = ""\n')
+
+        result = discover_source_paths(tmp_path)
+
+        assert result == []
