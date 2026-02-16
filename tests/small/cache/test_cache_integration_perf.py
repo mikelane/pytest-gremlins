@@ -13,7 +13,7 @@ from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestPluginCachePattern:
     """Tests that simulate the actual plugin cache usage pattern."""
 
@@ -71,9 +71,9 @@ class TestPluginCachePattern:
         # Warm run should be much faster (no writes, just reads)
         # Target: warm_time < cold_time / 10 (at least 10x faster)
         speedup = cold_time / warm_time if warm_time > 0 else float('inf')
-        assert (
-            speedup >= 2.0
-        ), f'Warm run speedup was only {speedup:.1f}x (cold={cold_time * 1000:.1f}ms, warm={warm_time * 1000:.1f}ms)'
+        assert speedup >= 2.0, (
+            f'Warm run speedup was only {speedup:.1f}x (cold={cold_time * 1000:.1f}ms, warm={warm_time * 1000:.1f}ms)'
+        )
 
     def test_cache_overhead_per_gremlin(self, tmp_path: Path) -> None:
         """Cache overhead per gremlin is under 1ms for cache hits."""
@@ -149,7 +149,7 @@ class TestPluginCachePattern:
         assert upfront_hash_time < 0.001, f'Upfront re-hashing took {upfront_hash_time * 1000:.3f}ms'
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCacheKeyEfficiency:
     """Tests for efficient cache key computation."""
 
@@ -187,7 +187,7 @@ class TestCacheKeyEfficiency:
         assert len(keys) == 5, f'All keys should be unique: {keys}'
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestBatchOperations:
     """Tests for batch cache operations."""
 

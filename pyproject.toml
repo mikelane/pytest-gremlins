@@ -222,6 +222,23 @@ reportMissingImports = "warning"
 reportMissingTypeStubs = false
 
 # =============================================================================
+# Bandit
+# =============================================================================
+[tool.bandit]
+exclude_dirs = [
+    "tests",
+    "benchmarks",
+    "scripts",
+    "examples",
+]
+skips = [
+    "B404",  # subprocess import is fine in benchmarks/scripts
+    "B603",  # subprocess calls are fine in benchmarks/scripts
+    "B101",  # assert is fine in examples/tests
+    "B102",  # exec is necessary for import hooks
+]
+
+# =============================================================================
 # MyPy
 # =============================================================================
 [tool.mypy]

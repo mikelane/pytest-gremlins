@@ -31,7 +31,7 @@ def pytest_collection_modifyitems(items):
     return pytester
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCachePerformanceIntegration:
     """Integration tests verifying cache provides speedup."""
 
@@ -169,6 +169,6 @@ class TestCachePerformanceIntegration:
         )
 
         # Warm cache run should be faster than no-cache
-        assert (
-            cache_warm_time < no_cache_time
-        ), f'Warm cache ({cache_warm_time:.2f}s) should be faster than no-cache ({no_cache_time:.2f}s)'
+        assert cache_warm_time < no_cache_time, (
+            f'Warm cache ({cache_warm_time:.2f}s) should be faster than no-cache ({no_cache_time:.2f}s)'
+        )

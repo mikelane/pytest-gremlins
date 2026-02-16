@@ -710,7 +710,7 @@ def check_python_version_for_mutmut() -> str | None:
     return None
 
 
-def run_mutmut(  # noqa: C901, PLR0912, PLR0915
+def run_mutmut(
     project_dir: Path,
     config_name: str,
     extra_args: list[str],
@@ -876,7 +876,7 @@ def run_mutmut(  # noqa: C901, PLR0912, PLR0915
         )
 
 
-def run_gremlins(  # noqa: C901
+def run_gremlins(
     project_dir: Path,
     config_name: str,
     extra_args: list[str],
@@ -1206,7 +1206,7 @@ def generate_markdown_report(
     return '\n'.join(lines)
 
 
-def main() -> int:  # noqa: PLR0915
+def main() -> int:
     """Run the benchmark suite.
 
     Returns:

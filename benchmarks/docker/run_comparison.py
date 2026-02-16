@@ -784,7 +784,7 @@ def main() -> int:
         for s in summaries:
             if s['tool'] == 'gremlins':
                 speedup = mutmut_time / s['mean'] if s['mean'] > 0 else 0
-                print(f"  {s['config']:12} {speedup:.2f}x faster")
+                print(f'  {s["config"]:12} {speedup:.2f}x faster')
 
     print()
 

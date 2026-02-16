@@ -41,7 +41,7 @@ def pytest_collection_modifyitems(items):
     return pytester
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestBooleanClassDefaultBug:
     """Reproduce issue #91: boolean mutations in dataclass defaults falsely survive."""
 
@@ -106,9 +106,9 @@ def test_explicit_last_true():
             survived_count = int(survived_match.group(1))
             # If there are survivors, none should be the False->True boolean mutation
             if survived_count > 0 and 'False' in output and 'True' in output:
-                assert (
-                    'False to True' not in output.split('Top surviving gremlins:')[-1]
-                ), 'False->True boolean mutation in dataclass default falsely reported as surviving'
+                assert 'False to True' not in output.split('Top surviving gremlins:')[-1], (
+                    'False->True boolean mutation in dataclass default falsely reported as surviving'
+                )
 
     def test_true_to_false_mutation_in_dataclass_default_is_zapped(self, pytester_with_conftest: pytest.Pytester):
         """A True->False mutation in a dataclass default is zapped when tests depend on it."""

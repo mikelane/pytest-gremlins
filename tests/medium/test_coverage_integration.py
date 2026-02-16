@@ -29,7 +29,7 @@ def pytest_collection_modifyitems(items):
     return pytester
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCoverageGuidedTestSelection:
     """Test that coverage-guided test selection reduces test executions."""
 
@@ -84,7 +84,7 @@ def test_subtract_negative():
         assert 'tests' in lower_output, 'Expected output to include "tests"'
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCoverageGuidedFallback:
     """Test fallback behavior when no coverage data exists."""
 
@@ -127,7 +127,7 @@ def test_covered():
         output = result.stdout.str()
 
         lower_output = output.lower()
-        assert (
-            'survived' in lower_output
-        ), 'Expected uncovered gremlins to survive (fallback runs all tests, but none exercise uncovered code)'
+        assert 'survived' in lower_output, (
+            'Expected uncovered gremlins to survive (fallback runs all tests, but none exercise uncovered code)'
+        )
         assert 'running' in lower_output, 'Expected uncovered gremlins to be run via fallback, not skipped'

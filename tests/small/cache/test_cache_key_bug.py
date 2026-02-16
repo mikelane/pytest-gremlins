@@ -12,7 +12,7 @@ import pytest
 from pytest_gremlins.cache.incremental import IncrementalCache
 
 
-@pytest.mark.medium()
+@pytest.mark.medium
 class TestCacheKeyIncludesTestNames:
     """Cache key must include test names, not just hashes."""
 
@@ -47,6 +47,6 @@ class TestCacheKeyIncludesTestNames:
 
         # These keys SHOULD be different because the test covering this gremlin changed
         # Even though the test content is the same, the test NAME changed
-        assert (
-            key_with_test_foo != key_with_test_bar
-        ), f'Cache keys must differ when test names differ, even if hashes are same. Got same key: {key_with_test_foo}'
+        assert key_with_test_foo != key_with_test_bar, (
+            f'Cache keys must differ when test names differ, even if hashes are same. Got same key: {key_with_test_foo}'
+        )

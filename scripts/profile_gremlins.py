@@ -7,7 +7,7 @@ timing information for each phase of execution.
 Note: This is a diagnostic script, not part of the main library. Some lint
 rules are relaxed for convenience (subprocess calls, dynamic imports, etc.)
 """
-# ruff: noqa: S603, ANN401, PLR0915
+# ruff: noqa: ANN401, PLR0915
 
 from __future__ import annotations
 
