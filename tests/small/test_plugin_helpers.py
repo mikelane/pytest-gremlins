@@ -14,6 +14,7 @@ from pytest_gremlins.plugin import (
     _build_test_command,
     _make_node_ids_relative,
     _path_to_module_name,
+    _resolve_parallel_from_xdist,
     _should_include_file,
 )
 
@@ -180,6 +181,51 @@ class TestPathToModuleName:
 
         # Just returns the filename without .py extension
         assert result == 'module'
+
+
+@pytest.mark.small
+class TestResolveParallelFromXdist:
+    """Tests for _resolve_parallel_from_xdist function.
+
+    Each test uses a distinct input/output pair to prevent hardcoded return values
+    from passing the suite.
+    """
+
+    def test_none_returns_disabled(self) -> None:
+        """None means xdist was not used — parallel stays off."""
+        enabled, workers = _resolve_parallel_from_xdist(None)
+        assert enabled is False
+        assert workers is None
+
+    def test_auto_returns_enabled_with_no_worker_count(self) -> None:
+        """'auto' enables parallel with None workers (CPU count)."""
+        enabled, workers = _resolve_parallel_from_xdist('auto')
+        assert enabled is True
+        assert workers is None
+
+    def test_positive_integer_returns_enabled_with_that_count(self) -> None:
+        """Positive integer enables parallel with that exact worker count."""
+        enabled, workers = _resolve_parallel_from_xdist(4)
+        assert enabled is True
+        assert workers == 4
+
+    def test_different_positive_integer_returns_that_exact_count(self) -> None:
+        """A different positive integer produces a different worker count — rules out hardcoding."""
+        enabled, workers = _resolve_parallel_from_xdist(8)
+        assert enabled is True
+        assert workers == 8
+
+    def test_zero_returns_disabled(self) -> None:
+        """Zero means xdist is present but disabled — parallel stays off."""
+        enabled, workers = _resolve_parallel_from_xdist(0)
+        assert enabled is False
+        assert workers is None
+
+    def test_one_returns_enabled_with_single_worker(self) -> None:
+        """1 is a valid positive count — sequential but still routes through parallel path."""
+        enabled, workers = _resolve_parallel_from_xdist(1)
+        assert enabled is True
+        assert workers == 1
 
 
 @pytest.mark.small
