@@ -183,7 +183,7 @@ def _read_parallel_config(config: pytest.Config) -> tuple[bool, int | None]:
             stacklevel=2,
         )
 
-    if xdist_available and config.option.numprocesses:
+    if xdist_available and config.option.numprocesses is not None:
         parallel_enabled, parallel_workers = _resolve_parallel_from_xdist(config.option.numprocesses)
 
     return parallel_enabled, parallel_workers
