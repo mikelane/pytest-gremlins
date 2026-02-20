@@ -297,6 +297,13 @@ class TestReadParallelConfig:
         assert enabled is True
         assert workers is None
 
+    def test_xdist_installed_but_n_not_passed_falls_back_to_gremlin_parallel(self) -> None:
+        """xdist installed but -n not passed: numprocesses=None, old flags apply."""
+        config = self._make_config(gremlin_parallel=True, numprocesses=None)
+        enabled, workers = _read_parallel_config(config)
+        assert enabled is True
+        assert workers is None
+
 
 @pytest.mark.small
 class TestBuildTestCommand:
