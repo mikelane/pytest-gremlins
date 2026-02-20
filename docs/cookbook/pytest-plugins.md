@@ -185,12 +185,13 @@ paths = ["src"]   # Same path
 
 ### Goal
 
-Use pytest-xdist for parallel test execution alongside pytest-gremlins.
+Use `-n` from pytest-xdist to control parallel mutation testing.
 
-### Important Note
+### How It Works
 
-pytest-gremlins has its own parallel execution via `--gremlin-workers`. You typically don't need
-pytest-xdist for mutation testing, but they can coexist for regular test runs.
+pytest-gremlins reads xdist's `-n` flag and uses it as the worker count for its
+mutation subprocess pool. Pass `-n auto` to use all CPU cores, or `-n 4` for
+an explicit count.
 
 ### Configuration
 
@@ -212,70 +213,44 @@ paths = ["src"]
 
 ### Running Tests
 
-**Regular tests with xdist:**
+**Mutation testing with automatic worker count:**
 
 ```bash
-pytest tests/ -n auto  # Uses all CPU cores
+pytest --gremlins -n auto
 ```
 
-**Mutation testing (don't use -n):**
+**Mutation testing with explicit worker count:**
 
 ```bash
-pytest --gremlins --gremlin-parallel --gremlin-workers=4
+pytest --gremlins -n 4
 ```
 
-**Combined in CI:**
+**In CI:**
 
 ```yaml
 jobs:
-  test:
-    steps:
-      # Fast parallel tests
-      - name: Run tests
-        run: pytest tests/ -n auto
-
   mutation:
-    needs: test
     steps:
-      # Mutation testing with its own parallelism
       - name: Run mutation testing
-        run: pytest --gremlins --gremlin-parallel --gremlin-workers=4
+        run: pytest --gremlins -n auto --gremlin-cache --gremlin-report=html
 ```
 
 ### Verification
 
-1. Regular tests run in parallel:
+```bash
+pytest --gremlins -n 4 -v
+```
 
-   ```bash
-   pytest tests/ -n 4 -v
-   ```
-
-2. Mutation testing uses its own workers:
-
-   ```bash
-   pytest --gremlins --gremlin-parallel --gremlin-workers=4
-   ```
+The output will show `Starting parallel execution with 4 workers`.
 
 ### Troubleshooting
 
-#### Tests hang when using -n with --gremlins
-
-Don't combine them. pytest-gremlins manages its own parallelism:
-
-```bash
-# Wrong
-pytest --gremlins -n 4
-
-# Correct
-pytest --gremlins --gremlin-parallel --gremlin-workers=4
-```
-
 #### Worker processes crash
 
-Reduce worker count or check for resource conflicts:
+Reduce the worker count:
 
 ```bash
-pytest --gremlins --gremlin-workers=2
+pytest --gremlins -n 2
 ```
 
 ---

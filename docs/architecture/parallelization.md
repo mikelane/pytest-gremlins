@@ -213,48 +213,17 @@ def worker_main(mutations: list[str], result_queue: Queue):
 
 ### Number of Workers
 
-```toml
-[tool.pytest-gremlins]
-# Fixed number of workers
-workers = 8
-
-# Or auto-detect based on CPU count
-workers = "auto"  # default: cpu_count() - 1
-```
-
-Command line override:
+Use xdist's `-n` flag (requires `pytest-xdist`):
 
 ```bash
-# Explicit worker count
-pytest --gremlins --workers 4
-
-# Use all available cores
-pytest --gremlins --workers auto
-```
-
-### Memory Considerations
-
-Each worker is a separate process with its own memory:
-
-```toml
-[tool.pytest-gremlins]
-# Limit workers on memory-constrained systems
-workers = 4
-worker_memory_limit_mb = 512  # Kill worker if exceeded
+pytest --gremlins -n auto   # use all CPU cores
+pytest --gremlins -n 4      # use 4 workers
 ```
 
 ### Worker Timeout
 
-Prevent hung workers:
-
-```toml
-[tool.pytest-gremlins]
-# Kill mutation if it takes too long
-mutation_timeout_seconds = 30
-
-# Kill worker if completely unresponsive
-worker_timeout_seconds = 300
-```
+Each mutation subprocess has a 30-second timeout. Mutations that exceed it are
+reported as `TIMEOUT` rather than `SURVIVED` or `ERROR`.
 
 ## Performance Characteristics
 
@@ -405,19 +374,11 @@ Parallelization efficiency: 96%
 
 ### Single Worker Mode
 
-When debugging, disable parallelization:
+When debugging, run with a single worker to get sequential output:
 
 ```bash
-pytest --gremlins --workers 1
+pytest --gremlins -n 1
 ```
-
-### Verbose Worker Output
-
-```bash
-pytest --gremlins --worker-verbose
-```
-
-Shows each worker's activity in real-time.
 
 ### Reproduce Specific Mutation
 

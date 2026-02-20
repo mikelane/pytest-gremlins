@@ -6,6 +6,8 @@ These tests cover the utility functions in plugin.py that can be tested in isola
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -14,8 +16,13 @@ from pytest_gremlins.plugin import (
     _build_test_command,
     _make_node_ids_relative,
     _path_to_module_name,
+    _read_parallel_config,
+    _resolve_parallel_from_xdist,
     _should_include_file,
 )
+
+
+_UNSET: object = object()  # sentinel: numprocesses attribute absent (xdist not installed)
 
 
 @pytest.mark.small
@@ -180,6 +187,122 @@ class TestPathToModuleName:
 
         # Just returns the filename without .py extension
         assert result == 'module'
+
+
+@pytest.mark.small
+class TestResolveParallelFromXdist:
+    """Tests for _resolve_parallel_from_xdist function.
+
+    Each test uses a distinct input/output pair to prevent hardcoded return values
+    from passing the suite.
+    """
+
+    def test_none_returns_disabled(self) -> None:
+        """None means xdist was not used — parallel stays off."""
+        enabled, workers = _resolve_parallel_from_xdist(None)
+        assert enabled is False
+        assert workers is None
+
+    def test_auto_returns_enabled_with_no_worker_count(self) -> None:
+        """'auto' enables parallel with None workers (CPU count)."""
+        enabled, workers = _resolve_parallel_from_xdist('auto')
+        assert enabled is True
+        assert workers is None
+
+    def test_positive_integer_returns_enabled_with_that_count(self) -> None:
+        """Positive integer enables parallel with that exact worker count."""
+        enabled, workers = _resolve_parallel_from_xdist(4)
+        assert enabled is True
+        assert workers == 4
+
+    def test_different_positive_integer_returns_that_exact_count(self) -> None:
+        """A different positive integer produces a different worker count — rules out hardcoding."""
+        enabled, workers = _resolve_parallel_from_xdist(8)
+        assert enabled is True
+        assert workers == 8
+
+    def test_zero_returns_disabled(self) -> None:
+        """Zero means xdist is present but disabled — parallel stays off."""
+        enabled, workers = _resolve_parallel_from_xdist(0)
+        assert enabled is False
+        assert workers is None
+
+    def test_one_returns_enabled_with_single_worker(self) -> None:
+        """1 is a valid positive count — sequential but still routes through parallel path."""
+        enabled, workers = _resolve_parallel_from_xdist(1)
+        assert enabled is True
+        assert workers == 1
+
+
+@pytest.mark.small
+class TestReadParallelConfig:
+    """Tests for _read_parallel_config function.
+
+    Uses SimpleNamespace to mock config.option so hasattr behaves correctly:
+    attributes present when xdist is installed, absent when it is not.
+    """
+
+    def _make_config(
+        self,
+        *,
+        gremlin_parallel: bool = False,
+        gremlin_workers: int | None = None,
+        numprocesses: str | int | None | object = _UNSET,
+    ) -> MagicMock:
+        """Build a mock pytest.Config with the given option values.
+
+        Pass numprocesses=_UNSET (default) to simulate xdist not installed.
+        Pass numprocesses=None to simulate xdist installed but -n not passed.
+        Pass numprocesses='auto' or an int to simulate -n auto / -n N.
+        """
+        attrs: dict[str, object] = {'gremlin_parallel': gremlin_parallel, 'gremlin_workers': gremlin_workers}
+        if numprocesses is not _UNSET:
+            attrs['numprocesses'] = numprocesses
+        config = MagicMock()
+        config.option = SimpleNamespace(**attrs)
+        return config
+
+    def test_no_xdist_no_flags_returns_disabled(self) -> None:
+        """No xdist, no old flags — sequential mode."""
+        config = self._make_config()
+        enabled, workers = _read_parallel_config(config)
+        assert enabled is False
+        assert workers is None
+
+    def test_xdist_n_auto_enables_parallel(self) -> None:
+        """-n auto with xdist installed enables parallel with no explicit count."""
+        config = self._make_config(numprocesses='auto')
+        enabled, workers = _read_parallel_config(config)
+        assert enabled is True
+        assert workers is None
+
+    def test_xdist_n_integer_enables_parallel_with_that_count(self) -> None:
+        """-n 3 enables parallel with exactly 3 workers."""
+        config = self._make_config(numprocesses=3)
+        enabled, workers = _read_parallel_config(config)
+        assert enabled is True
+        assert workers == 3
+
+    def test_xdist_n_zero_disables_parallel_even_with_gremlin_parallel(self) -> None:
+        """-n 0 --gremlin-parallel: xdist's explicit 0 must override the old flag."""
+        config = self._make_config(gremlin_parallel=True, numprocesses=0)
+        enabled, workers = _read_parallel_config(config)
+        assert enabled is False
+        assert workers is None
+
+    def test_xdist_not_installed_gremlin_parallel_enables_parallel(self) -> None:
+        """Without xdist, --gremlin-parallel still works."""
+        config = self._make_config(gremlin_parallel=True)
+        enabled, workers = _read_parallel_config(config)
+        assert enabled is True
+        assert workers is None
+
+    def test_xdist_installed_but_n_not_passed_falls_back_to_gremlin_parallel(self) -> None:
+        """xdist installed but -n not passed: numprocesses=None, old flags apply."""
+        config = self._make_config(gremlin_parallel=True, numprocesses=None)
+        enabled, workers = _read_parallel_config(config)
+        assert enabled is True
+        assert workers is None
 
 
 @pytest.mark.small
