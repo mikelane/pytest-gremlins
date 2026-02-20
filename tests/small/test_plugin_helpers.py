@@ -331,3 +331,35 @@ class TestBuildTestCommand:
         assert 'pytest' in result
         assert '-x' in result
         assert '--tb=no' in result
+
+    def test_with_instrumented_dir_suppresses_addopts(self, tmp_path: Path) -> None:
+        """When instrumented_dir provided, resets addopts to prevent inherited flags."""
+        instrumented_dir = tmp_path / 'instrumented'
+        instrumented_dir.mkdir()
+
+        result = _build_test_command(instrumented_dir)
+
+        assert '-o' in result
+        assert 'addopts=' in result
+
+    def test_without_instrumented_dir_suppresses_addopts(self) -> None:
+        """When instrumented_dir is None, resets addopts to prevent inherited flags."""
+        result = _build_test_command(None)
+
+        assert '-o' in result
+        assert 'addopts=' in result
+
+    def test_with_instrumented_dir_disables_coverage(self, tmp_path: Path) -> None:
+        """When instrumented_dir provided, disables coverage to avoid exit code 2."""
+        instrumented_dir = tmp_path / 'instrumented'
+        instrumented_dir.mkdir()
+
+        result = _build_test_command(instrumented_dir)
+
+        assert '--no-cov' in result
+
+    def test_without_instrumented_dir_disables_coverage(self) -> None:
+        """When instrumented_dir is None, disables coverage to avoid exit code 2."""
+        result = _build_test_command(None)
+
+        assert '--no-cov' in result
