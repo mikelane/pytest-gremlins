@@ -1362,6 +1362,9 @@ def _build_test_command(instrumented_dir: Path | None) -> list[str]:
             '-x',
             '--tb=no',
             '-q',
+            '-o',
+            'addopts=',
+            '--no-cov',
         ]
     return [
         sys.executable,
@@ -1370,6 +1373,9 @@ def _build_test_command(instrumented_dir: Path | None) -> list[str]:
         '-x',
         '--tb=no',
         '-q',
+        '-o',
+        'addopts=',
+        '--no-cov',
     ]
 
 
