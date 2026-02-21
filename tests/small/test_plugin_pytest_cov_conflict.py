@@ -13,6 +13,7 @@ See: https://github.com/mikelane/pytest-gremlins/issues/180
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 from unittest.mock import (
     MagicMock,
@@ -151,7 +152,9 @@ def _make_session_finish_mocks(
     mock_pluginmanager = MagicMock()
     mock_pluginmanager.get_plugin.return_value = cov_plugin
 
-    mock_config = MagicMock()
+    # spec=['rootdir', 'pluginmanager'] prevents workerinput from existing on the
+    # mock, so _is_xdist_worker returns False (controller path, not worker path).
+    mock_config = MagicMock(spec=['rootdir', 'pluginmanager'])
     mock_config.rootdir = tmp_path
     mock_config.pluginmanager = mock_pluginmanager
 
@@ -267,6 +270,8 @@ def _make_configure_config(*, gremlins: bool, has_pytest_cov: bool, no_cov: bool
         gremlin_cache=False,
         gremlin_clear_cache=False,
         gremlin_report='console',
+        gremlin_parallel=False,
+        gremlin_workers=None,
         gremlin_batch=False,
         gremlin_batch_size=10,
         n=None,
@@ -332,3 +337,120 @@ class TestOuterSessionCovNotSuppressed:
             pytest_configure(config)
 
         assert config.option.no_cov is False
+
+
+def _write_coverage_sqlite(
+    db_path: Path,
+    contexts: list[tuple[int, str]],
+    files: list[tuple[int, str]],
+    line_bits: list[tuple[int, int, bytes]],
+) -> None:
+    """Write a minimal coverage.py SQLite .coverage file with the given data."""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute('CREATE TABLE context (id INTEGER PRIMARY KEY, context TEXT)')
+    conn.execute('CREATE TABLE file (id INTEGER PRIMARY KEY, path TEXT)')
+    conn.execute('CREATE TABLE line_bits (file_id INTEGER, context_id INTEGER, numbits BLOB)')
+    conn.executemany('INSERT INTO context VALUES (?, ?)', contexts)
+    conn.executemany('INSERT INTO file VALUES (?, ?)', files)
+    conn.executemany('INSERT INTO line_bits VALUES (?, ?, ?)', line_bits)
+    conn.commit()
+    conn.close()
+
+
+@pytest.mark.small
+class TestCoverageSQLiteReading:
+    """Verify _run_tests_with_coverage reads per-test data from the .coverage SQLite DB."""
+
+    def test_returns_coverage_data_indexed_by_test_name(self, tmp_path: Path) -> None:
+        """When subprocess produces a .coverage file, its per-test data is returned."""
+        # Bit 0 of byte 0 = line 0; bit 1 of byte 0 = line 1
+        numbits = bytes([0x03])  # lines 0 and 1 covered
+
+        def create_coverage_file(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
+            _write_coverage_sqlite(
+                tmp_path / '.coverage',
+                contexts=[(1, 'tests/test_mod.py::test_foo|run')],
+                files=[(1, 'src/module.py')],
+                line_bits=[(1, 1, numbits)],
+            )
+
+            class FakeResult:
+                returncode = 0
+
+            return FakeResult()
+
+        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=create_coverage_file):
+            result = _run_tests_with_coverage(['tests/test_mod.py::test_foo'], tmp_path)
+
+        assert 'test_foo' in result
+        assert 'src/module.py' in result['test_foo']
+        assert 0 in result['test_foo']['src/module.py']
+        assert 1 in result['test_foo']['src/module.py']
+
+    def test_returns_empty_dict_when_coverage_file_absent(self, tmp_path: Path) -> None:
+        """When subprocess runs but produces no .coverage file, an empty dict is returned."""
+
+        def no_coverage_run(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
+            class FakeResult:
+                returncode = 1
+
+            return FakeResult()
+
+        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=no_coverage_run):
+            result = _run_tests_with_coverage([], tmp_path)
+
+        assert result == {}
+
+    def test_accumulates_lines_across_multiple_rows_for_same_test_and_file(self, tmp_path: Path) -> None:
+        """Multiple line_bits rows for the same test+file are accumulated (exercises already-seen branches)."""
+
+        def create_multi_row_db(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
+            # Two rows with the same context_id=1 and file_id=1 — second row hits the
+            # 'test_name in result' and 'file_path in result[test_name]' branches.
+            _write_coverage_sqlite(
+                tmp_path / '.coverage',
+                contexts=[(1, 'tests/test_mod.py::test_foo|run')],
+                files=[(1, 'src/module.py')],
+                line_bits=[
+                    (1, 1, bytes([0x01])),  # line 0
+                    (1, 1, bytes([0x02])),  # line 1 — same context/file, second pass
+                ],
+            )
+
+            class FakeResult:
+                returncode = 0
+
+            return FakeResult()
+
+        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=create_multi_row_db):
+            result = _run_tests_with_coverage([], tmp_path)
+
+        assert 0 in result['test_foo']['src/module.py']
+        assert 1 in result['test_foo']['src/module.py']
+
+    def test_skips_line_bits_rows_with_orphaned_context_or_file_id(self, tmp_path: Path) -> None:
+        """line_bits rows whose context_id or file_id are not in their tables are skipped (hits continue)."""
+
+        def create_orphan_row_db(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
+            _write_coverage_sqlite(
+                tmp_path / '.coverage',
+                contexts=[(1, 'tests/test_mod.py::test_bar|run')],
+                files=[(1, 'src/module.py')],
+                line_bits=[
+                    (1, 1, bytes([0x01])),  # valid row
+                    (1, 99, bytes([0x01])),  # context_id=99 not in contexts → hits continue
+                    (99, 1, bytes([0x01])),  # file_id=99 not in files → hits continue
+                ],
+            )
+
+            class FakeResult:
+                returncode = 0
+
+            return FakeResult()
+
+        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=create_orphan_row_db):
+            result = _run_tests_with_coverage([], tmp_path)
+
+        # Only the valid row contributes; orphaned rows are silently skipped
+        assert 'test_bar' in result
+        assert 0 in result['test_bar']['src/module.py']
