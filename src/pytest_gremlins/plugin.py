@@ -142,6 +142,18 @@ class GremlinSession:
         cache_misses: Number of cache misses in this session.
         parallel_enabled: Whether parallel execution is enabled.
         parallel_workers: Number of parallel workers (None = CPU count).
+        batch_enabled: Whether batch execution mode is enabled.
+        batch_size: Number of gremlins per batch in batch mode.
+        xdist_item_ids: Test node IDs captured from the first xdist worker after
+            collection finishes.  ``None`` until the hook fires; ``[]`` if the
+            worker collected nothing.
+        coverage_mode: Whether to reuse pytest-cov's coverage (PIGGYBACK) or
+            manage an inline coverage instance (PRIVATE).
+        private_coverage: The inline ``coverage.Coverage`` instance used in
+            PRIVATE mode.  ``None`` in PIGGYBACK mode or before session start.
+        gremlins_tmpdir: Path (as a string) to the shared temporary directory
+            where xdist workers write their per-worker coverage data files in
+            PRIVATE mode.  ``None`` when xdist is not active.
     """
 
     enabled: bool = False
