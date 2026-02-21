@@ -34,6 +34,9 @@ jobs:
         run: uv sync
 
       - name: Run ALL tests (small, medium, large)
+        env:
+          COVERAGE_PROCESS_START: pyproject.toml
+          PYTHONPATH: .
         run: |
           uv run coverage run -m pytest -v
           uv run coverage combine --quiet || true
