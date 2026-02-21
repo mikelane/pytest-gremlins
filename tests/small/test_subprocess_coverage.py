@@ -41,13 +41,15 @@ class TestSitecustomizeExists:
         source = (project_root / 'sitecustomize.py').read_text(encoding='utf-8')
         tree = ast.parse(source)
 
-        # Find any call to coverage.process_startup()
+        # Find calls specifically to coverage.process_startup() (not just anything.process_startup())
         calls = [
             node
             for node in ast.walk(tree)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == 'process_startup'
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == 'coverage'
         ]
         assert calls, 'sitecustomize.py must call coverage.process_startup()'
 
@@ -87,14 +89,16 @@ class TestCoverageRunConfig:
         )
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestSubprocessCoverageIntegration:
-    """Verify subprocess Python instances write coverage data when env vars are set."""
+    """Verify subprocess Python instances write coverage data when env vars are set.
+
+    Marked medium: these tests spawn real subprocesses with filesystem I/O.
+    """
 
     def test_subprocess_writes_coverage_file_when_env_vars_set(self, tmp_path: Path) -> None:
         project_root = Path(__file__).parent.parent.parent
 
-        # Write a trivial Python module that subprocess will import and run
         target = tmp_path / 'target.py'
         target.write_text('def add(a, b):\n    return a + b\n\nresult = add(1, 2)\n')
 
@@ -117,3 +121,24 @@ class TestSubprocessCoverageIntegration:
         assert coverage_files, (
             'Subprocess must write a .coverage.* file when COVERAGE_PROCESS_START and PYTHONPATH are set'
         )
+
+    def test_subprocess_does_not_write_coverage_file_without_env_vars(self, tmp_path: Path) -> None:
+        target = tmp_path / 'target.py'
+        target.write_text('def add(a, b):\n    return a + b\n\nresult = add(1, 2)\n')
+
+        env = os.environ.copy()
+        env.pop('COVERAGE_PROCESS_START', None)
+
+        result = subprocess.run(
+            [sys.executable, str(target)],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+            env=env,
+            check=False,
+        )
+
+        assert result.returncode == 0, f'Subprocess failed: {result.stderr}'
+
+        coverage_files = list(tmp_path.glob('.coverage*'))
+        assert not coverage_files, 'Subprocess must NOT write .coverage.* files when COVERAGE_PROCESS_START is absent'

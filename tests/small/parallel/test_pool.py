@@ -230,6 +230,37 @@ class TestWorkerPoolExecution:
         finally:
             Path(script_path).unlink()
 
+    def test_coverage_process_start_is_suppressed_in_subprocess(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """COVERAGE_PROCESS_START is not inherited by mutation subprocesses.
+
+        sitecustomize.py fires at Python startup before --no-cov takes effect,
+        so it must be explicitly suppressed in the subprocess environment.
+        """
+        monkeypatch.setenv('COVERAGE_PROCESS_START', '/some/pyproject.toml')
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write('import os, sys\ncps = os.environ.get("COVERAGE_PROCESS_START", "")\nsys.exit(1 if cps else 0)\n')
+            script_path = f.name
+
+        try:
+            with WorkerPool(max_workers=1, timeout=5) as pool:
+                future = pool.submit(
+                    gremlin_id='g001',
+                    test_command=[sys.executable, script_path],
+                    rootdir=str(tmp_path),
+                    instrumented_dir=None,
+                    env_vars={},
+                )
+                result = future.result(timeout=10)
+                # SURVIVED (exit 0) means COVERAGE_PROCESS_START was empty/unset
+                assert result.status == GremlinResultStatus.SURVIVED
+        finally:
+            Path(script_path).unlink()
+
     def test_instrumented_dir_sets_sources_env_var(self, tmp_path: Path) -> None:
         """When instrumented_dir is provided, PYTEST_GREMLINS_SOURCES_FILE is set in the subprocess env."""
         expected_sources_path = str(tmp_path / 'sources.json')

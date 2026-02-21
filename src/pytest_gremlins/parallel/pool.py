@@ -232,6 +232,10 @@ class WorkerPool:
         if instrumented_dir is not None:
             all_env_vars['PYTEST_GREMLINS_SOURCES_FILE'] = str(Path(instrumented_dir) / 'sources.json')
 
+        # Suppress subprocess coverage tracking: sitecustomize.py fires at Python startup
+        # before --no-cov takes effect, so we explicitly clear the env var here.
+        all_env_vars['COVERAGE_PROCESS_START'] = ''
+
         return self._executor.submit(
             _run_gremlin_test,
             gremlin_id,
