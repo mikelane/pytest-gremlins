@@ -133,6 +133,7 @@
     "sdist",
     "securepass",
     "serializable",
+    "sitecustomize",
     "behaviour",
     "channelexec",
     "collectionfinish",
