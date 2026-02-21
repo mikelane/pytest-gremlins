@@ -84,6 +84,8 @@ class TestSessionFinishWorkerGuard:
         session = MagicMock()
         session.config = MagicMock(spec=[])
         session.config.rootdir = str(tmp_path)
+        session.config.pluginmanager = MagicMock()
+        session.config.pluginmanager.get_plugin.return_value = None
 
         gs = GremlinSession(enabled=True)
         gs.gremlins = [MagicMock()]

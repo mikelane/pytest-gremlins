@@ -6,6 +6,7 @@ These tests cover the utility functions in plugin.py that can be tested in isola
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 

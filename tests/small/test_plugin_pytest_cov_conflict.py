@@ -151,7 +151,9 @@ def _make_session_finish_mocks(
     mock_pluginmanager = MagicMock()
     mock_pluginmanager.get_plugin.return_value = cov_plugin
 
-    mock_config = MagicMock()
+    # spec=['rootdir', 'pluginmanager'] prevents workerinput from existing on the
+    # mock, so _is_xdist_worker returns False (controller path, not worker path).
+    mock_config = MagicMock(spec=['rootdir', 'pluginmanager'])
     mock_config.rootdir = tmp_path
     mock_config.pluginmanager = mock_pluginmanager
 
@@ -267,6 +269,8 @@ def _make_configure_config(*, gremlins: bool, has_pytest_cov: bool, no_cov: bool
         gremlin_cache=False,
         gremlin_clear_cache=False,
         gremlin_report='console',
+        gremlin_parallel=False,
+        gremlin_workers=None,
         gremlin_batch=False,
         gremlin_batch_size=10,
         n=None,
