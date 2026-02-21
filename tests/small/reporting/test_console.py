@@ -110,6 +110,16 @@ class TestConsoleReporter:
         output_text = output.getvalue()
         assert 'Survived: 2 gremlins' in output_text
 
+    def test_write_summary_returns_early_when_total_is_zero(self) -> None:
+        """_write_summary with total=0 writes nothing (defensive guard)."""
+        score = MutationScore.from_results([])
+        output = StringIO()
+        reporter = ConsoleReporter(output=output)
+
+        reporter._write_summary(score)
+
+        assert output.getvalue() == ''
+
     def test_reporter_writes_top_survivors(self, make_result):
         results = [
             make_result(

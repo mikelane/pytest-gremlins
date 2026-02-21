@@ -229,3 +229,31 @@ class TestWorkerPoolExecution:
                 assert result.status == GremlinResultStatus.SURVIVED
         finally:
             Path(script_path).unlink()
+
+    def test_instrumented_dir_sets_sources_env_var(self, tmp_path: Path) -> None:
+        """When instrumented_dir is provided, PYTEST_GREMLINS_SOURCES_FILE is set in the subprocess env."""
+        expected_sources_path = str(tmp_path / 'sources.json')
+
+        # Script exits 0 if PYTEST_GREMLINS_SOURCES_FILE matches the expected path
+        script_content = (
+            f'import os, sys\n'
+            f'sys.exit(0 if os.environ.get("PYTEST_GREMLINS_SOURCES_FILE") == {expected_sources_path!r} else 1)\n'
+        )
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(script_content)
+            script_path = f.name
+
+        try:
+            with WorkerPool(max_workers=1, timeout=5) as pool:
+                future = pool.submit(
+                    gremlin_id='g001',
+                    test_command=[sys.executable, script_path],
+                    rootdir=str(tmp_path),
+                    instrumented_dir=str(tmp_path),
+                    env_vars={},
+                )
+                result = future.result(timeout=5)
+                # exit 0 = no test failures = SURVIVED (env var was set correctly)
+                assert result.status == GremlinResultStatus.SURVIVED
+        finally:
+            Path(script_path).unlink()
