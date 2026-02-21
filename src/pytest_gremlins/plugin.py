@@ -353,22 +353,6 @@ def pytest_configure(config: pytest.Config) -> None:
         )
     )
 
-    # Suppress --cov in the outer session: the outer session runs no application
-    # tests (mutations execute in subprocesses), so pytest-cov would collect zero
-    # useful coverage data and emit a misleading empty report.
-    cov_plugin_active = (
-        config.pluginmanager.hasplugin('pytest_cov') and hasattr(config.option, 'no_cov') and not config.option.no_cov
-    )
-    if cov_plugin_active:
-        config.option.no_cov = True
-        warnings.warn(
-            'pytest-gremlins suppressed --cov in the outer session. '
-            'The outer session runs no application tests; coverage would be empty. '
-            'Run without --gremlins to get application coverage data.',
-            UserWarning,
-            stacklevel=2,
-        )
-
 
 def pytest_collection_finish(session: pytest.Session) -> None:
     """After test collection, discover source files and generate gremlins."""
@@ -652,8 +636,22 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     if not gremlin_session.gremlins:
         return
 
-    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    config = session.config
+    rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
     _collect_coverage(gremlin_session, rootdir)
+
+    # If pytest-cov is active (--cov was passed), reload its in-memory coverage
+    # data from the .coverage file that the pre-scan just wrote. Without this,
+    # pytest-cov reports from its outer-session measurement (empty, since the
+    # outer session runs no application tests). The pre-scan's .coverage file
+    # contains the real per-test coverage data.
+    #
+    # Detection uses get_plugin('_cov') which is only registered when --cov is
+    # actually active. 'pytest_cov' is always present when the package is
+    # installed, regardless of whether --cov was passed.
+    cov_plugin = config.pluginmanager.get_plugin('_cov')
+    if cov_plugin is not None and hasattr(cov_plugin, 'cov') and cov_plugin.cov is not None:
+        cov_plugin.cov.load()
 
     # Choose execution mode based on configuration
     if gremlin_session.batch_enabled:
