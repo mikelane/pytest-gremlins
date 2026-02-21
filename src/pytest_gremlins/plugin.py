@@ -125,70 +125,6 @@ class GremlinSession:
 _gremlin_session: GremlinSession | None = None
 
 
-def _resolve_parallel_from_xdist(numprocesses: str | int | None) -> tuple[bool, int | None]:
-    """Map xdist numprocesses value to (parallel_enabled, parallel_workers).
-
-    Args:
-        numprocesses: The value of config.option.numprocesses from pytest-xdist.
-            None means xdist is not active. 'auto' means use CPU count.
-            A positive integer means use that many workers. Zero means disabled.
-
-    Returns:
-        A tuple of (parallel_enabled, parallel_workers) where parallel_workers
-        is None to use CPU count, or an integer for an explicit count.
-
-    Examples:
-        >>> _resolve_parallel_from_xdist(None)
-        (False, None)
-        >>> _resolve_parallel_from_xdist('auto')
-        (True, None)
-        >>> _resolve_parallel_from_xdist(4)
-        (True, 4)
-        >>> _resolve_parallel_from_xdist(0)
-        (False, None)
-        >>> _resolve_parallel_from_xdist(1)
-        (True, 1)
-    """
-    if numprocesses is None:
-        return False, None
-    if numprocesses == 'auto':
-        return True, None
-    if isinstance(numprocesses, int) and numprocesses > 0:
-        return True, numprocesses
-    return False, None
-
-
-def _read_parallel_config(config: pytest.Config) -> tuple[bool, int | None]:
-    """Determine parallel_enabled and parallel_workers from config options.
-
-    xdist -n takes precedence over --gremlin-parallel / --gremlin-workers when
-    both are provided. Emits a deprecation warning if the old flags are used while
-    xdist is available.
-
-    Args:
-        config: The pytest config object after option parsing.
-
-    Returns:
-        A tuple of (parallel_enabled, parallel_workers).
-    """
-    parallel_enabled: bool = config.option.gremlin_parallel
-    parallel_workers: int | None = config.option.gremlin_workers
-
-    xdist_available = hasattr(config.option, 'numprocesses')
-    if xdist_available and (config.option.gremlin_parallel or config.option.gremlin_workers is not None):
-        config.issue_config_time_warning(
-            pytest.PytestDeprecationWarning(
-                '--gremlin-parallel and --gremlin-workers are deprecated. Use -n (pytest-xdist) instead.'
-            ),
-            stacklevel=2,
-        )
-
-    if xdist_available and config.option.numprocesses is not None:
-        parallel_enabled, parallel_workers = _resolve_parallel_from_xdist(config.option.numprocesses)
-
-    return parallel_enabled, parallel_workers
-
-
 def _get_session() -> GremlinSession | None:
     """Get the current gremlin session."""
     return _gremlin_session
@@ -289,6 +225,17 @@ def pytest_configure(config: pytest.Config) -> None:
         _set_session(GremlinSession(enabled=False))
         return
 
+    # xdist distributes *test items* across workers, which conflicts with
+    # gremlins' subprocess-per-mutation model. Use --gremlin-workers instead.
+    if hasattr(config.option, 'numprocesses') and config.option.numprocesses is not None:
+        pytest.exit(
+            'pytest-gremlins is incompatible with pytest-xdist test distribution.\n'
+            'Remove -n from your invocation (or from addopts) when running mutation tests.\n'
+            'Use --gremlin-workers=N to parallelise mutation execution instead.\n'
+            'Deep xdist integration is tracked in https://github.com/mikelane/pytest-gremlins/issues/181',
+            returncode=4,
+        )
+
     rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
 
     # Load config from pyproject.toml and merge with CLI args
@@ -332,7 +279,8 @@ def pytest_configure(config: pytest.Config) -> None:
             cache.clear()
             print('pytest-gremlins: cache cleared')
 
-    parallel_enabled, parallel_workers = _read_parallel_config(config)
+    parallel_enabled: bool = config.option.gremlin_parallel
+    parallel_workers: int | None = config.option.gremlin_workers
 
     # Read batch execution options
     batch_enabled = config.option.gremlin_batch
