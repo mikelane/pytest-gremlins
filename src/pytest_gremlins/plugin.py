@@ -7,12 +7,14 @@ into the pytest test runner.
 from __future__ import annotations
 
 import ast
+import collections.abc
 from concurrent.futures import as_completed
 import contextlib
 from dataclasses import (
     dataclass,
     field,
 )
+from enum import Enum
 import json
 import logging
 import os
@@ -23,9 +25,14 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    cast,
+)
 import warnings
 
+import coverage
 import pytest
 
 from pytest_gremlins.cache.hasher import ContentHasher
@@ -40,6 +47,7 @@ from pytest_gremlins.coverage import (
     PrioritizedSelector,
     TestSelector,
 )
+from pytest_gremlins.coverage.context_plugin import GremlinContextPlugin
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import (
     get_default_registry,
@@ -66,6 +74,46 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 GREMLIN_SOURCES_ENV_VAR = 'PYTEST_GREMLINS_SOURCES_FILE'
+
+
+class CoverageMode(Enum):
+    """Coverage collection strategy for mutation testing.
+
+    Attributes:
+        PIGGYBACK: Reuse pytest-cov's coverage data (``--cov`` is active).
+            No separate pre-scan subprocess; tests run once.
+        PRIVATE: Run gremlins' own inline coverage collection.
+            No ``--cov`` in the session; no ``.coverage`` file created in rootdir.
+    """
+
+    PIGGYBACK = 'piggyback'
+    PRIVATE = 'private'
+
+
+def _detect_coverage_mode(config: pytest.Config) -> CoverageMode:
+    """Determine which coverage collection strategy to use.
+
+    Returns PIGGYBACK when pytest-cov's ``_cov`` plugin is registered (i.e.
+    the user passed ``--cov``).  Returns PRIVATE otherwise so that gremlins
+    manages its own inline coverage without touching ``rootdir/.coverage``.
+
+    Args:
+        config: The pytest config object.
+
+    Returns:
+        ``CoverageMode.PIGGYBACK`` if ``--cov`` is active, else ``CoverageMode.PRIVATE``.
+
+    Examples:
+        >>> from unittest.mock import MagicMock
+        >>> config = MagicMock()
+        >>> config.pluginmanager.get_plugin.return_value = None
+        >>> _detect_coverage_mode(config)
+        <CoverageMode.PRIVATE: 'private'>
+    """
+    cov_plugin = config.pluginmanager.get_plugin('_cov')
+    if cov_plugin is not None:
+        return CoverageMode.PIGGYBACK
+    return CoverageMode.PRIVATE
 
 
 @dataclass
@@ -120,9 +168,145 @@ class GremlinSession:
     parallel_workers: int | None = None
     batch_enabled: bool = False
     batch_size: int = 10
+    xdist_item_ids: list[str] = field(default_factory=list)
+    coverage_mode: CoverageMode = CoverageMode.PRIVATE
+    private_coverage: coverage.Coverage | None = None
+    gremlins_tmpdir: str | None = None
 
 
 _gremlin_session: GremlinSession | None = None
+
+
+def _extract_test_name_from_context(context: str) -> str:
+    """Extract the test function name from a coverage dynamic context string.
+
+    Handles two context formats:
+
+    - **New format** (GremlinContextPlugin): ``{nodeid}|{when}``
+      e.g. ``tests/test_foo.py::TestClass::test_bar|run``
+      The nodeid part is everything before ``|``; the function name is the
+      last ``::``-separated segment of the nodeid.
+
+    - **Old format** (coverage dynamic_context=test_function):
+      e.g. ``test_bar`` or ``TestClass.test_method`` or ``path::test_func``
+      The function name is the last ``::`` or ``.``-separated segment.
+
+    Args:
+        context: The raw context string from the coverage database.
+
+    Returns:
+        The test function name extracted from the context.
+
+    Examples:
+        >>> _extract_test_name_from_context('tests/test_foo.py::test_bar|run')
+        'test_bar'
+        >>> _extract_test_name_from_context('tests/test_foo.py::test_bar|setup')
+        'test_bar'
+        >>> _extract_test_name_from_context('tests/test_foo.py::TestFoo::test_bar|run')
+        'test_bar'
+        >>> _extract_test_name_from_context('test_bar')
+        'test_bar'
+        >>> _extract_test_name_from_context('TestClass.test_method')
+        'test_method'
+        >>> _extract_test_name_from_context('tests/test_foo.py::test_func')
+        'test_func'
+    """
+    if '|' in context:
+        nodeid = context.split('|', maxsplit=1)[0]
+        return nodeid.split('::')[-1] if '::' in nodeid else nodeid
+    if '::' in context:
+        return context.rsplit('::', maxsplit=1)[-1]
+    return context.rsplit('.', maxsplit=1)[-1]
+
+
+def _is_xdist_worker(config: pytest.Config) -> bool:
+    """Return True if this process is an xdist worker node.
+
+    xdist workers have a ``workerinput`` attribute on the config object that
+    the controller uses to pass per-worker configuration.  Controllers and
+    plain (non-xdist) sessions do not have this attribute.
+
+    Args:
+        config: The pytest config object.
+
+    Returns:
+        True when running inside an xdist worker process, False otherwise.
+
+    Examples:
+        >>> import pytest
+        >>> from unittest.mock import MagicMock
+        >>> worker_config = MagicMock(spec=['workerinput'])
+        >>> _is_xdist_worker(worker_config)
+        True
+        >>> plain_config = MagicMock(spec=[])
+        >>> _is_xdist_worker(plain_config)
+        False
+    """
+    return hasattr(config, 'workerinput')
+
+
+def _resolve_parallel_from_xdist(numprocesses: str | int | None) -> tuple[bool, int | None]:
+    """Map xdist numprocesses value to (parallel_enabled, parallel_workers).
+
+    Args:
+        numprocesses: The value of config.option.numprocesses from pytest-xdist.
+            None means xdist is not active. 'auto' means use CPU count.
+            A positive integer means use that many workers. Zero means disabled.
+
+    Returns:
+        A tuple of (parallel_enabled, parallel_workers) where parallel_workers
+        is None to use CPU count, or an integer for an explicit count.
+
+    Examples:
+        >>> _resolve_parallel_from_xdist(None)
+        (False, None)
+        >>> _resolve_parallel_from_xdist('auto')
+        (True, None)
+        >>> _resolve_parallel_from_xdist(4)
+        (True, 4)
+        >>> _resolve_parallel_from_xdist(0)
+        (False, None)
+        >>> _resolve_parallel_from_xdist(1)
+        (True, 1)
+    """
+    if numprocesses is None:
+        return False, None
+    if numprocesses == 'auto':
+        return True, None
+    if isinstance(numprocesses, int) and numprocesses > 0:
+        return True, numprocesses
+    return False, None
+
+
+def _read_parallel_config(config: pytest.Config) -> tuple[bool, int | None]:
+    """Determine parallel_enabled and parallel_workers from config options.
+
+    xdist -n takes precedence over --gremlin-parallel / --gremlin-workers when
+    both are provided. Emits a deprecation warning if the old flags are used while
+    xdist is available.
+
+    Args:
+        config: The pytest config object after option parsing.
+
+    Returns:
+        A tuple of (parallel_enabled, parallel_workers).
+    """
+    parallel_enabled: bool = config.option.gremlin_parallel
+    parallel_workers: int | None = config.option.gremlin_workers
+
+    xdist_available = hasattr(config.option, 'numprocesses')
+    if xdist_available and (config.option.gremlin_parallel or config.option.gremlin_workers is not None):
+        config.issue_config_time_warning(
+            pytest.PytestDeprecationWarning(
+                '--gremlin-parallel and --gremlin-workers are deprecated. Use -n (pytest-xdist) instead.'
+            ),
+            stacklevel=2,
+        )
+
+    if xdist_available and config.option.numprocesses is not None:
+        parallel_enabled, parallel_workers = _resolve_parallel_from_xdist(config.option.numprocesses)
+
+    return parallel_enabled, parallel_workers
 
 
 def _get_session() -> GremlinSession | None:
@@ -302,10 +486,118 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
+def pytest_configure_node(node: object) -> None:
+    """Inject gremlins tmpdir into xdist worker input for PRIVATE coverage mode.
+
+    Called on the controller for each xdist worker node before it starts.
+    Injects ``gremlins_tmpdir`` so workers can write their coverage data to a
+    shared directory that the controller combines in ``pytest_sessionfinish``.
+
+    Only active in PRIVATE mode; PIGGYBACK mode relies on pytest-cov's own
+    xdist integration for coverage combining.
+
+    Args:
+        node: The xdist worker node object.  Must have a ``workerinput`` dict.
+    """
+    gremlin_session = _get_session()
+    if gremlin_session is None or not gremlin_session.enabled:
+        return
+
+    if gremlin_session.coverage_mode != CoverageMode.PRIVATE:
+        return
+
+    cast('Any', node).workerinput['gremlins_tmpdir'] = gremlin_session.gremlins_tmpdir
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """At session start, register GremlinContextPlugin for coverage context tracking.
+
+    In PIGGYBACK mode (``--cov`` is active), attaches a
+    :class:`~pytest_gremlins.coverage.context_plugin.GremlinContextPlugin`
+    to the pytest-cov coverage instance so that every test phase is tagged
+    with ``{nodeid}|{when}`` in the coverage database.
+
+    In PRIVATE mode, creates a fresh ``coverage.Coverage`` instance, stores it
+    on the session, and registers a ``GremlinContextPlugin`` on it.  The
+    coverage instance is started/stopped in ``pytest_runtestloop``.
+
+    Args:
+        session: The pytest session object.
+    """
+    gremlin_session = _get_session()
+    if gremlin_session is None or not gremlin_session.enabled:
+        return
+
+    if gremlin_session.coverage_mode == CoverageMode.PIGGYBACK:
+        cov_plugin = session.config.pluginmanager.get_plugin('_cov')
+        if cov_plugin is None:
+            return
+        cov_instance = cov_plugin.cov_controller.cov
+        context_plugin = GremlinContextPlugin(cov_instance)
+        session.config.pluginmanager.register(context_plugin)
+    else:
+        private_cov = coverage.Coverage(data_suffix=True)
+        gremlin_session.private_coverage = private_cov
+        context_plugin = GremlinContextPlugin(private_cov)
+        session.config.pluginmanager.register(context_plugin)
+
+
+def pytest_xdist_node_collection_finished(node: object, ids: list[str]) -> None:  # noqa: ARG001
+    """Capture item IDs reported by the first xdist worker after it finishes collection.
+
+    xdist workers each collect all test items independently and report them
+    via this hook.  All workers collect identically, so we only store the
+    first worker's list and ignore subsequent calls.
+
+    Args:
+        node: The xdist worker node (unused; all workers collect the same items).
+        ids: The list of test node IDs collected by this worker.
+    """
+    gremlin_session = _get_session()
+    if gremlin_session is None or not gremlin_session.enabled:
+        return
+
+    if gremlin_session.xdist_item_ids:
+        return
+
+    gremlin_session.xdist_item_ids = list(ids)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtestloop(session: pytest.Session) -> collections.abc.Generator[None, None, None]:  # noqa: ARG001
+    """Start and stop private coverage around the full test loop.
+
+    In PRIVATE mode, wraps the entire test run so coverage is active for all
+    tests.  After the test loop finishes, stops and saves the coverage data for
+    later reading in ``pytest_sessionfinish``.
+
+    In PIGGYBACK mode or when gremlins is disabled, this hook is transparent.
+
+    Args:
+        session: The pytest session (unused; coverage instance is on GremlinSession).
+
+    Yields:
+        Control to the next hook implementation (the actual test runner).
+    """
+    gremlin_session = _get_session()
+    if gremlin_session is None or not gremlin_session.enabled or gremlin_session.private_coverage is None:
+        yield
+        return
+
+    private_cov = gremlin_session.private_coverage
+    private_cov.start()
+    yield
+    private_cov.stop()
+    private_cov.save()
+
+
 def pytest_collection_finish(session: pytest.Session) -> None:
     """After test collection, discover source files and generate gremlins."""
     gremlin_session = _get_session()
     if gremlin_session is None or not gremlin_session.enabled:
+        return
+
+    if _is_xdist_worker(session.config):
         return
 
     test_files = [Path(item.fspath) for item in session.items if hasattr(item, 'fspath')]
@@ -581,6 +873,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
+    if _is_xdist_worker(session.config):
+        return
+
     if not gremlin_session.gremlins:
         return
 
@@ -789,8 +1084,7 @@ dynamic_context = test_function
                 continue
 
             context = contexts[context_id]
-            test_name = context.split('|')[-1] if '|' in context else context
-            test_name = test_name.split('::')[-1] if '::' in test_name else test_name
+            test_name = _extract_test_name_from_context(context)
 
             file_path = files[file_id]
 

@@ -12,6 +12,7 @@ import pytest
 from pytest_gremlins.plugin import (
     _add_source_file,
     _build_test_command,
+    _is_xdist_worker,
     _make_node_ids_relative,
     _path_to_module_name,
     _should_include_file,
@@ -240,3 +241,24 @@ class TestBuildTestCommand:
         result = _build_test_command(None)
 
         assert '--no-cov' in result
+
+
+@pytest.mark.small
+class TestIsXdistWorker:
+    """Tests for _is_xdist_worker function.
+
+    Both True and False branches are tested so a hardcoded return value fails.
+    """
+
+    def test_returns_true_when_workerinput_present(self) -> None:
+        """Config with workerinput attribute is an xdist worker."""
+        config = MagicMock(spec=['workerinput'])
+        config.workerinput = {'slaveid': 'gw0'}
+
+        assert _is_xdist_worker(config) is True
+
+    def test_returns_false_when_workerinput_absent(self) -> None:
+        """Config without workerinput attribute is not an xdist worker."""
+        config = MagicMock(spec=[])
+
+        assert _is_xdist_worker(config) is False
