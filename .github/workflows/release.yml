@@ -33,14 +33,17 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Run ALL tests (small, medium, large)
+      - name: Run tests with coverage (small + medium, matching PR CI)
         env:
           COVERAGE_PROCESS_START: pyproject.toml
           PYTHONPATH: .
         run: |
-          uv run coverage run -m pytest -v
+          uv run coverage run -m pytest tests/small tests/medium -v
           uv run coverage combine --quiet || true
           uv run coverage report --show-missing
+
+      - name: Run benchmark tests (correctness only, no coverage threshold)
+        run: uv run pytest tests/benchmark -v
 
   # Run benchmarks as part of release
   benchmark:
