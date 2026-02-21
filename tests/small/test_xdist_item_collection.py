@@ -27,9 +27,9 @@ class TestXdistItemIds:
     """GremlinSession stores xdist_item_ids after node collection finishes."""
 
     def test_session_has_xdist_item_ids_field(self) -> None:
-        """GremlinSession dataclass has an xdist_item_ids field defaulting to empty list."""
+        """GremlinSession dataclass has an xdist_item_ids field defaulting to None (not yet set)."""
         gs = GremlinSession()
-        assert gs.xdist_item_ids == []
+        assert gs.xdist_item_ids is None
 
     def test_hook_stores_item_ids_from_first_worker(self) -> None:
         """Item IDs reported by the first worker are stored on the session."""
@@ -88,4 +88,43 @@ class TestXdistItemIds:
 
         pytest_xdist_node_collection_finished(node=node, ids=ids)
 
+        assert gs.xdist_item_ids is None
+
+    def test_first_worker_reporting_empty_ids_stores_empty_list(self) -> None:
+        """First worker with zero collected items stores an empty list.
+
+        Calling the hook when xdist_item_ids is still the default [] stores
+        the reported empty list.  This must produce [] (not remain unset).
+        """
+        gs = GremlinSession(enabled=True)
+        _set_session(gs)
+
+        node = MagicMock()
+        pytest_xdist_node_collection_finished(node=node, ids=[])
+
+        # After first call with empty ids, the session list must be [].
+        # (It already was [], so this verifies the hook ran without error.)
+        assert gs.xdist_item_ids == []
+
+    def test_second_worker_does_not_overwrite_empty_ids_from_first_worker(self) -> None:
+        """If the first worker reported empty ids, a second worker must not overwrite them.
+
+        An empty list is falsy.  The guard ``if gremlin_session.xdist_item_ids``
+        evaluates to False for [], so the second worker's call overwrites the
+        first worker's already-stored empty list — that is the bug.
+        """
+        gs = GremlinSession(enabled=True)
+        _set_session(gs)
+
+        node = MagicMock()
+
+        # First worker reports empty collection
+        pytest_xdist_node_collection_finished(node=node, ids=[])
+        assert gs.xdist_item_ids == []
+
+        # Second worker reports real items — must NOT overwrite first worker's []
+        second_ids = ['tests/test_bar.py::test_b']
+        pytest_xdist_node_collection_finished(node=node, ids=second_ids)
+
+        # Bug: the guard uses truthiness so [] is falsy and second_ids replaces it
         assert gs.xdist_item_ids == []

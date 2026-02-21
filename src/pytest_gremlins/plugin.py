@@ -168,7 +168,7 @@ class GremlinSession:
     parallel_workers: int | None = None
     batch_enabled: bool = False
     batch_size: int = 10
-    xdist_item_ids: list[str] = field(default_factory=list)
+    xdist_item_ids: list[str] | None = None
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
     private_coverage: coverage.Coverage | None = None
     gremlins_tmpdir: str | None = None
@@ -530,7 +530,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
     if gremlin_session.coverage_mode == CoverageMode.PIGGYBACK:
         cov_plugin = session.config.pluginmanager.get_plugin('_cov')
-        if cov_plugin is None:
+        if cov_plugin is None or cov_plugin.cov_controller is None:
             return
         cov_instance = cov_plugin.cov_controller.cov
         context_plugin = GremlinContextPlugin(cov_instance)
@@ -557,7 +557,7 @@ def pytest_xdist_node_collection_finished(node: object, ids: list[str]) -> None:
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
-    if gremlin_session.xdist_item_ids:
+    if gremlin_session.xdist_item_ids is not None:
         return
 
     gremlin_session.xdist_item_ids = list(ids)

@@ -115,3 +115,27 @@ class TestPiggybackContextPluginRegistration:
         pytest_sessionstart(session)
 
         session.config.pluginmanager.register.assert_not_called()
+
+    def test_skips_registration_when_cov_controller_is_none(self) -> None:
+        """PIGGYBACK mode with cov_controller=None does not raise AttributeError.
+
+        pytest-cov sets cov_controller to None when the plugin is loaded but
+        --cov was not passed.  _detect_coverage_mode returns PIGGYBACK whenever
+        the '_cov' plugin object exists, so pytest_sessionstart must guard
+        against cov_controller being None before accessing .cov on it.
+        """
+        cov_plugin = MagicMock()
+        cov_plugin.cov_controller = None  # --cov not passed
+
+        session = MagicMock()
+        session.config.pluginmanager.get_plugin.return_value = cov_plugin
+        session.config.pluginmanager.register = MagicMock()
+
+        gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PIGGYBACK)
+        _set_session(gs)
+
+        # Must not raise AttributeError: 'NoneType' object has no attribute 'cov'
+        pytest_sessionstart(session)
+
+        # No context plugin registered when there is no active coverage controller
+        session.config.pluginmanager.register.assert_not_called()
