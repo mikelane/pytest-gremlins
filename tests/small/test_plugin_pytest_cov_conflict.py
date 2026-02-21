@@ -210,8 +210,9 @@ class TestCovReloadAfterPreScan:
 
     def test_cov_load_not_called_when_cov_attribute_absent(self, tmp_path: Path) -> None:
         """When _cov plugin has no cov attribute, no load is attempted."""
-        # A plugin object that does not have a .cov attribute
-        mock_cov_plugin = MagicMock(spec=[])  # spec=[] means no attributes
+        # spec=[] means any attribute access raises AttributeError. If the hasattr guard
+        # were removed, accessing .cov on this mock would raise — failing this test.
+        mock_cov_plugin = MagicMock(spec=[])
 
         mock_session, gremlin_session = _make_session_finish_mocks(tmp_path, cov_plugin=mock_cov_plugin)
 
@@ -220,8 +221,7 @@ class TestCovReloadAfterPreScan:
             patch('pytest_gremlins.plugin._collect_coverage'),
             patch('pytest_gremlins.plugin._run_mutation_testing', return_value=[]),
         ):
-            # Should complete without raising AttributeError
-            pytest_sessionfinish(mock_session, exitstatus=0)
+            pytest_sessionfinish(mock_session, exitstatus=0)  # no AttributeError = guard is active
 
     def test_cov_load_not_called_when_cov_attribute_is_none(self, tmp_path: Path) -> None:
         """When _cov plugin's cov attribute is None, no load is attempted."""
@@ -235,7 +235,24 @@ class TestCovReloadAfterPreScan:
             patch('pytest_gremlins.plugin._collect_coverage'),
             patch('pytest_gremlins.plugin._run_mutation_testing', return_value=[]),
         ):
-            # Should complete without raising AttributeError
+            # If the `is not None` guard were removed, None.load() would raise AttributeError.
+            pytest_sessionfinish(mock_session, exitstatus=0)  # no AttributeError = guard is active
+
+    def test_cov_load_failure_propagates(self, tmp_path: Path) -> None:
+        """When cov.load() raises, the exception propagates — a missing .coverage after pre-scan is a hard failure."""
+        mock_cov = MagicMock()
+        mock_cov.load.side_effect = Exception('coverage data missing')
+        mock_cov_plugin = MagicMock()
+        mock_cov_plugin.cov = mock_cov
+
+        mock_session, gremlin_session = _make_session_finish_mocks(tmp_path, cov_plugin=mock_cov_plugin)
+
+        with (
+            patch('pytest_gremlins.plugin._get_session', return_value=gremlin_session),
+            patch('pytest_gremlins.plugin._collect_coverage'),
+            patch('pytest_gremlins.plugin._run_mutation_testing', return_value=[]),
+            pytest.raises(Exception, match='coverage data missing'),
+        ):
             pytest_sessionfinish(mock_session, exitstatus=0)
 
 
