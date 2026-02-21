@@ -3,15 +3,21 @@
 Verifies that pytest-gremlins clears user-configured addopts when running
 the coverage subprocess, preventing pytest-cov from hijacking coverage
 collection. Also verifies a warning is emitted when coverage returns
-empty data.
+empty data. Also verifies that --cov is suppressed in the outer session
+when --gremlins is active.
 
 See: https://github.com/mikelane/pytest-gremlins/issues/113
+See: https://github.com/mikelane/pytest-gremlins/issues/180
 """
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 import warnings
 
 import pytest
@@ -20,6 +26,7 @@ from pytest_gremlins.plugin import (
     GremlinSession,
     _collect_coverage,
     _run_tests_with_coverage,
+    pytest_configure,
 )
 
 
@@ -127,3 +134,109 @@ class TestEmptyCoverageWarning:
 
         user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
         assert len(user_warnings) == 0
+
+
+def _make_config(*, gremlins: bool, has_pytest_cov: bool, no_cov: bool) -> MagicMock:
+    """Build a mock pytest.Config for outer-session suppression tests."""
+    config = MagicMock(spec=pytest.Config)
+    config.option = SimpleNamespace(
+        gremlins=gremlins,
+        no_cov=no_cov,
+        gremlin_operators=None,
+        gremlin_targets=None,
+        gremlin_cache=False,
+        gremlin_clear_cache=False,
+        gremlin_report='console',
+        gremlin_batch=False,
+        gremlin_batch_size=10,
+        n=None,
+    )
+    config.pluginmanager = MagicMock()
+    config.pluginmanager.hasplugin.return_value = has_pytest_cov
+    return config
+
+
+@pytest.mark.small
+class TestOuterSessionCovSuppression:
+    """Verify --cov is suppressed in the outer gremlins session."""
+
+    def test_outer_session_cov_suppressed_when_gremlins_active(self) -> None:
+        """When --gremlins and --cov are both active, --cov is suppressed with a warning."""
+        config = _make_config(gremlins=True, has_pytest_cov=True, no_cov=False)
+
+        with (
+            patch('pytest_gremlins.plugin.load_config'),
+            patch('pytest_gremlins.plugin.merge_configs') as mock_merge,
+            patch('pytest_gremlins.plugin.get_default_registry'),
+            patch('pytest_gremlins.plugin.discover_source_paths', return_value=[]),
+            patch('pytest_gremlins.plugin._read_parallel_config', return_value=(False, None)),
+            patch('pytest_gremlins.plugin._set_session'),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter('always')
+            mock_merge.return_value = SimpleNamespace(operators=None, paths=None)
+            config.rootdir = '.'
+            pytest_configure(config)
+
+        assert config.option.no_cov is True
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 1
+        assert 'pytest-gremlins suppressed --cov' in str(user_warnings[0].message)
+
+    def test_outer_session_cov_not_suppressed_when_no_cov_already_set(self) -> None:
+        """When --no-cov is already set, no additional warning is emitted."""
+        config = _make_config(gremlins=True, has_pytest_cov=True, no_cov=True)
+
+        with (
+            patch('pytest_gremlins.plugin.load_config'),
+            patch('pytest_gremlins.plugin.merge_configs') as mock_merge,
+            patch('pytest_gremlins.plugin.get_default_registry'),
+            patch('pytest_gremlins.plugin.discover_source_paths', return_value=[]),
+            patch('pytest_gremlins.plugin._read_parallel_config', return_value=(False, None)),
+            patch('pytest_gremlins.plugin._set_session'),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter('always')
+            mock_merge.return_value = SimpleNamespace(operators=None, paths=None)
+            config.rootdir = '.'
+            pytest_configure(config)
+
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+
+    def test_outer_session_cov_not_suppressed_when_gremlins_not_active(self) -> None:
+        """When --gremlins is not active, --cov suppression does not fire."""
+        config = _make_config(gremlins=False, has_pytest_cov=True, no_cov=False)
+
+        with (
+            patch('pytest_gremlins.plugin._set_session'),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter('always')
+            pytest_configure(config)
+
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+        assert config.option.no_cov is False
+
+    def test_outer_session_cov_not_suppressed_when_pytest_cov_not_installed(self) -> None:
+        """When pytest-cov is not installed, no suppression or warning fires."""
+        config = _make_config(gremlins=True, has_pytest_cov=False, no_cov=False)
+
+        with (
+            patch('pytest_gremlins.plugin.load_config'),
+            patch('pytest_gremlins.plugin.merge_configs') as mock_merge,
+            patch('pytest_gremlins.plugin.get_default_registry'),
+            patch('pytest_gremlins.plugin.discover_source_paths', return_value=[]),
+            patch('pytest_gremlins.plugin._read_parallel_config', return_value=(False, None)),
+            patch('pytest_gremlins.plugin._set_session'),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter('always')
+            mock_merge.return_value = SimpleNamespace(operators=None, paths=None)
+            config.rootdir = '.'
+            pytest_configure(config)
+
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 0
+        assert config.option.no_cov is False

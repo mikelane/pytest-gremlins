@@ -353,6 +353,22 @@ def pytest_configure(config: pytest.Config) -> None:
         )
     )
 
+    # Suppress --cov in the outer session: the outer session runs no application
+    # tests (mutations execute in subprocesses), so pytest-cov would collect zero
+    # useful coverage data and emit a misleading empty report.
+    cov_plugin_active = (
+        config.pluginmanager.hasplugin('pytest_cov') and hasattr(config.option, 'no_cov') and not config.option.no_cov
+    )
+    if cov_plugin_active:
+        config.option.no_cov = True
+        warnings.warn(
+            'pytest-gremlins suppressed --cov in the outer session. '
+            'The outer session runs no application tests; coverage would be empty. '
+            'Run without --gremlins to get application coverage data.',
+            UserWarning,
+            stacklevel=2,
+        )
+
 
 def pytest_collection_finish(session: pytest.Session) -> None:
     """After test collection, discover source files and generate gremlins."""
