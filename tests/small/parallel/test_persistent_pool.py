@@ -78,21 +78,23 @@ class TestPersistentWorkerPoolCreation:
         assert pool.max_workers == 2
 
 
-@pytest.mark.small
 class TestPersistentWorkerPoolContextManager:
     """Tests for PersistentWorkerPool context manager protocol."""
 
+    @pytest.mark.medium
     def test_can_use_as_context_manager(self) -> None:
         """PersistentWorkerPool supports context manager protocol."""
         with PersistentWorkerPool(max_workers=2) as pool:
             assert pool is not None
             assert pool.max_workers == 2
 
+    @pytest.mark.medium
     def test_context_manager_starts_workers(self) -> None:
         """PersistentWorkerPool starts workers on context entry."""
         with PersistentWorkerPool(max_workers=2) as pool:
             assert pool.is_running
 
+    @pytest.mark.medium
     def test_context_manager_shuts_down_on_exit(self) -> None:
         """PersistentWorkerPool shuts down cleanly on context exit."""
         pool = PersistentWorkerPool(max_workers=2)
@@ -100,6 +102,7 @@ class TestPersistentWorkerPoolContextManager:
             pass
         assert not pool.is_running
 
+    @pytest.mark.medium
     def test_warmup_enabled_by_default(self) -> None:
         """Pool warms up workers by default when using context manager."""
         config = PoolConfig(max_workers=2, warmup=True)
@@ -108,6 +111,7 @@ class TestPersistentWorkerPoolContextManager:
             assert pool.is_warmed_up
             assert pool.warmup_completed_count == 2
 
+    @pytest.mark.medium
     def test_warmup_disabled_when_configured(self) -> None:
         """Pool does not warmup when warmup is disabled in config."""
         config = PoolConfig(max_workers=2, warmup=False)
@@ -124,7 +128,6 @@ class TestPersistentWorkerPoolContextManager:
         assert not pool.is_running
 
 
-@pytest.mark.small
 class TestPersistentWorkerPoolSubmit:
     """Tests for submitting work to the persistent pool."""
 
@@ -140,6 +143,7 @@ class TestPersistentWorkerPoolSubmit:
                 env_vars={},
             )
 
+    @pytest.mark.medium
     def test_submit_returns_future(self, tmp_path: Path) -> None:
         """Submit returns a Future object."""
         with PersistentWorkerPool(max_workers=2) as pool:
@@ -152,6 +156,7 @@ class TestPersistentWorkerPoolSubmit:
             )
             assert isinstance(future, Future)
 
+    @pytest.mark.medium
     def test_submit_multiple_gremlins(self, tmp_path: Path) -> None:
         """Multiple gremlins can be submitted to pool."""
         with PersistentWorkerPool(max_workers=2) as pool:
@@ -168,6 +173,7 @@ class TestPersistentWorkerPoolSubmit:
             assert len(futures) == 3
             assert all(isinstance(f, Future) for f in futures)
 
+    @pytest.mark.medium
     def test_submit_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """submit sets PYTEST_GREMLINS_SOURCES_FILE when instrumented_dir is provided."""
         script = tmp_path / 'test_script.py'
@@ -196,7 +202,7 @@ sys.exit(0)
             assert result.status == GremlinResultStatus.SURVIVED
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class TestPersistentWorkerPoolExecution:
     """Tests for actual execution in persistent pool."""
 
@@ -240,7 +246,6 @@ class TestPersistentWorkerPoolExecution:
             assert result.gremlin_id == 'g042'
 
 
-@pytest.mark.small
 class TestBatchExecution:
     """Tests for batch execution - running multiple gremlins in one subprocess."""
 
@@ -256,6 +261,7 @@ class TestBatchExecution:
                 env_vars={},
             )
 
+    @pytest.mark.medium
     def test_submit_batch_returns_future_with_list_of_results(self, tmp_path: Path) -> None:
         """submit_batch returns a Future with results for all gremlins in batch."""
         with PersistentWorkerPool(max_workers=1, timeout=10) as pool:
@@ -271,6 +277,7 @@ class TestBatchExecution:
             assert len(results) == 3
             assert all(isinstance(r, WorkerResult) for r in results)
 
+    @pytest.mark.medium
     def test_submit_batch_tests_each_gremlin_independently(self, tmp_path: Path) -> None:
         """Each gremlin in a batch is tested independently (different env var)."""
         with PersistentWorkerPool(max_workers=1, timeout=10) as pool:
@@ -285,6 +292,7 @@ class TestBatchExecution:
             gremlin_ids = [r.gremlin_id for r in results]
             assert gremlin_ids == ['g001', 'g002']
 
+    @pytest.mark.medium
     def test_submit_batch_stops_on_first_failure(self, tmp_path: Path) -> None:
         """Batch uses early termination - first zapped gremlin stops the batch."""
         # First gremlin survives (tests pass), second fails (tests fail)
@@ -317,6 +325,7 @@ sys.exit(1 if gremlin == 'g002' else 0)
             assert results[1].gremlin_id == 'g002'
             assert results[1].status == GremlinResultStatus.ZAPPED
 
+    @pytest.mark.medium
     def test_submit_batch_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """submit_batch sets PYTEST_GREMLINS_SOURCES_FILE when instrumented_dir is provided."""
         script = tmp_path / 'test_script.py'
