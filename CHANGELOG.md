@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.3.0b1 (2026-02-21)
+
+### Fix
+
+- make --cov + --gremlins produce real coverage output (#180) (#184)
+- revert xdist -n integration; error explicitly on --gremlins + -n conflict (#179) (#183)
+
 ## v1.3.0b0 (2026-02-20)
 
 ### Feat
