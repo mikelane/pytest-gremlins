@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from pytest_gremlins import plugin
+from pytest_gremlins.plugin import CoverageMode
 
 
 def _make_pluginmanager(*, has_pytest_cov: bool = False) -> MagicMock:
@@ -299,3 +300,69 @@ class TestPytestConfigureWithFileConfig:
         assert session is not None
         assert len(session.target_paths) == 1
         assert session.target_paths[0].name == 'cogapp'
+
+
+@pytest.mark.small
+class TestPytestConfigureCoverageMode:
+    """pytest_configure sets coverage_mode from _detect_coverage_mode."""
+
+    def _make_mock_config(self, tmp_path: Path, cov_plugin: object) -> object:
+        """Build a minimal _MockConfig with pluginmanager returning cov_plugin."""
+
+        class _MockOption:
+            gremlins = True
+            gremlin_operators: str | None = None
+            gremlin_report = 'console'
+            gremlin_targets: str | None = None
+            gremlin_cache = False
+            gremlin_clear_cache = False
+            gremlin_parallel = False
+            gremlin_workers: int | None = None
+            gremlin_batch = False
+            gremlin_batch_size = 10
+
+        pm = MagicMock()
+        pm.get_plugin.return_value = cov_plugin
+
+        class _MockConfig:
+            option = _MockOption()
+            rootdir = tmp_path
+            pluginmanager = pm
+
+        return _MockConfig()
+
+    def test_coverage_mode_is_piggyback_when_cov_plugin_present(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """pytest_configure sets coverage_mode=PIGGYBACK when _cov plugin is registered."""
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        config = self._make_mock_config(tmp_path, cov_plugin=MagicMock())
+        plugin.pytest_configure(config)  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.coverage_mode == CoverageMode.PIGGYBACK
+
+    def test_coverage_mode_is_private_when_cov_plugin_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """pytest_configure sets coverage_mode=PRIVATE when _cov plugin is not registered."""
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        config = self._make_mock_config(tmp_path, cov_plugin=None)
+        plugin.pytest_configure(config)  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.coverage_mode == CoverageMode.PRIVATE

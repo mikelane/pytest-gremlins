@@ -494,6 +494,7 @@ def pytest_configure(config: pytest.Config) -> None:
             parallel_workers=parallel_workers,
             batch_enabled=batch_enabled,
             batch_size=batch_size,
+            coverage_mode=_detect_coverage_mode(config),
         )
     )
 
