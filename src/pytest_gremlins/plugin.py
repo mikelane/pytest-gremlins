@@ -584,8 +584,22 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     if not gremlin_session.gremlins:
         return
 
-    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    config = session.config
+    rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
     _collect_coverage(gremlin_session, rootdir)
+
+    # If pytest-cov is active (--cov was passed), reload its in-memory coverage
+    # data from the .coverage file that the pre-scan just wrote. Without this,
+    # pytest-cov reports from its outer-session measurement (empty, since the
+    # outer session runs no application tests). The pre-scan's .coverage file
+    # contains the real per-test coverage data.
+    #
+    # Detection uses get_plugin('_cov') which is only registered when --cov is
+    # actually active. 'pytest_cov' is always present when the package is
+    # installed, regardless of whether --cov was passed.
+    cov_plugin = config.pluginmanager.get_plugin('_cov')
+    if cov_plugin is not None and hasattr(cov_plugin, 'cov') and cov_plugin.cov is not None:
+        cov_plugin.cov.load()
 
     # Choose execution mode based on configuration
     if gremlin_session.batch_enabled:

@@ -7,6 +7,7 @@ pyproject.toml configuration, with CLI arguments taking precedence.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,6 +16,13 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from pytest_gremlins import plugin
+
+
+def _make_pluginmanager(*, has_pytest_cov: bool = False) -> MagicMock:
+    """Return a minimal pluginmanager mock for pytest_configure tests."""
+    pm = MagicMock()
+    pm.hasplugin.return_value = has_pytest_cov
+    return pm
 
 
 @pytest.mark.small
@@ -48,6 +56,7 @@ class TestPytestConfigureWithFileConfig:
         class _MockConfig:
             option = _MockOption()
             rootdir = tmp_path
+            pluginmanager = _make_pluginmanager()
 
         # Reset session state
         plugin._set_session(None)
@@ -91,6 +100,7 @@ class TestPytestConfigureWithFileConfig:
         class _MockConfig:
             option = _MockOption()
             rootdir = tmp_path
+            pluginmanager = _make_pluginmanager()
 
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
@@ -134,6 +144,7 @@ class TestPytestConfigureWithFileConfig:
         class _MockConfig:
             option = _MockOption()
             rootdir = tmp_path
+            pluginmanager = _make_pluginmanager()
 
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
@@ -169,6 +180,7 @@ class TestPytestConfigureWithFileConfig:
         class _MockConfig:
             option = _MockOption()
             rootdir = tmp_path
+            pluginmanager = _make_pluginmanager()
 
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
@@ -204,6 +216,7 @@ class TestPytestConfigureWithFileConfig:
         class _MockConfig:
             option = _MockOption()
             rootdir = tmp_path
+            pluginmanager = _make_pluginmanager()
 
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
@@ -240,6 +253,7 @@ class TestPytestConfigureWithFileConfig:
         class _MockConfig:
             option = _MockOption()
             rootdir = tmp_path
+            pluginmanager = _make_pluginmanager()
 
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
@@ -274,6 +288,7 @@ class TestPytestConfigureWithFileConfig:
         class _MockConfig:
             option = _MockOption()
             rootdir = tmp_path
+            pluginmanager = _make_pluginmanager()
 
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
