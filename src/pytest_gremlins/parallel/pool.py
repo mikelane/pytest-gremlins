@@ -18,6 +18,7 @@ from concurrent.futures import (
 from dataclasses import dataclass
 import logging
 import os
+from pathlib import Path
 import subprocess
 import time
 from typing import Self
@@ -229,7 +230,7 @@ class WorkerPool:
         # Add instrumented dir to env vars if provided
         all_env_vars = dict(env_vars)
         if instrumented_dir is not None:
-            all_env_vars['PYTEST_GREMLINS_SOURCES_FILE'] = f'{instrumented_dir}/sources.json'
+            all_env_vars['PYTEST_GREMLINS_SOURCES_FILE'] = str(Path(instrumented_dir) / 'sources.json')
 
         return self._executor.submit(
             _run_gremlin_test,
