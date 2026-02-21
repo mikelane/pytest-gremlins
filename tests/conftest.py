@@ -6,7 +6,11 @@ This file is for test-specific fixtures only.
 
 from __future__ import annotations
 
+from collections.abc import Generator
+
 import pytest
+
+from pytest_gremlins.plugin import _set_session
 
 
 # Enable pytester fixture for plugin testing
@@ -19,6 +23,17 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line('markers', 'small: Fast, isolated unit tests (< 100ms)')
     config.addinivalue_line('markers', 'medium: Integration tests with real resources (< 10s)')
     config.addinivalue_line('markers', 'large: End-to-end system tests (< 60s)')
+
+
+@pytest.fixture(autouse=True)
+def reset_gremlin_session() -> Generator[None, None, None]:
+    """Reset the global gremlin session after each test to prevent state leakage.
+
+    Tests that call _set_session() with enabled=True must not bleed state into
+    the outer pytest process's pytest_sessionfinish hook.
+    """
+    yield
+    _set_session(None)
 
 
 @pytest.fixture
