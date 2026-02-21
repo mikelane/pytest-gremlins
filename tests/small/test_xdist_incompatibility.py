@@ -76,8 +76,7 @@ class TestXdistIncompatibilityError:
         with patch('pytest_gremlins.plugin.pytest') as mock_pytest:
             pytest_configure(config)
             mock_pytest.exit.assert_called_once()
-            call_kwargs = mock_pytest.exit.call_args
-            assert call_kwargs.kwargs.get('returncode') == 4 or call_args_returncode(call_kwargs) == 4
+            assert mock_pytest.exit.call_args.kwargs['returncode'] == 4
 
     def test_gremlins_with_n_integer_calls_pytest_exit(self) -> None:
         """--gremlins with -n 4 triggers pytest.exit with returncode 4."""
@@ -126,12 +125,18 @@ class TestXdistIncompatibilityError:
             assert 'issues/181' in message
 
     def test_no_error_when_gremlins_disabled_with_xdist(self) -> None:
-        """When --gremlins is not passed, xdist -n is allowed."""
+        """When --gremlins is not passed, pytest_configure returns before the xdist guard."""
         config = _make_config(gremlins=False, numprocesses='auto')
+        # No patch needed: the gremlins=False early-return fires before the guard is evaluated.
+        pytest_configure(config)  # no exception = correct
+
+    def test_gremlins_with_n_0_calls_pytest_exit(self) -> None:
+        """--gremlins with -n 0 triggers pytest.exit — 0 is not None, so xdist is considered active."""
+        config = _make_config(gremlins=True, numprocesses=0)
 
         with patch('pytest_gremlins.plugin.pytest') as mock_pytest:
             pytest_configure(config)
-            mock_pytest.exit.assert_not_called()
+            mock_pytest.exit.assert_called_once()
 
     def test_no_error_when_gremlins_enabled_but_xdist_not_installed(self) -> None:
         """When xdist is not installed (no numprocesses attr), no error fires."""
@@ -160,12 +165,3 @@ class TestXdistIncompatibilityError:
             ):
                 pytest_configure(config)
             mock_pytest.exit.assert_not_called()
-
-
-def call_args_returncode(call_args: object) -> int | None:
-    """Extract returncode from a call_args object, handling positional and keyword."""
-    if hasattr(call_args, 'kwargs') and 'returncode' in call_args.kwargs:
-        return call_args.kwargs['returncode']
-    if hasattr(call_args, 'args') and len(call_args.args) > 1:
-        return call_args.args[1]
-    return None

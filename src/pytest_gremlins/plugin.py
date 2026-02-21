@@ -225,7 +225,6 @@ def pytest_configure(config: pytest.Config) -> None:
         _set_session(GremlinSession(enabled=False))
         return
 
-    # Fail early and clearly if the user combined --gremlins with xdist -n.
     # xdist distributes *test items* across workers, which conflicts with
     # gremlins' subprocess-per-mutation model. Use --gremlin-workers instead.
     if hasattr(config.option, 'numprocesses') and config.option.numprocesses is not None:
