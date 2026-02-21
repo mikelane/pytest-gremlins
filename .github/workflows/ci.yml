@@ -112,6 +112,9 @@ jobs:
         run: uv sync
 
       - name: Run tests with coverage
+        env:
+          COVERAGE_PROCESS_START: pyproject.toml
+          PYTHONPATH: .
         run: |
           uv run coverage run -m pytest tests/small tests/medium -v
           uv run coverage combine --quiet || echo "::warning::No coverage data to combine (expected in some environments)"
