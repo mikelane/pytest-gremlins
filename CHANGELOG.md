@@ -5,19 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v1.3.0b0 (2026-02-20)
 
 ### Feat
 
-- integrate with pytest-xdist `-n` flag for parallel mutation execution (#130)
+- integrate pytest-xdist -n flag for parallel mutation execution (#130) (#175)
 
 ### Fix
 
-- suppress `addopts` and `--cov` in mutation subprocesses to prevent exit-code misclassification (#129)
-
-### Deprecated
-
-- `--gremlin-parallel` and `--gremlin-workers` — use `-n` (pytest-xdist) instead
+- suppress addopts and coverage in mutation subprocesses (#128)
 
 ## v1.2.0 (2026-02-15)
 
