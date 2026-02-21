@@ -303,8 +303,8 @@ def _read_parallel_config(config: pytest.Config) -> tuple[bool, int | None]:
     Returns:
         A tuple of (parallel_enabled, parallel_workers).
     """
-    parallel_enabled: bool = config.option.gremlin_parallel
     parallel_workers: int | None = config.option.gremlin_workers
+    parallel_enabled: bool = config.option.gremlin_parallel or parallel_workers is not None
 
     xdist_available = hasattr(config.option, 'numprocesses')
     if xdist_available and (config.option.gremlin_parallel or config.option.gremlin_workers is not None):
@@ -390,7 +390,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         type=int,
         default=None,
         dest='gremlin_workers',
-        help='Number of parallel workers (default: CPU count)',
+        help='Number of parallel workers; implies --gremlin-parallel (default: CPU count)',
     )
     group.addoption(
         '--gremlin-batch',
@@ -475,8 +475,7 @@ def pytest_configure(config: pytest.Config) -> None:
             cache.clear()
             print('pytest-gremlins: cache cleared')
 
-    parallel_enabled: bool = config.option.gremlin_parallel
-    parallel_workers: int | None = config.option.gremlin_workers
+    parallel_enabled, parallel_workers = _read_parallel_config(config)
 
     # Read batch execution options
     batch_enabled = config.option.gremlin_batch

@@ -365,6 +365,42 @@ class TestReadParallelConfig:
 
         config.issue_config_time_warning.assert_not_called()
 
+    def test_workers_alone_implies_parallel_enabled(self) -> None:
+        """Passing --gremlin-workers=N without --gremlin-parallel still enables parallel mode."""
+        config = MagicMock(spec=['option'])
+        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers'])
+        config.option.gremlin_parallel = False
+        config.option.gremlin_workers = 4
+
+        parallel_enabled, parallel_workers = _read_parallel_config(config)
+
+        assert parallel_enabled is True
+        assert parallel_workers == 4
+
+    def test_workers_none_without_parallel_flag_stays_disabled(self) -> None:
+        """When neither --gremlin-workers nor --gremlin-parallel is set, parallel stays disabled."""
+        config = MagicMock(spec=['option'])
+        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers'])
+        config.option.gremlin_parallel = False
+        config.option.gremlin_workers = None
+
+        parallel_enabled, parallel_workers = _read_parallel_config(config)
+
+        assert parallel_enabled is False
+        assert parallel_workers is None
+
+    def test_workers_implies_parallel_with_explicit_count(self) -> None:
+        """--gremlin-workers=2 implies parallel with worker count preserved."""
+        config = MagicMock(spec=['option'])
+        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers'])
+        config.option.gremlin_parallel = False
+        config.option.gremlin_workers = 2
+
+        parallel_enabled, parallel_workers = _read_parallel_config(config)
+
+        assert parallel_enabled is True
+        assert parallel_workers == 2
+
 
 @pytest.mark.small
 class TestSelectTestsForGremlinPrioritized:
