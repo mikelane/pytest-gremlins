@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.3.0b5 (2026-02-21)
+
+### Fix
+
+- --gremlin-workers=N implies parallel mode without --gremlin-parallel (#188)
+
 ## v1.3.0b4 (2026-02-21)
 
 ### Fix
