@@ -126,7 +126,7 @@ class DescribeCachePerformanceIntegration:
         # With multiple gremlins, this compounds
         assert warm_time < cold_time, f'Warm run ({warm_time:.2f}s) was NOT faster than cold run ({cold_time:.2f}s)'
 
-    def it_no_cache_mode_baseline(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_cold_cache_adds_minimal_overhead_over_no_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Establish baseline for no-cache mode."""
         pytester_with_conftest.makepyfile(
             src_module="""

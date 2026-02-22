@@ -238,7 +238,7 @@ class DescribeResultAggregatorStatusCounts:
             )
         assert aggregator.timeout_count == 2
 
-    def it_counts_error(self) -> None:
+    def it_tracks_error_count(self) -> None:
         """Tracks count of error gremlins."""
         aggregator = ResultAggregator(total_gremlins=10)
         aggregator.add_error('g001', Exception('crash'))

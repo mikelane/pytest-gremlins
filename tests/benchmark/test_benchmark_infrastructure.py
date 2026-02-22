@@ -29,7 +29,7 @@ from benchmarks.run_benchmarks import (  # noqa: E402
 
 @pytest.mark.small
 class DescribeBenchmarkResult:
-    def it_benchmark_result_creation(self):
+    def it_stores_all_fields_with_error_defaulting_to_none(self):
         result = BenchmarkResult(
             tool='gremlins',
             project='synthetic',
@@ -46,7 +46,7 @@ class DescribeBenchmarkResult:
         assert result.mutations_killed == 80
         assert result.error is None
 
-    def it_benchmark_result_with_error(self):
+    def it_stores_error_message_when_error_field_is_provided(self):
         result = BenchmarkResult(
             tool='mutmut',
             project='synthetic',
@@ -60,7 +60,7 @@ class DescribeBenchmarkResult:
 
 @pytest.mark.small
 class DescribeBenchmarkSummary:
-    def it_benchmark_summary_creation(self):
+    def it_stores_timing_statistics_and_run_count(self):
         summary = BenchmarkSummary(
             tool='gremlins',
             project='synthetic',
@@ -81,7 +81,7 @@ class DescribeBenchmarkSummary:
 
 @pytest.mark.small
 class DescribeEnvironmentInfo:
-    def it_environment_info_creation(self):
+    def it_stores_platform_info_with_tool_versions_defaulting_to_unknown(self):
         info = EnvironmentInfo(
             timestamp='2024-01-15T12:00:00',
             platform='Darwin 24.0.0',

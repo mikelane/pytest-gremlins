@@ -122,14 +122,14 @@ class DescribeCoverageCollectorTestTracking:
 class DescribeCoverageCollectorStats:
     """Test coverage collection statistics."""
 
-    def it_stats_empty_collector(self):
+    def it_get_stats_returns_zeros_for_empty_collector(self):
         collector = CoverageCollector()
         stats = collector.get_stats()
         assert stats['total_tests'] == 0
         assert stats['total_locations'] == 0
         assert stats['total_mappings'] == 0
 
-    def it_stats_with_data(self):
+    def it_get_stats_counts_tests_locations_and_mappings(self):
         collector = CoverageCollector()
         collector.record_test_coverage('test_login', {'src/auth.py': [10, 11]})
         collector.record_test_coverage('test_logout', {'src/auth.py': [10, 20]})

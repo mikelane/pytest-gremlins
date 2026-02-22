@@ -27,7 +27,7 @@ from benchmarks.check_regression import (  # noqa: E402
 
 @pytest.mark.small
 class DescribeRegressionDetail:
-    def it_regression_detail_creation(self):
+    def it_stores_config_and_timing_fields(self):
         detail = RegressionDetail(
             config='gremlins_sequential',
             baseline_time=10.0,
