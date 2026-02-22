@@ -185,7 +185,7 @@ class DescribeStrykerExporterOptionalFields:
             make_result(
                 GremlinResultStatus.ZAPPED,
                 killing_test='test_auth::test_login_validates_age',
-            )
+            ),
         ]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()

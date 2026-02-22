@@ -72,7 +72,8 @@ class DescribeLoadConfig:
         """Reads all config options together."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text(
-            '[tool.pytest-gremlins]\noperators = ["boolean"]\npaths = ["src/mypackage"]\nexclude = ["**/conftest.py"]\n'
+            '[tool.pytest-gremlins]\noperators = ["boolean"]'
+            '\npaths = ["src/mypackage"]\nexclude = ["**/conftest.py"]\n',
         )
 
         result = load_config(tmp_path)

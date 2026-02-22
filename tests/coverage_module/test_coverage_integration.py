@@ -30,7 +30,7 @@ def add(x, y):
 
 def subtract(x, y):
     return x - y
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -47,7 +47,7 @@ def test_subtract_positive():
 
 def test_subtract_negative():
     assert subtract(0, 5) == -5
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest(
@@ -86,7 +86,7 @@ def covered_function(x):
 
 def uncovered_function(x):
     return x - 1
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -94,7 +94,7 @@ from target_module import covered_function
 
 def test_covered():
     assert covered_function(5) == 6
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest(

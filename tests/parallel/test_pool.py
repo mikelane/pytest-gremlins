@@ -224,7 +224,7 @@ class DescribeWorkerPoolExecution:
             Path(script_path).unlink()
 
     @pytest.mark.small
-    def it_coverage_process_start_is_suppressed_in_subprocess(
+    def it_suppresses_coverage_process_start_in_subprocess(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,

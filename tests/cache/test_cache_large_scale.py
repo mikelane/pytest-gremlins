@@ -16,7 +16,8 @@ class DescribeCacheLargeScale:
     """Tests for cache with larger number of gremlins."""
 
     def it_cache_returns_identical_scores_on_warm_rerun_with_many_gremlins(
-        self, pytester_with_markers: pytest.Pytester
+        self,
+        pytester_with_markers: pytest.Pytester,
     ) -> None:
         """Cache produces same mutation scores on warm rerun with many gremlins.
 
@@ -51,7 +52,7 @@ def power(base, exp):
     for _ in range(exp):
         result *= base
     return result
-            """
+            """,
         )
 
         pytester_with_markers.makepyfile(
@@ -70,7 +71,7 @@ def is_negative(n):
 
 def is_zero(n):
     return n == 0
-            """
+            """,
         )
 
         # Create comprehensive tests
@@ -126,7 +127,7 @@ class TestPower:
     def test_negative_raises(self):
         with pytest.raises(ValueError):
             power(2, -1)
-            """
+            """,
         )
 
         pytester_with_markers.makepyfile(
@@ -182,7 +183,7 @@ class TestIsZero:
 
     def test_positive(self):
         assert is_zero(1) is False
-            """
+            """,
         )
 
         # Run without cache (baseline)

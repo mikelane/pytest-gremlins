@@ -19,7 +19,7 @@ class DescribeParallelExecution:
             sample="""
             def is_positive(x):
                 return x > 0
-            """
+            """,
         )
 
         # Create a test that covers the source
@@ -32,7 +32,7 @@ class DescribeParallelExecution:
 
             def test_negative():
                 assert is_positive(-1) is False
-            """
+            """,
         )
 
         # Run with parallel mode enabled
@@ -53,7 +53,7 @@ class DescribeParallelExecution:
             sample="""
             def add(a, b):
                 return a + b
-            """
+            """,
         )
 
         pytester_with_markers.makepyfile(
@@ -63,7 +63,7 @@ class DescribeParallelExecution:
             def test_add():
                 assert add(2, 3) == 5
                 assert add(0, 0) == 0
-            """
+            """,
         )
 
         result = pytester_with_markers.runpytest(
@@ -83,7 +83,7 @@ class DescribeParallelExecution:
             sample="""
             def negate(x):
                 return -x
-            """
+            """,
         )
 
         pytester_with_markers.makepyfile(
@@ -92,7 +92,7 @@ class DescribeParallelExecution:
 
             def test_negate():
                 assert negate(5) == -5
-            """
+            """,
         )
 
         result = pytester_with_markers.runpytest(
@@ -111,7 +111,7 @@ class DescribeParallelExecution:
             sample="""
             def double(x):
                 return x * 2
-            """
+            """,
         )
 
         pytester_with_markers.makepyfile(
@@ -120,7 +120,7 @@ class DescribeParallelExecution:
 
             def test_double():
                 assert double(3) == 6
-            """
+            """,
         )
 
         result = pytester_with_markers.runpytest(

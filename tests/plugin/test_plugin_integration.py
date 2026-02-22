@@ -20,7 +20,7 @@ class DescribePluginBasicFunctionality:
             target_module="""
 def is_adult(age):
     return age >= 18
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -31,7 +31,7 @@ def test_is_adult_true_for_21():
 
 def test_is_adult_false_for_10():
     assert is_adult(10) is False
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest('--gremlins', '-v')
@@ -44,7 +44,7 @@ def test_is_adult_false_for_10():
             target_module="""
 def is_adult(age):
     return age >= 18
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -52,7 +52,7 @@ from target_module import is_adult
 
 def test_is_adult():
     assert is_adult(21) is True
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
@@ -67,7 +67,7 @@ def test_is_adult():
             target_module="""
 def add(x, y):
     return x + y
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -75,7 +75,7 @@ from target_module import add
 
 def test_add():
     assert add(2, 3) == 5
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest('--gremlins', '-v')
@@ -94,7 +94,7 @@ class DescribePluginWithoutGremlinsFlag:
             target_module="""
 def is_adult(age):
     return age >= 18
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -102,7 +102,7 @@ from target_module import is_adult
 
 def test_is_adult():
     assert is_adult(21) is True
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest('-v')
@@ -121,7 +121,7 @@ class DescribePluginOperatorSelection:
             target_module="""
 def is_adult(age):
     return age >= 18
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -129,7 +129,7 @@ from target_module import is_adult
 
 def test_is_adult():
     assert is_adult(21) is True
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest('--gremlins', '--gremlin-operators=comparison', '-v')
@@ -148,7 +148,7 @@ class DescribePluginReportFormats:
             target_module="""
 def is_adult(age):
     return age >= 18
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -156,7 +156,7 @@ from target_module import is_adult
 
 def test_is_adult():
     assert is_adult(21) is True
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
@@ -182,7 +182,7 @@ class DescribeMutationSwitching:
             target_module="""
 def is_adult(age):
     return age >= 18
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -198,7 +198,7 @@ def test_above_boundary():
 
 def test_below_boundary():
     assert is_adult(10) is False
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
@@ -225,7 +225,7 @@ class DescribeHtmlReportIntegration:
             target_module="""
 def is_adult(age):
     return age >= 18
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -233,7 +233,7 @@ from target_module import is_adult
 
 def test_is_adult():
     assert is_adult(21) is True
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest(

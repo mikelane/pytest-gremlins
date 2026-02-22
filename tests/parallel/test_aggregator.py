@@ -219,7 +219,7 @@ class DescribeResultAggregatorStatusCounts:
                 WorkerResult(
                     gremlin_id=f'g{i:03d}',
                     status=GremlinResultStatus.ZAPPED,
-                )
+                ),
             )
         assert aggregator.zapped_count == 3
 
@@ -231,7 +231,7 @@ class DescribeResultAggregatorStatusCounts:
                 WorkerResult(
                     gremlin_id=f'g{i:03d}',
                     status=GremlinResultStatus.SURVIVED,
-                )
+                ),
             )
         assert aggregator.survived_count == 4
 
@@ -243,7 +243,7 @@ class DescribeResultAggregatorStatusCounts:
                 WorkerResult(
                     gremlin_id=f'g{i:03d}',
                     status=GremlinResultStatus.TIMEOUT,
-                )
+                ),
             )
         assert aggregator.timeout_count == 2
 

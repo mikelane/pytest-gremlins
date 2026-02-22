@@ -39,7 +39,10 @@ class DescribeGremlinExitCodeClassification:
     """Tests for _test_gremlin exit code handling."""
 
     def it_maps_exit_code_0_to_survived(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sample_gremlin: Gremlin
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        sample_gremlin: Gremlin,
     ) -> None:
         """Exit code 0 means all tests passed (mutation not caught) -> SURVIVED."""
 
@@ -53,7 +56,10 @@ class DescribeGremlinExitCodeClassification:
         assert result.status == GremlinResultStatus.SURVIVED
 
     def it_maps_exit_code_1_to_zapped(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sample_gremlin: Gremlin
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        sample_gremlin: Gremlin,
     ) -> None:
         """Exit code 1 means tests failed (mutation caught) -> ZAPPED."""
 

@@ -121,7 +121,7 @@ class DescribePersistentWorkerPoolContextManager:
             assert pool.warmup_completed_count == 0
 
     @pytest.mark.small
-    def it_shutdown_when_never_started_is_safe(self) -> None:
+    def it_handles_shutdown_safely_when_never_started(self) -> None:
         """Calling shutdown on pool that was never started is safe."""
         pool = PersistentWorkerPool(max_workers=2)
         # Never enter context, but call shutdown via __exit__
@@ -188,7 +188,7 @@ sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE', '')
 if 'instrumented/sources.json' not in sources_file:
     sys.exit(1)
 sys.exit(0)
-"""
+""",
         )
 
         with PersistentWorkerPool(max_workers=1, timeout=5) as pool:
@@ -308,7 +308,7 @@ import sys
 gremlin = os.environ.get('ACTIVE_GREMLIN')
 # g002 is detected (killed), others survive
 sys.exit(1 if gremlin == 'g002' else 0)
-"""
+""",
         )
 
         with PersistentWorkerPool(max_workers=1, timeout=10) as pool:
@@ -341,7 +341,7 @@ sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE', '')
 if 'instrumented/sources.json' not in sources_file:
     sys.exit(1)
 sys.exit(0)
-"""
+""",
         )
 
         with PersistentWorkerPool(max_workers=1, timeout=10) as pool:

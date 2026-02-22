@@ -28,7 +28,7 @@ class DescribeParallelCLIOptions:
             test_sample="""
             def test_pass():
                 assert True
-            """
+            """,
         )
         # Run without --gremlins flag - should work with no errors
         result = pytester_with_markers.runpytest('-v')
@@ -40,7 +40,7 @@ class DescribeParallelCLIOptions:
             test_sample="""
             def test_pass():
                 assert True
-            """
+            """,
         )
         # Should not fail from invalid option
         result = pytester_with_markers.runpytest('--gremlin-workers=4', '-v')

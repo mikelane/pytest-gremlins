@@ -115,7 +115,7 @@ import sys
 gremlin = os.environ.get('ACTIVE_GREMLIN')
 # g002 is detected (killed)
 sys.exit(1 if gremlin == 'g002' else 0)
-"""
+""",
         )
 
         executor = BatchExecutor(batch_size=5, max_workers=1)
@@ -162,7 +162,7 @@ if 'instrumented/sources.json' not in sources_file:
     print(f"SOURCES_FILE not set correctly: {sources_file}")
     sys.exit(1)
 sys.exit(0)
-"""
+""",
         )
 
         executor = BatchExecutor(batch_size=5, max_workers=1)
