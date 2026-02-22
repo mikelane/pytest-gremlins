@@ -61,7 +61,7 @@ def _make_config(
 
 
 @pytest.mark.small
-class TestXdistIncompatibilityError:
+class DescribeXdistIncompatibilityError:
     """Tests for --gremlins + -n incompatibility detection.
 
     When --gremlins is active and xdist is installed and the user passed -n,
@@ -69,7 +69,7 @@ class TestXdistIncompatibilityError:
     message before configuring any session state.
     """
 
-    def test_gremlins_with_n_auto_calls_pytest_exit(self) -> None:
+    def it_gremlins_with_n_auto_calls_pytest_exit(self) -> None:
         """--gremlins with -n auto triggers pytest.exit with returncode 4."""
         config = _make_config(gremlins=True, numprocesses='auto')
 
@@ -78,7 +78,7 @@ class TestXdistIncompatibilityError:
             mock_pytest.exit.assert_called_once()
             assert mock_pytest.exit.call_args.kwargs['returncode'] == 4
 
-    def test_gremlins_with_n_integer_calls_pytest_exit(self) -> None:
+    def it_gremlins_with_n_integer_calls_pytest_exit(self) -> None:
         """--gremlins with -n 4 triggers pytest.exit with returncode 4."""
         config = _make_config(gremlins=True, numprocesses=4)
 
@@ -86,7 +86,7 @@ class TestXdistIncompatibilityError:
             pytest_configure(config)
             mock_pytest.exit.assert_called_once()
 
-    def test_gremlins_with_n_1_calls_pytest_exit(self) -> None:
+    def it_gremlins_with_n_1_calls_pytest_exit(self) -> None:
         """--gremlins with -n 1 triggers pytest.exit — 1 is still an xdist invocation."""
         config = _make_config(gremlins=True, numprocesses=1)
 
@@ -94,7 +94,7 @@ class TestXdistIncompatibilityError:
             pytest_configure(config)
             mock_pytest.exit.assert_called_once()
 
-    def test_exit_message_mentions_incompatibility(self) -> None:
+    def it_exit_message_mentions_incompatibility(self) -> None:
         """The exit message mentions incompatibility with xdist test distribution."""
         config = _make_config(gremlins=True, numprocesses=2)
 
@@ -104,7 +104,7 @@ class TestXdistIncompatibilityError:
             message = call_args.args[0] if call_args.args else call_args.kwargs.get('msg', '')
             assert 'incompatible' in message.lower() or 'pytest-xdist' in message
 
-    def test_exit_message_mentions_gremlin_workers_alternative(self) -> None:
+    def it_exit_message_mentions_gremlin_workers_alternative(self) -> None:
         """The exit message mentions --gremlin-workers as the correct alternative."""
         config = _make_config(gremlins=True, numprocesses=2)
 
@@ -114,7 +114,7 @@ class TestXdistIncompatibilityError:
             message = call_args.args[0] if call_args.args else call_args.kwargs.get('msg', '')
             assert '--gremlin-workers' in message
 
-    def test_exit_message_mentions_tracking_issue(self) -> None:
+    def it_exit_message_mentions_tracking_issue(self) -> None:
         """The exit message contains the tracking issue URL."""
         config = _make_config(gremlins=True, numprocesses=2)
 
@@ -124,13 +124,13 @@ class TestXdistIncompatibilityError:
             message = call_args.args[0] if call_args.args else call_args.kwargs.get('msg', '')
             assert 'issues/181' in message
 
-    def test_no_error_when_gremlins_disabled_with_xdist(self) -> None:
+    def it_no_error_when_gremlins_disabled_with_xdist(self) -> None:
         """When --gremlins is not passed, pytest_configure returns before the xdist guard."""
         config = _make_config(gremlins=False, numprocesses='auto')
         # No patch needed: the gremlins=False early-return fires before the guard is evaluated.
         pytest_configure(config)  # no exception = correct
 
-    def test_gremlins_with_n_0_calls_pytest_exit(self) -> None:
+    def it_gremlins_with_n_0_calls_pytest_exit(self) -> None:
         """--gremlins with -n 0 triggers pytest.exit — 0 is not None, so xdist is considered active."""
         config = _make_config(gremlins=True, numprocesses=0)
 
@@ -138,7 +138,7 @@ class TestXdistIncompatibilityError:
             pytest_configure(config)
             mock_pytest.exit.assert_called_once()
 
-    def test_no_error_when_gremlins_enabled_but_xdist_not_installed(self) -> None:
+    def it_no_error_when_gremlins_enabled_but_xdist_not_installed(self) -> None:
         """When xdist is not installed (no numprocesses attr), no error fires."""
         config = _make_config(gremlins=True)  # numprocesses attribute absent
 
@@ -152,7 +152,7 @@ class TestXdistIncompatibilityError:
                 pytest_configure(config)
             mock_pytest.exit.assert_not_called()
 
-    def test_no_error_when_gremlins_enabled_xdist_installed_but_n_not_passed(self) -> None:
+    def it_no_error_when_gremlins_enabled_xdist_installed_but_n_not_passed(self) -> None:
         """xdist installed but -n not passed (numprocesses=None) is fine."""
         config = _make_config(gremlins=True, numprocesses=None)
 

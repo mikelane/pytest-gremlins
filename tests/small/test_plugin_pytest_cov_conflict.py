@@ -33,10 +33,10 @@ from pytest_gremlins.plugin import (
 
 
 @pytest.mark.small
-class TestCoverageSubprocessClearsAddopts:
+class DescribeCoverageSubprocessClearsAddopts:
     """Verify the coverage subprocess includes -o addopts= to clear user config."""
 
-    def test_coverage_subprocess_command_includes_addopts_override(self, tmp_path: Path) -> None:
+    def it_coverage_subprocess_command_includes_addopts_override(self, tmp_path: Path) -> None:
         """The subprocess command clears pytest addopts to prevent pytest-cov interference."""
         captured_cmd: list[list[str]] = []
 
@@ -57,7 +57,7 @@ class TestCoverageSubprocessClearsAddopts:
         addopts_idx = cmd.index('-o')
         assert cmd[addopts_idx + 1] == 'addopts='
 
-    def test_addopts_override_appears_before_test_node_ids(self, tmp_path: Path) -> None:
+    def it_addopts_override_appears_before_test_node_ids(self, tmp_path: Path) -> None:
         """The -o addopts= flag appears before the test node IDs in the command."""
         captured_cmd: list[list[str]] = []
 
@@ -83,10 +83,10 @@ class TestCoverageSubprocessClearsAddopts:
 
 
 @pytest.mark.small
-class TestEmptyCoverageWarning:
+class DescribeEmptyCoverageWarning:
     """Verify a warning is emitted when coverage collection returns empty data."""
 
-    def test_warns_when_coverage_data_is_empty(self, tmp_path: Path) -> None:
+    def it_warns_when_coverage_data_is_empty(self, tmp_path: Path) -> None:
         """A warning fires when _run_tests_with_coverage returns an empty dict."""
         session = GremlinSession(
             enabled=True,
@@ -106,7 +106,7 @@ class TestEmptyCoverageWarning:
         ):
             _collect_coverage(session, tmp_path)
 
-    def test_no_warning_when_coverage_data_is_present(self, tmp_path: Path) -> None:
+    def it_no_warning_when_coverage_data_is_present(self, tmp_path: Path) -> None:
         """No warning fires when coverage data contains entries."""
         session = GremlinSession(
             enabled=True,
@@ -176,10 +176,10 @@ def _make_session_finish_mocks(
 
 
 @pytest.mark.small
-class TestCovReloadAfterPreScan:
+class DescribeCovReloadAfterPreScan:
     """Verify pytest-cov's coverage data is reloaded after the pre-scan completes."""
 
-    def test_cov_load_called_when_cov_plugin_active(self, tmp_path: Path) -> None:
+    def it_cov_load_called_when_cov_plugin_active(self, tmp_path: Path) -> None:
         """When _cov plugin is present with a cov attribute, cov.load() is called."""
         mock_cov = MagicMock()
         mock_cov_plugin = MagicMock()
@@ -196,7 +196,7 @@ class TestCovReloadAfterPreScan:
 
         mock_cov.load.assert_called_once()
 
-    def test_cov_load_not_called_when_cov_plugin_absent(self, tmp_path: Path) -> None:
+    def it_cov_load_not_called_when_cov_plugin_absent(self, tmp_path: Path) -> None:
         """When _cov plugin is absent (--cov not passed), no load is attempted."""
         mock_session, gremlin_session = _make_session_finish_mocks(tmp_path, cov_plugin=None)
 
@@ -211,7 +211,7 @@ class TestCovReloadAfterPreScan:
         # Verify get_plugin was called with the correct key
         mock_session.config.pluginmanager.get_plugin.assert_called_once_with('_cov')
 
-    def test_cov_load_not_called_when_cov_attribute_absent(self, tmp_path: Path) -> None:
+    def it_cov_load_not_called_when_cov_attribute_absent(self, tmp_path: Path) -> None:
         """When _cov plugin has no cov attribute, no load is attempted."""
         # spec=[] means any attribute access raises AttributeError. If the hasattr guard
         # were removed, accessing .cov on this mock would raise — failing this test.
@@ -226,7 +226,7 @@ class TestCovReloadAfterPreScan:
         ):
             pytest_sessionfinish(mock_session, exitstatus=0)  # no AttributeError = guard is active
 
-    def test_cov_load_not_called_when_cov_attribute_is_none(self, tmp_path: Path) -> None:
+    def it_cov_load_not_called_when_cov_attribute_is_none(self, tmp_path: Path) -> None:
         """When _cov plugin's cov attribute is None, no load is attempted."""
         mock_cov_plugin = MagicMock()
         mock_cov_plugin.cov = None
@@ -241,7 +241,7 @@ class TestCovReloadAfterPreScan:
             # If the `is not None` guard were removed, None.load() would raise AttributeError.
             pytest_sessionfinish(mock_session, exitstatus=0)  # no AttributeError = guard is active
 
-    def test_cov_load_failure_propagates(self, tmp_path: Path) -> None:
+    def it_cov_load_failure_propagates(self, tmp_path: Path) -> None:
         """When cov.load() raises, the exception propagates — a missing .coverage after pre-scan is a hard failure."""
         mock_cov = MagicMock()
         mock_cov.load.side_effect = Exception('coverage data missing')
@@ -282,14 +282,14 @@ def _make_configure_config(*, gremlins: bool, has_pytest_cov: bool, no_cov: bool
 
 
 @pytest.mark.small
-class TestOuterSessionCovNotSuppressed:
+class DescribeOuterSessionCovNotSuppressed:
     """Verify --cov is NOT suppressed in the outer gremlins session.
 
     The correct behavior is to reload pytest-cov's data after the pre-scan,
     not to suppress --cov at configure time.
     """
 
-    def test_no_cov_flag_not_set_when_gremlins_and_cov_both_active(self) -> None:
+    def it_no_cov_flag_not_set_when_gremlins_and_cov_both_active(self) -> None:
         """When --gremlins and --cov are both active, --cov is NOT suppressed."""
         config = _make_configure_config(gremlins=True, has_pytest_cov=True, no_cov=False)
 
@@ -308,7 +308,7 @@ class TestOuterSessionCovNotSuppressed:
         # no_cov must remain False — gremlins must not suppress cov at configure time
         assert config.option.no_cov is False
 
-    def test_no_suppression_warning_emitted_when_gremlins_and_cov_both_active(self) -> None:
+    def it_no_suppression_warning_emitted_when_gremlins_and_cov_both_active(self) -> None:
         """No suppression UserWarning is emitted when --gremlins and --cov are active."""
         config = _make_configure_config(gremlins=True, has_pytest_cov=True, no_cov=False)
 
@@ -329,7 +329,7 @@ class TestOuterSessionCovNotSuppressed:
         suppression_warnings = [w for w in caught if 'suppressed --cov' in str(w.message)]
         assert len(suppression_warnings) == 0
 
-    def test_no_cov_flag_not_set_when_gremlins_not_active(self) -> None:
+    def it_no_cov_flag_not_set_when_gremlins_not_active(self) -> None:
         """When --gremlins is not active, --cov is untouched."""
         config = _make_configure_config(gremlins=False, has_pytest_cov=True, no_cov=False)
 
@@ -358,10 +358,10 @@ def _write_coverage_sqlite(
 
 
 @pytest.mark.small
-class TestCoverageSQLiteReading:
+class DescribeCoverageSQLiteReading:
     """Verify _run_tests_with_coverage reads per-test data from the .coverage SQLite DB."""
 
-    def test_returns_coverage_data_indexed_by_test_name(self, tmp_path: Path) -> None:
+    def it_returns_coverage_data_indexed_by_test_name(self, tmp_path: Path) -> None:
         """When subprocess produces a .coverage file, its per-test data is returned."""
         # Bit 0 of byte 0 = line 0; bit 1 of byte 0 = line 1
         numbits = bytes([0x03])  # lines 0 and 1 covered
@@ -387,7 +387,7 @@ class TestCoverageSQLiteReading:
         assert 0 in result['test_foo']['src/module.py']
         assert 1 in result['test_foo']['src/module.py']
 
-    def test_returns_empty_dict_when_coverage_file_absent(self, tmp_path: Path) -> None:
+    def it_returns_empty_dict_when_coverage_file_absent(self, tmp_path: Path) -> None:
         """When subprocess runs but produces no .coverage file, an empty dict is returned."""
 
         def no_coverage_run(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
@@ -401,7 +401,7 @@ class TestCoverageSQLiteReading:
 
         assert result == {}
 
-    def test_accumulates_lines_across_multiple_rows_for_same_test_and_file(self, tmp_path: Path) -> None:
+    def it_accumulates_lines_across_multiple_rows_for_same_test_and_file(self, tmp_path: Path) -> None:
         """Multiple line_bits rows for the same test+file are accumulated (exercises already-seen branches)."""
 
         def create_multi_row_db(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
@@ -428,7 +428,7 @@ class TestCoverageSQLiteReading:
         assert 0 in result['test_foo']['src/module.py']
         assert 1 in result['test_foo']['src/module.py']
 
-    def test_skips_line_bits_rows_with_orphaned_context_or_file_id(self, tmp_path: Path) -> None:
+    def it_skips_line_bits_rows_with_orphaned_context_or_file_id(self, tmp_path: Path) -> None:
         """line_bits rows whose context_id or file_id are not in their tables are skipped (hits continue)."""
 
         def create_orphan_row_db(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001

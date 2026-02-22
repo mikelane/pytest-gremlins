@@ -27,10 +27,10 @@ def _make_pluginmanager(*, has_pytest_cov: bool = False) -> MagicMock:
 
 
 @pytest.mark.small
-class TestPytestConfigureWithFileConfig:
+class DescribePytestConfigureWithFileConfig:
     """Tests for pytest_configure loading file config."""
 
-    def test_loads_config_from_pyproject_toml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_loads_config_from_pyproject_toml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """pytest_configure loads [tool.pytest-gremlins] from pyproject.toml."""
         # Create a pyproject.toml with gremlins config
         pyproject = tmp_path / 'pyproject.toml'
@@ -77,7 +77,7 @@ class TestPytestConfigureWithFileConfig:
         assert len(session.target_paths) == 1
         assert session.target_paths[0].name == 'mypackage'
 
-    def test_cli_operators_override_file_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_cli_operators_override_file_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """CLI --gremlin-operators takes precedence over pyproject.toml."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\noperators = ["comparison", "arithmetic"]\n')
@@ -116,7 +116,7 @@ class TestPytestConfigureWithFileConfig:
         assert 'comparison' not in operator_names
         assert 'arithmetic' not in operator_names
 
-    def test_cli_targets_override_file_paths(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_cli_targets_override_file_paths(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """CLI --gremlin-targets takes precedence over pyproject.toml paths."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\npaths = ["src/original"]\n')
@@ -157,7 +157,7 @@ class TestPytestConfigureWithFileConfig:
         assert len(session.target_paths) == 1
         assert session.target_paths[0].name == 'lib'
 
-    def test_falls_back_to_src_when_no_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_falls_back_to_src_when_no_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Falls back to src/ when neither CLI nor pyproject.toml specifies paths."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[project]\nname = "test"\n')
@@ -193,7 +193,7 @@ class TestPytestConfigureWithFileConfig:
         assert len(session.target_paths) == 1
         assert session.target_paths[0].name == 'src'
 
-    def test_discovers_paths_from_setuptools_packages(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_discovers_paths_from_setuptools_packages(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Falls back to setuptools packages when no explicit paths and no src/."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.setuptools]\npackages = ["cogapp"]\n')
@@ -229,7 +229,7 @@ class TestPytestConfigureWithFileConfig:
         assert len(session.target_paths) == 1
         assert session.target_paths[0].name == 'cogapp'
 
-    def test_explicit_config_takes_precedence_over_discovery(
+    def it_explicit_config_takes_precedence_over_discovery(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Explicit [tool.pytest-gremlins].paths beats setuptools discovery."""
@@ -266,7 +266,7 @@ class TestPytestConfigureWithFileConfig:
         assert len(session.target_paths) == 1
         assert session.target_paths[0].name == 'mylib'
 
-    def test_discovery_preferred_over_src_fallback(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_discovery_preferred_over_src_fallback(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Setuptools discovery is tried before falling back to src/."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.setuptools]\npackages = ["cogapp"]\n')
@@ -303,7 +303,7 @@ class TestPytestConfigureWithFileConfig:
 
 
 @pytest.mark.small
-class TestPytestConfigureCoverageMode:
+class DescribePytestConfigureCoverageMode:
     """pytest_configure sets coverage_mode from _detect_coverage_mode."""
 
     def _make_mock_config(self, tmp_path: Path, cov_plugin: object) -> object:
@@ -331,7 +331,7 @@ class TestPytestConfigureCoverageMode:
 
         return _MockConfig()
 
-    def test_coverage_mode_is_piggyback_when_cov_plugin_present(
+    def it_coverage_mode_is_piggyback_when_cov_plugin_present(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """pytest_configure sets coverage_mode=PIGGYBACK when _cov plugin is registered."""
@@ -349,7 +349,7 @@ class TestPytestConfigureCoverageMode:
         assert session is not None
         assert session.coverage_mode == CoverageMode.PIGGYBACK
 
-    def test_coverage_mode_is_private_when_cov_plugin_absent(
+    def it_coverage_mode_is_private_when_cov_plugin_absent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """pytest_configure sets coverage_mode=PRIVATE when _cov plugin is not registered."""

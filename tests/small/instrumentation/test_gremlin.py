@@ -22,24 +22,24 @@ def sample_gremlin():
     )
 
 
-class TestGremlinCreation:
+class DescribeGremlinCreation:
     """Test Gremlin dataclass creation and attributes."""
 
-    def test_gremlin_stores_id(self, sample_gremlin):
+    def it_gremlin_stores_id(self, sample_gremlin):
         assert sample_gremlin.gremlin_id == 'g001'
 
-    def test_gremlin_stores_file_path(self, sample_gremlin):
+    def it_gremlin_stores_file_path(self, sample_gremlin):
         assert sample_gremlin.file_path == 'example.py'
 
-    def test_gremlin_stores_line_number(self, sample_gremlin):
+    def it_gremlin_stores_line_number(self, sample_gremlin):
         assert sample_gremlin.line_number == 10
 
-    def test_gremlin_stores_operator_name(self, sample_gremlin):
+    def it_gremlin_stores_operator_name(self, sample_gremlin):
         assert sample_gremlin.operator_name == 'comparison'
 
-    def test_gremlin_stores_description(self, sample_gremlin):
+    def it_gremlin_stores_description(self, sample_gremlin):
         assert sample_gremlin.description == '< to <='
 
-    def test_gremlin_is_immutable(self, sample_gremlin):
+    def it_gremlin_is_immutable(self, sample_gremlin):
         with pytest.raises(AttributeError):
             sample_gremlin.gremlin_id = 'g002'

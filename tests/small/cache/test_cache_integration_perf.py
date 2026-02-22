@@ -14,10 +14,10 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 
 
 @pytest.mark.medium
-class TestPluginCachePattern:
+class DescribePluginCachePattern:
     """Tests that simulate the actual plugin cache usage pattern."""
 
-    def test_warm_run_is_faster_than_cold_run(self, tmp_path: Path) -> None:
+    def it_warm_run_is_faster_than_cold_run(self, tmp_path: Path) -> None:
         """Warm run with cache hits is at least 10x faster than cold run."""
         cache_dir = tmp_path / '.gremlins_cache'
         num_gremlins = 50
@@ -75,7 +75,7 @@ class TestPluginCachePattern:
             f'Warm run speedup was only {speedup:.1f}x (cold={cold_time * 1000:.1f}ms, warm={warm_time * 1000:.1f}ms)'
         )
 
-    def test_cache_overhead_per_gremlin(self, tmp_path: Path) -> None:
+    def it_cache_overhead_per_gremlin(self, tmp_path: Path) -> None:
         """Cache overhead per gremlin is under 1ms for cache hits."""
         cache_dir = tmp_path / '.gremlins_cache'
         num_gremlins = 100
@@ -104,7 +104,7 @@ class TestPluginCachePattern:
         per_gremlin_ms = (elapsed / num_gremlins) * 1000
         assert per_gremlin_ms < 1.0, f'Cache overhead per gremlin: {per_gremlin_ms:.3f}ms (target: <1ms)'
 
-    def test_file_hash_computation_cost(self, tmp_path: Path) -> None:
+    def it_file_hash_computation_cost(self, tmp_path: Path) -> None:
         """File hash computation for 50 files takes under 50ms."""
         # Create 50 simulated source files
         src_dir = tmp_path / 'src'
@@ -125,7 +125,7 @@ class TestPluginCachePattern:
         # 50 files should hash in under 50ms (1ms per file)
         assert elapsed < 0.05, f'Hashing 50 files took {elapsed * 1000:.1f}ms (target: <50ms)'
 
-    def test_upfront_hashing_vs_lazy_hashing(self) -> None:
+    def it_upfront_hashing_vs_lazy_hashing(self) -> None:
         """Lazy hashing (hash on demand) is faster when cache hit rate is high."""
         num_files = 20
 
@@ -150,10 +150,10 @@ class TestPluginCachePattern:
 
 
 @pytest.mark.medium
-class TestCacheKeyEfficiency:
+class DescribeCacheKeyEfficiency:
     """Tests for efficient cache key computation."""
 
-    def test_cache_key_is_deterministic(self, tmp_path: Path) -> None:
+    def it_cache_key_is_deterministic(self, tmp_path: Path) -> None:
         """Same inputs always produce same cache key."""
         cache_dir = tmp_path / '.gremlins_cache'
 
@@ -171,7 +171,7 @@ class TestCacheKeyEfficiency:
 
         assert key1 == key2, 'Cache key must be order-independent'
 
-    def test_cache_key_distinguishes_different_inputs(self, tmp_path: Path) -> None:
+    def it_cache_key_distinguishes_different_inputs(self, tmp_path: Path) -> None:
         """Different inputs produce different cache keys."""
         cache_dir = tmp_path / '.gremlins_cache'
 
@@ -188,10 +188,10 @@ class TestCacheKeyEfficiency:
 
 
 @pytest.mark.medium
-class TestBatchOperations:
+class DescribeBatchOperations:
     """Tests for batch cache operations."""
 
-    def test_batch_cache_lookup_pattern(self, tmp_path: Path) -> None:
+    def it_batch_cache_lookup_pattern(self, tmp_path: Path) -> None:
         """Batch lookups are efficient for high cache hit scenarios."""
         cache_dir = tmp_path / '.gremlins_cache'
         num_gremlins = 100

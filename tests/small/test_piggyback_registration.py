@@ -27,20 +27,20 @@ from pytest_gremlins.plugin import (
 
 
 @pytest.mark.small
-class TestGremlinSessionCoverageMode:
+class DescribeGremlinSessionCoverageMode:
     """GremlinSession stores coverage_mode field."""
 
-    def test_default_coverage_mode_is_private(self) -> None:
+    def it_default_coverage_mode_is_private(self) -> None:
         """GremlinSession defaults to PRIVATE mode when no mode specified."""
         gs = GremlinSession()
         assert gs.coverage_mode == CoverageMode.PRIVATE
 
-    def test_coverage_mode_can_be_set_to_piggyback(self) -> None:
+    def it_coverage_mode_can_be_set_to_piggyback(self) -> None:
         """GremlinSession accepts PIGGYBACK mode."""
         gs = GremlinSession(coverage_mode=CoverageMode.PIGGYBACK)
         assert gs.coverage_mode == CoverageMode.PIGGYBACK
 
-    def test_piggyback_and_private_are_distinct_in_session(self) -> None:
+    def it_piggyback_and_private_are_distinct_in_session(self) -> None:
         """PIGGYBACK and PRIVATE produce different session states."""
         gs_piggyback = GremlinSession(coverage_mode=CoverageMode.PIGGYBACK)
         gs_private = GremlinSession(coverage_mode=CoverageMode.PRIVATE)
@@ -48,10 +48,10 @@ class TestGremlinSessionCoverageMode:
 
 
 @pytest.mark.small
-class TestPiggybackContextPluginRegistration:
+class DescribePiggybackContextPluginRegistration:
     """pytest_sessionstart registers GremlinContextPlugin in PIGGYBACK mode."""
 
-    def test_registers_context_plugin_when_cov_plugin_present(self) -> None:
+    def it_registers_context_plugin_when_cov_plugin_present(self) -> None:
         """When _cov plugin exists, registers GremlinContextPlugin on its coverage."""
         cov_controller = MagicMock()
         cov_instance = MagicMock()
@@ -74,7 +74,7 @@ class TestPiggybackContextPluginRegistration:
         assert len(context_plugins) == 1
         assert context_plugins[0].cov is cov_instance
 
-    def test_registers_context_plugin_on_private_coverage_not_cov_plugin(self) -> None:
+    def it_registers_context_plugin_on_private_coverage_not_cov_plugin(self) -> None:
         """In PRIVATE mode, GremlinContextPlugin is registered on private coverage, not _cov's."""
         session = MagicMock()
         session.config.pluginmanager.get_plugin.return_value = None
@@ -93,7 +93,7 @@ class TestPiggybackContextPluginRegistration:
         assert len(context_plugins) == 1
         assert context_plugins[0].cov is mock_private_cov
 
-    def test_skips_registration_when_session_disabled(self) -> None:
+    def it_skips_registration_when_session_disabled(self) -> None:
         """No registration occurs when GremlinSession is disabled."""
         session = MagicMock()
         session.config.pluginmanager.register = MagicMock()
@@ -105,7 +105,7 @@ class TestPiggybackContextPluginRegistration:
 
         session.config.pluginmanager.register.assert_not_called()
 
-    def test_skips_registration_when_no_session(self) -> None:
+    def it_skips_registration_when_no_session(self) -> None:
         """No registration occurs when no GremlinSession exists."""
         session = MagicMock()
         session.config.pluginmanager.register = MagicMock()
@@ -116,7 +116,7 @@ class TestPiggybackContextPluginRegistration:
 
         session.config.pluginmanager.register.assert_not_called()
 
-    def test_skips_registration_when_cov_controller_is_none(self) -> None:
+    def it_skips_registration_when_cov_controller_is_none(self) -> None:
         """PIGGYBACK mode with cov_controller=None does not raise AttributeError.
 
         pytest-cov sets cov_controller to None when the plugin is loaded but

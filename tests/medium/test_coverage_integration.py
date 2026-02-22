@@ -30,10 +30,10 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.mark.medium
-class TestCoverageGuidedTestSelection:
+class DescribeCoverageGuidedTestSelection:
     """Test that coverage-guided test selection reduces test executions."""
 
-    def test_output_shows_test_count_per_gremlin(
+    def it_output_shows_test_count_per_gremlin(
         self,
         pytester_with_conftest: pytest.Pytester,
     ):
@@ -85,10 +85,10 @@ def test_subtract_negative():
 
 
 @pytest.mark.medium
-class TestCoverageGuidedFallback:
+class DescribeCoverageGuidedFallback:
     """Test fallback behavior when no coverage data exists."""
 
-    def test_uncovered_gremlin_survives_via_fallback(
+    def it_uncovered_gremlin_survives_via_fallback(
         self,
         pytester_with_conftest: pytest.Pytester,
     ):

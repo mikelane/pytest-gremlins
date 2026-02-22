@@ -9,10 +9,10 @@ import pytest
 
 
 @pytest.mark.medium
-class TestParallelExecution:
+class DescribeParallelExecution:
     """Tests for parallel execution mode."""
 
-    def test_parallel_flag_enables_parallel_mode(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_parallel_flag_enables_parallel_mode(self, pytester_with_markers: pytest.Pytester) -> None:
         """--gremlin-parallel flag enables parallel execution."""
         # Create a simple source file
         pytester_with_markers.makepyfile(
@@ -47,7 +47,7 @@ class TestParallelExecution:
         # Verify parallel execution output
         result.stdout.fnmatch_lines(['*Starting parallel execution*'])
 
-    def test_parallel_produces_correct_results(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_parallel_produces_correct_results(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel execution produces correct mutation results."""
         pytester_with_markers.makepyfile(
             sample="""
@@ -77,7 +77,7 @@ class TestParallelExecution:
         # Should show mutation report
         result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*'])
 
-    def test_parallel_with_single_worker(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_parallel_with_single_worker(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel mode works with a single worker."""
         pytester_with_markers.makepyfile(
             sample="""
@@ -105,7 +105,7 @@ class TestParallelExecution:
 
         result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*'])
 
-    def test_parallel_without_workers_flag_uses_auto(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_parallel_without_workers_flag_uses_auto(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel mode without --gremlin-workers uses auto detection."""
         pytester_with_markers.makepyfile(
             sample="""
@@ -135,10 +135,10 @@ class TestParallelExecution:
 
 
 @pytest.mark.medium
-class TestSequentialVsParallelConsistency:
+class DescribeSequentialVsParallelConsistency:
     """Tests that parallel and sequential modes produce consistent results."""
 
-    def test_same_mutations_found(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_same_mutations_found(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel mode finds the same mutations as sequential mode."""
         source_code = """
 def compare(a, b):

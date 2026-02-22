@@ -15,7 +15,7 @@ from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 
 
-class TestPrioritizedSelectorCompatibility:
+class DescribePrioritizedSelectorCompatibility:
     """Test that PrioritizedSelector can replace TestSelector in plugin usage."""
 
     @pytest.fixture
@@ -45,7 +45,7 @@ class TestPrioritizedSelectorCompatibility:
             description='< to <=',
         )
 
-    def test_prioritized_selector_provides_ordered_list_for_command_building(
+    def it_prioritized_selector_provides_ordered_list_for_command_building(
         self,
         coverage_map,
         sample_gremlin,
@@ -59,7 +59,7 @@ class TestPrioritizedSelectorCompatibility:
         # First test should be most specific
         assert result[0] == 'test_specific'
 
-    def test_prioritized_selector_result_can_be_used_for_node_id_lookup(
+    def it_prioritized_selector_result_can_be_used_for_node_id_lookup(
         self,
         coverage_map,
         sample_gremlin,

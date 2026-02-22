@@ -10,26 +10,26 @@ from pytest_gremlins.operators.comparison import ComparisonOperator
 from pytest_gremlins.operators.protocol import GremlinOperator
 
 
-class TestComparisonOperatorProtocol:
+class DescribeComparisonOperatorProtocol:
     """Test that ComparisonOperator implements the GremlinOperator protocol."""
 
-    def test_implements_gremlin_operator_protocol(self):
+    def it_implements_gremlin_operator_protocol(self):
         operator = ComparisonOperator()
         assert isinstance(operator, GremlinOperator)
 
-    def test_name_is_comparison(self):
+    def it_name_is_comparison(self):
         operator = ComparisonOperator()
         assert operator.name == 'comparison'
 
-    def test_description_describes_the_operator(self):
+    def it_description_describes_the_operator(self):
         operator = ComparisonOperator()
         assert 'comparison' in operator.description.lower()
 
 
-class TestComparisonOperatorCanMutate:
+class DescribeComparisonOperatorCanMutate:
     """Test the can_mutate method."""
 
-    def test_returns_true_for_compare_node_with_less_than(self):
+    def it_returns_true_for_compare_node_with_less_than(self):
         operator = ComparisonOperator()
         node = ast.parse('x < 10', mode='eval').body
 
@@ -46,35 +46,35 @@ class TestComparisonOperatorCanMutate:
             'x != 10',
         ],
     )
-    def test_returns_true_for_all_supported_comparisons(self, source):
+    def it_returns_true_for_all_supported_comparisons(self, source):
         operator = ComparisonOperator()
         node = ast.parse(source, mode='eval').body
 
         assert operator.can_mutate(node) is True
 
-    def test_returns_false_for_non_compare_node(self):
+    def it_returns_false_for_non_compare_node(self):
         operator = ComparisonOperator()
         node = ast.parse('x + 10', mode='eval').body
 
         assert operator.can_mutate(node) is False
 
-    def test_returns_false_for_unsupported_comparison_is(self):
+    def it_returns_false_for_unsupported_comparison_is(self):
         operator = ComparisonOperator()
         node = ast.parse('x is None', mode='eval').body
 
         assert operator.can_mutate(node) is False
 
-    def test_returns_false_for_unsupported_comparison_in(self):
+    def it_returns_false_for_unsupported_comparison_in(self):
         operator = ComparisonOperator()
         node = ast.parse('x in items', mode='eval').body
 
         assert operator.can_mutate(node) is False
 
 
-class TestComparisonOperatorMutate:
+class DescribeComparisonOperatorMutate:
     """Test the mutate method."""
 
-    def test_less_than_generates_two_mutations(self):
+    def it_less_than_generates_two_mutations(self):
         operator = ComparisonOperator()
         node = ast.parse('x < 10', mode='eval').body
 
@@ -82,7 +82,7 @@ class TestComparisonOperatorMutate:
 
         assert len(mutations) == 2
 
-    def test_less_than_mutates_to_less_than_or_equal_and_greater_than(self):
+    def it_less_than_mutates_to_less_than_or_equal_and_greater_than(self):
         operator = ComparisonOperator()
         node = ast.parse('x < 10', mode='eval').body
 
@@ -106,7 +106,7 @@ class TestComparisonOperatorMutate:
             ('x != 10', ['Eq']),
         ],
     )
-    def test_all_comparison_mutations(self, source, expected_ops):
+    def it_all_comparison_mutations(self, source, expected_ops):
         operator = ComparisonOperator()
         node = ast.parse(source, mode='eval').body
 
@@ -118,7 +118,7 @@ class TestComparisonOperatorMutate:
             actual_ops.append(m.ops[0].__class__.__name__)
         assert sorted(actual_ops) == sorted(expected_ops)
 
-    def test_original_node_is_not_modified(self):
+    def it_original_node_is_not_modified(self):
         operator = ComparisonOperator()
         node = ast.parse('x < 10', mode='eval').body
         assert isinstance(node, ast.Compare)
@@ -128,7 +128,7 @@ class TestComparisonOperatorMutate:
 
         assert isinstance(node.ops[0], original_op_type)
 
-    def test_returns_empty_list_for_unsupported_node(self):
+    def it_returns_empty_list_for_unsupported_node(self):
         operator = ComparisonOperator()
         node = ast.parse('x + 10', mode='eval').body
 
@@ -136,7 +136,7 @@ class TestComparisonOperatorMutate:
 
         assert mutations == []
 
-    def test_chained_comparison_generates_mutations_for_each_operator(self):
+    def it_chained_comparison_generates_mutations_for_each_operator(self):
         operator = ComparisonOperator()
         node = ast.parse('0 < x < 10', mode='eval').body
 
@@ -144,7 +144,7 @@ class TestComparisonOperatorMutate:
 
         assert len(mutations) == 4
 
-    def test_mutate_skips_unsupported_operators_in_chain(self):
+    def it_mutate_skips_unsupported_operators_in_chain(self):
         operator = ComparisonOperator()
         # x is None has an Is operator which we don't mutate
         # But we construct a chained comparison with both < and is
@@ -165,10 +165,10 @@ class TestComparisonOperatorMutate:
         assert len(mutations) == 2
 
 
-class TestComparisonOperatorSymbols:
+class DescribeComparisonOperatorSymbols:
     """Test the operator symbol mapping."""
 
-    def test_get_symbol_for_all_supported_ops(self):
+    def it_get_symbol_for_all_supported_ops(self):
         operator = ComparisonOperator()
 
         assert operator.get_symbol(ast.Lt()) == '<'
@@ -178,7 +178,7 @@ class TestComparisonOperatorSymbols:
         assert operator.get_symbol(ast.Eq()) == '=='
         assert operator.get_symbol(ast.NotEq()) == '!='
 
-    def test_get_symbol_returns_question_mark_for_unknown_op(self):
+    def it_get_symbol_returns_question_mark_for_unknown_op(self):
         operator = ComparisonOperator()
 
         assert operator.get_symbol(ast.Is()) == '?'

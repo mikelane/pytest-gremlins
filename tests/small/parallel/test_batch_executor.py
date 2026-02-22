@@ -21,30 +21,30 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.small
-class TestBatchExecutorCreation:
+class DescribeBatchExecutorCreation:
     """Tests for BatchExecutor instantiation."""
 
-    def test_creates_with_default_batch_size(self) -> None:
+    def it_creates_with_default_batch_size(self) -> None:
         """BatchExecutor defaults to batch size of 10."""
         executor = BatchExecutor()
         assert executor.batch_size == 10
 
-    def test_creates_with_specified_batch_size(self) -> None:
+    def it_creates_with_specified_batch_size(self) -> None:
         """BatchExecutor respects specified batch size."""
         executor = BatchExecutor(batch_size=5)
         assert executor.batch_size == 5
 
-    def test_creates_with_workers(self) -> None:
+    def it_creates_with_workers(self) -> None:
         """BatchExecutor stores the specified worker count."""
         executor = BatchExecutor(max_workers=4)
         assert executor.max_workers == 4
 
 
 @pytest.mark.small
-class TestBatchExecutorPartitioning:
+class DescribeBatchExecutorPartitioning:
     """Tests for how BatchExecutor partitions gremlins into batches."""
 
-    def test_partitions_gremlins_into_batches(self) -> None:
+    def it_partitions_gremlins_into_batches(self) -> None:
         """Gremlins are partitioned into batches of specified size."""
         executor = BatchExecutor(batch_size=3)
         gremlin_ids = ['g001', 'g002', 'g003', 'g004', 'g005']
@@ -55,7 +55,7 @@ class TestBatchExecutorPartitioning:
         assert batches[0] == ['g001', 'g002', 'g003']
         assert batches[1] == ['g004', 'g005']
 
-    def test_empty_gremlin_list_returns_empty_batches(self) -> None:
+    def it_empty_gremlin_list_returns_empty_batches(self) -> None:
         """Empty gremlin list returns empty batches."""
         executor = BatchExecutor(batch_size=3)
 
@@ -63,7 +63,7 @@ class TestBatchExecutorPartitioning:
 
         assert batches == []
 
-    def test_batch_size_one_creates_single_gremlin_batches(self) -> None:
+    def it_batch_size_one_creates_single_gremlin_batches(self) -> None:
         """Batch size 1 creates one batch per gremlin (no batching)."""
         executor = BatchExecutor(batch_size=1)
         gremlin_ids = ['g001', 'g002', 'g003']
@@ -73,7 +73,7 @@ class TestBatchExecutorPartitioning:
         assert len(batches) == 3
         assert batches == [['g001'], ['g002'], ['g003']]
 
-    def test_gremlins_less_than_batch_size_creates_one_batch(self) -> None:
+    def it_gremlins_less_than_batch_size_creates_one_batch(self) -> None:
         """When gremlins < batch_size, creates single batch."""
         executor = BatchExecutor(batch_size=10)
         gremlin_ids = ['g001', 'g002', 'g003']
@@ -85,10 +85,10 @@ class TestBatchExecutorPartitioning:
 
 
 @pytest.mark.small
-class TestBatchExecutorExecution:
+class DescribeBatchExecutorExecution:
     """Tests for BatchExecutor execution."""
 
-    def test_execute_returns_results_for_all_gremlins(self, tmp_path: Path) -> None:
+    def it_execute_returns_results_for_all_gremlins(self, tmp_path: Path) -> None:
         """Execute returns results for all tested gremlins."""
         executor = BatchExecutor(batch_size=2, max_workers=1)
 
@@ -105,7 +105,7 @@ class TestBatchExecutorExecution:
         assert all(isinstance(r, WorkerResult) for r in results)
         assert {r.gremlin_id for r in results} == {'g001', 'g002', 'g003'}
 
-    def test_execute_with_early_termination_batch(self, tmp_path: Path) -> None:
+    def it_execute_with_early_termination_batch(self, tmp_path: Path) -> None:
         """Execute handles early termination within batches."""
         script = tmp_path / 'test_script.py'
         script.write_text(
@@ -135,7 +135,7 @@ sys.exit(1 if gremlin == 'g002' else 0)
         assert results[1].gremlin_id == 'g002'
         assert results[1].status == GremlinResultStatus.ZAPPED
 
-    def test_execute_with_empty_gremlin_ids_returns_empty_list(self, tmp_path: Path) -> None:
+    def it_execute_with_empty_gremlin_ids_returns_empty_list(self, tmp_path: Path) -> None:
         """Execute returns empty list when no gremlins to test."""
         executor = BatchExecutor(batch_size=5, max_workers=1)
 
@@ -149,7 +149,7 @@ sys.exit(1 if gremlin == 'g002' else 0)
 
         assert results == []
 
-    def test_execute_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
+    def it_execute_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """Execute sets PYTEST_GREMLINS_SOURCES_FILE when instrumented_dir is provided."""
         script = tmp_path / 'test_script.py'
         script.write_text(

@@ -13,10 +13,10 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 
 
 @pytest.mark.medium
-class TestCacheKeyIncludesTestNames:
+class DescribeCacheKeyIncludesTestNames:
     """Cache key must include test names, not just hashes."""
 
-    def test_different_test_names_same_hash_produces_different_keys(self, tmp_path: Path) -> None:
+    def it_different_test_names_same_hash_produces_different_keys(self, tmp_path: Path) -> None:
         """Different test names with same hash value produce different cache keys.
 
         BUG: If a test file is renamed but content unchanged, the cache key

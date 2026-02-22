@@ -42,10 +42,10 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.mark.medium
-class TestBooleanClassDefaultBug:
+class DescribeBooleanClassDefaultBug:
     """Reproduce issue #91: boolean mutations in dataclass defaults falsely survive."""
 
-    def test_false_to_true_mutation_in_dataclass_default_is_zapped(self, pytester_with_conftest: pytest.Pytester):
+    def it_false_to_true_mutation_in_dataclass_default_is_zapped(self, pytester_with_conftest: pytest.Pytester):
         """A False->True mutation in a dataclass default is zapped when tests depend on it.
 
         This reproduces the exact scenario from issue #91: a dataclass field
@@ -110,7 +110,7 @@ def test_explicit_last_true():
                     'False->True boolean mutation in dataclass default falsely reported as surviving'
                 )
 
-    def test_true_to_false_mutation_in_dataclass_default_is_zapped(self, pytester_with_conftest: pytest.Pytester):
+    def it_true_to_false_mutation_in_dataclass_default_is_zapped(self, pytester_with_conftest: pytest.Pytester):
         """A True->False mutation in a dataclass default is zapped when tests depend on it."""
         pytester_with_conftest.makepyfile(
             target_module="""
@@ -154,7 +154,7 @@ def test_make_default_range_from0_is_true():
         zapped_count = int(match.group(1))
         assert zapped_count >= 1, 'Expected the True->False boolean gremlin to be zapped, got 0 zapped'
 
-    def test_both_boolean_defaults_in_same_class_are_zapped(self, pytester_with_conftest: pytest.Pytester):
+    def it_both_boolean_defaults_in_same_class_are_zapped(self, pytester_with_conftest: pytest.Pytester):
         """Multiple boolean defaults in the same dataclass are all correctly tested."""
         pytester_with_conftest.makepyfile(
             target_module="""

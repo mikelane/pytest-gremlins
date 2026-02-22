@@ -268,6 +268,8 @@ disallow_untyped_decorators = false
 # =============================================================================
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+python_classes = ["Describe"]
+python_functions = ["it_"]
 addopts = [
     "-ra",
     "--strict-markers",

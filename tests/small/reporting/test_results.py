@@ -14,19 +14,19 @@ from pytest_gremlins.reporting.results import (
 
 
 @pytest.mark.small
-class TestGremlinResultStatus:
+class DescribeGremlinResultStatus:
     """Tests for GremlinResultStatus enum."""
 
-    def test_status_has_zapped_value(self):
+    def it_status_has_zapped_value(self):
         assert GremlinResultStatus.ZAPPED.value == 'zapped'
 
-    def test_status_has_survived_value(self):
+    def it_status_has_survived_value(self):
         assert GremlinResultStatus.SURVIVED.value == 'survived'
 
-    def test_status_has_timeout_value(self):
+    def it_status_has_timeout_value(self):
         assert GremlinResultStatus.TIMEOUT.value == 'timeout'
 
-    def test_status_has_error_value(self):
+    def it_status_has_error_value(self):
         assert GremlinResultStatus.ERROR.value == 'error'
 
 
@@ -44,24 +44,24 @@ def sample_gremlin():
 
 
 @pytest.mark.small
-class TestGremlinResultCreation:
+class DescribeGremlinResultCreation:
     """Tests for GremlinResult dataclass creation and attributes."""
 
-    def test_result_stores_gremlin(self, sample_gremlin):
+    def it_result_stores_gremlin(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,
         )
         assert result.gremlin == sample_gremlin
 
-    def test_result_stores_status(self, sample_gremlin):
+    def it_result_stores_status(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.SURVIVED,
         )
         assert result.status == GremlinResultStatus.SURVIVED
 
-    def test_result_stores_killing_test_when_zapped(self, sample_gremlin):
+    def it_result_stores_killing_test_when_zapped(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,
@@ -69,14 +69,14 @@ class TestGremlinResultCreation:
         )
         assert result.killing_test == 'test_age_boundary'
 
-    def test_result_killing_test_defaults_to_none(self, sample_gremlin):
+    def it_result_killing_test_defaults_to_none(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.SURVIVED,
         )
         assert result.killing_test is None
 
-    def test_result_stores_execution_time(self, sample_gremlin):
+    def it_result_stores_execution_time(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,
@@ -84,14 +84,14 @@ class TestGremlinResultCreation:
         )
         assert result.execution_time_ms == 42.5
 
-    def test_result_execution_time_defaults_to_none(self, sample_gremlin):
+    def it_result_execution_time_defaults_to_none(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,
         )
         assert result.execution_time_ms is None
 
-    def test_result_is_immutable(self, sample_gremlin):
+    def it_result_is_immutable(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,
@@ -101,31 +101,31 @@ class TestGremlinResultCreation:
 
 
 @pytest.mark.small
-class TestGremlinResultProperties:
+class DescribeGremlinResultProperties:
     """Tests for computed properties on GremlinResult."""
 
-    def test_is_zapped_returns_true_when_zapped(self, sample_gremlin):
+    def it_is_zapped_returns_true_when_zapped(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,
         )
         assert result.is_zapped is True
 
-    def test_is_zapped_returns_false_when_survived(self, sample_gremlin):
+    def it_is_zapped_returns_false_when_survived(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.SURVIVED,
         )
         assert result.is_zapped is False
 
-    def test_is_survived_returns_true_when_survived(self, sample_gremlin):
+    def it_is_survived_returns_true_when_survived(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.SURVIVED,
         )
         assert result.is_survived is True
 
-    def test_is_survived_returns_false_when_zapped(self, sample_gremlin):
+    def it_is_survived_returns_false_when_zapped(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,

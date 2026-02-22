@@ -8,26 +8,26 @@ from pytest_gremlins.operators.protocol import GremlinOperator
 from pytest_gremlins.operators.return_value import ReturnOperator
 
 
-class TestReturnOperatorProtocol:
+class DescribeReturnOperatorProtocol:
     """Test that ReturnOperator implements the GremlinOperator protocol."""
 
-    def test_implements_gremlin_operator_protocol(self):
+    def it_implements_gremlin_operator_protocol(self):
         operator = ReturnOperator()
         assert isinstance(operator, GremlinOperator)
 
-    def test_name_is_return(self):
+    def it_name_is_return(self):
         operator = ReturnOperator()
         assert operator.name == 'return'
 
-    def test_description_describes_the_operator(self):
+    def it_description_describes_the_operator(self):
         operator = ReturnOperator()
         assert 'return' in operator.description.lower()
 
 
-class TestReturnOperatorCanMutate:
+class DescribeReturnOperatorCanMutate:
     """Test the can_mutate method."""
 
-    def test_returns_true_for_return_with_value(self):
+    def it_returns_true_for_return_with_value(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -40,7 +40,7 @@ def foo():
 
         assert operator.can_mutate(return_node) is True
 
-    def test_returns_true_for_return_with_expression(self):
+    def it_returns_true_for_return_with_expression(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -53,7 +53,7 @@ def foo():
 
         assert operator.can_mutate(return_node) is True
 
-    def test_returns_false_for_bare_return(self):
+    def it_returns_false_for_bare_return(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -66,7 +66,7 @@ def foo():
 
         assert operator.can_mutate(return_node) is False
 
-    def test_returns_false_for_return_none(self):
+    def it_returns_false_for_return_none(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -79,17 +79,17 @@ def foo():
 
         assert operator.can_mutate(return_node) is False
 
-    def test_returns_false_for_non_return_node(self):
+    def it_returns_false_for_non_return_node(self):
         operator = ReturnOperator()
         node = ast.parse('x + 10', mode='eval').body
 
         assert operator.can_mutate(node) is False
 
 
-class TestReturnOperatorMutate:
+class DescribeReturnOperatorMutate:
     """Test the mutate method."""
 
-    def test_return_value_mutates_to_none(self):
+    def it_return_value_mutates_to_none(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -106,7 +106,7 @@ def foo():
         assert isinstance(mutations[0], ast.Return)
         assert mutations[0].value is None
 
-    def test_return_true_mutates_to_false(self):
+    def it_return_true_mutates_to_false(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -131,7 +131,7 @@ def foo():
         assert None in mutation_values
         assert False in mutation_values
 
-    def test_return_false_mutates_to_true(self):
+    def it_return_false_mutates_to_true(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -155,7 +155,7 @@ def foo():
         assert None in mutation_values
         assert True in mutation_values
 
-    def test_original_node_is_not_modified(self):
+    def it_original_node_is_not_modified(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -174,7 +174,7 @@ def foo():
         assert isinstance(return_node.value, ast.Constant)
         assert return_node.value.value == original_value
 
-    def test_returns_empty_list_for_unsupported_node(self):
+    def it_returns_empty_list_for_unsupported_node(self):
         operator = ReturnOperator()
         node = ast.parse('x + 10', mode='eval').body
 
@@ -182,7 +182,7 @@ def foo():
 
         assert mutations == []
 
-    def test_returns_empty_list_for_bare_return(self):
+    def it_returns_empty_list_for_bare_return(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -197,7 +197,7 @@ def foo():
 
         assert mutations == []
 
-    def test_returns_empty_list_for_return_none(self):
+    def it_returns_empty_list_for_return_none(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -212,7 +212,7 @@ def foo():
 
         assert mutations == []
 
-    def test_return_empty_list_mutates_to_list_with_none(self):
+    def it_return_empty_list_mutates_to_list_with_none(self):
         operator = ReturnOperator()
         source = """
 def foo():

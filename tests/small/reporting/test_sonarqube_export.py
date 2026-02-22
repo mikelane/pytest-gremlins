@@ -79,10 +79,10 @@ def make_result(make_gremlin):
     return _make_result
 
 
-class TestSonarQubeExporterOutput:
+class DescribeSonarQubeExporterOutput:
     """Tests for SonarQube generic issue format output."""
 
-    def test_produces_valid_json(self, make_result):
+    def it_produces_valid_json(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -92,7 +92,7 @@ class TestSonarQubeExporterOutput:
         parsed = json.loads(json_str)
         assert isinstance(parsed, dict)
 
-    def test_includes_issues_array(self, make_result):
+    def it_includes_issues_array(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -103,10 +103,10 @@ class TestSonarQubeExporterOutput:
         assert isinstance(data['issues'], list)
 
 
-class TestSonarQubeExporterFiltering:
+class DescribeSonarQubeExporterFiltering:
     """Tests for filtering which mutants become issues."""
 
-    def test_exports_survived_mutants(self, make_result):
+    def it_exports_survived_mutants(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -115,7 +115,7 @@ class TestSonarQubeExporterFiltering:
 
         assert len(data['issues']) == 1
 
-    def test_does_not_export_zapped_mutants(self, make_result):
+    def it_does_not_export_zapped_mutants(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -124,7 +124,7 @@ class TestSonarQubeExporterFiltering:
 
         assert len(data['issues']) == 0
 
-    def test_does_not_export_timeout_mutants(self, make_result):
+    def it_does_not_export_timeout_mutants(self, make_result):
         results = [make_result(GremlinResultStatus.TIMEOUT)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -133,7 +133,7 @@ class TestSonarQubeExporterFiltering:
 
         assert len(data['issues']) == 0
 
-    def test_does_not_export_error_mutants(self, make_result):
+    def it_does_not_export_error_mutants(self, make_result):
         results = [make_result(GremlinResultStatus.ERROR)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -142,7 +142,7 @@ class TestSonarQubeExporterFiltering:
 
         assert len(data['issues']) == 0
 
-    def test_filters_mixed_results(self, make_result):
+    def it_filters_mixed_results(self, make_result):
         results = [
             make_result(GremlinResultStatus.SURVIVED),
             make_result(GremlinResultStatus.ZAPPED),
@@ -157,10 +157,10 @@ class TestSonarQubeExporterFiltering:
         assert len(data['issues']) == 2
 
 
-class TestSonarQubeExporterIssueFormat:
+class DescribeSonarQubeExporterIssueFormat:
     """Tests for individual issue format."""
 
-    def test_issue_includes_engine_id(self, make_result):
+    def it_issue_includes_engine_id(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -170,7 +170,7 @@ class TestSonarQubeExporterIssueFormat:
 
         assert issue['engineId'] == 'pytest-gremlins'
 
-    def test_issue_includes_rule_id(self, make_result):
+    def it_issue_includes_rule_id(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED, operator_name='comparison')]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -180,7 +180,7 @@ class TestSonarQubeExporterIssueFormat:
 
         assert issue['ruleId'] == 'mutant-survived-comparison'
 
-    def test_issue_includes_severity(self, make_result):
+    def it_issue_includes_severity(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -190,7 +190,7 @@ class TestSonarQubeExporterIssueFormat:
 
         assert issue['severity'] == 'MAJOR'
 
-    def test_issue_includes_type(self, make_result):
+    def it_issue_includes_type(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -200,7 +200,7 @@ class TestSonarQubeExporterIssueFormat:
 
         assert issue['type'] == 'CODE_SMELL'
 
-    def test_issue_includes_primary_location(self, make_result):
+    def it_issue_includes_primary_location(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED, file_path='src/auth.py', line_number=42)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -211,7 +211,7 @@ class TestSonarQubeExporterIssueFormat:
         assert 'primaryLocation' in issue
         assert issue['primaryLocation']['filePath'] == 'src/auth.py'
 
-    def test_issue_includes_text_range(self, make_result):
+    def it_issue_includes_text_range(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED, line_number=42)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -222,7 +222,7 @@ class TestSonarQubeExporterIssueFormat:
         assert 'textRange' in location
         assert location['textRange']['startLine'] == 42
 
-    def test_issue_includes_message(self, make_result):
+    def it_issue_includes_message(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED, description='>= to >')]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -233,7 +233,7 @@ class TestSonarQubeExporterIssueFormat:
         assert 'message' in location
         assert '>= to >' in location['message']
 
-    def test_issue_includes_effort_minutes(self, make_result):
+    def it_issue_includes_effort_minutes(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -244,10 +244,10 @@ class TestSonarQubeExporterIssueFormat:
         assert issue['effortMinutes'] == 10
 
 
-class TestSonarQubeExporterFileOutput:
+class DescribeSonarQubeExporterFileOutput:
     """Tests for writing SonarQube format to file."""
 
-    def test_writes_to_file(self, make_result, tmp_path: Path):
+    def it_writes_to_file(self, make_result, tmp_path: Path):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()
@@ -260,10 +260,10 @@ class TestSonarQubeExporterFileOutput:
         assert 'issues' in data
 
 
-class TestSonarQubeExporterProjectRoot:
+class DescribeSonarQubeExporterProjectRoot:
     """Tests for project root path handling."""
 
-    def test_strips_project_root_from_paths(self, make_result):
+    def it_strips_project_root_from_paths(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED, file_path='/home/user/project/src/auth.py')]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter(project_root='/home/user/project')
@@ -273,7 +273,7 @@ class TestSonarQubeExporterProjectRoot:
 
         assert issue['primaryLocation']['filePath'] == 'src/auth.py'
 
-    def test_handles_relative_paths_unchanged(self, make_result):
+    def it_handles_relative_paths_unchanged(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED, file_path='src/auth.py')]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter(project_root='/home/user/project')

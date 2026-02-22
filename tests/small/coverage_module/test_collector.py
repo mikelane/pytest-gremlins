@@ -8,19 +8,19 @@ from pytest_gremlins.coverage.collector import CoverageCollector
 from pytest_gremlins.coverage.mapper import CoverageMap
 
 
-class TestCoverageCollectorCreation:
+class DescribeCoverageCollectorCreation:
     """Test CoverageCollector initialization."""
 
-    def test_collector_creates_empty_coverage_map(self):
+    def it_collector_creates_empty_coverage_map(self):
         collector = CoverageCollector()
         assert isinstance(collector.coverage_map, CoverageMap)
         assert len(collector.coverage_map) == 0
 
 
-class TestCoverageCollectorRecording:
+class DescribeCoverageCollectorRecording:
     """Test recording coverage data for a test."""
 
-    def test_record_coverage_adds_lines_to_map(self):
+    def it_record_coverage_adds_lines_to_map(self):
         collector = CoverageCollector()
         coverage_data = {
             'src/auth.py': [10, 11, 12],
@@ -33,7 +33,7 @@ class TestCoverageCollectorRecording:
         assert collector.coverage_map.get_tests('src/auth.py', 12) == {'test_login'}
         assert collector.coverage_map.get_tests('src/utils.py', 5) == {'test_login'}
 
-    def test_record_coverage_multiple_tests_same_file(self):
+    def it_record_coverage_multiple_tests_same_file(self):
         collector = CoverageCollector()
         collector.record_test_coverage('test_login', {'src/auth.py': [10, 11]})
         collector.record_test_coverage('test_logout', {'src/auth.py': [10, 20]})
@@ -42,16 +42,16 @@ class TestCoverageCollectorRecording:
         assert collector.coverage_map.get_tests('src/auth.py', 11) == {'test_login'}
         assert collector.coverage_map.get_tests('src/auth.py', 20) == {'test_logout'}
 
-    def test_record_coverage_empty_coverage_data(self):
+    def it_record_coverage_empty_coverage_data(self):
         collector = CoverageCollector()
         collector.record_test_coverage('test_noop', {})
         assert len(collector.coverage_map) == 0
 
 
-class TestCoverageCollectorFromCoveragePy:
+class DescribeCoverageCollectorFromCoveragePy:
     """Test converting coverage.py data format to our format."""
 
-    def test_extract_from_coverage_data(self):
+    def it_extract_from_coverage_data(self):
         collector = CoverageCollector()
 
         # Mimic coverage.py's CoverageData structure
@@ -69,7 +69,7 @@ class TestCoverageCollectorFromCoveragePy:
             'src/utils.py': [5, 6],
         }
 
-    def test_extract_from_coverage_data_handles_none_lines(self):
+    def it_extract_from_coverage_data_handles_none_lines(self):
         collector = CoverageCollector()
 
         # Mimic coverage.py's CoverageData structure where a file has no lines
@@ -87,7 +87,7 @@ class TestCoverageCollectorFromCoveragePy:
             # src/empty.py is excluded because lines() returned None
         }
 
-    def test_extract_from_coverage_data_handles_empty_lines(self):
+    def it_extract_from_coverage_data_handles_empty_lines(self):
         collector = CoverageCollector()
 
         mock_coverage_data = MagicMock()
@@ -105,31 +105,31 @@ class TestCoverageCollectorFromCoveragePy:
         }
 
 
-class TestCoverageCollectorTestTracking:
+class DescribeCoverageCollectorTestTracking:
     """Test tracking which tests have been recorded."""
 
-    def test_recorded_tests_initially_empty(self):
+    def it_recorded_tests_initially_empty(self):
         collector = CoverageCollector()
         assert collector.recorded_tests == set()
 
-    def test_recorded_tests_tracks_recorded_tests(self):
+    def it_recorded_tests_tracks_recorded_tests(self):
         collector = CoverageCollector()
         collector.record_test_coverage('test_login', {'src/auth.py': [10]})
         collector.record_test_coverage('test_logout', {'src/auth.py': [20]})
         assert collector.recorded_tests == {'test_login', 'test_logout'}
 
 
-class TestCoverageCollectorStats:
+class DescribeCoverageCollectorStats:
     """Test coverage collection statistics."""
 
-    def test_stats_empty_collector(self):
+    def it_stats_empty_collector(self):
         collector = CoverageCollector()
         stats = collector.get_stats()
         assert stats['total_tests'] == 0
         assert stats['total_locations'] == 0
         assert stats['total_mappings'] == 0
 
-    def test_stats_with_data(self):
+    def it_stats_with_data(self):
         collector = CoverageCollector()
         collector.record_test_coverage('test_login', {'src/auth.py': [10, 11]})
         collector.record_test_coverage('test_logout', {'src/auth.py': [10, 20]})

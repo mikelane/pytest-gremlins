@@ -11,22 +11,22 @@ if TYPE_CHECKING:
     import ast
 
 
-class TestGremlinOperatorProtocol:
+class DescribeGremlinOperatorProtocol:
     """Test the GremlinOperator protocol interface."""
 
-    def test_protocol_defines_name_property(self):
+    def it_protocol_defines_name_property(self):
         assert hasattr(GremlinOperator, 'name')
 
-    def test_protocol_defines_description_property(self):
+    def it_protocol_defines_description_property(self):
         assert hasattr(GremlinOperator, 'description')
 
-    def test_protocol_defines_can_mutate_method(self):
+    def it_protocol_defines_can_mutate_method(self):
         assert hasattr(GremlinOperator, 'can_mutate')
 
-    def test_protocol_defines_mutate_method(self):
+    def it_protocol_defines_mutate_method(self):
         assert hasattr(GremlinOperator, 'mutate')
 
-    def test_protocol_is_runtime_checkable(self):
+    def it_protocol_is_runtime_checkable(self):
         class DummyOperator:
             @property
             def name(self) -> str:

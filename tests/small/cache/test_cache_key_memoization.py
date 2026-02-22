@@ -9,10 +9,10 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 
 
 @pytest.mark.medium
-class TestCacheKeyMemoization:
+class DescribeCacheKeyMemoization:
     """Tests for memoized cache key computation."""
 
-    def test_same_test_hashes_reuses_combined_hash(self, tmp_path: Path) -> None:
+    def it_same_test_hashes_reuses_combined_hash(self, tmp_path: Path) -> None:
         """Repeated calls with same test_hashes dict reuse the combined hash."""
         cache_dir = tmp_path / '.gremlins_cache'
 

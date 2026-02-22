@@ -32,10 +32,10 @@ from pytest_gremlins.plugin import (
 
 
 @pytest.mark.small
-class TestConfigureNode:
+class DescribeConfigureNode:
     """pytest_configure_node injects gremlins metadata into node.workerinput."""
 
-    def test_injects_tmpdir_into_workerinput(self, tmp_path: Path) -> None:
+    def it_injects_tmpdir_into_workerinput(self, tmp_path: Path) -> None:
         """Controller injects gremlins_tmpdir into node.workerinput."""
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE)
         gs.gremlins_tmpdir = str(tmp_path)
@@ -49,7 +49,7 @@ class TestConfigureNode:
         assert 'gremlins_tmpdir' in node.workerinput
         assert node.workerinput['gremlins_tmpdir'] == str(tmp_path)
 
-    def test_injects_different_tmpdir_correctly(self, tmp_path: Path) -> None:
+    def it_injects_different_tmpdir_correctly(self, tmp_path: Path) -> None:
         """Different tmpdir path is injected correctly - rules out hardcoding."""
         other_path = tmp_path / 'subdir'
         other_path.mkdir()
@@ -65,7 +65,7 @@ class TestConfigureNode:
 
         assert node.workerinput['gremlins_tmpdir'] == str(other_path)
 
-    def test_skips_when_session_disabled(self) -> None:
+    def it_skips_when_session_disabled(self) -> None:
         """No injection when GremlinSession is disabled."""
         gs = GremlinSession(enabled=False)
         _set_session(gs)
@@ -77,7 +77,7 @@ class TestConfigureNode:
 
         assert 'gremlins_tmpdir' not in node.workerinput
 
-    def test_skips_when_no_session(self) -> None:
+    def it_skips_when_no_session(self) -> None:
         """No injection when no GremlinSession exists."""
         _set_session(None)
 
@@ -88,7 +88,7 @@ class TestConfigureNode:
 
         assert 'gremlins_tmpdir' not in node.workerinput
 
-    def test_skips_in_piggyback_mode(self, tmp_path: Path) -> None:
+    def it_skips_in_piggyback_mode(self, tmp_path: Path) -> None:
         """No injection in PIGGYBACK mode - workers use pytest-cov's coverage."""
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PIGGYBACK)
         gs.gremlins_tmpdir = str(tmp_path)
@@ -103,20 +103,20 @@ class TestConfigureNode:
 
 
 @pytest.mark.small
-class TestGremlinSessionTmpdir:
+class DescribeGremlinSessionTmpdir:
     """GremlinSession has a gremlins_tmpdir field for shared coverage data."""
 
-    def test_default_gremlins_tmpdir_is_none(self) -> None:
+    def it_default_gremlins_tmpdir_is_none(self) -> None:
         """GremlinSession.gremlins_tmpdir defaults to None."""
         gs = GremlinSession()
         assert gs.gremlins_tmpdir is None
 
-    def test_gremlins_tmpdir_can_be_set(self) -> None:
+    def it_gremlins_tmpdir_can_be_set(self) -> None:
         """GremlinSession.gremlins_tmpdir can be set to a path string."""
         gs = GremlinSession(gremlins_tmpdir='/tmp/gremlins_test')  # noqa: S108
         assert gs.gremlins_tmpdir == '/tmp/gremlins_test'  # noqa: S108
 
-    def test_different_tmpdir_values_are_stored_correctly(self) -> None:
+    def it_different_tmpdir_values_are_stored_correctly(self) -> None:
         """Different tmpdir values produce different results - rules out hardcoding."""
         gs_a = GremlinSession(gremlins_tmpdir='/tmp/a')  # noqa: S108
         gs_b = GremlinSession(gremlins_tmpdir='/tmp/b')  # noqa: S108

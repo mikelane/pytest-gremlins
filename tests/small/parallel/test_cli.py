@@ -12,20 +12,20 @@ if TYPE_CHECKING:
     import pytest
 
 
-class TestParallelCLIOptions:
+class DescribeParallelCLIOptions:
     """Tests for parallel CLI option parsing via pytest."""
 
-    def test_gremlin_parallel_option_exists(self, pytester: pytest.Pytester) -> None:
+    def it_gremlin_parallel_option_exists(self, pytester: pytest.Pytester) -> None:
         """--gremlin-parallel option is available."""
         result = pytester.runpytest('--help')
         result.stdout.fnmatch_lines(['*--gremlin-parallel*'])
 
-    def test_gremlin_workers_option_exists(self, pytester: pytest.Pytester) -> None:
+    def it_gremlin_workers_option_exists(self, pytester: pytest.Pytester) -> None:
         """--gremlin-workers option is available."""
         result = pytester.runpytest('--help')
         result.stdout.fnmatch_lines(['*--gremlin-workers*'])
 
-    def test_parallel_disabled_by_default(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_parallel_disabled_by_default(self, pytester_with_markers: pytest.Pytester) -> None:
         """Parallel execution is disabled by default."""
         pytester_with_markers.makepyfile(
             test_sample="""
@@ -37,7 +37,7 @@ class TestParallelCLIOptions:
         result = pytester_with_markers.runpytest('-v')
         assert result.ret == 0
 
-    def test_workers_accepts_integer(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_workers_accepts_integer(self, pytester_with_markers: pytest.Pytester) -> None:
         """--gremlin-workers accepts an integer value."""
         pytester_with_markers.makepyfile(
             test_sample="""

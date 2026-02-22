@@ -28,30 +28,30 @@ def make_gremlin(gremlin_id: str, file_path: str = '/path/to/source.py', line_nu
     )
 
 
-class TestDistributionStrategyProtocol:
+class DescribeDistributionStrategyProtocol:
     """Tests for the DistributionStrategy protocol."""
 
-    def test_round_robin_implements_protocol(self) -> None:
+    def it_round_robin_implements_protocol(self) -> None:
         """RoundRobinDistribution implements DistributionStrategy protocol."""
         strategy: DistributionStrategy = RoundRobinDistribution()
         assert hasattr(strategy, 'distribute')
 
-    def test_weighted_implements_protocol(self) -> None:
+    def it_weighted_implements_protocol(self) -> None:
         """WeightedDistribution implements DistributionStrategy protocol."""
         strategy: DistributionStrategy = WeightedDistribution()
         assert hasattr(strategy, 'distribute')
 
 
-class TestRoundRobinDistribution:
+class DescribeRoundRobinDistribution:
     """Tests for RoundRobinDistribution strategy."""
 
-    def test_empty_gremlins_returns_empty_buckets(self) -> None:
+    def it_empty_gremlins_returns_empty_buckets(self) -> None:
         """Distributing empty list returns empty buckets for each worker."""
         strategy = RoundRobinDistribution()
         result = strategy.distribute([], num_workers=3)
         assert result == [[], [], []]
 
-    def test_single_gremlin_goes_to_first_worker(self) -> None:
+    def it_single_gremlin_goes_to_first_worker(self) -> None:
         """Single gremlin is assigned to first worker."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin('g001')]
@@ -62,7 +62,7 @@ class TestRoundRobinDistribution:
         assert result[1] == []
         assert result[2] == []
 
-    def test_distributes_evenly_across_workers(self) -> None:
+    def it_distributes_evenly_across_workers(self) -> None:
         """Gremlins are distributed round-robin across workers."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(6)]
@@ -73,7 +73,7 @@ class TestRoundRobinDistribution:
         assert len(result[1]) == 2  # g001, g004
         assert len(result[2]) == 2  # g002, g005
 
-    def test_handles_uneven_distribution(self) -> None:
+    def it_handles_uneven_distribution(self) -> None:
         """Handles case where gremlins don't divide evenly."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(5)]
@@ -84,7 +84,7 @@ class TestRoundRobinDistribution:
         assert len(result[1]) == 2  # g001, g004
         assert len(result[2]) == 1  # g002
 
-    def test_single_worker_gets_all_gremlins(self) -> None:
+    def it_single_worker_gets_all_gremlins(self) -> None:
         """With single worker, all gremlins go to that worker."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(5)]
@@ -93,7 +93,7 @@ class TestRoundRobinDistribution:
         assert len(result) == 1
         assert len(result[0]) == 5
 
-    def test_more_workers_than_gremlins(self) -> None:
+    def it_more_workers_than_gremlins(self) -> None:
         """Extra workers get empty buckets."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin('g001'), make_gremlin('g002')]
@@ -106,7 +106,7 @@ class TestRoundRobinDistribution:
         assert result[3] == []
         assert result[4] == []
 
-    def test_distribution_is_deterministic(self) -> None:
+    def it_distribution_is_deterministic(self) -> None:
         """Same input always produces same output."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(10)]
@@ -117,7 +117,7 @@ class TestRoundRobinDistribution:
         for i in range(3):
             assert [g.gremlin_id for g in result1[i]] == [g.gremlin_id for g in result2[i]]
 
-    def test_all_gremlins_are_assigned(self) -> None:
+    def it_all_gremlins_are_assigned(self) -> None:
         """All input gremlins appear exactly once in output."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(10)]
@@ -130,16 +130,16 @@ class TestRoundRobinDistribution:
         assert sorted(all_ids) == sorted(g.gremlin_id for g in gremlins)
 
 
-class TestWeightedDistribution:
+class DescribeWeightedDistribution:
     """Tests for WeightedDistribution strategy."""
 
-    def test_empty_gremlins_returns_empty_buckets(self) -> None:
+    def it_empty_gremlins_returns_empty_buckets(self) -> None:
         """Distributing empty list returns empty buckets."""
         strategy = WeightedDistribution()
         result = strategy.distribute([], num_workers=3)
         assert result == [[], [], []]
 
-    def test_without_test_counts_uses_round_robin(self) -> None:
+    def it_without_test_counts_uses_round_robin(self) -> None:
         """Without test counts, falls back to round-robin distribution."""
         strategy = WeightedDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(6)]
@@ -151,7 +151,7 @@ class TestWeightedDistribution:
         assert len(result[1]) == 2
         assert len(result[2]) == 2
 
-    def test_balances_by_test_count(self) -> None:
+    def it_balances_by_test_count(self) -> None:
         """Heavy gremlins are distributed to different workers."""
         strategy = WeightedDistribution()
         gremlins = [
@@ -178,7 +178,7 @@ class TestWeightedDistribution:
         assert heavy & worker0_ids  # Worker 0 has at least one heavy
         assert heavy & worker1_ids  # Worker 1 has at least one heavy
 
-    def test_all_gremlins_are_assigned(self) -> None:
+    def it_all_gremlins_are_assigned(self) -> None:
         """All input gremlins appear exactly once in output."""
         strategy = WeightedDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(10)]
@@ -191,7 +191,7 @@ class TestWeightedDistribution:
 
         assert sorted(all_ids) == sorted(g.gremlin_id for g in gremlins)
 
-    def test_missing_test_counts_default_to_one(self) -> None:
+    def it_missing_test_counts_default_to_one(self) -> None:
         """Gremlins without test count info are assigned weight of 1."""
         strategy = WeightedDistribution()
         gremlins = [
@@ -210,7 +210,7 @@ class TestWeightedDistribution:
 
         assert sorted(all_ids) == ['g001', 'g002', 'g003']
 
-    def test_distribution_is_deterministic(self) -> None:
+    def it_distribution_is_deterministic(self) -> None:
         """Same input always produces same output."""
         strategy = WeightedDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(10)]

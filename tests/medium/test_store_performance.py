@@ -15,10 +15,10 @@ from pytest_gremlins.cache.store import ResultStore
 
 
 @pytest.mark.medium
-class TestCachePerformance:
+class DescribeCachePerformance:
     """Performance tests for cache operations."""
 
-    def test_cache_lookup_is_fast(self, tmp_path: Path) -> None:
+    def it_cache_lookup_is_fast(self, tmp_path: Path) -> None:
         """Cache lookup completes in under 1ms per entry."""
         cache_dir = tmp_path / '.gremlins_cache'
 
@@ -45,7 +45,7 @@ class TestCachePerformance:
             # 100 lookups should take less than 100ms (1ms per lookup)
             assert elapsed < 0.1, f'Cache lookups took {elapsed * 1000:.1f}ms for 100 entries'
 
-    def test_cache_write_is_fast(self, tmp_path: Path) -> None:
+    def it_cache_write_is_fast(self, tmp_path: Path) -> None:
         """Cache writes complete in under 10ms per entry (batch)."""
         cache_dir = tmp_path / '.gremlins_cache'
 
@@ -67,7 +67,7 @@ class TestCachePerformance:
             # Allow 15 seconds to accommodate Windows CI variance
             assert elapsed < 15.0, f'Cache writes took {elapsed * 1000:.1f}ms for 100 entries'
 
-    def test_cache_key_computation_is_fast(self, tmp_path: Path) -> None:
+    def it_cache_key_computation_is_fast(self, tmp_path: Path) -> None:
         """Cache key computation completes in under 0.1ms per key."""
         cache_dir = tmp_path / '.gremlins_cache'
 
@@ -91,10 +91,10 @@ class TestCachePerformance:
 
 
 @pytest.mark.medium
-class TestStorePerformance:
+class DescribeStorePerformance:
     """Performance tests for result store."""
 
-    def test_batch_writes_are_faster_than_individual(self, tmp_path: Path) -> None:
+    def it_batch_writes_are_faster_than_individual(self, tmp_path: Path) -> None:
         """Batch writes are at least 5x faster than individual writes."""
         db_path = tmp_path / 'results.db'
 
@@ -116,7 +116,7 @@ class TestStorePerformance:
         # Allow 15 seconds to accommodate Windows CI variance
         assert individual_time < 15.0, f'Individual writes took {individual_time * 1000:.1f}ms'
 
-    def test_lookup_with_index_is_fast(self, tmp_path: Path) -> None:
+    def it_lookup_with_index_is_fast(self, tmp_path: Path) -> None:
         """Cache lookups with SQLite index complete in under 1ms."""
         db_path = tmp_path / 'results.db'
 

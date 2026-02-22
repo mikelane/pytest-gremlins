@@ -92,10 +92,10 @@ def make_result(make_gremlin):
     return _make_result
 
 
-class TestStrykerExporterSchemaCompliance:
+class DescribeStrykerExporterSchemaCompliance:
     """Tests that output complies with mutation-testing-report-schema."""
 
-    def test_produces_valid_json(self, make_result):
+    def it_produces_valid_json(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -105,7 +105,7 @@ class TestStrykerExporterSchemaCompliance:
         parsed = json.loads(json_str)
         assert isinstance(parsed, dict)
 
-    def test_includes_schema_version(self, make_result):
+    def it_includes_schema_version(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -115,7 +115,7 @@ class TestStrykerExporterSchemaCompliance:
         assert 'schemaVersion' in data
         assert data['schemaVersion'] == '1.0'
 
-    def test_includes_thresholds(self, make_result):
+    def it_includes_thresholds(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -128,7 +128,7 @@ class TestStrykerExporterSchemaCompliance:
         assert isinstance(data['thresholds']['high'], int)
         assert isinstance(data['thresholds']['low'], int)
 
-    def test_includes_files_section(self, make_result):
+    def it_includes_files_section(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py')]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -139,10 +139,10 @@ class TestStrykerExporterSchemaCompliance:
         assert 'src/auth.py' in data['files']
 
 
-class TestStrykerExporterFileFormat:
+class DescribeStrykerExporterFileFormat:
     """Tests for per-file format in Stryker schema."""
 
-    def test_file_includes_language(self, make_result):
+    def it_file_includes_language(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py')]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -151,7 +151,7 @@ class TestStrykerExporterFileFormat:
 
         assert data['files']['src/auth.py']['language'] == 'python'
 
-    def test_file_includes_mutants_array(self, make_result):
+    def it_file_includes_mutants_array(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py')]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -163,10 +163,10 @@ class TestStrykerExporterFileFormat:
         assert len(data['files']['src/auth.py']['mutants']) == 1
 
 
-class TestStrykerExporterMutantFormat:
+class DescribeStrykerExporterMutantFormat:
     """Tests for individual mutant format in Stryker schema."""
 
-    def test_mutant_includes_id(self, make_result):
+    def it_mutant_includes_id(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -177,7 +177,7 @@ class TestStrykerExporterMutantFormat:
         assert 'id' in mutant
         assert mutant['id'] == 'g001'
 
-    def test_mutant_includes_mutator_name(self, make_result):
+    def it_mutant_includes_mutator_name(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, operator_name='comparison')]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -188,7 +188,7 @@ class TestStrykerExporterMutantFormat:
         assert 'mutatorName' in mutant
         assert mutant['mutatorName'] == 'comparison'
 
-    def test_mutant_includes_location(self, make_gremlin):
+    def it_mutant_includes_location(self, make_gremlin):
         gremlin = make_gremlin(file_path='test.py', line_number=10, column_offset=4)
         result = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED)
         score = MutationScore.from_results([result])
@@ -202,7 +202,7 @@ class TestStrykerExporterMutantFormat:
         assert mutant['location']['start']['line'] == 10
         assert mutant['location']['start']['column'] == 4
 
-    def test_mutant_includes_description(self, make_result):
+    def it_mutant_includes_description(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, description='>= to >')]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -214,7 +214,7 @@ class TestStrykerExporterMutantFormat:
         assert mutant['description'] == '>= to >'
 
 
-class TestStrykerExporterStatus:
+class DescribeStrykerExporterStatus:
     """Tests for status mapping from gremlin status to Stryker status."""
 
     @pytest.mark.parametrize(
@@ -226,7 +226,7 @@ class TestStrykerExporterStatus:
             (GremlinResultStatus.ERROR, 'RuntimeError'),
         ],
     )
-    def test_maps_status_correctly(self, make_result, gremlin_status, stryker_status):
+    def it_maps_status_correctly(self, make_result, gremlin_status, stryker_status):
         results = [make_result(gremlin_status)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -237,10 +237,10 @@ class TestStrykerExporterStatus:
         assert mutant['status'] == stryker_status
 
 
-class TestStrykerExporterOptionalFields:
+class DescribeStrykerExporterOptionalFields:
     """Tests for optional fields in Stryker schema."""
 
-    def test_includes_killed_by_when_test_zapped(self, make_result):
+    def it_includes_killed_by_when_test_zapped(self, make_result):
         results = [
             make_result(
                 GremlinResultStatus.ZAPPED,
@@ -256,7 +256,7 @@ class TestStrykerExporterOptionalFields:
         assert 'killedBy' in mutant
         assert mutant['killedBy'] == ['test_auth::test_login_validates_age']
 
-    def test_excludes_killed_by_when_survived(self, make_result):
+    def it_excludes_killed_by_when_survived(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -266,7 +266,7 @@ class TestStrykerExporterOptionalFields:
 
         assert 'killedBy' not in mutant
 
-    def test_includes_duration_when_available(self, make_result):
+    def it_includes_duration_when_available(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, execution_time_ms=123.45)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -277,7 +277,7 @@ class TestStrykerExporterOptionalFields:
         assert 'duration' in mutant
         assert mutant['duration'] == 123
 
-    def test_excludes_duration_when_not_available(self, make_result):
+    def it_excludes_duration_when_not_available(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, execution_time_ms=None)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -288,10 +288,10 @@ class TestStrykerExporterOptionalFields:
         assert 'duration' not in mutant
 
 
-class TestStrykerExporterFileOutput:
+class DescribeStrykerExporterFileOutput:
     """Tests for writing Stryker format to file."""
 
-    def test_writes_to_file(self, make_result, tmp_path: Path):
+    def it_writes_to_file(self, make_result, tmp_path: Path):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -304,10 +304,10 @@ class TestStrykerExporterFileOutput:
         assert 'schemaVersion' in data
 
 
-class TestStrykerExporterFrameworkInfo:
+class DescribeStrykerExporterFrameworkInfo:
     """Tests for optional framework metadata."""
 
-    def test_includes_framework_info(self, make_result):
+    def it_includes_framework_info(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -319,10 +319,10 @@ class TestStrykerExporterFrameworkInfo:
         assert 'version' in data['framework']
 
 
-class TestStrykerExporterMutationScoreOnly:
+class DescribeStrykerExporterMutationScoreOnly:
     """Tests for simple mutation score export (for badge only)."""
 
-    def test_exports_score_only_format(self, make_result):
+    def it_exports_score_only_format(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.SURVIVED),
