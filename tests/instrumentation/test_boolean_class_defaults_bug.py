@@ -21,38 +21,18 @@ import re
 import pytest
 
 
-@pytest.fixture()
-def pytester_with_conftest(pytester: pytest.Pytester) -> pytest.Pytester:
-    """Create a pytester instance with conftest that registers small marker for nested tests."""
-    pytester.makeconftest(
-        """
-import pytest
-
-def pytest_configure(config):
-    config.addinivalue_line('markers', 'small: marks tests as small (fast unit tests)')
-
-@pytest.hookimpl(tryfirst=True)
-def pytest_collection_modifyitems(items):
-    for item in items:
-        if not any(marker.name in ('small', 'medium', 'large') for marker in item.iter_markers()):
-            item.add_marker(pytest.mark.small)
-"""
-    )
-    return pytester
-
-
 @pytest.mark.medium
 class DescribeBooleanClassDefaultBug:
     """Reproduce issue #91: boolean mutations in dataclass defaults falsely survive."""
 
-    def it_false_to_true_mutation_in_dataclass_default_is_zapped(self, pytester_with_conftest: pytest.Pytester):
+    def it_false_to_true_mutation_in_dataclass_default_is_zapped(self, pytester_with_markers: pytest.Pytester):
         """A False->True mutation in a dataclass default is zapped when tests depend on it.
 
         This reproduces the exact scenario from issue #91: a dataclass field
         `last: bool = False` should be detected as zapped because tests create
         instances relying on the default value.
         """
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 from dataclasses import dataclass
 
@@ -65,7 +45,7 @@ def make_default_addr():
     return Addr()
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import Addr, make_default_addr
 
@@ -83,7 +63,7 @@ def test_explicit_last_true():
 """
         )
 
-        result = pytester_with_conftest.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-operators=boolean',
             '--gremlin-targets=target_module.py',
@@ -110,9 +90,9 @@ def test_explicit_last_true():
                     'False->True boolean mutation in dataclass default falsely reported as surviving'
                 )
 
-    def it_true_to_false_mutation_in_dataclass_default_is_zapped(self, pytester_with_conftest: pytest.Pytester):
+    def it_true_to_false_mutation_in_dataclass_default_is_zapped(self, pytester_with_markers: pytest.Pytester):
         """A True->False mutation in a dataclass default is zapped when tests depend on it."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 from dataclasses import dataclass
 
@@ -125,7 +105,7 @@ def make_default_range():
     return Range()
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import Range, make_default_range
 
@@ -139,7 +119,7 @@ def test_make_default_range_from0_is_true():
 """
         )
 
-        result = pytester_with_conftest.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-operators=boolean',
             '--gremlin-targets=target_module.py',
@@ -154,9 +134,9 @@ def test_make_default_range_from0_is_true():
         zapped_count = int(match.group(1))
         assert zapped_count >= 1, 'Expected the True->False boolean gremlin to be zapped, got 0 zapped'
 
-    def it_zaps_both_boolean_defaults_in_the_same_class(self, pytester_with_conftest: pytest.Pytester):
+    def it_both_boolean_defaults_in_same_class_are_zapped(self, pytester_with_markers: pytest.Pytester):
         """Multiple boolean defaults in the same dataclass are all correctly tested."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 from dataclasses import dataclass
 
@@ -166,7 +146,7 @@ class Config:
     debug: bool = False
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import Config
 
@@ -180,7 +160,7 @@ def test_default_config_debug_is_false():
 """
         )
 
-        result = pytester_with_conftest.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-operators=boolean',
             '--gremlin-targets=target_module.py',

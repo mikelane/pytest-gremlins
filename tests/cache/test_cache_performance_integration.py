@@ -11,37 +11,17 @@ import time
 import pytest
 
 
-@pytest.fixture()
-def pytester_with_conftest(pytester: pytest.Pytester) -> pytest.Pytester:
-    """Create a pytester instance with conftest that registers small marker."""
-    pytester.makeconftest(
-        """
-import pytest
-
-def pytest_configure(config):
-    config.addinivalue_line('markers', 'small: marks tests as small (fast unit tests)')
-
-@pytest.hookimpl(tryfirst=True)
-def pytest_collection_modifyitems(items):
-    for item in items:
-        if not any(marker.name in ('small', 'medium', 'large') for marker in item.iter_markers()):
-            item.add_marker(pytest.mark.small)
-"""
-    )
-    return pytester
-
-
 @pytest.mark.medium
 class DescribeCachePerformanceIntegration:
     """Integration tests verifying cache provides speedup."""
 
-    def it_completes_faster_on_warm_run_than_cold_run(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_warm_run_is_faster_than_cold_run(self, pytester_with_markers: pytest.Pytester) -> None:
         """Warm run (cache populated) is faster than cold run.
 
         This is the key acceptance test - if warm run is not faster than
         cold run, the cache is not providing value.
         """
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             src_module="""
             def add(a, b):
                 return a + b
@@ -53,7 +33,7 @@ class DescribeCachePerformanceIntegration:
                 return a * b
             """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_module="""
             from src_module import add, subtract, multiply
 
@@ -70,12 +50,12 @@ class DescribeCachePerformanceIntegration:
 
         # Cold run (no cache)
         cold_start = time.perf_counter()
-        pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
+        pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
         cold_time = time.perf_counter() - cold_start
 
         # Warm run (cache populated)
         warm_start = time.perf_counter()
-        result = pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
+        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
         warm_time = time.perf_counter() - warm_start
 
         result.assert_outcomes(passed=3)
@@ -87,15 +67,15 @@ class DescribeCachePerformanceIntegration:
             'Cache is adding overhead instead of providing speedup!'
         )
 
-    def it_skips_test_execution_on_cache_hit(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_cache_hit_skips_test_execution(self, pytester_with_markers: pytest.Pytester) -> None:
         """Cache hits skip actual test execution, saving subprocess overhead."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             src_module="""
             def slow_function():
                 return 42
             """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_module="""
             import time
             from src_module import slow_function
@@ -109,12 +89,12 @@ class DescribeCachePerformanceIntegration:
 
         # Cold run (must execute slow test)
         cold_start = time.perf_counter()
-        pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
+        pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
         cold_time = time.perf_counter() - cold_start
 
         # Warm run (should skip test execution via cache)
         warm_start = time.perf_counter()
-        result = pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
+        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
         warm_time = time.perf_counter() - warm_start
 
         result.assert_outcomes(passed=1)
@@ -126,15 +106,15 @@ class DescribeCachePerformanceIntegration:
         # With multiple gremlins, this compounds
         assert warm_time < cold_time, f'Warm run ({warm_time:.2f}s) was NOT faster than cold run ({cold_time:.2f}s)'
 
-    def it_adds_minimal_overhead_for_cold_cache_over_no_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_cold_cache_adds_minimal_overhead_over_no_cache(self, pytester_with_markers: pytest.Pytester) -> None:
         """Establish baseline for no-cache mode."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             src_module="""
             def add(a, b):
                 return a + b
             """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_module="""
             from src_module import add
 
@@ -145,17 +125,17 @@ class DescribeCachePerformanceIntegration:
 
         # Run without cache
         no_cache_start = time.perf_counter()
-        pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=src_module.py')
+        pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py')
         no_cache_time = time.perf_counter() - no_cache_start
 
         # Run with cache (cold)
         cache_cold_start = time.perf_counter()
-        pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
+        pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
         cache_cold_time = time.perf_counter() - cache_cold_start
 
         # Run with cache (warm)
         cache_warm_start = time.perf_counter()
-        result = pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
+        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
         cache_warm_time = time.perf_counter() - cache_warm_start
 
         result.assert_outcomes(passed=1)
