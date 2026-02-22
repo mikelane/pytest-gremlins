@@ -5,46 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.3.0b5 (2026-02-21)
+## v1.3.0 (2026-02-21)
 
-### Fix
+### Added
 
-- --gremlin-workers=N implies parallel mode without --gremlin-parallel (#188)
+- `--gremlin-workers=N` now implies `--gremlin-parallel` — specifying a worker count
+  automatically enables parallel mode. Use `pytest --gremlins --gremlin-workers=auto`
+  without needing to also pass `--gremlin-parallel`. (#188)
 
-## v1.3.0b4 (2026-02-21)
+### Fixed
 
-### Fix
-
-- measure coverage on small+medium only in release workflow
-
-## v1.3.0b3 (2026-02-21)
-
-### Fix
-
-- **ci**: enable subprocess coverage tracking via sitecustomize.py (#186)
-
-## v1.3.0b2 (2026-02-21)
-
-### Fix
-
-- use Path for sources.json in WorkerPool to fix Windows path separators (#185)
-
-## v1.3.0b1 (2026-02-21)
-
-### Fix
-
-- make --cov + --gremlins produce real coverage output (#180) (#184)
-- revert xdist -n integration; error explicitly on --gremlins + -n conflict (#179) (#183)
-
-## v1.3.0b0 (2026-02-20)
-
-### Feat
-
-- integrate pytest-xdist -n flag for parallel mutation execution (#130) (#175)
-
-### Fix
-
-- suppress addopts and coverage in mutation subprocesses (#128)
+- `pytest --gremlins --cov` now produces real coverage output alongside mutation results.
+  Previously the mutation pre-scan subprocess corrupted the `.coverage` data. (#184)
+- Windows: Fixed path separator bug in `WorkerPool` sources.json that caused worker
+  failures on Windows. (#185)
+- Mutation subprocesses now suppress `addopts` and coverage instrumentation from the
+  host environment, preventing subprocess interference. (#128)
+- `pytest --gremlins -n N` (combining with pytest-xdist) now raises a clear error
+  instead of silently producing incorrect results. (#183)
 
 ## v1.2.0 (2026-02-15)
 
