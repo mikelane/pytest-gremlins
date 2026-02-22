@@ -44,11 +44,11 @@ class DescribeUpfrontHashingOverhead:
         # Measure upfront hashing cost (current plugin behavior)
         start = time.perf_counter()
         source_hashes = {}
-        for f in src_dir.iterdir():
-            source_hashes[str(f)] = hasher.hash_file(f)
+        for source_file in src_dir.iterdir():
+            source_hashes[str(source_file)] = hasher.hash_file(source_file)
         test_hashes = {}
-        for f in test_dir.iterdir():
-            test_hashes[str(f)] = hasher.hash_file(f)
+        for test_file in test_dir.iterdir():
+            test_hashes[str(test_file)] = hasher.hash_file(test_file)
         upfront_time = time.perf_counter() - start
 
         # This happens on EVERY run, even when cache hit rate is 100%

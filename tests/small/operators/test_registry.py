@@ -219,7 +219,6 @@ class DescribeOperatorRegistry:
 
         assert operators == []
 
-
     def it_register_as_decorator(self):
         registry = OperatorRegistry()
 

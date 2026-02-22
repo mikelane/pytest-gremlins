@@ -215,7 +215,6 @@ class DescribeStrykerExporterMutantFormat:
 
         assert 'end' not in mutant['location']
 
-
     def it_mutant_includes_description(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, description='>= to >')]
         score = MutationScore.from_results(results)

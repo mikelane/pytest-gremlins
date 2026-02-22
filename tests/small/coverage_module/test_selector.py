@@ -97,7 +97,6 @@ class DescribeSelectorSelectTestsForLocation:
         assert result == set()
 
 
-
 class DescribeSelectorBatchSelectionEmpty:
     """Test batch selection with empty input."""
 

@@ -48,7 +48,6 @@ class DescribeCoverageCollectorRecording:
         assert len(collector.coverage_map) == 0
 
 
-
 class DescribeCoverageCollectorMerging:
     """Test that duplicate recordings are merged correctly."""
 

@@ -158,7 +158,6 @@ class DescribeTestSpecificityComputation:
         assert specificity1 is specificity2  # Same object (cached)
 
 
-
 class DescribePrioritizedSelectorEdgeCases:
     """Test edge cases in prioritized selection."""
 

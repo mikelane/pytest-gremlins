@@ -119,8 +119,8 @@ class DescribePluginCachePattern:
         # Time hashing all files
         start = time.perf_counter()
         hashes = {}
-        for f in src_dir.iterdir():
-            hashes[str(f)] = hasher.hash_file(f)
+        for source_file in src_dir.iterdir():
+            hashes[str(source_file)] = hasher.hash_file(source_file)
         elapsed = time.perf_counter() - start
 
         # 50 files should hash in under 50ms (1ms per file)

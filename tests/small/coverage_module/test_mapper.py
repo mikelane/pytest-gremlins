@@ -38,7 +38,6 @@ class DescribeCoverageMapAddCoverage:
         assert len(coverage_map) == 2
 
 
-
 class DescribeCoverageMapIdempotency:
     """Test idempotency of add operations."""
 
