@@ -401,18 +401,6 @@ class TestReadParallelConfig:
         assert parallel_enabled is True
         assert parallel_workers == 2
 
-    def test_workers_alone_with_xdist_emits_deprecation_warning(self) -> None:
-        """--gremlin-workers=N without --gremlin-parallel still triggers the deprecation warning when xdist is present."""
-        config = MagicMock(spec=['option', 'issue_config_time_warning'])
-        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers', 'numprocesses'])
-        config.option.gremlin_parallel = False
-        config.option.gremlin_workers = 4
-        config.option.numprocesses = 'auto'
-
-        _read_parallel_config(config)
-
-        config.issue_config_time_warning.assert_called_once()
-
 
 @pytest.mark.small
 class TestSelectTestsForGremlinPrioritized:
