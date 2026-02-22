@@ -257,44 +257,13 @@ def _is_xdist_worker(config: pytest.Config) -> bool:
     return hasattr(config, 'workerinput')
 
 
-def _resolve_parallel_from_xdist(numprocesses: str | int | None) -> tuple[bool, int | None]:
-    """Map xdist numprocesses value to (parallel_enabled, parallel_workers).
-
-    Args:
-        numprocesses: The value of config.option.numprocesses from pytest-xdist.
-            None means xdist is not active. 'auto' means use CPU count.
-            A positive integer means use that many workers. Zero means disabled.
-
-    Returns:
-        A tuple of (parallel_enabled, parallel_workers) where parallel_workers
-        is None to use CPU count, or an integer for an explicit count.
-
-    Examples:
-        >>> _resolve_parallel_from_xdist(None)
-        (False, None)
-        >>> _resolve_parallel_from_xdist('auto')
-        (True, None)
-        >>> _resolve_parallel_from_xdist(4)
-        (True, 4)
-        >>> _resolve_parallel_from_xdist(0)
-        (False, None)
-        >>> _resolve_parallel_from_xdist(1)
-        (True, 1)
-    """
-    if numprocesses is None:
-        return False, None
-    if numprocesses == 'auto':
-        return True, None
-    if isinstance(numprocesses, int) and numprocesses > 0:
-        return True, numprocesses
-    return False, None
-
-
 def _read_parallel_config(config: pytest.Config) -> tuple[bool, int | None]:
     """Determine parallel_enabled and parallel_workers from config options.
 
-    xdist -n takes precedence over --gremlin-parallel / --gremlin-workers when
-    both are provided.
+    Only called when ``--gremlins`` is active and xdist is not active (because
+    ``pytest_configure`` exits with code 4 if xdist ``-n`` is detected alongside
+    ``--gremlins``).  Reads ``--gremlin-parallel`` and ``--gremlin-workers``
+    from the config options.
 
     Args:
         config: The pytest config object after option parsing.
@@ -304,12 +273,6 @@ def _read_parallel_config(config: pytest.Config) -> tuple[bool, int | None]:
     """
     parallel_workers: int | None = config.option.gremlin_workers
     parallel_enabled: bool = config.option.gremlin_parallel or parallel_workers is not None
-
-    xdist_available = hasattr(config.option, 'numprocesses')
-
-    if xdist_available and config.option.numprocesses is not None:
-        parallel_enabled, parallel_workers = _resolve_parallel_from_xdist(config.option.numprocesses)
-
     return parallel_enabled, parallel_workers
 
 
