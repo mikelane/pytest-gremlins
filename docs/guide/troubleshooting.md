@@ -441,7 +441,7 @@ This indicates a bug in pytest-gremlins. Please:
 2. As a workaround, disable parallel execution:
 
    ```bash
-   pytest --gremlins  # without --gremlin-parallel
+   pytest --gremlins  # without --gremlin-workers
    ```
 
 ---
@@ -476,7 +476,7 @@ Use valid configuration values via CLI arguments:
 - `--gremlin-batch-size`: A positive integer (default: 10)
 
 ```bash
-pytest --gremlins --gremlin-parallel --gremlin-workers=4
+pytest --gremlins --gremlin-workers=4
 ```
 
 Note: `workers` and `timeout` are not configurable via `pyproject.toml`. Use CLI arguments instead.
