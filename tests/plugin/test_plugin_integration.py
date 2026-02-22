@@ -14,15 +14,15 @@ import pytest
 class DescribePluginBasicFunctionality:
     """Test basic plugin functionality."""
 
-    def it_gremlins_flag_enables_mutation_testing(self, pytester_with_conftest: pytest.Pytester):
+    def it_gremlins_flag_enables_mutation_testing(self, pytester_with_markers: pytest.Pytester):
         """Verify that --gremlins flag enables mutation testing."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -34,19 +34,19 @@ def test_is_adult_false_for_10():
 """
         )
 
-        result = pytester_with_conftest.runpytest('--gremlins', '-v')
+        result = pytester_with_markers.runpytest('--gremlins', '-v')
         result.assert_outcomes(passed=2)
         assert 'pytest-gremlins mutation report' in result.stdout.str()
 
-    def it_gremlins_flag_generates_gremlins(self, pytester_with_conftest: pytest.Pytester):
+    def it_gremlins_flag_generates_gremlins(self, pytester_with_markers: pytest.Pytester):
         """Verify that gremlins are generated from source code."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -55,21 +55,21 @@ def test_is_adult():
 """
         )
 
-        result = pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
+        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
         result.assert_outcomes(passed=1)
         # Should have generated gremlins
         output = result.stdout.str()
         assert 'Zapped:' in output or 'Survived:' in output
 
-    def it_mutation_score_displayed(self, pytester_with_conftest: pytest.Pytester):
+    def it_mutation_score_displayed(self, pytester_with_markers: pytest.Pytester):
         """Verify that mutation score is displayed at the end."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def add(x, y):
     return x + y
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import add
 
@@ -78,7 +78,7 @@ def test_add():
 """
         )
 
-        result = pytester_with_conftest.runpytest('--gremlins', '-v')
+        result = pytester_with_markers.runpytest('--gremlins', '-v')
         result.assert_outcomes(passed=1)
         output = result.stdout.str()
         assert '%' in output  # Mutation score percentage
@@ -88,15 +88,15 @@ def test_add():
 class DescribePluginWithoutGremlinsFlag:
     """Test plugin behavior when --gremlins is not used."""
 
-    def it_skips_mutation_testing_without_gremlins_flag(self, pytester_with_conftest: pytest.Pytester):
+    def it_no_mutation_testing_without_flag(self, pytester_with_markers: pytest.Pytester):
         """Verify that tests run normally without --gremlins flag."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -105,7 +105,7 @@ def test_is_adult():
 """
         )
 
-        result = pytester_with_conftest.runpytest('-v')
+        result = pytester_with_markers.runpytest('-v')
         result.assert_outcomes(passed=1)
         # Should not have mutation report
         assert 'pytest-gremlins mutation report' not in result.stdout.str()
@@ -115,15 +115,15 @@ def test_is_adult():
 class DescribePluginOperatorSelection:
     """Test operator selection via command line."""
 
-    def it_specific_operators_via_command_line(self, pytester_with_conftest: pytest.Pytester):
+    def it_specific_operators_via_command_line(self, pytester_with_markers: pytest.Pytester):
         """Verify that specific operators can be selected."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -132,7 +132,7 @@ def test_is_adult():
 """
         )
 
-        result = pytester_with_conftest.runpytest('--gremlins', '--gremlin-operators=comparison', '-v')
+        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-operators=comparison', '-v')
         result.assert_outcomes(passed=1)
         output = result.stdout.str()
         assert 'pytest-gremlins mutation report' in output
@@ -142,15 +142,15 @@ def test_is_adult():
 class DescribePluginReportFormats:
     """Test different report format options."""
 
-    def it_generates_console_report_by_default(self, pytester_with_conftest: pytest.Pytester):
+    def it_generates_console_report_by_default(self, pytester_with_markers: pytest.Pytester):
         """Verify console report is generated by default."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -159,7 +159,7 @@ def test_is_adult():
 """
         )
 
-        result = pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
+        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
         result.assert_outcomes(passed=1)
         output = result.stdout.str()
         assert 'pytest-gremlins mutation report' in output
@@ -170,7 +170,7 @@ def test_is_adult():
 class DescribeMutationSwitching:
     """Test that mutations are actually activated via import hooks."""
 
-    def it_mutation_actually_kills_when_test_covers_it(self, pytester_with_conftest: pytest.Pytester):
+    def it_mutation_actually_kills_when_test_covers_it(self, pytester_with_markers: pytest.Pytester):
         """Verify that a mutation is actually killed when a test would catch it.
 
         This test creates a function with a >= comparison and tests that cover
@@ -178,13 +178,13 @@ class DescribeMutationSwitching:
         is working, the >= to > mutation should be killed because test_boundary
         will fail when age=18 returns False instead of True.
         """
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -201,7 +201,7 @@ def test_below_boundary():
 """
         )
 
-        result = pytester_with_conftest.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
+        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
         result.assert_outcomes(passed=3)
         output = result.stdout.str()
 
@@ -219,15 +219,15 @@ def test_below_boundary():
 class DescribeHtmlReportIntegration:
     """Test HTML report generation via CLI."""
 
-    def it_writes_html_report_when_specified(self, pytester_with_conftest: pytest.Pytester):
+    def it_html_report_written_when_specified(self, pytester_with_markers: pytest.Pytester):
         """Verify that HTML report is written when --gremlin-report=html is specified."""
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def is_adult(age):
     return age >= 18
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import is_adult
 
@@ -236,7 +236,7 @@ def test_is_adult():
 """
         )
 
-        result = pytester_with_conftest.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=target_module.py',
             '--gremlin-report=html',
@@ -245,7 +245,7 @@ def test_is_adult():
         result.assert_outcomes(passed=1)
 
         # The HTML report should be written to the default location
-        report_path = pytester_with_conftest.path / 'gremlin-report.html'
+        report_path = pytester_with_markers.path / 'gremlin-report.html'
         assert report_path.exists(), f'HTML report not found at {report_path}'
 
         content = report_path.read_text()

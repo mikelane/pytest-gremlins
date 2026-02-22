@@ -15,7 +15,7 @@ import pytest
 class DescribeCacheLargeScale:
     """Tests for cache with larger number of gremlins."""
 
-    def it_cache_scales_correctly_with_many_gremlins(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_cache_scales_correctly_with_many_gremlins(self, pytester_with_markers: pytest.Pytester) -> None:
         """Test cache with many mutations (like the benchmark synthetic project).
 
         The synthetic benchmark has:
@@ -26,7 +26,7 @@ class DescribeCacheLargeScale:
         This test simulates a similar setup to verify cache scales.
         """
         # Create source files similar to benchmark
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             calculator="""
 def add(a, b):
     return a + b
@@ -52,7 +52,7 @@ def power(base, exp):
             """
         )
 
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             validator="""
 def is_adult(age):
     return age >= 18
@@ -72,7 +72,7 @@ def is_zero(n):
         )
 
         # Create comprehensive tests
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_calculator="""
 import pytest
 from calculator import add, subtract, multiply, divide, power
@@ -127,7 +127,7 @@ class TestPower:
             """
         )
 
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_validator="""
 import pytest
 from validator import is_adult, is_valid_percentage, is_positive, is_negative, is_zero
@@ -185,7 +185,7 @@ class TestIsZero:
 
         # Run without cache (baseline)
         no_cache_start = time.perf_counter()
-        pytester_with_conftest.runpytest(
+        pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=calculator.py,validator.py',
         )
@@ -193,7 +193,7 @@ class TestIsZero:
 
         # Cold cache run
         cold_start = time.perf_counter()
-        pytester_with_conftest.runpytest(
+        pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=calculator.py,validator.py',
             '--gremlin-cache',
@@ -202,7 +202,7 @@ class TestIsZero:
 
         # Warm cache run
         warm_start = time.perf_counter()
-        result = pytester_with_conftest.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=calculator.py,validator.py',
             '--gremlin-cache',

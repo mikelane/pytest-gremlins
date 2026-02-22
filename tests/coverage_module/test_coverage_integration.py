@@ -15,7 +15,7 @@ class DescribeCoverageGuidedTestSelection:
 
     def it_shows_test_count_per_gremlin_in_output(
         self,
-        pytester_with_conftest: pytest.Pytester,
+        pytester_with_markers: pytest.Pytester,
     ):
         """Verify output shows 'running N/M tests' for each gremlin (AC1).
 
@@ -23,7 +23,7 @@ class DescribeCoverageGuidedTestSelection:
         Coverage-guided selection should run only 1-2 tests per gremlin,
         not all 4 tests.
         """
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def add(x, y):
     return x + y
@@ -32,7 +32,7 @@ def subtract(x, y):
     return x - y
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import add, subtract
 
@@ -50,7 +50,7 @@ def test_subtract_negative():
 """
         )
 
-        result = pytester_with_conftest.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=target_module.py',
             '-v',
@@ -70,7 +70,7 @@ class DescribeCoverageGuidedFallback:
 
     def it_falls_back_to_running_all_tests_for_uncovered_gremlins(
         self,
-        pytester_with_conftest: pytest.Pytester,
+        pytester_with_markers: pytest.Pytester,
     ):
         """Verify uncovered gremlins are tested via fallback to all tests (AC4).
 
@@ -79,7 +79,7 @@ class DescribeCoverageGuidedFallback:
         The gremlin in the uncovered function survives because no test exercises
         that code path.
         """
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             target_module="""
 def covered_function(x):
     return x + 1
@@ -88,7 +88,7 @@ def uncovered_function(x):
     return x - 1
 """
         )
-        pytester_with_conftest.makepyfile(
+        pytester_with_markers.makepyfile(
             test_target="""
 from target_module import covered_function
 
@@ -97,7 +97,7 @@ def test_covered():
 """
         )
 
-        result = pytester_with_conftest.runpytest(
+        result = pytester_with_markers.runpytest(
             '--gremlins',
             '--gremlin-targets=target_module.py',
             '-v',
