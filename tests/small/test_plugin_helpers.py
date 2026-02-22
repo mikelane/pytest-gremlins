@@ -28,7 +28,6 @@ from pytest_gremlins.plugin import (
     _make_node_ids_relative,
     _path_to_module_name,
     _read_parallel_config,
-    _resolve_parallel_from_xdist,
     _select_tests_for_gremlin_prioritized,
     _should_include_file,
     _test_gremlin,
@@ -285,85 +284,8 @@ class TestIsXdistWorker:
 
 
 @pytest.mark.small
-class TestResolveParallelFromXdist:
-    """Tests for _resolve_parallel_from_xdist function.
-
-    All four branches tested so no single return value can pass all cases.
-    """
-
-    def test_none_returns_disabled(self) -> None:
-        """None numprocesses means parallel is not enabled."""
-        assert _resolve_parallel_from_xdist(None) == (False, None)
-
-    def test_auto_returns_enabled_with_no_worker_count(self) -> None:
-        """'auto' enables parallel with worker count deferred to xdist."""
-        assert _resolve_parallel_from_xdist('auto') == (True, None)
-
-    def test_positive_int_returns_enabled_with_worker_count(self) -> None:
-        """Positive int enables parallel and sets explicit worker count."""
-        assert _resolve_parallel_from_xdist(4) == (True, 4)
-
-    def test_zero_returns_disabled(self) -> None:
-        """Zero numprocesses disables parallel (non-positive int guard)."""
-        assert _resolve_parallel_from_xdist(0) == (False, None)
-
-    def test_negative_int_returns_disabled(self) -> None:
-        """Negative numprocesses disables parallel."""
-        assert _resolve_parallel_from_xdist(-1) == (False, None)
-
-
-@pytest.mark.small
 class TestReadParallelConfig:
     """Tests for _read_parallel_config function."""
-
-    def test_returns_gremlin_parallel_flags_when_xdist_absent(self) -> None:
-        """When xdist is not installed, gremlin_parallel flags are used as-is."""
-        config = MagicMock(spec=['option'])
-        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers'])
-        config.option.gremlin_parallel = True
-        config.option.gremlin_workers = 2
-
-        parallel_enabled, parallel_workers = _read_parallel_config(config)
-
-        assert parallel_enabled is True
-        assert parallel_workers == 2
-
-    def test_xdist_numprocesses_overrides_gremlin_flags(self) -> None:
-        """When xdist is available with numprocesses, it takes precedence."""
-        config = MagicMock(spec=['option'])
-        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers', 'numprocesses'])
-        config.option.gremlin_parallel = False
-        config.option.gremlin_workers = None
-        config.option.numprocesses = 'auto'
-
-        parallel_enabled, parallel_workers = _read_parallel_config(config)
-
-        assert parallel_enabled is True
-        assert parallel_workers is None
-
-    def test_emits_deprecation_warning_when_gremlin_flags_used_with_xdist(self) -> None:
-        """Using --gremlin-parallel when xdist is available emits a deprecation warning."""
-        config = MagicMock(spec=['option', 'issue_config_time_warning'])
-        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers', 'numprocesses'])
-        config.option.gremlin_parallel = True
-        config.option.gremlin_workers = None
-        config.option.numprocesses = 'auto'
-
-        _read_parallel_config(config)
-
-        config.issue_config_time_warning.assert_called_once()
-
-    def test_no_deprecation_warning_when_only_xdist_used(self) -> None:
-        """No warning when only xdist -n is used (no --gremlin-parallel)."""
-        config = MagicMock(spec=['option', 'issue_config_time_warning'])
-        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers', 'numprocesses'])
-        config.option.gremlin_parallel = False
-        config.option.gremlin_workers = None
-        config.option.numprocesses = 4
-
-        _read_parallel_config(config)
-
-        config.issue_config_time_warning.assert_not_called()
 
     def test_workers_alone_implies_parallel_enabled(self) -> None:
         """Passing --gremlin-workers=N without --gremlin-parallel still enables parallel mode."""
