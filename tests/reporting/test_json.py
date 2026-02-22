@@ -111,7 +111,7 @@ class DescribeJsonReporterResultFormat:
                 GremlinResultStatus.ZAPPED,
                 operator_name='boundary',
                 description='>= 18 to >= 19',
-            )
+            ),
         ]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -126,7 +126,7 @@ class DescribeJsonReporterResultFormat:
             make_result(
                 GremlinResultStatus.ZAPPED,
                 killing_test='test_age_validation',
-            )
+            ),
         ]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()

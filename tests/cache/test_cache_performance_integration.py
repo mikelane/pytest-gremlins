@@ -15,7 +15,7 @@ import pytest
 class DescribeCachePerformanceIntegration:
     """Integration tests verifying cache provides speedup."""
 
-    def it_warm_run_is_faster_than_cold_run(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_completes_faster_on_warm_run_than_cold_run(self, pytester_with_markers: pytest.Pytester) -> None:
         """Warm run (cache populated) is faster than cold run.
 
         This is the key acceptance test - if warm run is not faster than
@@ -31,7 +31,7 @@ class DescribeCachePerformanceIntegration:
 
             def multiply(a, b):
                 return a * b
-            """
+            """,
         )
         pytester_with_markers.makepyfile(
             test_module="""
@@ -45,7 +45,7 @@ class DescribeCachePerformanceIntegration:
 
             def test_multiply():
                 assert multiply(3, 4) == 12
-            """
+            """,
         )
 
         # Cold run (no cache)
@@ -73,7 +73,7 @@ class DescribeCachePerformanceIntegration:
             src_module="""
             def slow_function():
                 return 42
-            """
+            """,
         )
         pytester_with_markers.makepyfile(
             test_module="""
@@ -84,7 +84,7 @@ class DescribeCachePerformanceIntegration:
                 # This test takes 0.1s to run
                 time.sleep(0.1)
                 assert slow_function() == 42
-            """
+            """,
         )
 
         # Cold run (must execute slow test)
@@ -112,7 +112,7 @@ class DescribeCachePerformanceIntegration:
             src_module="""
             def add(a, b):
                 return a + b
-            """
+            """,
         )
         pytester_with_markers.makepyfile(
             test_module="""
@@ -120,7 +120,7 @@ class DescribeCachePerformanceIntegration:
 
             def test_add():
                 assert add(1, 2) == 3
-            """
+            """,
         )
 
         # Run without cache

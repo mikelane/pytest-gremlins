@@ -102,7 +102,7 @@ class DescribePytestConfigureWithFileConfig:
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
         plugin.pytest_configure(  # type: ignore[arg-type]
-            _make_gremlins_config(tmp_path, gremlin_operators='boolean')
+            _make_gremlins_config(tmp_path, gremlin_operators='boolean'),
         )
 
         session = plugin._get_session()
@@ -129,7 +129,7 @@ class DescribePytestConfigureWithFileConfig:
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
         plugin.pytest_configure(  # type: ignore[arg-type]
-            _make_gremlins_config(tmp_path, gremlin_targets='lib')
+            _make_gremlins_config(tmp_path, gremlin_targets='lib'),
         )
 
         session = plugin._get_session()
@@ -176,7 +176,9 @@ class DescribePytestConfigureWithFileConfig:
         assert session.target_paths[0].name == 'cogapp'
 
     def it_explicit_config_takes_precedence_over_discovery(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Explicit [tool.pytest-gremlins].paths beats setuptools discovery."""
         pyproject = tmp_path / 'pyproject.toml'
@@ -225,7 +227,9 @@ class DescribePytestConfigureCoverageMode:
         return _make_gremlins_config(tmp_path, pluginmanager=pm)
 
     def it_uses_piggyback_coverage_when_cov_plugin_present(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """pytest_configure sets coverage_mode=PIGGYBACK when _cov plugin is registered."""
         src_dir = tmp_path / 'src'
@@ -242,7 +246,11 @@ class DescribePytestConfigureCoverageMode:
         assert session is not None
         assert session.coverage_mode == CoverageMode.PIGGYBACK
 
-    def it_uses_private_coverage_when_cov_plugin_absent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_uses_private_coverage_when_cov_plugin_absent(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """pytest_configure sets coverage_mode=PRIVATE when _cov plugin is not registered."""
         src_dir = tmp_path / 'src'
         src_dir.mkdir()

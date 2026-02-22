@@ -43,7 +43,7 @@ class Addr:
 
 def make_default_addr():
     return Addr()
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -60,7 +60,7 @@ def test_make_default_addr_last_is_false():
 def test_explicit_last_true():
     addr = Addr(last=True)
     assert addr.last is True
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest(
@@ -103,7 +103,7 @@ class Range:
 
 def make_default_range():
     return Range()
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -116,7 +116,7 @@ def test_default_range_from0_is_true():
 def test_make_default_range_from0_is_true():
     r = make_default_range()
     assert r.from0 is True
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest(
@@ -144,7 +144,7 @@ from dataclasses import dataclass
 class Config:
     enabled: bool = True
     debug: bool = False
-"""
+""",
         )
         pytester_with_markers.makepyfile(
             test_target="""
@@ -157,7 +157,7 @@ def test_default_config_enabled_is_true():
 def test_default_config_debug_is_false():
     config = Config()
     assert config.debug is False
-"""
+""",
         )
 
         result = pytester_with_markers.runpytest(
