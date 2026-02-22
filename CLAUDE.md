@@ -48,8 +48,14 @@ pytest-gremlins/
 │   └── py.typed              # PEP 561 marker
 ├── tests/
 │   ├── conftest.py           # Shared fixtures
-│   ├── small/                # Unit tests (< 100ms)
-│   ├── medium/               # Integration tests (< 10s)
+│   ├── cache/                # Cache domain tests
+│   ├── config/               # Config domain tests
+│   ├── coverage/             # Coverage domain tests
+│   ├── instrumentation/      # Instrumentation domain tests
+│   ├── operators/            # Operator domain tests
+│   ├── parallel/             # Parallel domain tests
+│   ├── plugin/               # Plugin integration tests
+│   ├── reporting/            # Reporting domain tests
 │   └── large/                # E2E tests (< 60s)
 ├── features/                 # Gherkin scenarios
 ├── docs/
@@ -67,10 +73,10 @@ pytest-gremlins/
 uv sync --dev
 
 # Run small tests only (fast, always safe)
-uv run pytest tests/small -m small
+uv run pytest tests -m small
 
 # Run small + medium tests (PR checks)
-uv run pytest tests/small tests/medium
+uv run pytest tests -m "small or medium"
 
 # Run all tests
 uv run pytest

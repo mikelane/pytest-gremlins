@@ -1,0 +1,187 @@
+"""Tests for the BoundaryOperator."""
+
+from __future__ import annotations
+
+import ast
+
+import pytest
+
+from pytest_gremlins.operators.boundary import BoundaryOperator
+from pytest_gremlins.operators.protocol import GremlinOperator
+
+
+@pytest.mark.small
+class DescribeBoundaryOperatorProtocol:
+    """Test that BoundaryOperator implements the GremlinOperator protocol."""
+
+    def it_implements_gremlin_operator_protocol(self):
+        operator = BoundaryOperator()
+        assert isinstance(operator, GremlinOperator)
+
+    def it_name_is_boundary(self):
+        operator = BoundaryOperator()
+        assert operator.name == 'boundary'
+
+    def it_description_describes_the_operator(self):
+        operator = BoundaryOperator()
+        assert 'boundary' in operator.description.lower()
+
+
+@pytest.mark.small
+class DescribeBoundaryOperatorCanMutate:
+    """Test the can_mutate method."""
+
+    def it_returns_true_for_comparison_with_integer_literal(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x >= 18', mode='eval').body
+
+        assert operator.can_mutate(node) is True
+
+    def it_returns_true_for_comparison_with_zero(self):
+        operator = BoundaryOperator()
+        node = ast.parse('len(s) > 0', mode='eval').body
+
+        assert operator.can_mutate(node) is True
+
+    def it_returns_false_for_comparison_with_non_integer(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x < "hello"', mode='eval').body
+
+        assert operator.can_mutate(node) is False
+
+    def it_returns_false_for_comparison_without_constant(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x < y', mode='eval').body
+
+        assert operator.can_mutate(node) is False
+
+    def it_returns_false_for_arithmetic_node(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x + 10', mode='eval').body
+
+        assert operator.can_mutate(node) is False
+
+    def it_returns_false_for_float_constant(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x < 3.14', mode='eval').body
+
+        assert operator.can_mutate(node) is False
+
+    def it_returns_true_for_integer_constant_on_left_side(self):
+        operator = BoundaryOperator()
+        node = ast.parse('18 <= x', mode='eval').body
+
+        assert operator.can_mutate(node) is True
+
+    def it_returns_false_for_boolean_true_on_left_side(self):
+        operator = BoundaryOperator()
+        # True is technically an int subclass but should not be mutated
+        node = ast.parse('True < x', mode='eval').body
+
+        assert operator.can_mutate(node) is False
+
+    def it_returns_false_for_boolean_false_in_comparators(self):
+        operator = BoundaryOperator()
+        # False is technically an int subclass but should not be mutated
+        node = ast.parse('x < False', mode='eval').body
+
+        assert operator.can_mutate(node) is False
+
+
+@pytest.mark.small
+class DescribeBoundaryOperatorMutate:
+    """Test the mutate method."""
+
+    def it_integer_generates_two_mutations(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x >= 18', mode='eval').body
+
+        mutations = operator.mutate(node)
+
+        assert len(mutations) == 2
+
+    def it_mutates_to_plus_one_and_minus_one(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x >= 18', mode='eval').body
+
+        mutations = operator.mutate(node)
+
+        values = []
+        for m in mutations:
+            assert isinstance(m, ast.Compare)
+            comparator = m.comparators[0]
+            assert isinstance(comparator, ast.Constant)
+            values.append(comparator.value)
+        assert 17 in values
+        assert 19 in values
+
+    def it_mutates_zero_to_minus_one_and_one(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x > 0', mode='eval').body
+
+        mutations = operator.mutate(node)
+
+        values = []
+        for m in mutations:
+            assert isinstance(m, ast.Compare)
+            comparator = m.comparators[0]
+            assert isinstance(comparator, ast.Constant)
+            values.append(comparator.value)
+        assert -1 in values
+        assert 1 in values
+
+    def it_does_not_modify_the_original_node(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x >= 18', mode='eval').body
+        assert isinstance(node, ast.Compare)
+        comparator = node.comparators[0]
+        assert isinstance(comparator, ast.Constant)
+        original_value = comparator.value
+
+        operator.mutate(node)
+
+        assert isinstance(node.comparators[0], ast.Constant)
+        assert node.comparators[0].value == original_value
+
+    def it_returns_empty_list_for_unsupported_node(self):
+        operator = BoundaryOperator()
+        node = ast.parse('x + 10', mode='eval').body
+
+        mutations = operator.mutate(node)
+
+        assert mutations == []
+
+    def it_mutates_left_side_integer_constant(self):
+        operator = BoundaryOperator()
+        node = ast.parse('18 <= x', mode='eval').body
+
+        mutations = operator.mutate(node)
+
+        assert len(mutations) == 2
+        values = []
+        for m in mutations:
+            assert isinstance(m, ast.Compare)
+            left = m.left
+            assert isinstance(left, ast.Constant)
+            values.append(left.value)
+        assert 17 in values
+        assert 19 in values
+
+    def it_mutates_chained_comparison_with_multiple_integer_constants(self):
+        operator = BoundaryOperator()
+        node = ast.parse('0 < x < 10', mode='eval').body
+
+        mutations = operator.mutate(node)
+
+        # Should have 4 mutations: 0->-1, 0->1, 10->9, 10->11
+        assert len(mutations) == 4
+
+    def it_mutate_chained_comparison_with_non_integer_comparator(self):
+        operator = BoundaryOperator()
+        # 10 < x < y - only left side integer constant
+        node = ast.parse('10 < x < y', mode='eval').body
+
+        mutations = operator.mutate(node)
+
+        # Only mutations for the left side (10): 10->9, 10->11
+        assert len(mutations) == 2
