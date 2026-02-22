@@ -122,7 +122,7 @@ repos:
         always_run: true
       - id: pytest-fast
         name: pytest (small tests)
-        entry: uv run pytest tests/small -q
+        entry: uv run pytest tests -m small -q
         language: system
         stages: [pre-push]
         pass_filenames: false

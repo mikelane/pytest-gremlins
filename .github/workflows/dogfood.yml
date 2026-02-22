@@ -64,31 +64,31 @@ jobs:
           case "$TARGET_MODULE" in
             reporting)
               echo "path=src/pytest_gremlins/reporting" >> $GITHUB_OUTPUT
-              echo "tests=tests/small/reporting" >> $GITHUB_OUTPUT
+              echo "tests=tests/reporting" >> $GITHUB_OUTPUT
               ;;
             cache)
               echo "path=src/pytest_gremlins/cache" >> $GITHUB_OUTPUT
-              echo "tests=tests/small/cache" >> $GITHUB_OUTPUT
+              echo "tests=tests/cache" >> $GITHUB_OUTPUT
               ;;
             coverage)
               echo "path=src/pytest_gremlins/coverage" >> $GITHUB_OUTPUT
-              echo "tests=tests/small/coverage_module" >> $GITHUB_OUTPUT
+              echo "tests=tests/coverage_module" >> $GITHUB_OUTPUT
               ;;
             operators)
               echo "path=src/pytest_gremlins/operators" >> $GITHUB_OUTPUT
-              echo "tests=tests/small/operators" >> $GITHUB_OUTPUT
+              echo "tests=tests/operators" >> $GITHUB_OUTPUT
               ;;
             instrumentation)
               echo "path=src/pytest_gremlins/instrumentation" >> $GITHUB_OUTPUT
-              echo "tests=tests/small/instrumentation" >> $GITHUB_OUTPUT
+              echo "tests=tests/instrumentation" >> $GITHUB_OUTPUT
               ;;
             parallel)
               echo "path=src/pytest_gremlins/parallel" >> $GITHUB_OUTPUT
-              echo "tests=tests/small/parallel" >> $GITHUB_OUTPUT
+              echo "tests=tests/parallel" >> $GITHUB_OUTPUT
               ;;
             all)
               echo "path=src/pytest_gremlins" >> $GITHUB_OUTPUT
-              echo "tests=tests/small tests/medium" >> $GITHUB_OUTPUT
+              echo "tests=tests" >> $GITHUB_OUTPUT
               ;;
           esac
 
