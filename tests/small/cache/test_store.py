@@ -205,7 +205,33 @@ class DescribeResultStore:
 
         assert file1_g001 is None
         assert file1_g002 is None
-        assert file2_g001 is not None
+        assert file2_g001 == {'status': 'zapped'}
+
+    def test_flush_with_no_pending_writes_is_noop(self, tmp_path) -> None:
+        """flush() when no deferred writes are pending does not raise."""
+        with ResultStore(tmp_path / 'results.db') as store:
+            store.flush()  # No exception raised
+
+    def test_delete_by_prefix_with_no_matching_keys_is_noop(self, tmp_path) -> None:
+        """delete_by_prefix with a prefix matching nothing leaves cache unchanged."""
+        with ResultStore(tmp_path / 'results.db') as store:
+            store.put('key1', {'status': 'zapped'})
+            store.put('key2', {'status': 'survived'})
+
+            store.delete_by_prefix('nonexistent_prefix:')
+
+            assert store.count() == 2
+
+    def test_delete_by_prefix_with_empty_string_deletes_all_entries(self, tmp_path) -> None:
+        """delete_by_prefix('') matches every key and deletes the entire cache."""
+        with ResultStore(tmp_path / 'results.db') as store:
+            store.put('key1', {'status': 'zapped'})
+            store.put('key2', {'status': 'survived'})
+            store.put('key3', {'status': 'timeout'})
+
+            store.delete_by_prefix('')
+
+            assert store.count() == 0
 
     def it_recreates_database_when_corrupted(self, tmp_path, caplog):
         """Corrupted database file is deleted and recreated with warning."""

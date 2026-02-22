@@ -147,9 +147,9 @@ class DescribeResultStoreBugs:
                 store2.put('key3', {'status': 'timeout'})
 
                 # Verify all writes succeeded
-                assert store1.get('key1') is not None
-                assert store1.get('key2') is not None
-                assert store2.get('key3') is not None
+                assert store1.get('key1') == {'status': 'zapped'}
+                assert store1.get('key2') == {'status': 'survived'}
+                assert store2.get('key3') == {'status': 'timeout'}
 
 
 @pytest.mark.medium
@@ -205,7 +205,6 @@ class DescribeIncrementalCacheBugs:
                 test_hashes={'test_foo': 'test_hash'},
             )
 
-            assert result is not None
             assert result['status'] == 'zapped'
 
     def it_cache_key_with_unicode_in_gremlin_id(self, tmp_path):
@@ -230,7 +229,6 @@ class DescribeIncrementalCacheBugs:
                 test_hashes={'test_foo': 'test_hash'},
             )
 
-            assert result is not None
             assert result['status'] == 'zapped'
 
     def it_stats_reset_after_clear(self, tmp_path):
@@ -287,5 +285,4 @@ class DescribeIncrementalCacheBugs:
             )
 
             # Should still find the cached result due to sorted ordering
-            assert result is not None
             assert result['status'] == 'zapped'

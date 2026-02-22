@@ -147,6 +147,79 @@ class DescribeOperatorRegistry:
 
         assert registry.available() == []
 
+    def it_register_overwrites_existing_operator_with_same_name(self) -> None:
+        """Registering a second operator under the same name silently replaces the first."""
+        registry = OperatorRegistry()
+
+        class FirstOp:
+            @property
+            def name(self) -> str:
+                return 'my_op'
+
+            @property
+            def description(self) -> str:
+                return 'First op'
+
+            def can_mutate(self, node: ast.AST) -> bool:  # noqa: ARG002
+                return False
+
+            def mutate(self, node: ast.AST) -> list[ast.AST]:  # noqa: ARG002
+                return []
+
+        class SecondOp:
+            @property
+            def name(self) -> str:
+                return 'my_op'
+
+            @property
+            def description(self) -> str:
+                return 'Second op'
+
+            def can_mutate(self, node: ast.AST) -> bool:  # noqa: ARG002
+                return False
+
+            def mutate(self, node: ast.AST) -> list[ast.AST]:  # noqa: ARG002
+                return []
+
+        registry.register(FirstOp)
+        registry.register(SecondOp)
+
+        assert isinstance(registry.get('my_op'), SecondOp)
+
+    def it_register_decorator_without_explicit_name_uses_operator_name_property(self) -> None:
+        """@registry.register_decorator() with no arg uses the operator's .name property as the key."""
+        registry = OperatorRegistry()
+
+        @registry.register_decorator()
+        class NamedOp:
+            @property
+            def name(self) -> str:
+                return 'from_property'
+
+            @property
+            def description(self) -> str:
+                return 'Uses name property'
+
+            def can_mutate(self, node: ast.AST) -> bool:  # noqa: ARG002
+                return False
+
+            def mutate(self, node: ast.AST) -> list[ast.AST]:  # noqa: ARG002
+                return []
+
+        assert 'from_property' in registry.available()
+        assert isinstance(registry.get('from_property'), NamedOp)
+
+    def it_get_all_with_empty_enabled_list_returns_empty(self) -> None:
+        """get_all(enabled=[]) returns []."""
+        registry = OperatorRegistry()
+        registry.register(FakeOperator)
+        registry.register(AnotherFakeOperator)
+
+        operators = registry.get_all(enabled=[])
+
+        assert operators == []
+
+
     def it_register_as_decorator(self):
         registry = OperatorRegistry()
 

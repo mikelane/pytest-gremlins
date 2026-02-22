@@ -202,6 +202,20 @@ class DescribeStrykerExporterMutantFormat:
         assert mutant['location']['start']['line'] == 10
         assert mutant['location']['start']['column'] == 4
 
+    def it_mutant_location_omits_end_when_end_lineno_is_none(self, make_gremlin) -> None:
+        """_build_location omits 'end' key when AST node has no end_lineno."""
+        gremlin = make_gremlin(file_path='test.py', line_number=5, column_offset=2)
+        gremlin.original_node.end_lineno = None
+        result = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED)
+        score = MutationScore.from_results([result])
+        exporter = StrykerExporter()
+
+        data = json.loads(exporter.to_json(score))
+        mutant = data['files']['test.py']['mutants'][0]
+
+        assert 'end' not in mutant['location']
+
+
     def it_mutant_includes_description(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, description='>= to >')]
         score = MutationScore.from_results(results)

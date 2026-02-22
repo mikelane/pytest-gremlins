@@ -53,7 +53,6 @@ class DescribeGremlinFinder:
 
         result = finder.find_spec('my_module', None)
 
-        assert result is not None
         assert isinstance(result, ModuleSpec)
         assert result.name == 'my_module'
 

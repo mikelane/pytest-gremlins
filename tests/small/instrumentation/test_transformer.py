@@ -85,7 +85,6 @@ def is_adult(age):
 """
         _, tree = collect_gremlins(source, 'example.py')
 
-        assert tree is not None
         assert isinstance(tree, ast.Module)
 
 
@@ -215,7 +214,6 @@ def calculate(x, y):
 """
         gremlins, _tree = transform_source(source, 'example.py')
 
-        assert len(gremlins) >= 1
         assert any(g.operator_name == 'arithmetic' for g in gremlins)
 
     def it_transform_source_generates_gremlins_for_boolean_operations(self):
@@ -225,7 +223,6 @@ def check(a, b):
 """
         gremlins, _tree = transform_source(source, 'example.py')
 
-        assert len(gremlins) >= 1
         assert any(g.operator_name == 'boolean' for g in gremlins)
 
     def it_transform_source_generates_gremlins_for_boundary_conditions(self):
@@ -236,7 +233,7 @@ def is_adult(age):
         gremlins, _tree = transform_source(source, 'example.py')
 
         boundary_gremlins = [g for g in gremlins if g.operator_name == 'boundary']
-        assert len(boundary_gremlins) >= 1
+        assert len(boundary_gremlins) == 2
 
     def it_transform_source_generates_gremlins_for_return_statements(self):
         source = """
@@ -245,8 +242,8 @@ def get_value():
 """
         gremlins, _tree = transform_source(source, 'example.py')
 
-        assert len(gremlins) >= 1
-        assert any(g.operator_name == 'return' for g in gremlins)
+        return_gremlins = [g for g in gremlins if g.operator_name == 'return']
+        assert len(return_gremlins) == 1
 
     def it_transform_source_uses_all_five_operators(self):
         source = """
@@ -297,7 +294,7 @@ def bitwise(x, y):
         # BitAnd is not a supported arithmetic operator
         # But return mutation should still work
         return_gremlins = [g for g in gremlins if g.operator_name == 'return']
-        assert len(return_gremlins) >= 1
+        assert len(return_gremlins) == 1
 
     def it_transform_source_handles_unsupported_boolop(self):
         source = """
@@ -306,8 +303,9 @@ def check(x):
 """
         # No boolean operations, just testing that visitor handles code without them
         gremlins, _tree = transform_source(source, 'example.py')
-        # Should have at least return gremlins
-        assert any(g.operator_name == 'return' for g in gremlins)
+
+        return_gremlins = [g for g in gremlins if g.operator_name == 'return']
+        assert len(return_gremlins) == 1
 
 
 class DescribeTransformerEdgeCases:

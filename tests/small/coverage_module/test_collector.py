@@ -48,8 +48,34 @@ class DescribeCoverageCollectorRecording:
         assert len(collector.coverage_map) == 0
 
 
+
+class DescribeCoverageCollectorMerging:
+    """Test that duplicate recordings are merged correctly."""
+
+    def it_record_coverage_same_test_twice_merges_lines(self) -> None:
+        """Recording the same test name twice merges lines, doesn't duplicate."""
+        collector = CoverageCollector()
+        collector.record_test_coverage('test_login', {'src/auth.py': [10, 11]})
+        collector.record_test_coverage('test_login', {'src/auth.py': [11, 12]})
+
+        assert collector.coverage_map.get_tests('src/auth.py', 10) == {'test_login'}
+        assert collector.coverage_map.get_tests('src/auth.py', 11) == {'test_login'}
+        assert collector.coverage_map.get_tests('src/auth.py', 12) == {'test_login'}
+        assert len(collector.coverage_map) == 3
+
+
 class DescribeCoverageCollectorFromCoveragePy:
     """Test converting coverage.py data format to our format."""
+
+    def it_extract_from_coverage_data_with_no_measured_files(self) -> None:
+        """measured_files() returns [] results in an empty dict."""
+        collector = CoverageCollector()
+        mock_coverage_data = MagicMock()
+        mock_coverage_data.measured_files.return_value = []
+
+        result = collector.extract_lines_from_coverage_data(mock_coverage_data)
+
+        assert result == {}
 
     def it_extracts_from_coverage_data(self):
         collector = CoverageCollector()
