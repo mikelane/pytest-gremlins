@@ -341,18 +341,6 @@ class TestReadParallelConfig:
         assert parallel_enabled is True
         assert parallel_workers is None
 
-    def test_emits_deprecation_warning_when_gremlin_flags_used_with_xdist(self) -> None:
-        """Using --gremlin-parallel when xdist is available emits a deprecation warning."""
-        config = MagicMock(spec=['option', 'issue_config_time_warning'])
-        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers', 'numprocesses'])
-        config.option.gremlin_parallel = True
-        config.option.gremlin_workers = None
-        config.option.numprocesses = 'auto'
-
-        _read_parallel_config(config)
-
-        config.issue_config_time_warning.assert_called_once()
-
     def test_no_deprecation_warning_when_only_xdist_used(self) -> None:
         """No warning when only xdist -n is used (no --gremlin-parallel)."""
         config = MagicMock(spec=['option', 'issue_config_time_warning'])
@@ -360,6 +348,18 @@ class TestReadParallelConfig:
         config.option.gremlin_parallel = False
         config.option.gremlin_workers = None
         config.option.numprocesses = 4
+
+        _read_parallel_config(config)
+
+        config.issue_config_time_warning.assert_not_called()
+
+    def test_no_deprecation_warning_when_gremlin_workers_used_with_xdist_available(self) -> None:
+        """No warning when xdist is available and --gremlin-workers=4 is used (recommended invocation)."""
+        config = MagicMock(spec=['option', 'issue_config_time_warning'])
+        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers', 'numprocesses'])
+        config.option.gremlin_parallel = False
+        config.option.gremlin_workers = 4
+        config.option.numprocesses = None
 
         _read_parallel_config(config)
 

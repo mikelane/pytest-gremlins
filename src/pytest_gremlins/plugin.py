@@ -294,8 +294,7 @@ def _read_parallel_config(config: pytest.Config) -> tuple[bool, int | None]:
     """Determine parallel_enabled and parallel_workers from config options.
 
     xdist -n takes precedence over --gremlin-parallel / --gremlin-workers when
-    both are provided. Emits a deprecation warning if the old flags are used while
-    xdist is available.
+    both are provided.
 
     Args:
         config: The pytest config object after option parsing.
@@ -307,13 +306,6 @@ def _read_parallel_config(config: pytest.Config) -> tuple[bool, int | None]:
     parallel_enabled: bool = config.option.gremlin_parallel or parallel_workers is not None
 
     xdist_available = hasattr(config.option, 'numprocesses')
-    if xdist_available and (config.option.gremlin_parallel or config.option.gremlin_workers is not None):
-        config.issue_config_time_warning(
-            pytest.PytestDeprecationWarning(
-                '--gremlin-parallel and --gremlin-workers are deprecated. Use -n (pytest-xdist) instead.'
-            ),
-            stacklevel=2,
-        )
 
     if xdist_available and config.option.numprocesses is not None:
         parallel_enabled, parallel_workers = _resolve_parallel_from_xdist(config.option.numprocesses)
