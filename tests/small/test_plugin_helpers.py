@@ -605,7 +605,7 @@ class DescribeCacheGremlinResult:
 
 
 @pytest.mark.small
-class DescribeTestGremlin:
+class DescribeGremlinSubprocessEnvVars:
     """Tests for _test_gremlin function (lines 1737-1739).
 
     Verifies that GREMLIN_SOURCES_ENV_VAR is injected into the subprocess env

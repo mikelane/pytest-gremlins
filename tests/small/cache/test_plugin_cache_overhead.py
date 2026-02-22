@@ -119,7 +119,7 @@ class DescribeCacheKeyComputationOverhead:
 class DescribeTotalCacheOverhead:
     """Tests measuring total cache overhead vs no-cache baseline."""
 
-    def it_cache_overhead_should_not_exceed_benefit(self, tmp_path: Path) -> None:
+    def it_cache_overhead_stays_under_half_ms_per_gremlin(self, tmp_path: Path) -> None:
         """Total cache overhead must be less than time saved.
 
         For cache to be beneficial:

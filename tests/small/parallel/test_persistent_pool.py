@@ -85,7 +85,7 @@ class DescribePersistentWorkerPoolContextManager:
     def it_can_use_as_context_manager(self) -> None:
         """PersistentWorkerPool supports context manager protocol."""
         with PersistentWorkerPool(max_workers=2) as pool:
-            assert pool is not None
+            assert isinstance(pool, PersistentWorkerPool)
             assert pool.max_workers == 2
 
     @pytest.mark.medium

@@ -24,7 +24,6 @@ class DescribePoolConfigCreation:
     def it_creates_with_defaults(self) -> None:
         """PoolConfig can be created with default values."""
         config = PoolConfig()
-        assert config.max_workers is not None
         assert config.max_workers >= 1
 
     def it_creates_with_specified_workers(self) -> None:
@@ -143,7 +142,7 @@ class DescribePoolConfigMpContext:
         """get_mp_context returns a multiprocessing context."""
         config = PoolConfig(start_method='spawn')
         ctx = config.get_mp_context()
-        assert ctx is not None
+        assert ctx.get_start_method() == 'spawn'
 
     def it_get_mp_context_uses_specified_method(self) -> None:
         """get_mp_context uses the specified start method."""

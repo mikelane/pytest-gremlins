@@ -62,7 +62,7 @@ class DescribeWorkerPoolContextManager:
     def it_can_use_as_context_manager(self) -> None:
         """WorkerPool supports context manager protocol."""
         with WorkerPool(max_workers=2) as pool:
-            assert pool is not None
+            assert isinstance(pool, WorkerPool)
             assert pool.max_workers == 2
 
     def it_context_manager_shuts_down_on_exit(self) -> None:

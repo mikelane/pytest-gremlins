@@ -26,12 +26,12 @@ class DescribeCoverageModeEnum:
     """CoverageMode enum has the expected members."""
 
     def it_has_piggyback_member(self) -> None:
-        """CoverageMode.PIGGYBACK exists."""
-        assert CoverageMode.PIGGYBACK is not None
+        """CoverageMode.PIGGYBACK is a member of the enum."""
+        assert CoverageMode.PIGGYBACK.name == 'PIGGYBACK'
 
     def it_has_private_member(self) -> None:
-        """CoverageMode.PRIVATE exists."""
-        assert CoverageMode.PRIVATE is not None
+        """CoverageMode.PRIVATE is a member of the enum."""
+        assert CoverageMode.PRIVATE.name == 'PRIVATE'
 
     def it_piggyback_and_private_are_distinct(self) -> None:
         """PIGGYBACK and PRIVATE are distinct values - rules out both returning same."""

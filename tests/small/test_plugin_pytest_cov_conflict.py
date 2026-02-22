@@ -289,7 +289,7 @@ class DescribeOuterSessionCovNotSuppressed:
     not to suppress --cov at configure time.
     """
 
-    def it_no_cov_flag_not_set_when_gremlins_and_cov_both_active(self) -> None:
+    def it_preserves_cov_flag_when_gremlins_and_cov_both_active(self) -> None:
         """When --gremlins and --cov are both active, --cov is NOT suppressed."""
         config = _make_configure_config(gremlins=True, has_pytest_cov=True, no_cov=False)
 
@@ -329,7 +329,7 @@ class DescribeOuterSessionCovNotSuppressed:
         suppression_warnings = [w for w in caught if 'suppressed --cov' in str(w.message)]
         assert len(suppression_warnings) == 0
 
-    def it_no_cov_flag_not_set_when_gremlins_not_active(self) -> None:
+    def it_preserves_cov_flag_when_gremlins_not_active(self) -> None:
         """When --gremlins is not active, --cov is untouched."""
         config = _make_configure_config(gremlins=False, has_pytest_cov=True, no_cov=False)
 

@@ -225,5 +225,5 @@ def foo():
 
         mutations = operator.mutate(return_node)
 
-        has_none_mutation = any(isinstance(m, ast.Return) and m.value is None for m in mutations)
-        assert has_none_mutation
+        none_mutations = [m for m in mutations if isinstance(m, ast.Return) and m.value is None]
+        assert len(none_mutations) == 1

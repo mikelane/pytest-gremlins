@@ -50,7 +50,7 @@ class DescribePersistentWorkerPoolWithConfig:
     def it_default_constructor_creates_default_config(self) -> None:
         """Default constructor creates a pool with default PoolConfig."""
         pool = PersistentWorkerPool()
-        assert pool.config is not None
+        assert isinstance(pool.config, PoolConfig)
         assert pool.config.warmup is True
 
     def it_constructor_args_override_config(self) -> None:
