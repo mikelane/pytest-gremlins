@@ -2,66 +2,13 @@
 
 from __future__ import annotations
 
-import ast
 from io import StringIO
 
 import pytest
 
-from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.reporting.console import ConsoleReporter
-from pytest_gremlins.reporting.results import (
-    GremlinResult,
-    GremlinResultStatus,
-)
+from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
-
-
-@pytest.fixture
-def make_gremlin():
-    """Factory fixture for creating test gremlins."""
-    counter = 0
-
-    def _make_gremlin(
-        file_path: str = 'test.py',
-        line_number: int = 1,
-        operator_name: str = 'comparison',
-        description: str = '>= to >',
-    ) -> Gremlin:
-        nonlocal counter
-        counter += 1
-        return Gremlin(
-            gremlin_id=f'g{counter:03d}',
-            file_path=file_path,
-            line_number=line_number,
-            original_node=ast.parse('x >= 0', mode='eval').body,
-            mutated_node=ast.parse('x > 0', mode='eval').body,
-            operator_name=operator_name,
-            description=description,
-        )
-
-    return _make_gremlin
-
-
-@pytest.fixture
-def make_result(make_gremlin):
-    """Factory fixture for creating test results."""
-
-    def _make_result(
-        status: GremlinResultStatus = GremlinResultStatus.ZAPPED,
-        file_path: str = 'test.py',
-        line_number: int = 1,
-        operator_name: str = 'comparison',
-        description: str = '>= to >',
-    ) -> GremlinResult:
-        gremlin = make_gremlin(
-            file_path=file_path,
-            line_number=line_number,
-            operator_name=operator_name,
-            description=description,
-        )
-        return GremlinResult(gremlin=gremlin, status=status)
-
-    return _make_result
 
 
 @pytest.mark.small
@@ -192,7 +139,7 @@ class DescribeConsoleReporterFormatting:
         # Should round to whole number or one decimal
         assert '67%' in output_text or '66.7%' in output_text or '66%' in output_text
 
-    def it_handles_zero_results_gracefully(self):
+    def it_outputs_no_gremlins_message_for_empty_results(self):
         score = MutationScore.from_results([])
         output = StringIO()
         reporter = ConsoleReporter(output=output)

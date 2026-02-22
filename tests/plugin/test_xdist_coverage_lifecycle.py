@@ -49,8 +49,8 @@ class DescribeConfigureNode:
         assert 'gremlins_tmpdir' in node.workerinput
         assert node.workerinput['gremlins_tmpdir'] == str(tmp_path)
 
-    def it_injects_different_tmpdir_correctly(self, tmp_path: Path) -> None:
-        """Different tmpdir path is injected correctly - rules out hardcoding."""
+    def it_injects_different_tmpdir_ruling_out_hardcoding(self, tmp_path: Path) -> None:
+        """Different tmpdir path is injected into workerinput - rules out hardcoding."""
         other_path = tmp_path / 'subdir'
         other_path.mkdir()
 
@@ -116,7 +116,7 @@ class DescribeGremlinSessionTmpdir:
         gs = GremlinSession(gremlins_tmpdir='/tmp/gremlins_test')  # noqa: S108
         assert gs.gremlins_tmpdir == '/tmp/gremlins_test'  # noqa: S108
 
-    def it_different_tmpdir_values_are_stored_correctly(self) -> None:
+    def it_stores_distinct_tmpdir_values_ruling_out_hardcoding(self) -> None:
         """Different tmpdir values produce different results - rules out hardcoding."""
         gs_a = GremlinSession(gremlins_tmpdir='/tmp/a')  # noqa: S108
         gs_b = GremlinSession(gremlins_tmpdir='/tmp/b')  # noqa: S108

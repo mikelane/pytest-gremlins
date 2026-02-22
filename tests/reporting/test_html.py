@@ -2,70 +2,17 @@
 
 from __future__ import annotations
 
-import ast
 from typing import TYPE_CHECKING
 
 import pytest
 
-from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.reporting.html import HtmlReporter
-from pytest_gremlins.reporting.results import (
-    GremlinResult,
-    GremlinResultStatus,
-)
+from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-@pytest.fixture
-def make_gremlin():
-    """Factory fixture for creating test gremlins."""
-    counter = 0
-
-    def _make_gremlin(
-        file_path: str = 'test.py',
-        line_number: int = 1,
-        operator_name: str = 'comparison',
-        description: str = '>= to >',
-    ) -> Gremlin:
-        nonlocal counter
-        counter += 1
-        return Gremlin(
-            gremlin_id=f'g{counter:03d}',
-            file_path=file_path,
-            line_number=line_number,
-            original_node=ast.parse('x >= 0', mode='eval').body,
-            mutated_node=ast.parse('x > 0', mode='eval').body,
-            operator_name=operator_name,
-            description=description,
-        )
-
-    return _make_gremlin
-
-
-@pytest.fixture
-def make_result(make_gremlin):
-    """Factory fixture for creating test results."""
-
-    def _make_result(
-        status: GremlinResultStatus = GremlinResultStatus.ZAPPED,
-        file_path: str = 'test.py',
-        line_number: int = 1,
-        operator_name: str = 'comparison',
-        description: str = '>= to >',
-    ) -> GremlinResult:
-        gremlin = make_gremlin(
-            file_path=file_path,
-            line_number=line_number,
-            operator_name=operator_name,
-            description=description,
-        )
-        return GremlinResult(gremlin=gremlin, status=status)
-
-    return _make_result
 
 
 @pytest.mark.small
@@ -191,14 +138,14 @@ class DescribeHtmlReporterFileOutput:
 class DescribeHtmlReporterEmpty:
     """Tests for handling empty results."""
 
-    def it_handles_empty_results(self):
+    def it_produces_valid_html_with_zero_indicator_for_empty_results(self):
         score = MutationScore.from_results([])
         reporter = HtmlReporter()
 
         html = reporter.to_html(score)
 
         assert '<!DOCTYPE html>' in html
-        # Should indicate no results rather than crash
+        # Must indicate no results rather than crash
         assert 'no' in html.lower() or '0' in html
 
 

@@ -63,7 +63,7 @@ class DescribeWorkerPoolContextManager:
 class DescribeWorkerPoolShutdown:
     """Tests for WorkerPool shutdown behavior."""
 
-    def it_shutdown_is_idempotent(self) -> None:
+    def it_allows_calling_shutdown_multiple_times_without_error(self) -> None:
         """Calling shutdown multiple times is safe."""
         pool = WorkerPool(max_workers=2)
         pool.shutdown()

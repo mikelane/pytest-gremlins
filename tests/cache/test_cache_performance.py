@@ -3,7 +3,7 @@
 These tests verify that hashing operations are fast. They use only
 in-memory computation with no I/O, suitable for SMALL tests.
 
-Tests that use SQLite I/O have been moved to tests/medium/test_store_performance.py.
+Tests that use SQLite I/O have been moved to tests/cache/test_store_performance.py.
 """
 
 import time

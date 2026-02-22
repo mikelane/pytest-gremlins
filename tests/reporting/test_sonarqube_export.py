@@ -9,74 +9,18 @@ See: https://stryker-mutator.io/docs/mutation-testing-elements/sonarqube-integra
 
 from __future__ import annotations
 
-import ast
 import json
 from typing import TYPE_CHECKING
 
 import pytest
 
-from pytest_gremlins.instrumentation.gremlin import Gremlin
-from pytest_gremlins.reporting.results import (
-    GremlinResult,
-    GremlinResultStatus,
-)
+from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.reporting.sonarqube_export import SonarQubeExporter
 
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-@pytest.fixture
-def make_gremlin():
-    """Factory fixture for creating test gremlins."""
-    counter = 0
-
-    def _make_gremlin(
-        file_path: str = 'src/auth.py',
-        line_number: int = 1,
-        operator_name: str = 'comparison',
-        description: str = '>= to >',
-    ) -> Gremlin:
-        nonlocal counter
-        counter += 1
-        node = ast.parse('x >= 0', mode='eval').body
-        node.lineno = line_number
-        node.col_offset = 0
-        return Gremlin(
-            gremlin_id=f'g{counter:03d}',
-            file_path=file_path,
-            line_number=line_number,
-            original_node=node,
-            mutated_node=ast.parse('x > 0', mode='eval').body,
-            operator_name=operator_name,
-            description=description,
-        )
-
-    return _make_gremlin
-
-
-@pytest.fixture
-def make_result(make_gremlin):
-    """Factory fixture for creating test results."""
-
-    def _make_result(
-        status: GremlinResultStatus = GremlinResultStatus.SURVIVED,
-        file_path: str = 'src/auth.py',
-        line_number: int = 1,
-        operator_name: str = 'comparison',
-        description: str = '>= to >',
-    ) -> GremlinResult:
-        gremlin = make_gremlin(
-            file_path=file_path,
-            line_number=line_number,
-            operator_name=operator_name,
-            description=description,
-        )
-        return GremlinResult(gremlin=gremlin, status=status)
-
-    return _make_result
 
 
 @pytest.mark.small
@@ -278,7 +222,7 @@ class DescribeSonarQubeExporterProjectRoot:
 
         assert issue['primaryLocation']['filePath'] == 'src/auth.py'
 
-    def it_handles_relative_paths_unchanged(self, make_result):
+    def it_preserves_relative_paths_unchanged(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED, file_path='src/auth.py')]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter(project_root='/home/user/project')

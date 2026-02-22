@@ -168,7 +168,7 @@ def is_adult(age):
         function_body = func_def.body[0]
         assert isinstance(function_body, ast.If)
 
-    def it_transformed_code_executes_correctly_with_no_gremlin(self):
+    def it_transformed_code_returns_original_result_with_no_gremlin(self):
         source = """
 def is_adult(age):
     return age >= 18
@@ -278,7 +278,7 @@ def negate(x):
         assert any(g.operator_name == 'boolean' for g in gremlins)
         assert any('not' in g.description.lower() for g in gremlins)
 
-    def it_transform_source_handles_return_true_false_mutations(self):
+    def it_transform_source_produces_boolean_gremlins_for_return_true(self):
         source = """
 def check():
     return True
@@ -289,7 +289,7 @@ def check():
         boolean_gremlins = [g for g in gremlins if g.operator_name == 'boolean']
         assert any('True' in g.description or 'False' in g.description for g in boolean_gremlins)
 
-    def it_transform_source_handles_unsupported_binop(self):
+    def it_transform_source_skips_arithmetic_gremlins_for_unsupported_binop(self):
         source = """
 def bitwise(x, y):
     return x & y
@@ -301,7 +301,7 @@ def bitwise(x, y):
         return_gremlins = [g for g in gremlins if g.operator_name == 'return']
         assert len(return_gremlins) == 1
 
-    def it_transform_source_handles_unsupported_boolop(self):
+    def it_transform_source_produces_return_gremlins_for_plain_return(self):
         source = """
 def check(x):
     return x
@@ -317,7 +317,7 @@ def check(x):
 class DescribeTransformerEdgeCases:
     """Test edge cases in the transformer."""
 
-    def it_transform_source_handles_bitwise_binop(self):
+    def it_transform_source_excludes_bitwise_binop_from_arithmetic_gremlins(self):
         """BitAnd is a BinOp but not mutated by arithmetic operator."""
         source = """
 def bitwise(x, y):
@@ -330,7 +330,7 @@ def bitwise(x, y):
         arithmetic_gremlins = [g for g in gremlins if g.operator_name == 'arithmetic']
         assert len(arithmetic_gremlins) == 0  # & is not an arithmetic operator
 
-    def it_transform_source_handles_unary_minus(self):
+    def it_transform_source_excludes_unary_minus_from_boolean_gremlins(self):
         """Unary minus is a UnaryOp but not mutated by boolean operator."""
         source = """
 def negate(x):
@@ -342,7 +342,7 @@ def negate(x):
         boolean_gremlins = [g for g in gremlins if g.operator_name == 'boolean']
         assert len(boolean_gremlins) == 0  # -x is not a boolean operator
 
-    def it_transform_source_handles_unsupported_comparison(self):
+    def it_transform_source_excludes_is_none_from_comparison_gremlins(self):
         """Is/IsNot comparisons are not mutated."""
         source = """
 def check(x):
@@ -354,7 +354,7 @@ def check(x):
         comparison_gremlins = [g for g in gremlins if g.operator_name == 'comparison']
         assert len(comparison_gremlins) == 0
 
-    def it_transform_source_handles_non_boolean_constant(self):
+    def it_transform_source_excludes_integer_constants_from_boolean_gremlins(self):
         """Non-boolean constants are not mutated by boolean operator."""
         source = """
 def get_value():

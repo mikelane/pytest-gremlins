@@ -103,7 +103,7 @@ class DescribePersistentWorkerPoolContextManager:
         assert not pool.is_running
 
     @pytest.mark.medium
-    def it_warmup_enabled_by_default(self) -> None:
+    def it_enables_warmup_by_default(self) -> None:
         """Pool warms up workers by default when using context manager."""
         config = PoolConfig(max_workers=2, warmup=True)
         pool = PersistentWorkerPool(config=config)
@@ -112,7 +112,7 @@ class DescribePersistentWorkerPoolContextManager:
             assert pool.warmup_completed_count == 2
 
     @pytest.mark.medium
-    def it_warmup_disabled_when_configured(self) -> None:
+    def it_disables_warmup_when_configured(self) -> None:
         """Pool does not warmup when warmup is disabled in config."""
         config = PoolConfig(max_workers=2, warmup=False)
         pool = PersistentWorkerPool(config=config)

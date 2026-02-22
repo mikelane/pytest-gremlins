@@ -64,8 +64,7 @@ class DescribePluginCachePattern:
 
                 # Check cache (hit expected)
                 result = cache.get_cached_result(gremlin_id, source_hash, selected_test_hashes)
-                assert result is not None
-                assert result['status'] == 'zapped'
+                assert result == {'status': 'zapped', 'killing_test': 'test_0'}
 
             warm_time = time.perf_counter() - warm_start
 

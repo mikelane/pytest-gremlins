@@ -26,54 +26,66 @@ def _make_pluginmanager(*, has_pytest_cov: bool = False) -> MagicMock:
     return pm
 
 
+def _make_gremlins_config(
+    tmp_path: Path,
+    *,
+    gremlin_operators: str | None = None,
+    gremlin_targets: str | None = None,
+    pluginmanager: MagicMock | None = None,
+) -> object:
+    """Build a minimal mock pytest.Config for pytest_configure tests.
+
+    Only the fields that vary across tests are parameters; all other
+    option fields use the standard defaults.
+    """
+
+    class _MockOption:
+        gremlins = True
+        gremlin_report = 'console'
+        gremlin_cache = False
+        gremlin_clear_cache = False
+        gremlin_parallel = False
+        gremlin_workers: int | None = None
+        gremlin_batch = False
+        gremlin_batch_size = 10
+
+    option = _MockOption()
+    option.gremlin_operators = gremlin_operators  # type: ignore[attr-defined]
+    option.gremlin_targets = gremlin_targets  # type: ignore[attr-defined]
+
+    class _MockConfig:
+        pass
+
+    cfg = _MockConfig()
+    cfg.option = option  # type: ignore[attr-defined]
+    cfg.rootdir = tmp_path  # type: ignore[attr-defined]
+    cfg.pluginmanager = pluginmanager or _make_pluginmanager()  # type: ignore[attr-defined]
+    return cfg
+
+
 @pytest.mark.small
 class DescribePytestConfigureWithFileConfig:
     """Tests for pytest_configure loading file config."""
 
     def it_loads_config_from_pyproject_toml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """pytest_configure loads [tool.pytest-gremlins] from pyproject.toml."""
-        # Create a pyproject.toml with gremlins config
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\noperators = ["comparison"]\npaths = ["src/mypackage"]\n')
 
-        # Create a minimal src directory
         src_dir = tmp_path / 'src' / 'mypackage'
         src_dir.mkdir(parents=True)
         (src_dir / '__init__.py').write_text('')
 
-        # Mock pytest config - uses class attributes to match pytest.Config structure
-        class _MockOption:
-            gremlins = True
-            gremlin_operators: str | None = None
-            gremlin_report = 'console'
-            gremlin_targets: str | None = None
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-
-        class _MockConfig:
-            option = _MockOption()
-            rootdir = tmp_path
-            pluginmanager = _make_pluginmanager()
-
-        # Reset session state
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        # Run pytest_configure - cast to satisfy type checker
-        # The mock provides the subset of pytest.Config that pytest_configure uses
-        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
         assert session.enabled is True
-        # Verify operators were loaded from config
         operator_names = [op.name for op in session.operators]
         assert 'comparison' in operator_names
-        # Verify paths were loaded
         assert len(session.target_paths) == 1
         assert session.target_paths[0].name == 'mypackage'
 
@@ -86,32 +98,16 @@ class DescribePytestConfigureWithFileConfig:
         src_dir.mkdir()
         (src_dir / 'module.py').write_text('x = 1')
 
-        class _MockOption:
-            gremlins = True
-            gremlin_operators = 'boolean'  # CLI overrides file
-            gremlin_report = 'console'
-            gremlin_targets: str | None = None
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-
-        class _MockConfig:
-            option = _MockOption()
-            rootdir = tmp_path
-            pluginmanager = _make_pluginmanager()
-
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+        plugin.pytest_configure(  # type: ignore[arg-type]
+            _make_gremlins_config(tmp_path, gremlin_operators='boolean')
+        )
 
         session = plugin._get_session()
         assert session is not None
         operator_names = [op.name for op in session.operators]
-        # Only boolean should be loaded, not comparison or arithmetic
         assert 'boolean' in operator_names
         assert 'comparison' not in operator_names
         assert 'arithmetic' not in operator_names
@@ -121,7 +117,6 @@ class DescribePytestConfigureWithFileConfig:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\npaths = ["src/original"]\n')
 
-        # Create both directories
         original_dir = tmp_path / 'src' / 'original'
         original_dir.mkdir(parents=True)
         (original_dir / '__init__.py').write_text('')
@@ -130,27 +125,12 @@ class DescribePytestConfigureWithFileConfig:
         override_dir.mkdir()
         (override_dir / 'module.py').write_text('x = 1')
 
-        class _MockOption:
-            gremlins = True
-            gremlin_operators: str | None = None
-            gremlin_report = 'console'
-            gremlin_targets = 'lib'  # CLI overrides file
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-
-        class _MockConfig:
-            option = _MockOption()
-            rootdir = tmp_path
-            pluginmanager = _make_pluginmanager()
-
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+        plugin.pytest_configure(  # type: ignore[arg-type]
+            _make_gremlins_config(tmp_path, gremlin_targets='lib')
+        )
 
         session = plugin._get_session()
         assert session is not None
@@ -166,27 +146,10 @@ class DescribePytestConfigureWithFileConfig:
         src_dir.mkdir()
         (src_dir / 'module.py').write_text('x = 1')
 
-        class _MockOption:
-            gremlins = True
-            gremlin_operators: str | None = None
-            gremlin_report = 'console'
-            gremlin_targets: str | None = None
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-
-        class _MockConfig:
-            option = _MockOption()
-            rootdir = tmp_path
-            pluginmanager = _make_pluginmanager()
-
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
@@ -202,27 +165,10 @@ class DescribePytestConfigureWithFileConfig:
         pkg_dir.mkdir()
         (pkg_dir / '__init__.py').write_text('')
 
-        class _MockOption:
-            gremlins = True
-            gremlin_operators: str | None = None
-            gremlin_report = 'console'
-            gremlin_targets: str | None = None
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-
-        class _MockConfig:
-            option = _MockOption()
-            rootdir = tmp_path
-            pluginmanager = _make_pluginmanager()
-
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
@@ -239,27 +185,10 @@ class DescribePytestConfigureWithFileConfig:
         (tmp_path / 'mylib').mkdir()
         (tmp_path / 'cogapp').mkdir()
 
-        class _MockOption:
-            gremlins = True
-            gremlin_operators: str | None = None
-            gremlin_report = 'console'
-            gremlin_targets: str | None = None
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-
-        class _MockConfig:
-            option = _MockOption()
-            rootdir = tmp_path
-            pluginmanager = _make_pluginmanager()
-
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
@@ -274,27 +203,10 @@ class DescribePytestConfigureWithFileConfig:
         (tmp_path / 'src').mkdir()
         (tmp_path / 'cogapp').mkdir()
 
-        class _MockOption:
-            gremlins = True
-            gremlin_operators: str | None = None
-            gremlin_report = 'console'
-            gremlin_targets: str | None = None
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-
-        class _MockConfig:
-            option = _MockOption()
-            rootdir = tmp_path
-            pluginmanager = _make_pluginmanager()
-
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_MockConfig())  # type: ignore[arg-type]
+        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
@@ -308,28 +220,9 @@ class DescribePytestConfigureCoverageMode:
 
     def _make_mock_config(self, tmp_path: Path, cov_plugin: object) -> object:
         """Build a minimal _MockConfig with pluginmanager returning cov_plugin."""
-
-        class _MockOption:
-            gremlins = True
-            gremlin_operators: str | None = None
-            gremlin_report = 'console'
-            gremlin_targets: str | None = None
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-
         pm = MagicMock()
         pm.get_plugin.return_value = cov_plugin
-
-        class _MockConfig:
-            option = _MockOption()
-            rootdir = tmp_path
-            pluginmanager = pm
-
-        return _MockConfig()
+        return _make_gremlins_config(tmp_path, pluginmanager=pm)
 
     def it_uses_piggyback_coverage_when_cov_plugin_present(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

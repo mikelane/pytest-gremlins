@@ -6,22 +6,15 @@ These tests cover the utility functions in plugin.py that can be tested in isola
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import (
-    MagicMock,
-    patch,
-)
+from unittest.mock import MagicMock
 
 import pytest
 
 from pytest_gremlins.plugin import (
-    GREMLIN_SOURCES_ENV_VAR,
     GremlinSession,
     _add_source_file,
     _build_filtered_test_command,
     _build_test_command,
-    _build_test_hashes_for_gremlin,
-    _cache_gremlin_result,
-    _check_cache_for_gremlin,
     _cleanup_instrumented_dir,
     _decode_numbits,
     _is_xdist_worker,
@@ -30,11 +23,6 @@ from pytest_gremlins.plugin import (
     _read_parallel_config,
     _select_tests_for_gremlin_prioritized,
     _should_include_file,
-    _test_gremlin,
-)
-from pytest_gremlins.reporting.results import (
-    GremlinResult,
-    GremlinResultStatus,
 )
 
 
@@ -142,8 +130,8 @@ class DescribeMakeNodeIdsRelative:
 
         assert result == ['tests/test_module.py::test_func']
 
-    def it_handles_node_id_without_double_colon(self, tmp_path: Path) -> None:
-        """Handles node IDs that are just file paths (no ::)."""
+    def it_strips_rootdir_from_absolute_path_without_double_colon(self, tmp_path: Path) -> None:
+        """Strips rootdir prefix from node IDs that are just file paths (no ::)."""
         rootdir = tmp_path
         abs_path = tmp_path / 'tests' / 'test_module.py'
         node_ids = [str(abs_path)]
@@ -152,8 +140,8 @@ class DescribeMakeNodeIdsRelative:
 
         assert result == ['tests/test_module.py']
 
-    def it_handles_relative_path_without_double_colon(self, tmp_path: Path) -> None:
-        """Handles relative paths without ::."""
+    def it_preserves_relative_path_without_double_colon(self, tmp_path: Path) -> None:
+        """Preserves relative paths without :: unchanged."""
         rootdir = tmp_path
         node_ids = ['tests/test_module.py']
 
@@ -161,8 +149,8 @@ class DescribeMakeNodeIdsRelative:
 
         assert result == ['tests/test_module.py']
 
-    def it_handles_non_relative_absolute_path(self, tmp_path: Path) -> None:
-        """Handles absolute paths that are not under rootdir."""
+    def it_preserves_absolute_path_outside_rootdir(self, tmp_path: Path) -> None:
+        """Preserves absolute paths that are not under rootdir unchanged."""
         rootdir = tmp_path
         node_ids = ['/some/other/path/test.py::test_func']
 
@@ -433,19 +421,19 @@ class DescribeDecodeNumbits:
     so a hardcoded empty-list or all-lines return cannot pass all cases.
     """
 
-    def it_single_line_one(self) -> None:
+    def it_decodes_single_line_zero_from_bit_zero(self) -> None:
         """Byte 0x01 encodes line 0 (bit 0 of byte 0)."""
         assert _decode_numbits(bytes([0x01])) == [0]
 
-    def it_single_line_two(self) -> None:
+    def it_decodes_single_line_one_from_bit_one(self) -> None:
         """Byte 0x02 encodes line 1 (bit 1 of byte 0)."""
         assert _decode_numbits(bytes([0x02])) == [1]
 
-    def it_multiple_lines_in_one_byte(self) -> None:
+    def it_decodes_multiple_lines_from_one_byte(self) -> None:
         """0x03 (bits 0 and 1 set) encodes lines 0 and 1."""
         assert _decode_numbits(bytes([0x03])) == [0, 1]
 
-    def it_line_in_second_byte(self) -> None:
+    def it_decodes_line_from_second_byte(self) -> None:
         """Bit 0 of byte 1 encodes line 8."""
         assert _decode_numbits(bytes([0x00, 0x01])) == [8]
 
@@ -480,172 +468,3 @@ class DescribeCleanupInstrumentedDir:
         missing = tmp_path / 'not_here'
         _cleanup_instrumented_dir(missing)  # must not raise
         assert not missing.exists()
-
-
-@pytest.mark.small
-class DescribeBuildTestHashesForGremlin:
-    """Tests for _build_test_hashes_for_gremlin function.
-
-    Tests the dotted-name fallback path (lines 1467-1468) where a test name
-    like 'SomeClass.test_method' is resolved to 'test_method' to find its node ID.
-    """
-
-    def it_resolves_dotted_name_via_simple_name_fallback(self) -> None:
-        """'Module.test_method' falls back to 'test_method' when the full name is not in test_node_ids."""
-        gs = GremlinSession(
-            enabled=True,
-            test_node_ids={'test_method': 'tests/test_m.py::test_method'},
-            test_hashes={'tests/test_m.py': 'abc123'},
-        )
-
-        result = _build_test_hashes_for_gremlin(['Module.test_method'], gs)
-
-        assert 'Module.test_method' in result
-        assert result['Module.test_method'] == 'abc123'
-
-    def it_returns_empty_when_node_id_not_found_even_after_fallback(self) -> None:
-        """Test names with no matching node ID (even via simple name) produce no entry."""
-        gs = GremlinSession(enabled=True, test_node_ids={}, test_hashes={})
-
-        result = _build_test_hashes_for_gremlin(['unknown.test_func'], gs)
-
-        assert result == {}
-
-
-@pytest.mark.small
-class DescribeCheckCacheForGremlin:
-    """Tests for _check_cache_for_gremlin function (lines 1498-1519).
-
-    Both the None-return paths and the hit path are tested so no single
-    hardcoded return value satisfies all cases.
-    """
-
-    def it_returns_none_when_cache_disabled(self) -> None:
-        """Returns None immediately when cache_enabled is False."""
-        gs = GremlinSession(enabled=True, cache_enabled=False)
-        gremlin = MagicMock()
-
-        result = _check_cache_for_gremlin(gremlin, [], gs)
-
-        assert result is None
-
-    def it_returns_none_when_source_hash_missing(self) -> None:
-        """Returns None when gremlin's file_path has no entry in source_hashes."""
-        mock_cache = MagicMock()
-        gs = GremlinSession(enabled=True, cache_enabled=True, cache=mock_cache, source_hashes={})
-        gremlin = MagicMock()
-        gremlin.file_path = 'src/module.py'
-
-        result = _check_cache_for_gremlin(gremlin, [], gs)
-
-        assert result is None
-        mock_cache.get_cached_result.assert_not_called()
-
-    def it_returns_gremlin_result_on_cache_hit(self) -> None:
-        """Returns a GremlinResult constructed from cached data when cache has a hit."""
-        mock_cache = MagicMock()
-        mock_cache.get_cached_result.return_value = {'status': 'zapped', 'killing_test': 'test_foo'}
-        gs = GremlinSession(
-            enabled=True,
-            cache_enabled=True,
-            cache=mock_cache,
-            source_hashes={'src/module.py': 'hash123'},
-        )
-        gremlin = MagicMock()
-        gremlin.file_path = 'src/module.py'
-
-        result = _check_cache_for_gremlin(gremlin, [], gs)
-
-        assert result.status == GremlinResultStatus.ZAPPED
-
-
-@pytest.mark.small
-class DescribeCacheGremlinResult:
-    """Tests for _cache_gremlin_result function (lines 1536-1555).
-
-    Verifies that cache.cache_result_deferred is called when a source hash exists,
-    and skipped when it does not.
-    """
-
-    def it_calls_cache_deferred_when_source_hash_exists(self) -> None:
-        """cache_result_deferred is called when gremlin's file has a source hash."""
-        mock_cache = MagicMock()
-        gs = GremlinSession(
-            enabled=True,
-            cache_enabled=True,
-            cache=mock_cache,
-            source_hashes={'src/module.py': 'hash123'},
-        )
-        gremlin = MagicMock()
-        gremlin.file_path = 'src/module.py'
-        gremlin.gremlin_id = 'g001'
-        result = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED)
-
-        _cache_gremlin_result(gremlin, [], result, gs)
-
-        mock_cache.cache_result_deferred.assert_called_once()
-
-    def it_skips_caching_when_source_hash_missing(self) -> None:
-        """cache_result_deferred is NOT called when gremlin's file has no source hash."""
-        mock_cache = MagicMock()
-        gs = GremlinSession(
-            enabled=True,
-            cache_enabled=True,
-            cache=mock_cache,
-            source_hashes={},
-        )
-        gremlin = MagicMock()
-        gremlin.file_path = 'src/module.py'
-        result = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED)
-
-        _cache_gremlin_result(gremlin, [], result, gs)
-
-        mock_cache.cache_result_deferred.assert_not_called()
-
-
-@pytest.mark.small
-class DescribeGremlinSubprocessEnvVars:
-    """Tests for _test_gremlin function (lines 1737-1739).
-
-    Verifies that GREMLIN_SOURCES_ENV_VAR is injected into the subprocess env
-    when instrumented_dir is not None, but not when it is None.
-    """
-
-    def it_sets_sources_env_var_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
-        """GREMLIN_SOURCES_ENV_VAR is set to '<instrumented_dir>/sources.json' in env."""
-        gremlin = MagicMock()
-        gremlin.gremlin_id = 'g001'
-        captured_env: dict[str, str] = {}
-
-        def capture_env(_cmd: list[str], **kwargs: object) -> object:
-            env = kwargs.get('env')
-            if isinstance(env, dict):
-                captured_env.update(env)
-            result = MagicMock()
-            result.returncode = 0
-            return result
-
-        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=capture_env):
-            _test_gremlin(gremlin, ['pytest'], tmp_path, instrumented_dir=tmp_path)
-
-        assert GREMLIN_SOURCES_ENV_VAR in captured_env
-        assert captured_env[GREMLIN_SOURCES_ENV_VAR] == str(tmp_path / 'sources.json')
-
-    def it_omits_sources_env_var_when_instrumented_dir_is_none(self, tmp_path: Path) -> None:
-        """GREMLIN_SOURCES_ENV_VAR is NOT set when instrumented_dir is None."""
-        gremlin = MagicMock()
-        gremlin.gremlin_id = 'g001'
-        captured_env: dict[str, str] = {}
-
-        def capture_env(_cmd: list[str], **kwargs: object) -> object:
-            env = kwargs.get('env')
-            if isinstance(env, dict):
-                captured_env.update(env)
-            result = MagicMock()
-            result.returncode = 0
-            return result
-
-        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=capture_env):
-            _test_gremlin(gremlin, ['pytest'], tmp_path, instrumented_dir=None)
-
-        assert GREMLIN_SOURCES_ENV_VAR not in captured_env
