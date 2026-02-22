@@ -10,13 +10,11 @@ See: https://github.com/stryker-mutator/mutation-testing-elements
 
 from __future__ import annotations
 
-import ast
 import json
 from typing import TYPE_CHECKING
 
 import pytest
 
-from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
@@ -27,69 +25,6 @@ from pytest_gremlins.reporting.stryker_export import StrykerExporter
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-@pytest.fixture
-def make_gremlin():
-    """Factory fixture for creating test gremlins."""
-    counter = 0
-
-    def _make_gremlin(
-        file_path: str = 'test.py',
-        line_number: int = 1,
-        column_offset: int = 0,
-        end_line_number: int | None = None,
-        end_column_offset: int | None = None,
-        operator_name: str = 'comparison',
-        description: str = '>= to >',
-    ) -> Gremlin:
-        nonlocal counter
-        counter += 1
-        node = ast.parse('x >= 0', mode='eval').body
-        node.lineno = line_number
-        node.col_offset = column_offset
-        node.end_lineno = end_line_number or line_number
-        node.end_col_offset = end_column_offset or (column_offset + 6)
-        return Gremlin(
-            gremlin_id=f'g{counter:03d}',
-            file_path=file_path,
-            line_number=line_number,
-            original_node=node,
-            mutated_node=ast.parse('x > 0', mode='eval').body,
-            operator_name=operator_name,
-            description=description,
-        )
-
-    return _make_gremlin
-
-
-@pytest.fixture
-def make_result(make_gremlin):
-    """Factory fixture for creating test results."""
-
-    def _make_result(
-        status: GremlinResultStatus = GremlinResultStatus.ZAPPED,
-        file_path: str = 'test.py',
-        line_number: int = 1,
-        operator_name: str = 'comparison',
-        description: str = '>= to >',
-        killing_test: str | None = None,
-        execution_time_ms: float | None = None,
-    ) -> GremlinResult:
-        gremlin = make_gremlin(
-            file_path=file_path,
-            line_number=line_number,
-            operator_name=operator_name,
-            description=description,
-        )
-        return GremlinResult(
-            gremlin=gremlin,
-            status=status,
-            killing_test=killing_test,
-            execution_time_ms=execution_time_ms,
-        )
-
-    return _make_result
 
 
 @pytest.mark.small
@@ -230,7 +165,7 @@ class DescribeStrykerExporterStatus:
             (GremlinResultStatus.ERROR, 'RuntimeError'),
         ],
     )
-    def it_maps_status_correctly(self, make_result, gremlin_status, stryker_status):
+    def it_maps_gremlin_status_to_stryker_status(self, make_result, gremlin_status, stryker_status):
         results = [make_result(gremlin_status)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()

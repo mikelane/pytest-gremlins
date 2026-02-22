@@ -74,7 +74,7 @@ class DescribeWarmupBenefits:
             result = future.result(timeout=5)
             assert result.gremlin_id == 'g001'
 
-    def it_warmup_is_configurable(self) -> None:
+    def it_allows_disabling_warmup_via_config(self) -> None:
         """Warmup can be disabled for specific use cases."""
         config = PoolConfig(warmup=False)
         pool = PersistentWorkerPool.from_config(config)
@@ -89,13 +89,12 @@ class DescribeWarmupBenefits:
 class DescribeMpContextOptimization:
     """Tests verifying multiprocessing context optimization."""
 
-    def it_mp_context_is_created_lazily(self) -> None:
+    def it_creates_mp_context_eagerly_on_init(self) -> None:
         """Multiprocessing context is created when pool starts."""
         config = PoolConfig(max_workers=2, start_method='spawn')
         pool = PersistentWorkerPool.from_config(config)
 
-        # Before entering context, mp_context should exist
-        assert pool._mp_context is not None
+        # Before entering context, mp_context should exist with the requested method
         assert pool._mp_context.get_start_method() == 'spawn'
 
     def it_selects_optimal_start_method_automatically(self) -> None:

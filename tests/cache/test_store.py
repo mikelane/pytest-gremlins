@@ -205,7 +205,7 @@ class DescribeResultStore:
 
         assert file1_g001 is None
         assert file1_g002 is None
-        assert file2_g001 is not None
+        assert file2_g001 == {'status': 'zapped'}
 
     def it_recreates_database_when_corrupted(self, tmp_path, caplog):
         """Corrupted database file is deleted and recreated with warning."""

@@ -41,7 +41,7 @@ class DescribePersistentWorkerPoolWithConfig:
         pool = PersistentWorkerPool.from_config(config)
         assert pool.config.start_method == 'spawn'
 
-    def it_pool_has_config_attribute(self) -> None:
+    def it_exposes_config_attribute(self) -> None:
         """Pool exposes its PoolConfig via config attribute."""
         config = PoolConfig(max_workers=2)
         pool = PersistentWorkerPool.from_config(config)
@@ -115,8 +115,7 @@ class DescribePersistentWorkerPoolMpContext:
         config = PoolConfig(start_method='spawn')
         pool = PersistentWorkerPool.from_config(config)
 
-        # The pool should store the mp_context
-        assert pool._mp_context is not None
+        # The pool should store the mp_context with the requested start method
         assert pool._mp_context.get_start_method() == 'spawn'
 
     def it_executor_uses_mp_context(self) -> None:

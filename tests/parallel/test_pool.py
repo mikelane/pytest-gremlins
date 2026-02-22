@@ -5,7 +5,6 @@ These tests verify the worker pool lifecycle management and execution behavior.
 
 from __future__ import annotations
 
-import ast
 from concurrent.futures import Future
 from pathlib import Path
 import sys
@@ -13,23 +12,8 @@ import tempfile
 
 import pytest
 
-from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.results import GremlinResultStatus
-
-
-@pytest.fixture
-def sample_gremlin() -> Gremlin:
-    """Create a sample gremlin for testing."""
-    return Gremlin(
-        gremlin_id='g001',
-        file_path='/path/to/source.py',
-        line_number=42,
-        original_node=ast.parse('x > 0').body[0].value,  # type: ignore[attr-defined]
-        mutated_node=ast.parse('x >= 0').body[0].value,  # type: ignore[attr-defined]
-        operator_name='ComparisonOperatorSwap',
-        description='> to >=',
-    )
 
 
 @pytest.mark.small
@@ -79,7 +63,7 @@ class DescribeWorkerPoolContextManager:
 class DescribeWorkerPoolShutdown:
     """Tests for WorkerPool shutdown behavior."""
 
-    def it_shutdown_is_idempotent(self) -> None:
+    def it_allows_calling_shutdown_multiple_times_without_error(self) -> None:
         """Calling shutdown multiple times is safe."""
         pool = WorkerPool(max_workers=2)
         pool.shutdown()

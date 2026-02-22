@@ -77,8 +77,8 @@ class DescribeRoundRobinDistribution:
         assert len(result[1]) == 2  # g001, g004
         assert len(result[2]) == 2  # g002, g005
 
-    def it_handles_uneven_distribution(self) -> None:
-        """Handles case where gremlins don't divide evenly."""
+    def it_assigns_remainder_gremlins_to_earlier_workers(self) -> None:
+        """Extra gremlins go to earlier workers when count does not divide evenly."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(5)]
         result = strategy.distribute(gremlins, num_workers=3)
@@ -110,7 +110,7 @@ class DescribeRoundRobinDistribution:
         assert result[3] == []
         assert result[4] == []
 
-    def it_distribution_is_deterministic(self) -> None:
+    def it_produces_deterministic_distribution(self) -> None:
         """Same input always produces same output."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(10)]
@@ -121,7 +121,7 @@ class DescribeRoundRobinDistribution:
         for i in range(3):
             assert [g.gremlin_id for g in result1[i]] == [g.gremlin_id for g in result2[i]]
 
-    def it_all_gremlins_are_assigned(self) -> None:
+    def it_assigns_all_gremlins(self) -> None:
         """All input gremlins appear exactly once in output."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(10)]
@@ -183,7 +183,7 @@ class DescribeWeightedDistribution:
         assert heavy & worker0_ids  # Worker 0 has at least one heavy
         assert heavy & worker1_ids  # Worker 1 has at least one heavy
 
-    def it_all_gremlins_are_assigned(self) -> None:
+    def it_assigns_all_gremlins(self) -> None:
         """All input gremlins appear exactly once in output."""
         strategy = WeightedDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(10)]
@@ -215,7 +215,7 @@ class DescribeWeightedDistribution:
 
         assert sorted(all_ids) == ['g001', 'g002', 'g003']
 
-    def it_distribution_is_deterministic(self) -> None:
+    def it_produces_deterministic_distribution(self) -> None:
         """Same input always produces same output."""
         strategy = WeightedDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(10)]

@@ -43,8 +43,8 @@ class DescribeXdistItemIds:
 
         assert gs.xdist_item_ids == ids
 
-    def it_hook_stores_different_ids_correctly(self) -> None:
-        """Different item IDs are stored correctly - rules out hardcoding."""
+    def it_hook_stores_different_ids_ruling_out_hardcoding(self) -> None:
+        """Different item IDs are stored on session - rules out hardcoding."""
         gs = GremlinSession(enabled=True)
         _set_session(gs)
 

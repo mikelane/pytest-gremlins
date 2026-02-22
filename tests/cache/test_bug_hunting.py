@@ -75,10 +75,10 @@ class DescribeResultStoreBugs:
 
             # fiXXXle:g001 should NOT be deleted - but due to the bug it will be
             # because % matches any characters in LIKE
-            assert store.get('fiXXXle:g001') is not None  # This will fail due to bug
+            assert store.get('fiXXXle:g001') == {'status': 'survived'}
 
             # another:g001 should not be deleted
-            assert store.get('another:g001') is not None
+            assert store.get('another:g001') == {'status': 'timeout'}
 
     def it_delete_by_prefix_with_underscore_metacharacter(self, tmp_path):
         """delete_by_prefix handles LIKE metacharacter _ correctly.
@@ -96,7 +96,7 @@ class DescribeResultStoreBugs:
 
             assert store.get('file_a:g001') is None
             # fileXa:g001 should NOT be deleted - but may be due to _ metachar
-            assert store.get('fileXa:g001') is not None  # This may fail
+            assert store.get('fileXa:g001') == {'status': 'survived'}
 
     def it_delete_by_prefix_with_backslash(self, tmp_path):
         """delete_by_prefix handles backslashes correctly.
@@ -112,7 +112,7 @@ class DescribeResultStoreBugs:
             store.delete_by_prefix('C:\\path\\file:')
 
             assert store.get('C:\\path\\file:g001') is None
-            assert store.get('C:\\other\\file:g001') is not None
+            assert store.get('C:\\other\\file:g001') == {'status': 'survived'}
 
     def it_connection_closed_on_schema_init_failure(self, tmp_path):
         """Connection is properly closed if schema initialization fails.
@@ -147,9 +147,9 @@ class DescribeResultStoreBugs:
                 store2.put('key3', {'status': 'timeout'})
 
                 # Verify all writes succeeded
-                assert store1.get('key1') is not None
-                assert store1.get('key2') is not None
-                assert store2.get('key3') is not None
+                assert store1.get('key1') == {'status': 'zapped'}
+                assert store1.get('key2') == {'status': 'survived'}
+                assert store2.get('key3') == {'status': 'timeout'}
 
 
 @pytest.mark.medium
@@ -205,11 +205,10 @@ class DescribeIncrementalCacheBugs:
                 test_hashes={'test_foo': 'test_hash'},
             )
 
-            assert result is not None
-            assert result['status'] == 'zapped'
+            assert result == {'status': 'zapped'}
 
     def it_cache_key_with_unicode_in_gremlin_id(self, tmp_path):
-        """Cache handles Unicode in gremlin IDs correctly.
+        """Cache retrieves results for gremlin IDs containing Unicode characters.
 
         File paths with Unicode characters should work correctly.
         """
@@ -230,8 +229,7 @@ class DescribeIncrementalCacheBugs:
                 test_hashes={'test_foo': 'test_hash'},
             )
 
-            assert result is not None
-            assert result['status'] == 'zapped'
+            assert result == {'status': 'zapped'}
 
     def it_stats_reset_after_clear(self, tmp_path):
         """get_stats shows zeroed hit/miss counts after clear().
@@ -287,5 +285,4 @@ class DescribeIncrementalCacheBugs:
             )
 
             # Should still find the cached result due to sorted ordering
-            assert result is not None
-            assert result['status'] == 'zapped'
+            assert result == {'status': 'zapped'}

@@ -91,7 +91,7 @@ class DescribeLoadConfig:
         assert result.operators == ['comparison']
         assert not hasattr(result, 'unknown_key')
 
-    def it_handles_empty_tool_section(self, tmp_path):
+    def it_returns_defaults_for_empty_tool_section(self, tmp_path):
         """Handles empty [tool.pytest-gremlins] section."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\n')

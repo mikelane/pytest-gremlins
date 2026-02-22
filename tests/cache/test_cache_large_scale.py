@@ -15,8 +15,10 @@ import pytest
 class DescribeCacheLargeScale:
     """Tests for cache with larger number of gremlins."""
 
-    def it_cache_scales_correctly_with_many_gremlins(self, pytester_with_markers: pytest.Pytester) -> None:
-        """Test cache with many mutations (like the benchmark synthetic project).
+    def it_cache_returns_identical_scores_on_warm_rerun_with_many_gremlins(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        """Cache produces same mutation scores on warm rerun with many gremlins.
 
         The synthetic benchmark has:
         - 3 source files with ~70 lines each

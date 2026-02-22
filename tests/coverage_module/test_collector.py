@@ -74,7 +74,7 @@ class DescribeCoverageCollectorFromCoveragePy:
             'src/utils.py': [5, 6],
         }
 
-    def it_extract_from_coverage_data_handles_none_lines(self):
+    def it_extract_from_coverage_data_excludes_files_with_none_lines(self):
         collector = CoverageCollector()
 
         # Mimic coverage.py's CoverageData structure where a file has no lines
@@ -92,7 +92,7 @@ class DescribeCoverageCollectorFromCoveragePy:
             # src/empty.py is excluded because lines() returned None
         }
 
-    def it_extract_from_coverage_data_handles_empty_lines(self):
+    def it_extract_from_coverage_data_excludes_files_with_empty_lines(self):
         collector = CoverageCollector()
 
         mock_coverage_data = MagicMock()
@@ -114,7 +114,7 @@ class DescribeCoverageCollectorFromCoveragePy:
 class DescribeCoverageCollectorTestTracking:
     """Test tracking which tests have been recorded."""
 
-    def it_recorded_tests_initially_empty(self):
+    def it_returns_empty_recorded_tests_initially(self):
         collector = CoverageCollector()
         assert collector.recorded_tests == set()
 
