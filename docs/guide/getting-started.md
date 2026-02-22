@@ -320,7 +320,7 @@ Try these strategies:
 
 1. **Start small**: Target specific files with `--gremlin-targets`
 2. **Use incremental mode**: `--gremlin-cache` skips unchanged code
-3. **Enable parallel execution**: `--gremlin-parallel`
+3. **Enable parallel execution**: `--gremlin-workers=auto`
 4. **Focus operators**: `--gremlin-operators=comparison,boolean`
 5. **Run in CI only**: Skip mutation testing in local development
 
@@ -340,5 +340,5 @@ Now that you understand the basics:
 | Target specific files | `pytest --gremlins --gremlin-targets=src/mymodule.py` |
 | Generate HTML report | `pytest --gremlins --gremlin-report=html` |
 | Use caching | `pytest --gremlins --gremlin-cache` |
-| Parallel execution | `pytest --gremlins --gremlin-parallel` |
+| Parallel execution | `pytest --gremlins --gremlin-workers=auto` |
 | Use specific operators | `pytest --gremlins --gremlin-operators=comparison,boolean` |

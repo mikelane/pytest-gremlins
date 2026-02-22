@@ -526,25 +526,40 @@ Coverage numbers are incorrect or missing when running mutation testing.
 
 **Symptom:**
 
-Mutation testing hangs or produces inconsistent results when using pytest-xdist.
+```text
+ERROR: --gremlins and -n cannot be used together. Use --gremlin-workers for parallel mutation execution.
+```
 
-**Cause:** pytest-xdist parallelizes test execution, which conflicts with pytest-gremlins' own parallelization strategy.
+**Cause:** `--gremlins` and `-n` (pytest-xdist) cannot be combined. pytest-xdist distributes
+tests across workers, which conflicts with how pytest-gremlins controls mutation state per
+worker process.
 
 **Solution:**
 
-1. Disable xdist when running mutation testing:
+Use `--gremlin-workers` instead:
 
-   ```bash
-   pytest --gremlins -p no:xdist
-   ```
+```bash
+pytest --gremlins --gremlin-workers=auto   # parallel across all CPU cores
+pytest --gremlins --gremlin-workers=4      # specific worker count
+```
 
-2. Use pytest-gremlins' built-in parallelization instead:
+**Prevention:** Never combine `--gremlins` with `-n`.
 
-   ```bash
-   pytest --gremlins --gremlin-parallel --gremlin-workers=4
-   ```
+---
 
-**Prevention:** Don't combine xdist with pytest-gremlins.
+### Can I use pytest --gremlins with -n (pytest-xdist)?
+
+No. pytest-gremlins does not support using `-n` (pytest-xdist) for parallel mutation execution.
+Passing both `--gremlins` and `-n` produces an explicit error.
+
+For parallel mutation testing, use `--gremlin-workers` instead:
+
+```bash
+pytest --gremlins --gremlin-workers=auto   # parallel across all CPU cores
+```
+
+`--gremlin-workers=N` uses pytest-gremlins' own worker pool. Each worker runs with a different
+`PYTEST_GREMLINS_ACTIVE` environment variable, so mutations never interfere with each other.
 
 ---
 
