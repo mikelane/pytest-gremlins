@@ -539,7 +539,7 @@ worker process.
 Use `--gremlin-workers` instead:
 
 ```bash
-pytest --gremlins --gremlin-workers=auto   # parallel across all CPU cores
+pytest --gremlins --gremlin-parallel   # parallel across all CPU cores
 pytest --gremlins --gremlin-workers=4      # specific worker count
 ```
 
@@ -555,7 +555,7 @@ Passing both `--gremlins` and `-n` produces an explicit error.
 For parallel mutation testing, use `--gremlin-workers` instead:
 
 ```bash
-pytest --gremlins --gremlin-workers=auto   # parallel across all CPU cores
+pytest --gremlins --gremlin-parallel   # parallel across all CPU cores
 ```
 
 `--gremlin-workers=N` uses pytest-gremlins' own worker pool. Each worker runs with a different
