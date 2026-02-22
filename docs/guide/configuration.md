@@ -84,10 +84,10 @@ pytest --gremlins --gremlin-cache
 pytest --gremlins --gremlin-cache --gremlin-clear-cache
 ```
 
-**Enable parallel execution:**
+**Enable parallel execution (use all CPU cores):**
 
 ```bash
-pytest --gremlins --gremlin-workers=auto
+pytest --gremlins --gremlin-parallel
 ```
 
 **Parallel with specific worker count:**
@@ -109,7 +109,7 @@ pytest --gremlins \
     --gremlin-targets=src/core \
     --gremlin-operators=comparison,boundary \
     --gremlin-cache \
-    --gremlin-workers=auto \
+    --gremlin-parallel \
     --gremlin-report=html
 ```
 
@@ -235,16 +235,16 @@ pytest --gremlins --gremlin-cache --gremlin-clear-cache
 
 ### Parallel Execution
 
-Use `--gremlin-workers` to distribute mutations across multiple worker processes. Specifying a
-worker count automatically enables parallel mode — you do not need to also pass `--gremlin-parallel`:
+Use `--gremlin-parallel` to distribute mutations across multiple worker processes. Specifying a
+worker count with `--gremlin-workers=N` automatically enables parallel mode:
 
 ```bash
-pytest --gremlins --gremlin-workers=auto   # use all CPU cores
-pytest --gremlins --gremlin-workers=4      # use 4 workers
+pytest --gremlins --gremlin-parallel        # use all CPU cores
+pytest --gremlins --gremlin-workers=4       # use 4 workers (implies --gremlin-parallel)
 ```
 
-`--gremlin-workers=auto` detects CPU count at runtime. `--gremlin-workers=1` runs sequentially
-(useful for debugging).
+`--gremlin-parallel` without `--gremlin-workers` defaults to `os.cpu_count()` workers.
+`--gremlin-workers=1` runs sequentially (useful for debugging).
 
 `--gremlins` and `-n` (pytest-xdist) cannot be combined — passing both raises an error. Use
 `--gremlin-workers` for parallel mutation execution.
@@ -272,7 +272,7 @@ For maximum speed, combine all performance options:
 ```bash
 pytest --gremlins \
     --gremlin-cache \
-    --gremlin-workers=auto \
+    --gremlin-parallel \
     --gremlin-batch \
     --gremlin-batch-size=20
 ```
@@ -307,7 +307,7 @@ jobs:
         run: |
           uv run pytest --gremlins \
             --gremlin-cache \
-            --gremlin-workers=auto \
+            --gremlin-parallel \
             --gremlin-report=json
 
       - name: Upload mutation report
@@ -324,7 +324,7 @@ mutation_testing:
   stage: test
   script:
     - pip install uv && uv sync
-    - uv run pytest --gremlins --gremlin-cache --gremlin-workers=auto --gremlin-report=json
+    - uv run pytest --gremlins --gremlin-cache --gremlin-parallel --gremlin-report=json
   artifacts:
     reports:
       junit: gremlin-report.json
@@ -343,7 +343,7 @@ repos:
     hooks:
       - id: mutation-testing
         name: Mutation Testing
-        entry: pytest --gremlins --gremlin-cache --gremlin-workers=auto
+        entry: pytest --gremlins --gremlin-cache --gremlin-parallel
         language: system
         pass_filenames: false
         stages: [pre-push]  # Run on push, not commit

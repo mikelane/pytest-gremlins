@@ -213,11 +213,11 @@ def worker_main(mutations: list[str], result_queue: Queue):
 
 ### Number of Workers
 
-Use `--gremlin-workers` to set the worker count. Specifying workers automatically enables parallel mode:
+Use `--gremlin-parallel` to enable parallel mode. Pass `--gremlin-workers=N` to pin the worker count (implies `--gremlin-parallel`):
 
 ```bash
-pytest --gremlins --gremlin-workers=auto   # use all CPU cores
-pytest --gremlins --gremlin-workers=4      # use 4 workers
+pytest --gremlins --gremlin-parallel        # use all CPU cores
+pytest --gremlins --gremlin-workers=4       # use 4 workers
 ```
 
 ### Worker Timeout
@@ -322,10 +322,10 @@ def db_session():
 pytest-xdist distributes tests across workers, which conflicts with how pytest-gremlins
 controls mutation state per worker process.
 
-To parallelize mutation execution, use `--gremlin-workers`:
+To parallelize mutation execution, use `--gremlin-parallel`:
 
 ```bash
-pytest --gremlins --gremlin-workers=auto
+pytest --gremlins --gremlin-parallel
 ```
 
 This uses pytest-gremlins' own worker pool, which is built specifically for mutation isolation.

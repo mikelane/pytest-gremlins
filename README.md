@@ -75,8 +75,8 @@ Benchmarked against [mutmut](https://github.com/boxed/mutmut) on a synthetic pro
 | Mode                                                 | Time   | vs mutmut | Speedup           |
 | ---------------------------------------------------- | ------ | --------- | ----------------- |
 | `--gremlins` (sequential)                            | 17.79s | 14.90s    | 0.84x (see note)  |
-| `--gremlins --gremlin-workers=auto`                  | 3.99s  | 14.90s    | **3.73x faster**  |
-| `--gremlins --gremlin-workers=auto --gremlin-cache`  | 1.08s  | 14.90s    | **13.82x faster** |
+| `--gremlins --gremlin-parallel`                      | 3.99s  | 14.90s    | **3.73x faster**  |
+| `--gremlins --gremlin-parallel --gremlin-cache`      | 1.08s  | 14.90s    | **13.82x faster** |
 
 **Key findings:**
 
