@@ -65,6 +65,7 @@ class DescribePluginCachePattern:
                 # Check cache (hit expected)
                 result = cache.get_cached_result(gremlin_id, source_hash, selected_test_hashes)
                 assert result is not None
+                assert result['status'] == 'zapped'
 
             warm_time = time.perf_counter() - warm_start
 
@@ -118,8 +119,8 @@ class DescribePluginCachePattern:
         # Time hashing all files
         start = time.perf_counter()
         hashes = {}
-        for f in src_dir.iterdir():
-            hashes[str(f)] = hasher.hash_file(f)
+        for source_file in src_dir.iterdir():
+            hashes[str(source_file)] = hasher.hash_file(source_file)
         elapsed = time.perf_counter() - start
 
         # 50 files should hash in under 50ms (1ms per file)

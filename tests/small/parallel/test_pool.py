@@ -5,7 +5,6 @@ These tests verify the worker pool lifecycle management and execution behavior.
 
 from __future__ import annotations
 
-import ast
 from concurrent.futures import Future
 from pathlib import Path
 import sys
@@ -13,23 +12,8 @@ import tempfile
 
 import pytest
 
-from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.results import GremlinResultStatus
-
-
-@pytest.fixture
-def sample_gremlin() -> Gremlin:
-    """Create a sample gremlin for testing."""
-    return Gremlin(
-        gremlin_id='g001',
-        file_path='/path/to/source.py',
-        line_number=42,
-        original_node=ast.parse('x > 0').body[0].value,  # type: ignore[attr-defined]
-        mutated_node=ast.parse('x >= 0').body[0].value,  # type: ignore[attr-defined]
-        operator_name='ComparisonOperatorSwap',
-        description='> to >=',
-    )
 
 
 class DescribeWorkerPoolCreation:
@@ -126,18 +110,30 @@ class DescribeWorkerPoolSubmit:
     def it_submit_multiple_gremlins(self, tmp_path: Path) -> None:
         """Multiple gremlins can be submitted to pool."""
         with WorkerPool(max_workers=2) as pool:
-            futures = []
-            for i in range(3):
-                future = pool.submit(
-                    gremlin_id=f'g{i:03d}',
-                    test_command=['python', '-c', 'pass'],
-                    rootdir=str(tmp_path),
-                    instrumented_dir=None,
-                    env_vars={},
-                )
-                futures.append(future)
-            assert len(futures) == 3
-            assert all(isinstance(f, Future) for f in futures)
+            future_0 = pool.submit(
+                gremlin_id='g000',
+                test_command=['python', '-c', 'pass'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            future_1 = pool.submit(
+                gremlin_id='g001',
+                test_command=['python', '-c', 'pass'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            future_2 = pool.submit(
+                gremlin_id='g002',
+                test_command=['python', '-c', 'pass'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            assert isinstance(future_0, Future)
+            assert isinstance(future_1, Future)
+            assert isinstance(future_2, Future)
 
 
 class DescribeWorkerPoolExecution:

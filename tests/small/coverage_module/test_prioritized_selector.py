@@ -158,6 +158,36 @@ class DescribeTestSpecificityComputation:
         assert specificity1 is specificity2  # Same object (cached)
 
 
+class DescribePrioritizedSelectorEdgeCases:
+    """Test edge cases in prioritized selection."""
+
+    def it_compute_specificity_returns_empty_dict_for_empty_map(self) -> None:
+        """Empty CoverageMap -> get_test_specificity() returns {}."""
+        cm = CoverageMap()
+        selector = PrioritizedSelector(cm)
+
+        assert selector.get_test_specificity() == {}
+
+    def it_select_tests_for_location_prioritized_returns_empty_for_unknown(self) -> None:
+        """Unknown location returns []."""
+        cm = CoverageMap()
+        cm.add('src/auth.py', 42, 'test_something')
+        selector = PrioritizedSelector(cm)
+        gremlin = Gremlin(
+            gremlin_id='g999',
+            file_path='src/unknown.py',
+            line_number=999,
+            original_node=ast.parse('x', mode='eval').body,
+            mutated_node=ast.parse('y', mode='eval').body,
+            operator_name='test',
+            description='test',
+        )
+
+        result = selector.select_tests_prioritized(gremlin)
+
+        assert result == []
+
+
 class DescribePrioritizedSelectorStats:
     """Test statistics from prioritized selection."""
 

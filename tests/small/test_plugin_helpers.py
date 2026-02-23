@@ -556,7 +556,6 @@ class DescribeCheckCacheForGremlin:
 
         result = _check_cache_for_gremlin(gremlin, [], gs)
 
-        assert result is not None
         assert result.status == GremlinResultStatus.ZAPPED
 
 

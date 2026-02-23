@@ -116,3 +116,40 @@ class DescribeContentHasher:
         result2 = hasher.hash_combined(hashes2)
 
         assert result1 != result2
+
+
+class DescribeContentHasherEdgeCases:
+    """Tests for edge cases in ContentHasher."""
+
+    def it_hash_string_returns_64_character_hex_digest(self):
+        """hash_string returns a 64-character hex digest (SHA-256)."""
+        hasher = ContentHasher()
+
+        result = hasher.hash_string('hello world')
+
+        assert len(result) == 64
+        assert all(c in '0123456789abcdef' for c in result)
+
+    def it_hash_string_of_empty_string_returns_valid_hash(self):
+        """hash_string('') returns a valid 64-char hex digest."""
+        hasher = ContentHasher()
+
+        result = hasher.hash_string('')
+
+        assert len(result) == 64
+        assert all(c in '0123456789abcdef' for c in result)
+
+    def it_hash_files_with_empty_list_returns_empty_dict(self):
+        """hash_files([]) returns {}."""
+        hasher = ContentHasher()
+
+        result = hasher.hash_files([])
+
+        assert result == {}
+
+    def it_hash_combined_with_single_element_equals_hash_string(self):
+        """hash_combined([h]) equals hash_string(h)."""
+        hasher = ContentHasher()
+        h = 'abc123def456'  # pragma: allowlist secret
+
+        assert hasher.hash_combined([h]) == hasher.hash_string(h)

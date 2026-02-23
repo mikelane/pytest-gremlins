@@ -89,6 +89,24 @@ def foo():
 class DescribeReturnOperatorMutate:
     """Test the mutate method."""
 
+    def it_return_expression_mutates_only_to_none(self):
+        """For return x + y, mutate() returns exactly 1 mutation (return None), not a boolean flip."""
+        operator = ReturnOperator()
+        source = """
+def foo():
+    return x + y
+"""
+        tree = ast.parse(source)
+        func_def = tree.body[0]
+        assert isinstance(func_def, ast.FunctionDef)
+        return_node = func_def.body[0]
+
+        mutations = operator.mutate(return_node)
+
+        assert len(mutations) == 1
+        assert isinstance(mutations[0], ast.Return)
+        assert mutations[0].value is None
+
     def it_mutates_return_value_to_none(self):
         operator = ReturnOperator()
         source = """
@@ -120,14 +138,8 @@ def foo():
         mutations = operator.mutate(return_node)
 
         assert len(mutations) == 2
-        mutation_values: list[object] = []
-        for m in mutations:
-            assert isinstance(m, ast.Return)
-            if m.value is None:
-                mutation_values.append(None)
-            elif isinstance(m.value, ast.Constant):
-                mutation_values.append(m.value.value)
-
+        assert all(isinstance(m, ast.Return) for m in mutations)
+        mutation_values = {m.value.value if isinstance(m.value, ast.Constant) else None for m in mutations}
         assert None in mutation_values
         assert False in mutation_values
 
@@ -144,14 +156,8 @@ def foo():
 
         mutations = operator.mutate(return_node)
 
-        mutation_values: list[object] = []
-        for m in mutations:
-            assert isinstance(m, ast.Return)
-            if m.value is None:
-                mutation_values.append(None)
-            elif isinstance(m.value, ast.Constant):
-                mutation_values.append(m.value.value)
-
+        assert all(isinstance(m, ast.Return) for m in mutations)
+        mutation_values = {m.value.value if isinstance(m.value, ast.Constant) else None for m in mutations}
         assert None in mutation_values
         assert True in mutation_values
 

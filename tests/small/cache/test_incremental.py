@@ -356,3 +356,22 @@ class DescribeIncrementalCache:
             )
 
         assert retrieved == result_data
+
+    def test_invalidate_file_with_no_matching_entries_is_noop(self, tmp_path) -> None:
+        """invalidate_file('nonexistent') does not affect existing entries."""
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            cache.cache_result(
+                gremlin_id='file1:g001',
+                source_hash='source_hash',
+                test_hashes={'test_foo': 'test_hash'},
+                result={'status': 'zapped'},
+            )
+
+            cache.invalidate_file('nonexistent')
+
+            result = cache.get_cached_result(
+                gremlin_id='file1:g001',
+                source_hash='source_hash',
+                test_hashes={'test_foo': 'test_hash'},
+            )
+            assert result == {'status': 'zapped'}
