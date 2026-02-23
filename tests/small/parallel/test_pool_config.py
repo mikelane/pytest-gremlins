@@ -81,11 +81,11 @@ class DescribePoolConfigValidation:
         with pytest.raises(ValueError, match='Invalid start method'):
             PoolConfig(start_method='invalid')
 
-    def it_accepts_valid_start_methods(self) -> None:
+    @pytest.mark.parametrize('method', ['auto', 'spawn', 'fork', 'forkserver'])
+    def it_accepts_valid_start_methods(self, method: str) -> None:
         """Valid start methods are accepted."""
-        for method in ('auto', 'spawn', 'fork', 'forkserver'):
-            config = PoolConfig(start_method=method)
-            assert config.start_method == method
+        config = PoolConfig(start_method=method)
+        assert config.start_method == method
 
     def it_max_workers_must_be_positive(self) -> None:
         """max_workers must be positive."""

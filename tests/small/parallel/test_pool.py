@@ -126,18 +126,30 @@ class DescribeWorkerPoolSubmit:
     def it_submit_multiple_gremlins(self, tmp_path: Path) -> None:
         """Multiple gremlins can be submitted to pool."""
         with WorkerPool(max_workers=2) as pool:
-            futures = []
-            for i in range(3):
-                future = pool.submit(
-                    gremlin_id=f'g{i:03d}',
-                    test_command=['python', '-c', 'pass'],
-                    rootdir=str(tmp_path),
-                    instrumented_dir=None,
-                    env_vars={},
-                )
-                futures.append(future)
-            assert len(futures) == 3
-            assert all(isinstance(f, Future) for f in futures)
+            future_0 = pool.submit(
+                gremlin_id='g000',
+                test_command=['python', '-c', 'pass'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            future_1 = pool.submit(
+                gremlin_id='g001',
+                test_command=['python', '-c', 'pass'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            future_2 = pool.submit(
+                gremlin_id='g002',
+                test_command=['python', '-c', 'pass'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            assert isinstance(future_0, Future)
+            assert isinstance(future_1, Future)
+            assert isinstance(future_2, Future)
 
 
 class DescribeWorkerPoolExecution:
