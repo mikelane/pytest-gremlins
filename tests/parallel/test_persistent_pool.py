@@ -49,7 +49,7 @@ class DescribePersistentWorkerPoolCreation:
         pool = PersistentWorkerPool()
         assert pool.timeout == 30
 
-    def it_from_config_creates_pool_with_config_values(self) -> None:
+    def it_creates_pool_with_config_values_via_from_config(self) -> None:
         """from_config creates pool using PoolConfig settings."""
         config = PoolConfig(max_workers=8, timeout=45)
         pool = PersistentWorkerPool.from_config(config)
