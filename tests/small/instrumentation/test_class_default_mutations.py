@@ -82,7 +82,7 @@ class DescribeSwitchingExpressionWorksInClassBody:
     accessible from the class body's scope.
     """
 
-    def it_class_default_uses_original_when_no_gremlin_active(self):
+    def it_uses_original_when_no_gremlin_is_active(self):
         source = """
 from dataclasses import dataclass
 
@@ -103,7 +103,7 @@ class Addr:
         instance = Addr()  # type: ignore[operator]
         assert instance.last is False  # type: ignore[union-attr]
 
-    def it_class_default_uses_mutation_when_gremlin_active(self):
+    def it_uses_mutation_when_gremlin_is_active(self):
         source = """
 from dataclasses import dataclass
 

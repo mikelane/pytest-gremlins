@@ -154,7 +154,7 @@ def test_make_default_range_from0_is_true():
         zapped_count = int(match.group(1))
         assert zapped_count >= 1, 'Expected the True->False boolean gremlin to be zapped, got 0 zapped'
 
-    def it_both_boolean_defaults_in_same_class_are_zapped(self, pytester_with_conftest: pytest.Pytester):
+    def it_zaps_both_boolean_defaults_in_the_same_class(self, pytester_with_conftest: pytest.Pytester):
         """Multiple boolean defaults in the same dataclass are all correctly tested."""
         pytester_with_conftest.makepyfile(
             target_module="""

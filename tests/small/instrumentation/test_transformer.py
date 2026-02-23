@@ -52,7 +52,7 @@ class DescribeMutationGenerator:
         actual_ops = [m.ops[0].__class__.__name__ for m in mutations]
         assert sorted(actual_ops) == sorted(expected_ops)
 
-    def it_original_node_is_not_modified(self):
+    def it_does_not_modify_the_original_node(self):
         source = 'x < 10'
         tree = ast.parse(source, mode='eval')
         compare_node = tree.body
@@ -398,7 +398,7 @@ class DescribeGremlinIdUniquenessAcrossFiles:
 
         assert ids_a.isdisjoint(ids_b)
 
-    def it_same_named_files_in_different_directories_have_disjoint_ids(self):
+    def it_assigns_disjoint_ids_to_same_named_files_in_different_directories(self):
         source = 'x = 1 + 2'
         gremlins_src, _ = transform_source(source, 'src/utils.py')
         gremlins_tests, _ = transform_source(source, 'tests/utils.py')
@@ -408,7 +408,7 @@ class DescribeGremlinIdUniquenessAcrossFiles:
 
         assert ids_src.isdisjoint(ids_tests)
 
-    def it_gremlin_ids_contain_file_stem_prefix(self):
+    def it_prefixes_gremlin_ids_with_file_stem(self):
         source = 'x = 1 + 2'
         gremlins, _ = transform_source(source, 'my_module.py')
 

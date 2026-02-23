@@ -53,12 +53,12 @@ def make_result(make_gremlin):
 class DescribeMutationScore:
     """Tests for MutationScore dataclass."""
 
-    def it_score_stores_total(self, make_result):
+    def it_stores_total(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED) for _ in range(10)]
         score = MutationScore.from_results(results)
         assert score.total == 10
 
-    def it_score_stores_zapped_count(self, make_result):
+    def it_stores_zapped_count(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.ZAPPED),
@@ -67,7 +67,7 @@ class DescribeMutationScore:
         score = MutationScore.from_results(results)
         assert score.zapped == 2
 
-    def it_score_stores_survived_count(self, make_result):
+    def it_stores_survived_count(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.SURVIVED),
@@ -76,7 +76,7 @@ class DescribeMutationScore:
         score = MutationScore.from_results(results)
         assert score.survived == 2
 
-    def it_score_stores_timeout_count(self, make_result):
+    def it_stores_timeout_count(self, make_result):
         results = [
             make_result(GremlinResultStatus.TIMEOUT),
             make_result(GremlinResultStatus.TIMEOUT),
@@ -84,7 +84,7 @@ class DescribeMutationScore:
         score = MutationScore.from_results(results)
         assert score.timeout == 2
 
-    def it_score_stores_error_count(self, make_result):
+    def it_stores_error_count(self, make_result):
         results = [
             make_result(GremlinResultStatus.ERROR),
         ]
@@ -140,7 +140,7 @@ class DescribeMutationScorePercentage:
 class DescribeMutationScoreByFile:
     """Tests for file-level score breakdown."""
 
-    def it_by_file_returns_dict_keyed_by_file_path(self, make_result):
+    def it_returns_dict_keyed_by_file_path(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED, file_path='auth.py'),
             make_result(GremlinResultStatus.SURVIVED, file_path='utils.py'),
@@ -149,7 +149,7 @@ class DescribeMutationScoreByFile:
         file_scores = score.by_file()
         assert set(file_scores.keys()) == {'auth.py', 'utils.py'}
 
-    def it_by_file_calculates_per_file_score(self, make_result):
+    def it_calculates_per_file_score(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED, file_path='auth.py'),
             make_result(GremlinResultStatus.ZAPPED, file_path='auth.py'),

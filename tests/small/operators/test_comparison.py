@@ -106,7 +106,7 @@ class DescribeComparisonOperatorMutate:
             ('x != 10', ['Eq']),
         ],
     )
-    def it_all_comparison_mutations(self, source, expected_ops):
+    def it_generates_all_comparison_mutations(self, source, expected_ops):
         operator = ComparisonOperator()
         node = ast.parse(source, mode='eval').body
 
@@ -118,7 +118,7 @@ class DescribeComparisonOperatorMutate:
             actual_ops.append(m.ops[0].__class__.__name__)
         assert sorted(actual_ops) == sorted(expected_ops)
 
-    def it_original_node_is_not_modified(self):
+    def it_does_not_modify_the_original_node(self):
         operator = ComparisonOperator()
         node = ast.parse('x < 10', mode='eval').body
         assert isinstance(node, ast.Compare)
@@ -168,7 +168,7 @@ class DescribeComparisonOperatorMutate:
 class DescribeComparisonOperatorSymbols:
     """Test the operator symbol mapping."""
 
-    def it_get_symbol_for_all_supported_ops(self):
+    def it_returns_symbol_for_all_supported_ops(self):
         operator = ComparisonOperator()
 
         assert operator.get_symbol(ast.Lt()) == '<'
@@ -178,7 +178,7 @@ class DescribeComparisonOperatorSymbols:
         assert operator.get_symbol(ast.Eq()) == '=='
         assert operator.get_symbol(ast.NotEq()) == '!='
 
-    def it_get_symbol_returns_question_mark_for_unknown_op(self):
+    def it_returns_question_mark_for_unknown_op(self):
         operator = ComparisonOperator()
 
         assert operator.get_symbol(ast.Is()) == '?'

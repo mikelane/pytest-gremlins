@@ -30,7 +30,7 @@ class DescribeBatchExecutorWithConfig:
         assert executor.batch_size == 15
         assert executor.max_workers == 4
 
-    def it_from_config_uses_optimal_settings(self) -> None:
+    def it_uses_optimal_settings_via_from_config(self) -> None:
         """from_config creates an executor with optimal settings."""
         config = PoolConfig(warmup=True, batch_size=20)
         executor = BatchExecutor.from_config(config)
@@ -52,7 +52,7 @@ class DescribeBatchExecutorWithConfig:
 class DescribeBatchExecutorConfigIntegration:
     """Integration tests for BatchExecutor with PoolConfig."""
 
-    def it_execute_uses_config_start_method(self, tmp_path: Path) -> None:
+    def it_uses_config_start_method(self, tmp_path: Path) -> None:
         """Execute creates pool with configured start method."""
         config = PoolConfig(max_workers=1, start_method='spawn', warmup=True, batch_size=2, timeout=5)
         executor = BatchExecutor.from_config(config)
@@ -69,7 +69,7 @@ class DescribeBatchExecutorConfigIntegration:
         assert len(results) == 2
         assert {r.gremlin_id for r in results} == {'g001', 'g002'}
 
-    def it_execute_with_warmup_enabled(self, tmp_path: Path) -> None:
+    def it_warms_up_pool_before_executing(self, tmp_path: Path) -> None:
         """Execute benefits from warmup when enabled."""
         config = PoolConfig(max_workers=1, warmup=True, batch_size=2, timeout=5)
         executor = BatchExecutor.from_config(config)

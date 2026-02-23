@@ -49,7 +49,7 @@ class DescribePersistentWorkerPoolCreation:
         pool = PersistentWorkerPool()
         assert pool.timeout == 30
 
-    def it_from_config_creates_pool_with_config_values(self) -> None:
+    def it_creates_pool_with_config_values_via_from_config(self) -> None:
         """from_config creates pool using PoolConfig settings."""
         config = PoolConfig(max_workers=8, timeout=45)
         pool = PersistentWorkerPool.from_config(config)
@@ -57,7 +57,7 @@ class DescribePersistentWorkerPoolCreation:
         assert pool.timeout == 45
         assert pool.config is config
 
-    def it_config_property_returns_poolconfig(self) -> None:
+    def it_returns_poolconfig_from_config_property(self) -> None:
         """config property returns the PoolConfig used by the pool."""
         config = PoolConfig(max_workers=4)
         pool = PersistentWorkerPool(config=config)
@@ -120,7 +120,7 @@ class DescribePersistentWorkerPoolContextManager:
             assert not pool.is_warmed_up
             assert pool.warmup_completed_count == 0
 
-    def it_shutdown_when_never_started_is_safe(self) -> None:
+    def it_handles_shutdown_safely_when_never_started(self) -> None:
         """Calling shutdown on pool that was never started is safe."""
         pool = PersistentWorkerPool(max_workers=2)
         # Never enter context, but call shutdown via __exit__
@@ -232,7 +232,7 @@ class DescribePersistentWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.SURVIVED
 
-    def it_result_includes_gremlin_id(self, tmp_path: Path) -> None:
+    def it_includes_gremlin_id(self, tmp_path: Path) -> None:
         """Result includes the gremlin ID that was tested."""
         with PersistentWorkerPool(max_workers=1, timeout=5) as pool:
             future = pool.submit(

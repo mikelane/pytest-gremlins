@@ -53,7 +53,7 @@ class DescribePathToModuleName:
             "The 'src.' prefix should be stripped for src/ layout projects."
         )
 
-    def it_nested_src_layout_module(self):
+    def it_resolves_nested_src_layout_module(self):
         """Deeply nested module in src/ layout converts correctly."""
         rootdir = Path('/project')
         file_path = Path('/project/src/mypackage/subpackage/module.py')

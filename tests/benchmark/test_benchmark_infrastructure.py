@@ -98,7 +98,7 @@ class DescribeEnvironmentInfo:
 
 @pytest.mark.small
 class DescribeComputeSummaries:
-    def it_compute_summaries_single_config(self):
+    def it_computes_summary_for_single_config(self):
         results = [
             BenchmarkResult(
                 tool='gremlins',
@@ -140,7 +140,7 @@ class DescribeComputeSummaries:
         assert summary.max_time == 12.0
         assert summary.runs == 3
 
-    def it_compute_summaries_multiple_configs(self):
+    def it_computes_summaries_for_multiple_configs(self):
         results = [
             BenchmarkResult(
                 tool='gremlins',
@@ -174,7 +174,7 @@ class DescribeComputeSummaries:
         tools = {s.tool for s in summaries}
         assert tools == {'gremlins', 'mutmut'}
 
-    def it_compute_summaries_skips_errors(self):
+    def it_skips_errors_when_computing_summaries(self):
         results = [
             BenchmarkResult(
                 tool='gremlins',

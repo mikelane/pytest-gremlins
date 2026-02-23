@@ -138,7 +138,7 @@ class DescribePrioritizedSelectorSelectTests:
 class DescribeTestSpecificityComputation:
     """Test computing test specificity (lines covered)."""
 
-    def it_compute_specificity_returns_line_counts(self, coverage_map_with_specificity):
+    def it_returns_line_counts_for_specificity(self, coverage_map_with_specificity):
         selector = PrioritizedSelector(coverage_map_with_specificity)
         specificity = selector.get_test_specificity()
 
@@ -147,7 +147,7 @@ class DescribeTestSpecificityComputation:
         assert specificity['test_medium'] == 3
         assert specificity['test_broad'] == 10
 
-    def it_compute_specificity_caches_result(self, coverage_map_with_specificity):
+    def it_caches_specificity_result(self, coverage_map_with_specificity):
         selector = PrioritizedSelector(coverage_map_with_specificity)
 
         # First call computes

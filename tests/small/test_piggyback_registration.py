@@ -30,17 +30,17 @@ from pytest_gremlins.plugin import (
 class DescribeGremlinSessionCoverageMode:
     """GremlinSession stores coverage_mode field."""
 
-    def it_default_coverage_mode_is_private(self) -> None:
+    def it_defaults_to_private_coverage_mode(self) -> None:
         """GremlinSession defaults to PRIVATE mode when no mode specified."""
         gs = GremlinSession()
         assert gs.coverage_mode == CoverageMode.PRIVATE
 
-    def it_coverage_mode_can_be_set_to_piggyback(self) -> None:
+    def it_allows_setting_coverage_mode_to_piggyback(self) -> None:
         """GremlinSession accepts PIGGYBACK mode."""
         gs = GremlinSession(coverage_mode=CoverageMode.PIGGYBACK)
         assert gs.coverage_mode == CoverageMode.PIGGYBACK
 
-    def it_piggyback_and_private_are_distinct_in_session(self) -> None:
+    def it_treats_piggyback_and_private_as_distinct_in_session(self) -> None:
         """PIGGYBACK and PRIVATE produce different session states."""
         gs_piggyback = GremlinSession(coverage_mode=CoverageMode.PIGGYBACK)
         gs_private = GremlinSession(coverage_mode=CoverageMode.PRIVATE)

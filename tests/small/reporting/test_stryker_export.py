@@ -142,7 +142,7 @@ class DescribeStrykerExporterSchemaCompliance:
 class DescribeStrykerExporterFileFormat:
     """Tests for per-file format in Stryker schema."""
 
-    def it_file_includes_language(self, make_result):
+    def it_includes_language_in_file_output(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py')]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()
@@ -151,7 +151,7 @@ class DescribeStrykerExporterFileFormat:
 
         assert data['files']['src/auth.py']['language'] == 'python'
 
-    def it_file_includes_mutants_array(self, make_result):
+    def it_includes_mutants_array_in_file_output(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py')]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()

@@ -94,7 +94,7 @@ class DescribeCacheIntegration:
         # Should show cache hits in output
         result.stdout.fnmatch_lines(['*cache hit*'])
 
-    def it_source_change_invalidates_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_invalidates_cache_when_source_file_changes(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Modifying source file invalidates cache entries."""
         pytester_with_conftest.makepyfile(
             src_module="""
@@ -129,7 +129,7 @@ class DescribeCacheIntegration:
         # Should show cache miss due to source change
         result.stdout.fnmatch_lines(['*cache miss*'])
 
-    def it_test_change_invalidates_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_invalidates_cache_when_test_file_is_modified(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Modifying test file invalidates cache entries."""
         pytester_with_conftest.makepyfile(
             src_module="""
@@ -190,7 +190,9 @@ class DescribeCacheIntegration:
         cache_dir = pytester_with_conftest.path / '.gremlins_cache'
         assert not cache_dir.exists()
 
-    def it_clear_cache_option(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_clears_all_cached_results_when_gremlin_clear_cache_is_set(
+        self, pytester_with_conftest: pytest.Pytester
+    ) -> None:
         """--gremlin-clear-cache removes all cached results."""
         pytester_with_conftest.makepyfile(
             src_module="""

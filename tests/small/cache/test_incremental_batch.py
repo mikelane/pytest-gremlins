@@ -12,7 +12,7 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 class DescribeIncrementalCacheBatchOperations:
     """Tests for batch cache write support."""
 
-    def it_cache_result_deferred_batches_writes(self, tmp_path: Path) -> None:
+    def it_batches_writes_in_deferred_cache_results(self, tmp_path: Path) -> None:
         """cache_result_deferred batches writes for better performance."""
         cache_dir = tmp_path / '.gremlins_cache'
         num_gremlins = 100

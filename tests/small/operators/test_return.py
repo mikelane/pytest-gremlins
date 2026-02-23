@@ -89,7 +89,7 @@ def foo():
 class DescribeReturnOperatorMutate:
     """Test the mutate method."""
 
-    def it_return_value_mutates_to_none(self):
+    def it_mutates_return_value_to_none(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -106,7 +106,7 @@ def foo():
         assert isinstance(mutations[0], ast.Return)
         assert mutations[0].value is None
 
-    def it_return_true_mutates_to_false(self):
+    def it_mutates_return_true_to_false(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -131,7 +131,7 @@ def foo():
         assert None in mutation_values
         assert False in mutation_values
 
-    def it_return_false_mutates_to_true(self):
+    def it_mutates_return_false_to_true(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -155,7 +155,7 @@ def foo():
         assert None in mutation_values
         assert True in mutation_values
 
-    def it_original_node_is_not_modified(self):
+    def it_does_not_modify_the_original_node(self):
         operator = ReturnOperator()
         source = """
 def foo():
@@ -212,7 +212,7 @@ def foo():
 
         assert mutations == []
 
-    def it_return_empty_list_mutates_to_list_with_none(self):
+    def it_mutates_return_empty_list_to_list_with_none(self):
         operator = ReturnOperator()
         source = """
 def foo():

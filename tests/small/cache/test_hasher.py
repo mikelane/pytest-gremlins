@@ -13,7 +13,7 @@ from pytest_gremlins.cache.hasher import ContentHasher
 class DescribeContentHasher:
     """Tests for ContentHasher class."""
 
-    def it_hash_string_returns_hex_digest(self):
+    def it_returns_hex_digest_from_hash_string(self):
         """hash_string returns a hexadecimal string."""
         hasher = ContentHasher()
 
@@ -22,7 +22,7 @@ class DescribeContentHasher:
         assert isinstance(result, str)
         assert all(c in '0123456789abcdef' for c in result)
 
-    def it_hash_string_is_deterministic(self):
+    def it_produces_deterministic_hash_strings(self):
         """Same content produces same hash."""
         hasher = ContentHasher()
         content = 'def foo(): return 42'
@@ -32,7 +32,7 @@ class DescribeContentHasher:
 
         assert hash1 == hash2
 
-    def it_hash_string_differs_for_different_content(self):
+    def it_produces_different_hash_strings_for_different_content(self):
         """Different content produces different hashes."""
         hasher = ContentHasher()
 
@@ -41,7 +41,7 @@ class DescribeContentHasher:
 
         assert hash1 != hash2
 
-    def it_hash_string_is_sensitive_to_whitespace(self):
+    def it_produces_different_hashes_for_whitespace_differences(self):
         """Whitespace changes produce different hashes."""
         hasher = ContentHasher()
 
@@ -50,7 +50,7 @@ class DescribeContentHasher:
 
         assert hash1 != hash2
 
-    def it_hash_file_reads_and_hashes_content(self, tmp_path):
+    def it_reads_and_hashes_file_content(self, tmp_path):
         """hash_file reads file content and returns hash."""
         hasher = ContentHasher()
         file_path = tmp_path / 'test.py'
@@ -61,7 +61,7 @@ class DescribeContentHasher:
         assert isinstance(result, str)
         assert len(result) == 64  # SHA-256 produces 64 hex characters
 
-    def it_hash_file_matches_hash_string(self, tmp_path):
+    def it_matches_hash_file_output_to_hash_string(self, tmp_path):
         """hash_file produces same result as hash_string for same content."""
         hasher = ContentHasher()
         content = 'class MyClass:\n    pass\n'
@@ -73,7 +73,7 @@ class DescribeContentHasher:
 
         assert file_hash == string_hash
 
-    def it_hash_file_raises_for_missing_file(self, tmp_path):
+    def it_raises_for_missing_file(self, tmp_path):
         """hash_file raises FileNotFoundError for missing files."""
         hasher = ContentHasher()
         missing_path = tmp_path / 'nonexistent.py'
@@ -81,7 +81,7 @@ class DescribeContentHasher:
         with pytest.raises(FileNotFoundError):
             hasher.hash_file(missing_path)
 
-    def it_hash_multiple_files(self, tmp_path):
+    def it_hashes_multiple_files(self, tmp_path):
         """hash_files returns a dict of path to hash."""
         hasher = ContentHasher()
         file1 = tmp_path / 'a.py'
@@ -96,7 +96,7 @@ class DescribeContentHasher:
         assert str(file2) in result
         assert result[str(file1)] != result[str(file2)]
 
-    def it_hash_combined_produces_single_hash(self):
+    def it_produces_single_hash_from_combined_inputs(self):
         """hash_combined combines multiple hashes into one."""
         hasher = ContentHasher()
         hashes = ['abc123', 'def456', 'ghi789']
@@ -106,7 +106,7 @@ class DescribeContentHasher:
         assert isinstance(result, str)
         assert len(result) == 64
 
-    def it_hash_combined_is_order_dependent(self):
+    def it_produces_different_combined_hashes_for_different_orderings(self):
         """Order of hashes affects combined hash."""
         hasher = ContentHasher()
         hashes1 = ['abc123', 'def456']

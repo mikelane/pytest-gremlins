@@ -215,7 +215,7 @@ class DescribeConsoleReporterFormatting:
 class DescribeConsoleReporterAllOutcomeCategories:
     """Tests for all mutation outcome categories (zapped, survived, timeout, error)."""
 
-    def it_report_with_mixed_results_displays_all_four_categories(self, make_result):
+    def it_displays_all_four_categories_with_mixed_results(self, make_result):
         """It displays zapped, survived, timeout, and error with correct counts and percentages."""
         results = [
             make_result(GremlinResultStatus.ZAPPED),
@@ -241,7 +241,7 @@ class DescribeConsoleReporterAllOutcomeCategories:
         assert 'Timeout: 3 gremlins (30%)' in output_text
         assert 'Error: 1 gremlins (10%)' in output_text
 
-    def it_report_omits_timeout_line_when_zero_timeouts(self, make_result):
+    def it_omits_timeout_line_when_zero_timeouts(self, make_result):
         """It omits the timeout line when there are no timeouts."""
         results = [
             make_result(GremlinResultStatus.ZAPPED),
@@ -260,7 +260,7 @@ class DescribeConsoleReporterAllOutcomeCategories:
         assert 'Error:' in output_text
         assert 'Timeout:' not in output_text
 
-    def it_report_omits_error_line_when_zero_errors(self, make_result):
+    def it_omits_error_line_when_zero_errors(self, make_result):
         """It omits the error line when there are no errors."""
         results = [
             make_result(GremlinResultStatus.ZAPPED),

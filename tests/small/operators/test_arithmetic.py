@@ -69,7 +69,7 @@ class DescribeArithmeticOperatorCanMutate:
 class DescribeArithmeticOperatorMutate:
     """Test the mutate method."""
 
-    def it_add_generates_one_mutation(self):
+    def it_generates_one_mutation_for_add(self):
         operator = ArithmeticOperator()
         node = ast.parse('x + 10', mode='eval').body
 
@@ -77,7 +77,7 @@ class DescribeArithmeticOperatorMutate:
 
         assert len(mutations) == 1
 
-    def it_add_mutates_to_subtract(self):
+    def it_mutates_add_to_subtract(self):
         operator = ArithmeticOperator()
         node = ast.parse('x + 10', mode='eval').body
 
@@ -99,7 +99,7 @@ class DescribeArithmeticOperatorMutate:
             ('x ** y', [ast.Mult]),
         ],
     )
-    def it_all_arithmetic_mutations(self, source, expected_ops):
+    def it_generates_all_arithmetic_mutations(self, source, expected_ops):
         operator = ArithmeticOperator()
         node = ast.parse(source, mode='eval').body
 
@@ -111,7 +111,7 @@ class DescribeArithmeticOperatorMutate:
             actual_ops.append(type(m.op))
         assert actual_ops == expected_ops
 
-    def it_original_node_is_not_modified(self):
+    def it_does_not_modify_the_original_node(self):
         operator = ArithmeticOperator()
         node = ast.parse('x + 10', mode='eval').body
         assert isinstance(node, ast.BinOp)
@@ -144,7 +144,7 @@ class DescribeArithmeticOperatorMutate:
 class DescribeArithmeticOperatorSymbols:
     """Test the operator symbol mapping."""
 
-    def it_get_symbol_for_all_supported_ops(self):
+    def it_returns_symbol_for_all_supported_ops(self):
         operator = ArithmeticOperator()
 
         assert operator.get_symbol(ast.Add()) == '+'
@@ -155,7 +155,7 @@ class DescribeArithmeticOperatorSymbols:
         assert operator.get_symbol(ast.Mod()) == '%'
         assert operator.get_symbol(ast.Pow()) == '**'
 
-    def it_get_symbol_returns_question_mark_for_unknown_op(self):
+    def it_returns_question_mark_for_unknown_op(self):
         operator = ArithmeticOperator()
 
         assert operator.get_symbol(ast.BitAnd()) == '?'

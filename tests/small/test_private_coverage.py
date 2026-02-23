@@ -33,12 +33,12 @@ from pytest_gremlins.plugin import (
 class DescribeGremlinSessionPrivateCoverageField:
     """GremlinSession has a private_coverage field for the inline Coverage instance."""
 
-    def it_default_private_coverage_is_none(self) -> None:
+    def it_initializes_private_coverage_to_none(self) -> None:
         """GremlinSession.private_coverage defaults to None."""
         gs = GremlinSession()
         assert gs.private_coverage is None
 
-    def it_private_coverage_can_be_set(self) -> None:
+    def it_allows_setting_private_coverage(self) -> None:
         """GremlinSession.private_coverage can hold a Coverage instance."""
         cov = MagicMock()
         gs = GremlinSession(private_coverage=cov)

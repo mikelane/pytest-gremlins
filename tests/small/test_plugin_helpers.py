@@ -187,7 +187,7 @@ class DescribePathToModuleName:
         result = _path_to_module_name(file_path, tmp_path)
         assert result == 'mypackage.module'
 
-    def it_file_not_relative_to_rootdir(self, tmp_path: Path) -> None:
+    def it_handles_file_not_relative_to_rootdir(self, tmp_path: Path) -> None:
         """When file is not under rootdir, uses just the filename.
 
         Covers lines 426-427: ValueError catch for relative_to.
@@ -206,7 +206,7 @@ class DescribePathToModuleName:
 class DescribeBuildTestCommand:
     """Tests for _build_test_command function."""
 
-    def it_with_instrumented_dir(self, tmp_path: Path) -> None:
+    def it_builds_command_with_instrumented_dir(self, tmp_path: Path) -> None:
         """When instrumented_dir provided, uses bootstrap script."""
         instrumented_dir = tmp_path / 'instrumented'
         instrumented_dir.mkdir()
@@ -217,7 +217,7 @@ class DescribeBuildTestCommand:
         assert '-x' in result
         assert '--tb=no' in result
 
-    def it_without_instrumented_dir(self) -> None:
+    def it_builds_command_without_instrumented_dir(self) -> None:
         """When instrumented_dir is None, runs pytest directly.
 
         Covers line 1321: return branch when instrumented_dir is None.
@@ -229,7 +229,7 @@ class DescribeBuildTestCommand:
         assert '-x' in result
         assert '--tb=no' in result
 
-    def it_with_instrumented_dir_suppresses_addopts(self, tmp_path: Path) -> None:
+    def it_suppresses_addopts_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """When instrumented_dir provided, resets addopts to prevent inherited flags."""
         instrumented_dir = tmp_path / 'instrumented'
         instrumented_dir.mkdir()
@@ -239,14 +239,14 @@ class DescribeBuildTestCommand:
         assert '-o' in result
         assert 'addopts=' in result
 
-    def it_without_instrumented_dir_suppresses_addopts(self) -> None:
+    def it_suppresses_addopts_when_instrumented_dir_is_none(self) -> None:
         """When instrumented_dir is None, resets addopts to prevent inherited flags."""
         result = _build_test_command(None)
 
         assert '-o' in result
         assert 'addopts=' in result
 
-    def it_with_instrumented_dir_disables_coverage(self, tmp_path: Path) -> None:
+    def it_disables_coverage_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """When instrumented_dir provided, disables coverage to avoid exit code 2."""
         instrumented_dir = tmp_path / 'instrumented'
         instrumented_dir.mkdir()
@@ -255,7 +255,7 @@ class DescribeBuildTestCommand:
 
         assert '--no-cov' in result
 
-    def it_without_instrumented_dir_disables_coverage(self) -> None:
+    def it_disables_coverage_when_instrumented_dir_is_none(self) -> None:
         """When instrumented_dir is None, disables coverage to avoid exit code 2."""
         result = _build_test_command(None)
 
@@ -449,7 +449,7 @@ class DescribeDecodeNumbits:
         """Bit 0 of byte 1 encodes line 8."""
         assert _decode_numbits(bytes([0x00, 0x01])) == [8]
 
-    def it_empty_bytes_returns_no_lines(self) -> None:
+    def it_returns_no_lines_for_empty_bytes(self) -> None:
         """Empty bytes produce an empty list."""
         assert _decode_numbits(b'') == []
 

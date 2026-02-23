@@ -178,7 +178,7 @@ class DescribeTotalCacheOverhead:
 class DescribeCacheWithBatchOperations:
     """Tests demonstrating potential for batch optimization."""
 
-    def it_batch_get_potential(self, tmp_path: Path) -> None:
+    def it_computes_batch_get_potential(self, tmp_path: Path) -> None:
         """Batch get could retrieve all cached results in one query.
 
         Current: N SQLite queries for N gremlins

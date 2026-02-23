@@ -129,7 +129,7 @@ class DescribeJsonReporterOutput:
 class DescribeJsonReporterResultFormat:
     """Tests for individual result format in JSON."""
 
-    def it_result_includes_gremlin_id(self, make_result):
+    def it_includes_gremlin_id(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -138,7 +138,7 @@ class DescribeJsonReporterResultFormat:
 
         assert data['results'][0]['gremlin_id'] == 'g001'
 
-    def it_result_includes_file_and_line(self, make_result):
+    def it_includes_file_and_line(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py', line_number=42)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -148,7 +148,7 @@ class DescribeJsonReporterResultFormat:
         assert data['results'][0]['file_path'] == 'src/auth.py'
         assert data['results'][0]['line_number'] == 42
 
-    def it_result_includes_status(self, make_result):
+    def it_includes_status(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -157,7 +157,7 @@ class DescribeJsonReporterResultFormat:
 
         assert data['results'][0]['status'] == 'survived'
 
-    def it_result_includes_operator_and_description(self, make_result):
+    def it_includes_operator_and_description(self, make_result):
         results = [
             make_result(
                 GremlinResultStatus.ZAPPED,
@@ -173,7 +173,7 @@ class DescribeJsonReporterResultFormat:
         assert data['results'][0]['operator'] == 'boundary'
         assert data['results'][0]['description'] == '>= 18 to >= 19'
 
-    def it_result_includes_killing_test_when_present(self, make_result):
+    def it_includes_killing_test_when_present(self, make_result):
         results = [
             make_result(
                 GremlinResultStatus.ZAPPED,
@@ -233,7 +233,7 @@ class DescribeJsonReporterFileBreakdown:
         assert 'auth.py' in data['files']
         assert 'utils.py' in data['files']
 
-    def it_file_breakdown_includes_per_file_stats(self, make_result):
+    def it_includes_per_file_stats_in_file_breakdown(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED, file_path='auth.py'),
             make_result(GremlinResultStatus.ZAPPED, file_path='auth.py'),

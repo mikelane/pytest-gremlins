@@ -35,7 +35,7 @@ class DescribePersistentWorkerPoolWithConfig:
         assert pool.max_workers == 4
         assert pool.timeout == 60
 
-    def it_from_config_respects_start_method(self) -> None:
+    def it_respects_start_method_via_from_config(self) -> None:
         """from_config creates a pool that will use the specified start method."""
         config = PoolConfig(start_method='spawn')
         pool = PersistentWorkerPool.from_config(config)
@@ -143,7 +143,7 @@ class DescribePersistentWorkerPoolMpContext:
 class DescribePersistentWorkerPoolIntegration:
     """Integration tests for optimized pool with actual execution."""
 
-    def it_pool_executes_work_with_spawn_method(self, tmp_path: Path) -> None:
+    def it_executes_work_with_spawn_method(self, tmp_path: Path) -> None:
         """Pool correctly executes work when using spawn start method."""
         config = PoolConfig(max_workers=1, start_method='spawn', warmup=True, timeout=5)
         pool = PersistentWorkerPool.from_config(config)
@@ -159,7 +159,7 @@ class DescribePersistentWorkerPoolIntegration:
             result = future.result(timeout=5)
             assert result.gremlin_id == 'g001'
 
-    def it_pool_executes_batch_with_optimized_settings(self, tmp_path: Path) -> None:
+    def it_executes_batch_with_optimized_settings(self, tmp_path: Path) -> None:
         """Pool correctly executes batches with optimized settings."""
         config = PoolConfig(max_workers=1, start_method='spawn', warmup=True, timeout=10)
         pool = PersistentWorkerPool.from_config(config)

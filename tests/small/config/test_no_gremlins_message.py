@@ -67,7 +67,7 @@ class DescribeNoGremlinsMessage:
         assert '[tool.pytest-gremlins]' in output
         assert 'paths' in output
 
-    def it_no_paths_message_shows_discovery_chain(self) -> None:
+    def it_shows_discovery_chain_in_no_paths_message(self) -> None:
         """Error message lists the full discovery chain when no paths found."""
         session = GremlinSession(
             enabled=True,
@@ -82,7 +82,7 @@ class DescribeNoGremlinsMessage:
         assert '[tool.setuptools]' in output
         assert 'src/' in output
 
-    def it_no_paths_message_shows_numbered_steps(self) -> None:
+    def it_shows_numbered_steps_in_no_paths_message(self) -> None:
         """Error message presents discovery chain as numbered steps."""
         session = GremlinSession(
             enabled=True,
@@ -97,7 +97,7 @@ class DescribeNoGremlinsMessage:
         assert '3.' in output
         assert '4.' in output
 
-    def it_no_paths_message_suggests_gremlin_targets_flag(self) -> None:
+    def it_suggests_gremlin_targets_flag_in_no_paths_message(self) -> None:
         """Error message tells user how to specify targets explicitly."""
         session = GremlinSession(
             enabled=True,

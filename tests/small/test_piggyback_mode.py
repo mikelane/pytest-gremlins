@@ -33,7 +33,7 @@ class DescribeCoverageModeEnum:
         """CoverageMode.PRIVATE is a member of the enum."""
         assert CoverageMode.PRIVATE.name == 'PRIVATE'
 
-    def it_piggyback_and_private_are_distinct(self) -> None:
+    def it_treats_piggyback_and_private_as_distinct_modes(self) -> None:
         """PIGGYBACK and PRIVATE are distinct values - rules out both returning same."""
         assert CoverageMode.PIGGYBACK != CoverageMode.PRIVATE
 

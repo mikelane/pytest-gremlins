@@ -118,7 +118,7 @@ class DescribeDiscoverSourcePaths:
 
         assert result == ['lib']
 
-    def it_empty_setuptools_section(self, tmp_path):
+    def it_handles_empty_setuptools_section(self, tmp_path):
         """Returns empty list when [tool.setuptools] is empty."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.setuptools]\n')
@@ -137,7 +137,7 @@ class DescribeDiscoverSourcePaths:
 
         assert result == ['src/mypkg']
 
-    def it_nested_dotted_package_resolves_to_top_level_directory(self, tmp_path):
+    def it_resolves_nested_dotted_package_to_top_level_directory(self, tmp_path):
         """Resolves dotted package name to its top-level directory."""
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.setuptools]\npackages = ["cogapp.utils"]\n')

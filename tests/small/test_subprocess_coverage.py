@@ -70,7 +70,7 @@ class DescribeSitecustomizeExists:
 class DescribeCoverageRunConfig:
     """Verify pyproject.toml coverage config enables parallel subprocess tracking."""
 
-    def it_coverage_run_parallel_is_true(self) -> None:
+    def it_sets_coverage_run_parallel_to_true(self) -> None:
         project_root = Path(__file__).parent.parent.parent
         pyproject = project_root / 'pyproject.toml'
         content = pyproject.read_text(encoding='utf-8')
@@ -79,7 +79,7 @@ class DescribeCoverageRunConfig:
             '[tool.coverage.run] must have parallel = true for subprocess coverage to work'
         )
 
-    def it_coverage_run_has_source_configured(self) -> None:
+    def it_configures_source_for_coverage_run(self) -> None:
         project_root = Path(__file__).parent.parent.parent
         pyproject = project_root / 'pyproject.toml'
         content = pyproject.read_text(encoding='utf-8')
@@ -96,7 +96,7 @@ class DescribeSubprocessCoverageIntegration:
     Marked medium: these tests spawn real subprocesses with filesystem I/O.
     """
 
-    def it_subprocess_writes_coverage_file_when_env_vars_set(self, tmp_path: Path) -> None:
+    def it_writes_coverage_file_when_env_vars_set(self, tmp_path: Path) -> None:
         project_root = Path(__file__).parent.parent.parent
 
         target = tmp_path / 'target.py'
@@ -122,7 +122,7 @@ class DescribeSubprocessCoverageIntegration:
             'Subprocess must write a .coverage.* file when COVERAGE_PROCESS_START and PYTHONPATH are set'
         )
 
-    def it_subprocess_does_not_write_coverage_file_without_env_vars(self, tmp_path: Path) -> None:
+    def it_does_not_write_coverage_file_when_env_vars_absent(self, tmp_path: Path) -> None:
         target = tmp_path / 'target.py'
         target.write_text('def add(a, b):\n    return a + b\n\nresult = add(1, 2)\n')
 

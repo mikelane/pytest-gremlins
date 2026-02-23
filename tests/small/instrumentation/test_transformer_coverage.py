@@ -22,7 +22,7 @@ from pytest_gremlins.operators import ComparisonOperator
 class DescribeReturnDescriptionConstantToConstant:
     """Tests for _get_return_description with constant-to-constant mutations."""
 
-    def it_return_constant_to_constant_description(self) -> None:
+    def it_provides_description_for_return_constant_to_constant(self) -> None:
         """Covers lines 181-187: return constant to constant mutation description."""
         # Create original and mutated Return nodes with Constant values
         original = ast.Return(value=ast.Constant(value=42))
@@ -32,7 +32,7 @@ class DescribeReturnDescriptionConstantToConstant:
 
         assert result == 'return 42 to 0'
 
-    def it_return_string_constant_to_string_constant(self) -> None:
+    def it_mutates_return_string_constant_to_other_string_constant(self) -> None:
         """Constant to constant with string values."""
         original = ast.Return(value=ast.Constant(value='hello'))
         mutated = ast.Return(value=ast.Constant(value=''))
@@ -41,7 +41,7 @@ class DescribeReturnDescriptionConstantToConstant:
 
         assert result == "return 'hello' to ''"
 
-    def it_return_bool_constant_to_bool_constant(self) -> None:
+    def it_mutates_return_bool_constant_to_other_bool_constant(self) -> None:
         """Constant to constant with boolean values."""
         original = ast.Return(value=ast.Constant(value=True))
         mutated = ast.Return(value=ast.Constant(value=False))
@@ -97,7 +97,7 @@ def do_nothing():
 class DescribeMutationSwitchingTransformerPrivateMethods:
     """Tests for MutationSwitchingTransformer internal methods."""
 
-    def it_create_gremlins_for_compare_is_callable(self) -> None:
+    def it_exposes_create_gremlins_for_compare_as_callable(self) -> None:
         """Covers line 370: _create_gremlins_for_compare method.
 
         This is a wrapper method that's used internally. We call it directly

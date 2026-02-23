@@ -16,23 +16,23 @@ def coverage_map():
 class DescribeCoverageMapCreation:
     """Test CoverageMap creation and basic operations."""
 
-    def it_empty_coverage_map_has_no_mappings(self, coverage_map):
+    def it_has_no_coverage_mappings_when_empty(self, coverage_map):
         assert len(coverage_map) == 0
 
 
 class DescribeCoverageMapAddCoverage:
     """Test adding coverage data to the map."""
 
-    def it_add_single_test_for_line(self, coverage_map):
+    def it_adds_single_test_for_line(self, coverage_map):
         coverage_map.add('src/auth.py', 42, 'test_login_success')
         assert len(coverage_map) == 1
 
-    def it_add_multiple_tests_for_same_line(self, coverage_map):
+    def it_adds_multiple_tests_for_same_line(self, coverage_map):
         coverage_map.add('src/auth.py', 42, 'test_login_success')
         coverage_map.add('src/auth.py', 42, 'test_login_failure')
         assert len(coverage_map) == 1  # Still one location
 
-    def it_add_tests_for_different_lines(self, coverage_map):
+    def it_adds_tests_for_different_lines(self, coverage_map):
         coverage_map.add('src/auth.py', 42, 'test_login_success')
         coverage_map.add('src/shipping.py', 17, 'test_calculate_shipping')
         assert len(coverage_map) == 2
@@ -41,22 +41,22 @@ class DescribeCoverageMapAddCoverage:
 class DescribeCoverageMapGetTests:
     """Test retrieving tests for a source location."""
 
-    def it_get_tests_returns_empty_set_for_unknown_location(self, coverage_map):
+    def it_returns_empty_set_for_unknown_location(self, coverage_map):
         result = coverage_map.get_tests('nonexistent.py', 1)
         assert result == set()
 
-    def it_get_tests_returns_single_test(self, coverage_map):
+    def it_returns_single_test_for_location(self, coverage_map):
         coverage_map.add('src/auth.py', 42, 'test_login_success')
         result = coverage_map.get_tests('src/auth.py', 42)
         assert result == {'test_login_success'}
 
-    def it_get_tests_returns_multiple_tests(self, coverage_map):
+    def it_returns_multiple_tests_for_location(self, coverage_map):
         coverage_map.add('src/auth.py', 42, 'test_login_success')
         coverage_map.add('src/auth.py', 42, 'test_login_failure')
         result = coverage_map.get_tests('src/auth.py', 42)
         assert result == {'test_login_success', 'test_login_failure'}
 
-    def it_get_tests_returns_copy_not_internal_set(self, coverage_map):
+    def it_returns_copy_not_internal_set(self, coverage_map):
         coverage_map.add('src/auth.py', 42, 'test_login_success')
         result = coverage_map.get_tests('src/auth.py', 42)
         result.add('intruder')  # Modify the result
@@ -70,24 +70,24 @@ class DescribeCoverageMapIncidentallyTested:
     targeted - often utility or infrastructure code.
     """
 
-    def it_get_incidentally_tested_returns_empty_for_empty_map(self, coverage_map):
+    def it_returns_empty_for_empty_coverage_map(self, coverage_map):
         result = coverage_map.get_incidentally_tested(threshold=3)
         assert result == []
 
-    def it_get_incidentally_tested_returns_empty_below_threshold(self, coverage_map):
+    def it_returns_empty_when_below_incidental_threshold(self, coverage_map):
         coverage_map.add('src/auth.py', 42, 'test_login')
         coverage_map.add('src/auth.py', 42, 'test_logout')
         result = coverage_map.get_incidentally_tested(threshold=3)
         assert result == []
 
-    def it_get_incidentally_tested_returns_locations_at_threshold(self, coverage_map):
+    def it_returns_locations_at_incidental_threshold(self, coverage_map):
         coverage_map.add('src/utils.py', 10, 'test_a')
         coverage_map.add('src/utils.py', 10, 'test_b')
         coverage_map.add('src/utils.py', 10, 'test_c')
         result = coverage_map.get_incidentally_tested(threshold=3)
         assert result == [('src/utils.py', 10, 3)]
 
-    def it_get_incidentally_tested_returns_sorted_by_test_count(self, coverage_map):
+    def it_returns_locations_sorted_by_test_count(self, coverage_map):
         # Location with 3 tests
         coverage_map.add('src/utils.py', 10, 'test_a')
         coverage_map.add('src/utils.py', 10, 'test_b')

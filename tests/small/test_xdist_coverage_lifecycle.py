@@ -106,7 +106,7 @@ class DescribeConfigureNode:
 class DescribeGremlinSessionTmpdir:
     """GremlinSession has a gremlins_tmpdir field for shared coverage data."""
 
-    def it_default_gremlins_tmpdir_is_none(self) -> None:
+    def it_initializes_gremlins_tmpdir_as_none(self) -> None:
         """GremlinSession.gremlins_tmpdir defaults to None."""
         gs = GremlinSession()
         assert gs.gremlins_tmpdir is None

@@ -107,7 +107,7 @@ class DescribeLoadConfig:
 class DescribeGremlinConfig:
     """Tests for GremlinConfig dataclass."""
 
-    def it_default_values_are_none(self):
+    def it_defaults_all_values_to_none(self):
         """Default values are None (meaning use CLI defaults)."""
         config = GremlinConfig()
 

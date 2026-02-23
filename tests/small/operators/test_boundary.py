@@ -125,7 +125,7 @@ class DescribeBoundaryOperatorMutate:
         assert -1 in values
         assert 1 in values
 
-    def it_original_node_is_not_modified(self):
+    def it_does_not_modify_the_original_node(self):
         operator = BoundaryOperator()
         node = ast.parse('x >= 18', mode='eval').body
         assert isinstance(node, ast.Compare)

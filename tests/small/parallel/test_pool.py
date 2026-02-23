@@ -196,7 +196,7 @@ class DescribeWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.TIMEOUT
 
-    def it_result_includes_gremlin_id(self, tmp_path: Path) -> None:
+    def it_includes_gremlin_id(self, tmp_path: Path) -> None:
         """Result includes the gremlin ID that was tested."""
         with WorkerPool(max_workers=1, timeout=5) as pool:
             future = pool.submit(
@@ -230,7 +230,7 @@ class DescribeWorkerPoolExecution:
         finally:
             Path(script_path).unlink()
 
-    def it_coverage_process_start_is_suppressed_in_subprocess(
+    def it_suppresses_coverage_process_start_in_subprocess(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,

@@ -116,7 +116,7 @@ def test_add():
 class DescribePluginWithoutGremlinsFlag:
     """Test plugin behavior when --gremlins is not used."""
 
-    def it_no_mutation_testing_without_flag(self, pytester_with_conftest: pytest.Pytester):
+    def it_skips_mutation_testing_without_gremlins_flag(self, pytester_with_conftest: pytest.Pytester):
         """Verify that tests run normally without --gremlins flag."""
         pytester_with_conftest.makepyfile(
             target_module="""
@@ -247,7 +247,7 @@ def test_below_boundary():
 class DescribeHtmlReportIntegration:
     """Test HTML report generation via CLI."""
 
-    def it_html_report_written_when_specified(self, pytester_with_conftest: pytest.Pytester):
+    def it_writes_html_report_when_specified(self, pytester_with_conftest: pytest.Pytester):
         """Verify that HTML report is written when --gremlin-report=html is specified."""
         pytester_with_conftest.makepyfile(
             target_module="""

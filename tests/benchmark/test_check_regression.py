@@ -65,7 +65,7 @@ class DescribeRegressionDetail:
 
 @pytest.mark.small
 class DescribeRegressionCheckResult:
-    def it_check_result_no_regressions(self):
+    def it_reports_no_regressions(self):
         result = RegressionCheckResult(
             has_regressions=False,
             regressions=[],
@@ -76,7 +76,7 @@ class DescribeRegressionCheckResult:
         assert result.regressions == []
         assert result.threshold_percent == 10.0
 
-    def it_check_result_with_regressions(self):
+    def it_reports_regressions(self):
         regression = RegressionDetail(
             config='gremlins_sequential',
             baseline_time=10.0,
@@ -92,7 +92,7 @@ class DescribeRegressionCheckResult:
         assert result.has_regressions
         assert len(result.regressions) == 1
 
-    def it_check_result_with_improvements(self):
+    def it_reports_improvements(self):
         improvement = RegressionDetail(
             config='gremlins_parallel',
             baseline_time=10.0,
@@ -111,7 +111,7 @@ class DescribeRegressionCheckResult:
 
 @pytest.mark.small
 class DescribeCheckRegression:
-    def it_no_regression_within_threshold(self):
+    def it_finds_no_regression_within_threshold(self):
         baseline = {
             'gremlins_sequential': 45.63,
             'gremlins_parallel': 10.36,
@@ -140,7 +140,7 @@ class DescribeCheckRegression:
         assert len(result.regressions) == 1
         assert result.regressions[0].config == 'gremlins_sequential'
 
-    def it_multiple_regressions(self):
+    def it_reports_multiple_regressions(self):
         baseline = {
             'gremlins_sequential': 45.63,
             'gremlins_parallel': 10.36,

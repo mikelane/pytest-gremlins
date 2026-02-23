@@ -15,7 +15,7 @@ from pytest_gremlins.cache.store import ResultStore
 class DescribeHasherBugs:
     """Tests for bugs in ContentHasher."""
 
-    def it_hash_combined_with_empty_list_returns_consistent_value(self):
+    def it_returns_consistent_value_from_combined_empty_list(self):
         """hash_combined([]) returns a deterministic value, not hash of empty string.
 
         BUG: hash_combined([]) currently returns hash('') which could collide
@@ -35,7 +35,7 @@ class DescribeHasherBugs:
         # Currently they're the same, which is a bug
         assert combined_empty == string_empty  # This passes, showing the bug exists
 
-    def it_hash_file_with_binary_content_raises_clear_error(self, tmp_path):
+    def it_raises_clear_error_for_binary_file_content(self, tmp_path):
         """hash_file raises UnicodeDecodeError for binary files.
 
         BUG: hash_file uses read_text() which fails on binary files.
@@ -156,7 +156,7 @@ class DescribeResultStoreBugs:
 class DescribeIncrementalCacheBugs:
     """Tests for bugs in IncrementalCache."""
 
-    def it_empty_test_hashes_vs_single_empty_test(self, tmp_path):
+    def it_distinguishes_empty_test_hashes_from_single_empty_test(self, tmp_path):
         """Empty test_hashes should differ from test with empty content.
 
         Related to hash_combined([]) bug - empty test_hashes uses 'no_tests'
@@ -182,7 +182,7 @@ class DescribeIncrementalCacheBugs:
             # Should be None (cache miss) because having a test is different from no tests
             assert result is None
 
-    def it_gremlin_id_with_colon_separator(self, tmp_path):
+    def it_formats_gremlin_id_with_colon_separator(self, tmp_path):
         """gremlin_id containing colons does not confuse cache key parsing.
 
         Cache key format is 'gremlin_id:source_hash:test_hash'.
@@ -261,7 +261,7 @@ class DescribeIncrementalCacheBugs:
             assert stats_after['misses'] == 0
             assert stats_after['total_entries'] == 0
 
-    def it_test_hash_ordering_is_deterministic(self, tmp_path):
+    def it_produces_deterministic_test_hash_ordering(self, tmp_path):
         """Test hashes are combined in deterministic order regardless of dict ordering.
 
         Python dicts maintain insertion order since 3.7, but the cache should

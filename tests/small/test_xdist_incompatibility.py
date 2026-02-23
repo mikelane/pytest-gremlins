@@ -124,7 +124,7 @@ class DescribeXdistIncompatibilityError:
             message = call_args.args[0] if call_args.args else call_args.kwargs.get('msg', '')
             assert 'issues/181' in message
 
-    def it_no_error_when_gremlins_disabled_with_xdist(self) -> None:
+    def it_raises_no_error_when_gremlins_disabled_with_xdist(self) -> None:
         """When --gremlins is not passed, pytest_configure returns before the xdist guard."""
         config = _make_config(gremlins=False, numprocesses='auto')
         # No patch needed: the gremlins=False early-return fires before the guard is evaluated.
@@ -138,7 +138,7 @@ class DescribeXdistIncompatibilityError:
             pytest_configure(config)
             mock_pytest.exit.assert_called_once()
 
-    def it_no_error_when_gremlins_enabled_but_xdist_not_installed(self) -> None:
+    def it_raises_no_error_when_gremlins_enabled_but_xdist_not_installed(self) -> None:
         """When xdist is not installed (no numprocesses attr), no error fires."""
         config = _make_config(gremlins=True)  # numprocesses attribute absent
 
@@ -152,7 +152,7 @@ class DescribeXdistIncompatibilityError:
                 pytest_configure(config)
             mock_pytest.exit.assert_not_called()
 
-    def it_no_error_when_gremlins_enabled_xdist_installed_but_n_not_passed(self) -> None:
+    def it_raises_no_error_when_gremlins_enabled_and_xdist_n_not_passed(self) -> None:
         """xdist installed but -n not passed (numprocesses=None) is fine."""
         config = _make_config(gremlins=True, numprocesses=None)
 

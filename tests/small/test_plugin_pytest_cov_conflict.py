@@ -36,7 +36,7 @@ from pytest_gremlins.plugin import (
 class DescribeCoverageSubprocessClearsAddopts:
     """Verify the coverage subprocess includes -o addopts= to clear user config."""
 
-    def it_coverage_subprocess_command_includes_addopts_override(self, tmp_path: Path) -> None:
+    def it_includes_addopts_override_in_coverage_subprocess_command(self, tmp_path: Path) -> None:
         """The subprocess command clears pytest addopts to prevent pytest-cov interference."""
         captured_cmd: list[list[str]] = []
 
@@ -57,7 +57,7 @@ class DescribeCoverageSubprocessClearsAddopts:
         addopts_idx = cmd.index('-o')
         assert cmd[addopts_idx + 1] == 'addopts='
 
-    def it_addopts_override_appears_before_test_node_ids(self, tmp_path: Path) -> None:
+    def it_places_addopts_override_before_test_node_ids(self, tmp_path: Path) -> None:
         """The -o addopts= flag appears before the test node IDs in the command."""
         captured_cmd: list[list[str]] = []
 
@@ -106,7 +106,7 @@ class DescribeEmptyCoverageWarning:
         ):
             _collect_coverage(session, tmp_path)
 
-    def it_no_warning_when_coverage_data_is_present(self, tmp_path: Path) -> None:
+    def it_emits_no_warning_when_coverage_data_is_present(self, tmp_path: Path) -> None:
         """No warning fires when coverage data contains entries."""
         session = GremlinSession(
             enabled=True,
@@ -308,7 +308,7 @@ class DescribeOuterSessionCovNotSuppressed:
         # no_cov must remain False — gremlins must not suppress cov at configure time
         assert config.option.no_cov is False
 
-    def it_no_suppression_warning_emitted_when_gremlins_and_cov_both_active(self) -> None:
+    def it_emits_no_suppression_warning_when_gremlins_and_cov_both_active(self) -> None:
         """No suppression UserWarning is emitted when --gremlins and --cov are active."""
         config = _make_configure_config(gremlins=True, has_pytest_cov=True, no_cov=False)
 

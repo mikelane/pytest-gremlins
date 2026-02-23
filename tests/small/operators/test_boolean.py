@@ -85,7 +85,7 @@ class DescribeBooleanOperatorCanMutate:
 class DescribeBooleanOperatorMutate:
     """Test the mutate method."""
 
-    def it_and_mutates_to_or(self):
+    def it_mutates_and_to_or(self):
         operator = BooleanOperator()
         node = ast.parse('x and y', mode='eval').body
 
@@ -96,7 +96,7 @@ class DescribeBooleanOperatorMutate:
         assert isinstance(mutation, ast.BoolOp)
         assert isinstance(mutation.op, ast.Or)
 
-    def it_or_mutates_to_and(self):
+    def it_mutates_or_to_and(self):
         operator = BooleanOperator()
         node = ast.parse('x or y', mode='eval').body
 
@@ -107,7 +107,7 @@ class DescribeBooleanOperatorMutate:
         assert isinstance(mutation, ast.BoolOp)
         assert isinstance(mutation.op, ast.And)
 
-    def it_not_x_mutates_to_x(self):
+    def it_mutates_not_x_to_x(self):
         operator = BooleanOperator()
         node = ast.parse('not x', mode='eval').body
 
@@ -137,7 +137,7 @@ class DescribeBooleanOperatorMutate:
         assert isinstance(mutations[0], ast.Constant)
         assert mutations[0].value is True
 
-    def it_original_node_is_not_modified(self):
+    def it_does_not_modify_the_original_node(self):
         operator = BooleanOperator()
         node = ast.parse('x and y', mode='eval').body
         assert isinstance(node, ast.BoolOp)

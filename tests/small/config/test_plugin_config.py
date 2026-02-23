@@ -25,7 +25,7 @@ class DescribeMergeConfigs:
 
         assert result.operators == ['boolean', 'return']
 
-    def it_file_operators_used_when_cli_is_none(self):
+    def it_uses_file_operators_when_cli_is_none(self):
         """Uses pyproject.toml operators when CLI is not provided."""
         file_config = GremlinConfig(operators=['comparison'])
         cli_operators = None
@@ -43,7 +43,7 @@ class DescribeMergeConfigs:
 
         assert result.paths == ['lib', 'app']
 
-    def it_file_paths_used_when_cli_is_none(self):
+    def it_uses_file_paths_when_cli_is_none(self):
         """Uses pyproject.toml paths when CLI is not provided."""
         file_config = GremlinConfig(paths=['src/mypackage'])
         cli_targets = None
@@ -71,7 +71,7 @@ class DescribeMergeConfigs:
 
         assert result.exclude == ['**/migrations/*']
 
-    def it_empty_cli_string_is_treated_as_none(self):
+    def it_treats_empty_cli_string_as_none(self):
         """Empty CLI string is treated as not provided."""
         file_config = GremlinConfig(operators=['comparison'])
         cli_operators = ''
@@ -80,7 +80,7 @@ class DescribeMergeConfigs:
 
         assert result.operators == ['comparison']
 
-    def it_cli_whitespace_is_trimmed(self):
+    def it_trims_whitespace_from_cli_string(self):
         """CLI values have whitespace trimmed."""
         file_config = GremlinConfig()
         cli_operators = ' boolean , arithmetic '

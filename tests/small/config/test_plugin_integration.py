@@ -331,7 +331,7 @@ class DescribePytestConfigureCoverageMode:
 
         return _MockConfig()
 
-    def it_coverage_mode_is_piggyback_when_cov_plugin_present(
+    def it_uses_piggyback_coverage_when_cov_plugin_present(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """pytest_configure sets coverage_mode=PIGGYBACK when _cov plugin is registered."""
@@ -349,9 +349,7 @@ class DescribePytestConfigureCoverageMode:
         assert session is not None
         assert session.coverage_mode == CoverageMode.PIGGYBACK
 
-    def it_coverage_mode_is_private_when_cov_plugin_absent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def it_uses_private_coverage_when_cov_plugin_absent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """pytest_configure sets coverage_mode=PRIVATE when _cov plugin is not registered."""
         src_dir = tmp_path / 'src'
         src_dir.mkdir()

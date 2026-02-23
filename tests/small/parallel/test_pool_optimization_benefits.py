@@ -98,7 +98,7 @@ class DescribeMpContextOptimization:
         assert pool._mp_context is not None
         assert pool._mp_context.get_start_method() == 'spawn'
 
-    def it_auto_start_method_selects_optimal(self) -> None:
+    def it_selects_optimal_start_method_automatically(self) -> None:
         """Auto start method selects the optimal method for the platform."""
         config = PoolConfig(start_method='auto')
         pool = PersistentWorkerPool.from_config(config)
@@ -111,12 +111,12 @@ class DescribeMpContextOptimization:
 class DescribePoolConfigIntegrationWithBatchExecutor:
     """Tests verifying PoolConfig works with BatchExecutor patterns."""
 
-    def it_batch_size_from_config(self) -> None:
+    def it_reads_batch_size_from_config(self) -> None:
         """BatchExecutor can use batch size from PoolConfig."""
         config = PoolConfig(batch_size=20)
         assert config.batch_size == 20
 
-    def it_config_provides_all_batch_executor_params(self) -> None:
+    def it_provides_all_batch_executor_params(self) -> None:
         """PoolConfig provides all parameters needed by BatchExecutor."""
         config = PoolConfig(
             max_workers=4,
@@ -153,7 +153,7 @@ class DescribePoolPerformanceCharacteristics:
         # The pool is not started yet
         assert not pool.is_running
 
-    def it_pool_startup_with_warmup_reasonable_time(self) -> None:
+    def it_completes_startup_with_warmup_in_reasonable_time(self) -> None:
         """Pool startup with warmup completes in reasonable time.
 
         Warmup should add some overhead but not be excessive.
@@ -171,7 +171,7 @@ class DescribePoolPerformanceCharacteristics:
         # Windows CI is slower and more variable
         assert elapsed < self.WARMUP_THRESHOLD
 
-    def it_pool_reuse_avoids_startup_overhead(self, tmp_path: Path) -> None:
+    def it_avoids_startup_overhead_when_reusing_pool(self, tmp_path: Path) -> None:
         """Using the same pool for multiple batches avoids repeated startup."""
         config = PoolConfig(max_workers=1, warmup=True, timeout=5)
         pool = PersistentWorkerPool.from_config(config)

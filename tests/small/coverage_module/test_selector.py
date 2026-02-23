@@ -156,7 +156,7 @@ class DescribeSelectorBatchSelection:
 class DescribeSelectorStats:
     """Test selector statistics."""
 
-    def it_get_selection_stats_empty_result(self, selector):
+    def it_returns_empty_selection_stats(self, selector):
         gremlin = Gremlin(
             gremlin_id='g999',
             file_path='unknown.py',
@@ -171,7 +171,7 @@ class DescribeSelectorStats:
         assert stats['selected_count'] == 0
         assert stats['coverage_location'] == 'unknown.py:1'
 
-    def it_get_selection_stats_with_matches(self, selector, sample_gremlin):
+    def it_includes_matches_in_selection_stats(self, selector, sample_gremlin):
         tests, stats = selector.select_tests_with_stats(sample_gremlin)
         assert tests == {'test_login_success', 'test_login_failure'}
         assert stats['selected_count'] == 2

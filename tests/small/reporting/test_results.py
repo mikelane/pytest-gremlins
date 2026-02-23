@@ -47,21 +47,21 @@ def sample_gremlin():
 class DescribeGremlinResultCreation:
     """Tests for GremlinResult dataclass creation and attributes."""
 
-    def it_result_stores_gremlin(self, sample_gremlin):
+    def it_stores_gremlin(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,
         )
         assert result.gremlin == sample_gremlin
 
-    def it_result_stores_status(self, sample_gremlin):
+    def it_stores_status(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.SURVIVED,
         )
         assert result.status == GremlinResultStatus.SURVIVED
 
-    def it_result_stores_killing_test_when_zapped(self, sample_gremlin):
+    def it_stores_killing_test_when_zapped(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,
@@ -76,7 +76,7 @@ class DescribeGremlinResultCreation:
         )
         assert result.killing_test is None
 
-    def it_result_stores_execution_time(self, sample_gremlin):
+    def it_stores_execution_time(self, sample_gremlin):
         result = GremlinResult(
             gremlin=sample_gremlin,
             status=GremlinResultStatus.ZAPPED,

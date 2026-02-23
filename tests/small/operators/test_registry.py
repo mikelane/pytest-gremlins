@@ -68,7 +68,7 @@ class DescribeOperatorRegistry:
         assert 'custom_name' in registry.available()
         assert 'fake' not in registry.available()
 
-    def it_get_returns_operator_instance(self):
+    def it_returns_operator_instance(self):
         registry = OperatorRegistry()
         registry.register(FakeOperator)
 
@@ -77,13 +77,13 @@ class DescribeOperatorRegistry:
         assert isinstance(operator, FakeOperator)
         assert isinstance(operator, GremlinOperator)
 
-    def it_get_raises_key_error_for_unknown_operator(self):
+    def it_raises_key_error_for_unknown_operator(self):
         registry = OperatorRegistry()
 
         with pytest.raises(KeyError, match='unknown'):
             registry.get('unknown')
 
-    def it_get_all_returns_all_registered_operators(self):
+    def it_returns_all_registered_operators(self):
         registry = OperatorRegistry()
         registry.register(FakeOperator)
         registry.register(AnotherFakeOperator)
@@ -95,7 +95,7 @@ class DescribeOperatorRegistry:
         assert 'fake' in names
         assert 'another_fake' in names
 
-    def it_get_all_with_enabled_filter_returns_only_specified_operators(self):
+    def it_returns_only_specified_operators_when_enabled_filter_set(self):
         registry = OperatorRegistry()
         registry.register(FakeOperator)
         registry.register(AnotherFakeOperator)
@@ -105,7 +105,7 @@ class DescribeOperatorRegistry:
         assert len(operators) == 1
         assert operators[0].name == 'fake'
 
-    def it_get_all_preserves_enabled_order(self):
+    def it_preserves_enabled_order(self):
         registry = OperatorRegistry()
         registry.register(FakeOperator)
         registry.register(AnotherFakeOperator)
@@ -115,7 +115,7 @@ class DescribeOperatorRegistry:
         names = [op.name for op in operators]
         assert names == ['another_fake', 'fake']
 
-    def it_get_all_ignores_unknown_operators_in_enabled(self):
+    def it_ignores_unknown_operators_in_enabled_list(self):
         registry = OperatorRegistry()
         registry.register(FakeOperator)
 
@@ -125,14 +125,14 @@ class DescribeOperatorRegistry:
         assert len(operators) == 1
         assert operators[0].name == 'fake'
 
-    def it_get_all_emits_warning_for_unknown_operators(self):
+    def it_emits_warning_for_unknown_operators(self):
         registry = OperatorRegistry()
         registry.register(FakeOperator)
 
         with pytest.warns(UserWarning, match="Unknown operator 'unknown_op' requested"):
             registry.get_all(enabled=['fake', 'unknown_op'])
 
-    def it_available_returns_list_of_registered_names(self):
+    def it_returns_list_of_registered_names(self):
         registry = OperatorRegistry()
         registry.register(FakeOperator)
         registry.register(AnotherFakeOperator)
@@ -142,7 +142,7 @@ class DescribeOperatorRegistry:
         assert 'fake' in available
         assert 'another_fake' in available
 
-    def it_empty_registry_returns_empty_available(self):
+    def it_returns_empty_available_from_empty_registry(self):
         registry = OperatorRegistry()
 
         assert registry.available() == []

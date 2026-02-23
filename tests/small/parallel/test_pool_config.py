@@ -76,12 +76,12 @@ class DescribePoolConfigCreation:
 class DescribePoolConfigValidation:
     """Tests for PoolConfig validation."""
 
-    def it_invalid_start_method_raises_error(self) -> None:
+    def it_raises_error_for_invalid_start_method(self) -> None:
         """Invalid start method raises ValueError."""
         with pytest.raises(ValueError, match='Invalid start method'):
             PoolConfig(start_method='invalid')
 
-    def it_valid_start_methods_are_accepted(self) -> None:
+    def it_accepts_valid_start_methods(self) -> None:
         """Valid start methods are accepted."""
         for method in ('auto', 'spawn', 'fork', 'forkserver'):
             config = PoolConfig(start_method=method)
@@ -100,7 +100,7 @@ class DescribePoolConfigValidation:
         with pytest.raises(ValueError, match='timeout must be positive'):
             PoolConfig(timeout=0)
 
-    def it_batch_size_must_be_positive(self) -> None:
+    def it_requires_positive_batch_size(self) -> None:
         """batch_size must be positive."""
         with pytest.raises(ValueError, match='batch_size must be positive'):
             PoolConfig(batch_size=0)
@@ -138,20 +138,20 @@ class DescribeGetOptimalStartMethod:
 class DescribePoolConfigMpContext:
     """Tests for PoolConfig multiprocessing context creation."""
 
-    def it_get_mp_context_returns_context(self) -> None:
+    def it_returns_mp_context(self) -> None:
         """get_mp_context returns a multiprocessing context."""
         config = PoolConfig(start_method='spawn')
         ctx = config.get_mp_context()
         assert ctx.get_start_method() == 'spawn'
 
-    def it_get_mp_context_uses_specified_method(self) -> None:
+    def it_uses_specified_start_method_for_mp_context(self) -> None:
         """get_mp_context uses the specified start method."""
         config = PoolConfig(start_method='spawn')
         ctx = config.get_mp_context()
         # The context should use spawn method
         assert ctx.get_start_method() == 'spawn'
 
-    def it_get_mp_context_with_auto_uses_optimal(self) -> None:
+    def it_uses_optimal_method_when_auto_is_set(self) -> None:
         """get_mp_context with 'auto' uses the optimal method."""
         config = PoolConfig(start_method='auto')
         ctx = config.get_mp_context()
@@ -163,13 +163,13 @@ class DescribePoolConfigMpContext:
 class DescribePoolConfigEquality:
     """Tests for PoolConfig equality and hashing."""
 
-    def it_equal_configs_are_equal(self) -> None:
+    def it_considers_equal_configs_as_equal(self) -> None:
         """Two configs with same values are equal."""
         config1 = PoolConfig(max_workers=4, timeout=30)
         config2 = PoolConfig(max_workers=4, timeout=30)
         assert config1 == config2
 
-    def it_different_configs_are_not_equal(self) -> None:
+    def it_considers_different_configs_as_not_equal(self) -> None:
         """Two configs with different values are not equal."""
         config1 = PoolConfig(max_workers=4)
         config2 = PoolConfig(max_workers=8)

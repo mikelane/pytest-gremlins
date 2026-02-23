@@ -146,7 +146,7 @@ class DescribeImportHookRegistration:
         finder_types = [type(f) for f in sys.meta_path]
         assert GremlinFinder not in finder_types
 
-    def it_unregister_hooks_is_safe_when_not_registered(self, clean_meta_path):  # noqa: ARG002
+    def it_safely_unregisters_hooks_when_not_registered(self, clean_meta_path):  # noqa: ARG002
         # Should not raise
         unregister_import_hooks()
 

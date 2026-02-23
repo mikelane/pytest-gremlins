@@ -30,7 +30,7 @@ class DescribeResultAggregatorCreation:
 class DescribeResultAggregatorAddResult:
     """Tests for adding results to aggregator."""
 
-    def it_add_result_increments_completed(self) -> None:
+    def it_increments_completed_on_add_result(self) -> None:
         """Adding result increments completed count."""
         aggregator = ResultAggregator(total_gremlins=10)
         result = WorkerResult(
@@ -40,7 +40,7 @@ class DescribeResultAggregatorAddResult:
         aggregator.add_result(result)
         assert aggregator.completed == 1
 
-    def it_add_multiple_results(self) -> None:
+    def it_aggregates_multiple_results(self) -> None:
         """Can add multiple results."""
         aggregator = ResultAggregator(total_gremlins=10)
         for i in range(5):
@@ -51,7 +51,7 @@ class DescribeResultAggregatorAddResult:
             aggregator.add_result(result)
         assert aggregator.completed == 5
 
-    def it_get_results_returns_all_added(self) -> None:
+    def it_returns_all_added_results(self) -> None:
         """get_results returns all added results."""
         aggregator = ResultAggregator(total_gremlins=3)
         for i in range(3):
@@ -88,7 +88,7 @@ class DescribeResultAggregatorOrdering:
 class DescribeResultAggregatorProgress:
     """Tests for progress reporting."""
 
-    def it_get_progress_returns_completed_and_total(self) -> None:
+    def it_returns_completed_and_total_progress(self) -> None:
         """get_progress returns (completed, total)."""
         aggregator = ResultAggregator(total_gremlins=10)
         assert aggregator.get_progress() == (0, 10)
@@ -125,7 +125,7 @@ class DescribeResultAggregatorProgress:
 class DescribeResultAggregatorErrorHandling:
     """Tests for error handling."""
 
-    def it_add_error_creates_error_result(self) -> None:
+    def it_creates_error_result_on_add_error(self) -> None:
         """add_error creates result with ERROR status."""
         aggregator = ResultAggregator(total_gremlins=10)
         aggregator.add_error('g001', Exception('Worker crashed'))
@@ -135,7 +135,7 @@ class DescribeResultAggregatorErrorHandling:
         assert results[0].gremlin_id == 'g001'
         assert results[0].status == GremlinResultStatus.ERROR
 
-    def it_add_error_increments_completed(self) -> None:
+    def it_increments_completed_on_add_error(self) -> None:
         """add_error increments completed count."""
         aggregator = ResultAggregator(total_gremlins=10)
         aggregator.add_error('g001', Exception('Worker crashed'))
@@ -172,7 +172,7 @@ class DescribeResultAggregatorThreadSafety:
         results = aggregator.get_results()
         assert len(results) == 100
 
-    def it_no_duplicate_results_from_concurrent_adds(self) -> None:
+    def it_prevents_duplicate_results_from_concurrent_adds(self) -> None:
         """Concurrent adds don't create duplicates."""
         aggregator = ResultAggregator(total_gremlins=50)
         threads = []

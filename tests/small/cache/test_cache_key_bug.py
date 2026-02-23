@@ -16,7 +16,7 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 class DescribeCacheKeyIncludesTestNames:
     """Cache key must include test names, not just hashes."""
 
-    def it_different_test_names_same_hash_produces_different_keys(self, tmp_path: Path) -> None:
+    def it_produces_different_keys_for_same_hash_with_different_test_names(self, tmp_path: Path) -> None:
         """Different test names with same hash value produce different cache keys.
 
         BUG: If a test file is renamed but content unchanged, the cache key

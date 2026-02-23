@@ -14,7 +14,7 @@ from pytest_gremlins.reporting.results import GremlinResultStatus
 class DescribeResultStore:
     """Tests for ResultStore class."""
 
-    def it_store_creates_database_file(self, tmp_path):
+    def it_creates_database_file(self, tmp_path):
         """Store creates SQLite database at specified path."""
         db_path = tmp_path / '.gremlins_cache' / 'results.db'
 
@@ -23,7 +23,7 @@ class DescribeResultStore:
 
         assert db_path.exists()
 
-    def it_store_creates_parent_directories(self, tmp_path):
+    def it_creates_parent_directories(self, tmp_path):
         """Store creates parent directories if they don't exist."""
         db_path = tmp_path / 'nested' / 'deep' / 'results.db'
 
@@ -32,7 +32,7 @@ class DescribeResultStore:
 
         assert db_path.exists()
 
-    def it_get_returns_none_for_unknown_key(self, tmp_path):
+    def it_returns_none_for_unknown_key(self, tmp_path):
         """get returns None for cache miss."""
         with ResultStore(tmp_path / 'results.db') as store:
             result = store.get('nonexistent_key')
@@ -67,7 +67,7 @@ class DescribeResultStore:
 
         assert retrieved == updated
 
-    def it_store_persists_across_instances(self, tmp_path):
+    def it_persists_across_instances(self, tmp_path):
         """Data persists when store is reopened."""
         db_path = tmp_path / 'results.db'
         cache_key = 'persistent_key'
@@ -93,7 +93,7 @@ class DescribeResultStore:
 
         assert retrieved is None
 
-    def it_delete_nonexistent_key_is_noop(self, tmp_path):
+    def it_ignores_deletion_of_nonexistent_keys(self, tmp_path):
         """delete on missing key does nothing (no error)."""
         with ResultStore(tmp_path / 'results.db') as store:
             store.delete('nonexistent')  # No exception raised
@@ -142,7 +142,7 @@ class DescribeResultStore:
 
         assert keys == []
 
-    def it_count_returns_number_of_entries(self, tmp_path):
+    def it_returns_number_of_entries(self, tmp_path):
         """count returns total number of cached entries."""
         with ResultStore(tmp_path / 'results.db') as store:
             store.put('key1', {'status': 'zapped'})
@@ -151,7 +151,7 @@ class DescribeResultStore:
 
         assert count == 2
 
-    def it_count_returns_zero_when_empty(self, tmp_path):
+    def it_returns_zero_when_empty(self, tmp_path):
         """count returns 0 for empty cache."""
         with ResultStore(tmp_path / 'results.db') as store:
             count = store.count()
@@ -207,7 +207,7 @@ class DescribeResultStore:
         assert file1_g002 is None
         assert file2_g001 is not None
 
-    def it_corrupted_database_is_recreated(self, tmp_path, caplog):
+    def it_recreates_database_when_corrupted(self, tmp_path, caplog):
         """Corrupted database file is deleted and recreated with warning."""
         db_path = tmp_path / 'results.db'
         db_path.write_bytes(b'not a valid sqlite database')

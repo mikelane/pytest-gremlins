@@ -45,13 +45,13 @@ class DescribeDistributionStrategyProtocol:
 class DescribeRoundRobinDistribution:
     """Tests for RoundRobinDistribution strategy."""
 
-    def it_empty_gremlins_returns_empty_buckets(self) -> None:
+    def it_returns_empty_buckets_for_empty_gremlins(self) -> None:
         """Distributing empty list returns empty buckets for each worker."""
         strategy = RoundRobinDistribution()
         result = strategy.distribute([], num_workers=3)
         assert result == [[], [], []]
 
-    def it_single_gremlin_goes_to_first_worker(self) -> None:
+    def it_assigns_single_gremlin_to_first_worker(self) -> None:
         """Single gremlin is assigned to first worker."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin('g001')]
@@ -84,7 +84,7 @@ class DescribeRoundRobinDistribution:
         assert len(result[1]) == 2  # g001, g004
         assert len(result[2]) == 1  # g002
 
-    def it_single_worker_gets_all_gremlins(self) -> None:
+    def it_assigns_all_gremlins_to_single_worker(self) -> None:
         """With single worker, all gremlins go to that worker."""
         strategy = RoundRobinDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(5)]
@@ -133,13 +133,13 @@ class DescribeRoundRobinDistribution:
 class DescribeWeightedDistribution:
     """Tests for WeightedDistribution strategy."""
 
-    def it_empty_gremlins_returns_empty_buckets(self) -> None:
+    def it_returns_empty_buckets_for_empty_gremlins(self) -> None:
         """Distributing empty list returns empty buckets."""
         strategy = WeightedDistribution()
         result = strategy.distribute([], num_workers=3)
         assert result == [[], [], []]
 
-    def it_without_test_counts_uses_round_robin(self) -> None:
+    def it_uses_round_robin_when_test_counts_unavailable(self) -> None:
         """Without test counts, falls back to round-robin distribution."""
         strategy = WeightedDistribution()
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(6)]
