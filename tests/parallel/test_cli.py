@@ -1,0 +1,47 @@
+"""Tests for parallel execution CLI options.
+
+These tests verify the CLI option parsing and configuration.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+
+@pytest.mark.small
+class DescribeParallelCLIOptions:
+    """Tests for parallel CLI option parsing via pytest."""
+
+    def it_gremlin_parallel_option_exists(self, pytester: pytest.Pytester) -> None:
+        """--gremlin-parallel option is available."""
+        result = pytester.runpytest('--help')
+        result.stdout.fnmatch_lines(['*--gremlin-parallel*'])
+
+    def it_gremlin_workers_option_exists(self, pytester: pytest.Pytester) -> None:
+        """--gremlin-workers option is available."""
+        result = pytester.runpytest('--help')
+        result.stdout.fnmatch_lines(['*--gremlin-workers*'])
+
+    def it_parallel_disabled_by_default(self, pytester_with_markers: pytest.Pytester) -> None:
+        """Parallel execution is disabled by default."""
+        pytester_with_markers.makepyfile(
+            test_sample="""
+            def test_pass():
+                assert True
+            """,
+        )
+        # Run without --gremlins flag - should work with no errors
+        result = pytester_with_markers.runpytest('-v')
+        assert result.ret == 0
+
+    def it_workers_accepts_integer(self, pytester_with_markers: pytest.Pytester) -> None:
+        """--gremlin-workers accepts an integer value."""
+        pytester_with_markers.makepyfile(
+            test_sample="""
+            def test_pass():
+                assert True
+            """,
+        )
+        # Should not fail from invalid option
+        result = pytester_with_markers.runpytest('--gremlin-workers=4', '-v')
+        assert result.ret == 0

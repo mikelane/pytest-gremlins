@@ -274,7 +274,7 @@ class DescribeLoadBenchmarkResults:
                 ],
                 "results": []
             }
-            """
+            """,
             )
             f.flush()
 

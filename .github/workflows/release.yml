@@ -38,7 +38,7 @@ jobs:
           COVERAGE_PROCESS_START: pyproject.toml
           PYTHONPATH: .
         run: |
-          uv run coverage run -m pytest tests/small tests/medium -v
+          uv run coverage run -m pytest tests -m "small or medium" -v
           uv run coverage combine --quiet || true
           uv run coverage report --show-missing
 
