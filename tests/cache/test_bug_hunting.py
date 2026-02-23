@@ -207,7 +207,7 @@ class DescribeIncrementalCacheBugs:
 
             assert result == {'status': 'zapped'}
 
-    def it_cache_key_with_unicode_in_gremlin_id(self, tmp_path):
+    def it_computes_cache_key_with_unicode_gremlin_id(self, tmp_path):
         """Cache retrieves results for gremlin IDs containing Unicode characters.
 
         File paths with Unicode characters should work correctly.

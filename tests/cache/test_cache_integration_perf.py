@@ -171,7 +171,7 @@ class DescribeCacheKeyEfficiency:
 
         assert key1 == key2, 'Cache key must be order-independent'
 
-    def it_cache_key_distinguishes_different_inputs(self, tmp_path: Path) -> None:
+    def it_distinguishes_different_inputs_by_cache_key(self, tmp_path: Path) -> None:
         """Different inputs produce different cache keys."""
         cache_dir = tmp_path / '.gremlins_cache'
 

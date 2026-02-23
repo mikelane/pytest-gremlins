@@ -61,7 +61,7 @@ class DescribeDetectCoverageMode:
 
         assert result == CoverageMode.PRIVATE
 
-    def it_piggyback_and_private_produce_different_results(self) -> None:
+    def it_produces_different_results_for_piggyback_and_private(self) -> None:
         """Present vs absent plugin produces different modes - rules out hardcoding."""
         config_with_cov = MagicMock()
         config_with_cov.pluginmanager.get_plugin.return_value = MagicMock()

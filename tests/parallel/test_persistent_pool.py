@@ -57,7 +57,7 @@ class DescribePersistentWorkerPoolCreation:
         assert pool.timeout == 45
         assert pool.config is config
 
-    def it_config_property_returns_poolconfig(self) -> None:
+    def it_returns_poolconfig_from_config_property(self) -> None:
         """config property returns the PoolConfig used by the pool."""
         config = PoolConfig(max_workers=4)
         pool = PersistentWorkerPool(config=config)
@@ -246,7 +246,7 @@ class DescribePersistentWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.SURVIVED
 
-    def it_result_includes_gremlin_id(self, tmp_path: Path) -> None:
+    def it_includes_gremlin_id(self, tmp_path: Path) -> None:
         """Result includes the gremlin ID that was tested."""
         with PersistentWorkerPool(max_workers=1, timeout=5) as pool:
             future = pool.submit(

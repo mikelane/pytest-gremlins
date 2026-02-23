@@ -66,7 +66,7 @@ class DescribeCacheIntegration:
         # Should show cache hits in output
         result.stdout.fnmatch_lines(['*cache hit*'])
 
-    def it_source_change_invalidates_cache(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_invalidates_cache_when_source_file_changes(self, pytester_with_markers: pytest.Pytester) -> None:
         """Modifying source file invalidates cache entries."""
         pytester_with_markers.makepyfile(
             src_module="""
