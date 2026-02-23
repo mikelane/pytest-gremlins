@@ -25,6 +25,29 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line('markers', 'large: End-to-end system tests (< 60s)')
 
 
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Sort small tests before medium tests to preserve coverage tracing.
+
+    In-process pytester (used by medium tests) resets sys.settrace when the
+    inner session ends, stopping coverage.py from tracking subsequent tests.
+    Running all small tests first ensures their coverage is captured before
+    any in-process pytester session can clear the trace function.
+
+    This restores the execution order that existed when tests lived in
+    separate tests/small/ and tests/medium/ directories.
+    """
+
+    def _size_priority(item: pytest.Item) -> int:
+        markers = {m.name for m in item.iter_markers()}
+        if 'large' in markers:
+            return 3
+        if 'medium' in markers:
+            return 2
+        return 1  # small or unmarked runs first
+
+    items.sort(key=_size_priority)
+
+
 @pytest.fixture(autouse=True)
 def reset_gremlin_session() -> Generator[None, None, None]:
     """Reset the global gremlin session after each test to prevent state leakage.

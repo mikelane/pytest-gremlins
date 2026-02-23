@@ -118,6 +118,7 @@ class DescribeContentHasher:
         assert result1 != result2
 
 
+@pytest.mark.small
 class DescribeContentHasherEdgeCases:
     """Tests for edge cases in ContentHasher."""
 

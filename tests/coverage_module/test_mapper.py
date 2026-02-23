@@ -40,6 +40,7 @@ class DescribeCoverageMapAddCoverage:
         assert len(coverage_map) == 2
 
 
+@pytest.mark.small
 class DescribeCoverageMapIdempotency:
     """Test idempotency of add operations."""
 

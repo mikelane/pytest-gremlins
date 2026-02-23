@@ -52,6 +52,7 @@ class DescribeCoverageCollectorRecording:
         assert len(collector.coverage_map) == 0
 
 
+@pytest.mark.small
 class DescribeCoverageCollectorMerging:
     """Test that duplicate recordings are merged correctly."""
 

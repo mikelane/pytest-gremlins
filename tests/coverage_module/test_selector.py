@@ -100,6 +100,7 @@ class DescribeSelectorSelectTestsForLocation:
         assert result == set()
 
 
+@pytest.mark.small
 class DescribeSelectorBatchSelectionEmpty:
     """Test batch selection with empty input."""
 

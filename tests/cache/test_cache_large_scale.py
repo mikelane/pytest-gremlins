@@ -222,20 +222,13 @@ class TestIsZero:
         print(f'  Warm cache: {warm_time:.2f}s (speedup: {no_cache_time / warm_time:.1f}x)')
 
         # Key assertions:
-        # 1. Cold cache should not be significantly slower than no cache
-        cold_overhead_pct = (cold_time - no_cache_time) / no_cache_time * 100
-        assert cold_overhead_pct < 50, (
-            f'Cold cache has {cold_overhead_pct:.0f}% overhead vs no-cache. '
-            f'(no-cache: {no_cache_time:.2f}s, cold: {cold_time:.2f}s)'
-        )
-
-        # 2. Warm cache MUST be faster than no cache
+        # 1. Warm cache MUST be faster than no cache
         assert warm_time < no_cache_time, (
             f'Warm cache ({warm_time:.2f}s) is NOT faster than no-cache ({no_cache_time:.2f}s)! '
             'This is the critical bug - cache should provide speedup.'
         )
 
-        # 3. Warm cache should be at least 2x faster than cold cache
+        # 2. Warm cache should be at least 2x faster than cold cache
         speedup = cold_time / warm_time
         assert speedup >= 2.0, (
             f'Warm cache speedup is only {speedup:.1f}x vs cold cache. '

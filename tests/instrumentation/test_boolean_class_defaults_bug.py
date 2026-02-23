@@ -63,7 +63,7 @@ def test_explicit_last_true():
 """,
         )
 
-        result = pytester_with_markers.runpytest(
+        result = pytester_with_markers.runpytest_subprocess(
             '--gremlins',
             '--gremlin-operators=boolean',
             '--gremlin-targets=target_module.py',
@@ -119,7 +119,7 @@ def test_make_default_range_from0_is_true():
 """,
         )
 
-        result = pytester_with_markers.runpytest(
+        result = pytester_with_markers.runpytest_subprocess(
             '--gremlins',
             '--gremlin-operators=boolean',
             '--gremlin-targets=target_module.py',
@@ -160,7 +160,7 @@ def test_default_config_debug_is_false():
 """,
         )
 
-        result = pytester_with_markers.runpytest(
+        result = pytester_with_markers.runpytest_subprocess(
             '--gremlins',
             '--gremlin-operators=boolean',
             '--gremlin-targets=target_module.py',
