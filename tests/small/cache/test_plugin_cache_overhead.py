@@ -14,10 +14,10 @@ from pytest_gremlins.cache.store import ResultStore
 
 
 @pytest.mark.medium
-class TestUpfrontHashingOverhead:
+class DescribeUpfrontHashingOverhead:
     """Tests for upfront file hashing overhead."""
 
-    def test_upfront_hashing_cost_for_typical_project(self, tmp_path: Path) -> None:
+    def it_upfront_hashing_cost_for_typical_project(self, tmp_path: Path) -> None:
         """Measure upfront hashing cost for a typical project.
 
         Simulates the current plugin behavior where ALL source and test
@@ -60,10 +60,10 @@ class TestUpfrontHashingOverhead:
 
 
 @pytest.mark.medium
-class TestSqliteCommitOverhead:
+class DescribeSqliteCommitOverhead:
     """Tests for SQLite commit overhead."""
 
-    def test_individual_commits_are_slow(self, tmp_path: Path) -> None:
+    def it_individual_commits_are_slow(self, tmp_path: Path) -> None:
         """Individual commits per write are slower than batch commits."""
         db_path = tmp_path / 'results.db'
 
@@ -85,10 +85,10 @@ class TestSqliteCommitOverhead:
 
 
 @pytest.mark.medium
-class TestCacheKeyComputationOverhead:
+class DescribeCacheKeyComputationOverhead:
     """Tests for cache key computation overhead."""
 
-    def test_repeated_hash_combined_calls(self, tmp_path: Path) -> None:
+    def it_repeated_hash_combined_calls(self, tmp_path: Path) -> None:
         """Measure overhead of computing combined test hashes repeatedly.
 
         For each gremlin, we call hash_combined with the test hashes.
@@ -116,10 +116,10 @@ class TestCacheKeyComputationOverhead:
 
 
 @pytest.mark.medium
-class TestTotalCacheOverhead:
+class DescribeTotalCacheOverhead:
     """Tests measuring total cache overhead vs no-cache baseline."""
 
-    def test_cache_overhead_should_not_exceed_benefit(self, tmp_path: Path) -> None:
+    def it_cache_overhead_stays_under_half_ms_per_gremlin(self, tmp_path: Path) -> None:
         """Total cache overhead must be less than time saved.
 
         For cache to be beneficial:
@@ -175,10 +175,10 @@ class TestTotalCacheOverhead:
 
 
 @pytest.mark.medium
-class TestCacheWithBatchOperations:
+class DescribeCacheWithBatchOperations:
     """Tests demonstrating potential for batch optimization."""
 
-    def test_batch_get_potential(self, tmp_path: Path) -> None:
+    def it_computes_batch_get_potential(self, tmp_path: Path) -> None:
         """Batch get could retrieve all cached results in one query.
 
         Current: N SQLite queries for N gremlins

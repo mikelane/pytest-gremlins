@@ -16,10 +16,10 @@ from pytest_gremlins.instrumentation.transformer import (
 from pytest_gremlins.operators.comparison import ComparisonOperator
 
 
-class TestMutationGenerator:
+class DescribeMutationGenerator:
     """Test generating mutations for comparison operators."""
 
-    def test_generate_mutations_for_less_than(self):
+    def it_generate_mutations_for_less_than(self):
         source = 'x < 10'
         tree = ast.parse(source, mode='eval')
         compare_node = tree.body
@@ -43,7 +43,7 @@ class TestMutationGenerator:
             ('x != 10', ['Eq']),
         ],
     )
-    def test_generate_mutations_for_comparison_operators(self, source, expected_ops):
+    def it_generate_mutations_for_comparison_operators(self, source, expected_ops):
         tree = ast.parse(source, mode='eval')
         compare_node = tree.body
 
@@ -52,7 +52,7 @@ class TestMutationGenerator:
         actual_ops = [m.ops[0].__class__.__name__ for m in mutations]
         assert sorted(actual_ops) == sorted(expected_ops)
 
-    def test_original_node_is_not_modified(self):
+    def it_does_not_modify_the_original_node(self):
         source = 'x < 10'
         tree = ast.parse(source, mode='eval')
         compare_node = tree.body
@@ -64,10 +64,10 @@ class TestMutationGenerator:
         assert isinstance(compare_node.ops[0], original_op_type)
 
 
-class TestCollectGremlins:
+class DescribeCollectGremlins:
     """Test collecting gremlins from source code."""
 
-    def test_collect_gremlins_returns_gremlins(self):
+    def it_collect_gremlins_returns_gremlins(self):
         source = """
 def is_adult(age):
     return age >= 18
@@ -78,7 +78,7 @@ def is_adult(age):
         assert all(g.file_path == 'example.py' for g in gremlins)
         assert all(g.operator_name == 'comparison' for g in gremlins)
 
-    def test_collect_gremlins_returns_original_ast(self):
+    def it_collect_gremlins_returns_original_ast(self):
         source = """
 def is_adult(age):
     return age >= 18
@@ -89,10 +89,10 @@ def is_adult(age):
         assert isinstance(tree, ast.Module)
 
 
-class TestBuildSwitchingCode:
+class DescribeBuildSwitchingCode:
     """Test building AST code that implements mutation switching."""
 
-    def test_build_switching_expression_returns_if_expression(self):
+    def it_build_switching_expression_returns_if_expression(self):
         source = """
 def is_adult(age):
     return age >= 18
@@ -109,7 +109,7 @@ def is_adult(age):
 
         assert isinstance(switching_expr, ast.IfExp)
 
-    def test_switching_expression_executes_original_when_no_gremlin_active(self, monkeypatch):
+    def it_switching_expression_executes_original_when_no_gremlin_active(self, monkeypatch):
         source = 'age >= 18'
         gremlins, tree = collect_gremlins(source, 'example.py')
         expr_stmt = tree.body[0]
@@ -127,7 +127,7 @@ def is_adult(age):
 
         assert result is True
 
-    def test_switching_expression_executes_mutation_when_gremlin_active(self):
+    def it_switching_expression_executes_mutation_when_gremlin_active(self):
         source = 'age >= 18'
         gremlins, tree = collect_gremlins(source, 'example.py')
         expr_stmt = tree.body[0]
@@ -147,10 +147,10 @@ def is_adult(age):
         assert result is False
 
 
-class TestMutationSwitchingTransformer:
+class DescribeMutationSwitchingTransformer:
     """Test the full AST transformer that embeds mutation switching."""
 
-    def test_transform_source_replaces_comparisons_with_switches(self):
+    def it_transform_source_replaces_comparisons_with_switches(self):
         source = """
 def is_adult(age):
     return age >= 18
@@ -165,7 +165,7 @@ def is_adult(age):
         function_body = func_def.body[0]
         assert isinstance(function_body, ast.If)
 
-    def test_transformed_code_executes_correctly_with_no_gremlin(self):
+    def it_transformed_code_executes_correctly_with_no_gremlin(self):
         source = """
 def is_adult(age):
     return age >= 18
@@ -186,7 +186,7 @@ def is_adult(age):
         assert is_adult(18) is True
         assert is_adult(17) is False
 
-    def test_transformed_code_executes_mutation_when_gremlin_active(self):
+    def it_transformed_code_executes_mutation_when_gremlin_active(self):
         source = """
 def is_adult(age):
     return age >= 18
@@ -205,10 +205,10 @@ def is_adult(age):
         assert is_adult(18) is False
 
 
-class TestMultiOperatorTransformer:
+class DescribeMultiOperatorTransformer:
     """Test transformer with multiple operators."""
 
-    def test_transform_source_generates_gremlins_for_arithmetic_operations(self):
+    def it_transform_source_generates_gremlins_for_arithmetic_operations(self):
         source = """
 def calculate(x, y):
     return x + y
@@ -218,7 +218,7 @@ def calculate(x, y):
         assert len(gremlins) >= 1
         assert any(g.operator_name == 'arithmetic' for g in gremlins)
 
-    def test_transform_source_generates_gremlins_for_boolean_operations(self):
+    def it_transform_source_generates_gremlins_for_boolean_operations(self):
         source = """
 def check(a, b):
     return a and b
@@ -228,7 +228,7 @@ def check(a, b):
         assert len(gremlins) >= 1
         assert any(g.operator_name == 'boolean' for g in gremlins)
 
-    def test_transform_source_generates_gremlins_for_boundary_conditions(self):
+    def it_transform_source_generates_gremlins_for_boundary_conditions(self):
         source = """
 def is_adult(age):
     return age >= 18
@@ -238,7 +238,7 @@ def is_adult(age):
         boundary_gremlins = [g for g in gremlins if g.operator_name == 'boundary']
         assert len(boundary_gremlins) >= 1
 
-    def test_transform_source_generates_gremlins_for_return_statements(self):
+    def it_transform_source_generates_gremlins_for_return_statements(self):
         source = """
 def get_value():
     return 42
@@ -248,7 +248,7 @@ def get_value():
         assert len(gremlins) >= 1
         assert any(g.operator_name == 'return' for g in gremlins)
 
-    def test_transform_source_uses_all_five_operators(self):
+    def it_transform_source_uses_all_five_operators(self):
         source = """
 def complex_function(x, y):
     if x >= 10:
@@ -266,7 +266,7 @@ def complex_function(x, y):
         assert 'boundary' in operator_names
         assert 'return' in operator_names
 
-    def test_transform_source_generates_gremlins_for_not_operator(self):
+    def it_transform_source_generates_gremlins_for_not_operator(self):
         source = """
 def negate(x):
     return not x
@@ -276,7 +276,7 @@ def negate(x):
         assert any(g.operator_name == 'boolean' for g in gremlins)
         assert any('not' in g.description.lower() for g in gremlins)
 
-    def test_transform_source_handles_return_true_false_mutations(self):
+    def it_transform_source_handles_return_true_false_mutations(self):
         source = """
 def check():
     return True
@@ -287,7 +287,7 @@ def check():
         boolean_gremlins = [g for g in gremlins if g.operator_name == 'boolean']
         assert any('True' in g.description or 'False' in g.description for g in boolean_gremlins)
 
-    def test_transform_source_handles_unsupported_binop(self):
+    def it_transform_source_handles_unsupported_binop(self):
         source = """
 def bitwise(x, y):
     return x & y
@@ -299,7 +299,7 @@ def bitwise(x, y):
         return_gremlins = [g for g in gremlins if g.operator_name == 'return']
         assert len(return_gremlins) >= 1
 
-    def test_transform_source_handles_unsupported_boolop(self):
+    def it_transform_source_handles_unsupported_boolop(self):
         source = """
 def check(x):
     return x
@@ -310,10 +310,10 @@ def check(x):
         assert any(g.operator_name == 'return' for g in gremlins)
 
 
-class TestTransformerEdgeCases:
+class DescribeTransformerEdgeCases:
     """Test edge cases in the transformer."""
 
-    def test_transform_source_handles_bitwise_binop(self):
+    def it_transform_source_handles_bitwise_binop(self):
         """BitAnd is a BinOp but not mutated by arithmetic operator."""
         source = """
 def bitwise(x, y):
@@ -326,7 +326,7 @@ def bitwise(x, y):
         arithmetic_gremlins = [g for g in gremlins if g.operator_name == 'arithmetic']
         assert len(arithmetic_gremlins) == 0  # & is not an arithmetic operator
 
-    def test_transform_source_handles_unary_minus(self):
+    def it_transform_source_handles_unary_minus(self):
         """Unary minus is a UnaryOp but not mutated by boolean operator."""
         source = """
 def negate(x):
@@ -338,7 +338,7 @@ def negate(x):
         boolean_gremlins = [g for g in gremlins if g.operator_name == 'boolean']
         assert len(boolean_gremlins) == 0  # -x is not a boolean operator
 
-    def test_transform_source_handles_unsupported_comparison(self):
+    def it_transform_source_handles_unsupported_comparison(self):
         """Is/IsNot comparisons are not mutated."""
         source = """
 def check(x):
@@ -350,7 +350,7 @@ def check(x):
         comparison_gremlins = [g for g in gremlins if g.operator_name == 'comparison']
         assert len(comparison_gremlins) == 0
 
-    def test_transform_source_handles_non_boolean_constant(self):
+    def it_transform_source_handles_non_boolean_constant(self):
         """Non-boolean constants are not mutated by boolean operator."""
         source = """
 def get_value():
@@ -363,10 +363,10 @@ def get_value():
         assert len(boolean_gremlins) == 0
 
 
-class TestCreateGremlinsForNode:
+class DescribeCreateGremlinsForNode:
     """Test create_gremlins_for_node function directly."""
 
-    def test_returns_empty_list_when_operator_cannot_mutate_node(self):
+    def it_returns_empty_list_when_operator_cannot_mutate_node(self):
         """Returns empty list when operator.can_mutate returns False."""
         # BinOp node that ComparisonOperator cannot mutate
         node = ast.parse('x + 10', mode='eval').body
@@ -385,10 +385,10 @@ class TestCreateGremlinsForNode:
         assert counter[0] == 0  # No IDs were generated
 
 
-class TestGremlinIdUniquenessAcrossFiles:
+class DescribeGremlinIdUniquenessAcrossFiles:
     """Test that gremlin IDs are globally unique across different files."""
 
-    def test_gremlins_from_different_files_have_disjoint_ids(self):
+    def it_gremlins_from_different_files_have_disjoint_ids(self):
         source = 'x = 1 + 2'
         gremlins_a, _ = transform_source(source, 'file_a.py')
         gremlins_b, _ = transform_source(source, 'file_b.py')
@@ -398,7 +398,7 @@ class TestGremlinIdUniquenessAcrossFiles:
 
         assert ids_a.isdisjoint(ids_b)
 
-    def test_same_named_files_in_different_directories_have_disjoint_ids(self):
+    def it_assigns_disjoint_ids_to_same_named_files_in_different_directories(self):
         source = 'x = 1 + 2'
         gremlins_src, _ = transform_source(source, 'src/utils.py')
         gremlins_tests, _ = transform_source(source, 'tests/utils.py')
@@ -408,7 +408,7 @@ class TestGremlinIdUniquenessAcrossFiles:
 
         assert ids_src.isdisjoint(ids_tests)
 
-    def test_gremlin_ids_contain_file_stem_prefix(self):
+    def it_prefixes_gremlin_ids_with_file_stem(self):
         source = 'x = 1 + 2'
         gremlins, _ = transform_source(source, 'my_module.py')
 

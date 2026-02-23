@@ -23,15 +23,15 @@ from pytest_gremlins.plugin import (
 
 
 @pytest.mark.small
-class TestXdistItemIds:
+class DescribeXdistItemIds:
     """GremlinSession stores xdist_item_ids after node collection finishes."""
 
-    def test_session_has_xdist_item_ids_field(self) -> None:
+    def it_session_has_xdist_item_ids_field(self) -> None:
         """GremlinSession dataclass has an xdist_item_ids field defaulting to None (not yet set)."""
         gs = GremlinSession()
         assert gs.xdist_item_ids is None
 
-    def test_hook_stores_item_ids_from_first_worker(self) -> None:
+    def it_hook_stores_item_ids_from_first_worker(self) -> None:
         """Item IDs reported by the first worker are stored on the session."""
         gs = GremlinSession(enabled=True)
         _set_session(gs)
@@ -43,7 +43,7 @@ class TestXdistItemIds:
 
         assert gs.xdist_item_ids == ids
 
-    def test_hook_stores_different_ids_correctly(self) -> None:
+    def it_hook_stores_different_ids_correctly(self) -> None:
         """Different item IDs are stored correctly - rules out hardcoding."""
         gs = GremlinSession(enabled=True)
         _set_session(gs)
@@ -55,7 +55,7 @@ class TestXdistItemIds:
 
         assert gs.xdist_item_ids == ids
 
-    def test_hook_does_not_overwrite_existing_ids(self) -> None:
+    def it_hook_does_not_overwrite_existing_ids(self) -> None:
         """Second worker call does not overwrite already-captured item IDs."""
         gs = GremlinSession(enabled=True)
         first_ids = ['tests/test_foo.py::test_a']
@@ -69,7 +69,7 @@ class TestXdistItemIds:
 
         assert gs.xdist_item_ids == first_ids
 
-    def test_hook_skips_when_no_session(self) -> None:
+    def it_hook_skips_when_no_session(self) -> None:
         """Hook is a no-op when no GremlinSession is active."""
         _set_session(None)
 
@@ -78,7 +78,7 @@ class TestXdistItemIds:
 
         pytest_xdist_node_collection_finished(node=node, ids=ids)
 
-    def test_hook_skips_when_session_disabled(self) -> None:
+    def it_hook_skips_when_session_disabled(self) -> None:
         """Hook is a no-op when GremlinSession is disabled."""
         gs = GremlinSession(enabled=False)
         _set_session(gs)
@@ -90,7 +90,7 @@ class TestXdistItemIds:
 
         assert gs.xdist_item_ids is None
 
-    def test_first_worker_reporting_empty_ids_stores_empty_list(self) -> None:
+    def it_first_worker_reporting_empty_ids_stores_empty_list(self) -> None:
         """First worker with zero collected items stores an empty list.
 
         Calling the hook when xdist_item_ids is still the default [] stores
@@ -106,7 +106,7 @@ class TestXdistItemIds:
         # (It already was [], so this verifies the hook ran without error.)
         assert gs.xdist_item_ids == []
 
-    def test_second_worker_does_not_overwrite_empty_ids_from_first_worker(self) -> None:
+    def it_second_worker_does_not_overwrite_empty_ids_from_first_worker(self) -> None:
         """If the first worker reported empty ids, a second worker must not overwrite them.
 
         An empty list is falsy.  The guard ``if gremlin_session.xdist_item_ids``

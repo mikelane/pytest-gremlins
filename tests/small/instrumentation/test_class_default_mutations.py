@@ -16,10 +16,10 @@ from pytest_gremlins.instrumentation.transformer import transform_source
 from pytest_gremlins.operators.boolean import BooleanOperator
 
 
-class TestTransformerDetectsClassDefaultBooleans:
+class DescribeTransformerDetectsClassDefaultBooleans:
     """Verify the transformer creates gremlins for boolean defaults in class bodies."""
 
-    def test_creates_gremlin_for_false_default_in_dataclass(self):
+    def it_creates_gremlin_for_false_default_in_dataclass(self):
         source = """
 from dataclasses import dataclass
 
@@ -34,7 +34,7 @@ class Addr:
         assert len(boolean_gremlins) == 1
         assert boolean_gremlins[0].line_number == 7
 
-    def test_creates_gremlin_for_true_default_in_dataclass(self):
+    def it_creates_gremlin_for_true_default_in_dataclass(self):
         source = """
 from dataclasses import dataclass
 
@@ -49,7 +49,7 @@ class Range:
         assert len(boolean_gremlins) == 1
         assert boolean_gremlins[0].line_number == 7
 
-    def test_creates_gremlins_for_multiple_boolean_defaults(self):
+    def it_creates_gremlins_for_multiple_boolean_defaults(self):
         source = """
 from dataclasses import dataclass
 
@@ -63,7 +63,7 @@ class Config:
 
         assert len(gremlins) == 3
 
-    def test_creates_gremlin_for_plain_class_boolean_default(self):
+    def it_creates_gremlin_for_plain_class_boolean_default(self):
         source = """
 class MyClass:
     active: bool = False
@@ -74,7 +74,7 @@ class MyClass:
         assert len(boolean_gremlins) == 1
 
 
-class TestSwitchingExpressionWorksInClassBody:
+class DescribeSwitchingExpressionWorksInClassBody:
     """Verify that the switching expression evaluates correctly in a class body context.
 
     This is critical: class attribute defaults are evaluated at class definition time
@@ -82,7 +82,7 @@ class TestSwitchingExpressionWorksInClassBody:
     accessible from the class body's scope.
     """
 
-    def test_class_default_uses_original_when_no_gremlin_active(self):
+    def it_uses_original_when_no_gremlin_is_active(self):
         source = """
 from dataclasses import dataclass
 
@@ -103,7 +103,7 @@ class Addr:
         instance = Addr()  # type: ignore[operator]
         assert instance.last is False  # type: ignore[union-attr]
 
-    def test_class_default_uses_mutation_when_gremlin_active(self):
+    def it_uses_mutation_when_gremlin_is_active(self):
         source = """
 from dataclasses import dataclass
 
@@ -125,7 +125,7 @@ class Addr:
         instance = Addr()  # type: ignore[operator]
         assert instance.last is True  # type: ignore[union-attr]
 
-    def test_true_default_flips_to_false_when_gremlin_active(self):
+    def it_true_default_flips_to_false_when_gremlin_active(self):
         source = """
 from dataclasses import dataclass
 

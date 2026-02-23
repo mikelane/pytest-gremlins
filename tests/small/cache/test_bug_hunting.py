@@ -12,10 +12,10 @@ from pytest_gremlins.cache.store import ResultStore
 
 
 @pytest.mark.medium
-class TestHasherBugs:
+class DescribeHasherBugs:
     """Tests for bugs in ContentHasher."""
 
-    def test_hash_combined_with_empty_list_returns_consistent_value(self):
+    def it_returns_consistent_value_from_combined_empty_list(self):
         """hash_combined([]) returns a deterministic value, not hash of empty string.
 
         BUG: hash_combined([]) currently returns hash('') which could collide
@@ -35,7 +35,7 @@ class TestHasherBugs:
         # Currently they're the same, which is a bug
         assert combined_empty == string_empty  # This passes, showing the bug exists
 
-    def test_hash_file_with_binary_content_raises_clear_error(self, tmp_path):
+    def it_raises_clear_error_for_binary_file_content(self, tmp_path):
         """hash_file raises UnicodeDecodeError for binary files.
 
         BUG: hash_file uses read_text() which fails on binary files.
@@ -51,10 +51,10 @@ class TestHasherBugs:
 
 
 @pytest.mark.medium
-class TestResultStoreBugs:
+class DescribeResultStoreBugs:
     """Tests for bugs in ResultStore."""
 
-    def test_delete_by_prefix_with_percent_metacharacter(self, tmp_path):
+    def it_delete_by_prefix_with_percent_metacharacter(self, tmp_path):
         """delete_by_prefix handles LIKE metacharacter % correctly.
 
         BUG: prefix is used directly in LIKE clause without escaping.
@@ -80,7 +80,7 @@ class TestResultStoreBugs:
             # another:g001 should not be deleted
             assert store.get('another:g001') is not None
 
-    def test_delete_by_prefix_with_underscore_metacharacter(self, tmp_path):
+    def it_delete_by_prefix_with_underscore_metacharacter(self, tmp_path):
         """delete_by_prefix handles LIKE metacharacter _ correctly.
 
         BUG: prefix is used directly in LIKE clause without escaping.
@@ -98,7 +98,7 @@ class TestResultStoreBugs:
             # fileXa:g001 should NOT be deleted - but may be due to _ metachar
             assert store.get('fileXa:g001') is not None  # This may fail
 
-    def test_delete_by_prefix_with_backslash(self, tmp_path):
+    def it_delete_by_prefix_with_backslash(self, tmp_path):
         """delete_by_prefix handles backslashes correctly.
 
         Backslash is the escape character in the LIKE clause,
@@ -114,7 +114,7 @@ class TestResultStoreBugs:
             assert store.get('C:\\path\\file:g001') is None
             assert store.get('C:\\other\\file:g001') is not None
 
-    def test_connection_closed_on_schema_init_failure(self, tmp_path):
+    def it_connection_closed_on_schema_init_failure(self, tmp_path):
         """Connection is properly closed if schema initialization fails.
 
         BUG: If _init_schema() fails after connection is opened,
@@ -128,7 +128,7 @@ class TestResultStoreBugs:
         # Calling close again should not raise
         store.close()
 
-    def test_concurrent_writes_do_not_fail_with_busy(self, tmp_path):
+    def it_concurrent_writes_do_not_fail_with_busy(self, tmp_path):
         """Concurrent writes should not fail with database locked errors.
 
         BUG: No WAL mode or busy_timeout configured, so concurrent
@@ -153,10 +153,10 @@ class TestResultStoreBugs:
 
 
 @pytest.mark.medium
-class TestIncrementalCacheBugs:
+class DescribeIncrementalCacheBugs:
     """Tests for bugs in IncrementalCache."""
 
-    def test_empty_test_hashes_vs_single_empty_test(self, tmp_path):
+    def it_distinguishes_empty_test_hashes_from_single_empty_test(self, tmp_path):
         """Empty test_hashes should differ from test with empty content.
 
         Related to hash_combined([]) bug - empty test_hashes uses 'no_tests'
@@ -182,7 +182,7 @@ class TestIncrementalCacheBugs:
             # Should be None (cache miss) because having a test is different from no tests
             assert result is None
 
-    def test_gremlin_id_with_colon_separator(self, tmp_path):
+    def it_formats_gremlin_id_with_colon_separator(self, tmp_path):
         """gremlin_id containing colons does not confuse cache key parsing.
 
         Cache key format is 'gremlin_id:source_hash:test_hash'.
@@ -208,7 +208,7 @@ class TestIncrementalCacheBugs:
             assert result is not None
             assert result['status'] == 'zapped'
 
-    def test_cache_key_with_unicode_in_gremlin_id(self, tmp_path):
+    def it_cache_key_with_unicode_in_gremlin_id(self, tmp_path):
         """Cache handles Unicode in gremlin IDs correctly.
 
         File paths with Unicode characters should work correctly.
@@ -233,7 +233,7 @@ class TestIncrementalCacheBugs:
             assert result is not None
             assert result['status'] == 'zapped'
 
-    def test_stats_reset_after_clear(self, tmp_path):
+    def it_stats_reset_after_clear(self, tmp_path):
         """get_stats shows zeroed hit/miss counts after clear().
 
         The clear() method resets stats, but verify this works correctly.
@@ -261,7 +261,7 @@ class TestIncrementalCacheBugs:
             assert stats_after['misses'] == 0
             assert stats_after['total_entries'] == 0
 
-    def test_test_hash_ordering_is_deterministic(self, tmp_path):
+    def it_produces_deterministic_test_hash_ordering(self, tmp_path):
         """Test hashes are combined in deterministic order regardless of dict ordering.
 
         Python dicts maintain insertion order since 3.7, but the cache should

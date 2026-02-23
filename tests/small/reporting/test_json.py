@@ -70,10 +70,10 @@ def make_result(make_gremlin):
     return _make_result
 
 
-class TestJsonReporterOutput:
+class DescribeJsonReporterOutput:
     """Tests for JSON reporter structure."""
 
-    def test_produces_valid_json(self, make_result):
+    def it_produces_valid_json(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -84,7 +84,7 @@ class TestJsonReporterOutput:
         parsed = json.loads(json_str)
         assert isinstance(parsed, dict)
 
-    def test_includes_summary_section(self, make_result):
+    def it_includes_summary_section(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.SURVIVED),
@@ -99,7 +99,7 @@ class TestJsonReporterOutput:
         assert data['summary']['zapped'] == 1
         assert data['summary']['survived'] == 1
 
-    def test_includes_percentage_in_summary(self, make_result):
+    def it_includes_percentage_in_summary(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.SURVIVED),
@@ -112,7 +112,7 @@ class TestJsonReporterOutput:
         assert 'percentage' in data['summary']
         assert data['summary']['percentage'] == 50.0
 
-    def test_includes_results_array(self, make_result):
+    def it_includes_results_array(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.SURVIVED),
@@ -126,10 +126,10 @@ class TestJsonReporterOutput:
         assert len(data['results']) == 2
 
 
-class TestJsonReporterResultFormat:
+class DescribeJsonReporterResultFormat:
     """Tests for individual result format in JSON."""
 
-    def test_result_includes_gremlin_id(self, make_result):
+    def it_includes_gremlin_id(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -138,7 +138,7 @@ class TestJsonReporterResultFormat:
 
         assert data['results'][0]['gremlin_id'] == 'g001'
 
-    def test_result_includes_file_and_line(self, make_result):
+    def it_includes_file_and_line(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py', line_number=42)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -148,7 +148,7 @@ class TestJsonReporterResultFormat:
         assert data['results'][0]['file_path'] == 'src/auth.py'
         assert data['results'][0]['line_number'] == 42
 
-    def test_result_includes_status(self, make_result):
+    def it_includes_status(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -157,7 +157,7 @@ class TestJsonReporterResultFormat:
 
         assert data['results'][0]['status'] == 'survived'
 
-    def test_result_includes_operator_and_description(self, make_result):
+    def it_includes_operator_and_description(self, make_result):
         results = [
             make_result(
                 GremlinResultStatus.ZAPPED,
@@ -173,7 +173,7 @@ class TestJsonReporterResultFormat:
         assert data['results'][0]['operator'] == 'boundary'
         assert data['results'][0]['description'] == '>= 18 to >= 19'
 
-    def test_result_includes_killing_test_when_present(self, make_result):
+    def it_includes_killing_test_when_present(self, make_result):
         results = [
             make_result(
                 GremlinResultStatus.ZAPPED,
@@ -188,10 +188,10 @@ class TestJsonReporterResultFormat:
         assert data['results'][0]['killing_test'] == 'test_age_validation'
 
 
-class TestJsonReporterFileOutput:
+class DescribeJsonReporterFileOutput:
     """Tests for writing JSON to file."""
 
-    def test_writes_to_file(self, make_result, tmp_path: Path):
+    def it_writes_to_file(self, make_result, tmp_path: Path):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -203,7 +203,7 @@ class TestJsonReporterFileOutput:
         data = json.loads(output_file.read_text())
         assert 'summary' in data
 
-    def test_writes_formatted_json(self, make_result, tmp_path: Path):
+    def it_writes_formatted_json(self, make_result, tmp_path: Path):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -216,10 +216,10 @@ class TestJsonReporterFileOutput:
         assert '\n' in content
 
 
-class TestJsonReporterFileBreakdown:
+class DescribeJsonReporterFileBreakdown:
     """Tests for per-file breakdown in JSON."""
 
-    def test_includes_files_section(self, make_result):
+    def it_includes_files_section(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED, file_path='auth.py'),
             make_result(GremlinResultStatus.SURVIVED, file_path='utils.py'),
@@ -233,7 +233,7 @@ class TestJsonReporterFileBreakdown:
         assert 'auth.py' in data['files']
         assert 'utils.py' in data['files']
 
-    def test_file_breakdown_includes_per_file_stats(self, make_result):
+    def it_includes_per_file_stats_in_file_breakdown(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED, file_path='auth.py'),
             make_result(GremlinResultStatus.ZAPPED, file_path='auth.py'),

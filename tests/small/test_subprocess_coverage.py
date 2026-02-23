@@ -19,10 +19,10 @@ import pytest
 
 
 @pytest.mark.small
-class TestSitecustomizeExists:
+class DescribeSitecustomizeExists:
     """Verify sitecustomize.py is present at the project root."""
 
-    def test_sitecustomize_exists_at_project_root(self) -> None:
+    def it_sitecustomize_exists_at_project_root(self) -> None:
         project_root = Path(__file__).parent.parent.parent
         sitecustomize = project_root / 'sitecustomize.py'
         assert sitecustomize.exists(), (
@@ -30,13 +30,13 @@ class TestSitecustomizeExists:
             'PYTHONPATH=. makes it importable by subprocess Python instances'
         )
 
-    def test_sitecustomize_is_valid_python(self) -> None:
+    def it_sitecustomize_is_valid_python(self) -> None:
         project_root = Path(__file__).parent.parent.parent
         source = (project_root / 'sitecustomize.py').read_text(encoding='utf-8')
         # ast.parse raises SyntaxError if the file is not valid Python
         ast.parse(source)
 
-    def test_sitecustomize_calls_coverage_process_startup(self) -> None:
+    def it_sitecustomize_calls_coverage_process_startup(self) -> None:
         project_root = Path(__file__).parent.parent.parent
         source = (project_root / 'sitecustomize.py').read_text(encoding='utf-8')
         tree = ast.parse(source)
@@ -53,7 +53,7 @@ class TestSitecustomizeExists:
         ]
         assert calls, 'sitecustomize.py must call coverage.process_startup()'
 
-    def test_sitecustomize_imports_coverage(self) -> None:
+    def it_sitecustomize_imports_coverage(self) -> None:
         project_root = Path(__file__).parent.parent.parent
         source = (project_root / 'sitecustomize.py').read_text(encoding='utf-8')
         tree = ast.parse(source)
@@ -67,10 +67,10 @@ class TestSitecustomizeExists:
 
 
 @pytest.mark.small
-class TestCoverageRunConfig:
+class DescribeCoverageRunConfig:
     """Verify pyproject.toml coverage config enables parallel subprocess tracking."""
 
-    def test_coverage_run_parallel_is_true(self) -> None:
+    def it_sets_coverage_run_parallel_to_true(self) -> None:
         project_root = Path(__file__).parent.parent.parent
         pyproject = project_root / 'pyproject.toml'
         content = pyproject.read_text(encoding='utf-8')
@@ -79,7 +79,7 @@ class TestCoverageRunConfig:
             '[tool.coverage.run] must have parallel = true for subprocess coverage to work'
         )
 
-    def test_coverage_run_has_source_configured(self) -> None:
+    def it_configures_source_for_coverage_run(self) -> None:
         project_root = Path(__file__).parent.parent.parent
         pyproject = project_root / 'pyproject.toml'
         content = pyproject.read_text(encoding='utf-8')
@@ -90,13 +90,13 @@ class TestCoverageRunConfig:
 
 
 @pytest.mark.medium
-class TestSubprocessCoverageIntegration:
+class DescribeSubprocessCoverageIntegration:
     """Verify subprocess Python instances write coverage data when env vars are set.
 
     Marked medium: these tests spawn real subprocesses with filesystem I/O.
     """
 
-    def test_subprocess_writes_coverage_file_when_env_vars_set(self, tmp_path: Path) -> None:
+    def it_writes_coverage_file_when_env_vars_set(self, tmp_path: Path) -> None:
         project_root = Path(__file__).parent.parent.parent
 
         target = tmp_path / 'target.py'
@@ -122,7 +122,7 @@ class TestSubprocessCoverageIntegration:
             'Subprocess must write a .coverage.* file when COVERAGE_PROCESS_START and PYTHONPATH are set'
         )
 
-    def test_subprocess_does_not_write_coverage_file_without_env_vars(self, tmp_path: Path) -> None:
+    def it_does_not_write_coverage_file_when_env_vars_absent(self, tmp_path: Path) -> None:
         target = tmp_path / 'target.py'
         target.write_text('def add(a, b):\n    return a + b\n\nresult = add(1, 2)\n')
 

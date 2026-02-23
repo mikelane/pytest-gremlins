@@ -9,10 +9,10 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 
 
 @pytest.mark.medium
-class TestIncrementalCacheBatchOperations:
+class DescribeIncrementalCacheBatchOperations:
     """Tests for batch cache write support."""
 
-    def test_cache_result_deferred_batches_writes(self, tmp_path: Path) -> None:
+    def it_batches_writes_in_deferred_cache_results(self, tmp_path: Path) -> None:
         """cache_result_deferred batches writes for better performance."""
         cache_dir = tmp_path / '.gremlins_cache'
         num_gremlins = 100
@@ -40,7 +40,7 @@ class TestIncrementalCacheBatchOperations:
         # Note: Windows CI (especially Python 3.14) can be significantly slower
         assert deferred_time < 0.5, f'Deferred writes took {deferred_time * 1000:.1f}ms for {num_gremlins} entries'
 
-    def test_close_flushes_deferred_writes(self, tmp_path: Path) -> None:
+    def it_close_flushes_deferred_writes(self, tmp_path: Path) -> None:
         """Closing the cache flushes any pending deferred writes."""
         cache_dir = tmp_path / '.gremlins_cache'
 

@@ -22,27 +22,27 @@ from pytest_gremlins.plugin import (
 
 
 @pytest.mark.small
-class TestCoverageModeEnum:
+class DescribeCoverageModeEnum:
     """CoverageMode enum has the expected members."""
 
-    def test_has_piggyback_member(self) -> None:
-        """CoverageMode.PIGGYBACK exists."""
-        assert CoverageMode.PIGGYBACK is not None
+    def it_has_piggyback_member(self) -> None:
+        """CoverageMode.PIGGYBACK is a member of the enum."""
+        assert CoverageMode.PIGGYBACK.name == 'PIGGYBACK'
 
-    def test_has_private_member(self) -> None:
-        """CoverageMode.PRIVATE exists."""
-        assert CoverageMode.PRIVATE is not None
+    def it_has_private_member(self) -> None:
+        """CoverageMode.PRIVATE is a member of the enum."""
+        assert CoverageMode.PRIVATE.name == 'PRIVATE'
 
-    def test_piggyback_and_private_are_distinct(self) -> None:
+    def it_treats_piggyback_and_private_as_distinct_modes(self) -> None:
         """PIGGYBACK and PRIVATE are distinct values - rules out both returning same."""
         assert CoverageMode.PIGGYBACK != CoverageMode.PRIVATE
 
 
 @pytest.mark.small
-class TestDetectCoverageMode:
+class DescribeDetectCoverageMode:
     """_detect_coverage_mode returns the correct mode based on plugin presence."""
 
-    def test_returns_piggyback_when_cov_plugin_present(self) -> None:
+    def it_returns_piggyback_when_cov_plugin_present(self) -> None:
         """Returns PIGGYBACK when '_cov' plugin is registered."""
         config = MagicMock()
         config.pluginmanager.get_plugin.return_value = MagicMock()
@@ -52,7 +52,7 @@ class TestDetectCoverageMode:
         config.pluginmanager.get_plugin.assert_called_once_with('_cov')
         assert result == CoverageMode.PIGGYBACK
 
-    def test_returns_private_when_cov_plugin_absent(self) -> None:
+    def it_returns_private_when_cov_plugin_absent(self) -> None:
         """Returns PRIVATE when '_cov' plugin returns None."""
         config = MagicMock()
         config.pluginmanager.get_plugin.return_value = None
@@ -61,7 +61,7 @@ class TestDetectCoverageMode:
 
         assert result == CoverageMode.PRIVATE
 
-    def test_piggyback_and_private_produce_different_results(self) -> None:
+    def it_piggyback_and_private_produce_different_results(self) -> None:
         """Present vs absent plugin produces different modes - rules out hardcoding."""
         config_with_cov = MagicMock()
         config_with_cov.pluginmanager.get_plugin.return_value = MagicMock()

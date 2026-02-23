@@ -42,22 +42,22 @@ def selector(coverage_map):
     return Selector(coverage_map)
 
 
-class TestSelectorCreation:
+class DescribeSelectorCreation:
     """Test Selector initialization."""
 
-    def test_selector_stores_coverage_map(self, coverage_map):
+    def it_selector_stores_coverage_map(self, coverage_map):
         selector = Selector(coverage_map)
         assert selector.coverage_map is coverage_map
 
 
-class TestSelectorSelectTests:
+class DescribeSelectorSelectTests:
     """Test selecting tests for a gremlin."""
 
-    def test_select_tests_returns_matching_tests(self, selector, sample_gremlin):
+    def it_select_tests_returns_matching_tests(self, selector, sample_gremlin):
         result = selector.select_tests(sample_gremlin)
         assert result == {'test_login_success', 'test_login_failure'}
 
-    def test_select_tests_returns_empty_for_uncovered_gremlin(self, selector):
+    def it_select_tests_returns_empty_for_uncovered_gremlin(self, selector):
         gremlin = Gremlin(
             gremlin_id='g999',
             file_path='src/unknown.py',
@@ -70,7 +70,7 @@ class TestSelectorSelectTests:
         result = selector.select_tests(gremlin)
         assert result == set()
 
-    def test_select_tests_uses_file_path_and_line_from_gremlin(self, coverage_map):
+    def it_select_tests_uses_file_path_and_line_from_gremlin(self, coverage_map):
         selector = Selector(coverage_map)
         gremlin = Gremlin(
             gremlin_id='g002',
@@ -85,22 +85,22 @@ class TestSelectorSelectTests:
         assert result == {'test_calculate_shipping'}
 
 
-class TestSelectorSelectTestsForLocation:
+class DescribeSelectorSelectTestsForLocation:
     """Test selecting tests using file path and line number directly."""
 
-    def test_select_tests_for_location_returns_matching_tests(self, selector):
+    def it_select_tests_for_location_returns_matching_tests(self, selector):
         result = selector.select_tests_for_location('src/auth.py', 42)
         assert result == {'test_login_success', 'test_login_failure'}
 
-    def test_select_tests_for_location_returns_empty_for_unknown(self, selector):
+    def it_select_tests_for_location_returns_empty_for_unknown(self, selector):
         result = selector.select_tests_for_location('unknown.py', 999)
         assert result == set()
 
 
-class TestSelectorBatchSelection:
+class DescribeSelectorBatchSelection:
     """Test selecting tests for multiple gremlins."""
 
-    def test_select_tests_for_gremlins_returns_all_matching_tests(self, selector):
+    def it_select_tests_for_gremlins_returns_all_matching_tests(self, selector):
         gremlins = [
             Gremlin(
                 gremlin_id='g001',
@@ -128,7 +128,7 @@ class TestSelectorBatchSelection:
             'test_calculate_shipping',
         }
 
-    def test_select_tests_for_gremlins_deduplicates(self, selector):
+    def it_select_tests_for_gremlins_deduplicates(self, selector):
         gremlins = [
             Gremlin(
                 gremlin_id='g001',
@@ -153,10 +153,10 @@ class TestSelectorBatchSelection:
         assert result == {'test_login_success', 'test_login_failure'}
 
 
-class TestSelectorStats:
+class DescribeSelectorStats:
     """Test selector statistics."""
 
-    def test_get_selection_stats_empty_result(self, selector):
+    def it_returns_empty_selection_stats(self, selector):
         gremlin = Gremlin(
             gremlin_id='g999',
             file_path='unknown.py',
@@ -171,7 +171,7 @@ class TestSelectorStats:
         assert stats['selected_count'] == 0
         assert stats['coverage_location'] == 'unknown.py:1'
 
-    def test_get_selection_stats_with_matches(self, selector, sample_gremlin):
+    def it_includes_matches_in_selection_stats(self, selector, sample_gremlin):
         tests, stats = selector.select_tests_with_stats(sample_gremlin)
         assert tests == {'test_login_success', 'test_login_failure'}
         assert stats['selected_count'] == 2

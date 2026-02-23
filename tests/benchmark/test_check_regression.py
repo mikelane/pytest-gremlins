@@ -26,8 +26,8 @@ from benchmarks.check_regression import (  # noqa: E402
 
 
 @pytest.mark.small
-class TestRegressionDetail:
-    def test_regression_detail_creation(self):
+class DescribeRegressionDetail:
+    def it_stores_config_and_timing_fields(self):
         detail = RegressionDetail(
             config='gremlins_sequential',
             baseline_time=10.0,
@@ -39,7 +39,7 @@ class TestRegressionDetail:
         assert detail.current_time == 12.0
         assert detail.change_percent == 20.0
 
-    def test_regression_detail_str_positive_change(self):
+    def it_regression_detail_str_positive_change(self):
         detail = RegressionDetail(
             config='gremlins_parallel',
             baseline_time=5.0,
@@ -52,7 +52,7 @@ class TestRegressionDetail:
         assert '6.00s' in result
         assert '+20.0%' in result
 
-    def test_regression_detail_str_negative_change(self):
+    def it_regression_detail_str_negative_change(self):
         detail = RegressionDetail(
             config='gremlins_full',
             baseline_time=10.0,
@@ -64,8 +64,8 @@ class TestRegressionDetail:
 
 
 @pytest.mark.small
-class TestRegressionCheckResult:
-    def test_check_result_no_regressions(self):
+class DescribeRegressionCheckResult:
+    def it_reports_no_regressions(self):
         result = RegressionCheckResult(
             has_regressions=False,
             regressions=[],
@@ -76,7 +76,7 @@ class TestRegressionCheckResult:
         assert result.regressions == []
         assert result.threshold_percent == 10.0
 
-    def test_check_result_with_regressions(self):
+    def it_reports_regressions(self):
         regression = RegressionDetail(
             config='gremlins_sequential',
             baseline_time=10.0,
@@ -92,7 +92,7 @@ class TestRegressionCheckResult:
         assert result.has_regressions
         assert len(result.regressions) == 1
 
-    def test_check_result_with_improvements(self):
+    def it_reports_improvements(self):
         improvement = RegressionDetail(
             config='gremlins_parallel',
             baseline_time=10.0,
@@ -110,8 +110,8 @@ class TestRegressionCheckResult:
 
 
 @pytest.mark.small
-class TestCheckRegression:
-    def test_no_regression_within_threshold(self):
+class DescribeCheckRegression:
+    def it_finds_no_regression_within_threshold(self):
         baseline = {
             'gremlins_sequential': 45.63,
             'gremlins_parallel': 10.36,
@@ -126,7 +126,7 @@ class TestCheckRegression:
         assert not result.has_regressions
         assert result.regressions == []
 
-    def test_regression_exceeds_threshold(self):
+    def it_regression_exceeds_threshold(self):
         baseline = {
             'gremlins_sequential': 45.63,
             'gremlins_parallel': 10.36,
@@ -140,7 +140,7 @@ class TestCheckRegression:
         assert len(result.regressions) == 1
         assert result.regressions[0].config == 'gremlins_sequential'
 
-    def test_multiple_regressions(self):
+    def it_reports_multiple_regressions(self):
         baseline = {
             'gremlins_sequential': 45.63,
             'gremlins_parallel': 10.36,
@@ -157,7 +157,7 @@ class TestCheckRegression:
         configs = {r.config for r in result.regressions}
         assert configs == {'gremlins_sequential', 'gremlins_parallel'}
 
-    def test_improvement_detected(self):
+    def it_improvement_detected(self):
         baseline = {
             'gremlins_sequential': 45.63,
             'gremlins_parallel': 10.36,
@@ -172,7 +172,7 @@ class TestCheckRegression:
         assert result.improvements[0].config == 'gremlins_sequential'
         assert result.improvements[0].change_percent < 0
 
-    def test_missing_config_in_current_ignored(self):
+    def it_missing_config_in_current_ignored(self):
         baseline = {
             'gremlins_sequential': 45.63,
             'gremlins_parallel': 10.36,
@@ -186,7 +186,7 @@ class TestCheckRegression:
         result = check_regression(baseline, current, threshold_percent=10.0)
         assert not result.has_regressions
 
-    def test_extra_config_in_current_ignored(self):
+    def it_extra_config_in_current_ignored(self):
         baseline = {
             'gremlins_sequential': 45.63,
         }
@@ -197,7 +197,7 @@ class TestCheckRegression:
         result = check_regression(baseline, current, threshold_percent=10.0)
         assert not result.has_regressions
 
-    def test_exact_threshold_not_regression(self):
+    def it_exact_threshold_not_regression(self):
         baseline = {
             'gremlins_sequential': 100.0,
         }
@@ -208,7 +208,7 @@ class TestCheckRegression:
         # Exactly at threshold should NOT be a regression (> not >=)
         assert not result.has_regressions
 
-    def test_just_over_threshold_is_regression(self):
+    def it_just_over_threshold_is_regression(self):
         baseline = {
             'gremlins_sequential': 100.0,
         }
@@ -218,7 +218,7 @@ class TestCheckRegression:
         result = check_regression(baseline, current, threshold_percent=10.0)
         assert result.has_regressions
 
-    def test_custom_threshold(self):
+    def it_custom_threshold(self):
         baseline = {
             'gremlins_sequential': 100.0,
         }
@@ -235,8 +235,8 @@ class TestCheckRegression:
 
 
 @pytest.mark.small
-class TestLoadBenchmarkResults:
-    def test_load_valid_json_file(self):
+class DescribeLoadBenchmarkResults:
+    def it_load_valid_json_file(self):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write('{"gremlins_sequential": 45.63, "gremlins_parallel": 10.36}')
             f.flush()
@@ -247,11 +247,11 @@ class TestLoadBenchmarkResults:
                 'gremlins_parallel': 10.36,
             }
 
-    def test_load_missing_file_raises(self):
+    def it_load_missing_file_raises(self):
         with pytest.raises(FileNotFoundError):
             load_benchmark_results(Path('/nonexistent/path.json'))
 
-    def test_load_invalid_json_raises(self):
+    def it_load_invalid_json_raises(self):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write('not valid json {')
             f.flush()
@@ -259,7 +259,7 @@ class TestLoadBenchmarkResults:
             with pytest.raises(ValueError, match='Invalid JSON'):
                 load_benchmark_results(Path(f.name))
 
-    def test_load_from_full_results_format(self):
+    def it_load_from_full_results_format(self):
         # The benchmark runner outputs a more complex format with summaries
         # We need to extract just the timing data
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -285,7 +285,7 @@ class TestLoadBenchmarkResults:
                 'mutmut_default': 37.22,
             }
 
-    def test_load_from_simple_format(self):
+    def it_load_from_simple_format(self):
         # Simple key-value format for baseline.json
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write('{"gremlins_sequential": 45.63}')

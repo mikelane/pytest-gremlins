@@ -14,10 +14,10 @@ from pytest_gremlins.cache.hasher import ContentHasher
 
 
 @pytest.mark.small
-class TestHasherPerformance:
+class DescribeHasherPerformance:
     """Performance tests for content hashing."""
 
-    def test_string_hashing_is_fast(self) -> None:
+    def it_string_hashing_is_fast(self) -> None:
         """Hashing a typical source file completes in under 1ms."""
         hasher = ContentHasher()
 
@@ -32,7 +32,7 @@ class TestHasherPerformance:
         # 100 hashes should take less than 100ms (1ms per hash)
         assert elapsed < 0.1, f'String hashing took {elapsed * 1000:.1f}ms for 100 hashes'
 
-    def test_combined_hash_is_fast(self) -> None:
+    def it_combined_hash_is_fast(self) -> None:
         """Combining multiple hashes completes in under 0.1ms."""
         hasher = ContentHasher()
 

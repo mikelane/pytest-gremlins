@@ -64,10 +64,10 @@ def make_result(make_gremlin):
     return _make_result
 
 
-class TestConsoleReporter:
+class DescribeConsoleReporter:
     """Tests for console reporter output."""
 
-    def test_reporter_writes_header(self, make_result):
+    def it_reporter_writes_header(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output = StringIO()
@@ -78,7 +78,7 @@ class TestConsoleReporter:
         output_text = output.getvalue()
         assert 'pytest-gremlins mutation report' in output_text
 
-    def test_reporter_writes_summary_line(self, make_result):
+    def it_reporter_writes_summary_line(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.ZAPPED),
@@ -95,7 +95,7 @@ class TestConsoleReporter:
         # 66.67% rounds to 67%
         assert '67%' in output_text or '66%' in output_text
 
-    def test_reporter_writes_survived_count(self, make_result):
+    def it_reporter_writes_survived_count(self, make_result):
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.SURVIVED),
@@ -110,7 +110,7 @@ class TestConsoleReporter:
         output_text = output.getvalue()
         assert 'Survived: 2 gremlins' in output_text
 
-    def test_write_summary_returns_early_when_total_is_zero(self) -> None:
+    def it_write_summary_returns_early_when_total_is_zero(self) -> None:
         """_write_summary with total=0 writes nothing (defensive guard)."""
         score = MutationScore.from_results([])
         output = StringIO()
@@ -120,7 +120,7 @@ class TestConsoleReporter:
 
         assert output.getvalue() == ''
 
-    def test_reporter_writes_top_survivors(self, make_result):
+    def it_reporter_writes_top_survivors(self, make_result):
         results = [
             make_result(
                 GremlinResultStatus.SURVIVED,
@@ -146,7 +146,7 @@ class TestConsoleReporter:
         assert 'src/auth.py:42' in output_text
         assert 'src/utils.py:17' in output_text
 
-    def test_reporter_omits_survivors_section_when_none(self, make_result):
+    def it_reporter_omits_survivors_section_when_none(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED) for _ in range(5)]
         score = MutationScore.from_results(results)
         output = StringIO()
@@ -157,7 +157,7 @@ class TestConsoleReporter:
         output_text = output.getvalue()
         assert 'Top surviving gremlins:' not in output_text
 
-    def test_reporter_writes_footer(self, make_result):
+    def it_reporter_writes_footer(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output = StringIO()
@@ -170,10 +170,10 @@ class TestConsoleReporter:
         assert output_text.count('=') >= 40  # Multiple = signs for borders
 
 
-class TestConsoleReporterFormatting:
+class DescribeConsoleReporterFormatting:
     """Tests for console reporter formatting details."""
 
-    def test_formats_percentage_with_rounding(self, make_result):
+    def it_formats_percentage_with_rounding(self, make_result):
         # Create 3 results: 2 zapped, 1 survived = 66.67%
         results = [
             make_result(GremlinResultStatus.ZAPPED),
@@ -190,7 +190,7 @@ class TestConsoleReporterFormatting:
         # Should round to whole number or one decimal
         assert '67%' in output_text or '66.7%' in output_text or '66%' in output_text
 
-    def test_handles_zero_results_gracefully(self):
+    def it_handles_zero_results_gracefully(self):
         score = MutationScore.from_results([])
         output = StringIO()
         reporter = ConsoleReporter(output=output)
@@ -200,7 +200,7 @@ class TestConsoleReporterFormatting:
         output_text = output.getvalue()
         assert 'No gremlins tested' in output_text or '0 gremlins' in output_text
 
-    def test_includes_hint_for_detailed_report(self, make_result):
+    def it_includes_hint_for_detailed_report(self, make_result):
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         output = StringIO()
@@ -212,10 +212,10 @@ class TestConsoleReporterFormatting:
         assert '--gremlin-report=html' in output_text or 'html' in output_text.lower()
 
 
-class TestConsoleReporterAllOutcomeCategories:
+class DescribeConsoleReporterAllOutcomeCategories:
     """Tests for all mutation outcome categories (zapped, survived, timeout, error)."""
 
-    def test_report_with_mixed_results_displays_all_four_categories(self, make_result):
+    def it_displays_all_four_categories_with_mixed_results(self, make_result):
         """It displays zapped, survived, timeout, and error with correct counts and percentages."""
         results = [
             make_result(GremlinResultStatus.ZAPPED),
@@ -241,7 +241,7 @@ class TestConsoleReporterAllOutcomeCategories:
         assert 'Timeout: 3 gremlins (30%)' in output_text
         assert 'Error: 1 gremlins (10%)' in output_text
 
-    def test_report_omits_timeout_line_when_zero_timeouts(self, make_result):
+    def it_omits_timeout_line_when_zero_timeouts(self, make_result):
         """It omits the timeout line when there are no timeouts."""
         results = [
             make_result(GremlinResultStatus.ZAPPED),
@@ -260,7 +260,7 @@ class TestConsoleReporterAllOutcomeCategories:
         assert 'Error:' in output_text
         assert 'Timeout:' not in output_text
 
-    def test_report_omits_error_line_when_zero_errors(self, make_result):
+    def it_omits_error_line_when_zero_errors(self, make_result):
         """It omits the error line when there are no errors."""
         results = [
             make_result(GremlinResultStatus.ZAPPED),
@@ -279,7 +279,7 @@ class TestConsoleReporterAllOutcomeCategories:
         assert 'Timeout:' in output_text
         assert 'Error:' not in output_text
 
-    def test_percentages_computed_from_own_counts_not_complement(self, make_result):
+    def it_percentages_computed_from_own_counts_not_complement(self, make_result):
         """It computes each percentage from its own count, not as 100 - other_percent."""
         # 5 zapped (50%), 1 survived (10%), 2 timeout (20%), 2 error (20%) = 10 total
         results = [

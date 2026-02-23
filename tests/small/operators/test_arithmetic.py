@@ -10,26 +10,26 @@ from pytest_gremlins.operators.arithmetic import ArithmeticOperator
 from pytest_gremlins.operators.protocol import GremlinOperator
 
 
-class TestArithmeticOperatorProtocol:
+class DescribeArithmeticOperatorProtocol:
     """Test that ArithmeticOperator implements the GremlinOperator protocol."""
 
-    def test_implements_gremlin_operator_protocol(self):
+    def it_implements_gremlin_operator_protocol(self):
         operator = ArithmeticOperator()
         assert isinstance(operator, GremlinOperator)
 
-    def test_name_is_arithmetic(self):
+    def it_name_is_arithmetic(self):
         operator = ArithmeticOperator()
         assert operator.name == 'arithmetic'
 
-    def test_description_describes_the_operator(self):
+    def it_description_describes_the_operator(self):
         operator = ArithmeticOperator()
         assert 'arithmetic' in operator.description.lower()
 
 
-class TestArithmeticOperatorCanMutate:
+class DescribeArithmeticOperatorCanMutate:
     """Test the can_mutate method."""
 
-    def test_returns_true_for_binop_add(self):
+    def it_returns_true_for_binop_add(self):
         operator = ArithmeticOperator()
         node = ast.parse('x + 10', mode='eval').body
 
@@ -47,29 +47,29 @@ class TestArithmeticOperatorCanMutate:
             'x ** y',
         ],
     )
-    def test_returns_true_for_all_supported_operations(self, source):
+    def it_returns_true_for_all_supported_operations(self, source):
         operator = ArithmeticOperator()
         node = ast.parse(source, mode='eval').body
 
         assert operator.can_mutate(node) is True
 
-    def test_returns_false_for_comparison_node(self):
+    def it_returns_false_for_comparison_node(self):
         operator = ArithmeticOperator()
         node = ast.parse('x < 10', mode='eval').body
 
         assert operator.can_mutate(node) is False
 
-    def test_returns_false_for_bitwise_operations(self):
+    def it_returns_false_for_bitwise_operations(self):
         operator = ArithmeticOperator()
         node = ast.parse('x & y', mode='eval').body
 
         assert operator.can_mutate(node) is False
 
 
-class TestArithmeticOperatorMutate:
+class DescribeArithmeticOperatorMutate:
     """Test the mutate method."""
 
-    def test_add_generates_one_mutation(self):
+    def it_generates_one_mutation_for_add(self):
         operator = ArithmeticOperator()
         node = ast.parse('x + 10', mode='eval').body
 
@@ -77,7 +77,7 @@ class TestArithmeticOperatorMutate:
 
         assert len(mutations) == 1
 
-    def test_add_mutates_to_subtract(self):
+    def it_mutates_add_to_subtract(self):
         operator = ArithmeticOperator()
         node = ast.parse('x + 10', mode='eval').body
 
@@ -99,7 +99,7 @@ class TestArithmeticOperatorMutate:
             ('x ** y', [ast.Mult]),
         ],
     )
-    def test_all_arithmetic_mutations(self, source, expected_ops):
+    def it_generates_all_arithmetic_mutations(self, source, expected_ops):
         operator = ArithmeticOperator()
         node = ast.parse(source, mode='eval').body
 
@@ -111,7 +111,7 @@ class TestArithmeticOperatorMutate:
             actual_ops.append(type(m.op))
         assert actual_ops == expected_ops
 
-    def test_original_node_is_not_modified(self):
+    def it_does_not_modify_the_original_node(self):
         operator = ArithmeticOperator()
         node = ast.parse('x + 10', mode='eval').body
         assert isinstance(node, ast.BinOp)
@@ -121,7 +121,7 @@ class TestArithmeticOperatorMutate:
 
         assert isinstance(node.op, original_op_type)
 
-    def test_returns_empty_list_for_unsupported_node(self):
+    def it_returns_empty_list_for_unsupported_node(self):
         operator = ArithmeticOperator()
         node = ast.parse('x < 10', mode='eval').body
 
@@ -129,7 +129,7 @@ class TestArithmeticOperatorMutate:
 
         assert mutations == []
 
-    def test_returns_empty_list_for_binop_with_unsupported_operator(self):
+    def it_returns_empty_list_for_binop_with_unsupported_operator(self):
         operator = ArithmeticOperator()
         # BitAnd (&) is a BinOp but not an arithmetic operator we mutate
         node = ast.parse('x & y', mode='eval').body
@@ -141,10 +141,10 @@ class TestArithmeticOperatorMutate:
         assert mutations == []
 
 
-class TestArithmeticOperatorSymbols:
+class DescribeArithmeticOperatorSymbols:
     """Test the operator symbol mapping."""
 
-    def test_get_symbol_for_all_supported_ops(self):
+    def it_returns_symbol_for_all_supported_ops(self):
         operator = ArithmeticOperator()
 
         assert operator.get_symbol(ast.Add()) == '+'
@@ -155,7 +155,7 @@ class TestArithmeticOperatorSymbols:
         assert operator.get_symbol(ast.Mod()) == '%'
         assert operator.get_symbol(ast.Pow()) == '**'
 
-    def test_get_symbol_returns_question_mark_for_unknown_op(self):
+    def it_returns_question_mark_for_unknown_op(self):
         operator = ArithmeticOperator()
 
         assert operator.get_symbol(ast.BitAnd()) == '?'

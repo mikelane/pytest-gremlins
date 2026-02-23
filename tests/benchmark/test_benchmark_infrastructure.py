@@ -28,8 +28,8 @@ from benchmarks.run_benchmarks import (  # noqa: E402
 
 
 @pytest.mark.small
-class TestBenchmarkResult:
-    def test_benchmark_result_creation(self):
+class DescribeBenchmarkResult:
+    def it_stores_all_fields_with_error_defaulting_to_none(self):
         result = BenchmarkResult(
             tool='gremlins',
             project='synthetic',
@@ -46,7 +46,7 @@ class TestBenchmarkResult:
         assert result.mutations_killed == 80
         assert result.error is None
 
-    def test_benchmark_result_with_error(self):
+    def it_stores_error_message_when_error_field_is_provided(self):
         result = BenchmarkResult(
             tool='mutmut',
             project='synthetic',
@@ -59,8 +59,8 @@ class TestBenchmarkResult:
 
 
 @pytest.mark.small
-class TestBenchmarkSummary:
-    def test_benchmark_summary_creation(self):
+class DescribeBenchmarkSummary:
+    def it_stores_timing_statistics_and_run_count(self):
         summary = BenchmarkSummary(
             tool='gremlins',
             project='synthetic',
@@ -80,8 +80,8 @@ class TestBenchmarkSummary:
 
 
 @pytest.mark.small
-class TestEnvironmentInfo:
-    def test_environment_info_creation(self):
+class DescribeEnvironmentInfo:
+    def it_stores_platform_info_with_tool_versions_defaulting_to_unknown(self):
         info = EnvironmentInfo(
             timestamp='2024-01-15T12:00:00',
             platform='Darwin 24.0.0',
@@ -97,8 +97,8 @@ class TestEnvironmentInfo:
 
 
 @pytest.mark.small
-class TestComputeSummaries:
-    def test_compute_summaries_single_config(self):
+class DescribeComputeSummaries:
+    def it_computes_summary_for_single_config(self):
         results = [
             BenchmarkResult(
                 tool='gremlins',
@@ -140,7 +140,7 @@ class TestComputeSummaries:
         assert summary.max_time == 12.0
         assert summary.runs == 3
 
-    def test_compute_summaries_multiple_configs(self):
+    def it_computes_summaries_for_multiple_configs(self):
         results = [
             BenchmarkResult(
                 tool='gremlins',
@@ -174,7 +174,7 @@ class TestComputeSummaries:
         tools = {s.tool for s in summaries}
         assert tools == {'gremlins', 'mutmut'}
 
-    def test_compute_summaries_skips_errors(self):
+    def it_skips_errors_when_computing_summaries(self):
         results = [
             BenchmarkResult(
                 tool='gremlins',
@@ -200,8 +200,8 @@ class TestComputeSummaries:
 
 
 @pytest.mark.small
-class TestGenerateMarkdownReport:
-    def test_generate_report_includes_environment(self):
+class DescribeGenerateMarkdownReport:
+    def it_generate_report_includes_environment(self):
         env_info = EnvironmentInfo(
             timestamp='2024-01-15T12:00:00',
             platform='Darwin 24.0.0',
@@ -224,7 +224,7 @@ class TestGenerateMarkdownReport:
         assert '2.4.5' in report
         assert '0.1.0' in report
 
-    def test_generate_report_includes_summary_table(self):
+    def it_generate_report_includes_summary_table(self):
         env_info = EnvironmentInfo(
             timestamp='2024-01-15T12:00:00',
             platform='Darwin',
@@ -256,7 +256,7 @@ class TestGenerateMarkdownReport:
         assert 'sequential' in report
         assert '10.00s' in report
 
-    def test_generate_report_includes_speedup_analysis(self):
+    def it_generate_report_includes_speedup_analysis(self):
         env_info = EnvironmentInfo(
             timestamp='2024-01-15T12:00:00',
             platform='Darwin',
@@ -301,8 +301,8 @@ class TestGenerateMarkdownReport:
 
 
 @pytest.mark.medium
-class TestCreateSyntheticProject:
-    def test_create_synthetic_project_structure(self):
+class DescribeCreateSyntheticProject:
+    def it_create_synthetic_project_structure(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             work_dir = Path(tmp_dir)
             project_dir = create_synthetic_project(work_dir)
@@ -313,7 +313,7 @@ class TestCreateSyntheticProject:
             assert (project_dir / 'tests').is_dir()
             assert (project_dir / 'pyproject.toml').is_file()
 
-    def test_create_synthetic_project_source_files(self):
+    def it_create_synthetic_project_source_files(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             work_dir = Path(tmp_dir)
             project_dir = create_synthetic_project(work_dir)
@@ -324,7 +324,7 @@ class TestCreateSyntheticProject:
             assert (src_dir / 'validator.py').is_file()
             assert (src_dir / 'processor.py').is_file()
 
-    def test_create_synthetic_project_test_files(self):
+    def it_create_synthetic_project_test_files(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             work_dir = Path(tmp_dir)
             project_dir = create_synthetic_project(work_dir)
@@ -334,7 +334,7 @@ class TestCreateSyntheticProject:
             assert (test_dir / 'test_validator.py').is_file()
             assert (test_dir / 'test_processor.py').is_file()
 
-    def test_synthetic_project_source_is_valid_python(self):
+    def it_synthetic_project_source_is_valid_python(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             work_dir = Path(tmp_dir)
             project_dir = create_synthetic_project(work_dir)
@@ -345,7 +345,7 @@ class TestCreateSyntheticProject:
                 # This will raise SyntaxError if invalid
                 compile(source, str(py_file), 'exec')
 
-    def test_synthetic_project_tests_are_valid_python(self):
+    def it_synthetic_project_tests_are_valid_python(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             work_dir = Path(tmp_dir)
             project_dir = create_synthetic_project(work_dir)

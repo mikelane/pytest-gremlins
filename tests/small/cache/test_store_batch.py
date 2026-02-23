@@ -13,10 +13,10 @@ from pytest_gremlins.cache.store import ResultStore
 
 
 @pytest.mark.medium
-class TestStoreBatchOperations:
+class DescribeStoreBatchOperations:
     """Tests for batch write support."""
 
-    def test_put_deferred_does_not_commit_immediately(self, tmp_path: Path) -> None:
+    def it_put_deferred_does_not_commit_immediately(self, tmp_path: Path) -> None:
         """put_deferred does not commit until flush is called."""
         db_path = tmp_path / 'results.db'
 
@@ -34,7 +34,7 @@ class TestStoreBatchOperations:
             assert store.get('key1') == {'status': 'zapped'}
             assert store.get('key2') == {'status': 'survived'}
 
-    def test_batch_writes_are_faster_than_individual(self, tmp_path: Path) -> None:
+    def it_batch_writes_are_faster_than_individual(self, tmp_path: Path) -> None:
         """Batch writes with deferred commit are faster than individual commits."""
         db_path = tmp_path / 'results.db'
         num_entries = 100
@@ -62,7 +62,7 @@ class TestStoreBatchOperations:
             f'individual writes ({individual_time * 1000:.1f}ms)'
         )
 
-    def test_close_flushes_pending_writes(self, tmp_path: Path) -> None:
+    def it_close_flushes_pending_writes(self, tmp_path: Path) -> None:
         """Closing the store flushes any pending deferred writes."""
         db_path = tmp_path / 'results.db'
 
@@ -76,7 +76,7 @@ class TestStoreBatchOperations:
             result = store.get('key1')
             assert result == {'status': 'zapped'}
 
-    def test_context_manager_flushes_on_exit(self, tmp_path: Path) -> None:
+    def it_context_manager_flushes_on_exit(self, tmp_path: Path) -> None:
         """Context manager exit flushes pending writes."""
         db_path = tmp_path / 'results.db'
 

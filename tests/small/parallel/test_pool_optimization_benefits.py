@@ -24,10 +24,10 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.small
-class TestStartMethodOptimization:
+class DescribeStartMethodOptimization:
     """Tests verifying start method optimization."""
 
-    def test_forkserver_available_on_unix(self) -> None:
+    def it_forkserver_available_on_unix(self) -> None:
         """forkserver is available and selected on Unix systems."""
         if sys.platform == 'win32':
             pytest.skip('forkserver not available on Windows')
@@ -35,7 +35,7 @@ class TestStartMethodOptimization:
         method = get_optimal_start_method()
         assert method == 'forkserver'
 
-    def test_spawn_used_on_windows(self) -> None:
+    def it_spawn_used_on_windows(self) -> None:
         """spawn is used on Windows."""
         if sys.platform != 'win32':
             pytest.skip('Only relevant on Windows')
@@ -45,10 +45,10 @@ class TestStartMethodOptimization:
 
 
 @pytest.mark.small
-class TestWarmupBenefits:
+class DescribeWarmupBenefits:
     """Tests demonstrating warmup benefits."""
 
-    def test_warmed_pool_completes_first_task_faster(self, tmp_path: Path) -> None:
+    def it_warmed_pool_completes_first_task_faster(self, tmp_path: Path) -> None:
         """A warmed pool completes its first real task faster than cold pool.
 
         Note: This test is probabilistic - warmup may not always be faster
@@ -74,7 +74,7 @@ class TestWarmupBenefits:
             result = future.result(timeout=5)
             assert result.gremlin_id == 'g001'
 
-    def test_warmup_is_configurable(self) -> None:
+    def it_warmup_is_configurable(self) -> None:
         """Warmup can be disabled for specific use cases."""
         config = PoolConfig(warmup=False)
         pool = PersistentWorkerPool.from_config(config)
@@ -86,10 +86,10 @@ class TestWarmupBenefits:
 
 
 @pytest.mark.small
-class TestMpContextOptimization:
+class DescribeMpContextOptimization:
     """Tests verifying multiprocessing context optimization."""
 
-    def test_mp_context_is_created_lazily(self) -> None:
+    def it_mp_context_is_created_lazily(self) -> None:
         """Multiprocessing context is created when pool starts."""
         config = PoolConfig(max_workers=2, start_method='spawn')
         pool = PersistentWorkerPool.from_config(config)
@@ -98,7 +98,7 @@ class TestMpContextOptimization:
         assert pool._mp_context is not None
         assert pool._mp_context.get_start_method() == 'spawn'
 
-    def test_auto_start_method_selects_optimal(self) -> None:
+    def it_selects_optimal_start_method_automatically(self) -> None:
         """Auto start method selects the optimal method for the platform."""
         config = PoolConfig(start_method='auto')
         pool = PersistentWorkerPool.from_config(config)
@@ -108,15 +108,15 @@ class TestMpContextOptimization:
 
 
 @pytest.mark.small
-class TestPoolConfigIntegrationWithBatchExecutor:
+class DescribePoolConfigIntegrationWithBatchExecutor:
     """Tests verifying PoolConfig works with BatchExecutor patterns."""
 
-    def test_batch_size_from_config(self) -> None:
+    def it_reads_batch_size_from_config(self) -> None:
         """BatchExecutor can use batch size from PoolConfig."""
         config = PoolConfig(batch_size=20)
         assert config.batch_size == 20
 
-    def test_config_provides_all_batch_executor_params(self) -> None:
+    def it_provides_all_batch_executor_params(self) -> None:
         """PoolConfig provides all parameters needed by BatchExecutor."""
         config = PoolConfig(
             max_workers=4,
@@ -131,7 +131,7 @@ class TestPoolConfigIntegrationWithBatchExecutor:
 
 
 @pytest.mark.small
-class TestPoolPerformanceCharacteristics:
+class DescribePoolPerformanceCharacteristics:
     """Tests documenting expected performance characteristics."""
 
     # Windows CI runners are significantly slower and more variable than Linux/macOS
@@ -139,7 +139,7 @@ class TestPoolPerformanceCharacteristics:
     POOL_CREATION_THRESHOLD = 0.5 if sys.platform == 'win32' else 0.1  # 500ms Windows, 100ms Unix
     WARMUP_THRESHOLD = 10.0 if sys.platform == 'win32' else 3.0  # 10s Windows, 3s Unix
 
-    def test_pool_creation_is_fast(self) -> None:
+    def it_pool_creation_is_fast(self) -> None:
         """Pool creation without warmup is fast (<100ms on Unix, <500ms on Windows)."""
         config = PoolConfig(max_workers=2, warmup=False)
 
@@ -153,7 +153,7 @@ class TestPoolPerformanceCharacteristics:
         # The pool is not started yet
         assert not pool.is_running
 
-    def test_pool_startup_with_warmup_reasonable_time(self) -> None:
+    def it_completes_startup_with_warmup_in_reasonable_time(self) -> None:
         """Pool startup with warmup completes in reasonable time.
 
         Warmup should add some overhead but not be excessive.
@@ -171,7 +171,7 @@ class TestPoolPerformanceCharacteristics:
         # Windows CI is slower and more variable
         assert elapsed < self.WARMUP_THRESHOLD
 
-    def test_pool_reuse_avoids_startup_overhead(self, tmp_path: Path) -> None:
+    def it_avoids_startup_overhead_when_reusing_pool(self, tmp_path: Path) -> None:
         """Using the same pool for multiple batches avoids repeated startup."""
         config = PoolConfig(max_workers=1, warmup=True, timeout=5)
         pool = PersistentWorkerPool.from_config(config)

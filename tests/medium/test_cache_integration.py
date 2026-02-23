@@ -38,10 +38,10 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.mark.medium
-class TestCacheIntegration:
+class DescribeCacheIntegration:
     """Tests for cache integration with the mutation testing plugin."""
 
-    def test_first_run_populates_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_first_run_populates_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
         """First run stores results in cache."""
         pytester_with_conftest.makepyfile(
             src_module="""
@@ -67,7 +67,7 @@ class TestCacheIntegration:
         assert cache_dir.exists()
         assert (cache_dir / 'results.db').exists()
 
-    def test_second_run_uses_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_second_run_uses_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Second run on unchanged code uses cached results."""
         pytester_with_conftest.makepyfile(
             src_module="""
@@ -94,7 +94,7 @@ class TestCacheIntegration:
         # Should show cache hits in output
         result.stdout.fnmatch_lines(['*cache hit*'])
 
-    def test_source_change_invalidates_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_invalidates_cache_when_source_file_changes(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Modifying source file invalidates cache entries."""
         pytester_with_conftest.makepyfile(
             src_module="""
@@ -129,7 +129,7 @@ class TestCacheIntegration:
         # Should show cache miss due to source change
         result.stdout.fnmatch_lines(['*cache miss*'])
 
-    def test_test_change_invalidates_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_invalidates_cache_when_test_file_is_modified(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Modifying test file invalidates cache entries."""
         pytester_with_conftest.makepyfile(
             src_module="""
@@ -166,7 +166,7 @@ class TestCacheIntegration:
         result.assert_outcomes(passed=1)
         result.stdout.fnmatch_lines(['*cache miss*'])
 
-    def test_cache_disabled_by_default(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_cache_disabled_by_default(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Cache is not used when --gremlin-cache not specified."""
         pytester_with_conftest.makepyfile(
             src_module="""
@@ -190,7 +190,9 @@ class TestCacheIntegration:
         cache_dir = pytester_with_conftest.path / '.gremlins_cache'
         assert not cache_dir.exists()
 
-    def test_clear_cache_option(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_clears_all_cached_results_when_gremlin_clear_cache_is_set(
+        self, pytester_with_conftest: pytest.Pytester
+    ) -> None:
         """--gremlin-clear-cache removes all cached results."""
         pytester_with_conftest.makepyfile(
             src_module="""

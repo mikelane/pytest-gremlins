@@ -23,7 +23,7 @@ from pytest_gremlins.reporting.results import (
 
 
 @pytest.mark.small
-class TestNoGremlinsMessage:
+class DescribeNoGremlinsMessage:
     """Tests for actionable error message in terminal summary."""
 
     def _run_terminal_summary(self, session: GremlinSession) -> list[str]:
@@ -41,7 +41,7 @@ class TestNoGremlinsMessage:
 
         return lines
 
-    def test_message_lists_searched_paths(self) -> None:
+    def it_message_lists_searched_paths(self) -> None:
         """Error message includes the paths that were searched."""
         session = GremlinSession(
             enabled=True,
@@ -54,7 +54,7 @@ class TestNoGremlinsMessage:
         assert str(Path('/project/src')) in output
         assert str(Path('/project/lib')) in output
 
-    def test_message_suggests_config_when_no_paths(self) -> None:
+    def it_message_suggests_config_when_no_paths(self) -> None:
         """Error message suggests configuring paths when no paths were found."""
         session = GremlinSession(
             enabled=True,
@@ -67,7 +67,7 @@ class TestNoGremlinsMessage:
         assert '[tool.pytest-gremlins]' in output
         assert 'paths' in output
 
-    def test_no_paths_message_shows_discovery_chain(self) -> None:
+    def it_shows_discovery_chain_in_no_paths_message(self) -> None:
         """Error message lists the full discovery chain when no paths found."""
         session = GremlinSession(
             enabled=True,
@@ -82,7 +82,7 @@ class TestNoGremlinsMessage:
         assert '[tool.setuptools]' in output
         assert 'src/' in output
 
-    def test_no_paths_message_shows_numbered_steps(self) -> None:
+    def it_shows_numbered_steps_in_no_paths_message(self) -> None:
         """Error message presents discovery chain as numbered steps."""
         session = GremlinSession(
             enabled=True,
@@ -97,7 +97,7 @@ class TestNoGremlinsMessage:
         assert '3.' in output
         assert '4.' in output
 
-    def test_no_paths_message_suggests_gremlin_targets_flag(self) -> None:
+    def it_suggests_gremlin_targets_flag_in_no_paths_message(self) -> None:
         """Error message tells user how to specify targets explicitly."""
         session = GremlinSession(
             enabled=True,
@@ -109,7 +109,7 @@ class TestNoGremlinsMessage:
 
         assert 'pytest --gremlins --gremlin-targets=' in output
 
-    def test_message_differs_for_searched_paths_vs_no_paths(self) -> None:
+    def it_message_differs_for_searched_paths_vs_no_paths(self) -> None:
         """Message with searched paths differs from message with no paths."""
         session_with_paths = GremlinSession(
             enabled=True,
@@ -137,7 +137,7 @@ def _make_gremlin_result(status: GremlinResultStatus) -> GremlinResult:
 
 
 @pytest.mark.small
-class TestMutationResultsReport:
+class DescribeMutationResultsReport:
     """Tests for the results display section of pytest_terminal_summary (lines 1832-1881).
 
     All tests supply a non-empty gremlins list so the no-gremlins early-return
@@ -155,7 +155,7 @@ class TestMutationResultsReport:
         plugin.pytest_terminal_summary(mock_reporter, 0, mock_config)
         return lines
 
-    def test_shows_no_gremlins_tested_when_results_empty(self) -> None:
+    def it_shows_no_gremlins_tested_when_results_empty(self) -> None:
         """When results list is empty (total=0), 'No gremlins tested.' appears."""
         gs = GremlinSession(
             enabled=True,
@@ -168,7 +168,7 @@ class TestMutationResultsReport:
 
         assert 'No gremlins tested.' in output
 
-    def test_shows_zapped_and_survived_counts(self) -> None:
+    def it_shows_zapped_and_survived_counts(self) -> None:
         """Zapped and survived gremlins produce count lines in the report."""
         gs = GremlinSession(
             enabled=True,
@@ -185,7 +185,7 @@ class TestMutationResultsReport:
         assert 'Zapped: 1 gremlins' in output
         assert 'Survived: 1 gremlins' in output
 
-    def test_shows_timeout_line_when_timeouts_present(self) -> None:
+    def it_shows_timeout_line_when_timeouts_present(self) -> None:
         """A 'Timeout:' line appears only when at least one timeout result exists."""
         gs = GremlinSession(
             enabled=True,
@@ -198,7 +198,7 @@ class TestMutationResultsReport:
 
         assert 'Timeout: 1 gremlins' in output
 
-    def test_shows_error_line_when_errors_present(self) -> None:
+    def it_shows_error_line_when_errors_present(self) -> None:
         """An 'Error:' line appears only when at least one error result exists."""
         gs = GremlinSession(
             enabled=True,
@@ -211,7 +211,7 @@ class TestMutationResultsReport:
 
         assert 'Error: 1 gremlins' in output
 
-    def test_shows_cache_stats_when_cache_enabled_with_hits(self) -> None:
+    def it_shows_cache_stats_when_cache_enabled_with_hits(self) -> None:
         """Cache hit/miss statistics appear when cache_enabled and total cache activity > 0."""
         gs = GremlinSession(
             enabled=True,
@@ -228,7 +228,7 @@ class TestMutationResultsReport:
         assert 'Cache: 3 hits' in output
         assert '1 misses' in output
 
-    def test_omits_cache_stats_when_cache_disabled(self) -> None:
+    def it_omits_cache_stats_when_cache_disabled(self) -> None:
         """Cache stats do not appear when cache_enabled is False."""
         gs = GremlinSession(
             enabled=True,
@@ -242,7 +242,7 @@ class TestMutationResultsReport:
 
         assert 'Cache:' not in output
 
-    def test_shows_top_surviving_gremlins_section(self) -> None:
+    def it_shows_top_surviving_gremlins_section(self) -> None:
         """Survivors section appears when at least one gremlin survived."""
         gs = GremlinSession(
             enabled=True,
@@ -256,7 +256,7 @@ class TestMutationResultsReport:
         assert 'Top surviving gremlins:' in output
         assert 'src/module.py:42' in output
 
-    def test_shows_html_report_hint_when_format_is_console(self) -> None:
+    def it_shows_html_report_hint_when_format_is_console(self) -> None:
         """Console report format includes a hint to use --gremlin-report=html."""
         gs = GremlinSession(
             enabled=True,
@@ -270,7 +270,7 @@ class TestMutationResultsReport:
 
         assert '--gremlin-report=html' in output
 
-    def test_writes_html_report_when_format_is_html(self) -> None:
+    def it_writes_html_report_when_format_is_html(self) -> None:
         """When report_format='html', the HTML report is written and its path displayed."""
         gs = GremlinSession(
             enabled=True,

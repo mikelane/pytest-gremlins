@@ -53,18 +53,18 @@ def coverage_map_with_specificity():
     return cm
 
 
-class TestPrioritizedSelectorCreation:
+class DescribePrioritizedSelectorCreation:
     """Test PrioritizedSelector initialization."""
 
-    def test_prioritized_selector_stores_coverage_map(self, coverage_map_with_specificity):
+    def it_prioritized_selector_stores_coverage_map(self, coverage_map_with_specificity):
         selector = PrioritizedSelector(coverage_map_with_specificity)
         assert selector.coverage_map is coverage_map_with_specificity
 
 
-class TestPrioritizedSelectorSelectTests:
+class DescribePrioritizedSelectorSelectTests:
     """Test selecting tests in priority order."""
 
-    def test_select_tests_returns_tests_ordered_by_specificity(
+    def it_select_tests_returns_tests_ordered_by_specificity(
         self,
         coverage_map_with_specificity,
         sample_gremlin,
@@ -84,7 +84,7 @@ class TestPrioritizedSelectorSelectTests:
         # test_broad covers 10 lines -> lowest priority
         assert result[2] == 'test_broad'
 
-    def test_select_tests_returns_empty_for_uncovered_gremlin(
+    def it_select_tests_returns_empty_for_uncovered_gremlin(
         self,
         coverage_map_with_specificity,
     ):
@@ -101,7 +101,7 @@ class TestPrioritizedSelectorSelectTests:
         result = selector.select_tests_prioritized(gremlin)
         assert result == []
 
-    def test_select_tests_maintains_order_stability_for_equal_specificity(
+    def it_select_tests_maintains_order_stability_for_equal_specificity(
         self,
     ):
         """Tests with equal specificity maintain consistent ordering."""
@@ -135,10 +135,10 @@ class TestPrioritizedSelectorSelectTests:
         assert result == ['test_alpha', 'test_beta', 'test_gamma']
 
 
-class TestTestSpecificityComputation:
+class DescribeTestSpecificityComputation:
     """Test computing test specificity (lines covered)."""
 
-    def test_compute_specificity_returns_line_counts(self, coverage_map_with_specificity):
+    def it_returns_line_counts_for_specificity(self, coverage_map_with_specificity):
         selector = PrioritizedSelector(coverage_map_with_specificity)
         specificity = selector.get_test_specificity()
 
@@ -147,7 +147,7 @@ class TestTestSpecificityComputation:
         assert specificity['test_medium'] == 3
         assert specificity['test_broad'] == 10
 
-    def test_compute_specificity_caches_result(self, coverage_map_with_specificity):
+    def it_caches_specificity_result(self, coverage_map_with_specificity):
         selector = PrioritizedSelector(coverage_map_with_specificity)
 
         # First call computes
@@ -158,10 +158,10 @@ class TestTestSpecificityComputation:
         assert specificity1 is specificity2  # Same object (cached)
 
 
-class TestPrioritizedSelectorStats:
+class DescribePrioritizedSelectorStats:
     """Test statistics from prioritized selection."""
 
-    def test_stats_include_specificity_info(
+    def it_stats_include_specificity_info(
         self,
         coverage_map_with_specificity,
         sample_gremlin,
@@ -177,7 +177,7 @@ class TestPrioritizedSelectorStats:
         assert 'specificity_range' in stats
         assert stats['specificity_range'] == (1, 10)  # min, max lines covered
 
-    def test_stats_for_uncovered_gremlin_has_none_values(self):
+    def it_stats_for_uncovered_gremlin_has_none_values(self):
         cm = CoverageMap()
         cm.add('src/auth.py', 42, 'test_something')  # Different file
 

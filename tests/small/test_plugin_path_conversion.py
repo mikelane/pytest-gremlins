@@ -10,10 +10,10 @@ from pytest_gremlins.plugin import _path_to_module_name
 
 
 @pytest.mark.small
-class TestPathToModuleName:
+class DescribePathToModuleName:
     """Tests for _path_to_module_name function."""
 
-    def test_flat_module_at_root(self):
+    def it_flat_module_at_root(self):
         """Module at project root converts correctly."""
         rootdir = Path('/project')
         file_path = Path('/project/module.py')
@@ -22,7 +22,7 @@ class TestPathToModuleName:
 
         assert result == 'module'
 
-    def test_package_module_at_root(self):
+    def it_package_module_at_root(self):
         """Module in package at project root converts correctly."""
         rootdir = Path('/project')
         file_path = Path('/project/mypackage/module.py')
@@ -31,7 +31,7 @@ class TestPathToModuleName:
 
         assert result == 'mypackage.module'
 
-    def test_src_layout_module_excludes_src_prefix(self):
+    def it_src_layout_module_excludes_src_prefix(self):
         """Module in src/ layout should NOT include 'src.' prefix.
 
         When using src/ layout, Python imports are like:
@@ -53,7 +53,7 @@ class TestPathToModuleName:
             "The 'src.' prefix should be stripped for src/ layout projects."
         )
 
-    def test_nested_src_layout_module(self):
+    def it_resolves_nested_src_layout_module(self):
         """Deeply nested module in src/ layout converts correctly."""
         rootdir = Path('/project')
         file_path = Path('/project/src/mypackage/subpackage/module.py')

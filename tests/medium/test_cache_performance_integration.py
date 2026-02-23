@@ -32,10 +32,10 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.mark.medium
-class TestCachePerformanceIntegration:
+class DescribeCachePerformanceIntegration:
     """Integration tests verifying cache provides speedup."""
 
-    def test_warm_run_is_faster_than_cold_run(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_completes_faster_on_warm_run_than_cold_run(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Warm run (cache populated) is faster than cold run.
 
         This is the key acceptance test - if warm run is not faster than
@@ -87,7 +87,7 @@ class TestCachePerformanceIntegration:
             'Cache is adding overhead instead of providing speedup!'
         )
 
-    def test_cache_hit_skips_test_execution(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_skips_test_execution_on_cache_hit(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Cache hits skip actual test execution, saving subprocess overhead."""
         pytester_with_conftest.makepyfile(
             src_module="""
@@ -126,7 +126,7 @@ class TestCachePerformanceIntegration:
         # With multiple gremlins, this compounds
         assert warm_time < cold_time, f'Warm run ({warm_time:.2f}s) was NOT faster than cold run ({cold_time:.2f}s)'
 
-    def test_no_cache_mode_baseline(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_adds_minimal_overhead_for_cold_cache_over_no_cache(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Establish baseline for no-cache mode."""
         pytester_with_conftest.makepyfile(
             src_module="""

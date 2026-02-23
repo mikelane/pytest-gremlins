@@ -19,10 +19,10 @@ from pytest_gremlins.operators import ComparisonOperator
 
 
 @pytest.mark.small
-class TestReturnDescriptionConstantToConstant:
+class DescribeReturnDescriptionConstantToConstant:
     """Tests for _get_return_description with constant-to-constant mutations."""
 
-    def test_return_constant_to_constant_description(self) -> None:
+    def it_provides_description_for_return_constant_to_constant(self) -> None:
         """Covers lines 181-187: return constant to constant mutation description."""
         # Create original and mutated Return nodes with Constant values
         original = ast.Return(value=ast.Constant(value=42))
@@ -32,7 +32,7 @@ class TestReturnDescriptionConstantToConstant:
 
         assert result == 'return 42 to 0'
 
-    def test_return_string_constant_to_string_constant(self) -> None:
+    def it_mutates_return_string_constant_to_other_string_constant(self) -> None:
         """Constant to constant with string values."""
         original = ast.Return(value=ast.Constant(value='hello'))
         mutated = ast.Return(value=ast.Constant(value=''))
@@ -41,7 +41,7 @@ class TestReturnDescriptionConstantToConstant:
 
         assert result == "return 'hello' to ''"
 
-    def test_return_bool_constant_to_bool_constant(self) -> None:
+    def it_mutates_return_bool_constant_to_other_bool_constant(self) -> None:
         """Constant to constant with boolean values."""
         original = ast.Return(value=ast.Constant(value=True))
         mutated = ast.Return(value=ast.Constant(value=False))
@@ -52,10 +52,10 @@ class TestReturnDescriptionConstantToConstant:
 
 
 @pytest.mark.small
-class TestTransformerEdgeCasesForCoverage:
+class DescribeTransformerEdgeCasesForCoverage:
     """Tests for transformer visitor edge cases."""
 
-    def test_visit_boolop_returns_unchanged_when_no_gremlins(self) -> None:
+    def it_visit_boolop_returns_unchanged_when_no_gremlins(self) -> None:
         """Covers line 417: visit_BoolOp returns node when no gremlins produced.
 
         This happens when BoolOp uses operators that can't be mutated,
@@ -75,7 +75,7 @@ def check(a, b):
         assert all(g.operator_name == 'comparison' for g in gremlins)
         # The 'and' expression should be unchanged in the tree
 
-    def test_visit_return_returns_unchanged_when_no_gremlins(self) -> None:
+    def it_visit_return_returns_unchanged_when_no_gremlins(self) -> None:
         """Covers line 448: visit_Return returns node when no gremlins produced.
 
         Return statements with no value (bare return) don't produce gremlins
@@ -94,10 +94,10 @@ def do_nothing():
 
 
 @pytest.mark.small
-class TestMutationSwitchingTransformerPrivateMethods:
+class DescribeMutationSwitchingTransformerPrivateMethods:
     """Tests for MutationSwitchingTransformer internal methods."""
 
-    def test_create_gremlins_for_compare_is_callable(self) -> None:
+    def it_exposes_create_gremlins_for_compare_as_callable(self) -> None:
         """Covers line 370: _create_gremlins_for_compare method.
 
         This is a wrapper method that's used internally. We call it directly

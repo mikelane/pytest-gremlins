@@ -32,10 +32,10 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.mark.medium
-class TestCacheLargeScale:
+class DescribeCacheLargeScale:
     """Tests for cache with larger number of gremlins."""
 
-    def test_many_gremlins_cache_performance(self, pytester_with_conftest: pytest.Pytester) -> None:
+    def it_cache_scales_correctly_with_many_gremlins(self, pytester_with_conftest: pytest.Pytester) -> None:
         """Test cache with many mutations (like the benchmark synthetic project).
 
         The synthetic benchmark has:
