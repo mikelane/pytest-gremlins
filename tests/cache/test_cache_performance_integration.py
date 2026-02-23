@@ -67,7 +67,7 @@ class DescribeCachePerformanceIntegration:
             'Cache is adding overhead instead of providing speedup!'
         )
 
-    def it_cache_hit_skips_test_execution(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_skips_test_execution_on_cache_hit(self, pytester_with_markers: pytest.Pytester) -> None:
         """Cache hits skip actual test execution, saving subprocess overhead."""
         pytester_with_markers.makepyfile(
             src_module="""
@@ -106,7 +106,7 @@ class DescribeCachePerformanceIntegration:
         # With multiple gremlins, this compounds
         assert warm_time < cold_time, f'Warm run ({warm_time:.2f}s) was NOT faster than cold run ({cold_time:.2f}s)'
 
-    def it_cold_cache_adds_minimal_overhead_over_no_cache(self, pytester_with_markers: pytest.Pytester) -> None:
+    def it_adds_minimal_overhead_for_cold_cache_over_no_cache(self, pytester_with_markers: pytest.Pytester) -> None:
         """Establish baseline for no-cache mode."""
         pytester_with_markers.makepyfile(
             src_module="""

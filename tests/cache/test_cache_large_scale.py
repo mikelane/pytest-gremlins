@@ -15,7 +15,7 @@ import pytest
 class DescribeCacheLargeScale:
     """Tests for cache with larger number of gremlins."""
 
-    def it_cache_returns_identical_scores_on_warm_rerun_with_many_gremlins(
+    def it_returns_identical_scores_on_warm_cache_rerun_with_many_gremlins(
         self,
         pytester_with_markers: pytest.Pytester,
     ) -> None:

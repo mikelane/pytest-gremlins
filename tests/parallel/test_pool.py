@@ -188,7 +188,7 @@ class DescribeWorkerPoolExecution:
             assert result.status == GremlinResultStatus.TIMEOUT
 
     @pytest.mark.small
-    def it_result_includes_gremlin_id(self, tmp_path: Path) -> None:
+    def it_includes_gremlin_id(self, tmp_path: Path) -> None:
         """Result includes the gremlin ID that was tested."""
         with WorkerPool(max_workers=1, timeout=5) as pool:
             future = pool.submit(
