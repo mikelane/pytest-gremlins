@@ -1280,6 +1280,14 @@ dependencies = [
     { name = "pytest" },
 ]
 
+[package.optional-dependencies]
+docs = [
+    { name = "mkdocs" },
+    { name = "mkdocs-material" },
+    { name = "mkdocs-minify-plugin" },
+    { name = "mkdocstrings", extra = ["python"] },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "commitizen" },
@@ -1307,8 +1315,13 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "coverage", specifier = ">=7.12.0" },
+    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.5.0" },
+    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.0.0" },
+    { name = "mkdocs-minify-plugin", marker = "extra == 'docs'", specifier = ">=0.7.0" },
+    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24.0" },
     { name = "pytest", specifier = ">=7.0.0" },
 ]
+provides-extras = ["docs"]
 
 [package.metadata.requires-dev]
 dev = [
