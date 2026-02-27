@@ -28,13 +28,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install Python
+        run: uv python install
 
       - name: Install dependencies
         run: uv sync --all-groups
@@ -46,32 +44,31 @@ jobs:
 
       - name: Show unreleased commits
         run: |
-          echo "### Unreleased commits" >> $GITHUB_STEP_SUMMARY
-          git log --oneline "$(git describe --tags --abbrev=0)"..HEAD >> $GITHUB_STEP_SUMMARY
+          echo "### Unreleased commits" >> "$GITHUB_STEP_SUMMARY"
+          last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [[ -n "$last_tag" ]]; then
+            git log --oneline "${last_tag}..HEAD" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "(no previous tag — this will be the first release)" >> "$GITHUB_STEP_SUMMARY"
+            git log --oneline >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-      - name: Bump version (auto)
-        if: inputs.bump == 'auto'
-        run: uv run cz bump --yes
-
-      - name: Bump version (patch)
-        if: inputs.bump == 'patch'
-        run: uv run cz bump --yes --increment PATCH
-
-      - name: Bump version (minor)
-        if: inputs.bump == 'minor'
-        run: uv run cz bump --yes --increment MINOR
-
-      - name: Bump version (major)
-        if: inputs.bump == 'major'
-        run: uv run cz bump --yes --increment MAJOR
+      - name: Bump version
+        run: |
+          bump_type="${{ inputs.bump }}"
+          if [[ "$bump_type" == "auto" ]]; then
+            uv run cz bump --yes
+          else
+            uv run cz bump --yes --increment "${bump_type^^}"
+          fi
 
       - name: Push commit and tag
-        run: git push origin main --follow-tags
+        run: git push origin HEAD:refs/heads/${{ github.ref_name }} --follow-tags
 
       - name: Report new version
         run: |
-          NEW_TAG=$(git describe --tags --abbrev=0)
-          echo "### Released: ${NEW_TAG}" >> $GITHUB_STEP_SUMMARY
-          echo "The tag push will trigger \`release.yml\` to publish to PyPI." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "[Monitor release pipeline](https://github.com/mikelane/pytest-gremlins/actions/workflows/release.yml)" >> $GITHUB_STEP_SUMMARY
+          new_tag=$(git describe --tags --abbrev=0)
+          echo "### Released: ${new_tag}" >> "$GITHUB_STEP_SUMMARY"
+          echo "The tag push will trigger \`release.yml\` to publish to PyPI." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Monitor release pipeline](https://github.com/mikelane/pytest-gremlins/actions/workflows/release.yml)" >> "$GITHUB_STEP_SUMMARY"
