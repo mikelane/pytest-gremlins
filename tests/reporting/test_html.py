@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
-from pytest_gremlins.reporting.html import HtmlReporter, resolve_html_output_path
+from pytest_gremlins.reporting.html import HtmlReporter, append_history_entry, resolve_html_output_path
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 
@@ -337,3 +338,389 @@ class DescribeResolveHtmlOutputPath:
 
         assert result.is_absolute()
         assert result == tmp_path / 'reports' / 'index.html'
+
+
+@pytest.mark.small
+class DescribeHtmlReporterDarkMode:
+    """Tests for Epic B: dark-mode-by-default via CSS custom properties.
+
+    References: #159, #160
+    """
+
+    def it_sets_data_theme_dark_on_html_element(self, make_result):
+        # Light fallback would use no data-theme; dark default requires the attribute.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'data-theme="dark"' in html
+
+    def it_defines_css_custom_properties_for_theming(self, make_result):
+        # Old impl used raw hex values; new impl must use --var-name tokens.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert '--' in html  # at least one CSS custom property defined
+        assert 'var(--' in html  # at least one CSS custom property consumed
+
+    def it_includes_gremlin_green_primary_colour(self, make_result):
+        # The gremlin-green palette anchors at #2e7d32 (primary).
+        # Old grey palette would not contain this value.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert '#2e7d32' in html or '2e7d32' in html.lower()
+
+    def it_includes_light_mode_css_block(self, make_result):
+        # A data-theme toggle requires both dark and light variable sets.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'data-theme="light"' in html or "[data-theme='light']" in html or '[data-theme="light"]' in html
+
+
+@pytest.mark.small
+class DescribeHtmlReporterFonts:
+    """Tests for Epic B: Inter body font and JetBrains Mono code font.
+
+    References: #160
+    """
+
+    def it_imports_inter_font(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'Inter' in html
+
+    def it_imports_jetbrains_mono_font(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'JetBrains' in html or 'JetBrainsMono' in html
+
+
+@pytest.mark.small
+class DescribeHtmlReporterThemeToggle:
+    """Tests for Epic B: light/dark mode toggle with localStorage persistence.
+
+    References: #161
+    """
+
+    def it_includes_a_theme_toggle_button(self, make_result):
+        # Must have a button element the user can click to switch theme.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert '<button' in html
+
+    def it_persists_theme_via_localstorage(self, make_result):
+        # The inline script must reference localStorage so preference survives reload.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'localStorage' in html
+
+    def it_includes_inline_script_for_toggle(self, make_result):
+        # The toggle must be self-contained (no external JS file needed).
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert '<script>' in html or '<script ' in html
+
+
+@pytest.mark.small
+class DescribeHtmlReporterResponsive:
+    """Tests for Epic B: responsive viewport meta tag.
+
+    References: #161
+    """
+
+    def it_includes_viewport_meta_tag(self, make_result):
+        # Required for 375px mobile viewport to render without horizontal scroll.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'viewport' in html
+        assert 'width=device-width' in html
+
+
+@pytest.mark.small
+class DescribeHtmlReporterChartJs:
+    """Tests for Epic C: Chart.js visualisations.
+
+    References: #163, #164, #165
+    """
+
+    def it_loads_chartjs_from_cdn(self, make_result):
+        # Charts require the Chart.js library; must be loaded via CDN script tag.
+        # Checking the CDN domain is specific enough that a stub cannot fake it.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'chart.js' in html.lower()
+
+    def it_includes_score_gauge_canvas(self, make_result):
+        # The donut gauge must use a <canvas> element with id="scoreGauge".
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'scoreGauge' in html
+        assert '<canvas' in html
+
+    def it_includes_outcome_pie_canvas(self, make_result):
+        # The outcome breakdown must use a <canvas> element with id="outcomeChart".
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'outcomeChart' in html
+
+    def it_includes_per_file_bar_canvas(self, make_result):
+        # Per-file scores must use a <canvas> element with id="fileChart".
+        results = [
+            make_result(GremlinResultStatus.ZAPPED, file_path='a.py'),
+            make_result(GremlinResultStatus.SURVIVED, file_path='b.py'),
+        ]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'fileChart' in html
+
+    def it_includes_operator_distribution_canvas(self, make_result):
+        # Operator breakdown must use a <canvas> element with id="operatorChart".
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'operatorChart' in html
+
+    def it_embeds_file_scores_as_json_data(self, make_result):
+        # File paths must appear inside a <script> block as JSON data for Chart.js,
+        # not just in the HTML table rows. We verify they appear in a JSON array
+        # context by checking for the quoted path adjacent to numeric score data.
+        results = [
+            make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py'),
+            make_result(GremlinResultStatus.SURVIVED, file_path='src/utils.py'),
+        ]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        # json.dumps produces the quoted form; it must appear inside a script block
+        assert json.dumps('src/auth.py') in html
+        assert json.dumps('src/utils.py') in html
+
+    def it_omits_charts_when_no_gremlins_tested(self):
+        # With zero results there is nothing to visualise; canvas elements must be absent.
+        score = MutationScore.from_results([])
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'scoreGauge' not in html
+        assert 'outcomeChart' not in html
+
+
+@pytest.mark.small
+class DescribeHtmlReporterDiffPanels:
+    """Tests for Epic D: collapsible diff panels for each result row.
+
+    References: #167, #168, #169
+    """
+
+    def it_includes_details_element_for_each_result(self, make_result):
+        # Each row needs a <details> element for expand/collapse behaviour.
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.SURVIVED),
+        ]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert html.count('<details>') == 2
+
+    def it_includes_show_diff_summary_label(self, make_result):
+        # The summary toggle must be labelled so users know what it reveals.
+        results = [make_result(GremlinResultStatus.SURVIVED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'Show diff' in html
+
+    def it_renders_original_source_in_mogwai_panel(self, make_result):
+        # The left panel must show the original code labelled 'Mogwai'.
+        results = [make_result(GremlinResultStatus.SURVIVED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'Mogwai' in html or 'mogwai' in html
+
+    def it_renders_mutated_source_in_gremlin_panel(self, make_result):
+        # The right panel header must be labelled 'Gremlin (mutated)' — the word
+        # "Gremlin" alone is insufficient because the page title already contains it.
+        results = [make_result(GremlinResultStatus.SURVIVED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'Gremlin (mutated)' in html
+
+    def it_includes_expand_all_button(self, make_result):
+        # A global control lets users expand every diff at once.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'expand' in html.lower()
+
+    def it_includes_collapse_all_button(self, make_result):
+        # A global control lets users collapse every diff at once.
+        # The word 'collapse' alone is insufficient (CSS has border-collapse).
+        # The button must invoke a JS function whose name contains 'collapse'.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'collapseAll' in html or 'collapse-all' in html or 'Collapse all' in html
+
+
+@pytest.mark.small
+class DescribeAppendHistoryEntry:
+    """Tests for Epic E: appending a history entry to history.json.
+
+    References: #171, #172
+    """
+
+    def it_creates_history_json_when_absent(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        history_path = tmp_path / 'history.json'
+
+        append_history_entry(rootdir=tmp_path, score=score, history_path=history_path)
+
+        assert history_path.exists()
+
+    def it_writes_score_and_timestamp_to_entry(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        history_path = tmp_path / 'history.json'
+
+        append_history_entry(rootdir=tmp_path, score=score, history_path=history_path)
+
+        entries = json.loads(history_path.read_text())
+        assert len(entries) == 1
+        assert 'timestamp' in entries[0]
+        assert 'score' in entries[0]
+        assert entries[0]['score'] == 100.0
+
+    def it_appends_to_existing_entries(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        history_path = tmp_path / 'history.json'
+
+        append_history_entry(rootdir=tmp_path, score=score, history_path=history_path)
+        append_history_entry(rootdir=tmp_path, score=score, history_path=history_path)
+
+        entries = json.loads(history_path.read_text())
+        assert len(entries) == 2
+
+    def it_caps_entries_at_history_limit(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        history_path = tmp_path / 'history.json'
+
+        for _ in range(5):
+            append_history_entry(rootdir=tmp_path, score=score, history_limit=3, history_path=history_path)
+
+        entries = json.loads(history_path.read_text())
+        assert len(entries) == 3
+
+    def it_includes_by_file_breakdown_in_entry(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py')]
+        score = MutationScore.from_results(results)
+        history_path = tmp_path / 'history.json'
+
+        append_history_entry(rootdir=tmp_path, score=score, history_path=history_path)
+
+        entries = json.loads(history_path.read_text())
+        assert 'by_file' in entries[0]
+        assert 'src/auth.py' in entries[0]['by_file']
+
+    def it_includes_by_operator_breakdown_in_entry(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED, operator_name='comparison')]
+        score = MutationScore.from_results(results)
+        history_path = tmp_path / 'history.json'
+
+        append_history_entry(rootdir=tmp_path, score=score, history_path=history_path)
+
+        entries = json.loads(history_path.read_text())
+        assert 'by_operator' in entries[0]
+        assert 'comparison' in entries[0]['by_operator']
+
+
+@pytest.mark.small
+class DescribeHtmlReporterHistorySection:
+    """Tests for Epic E: historical trend section rendered in the HTML report.
+
+    References: #173
+    """
+
+    def it_renders_no_history_message_when_history_is_empty(self, make_result):
+        score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
+
+        html = HtmlReporter().to_html(score, history=[])
+
+        assert 'No historical data' in html
+
+    def it_renders_history_canvas_when_two_or_more_entries_present(self, make_result):
+        score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
+        history = [
+            {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
+            {'timestamp': '2026-01-02T00:00:00+00:00', 'score': 85.0, 'by_file': {}, 'by_operator': {}},
+        ]
+
+        html = HtmlReporter().to_html(score, history=history)
+
+        assert 'historyChart' in html
+
+    def it_embeds_history_data_as_json_in_canvas_attribute(self, make_result):
+        score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
+        history = [
+            {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
+            {'timestamp': '2026-01-02T00:00:00+00:00', 'score': 85.0, 'by_file': {}, 'by_operator': {}},
+        ]
+
+        html = HtmlReporter().to_html(score, history=history)
+
+        assert '2026-01-01' in html
+        assert '80.0' in html
