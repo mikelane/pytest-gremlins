@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
-from pytest_gremlins.reporting.html import HtmlReporter
+from pytest_gremlins.reporting.html import HtmlReporter, resolve_html_output_path
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.mark.small
@@ -246,3 +242,98 @@ class DescribeHtmlReporterAllOutcomeCategories:
         # Verify counts
         assert '>2<' in html  # 2 zapped
         assert '>1<' in html  # 1 survived, 1 timeout, 1 error
+
+
+@pytest.mark.small
+class DescribeHtmlReporterOutputLocation:
+    """Tests for Epic A: write_report creates parent directories automatically.
+
+    References: #155, #157
+    """
+
+    def it_creates_nested_parent_directories_before_writing(self, make_result, tmp_path: Path):
+        # write_text without mkdir raises FileNotFoundError for missing parents.
+        # This test fails if mkdir(parents=True) is absent from write_report.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+        nested = tmp_path / 'coverage' / 'gremlins' / 'index.html'
+
+        reporter.write_report(score, nested)
+
+        assert nested.exists()
+        assert '<!DOCTYPE html>' in nested.read_text()
+
+    def it_writes_to_the_exact_nested_path_not_a_sibling(self, make_result, tmp_path: Path):
+        # Hardcoding 'gremlin-report.html' next to rootdir would fail this assertion.
+        results = [make_result(GremlinResultStatus.SURVIVED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+        exact = tmp_path / 'deep' / 'nested' / 'index.html'
+
+        reporter.write_report(score, exact)
+
+        assert exact.exists()
+        assert not (tmp_path / 'deep' / 'nested.html').exists()
+        assert not (tmp_path / 'index.html').exists()
+
+    def it_succeeds_when_parent_directory_already_exists(self, make_result, tmp_path: Path):
+        # exist_ok=True must be set; without it a second mkdir raises FileExistsError.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+        output = tmp_path / 'coverage' / 'gremlins' / 'index.html'
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        reporter.write_report(score, output)  # must not raise
+
+        assert output.exists()
+
+
+@pytest.mark.small
+class DescribeResolveHtmlOutputPath:
+    """Tests for Epic A: resolve_html_output_path pure function.
+
+    References: #155, #156
+    """
+
+    def it_returns_coverage_gremlins_index_when_no_custom_dir(self, tmp_path: Path):
+        result = resolve_html_output_path(rootdir=tmp_path, html_dir=None)
+
+        # Must be exactly <rootdir>/coverage/gremlins/index.html, not rootdir/gremlin-report.html.
+        assert result == tmp_path / 'coverage' / 'gremlins' / 'index.html'
+
+    def it_returns_custom_dir_slash_index_when_html_dir_provided(self, tmp_path: Path):
+        custom = tmp_path / 'my-reports'
+        result = resolve_html_output_path(rootdir=tmp_path, html_dir=custom)
+
+        # Must append index.html to the custom dir, not the default subpath.
+        assert result == custom / 'index.html'
+
+    def it_does_not_embed_coverage_gremlins_when_custom_dir_given(self, tmp_path: Path):
+        custom = tmp_path / 'out'
+        result = resolve_html_output_path(rootdir=tmp_path, html_dir=custom)
+
+        # A naïve impl that always appends coverage/gremlins would fail here.
+        assert 'coverage' not in result.parts
+        assert 'gremlins' not in result.parts
+
+    def it_uses_rootdir_not_cwd_for_default_path(self, tmp_path: Path):
+        different_rootdir = tmp_path / 'project-root'
+        result = resolve_html_output_path(rootdir=different_rootdir, html_dir=None)
+
+        # The default path must be anchored at rootdir, not at tmp_path or cwd.
+        assert result == different_rootdir / 'coverage' / 'gremlins' / 'index.html'
+        assert tmp_path not in result.parents or result.is_relative_to(different_rootdir)
+
+    def it_resolves_relative_html_dir_against_rootdir(self, tmp_path: Path):
+        # When --gremlins-html-dir is passed as a relative string (e.g. "reports"),
+        # resolve_html_output_path must anchor it to rootdir, not to cwd.
+        # A naïve impl that uses html_dir as-is returns a relative path like
+        # 'reports/index.html' instead of '<rootdir>/reports/index.html'.
+        relative_html_dir = Path('reports')
+
+        result = resolve_html_output_path(rootdir=tmp_path, html_dir=relative_html_dir)
+
+        assert result.is_absolute()
+        assert result == tmp_path / 'reports' / 'index.html'

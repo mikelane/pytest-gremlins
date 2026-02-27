@@ -6,14 +6,43 @@ and visual highlighting of surviving gremlins.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from pytest_gremlins.reporting.results import GremlinResult
     from pytest_gremlins.reporting.score import MutationScore
+
+
+def resolve_html_output_path(rootdir: Path, html_dir: Path | None) -> Path:
+    """Resolve the output path for the HTML report.
+
+    When no custom directory is given, the report is written to
+    ``<rootdir>/coverage/gremlins/index.html`` so it can coexist with
+    coverage.py HTML output.  When a custom directory is supplied the
+    report is written to ``<html_dir>/index.html``.
+
+    Args:
+        rootdir: Project root directory used as the anchor for the default path.
+        html_dir: Custom output directory, or ``None`` for the default location.
+
+    Returns:
+        Absolute path to ``index.html`` inside the resolved output directory.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> p = resolve_html_output_path(Path('/project'), None)
+        >>> p.parts[-3:]
+        ('coverage', 'gremlins', 'index.html')
+        >>> q = resolve_html_output_path(Path('/project'), Path('/project/out'))
+        >>> q.parts[-2:]
+        ('out', 'index.html')
+    """
+    if html_dir is not None:
+        resolved_dir = html_dir if html_dir.is_absolute() else rootdir / html_dir
+        return resolved_dir / 'index.html'
+    return rootdir / 'coverage' / 'gremlins' / 'index.html'
 
 
 class HtmlReporter:
@@ -54,10 +83,13 @@ class HtmlReporter:
     def write_report(self, score: MutationScore, output_path: Path) -> None:
         """Write mutation report to an HTML file.
 
+        Creates any missing parent directories before writing.
+
         Args:
             score: The MutationScore to write.
             output_path: Path to the output HTML file.
         """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(self.to_html(score))
 
     def _get_styles(self) -> str:
