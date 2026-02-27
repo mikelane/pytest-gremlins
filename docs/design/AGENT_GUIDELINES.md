@@ -806,10 +806,13 @@ jobs:
 
 ### Philosophy: Release Often
 
-We follow the FastAPI/Ruff model — release stable versions frequently. Every few
+We follow the FastAPI/Ruff model -- release stable versions frequently. Every few
 merged PRs, cut a release. No alpha/beta/RC ceremony for routine releases.
 
-### How to Release
+### How to Release (Local)
+
+**Prerequisites:** Be on `main` with a clean working tree. The script checks both and
+refuses to continue if either is wrong.
 
 ```bash
 # Auto-detect bump type from conventional commits (recommended)
@@ -821,8 +824,27 @@ merged PRs, cut a release. No alpha/beta/RC ceremony for routine releases.
 ./scripts/release.sh --major
 ```
 
-This runs commitizen to bump the version, update CHANGELOG.md, and push the tag.
-The existing release pipeline handles the rest (tests, benchmarks, PyPI, GitHub Release).
+**What happens:** The script uses commitizen to bump the version in `pyproject.toml` and
+`src/pytest_gremlins/__init__.py`, regenerate `CHANGELOG.md`, create a version commit and
+tag, and push both to origin. The tag push triggers the `release.yml` pipeline, which runs
+tests, publishes to PyPI, and creates a GitHub Release.
+
+### How to Release (GitHub Actions)
+
+The `cut-release.yml` workflow lets you release without a local checkout:
+
+1. Go to **Actions > Cut Release > Run workflow**
+2. Select the bump type (`auto`, `patch`, `minor`, `major`)
+3. Click **Run workflow**
+
+The workflow bumps the version, pushes the commit and tag, and triggers `release.yml`.
+The job summary shows which commits are included and links to the release pipeline.
+
+**Prerequisites:** A GitHub fine-grained PAT with **Repository permissions > Contents:
+Read and write** must be stored as the `RELEASE_PAT` repository secret. Set a 90-day
+expiry and renew before it lapses. Without this secret, the workflow will fail at the
+push step because the default `GITHUB_TOKEN` cannot push commits that trigger other
+workflows.
 
 ### When to Release
 
@@ -830,22 +852,12 @@ The existing release pipeline handles the rest (tests, benchmarks, PyPI, GitHub 
 - After any security fix (immediately)
 - After a significant bug fix users are waiting on
 
-### When NOT to Use This Script
+### When to Pause and Think First
 
-- Breaking changes: Think carefully, write migration notes first
-- Major versions: Discuss with the team before bumping
-
-### One-Click Release via GitHub Actions
-
-The `cut-release.yml` workflow enables releasing directly from the GitHub Actions UI:
-
-1. Go to **Actions → Cut Release → Run workflow**
-2. Select the bump type (`auto`, `patch`, `minor`, `major`)
-3. The workflow bumps the version, pushes the commit + tag, and triggers `release.yml`
-
-**Prerequisites:** A fine-grained PAT with **Repository permissions → Contents: Read and write**
-stored as the `RELEASE_PAT` repository secret. Set a 90-day expiry and renew before it
-lapses. See Phase 2 setup in the release plan.
+- **Breaking changes:** Write migration notes in `CHANGELOG.md` before bumping. Users
+  need to know what breaks and how to update their code.
+- **Major version bumps:** Discuss with the team first. A major bump signals a
+  compatibility contract change and should not be accidental.
 
 ### MLP Definition
 
@@ -892,7 +904,7 @@ v1.0.0 (Minimum Loveable Product) requires:
 - Create commits (conventional format)
 - Create PRs via Graphite
 - Respond to review feedback
-- Bump patch/rc/alpha/beta versions
+- Bump patch versions
 - Merge PRs (when all checks pass + reviewer approves + no conflicts)
 - Update documentation alongside code
 

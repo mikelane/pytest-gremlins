@@ -125,4 +125,5 @@ uv run pytest --doctest-modules src/pytest_gremlins
 - `.pre-commit-config.yaml` - Pre-commit hooks
 - `.github/workflows/ci.yml` - CI pipeline
 - `.github/workflows/release.yml` - Release pipeline with Test PyPI
-- `.github/workflows/cut-release.yml` - Manually triggered release pipeline
+- `.github/workflows/cut-release.yml` - One-click version bump + tag (triggers release.yml)
+- `scripts/release.sh` - Local release script (same thing, from your terminal)
