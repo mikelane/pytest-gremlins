@@ -239,7 +239,9 @@ class HtmlReporter:
         {history_html}
         </main>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"
+            integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt"
+            crossorigin="anonymous"></script>
     <script>
         {self._get_chart_script(score, chart_data) if score.total > 0 else ''}
         {self._get_expand_collapse_script()}
@@ -262,8 +264,6 @@ class HtmlReporter:
     def _get_styles(self) -> str:
         """Get embedded CSS styles with dark/light mode custom properties."""
         return """
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
         :root, [data-theme="dark"] {
             --bg-primary: #121212;
             --bg-secondary: #1e1e1e;
