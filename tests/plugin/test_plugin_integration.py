@@ -289,3 +289,37 @@ def test_is_adult():
         result.stdout.fnmatch_lines(['*mutation report*'])
         # No unhandled exception traceback in the output.
         result.stdout.no_fnmatch_line('*Traceback (most recent call last)*')
+
+    def it_writes_html_report_to_custom_dir_when_gremlins_html_dir_given(self, pytester_with_markers: pytest.Pytester):
+        """Verify that --gremlins-html-dir routes the HTML report to the specified directory."""
+        pytester_with_markers.makepyfile(
+            target_module="""
+def is_adult(age):
+    return age >= 18
+""",
+        )
+        pytester_with_markers.makepyfile(
+            test_target="""
+from target_module import is_adult
+
+def test_is_adult():
+    assert is_adult(21) is True
+""",
+        )
+
+        result = pytester_with_markers.runpytest(
+            '--gremlins',
+            '--gremlin-targets=target_module.py',
+            '--gremlin-report=html',
+            '--gremlins-html-dir=custom-reports',
+            '-v',
+        )
+        result.assert_outcomes(passed=1)
+
+        # Report must land in custom-reports/index.html, not the default path.
+        custom_report = pytester_with_markers.path / 'custom-reports' / 'index.html'
+        assert custom_report.exists(), f'HTML report not found at {custom_report}'
+        assert not (pytester_with_markers.path / 'coverage' / 'gremlins' / 'index.html').exists()
+
+        content = custom_report.read_text()
+        assert '<!DOCTYPE html>' in content

@@ -26,13 +26,34 @@ _SCORE_AMBER_THRESHOLD = 60
 _HISTORY_MIN_ENTRIES_FOR_CHART = 2
 
 
+def _build_operator_data(score: MutationScore) -> dict[str, dict[str, int]]:
+    """Aggregate per-operator totals and survivor counts from a MutationScore.
+
+    Args:
+        score: The MutationScore whose results are aggregated.
+
+    Returns:
+        Mapping of operator name to ``{'total': int, 'survived': int}``.
+    """
+    op_data: dict[str, dict[str, int]] = {}
+    for result in score.results:
+        op = result.gremlin.operator_name
+        if op not in op_data:
+            op_data[op] = {'total': 0, 'survived': 0}
+        op_data[op]['total'] += 1
+        if result.status == GremlinResultStatus.SURVIVED:
+            op_data[op]['survived'] += 1
+    return op_data
+
+
 def resolve_html_output_path(rootdir: Path, html_dir: Path | None) -> Path:
     """Resolve the output path for the HTML report.
 
     When no custom directory is given, the report is written to
     ``<rootdir>/coverage/gremlins/index.html`` so it can coexist with
     coverage.py HTML output.  When a custom directory is supplied the
-    report is written to ``<html_dir>/index.html``.
+    report is written to ``<html_dir>/index.html``; if *html_dir* is a
+    relative path it is anchored to *rootdir*.
 
     Args:
         rootdir: Project root directory used as the anchor for the default path.
@@ -133,20 +154,11 @@ def append_history_entry(
 
     by_file = {fp: round(fs.percentage, 2) for fp, fs in score.by_file().items()}
 
-    op_data: dict[str, dict[str, int]] = {}
-    for result in score.results:
-        op = result.gremlin.operator_name
-        if op not in op_data:
-            op_data[op] = {'total': 0, 'survived': 0}
-        op_data[op]['total'] += 1
-        if result.status == GremlinResultStatus.SURVIVED:
-            op_data[op]['survived'] += 1
-
     entry = {
         'timestamp': datetime.now(UTC).isoformat(),
         'score': round(score.percentage, 2),
         'by_file': by_file,
-        'by_operator': op_data,
+        'by_operator': _build_operator_data(score),
     }
 
     existing.append(entry)
@@ -606,7 +618,8 @@ class HtmlReporter:
                             label: 'Score %',
                             data: {file_scores},
                             backgroundColor: {file_scores}.map(function(v) {{
-                                return v >= 80 ? '#4caf50' : (v >= 60 ? '#ffa726' : '#ef5350');
+                                if (v >= {_SCORE_GREEN_THRESHOLD}) {{ return '#4caf50'; }}
+                                return v >= {_SCORE_AMBER_THRESHOLD} ? '#ffa726' : '#ef5350';
                             }}),
                         }}]
                     }},
@@ -711,14 +724,7 @@ class HtmlReporter:
         file_labels = [fp for fp, _ in file_items]
         file_scores_list = [round(fs.percentage, 1) for _, fs in file_items]
 
-        op_data: dict[str, dict[str, int]] = {}
-        for result in score.results:
-            op = result.gremlin.operator_name
-            if op not in op_data:
-                op_data[op] = {'total': 0, 'survived': 0}
-            op_data[op]['total'] += 1
-            if result.status == GremlinResultStatus.SURVIVED:
-                op_data[op]['survived'] += 1
+        op_data = _build_operator_data(score)
 
         op_labels = list(op_data.keys())
         op_total = [op_data[op]['total'] for op in op_labels]
