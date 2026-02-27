@@ -5,7 +5,6 @@ References: #155, #156, #157
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
@@ -90,12 +89,25 @@ class DescribeGremlinsHtmlDirOption:
     """
 
     def it_registers_gremlins_html_dir_option(self):
-        # Verify the option key appears in the plugin's addoption registration
-        # by inspecting the plugin source — no pytest config object needed.
-        source = inspect.getsource(plugin.pytest_addoption)
-        assert '--gremlins-html-dir' in source
+        # Call pytest_addoption with a real Parser and parse a CLI value to prove
+        # the option is registered (parse_known_args raises SystemExit if unrecognised).
+        # pytest.Parser() is a private class; suppress its deprecation warning since
+        # testing option registration is a legitimate use of the internal API here.
+        with pytest.warns(pytest.PytestDeprecationWarning):
+            parser = pytest.Parser()
+        plugin.pytest_addoption(parser)
+
+        namespace, _ = parser.optparser.parse_known_args(['--gremlins-html-dir', '/project/reports'])
+
+        assert namespace.gremlins_html_dir == '/project/reports'
 
     def it_stores_option_under_gremlins_html_dir_dest(self):
         # The dest must be gremlins_html_dir so config.getoption('gremlins_html_dir') works.
-        source = inspect.getsource(plugin.pytest_addoption)
-        assert 'gremlins_html_dir' in source
+        # Parsing without the flag must yield None (the declared default).
+        with pytest.warns(pytest.PytestDeprecationWarning):
+            parser = pytest.Parser()
+        plugin.pytest_addoption(parser)
+
+        namespace, _ = parser.optparser.parse_known_args([])
+
+        assert namespace.gremlins_html_dir is None
