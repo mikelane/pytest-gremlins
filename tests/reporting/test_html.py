@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from pytest_gremlins.reporting.html import HtmlReporter, append_history_entry, resolve_html_output_path
+from pytest_gremlins.reporting.html import (
+    HtmlReporter,
+    _build_operator_data,
+    append_history_entry,
+    load_history,
+    resolve_html_output_path,
+)
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 
@@ -60,7 +66,8 @@ class DescribeHtmlReporterContent:
 
         html = reporter.to_html(score)
 
-        assert 'pytest-gremlins' in html.lower() or 'mutation' in html.lower()
+        assert 'pytest-gremlins' in html.lower()
+        assert 'mutation' in html.lower()
 
     def it_includes_summary_stats(self, make_result):
         results = [
@@ -73,7 +80,7 @@ class DescribeHtmlReporterContent:
         html = reporter.to_html(score)
 
         assert '50' in html  # 50% score
-        assert 'zapped' in html.lower() or '1' in html
+        assert 'zapped' in html.lower()
 
     def it_includes_results_table(self, make_result):
         results = [
@@ -128,7 +135,7 @@ class DescribeHtmlReporterFileOutput:
         html = reporter.to_html(score)
 
         # Should have embedded CSS for standalone report
-        assert '<style>' in html or 'style=' in html
+        assert '<style>' in html
 
 
 @pytest.mark.small
@@ -143,7 +150,7 @@ class DescribeHtmlReporterEmpty:
 
         assert '<!DOCTYPE html>' in html
         # Must indicate no results rather than crash
-        assert 'no' in html.lower() or '0' in html
+        assert 'No gremlins tested' in html
 
 
 @pytest.mark.small
@@ -325,7 +332,7 @@ class DescribeResolveHtmlOutputPath:
 
         # The default path must be anchored at rootdir, not at tmp_path or cwd.
         assert result == different_rootdir / 'coverage' / 'gremlins' / 'index.html'
-        assert tmp_path not in result.parents or result.is_relative_to(different_rootdir)
+        assert result.is_relative_to(different_rootdir)
 
     def it_resolves_relative_html_dir_against_rootdir(self, tmp_path: Path):
         # When --gremlins-html-dir is passed as a relative path string (e.g. "reports"),
@@ -374,7 +381,7 @@ class DescribeHtmlReporterDarkMode:
 
         html = HtmlReporter().to_html(score)
 
-        assert '#2e7d32' in html or '2e7d32' in html.lower()
+        assert '#2e7d32' in html
 
     def it_includes_light_mode_css_block(self, make_result):
         # A data-theme toggle requires both dark and light variable sets.
@@ -383,7 +390,7 @@ class DescribeHtmlReporterDarkMode:
 
         html = HtmlReporter().to_html(score)
 
-        assert 'data-theme="light"' in html or "[data-theme='light']" in html or '[data-theme="light"]' in html
+        assert '[data-theme="light"]' in html
 
 
 @pytest.mark.small
@@ -407,7 +414,7 @@ class DescribeHtmlReporterFonts:
 
         html = HtmlReporter().to_html(score)
 
-        assert 'JetBrains' in html or 'JetBrainsMono' in html
+        assert 'JetBrains Mono' in html
 
 
 @pytest.mark.small
@@ -442,7 +449,7 @@ class DescribeHtmlReporterThemeToggle:
 
         html = HtmlReporter().to_html(score)
 
-        assert '<script>' in html or '<script ' in html
+        assert '<script>' in html
 
 
 @pytest.mark.small
@@ -581,7 +588,7 @@ class DescribeHtmlReporterDiffPanels:
 
         html = HtmlReporter().to_html(score)
 
-        assert 'Mogwai' in html or 'mogwai' in html
+        assert 'Mogwai' in html
 
     def it_renders_mutated_source_in_gremlin_panel(self, make_result):
         # The right panel header must be labelled 'Gremlin (mutated)' — the word
@@ -611,7 +618,7 @@ class DescribeHtmlReporterDiffPanels:
 
         html = HtmlReporter().to_html(score)
 
-        assert 'collapseAll' in html or 'collapse-all' in html or 'Collapse all' in html
+        assert 'collapseAll' in html
 
 
 @pytest.mark.small
@@ -924,3 +931,89 @@ class DescribeHtmlReporterA11y:
         assert h3_pos != -1, 'Expected <h3> elements in chart cards'
         assert h2_pos != -1, 'Expected at least one <h2> section heading before <h3> chart titles'
         assert h2_pos < h3_pos
+
+
+@pytest.mark.small
+class DescribeLoadHistory:
+    """Tests for the load_history module-level function."""
+
+    def it_returns_empty_list_when_file_is_missing(self, tmp_path: Path):
+        result = load_history(tmp_path / 'nonexistent.json')
+
+        assert result == []
+
+    def it_returns_parsed_list_from_valid_json_file(self, tmp_path: Path):
+        history_path = tmp_path / 'history.json'
+        entries = [
+            {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
+            {'timestamp': '2026-01-02T00:00:00+00:00', 'score': 90.0, 'by_file': {}, 'by_operator': {}},
+        ]
+        history_path.write_text(json.dumps(entries), encoding='utf-8')
+
+        result = load_history(history_path)
+
+        assert result == entries
+
+    def it_returns_empty_list_for_corrupt_json(self, tmp_path: Path):
+        history_path = tmp_path / 'history.json'
+        history_path.write_text('invalid json', encoding='utf-8')
+
+        result = load_history(history_path)
+
+        assert result == []
+
+    def it_returns_empty_list_when_path_is_a_directory(self, tmp_path: Path):
+        # Passing a directory where a file is expected raises OSError on read_text.
+        result = load_history(tmp_path)
+
+        assert result == []
+
+
+@pytest.mark.small
+class DescribeBuildOperatorData:
+    """Tests for the _build_operator_data module-level function."""
+
+    def it_returns_empty_dict_when_score_has_no_results(self):
+        score = MutationScore.from_results([])
+
+        result = _build_operator_data(score)
+
+        assert result == {}
+
+    def it_returns_correct_keys_and_values_for_single_operator(self, make_result):
+        results = [
+            make_result(GremlinResultStatus.ZAPPED, operator_name='comparison'),
+            make_result(GremlinResultStatus.SURVIVED, operator_name='comparison'),
+            make_result(GremlinResultStatus.ZAPPED, operator_name='comparison'),
+        ]
+        score = MutationScore.from_results(results)
+
+        result = _build_operator_data(score)
+
+        assert result == {'comparison': {'total': 3, 'survived': 1}}
+
+    def it_returns_separate_entries_for_multiple_operators(self, make_result):
+        results = [
+            make_result(GremlinResultStatus.ZAPPED, operator_name='comparison'),
+            make_result(GremlinResultStatus.SURVIVED, operator_name='arithmetic'),
+            make_result(GremlinResultStatus.SURVIVED, operator_name='arithmetic'),
+        ]
+        score = MutationScore.from_results(results)
+
+        result = _build_operator_data(score)
+
+        assert result['comparison'] == {'total': 1, 'survived': 0}
+        assert result['arithmetic'] == {'total': 2, 'survived': 2}
+
+    def it_counts_only_survived_status_as_survived(self, make_result):
+        results = [
+            make_result(GremlinResultStatus.ZAPPED, operator_name='comparison'),
+            make_result(GremlinResultStatus.TIMEOUT, operator_name='comparison'),
+            make_result(GremlinResultStatus.ERROR, operator_name='comparison'),
+            make_result(GremlinResultStatus.SURVIVED, operator_name='comparison'),
+        ]
+        score = MutationScore.from_results(results)
+
+        result = _build_operator_data(score)
+
+        assert result['comparison'] == {'total': 4, 'survived': 1}
