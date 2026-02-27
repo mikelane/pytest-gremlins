@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: 'Version bump type'
+        description: 'How to bump the version. "auto" detects bump type from conventional commits (recommended).'
         required: false
         default: 'auto'
         type: choice
@@ -51,8 +51,8 @@ jobs:
           if [[ -n "$last_tag" ]]; then
             commit_count=$(git rev-list --count "${last_tag}..HEAD")
             if [[ "$commit_count" -eq 0 ]]; then
-              echo "::error::No commits since last tag (${last_tag}). Nothing to release."
-              echo "No commits since **${last_tag}**. Nothing to release." >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::No commits since ${last_tag}. Merge new PRs to main before cutting a release."
+              echo "No commits since **${last_tag}**. Merge new PRs to main before cutting a release." >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
             echo "${commit_count} commits since ${last_tag}:" >> "$GITHUB_STEP_SUMMARY"

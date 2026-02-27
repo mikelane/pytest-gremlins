@@ -69,7 +69,7 @@ if [[ "$branch" != "main" ]]; then
   exit 1
 fi
 if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "Error: Working tree has uncommitted changes. Commit or stash them first." >&2
+  echo "Error: You have uncommitted changes. Commit or stash them first." >&2
   git status --short >&2
   exit 1
 fi
@@ -84,7 +84,7 @@ last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 if [[ -n "$last_tag" ]]; then
   commit_count=$(git rev-list --count "${last_tag}..HEAD")
   if [[ "$commit_count" -eq 0 ]]; then
-    echo "Error: No commits since last tag (${last_tag}). Nothing to release." >&2
+    echo "Error: No commits since ${last_tag}. Merge new changes to main before releasing." >&2
     exit 1
   fi
   echo "  (${commit_count} commits since ${last_tag})"

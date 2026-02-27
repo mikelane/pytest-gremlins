@@ -39,8 +39,7 @@ jobs:
           PYTHONPATH: .
         run: |
           uv run coverage run -m pytest tests -m "small or medium" -v
-          # coverage combine may exit non-zero when there is only a single data file
-          # (no subprocess coverage to combine). This is expected -- not an error.
+          # Expected: coverage combine exits non-zero with a single data file.
           uv run coverage combine --quiet || echo "::notice::coverage combine found nothing to combine (single data file). This is normal."
           uv run coverage report --show-missing
 
@@ -99,7 +98,7 @@ jobs:
       - name: Annotate benchmark regression
         if: steps.check_regression.outcome == 'failure'
         run: |
-          echo "::warning::Benchmark regression detected (>10% threshold). Review regression_report.txt in the uploaded artifacts."
+          echo "::warning::Benchmark regression detected (>10% threshold). Review regression_report.txt in the 'benchmark-results' artifact."
           echo "### Benchmark Regression Detected" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "The benchmark regression check exceeded the 10% threshold." >> "$GITHUB_STEP_SUMMARY"
