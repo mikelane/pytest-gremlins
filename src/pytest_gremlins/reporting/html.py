@@ -7,8 +7,11 @@ and visual highlighting of surviving gremlins.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 from pytest_gremlins.reporting.diff import _compute_diff, _node_to_source
 from pytest_gremlins.reporting.history import (
@@ -138,6 +141,7 @@ class HtmlReporter:
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(self.to_html(score), encoding='utf-8')
+        logger.info('HTML report written to %s', output_path)
 
     def _get_styles(self) -> str:
         """Get embedded CSS styles with dark/light mode custom properties."""

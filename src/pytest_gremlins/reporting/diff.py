@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import ast
 import difflib
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _node_to_source(node: ast.AST) -> str:
@@ -22,6 +25,7 @@ def _node_to_source(node: ast.AST) -> str:
     try:
         return ast.unparse(node)
     except Exception:
+        logger.warning('Failed to get source for AST node', exc_info=True)
         return ''
 
 
