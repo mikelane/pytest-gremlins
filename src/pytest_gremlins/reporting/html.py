@@ -165,7 +165,7 @@ def append_history_entry(
     if len(existing) > history_limit:
         existing = existing[-history_limit:]
 
-    path.write_text(json.dumps(existing, indent=2))
+    path.write_text(json.dumps(existing, indent=2), encoding='utf-8')
     return path
 
 
@@ -254,7 +254,7 @@ class HtmlReporter:
             output_path: Path to the output HTML file.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(self.to_html(score))
+        output_path.write_text(self.to_html(score), encoding='utf-8')
 
     def _get_styles(self) -> str:
         """Get embedded CSS styles with dark/light mode custom properties."""
