@@ -1,0 +1,77 @@
+name: Cut Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+jobs:
+  cut-release:
+    name: Bump version and push tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Show unreleased commits
+        run: |
+          echo "### Unreleased commits" >> $GITHUB_STEP_SUMMARY
+          git log --oneline "$(git describe --tags --abbrev=0)"..HEAD >> $GITHUB_STEP_SUMMARY
+
+      - name: Bump version (auto)
+        if: inputs.bump == 'auto'
+        run: uv run cz bump --yes
+
+      - name: Bump version (patch)
+        if: inputs.bump == 'patch'
+        run: uv run cz bump --yes --increment PATCH
+
+      - name: Bump version (minor)
+        if: inputs.bump == 'minor'
+        run: uv run cz bump --yes --increment MINOR
+
+      - name: Bump version (major)
+        if: inputs.bump == 'major'
+        run: uv run cz bump --yes --increment MAJOR
+
+      - name: Push commit and tag
+        run: git push origin main --follow-tags
+
+      - name: Report new version
+        run: |
+          NEW_TAG=$(git describe --tags --abbrev=0)
+          echo "### Released: ${NEW_TAG}" >> $GITHUB_STEP_SUMMARY
+          echo "The tag push will trigger \`release.yml\` to publish to PyPI." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[Monitor release pipeline](https://github.com/mikelane/pytest-gremlins/actions/workflows/release.yml)" >> $GITHUB_STEP_SUMMARY

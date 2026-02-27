@@ -804,80 +804,47 @@ jobs:
 
 ## Release Process
 
-### Version Scheme
+### Philosophy: Release Often
 
-SemVer with pre-release identifiers:
+We follow the FastAPI/Ruff model — release stable versions frequently. Every few
+merged PRs, cut a release. No alpha/beta/RC ceremony for routine releases.
 
-- `0.1.0-alpha.1` - Early development, unstable
-- `0.1.0-beta.1` - Feature complete, testing
-- `0.1.0-rc.1` - Release candidate, final testing
-- `0.1.0` - Stable release
-- `1.0.0` - MLP (Minimum Loveable Product)
-
-### Release Candidate Process
-
-For **minor and major versions**:
-
-```text
-1. Feature complete on main
-2. Create RC tag: v0.2.0-rc.1
-3. Publish to Test PyPI
-4. Independent agent tests in real project
-5. Documentation review (thorough!)
-6. If issues found:
-   - Fix issues
-   - Tag v0.2.0-rc.2
-   - Repeat from step 3
-7. If no issues:
-   - Tag v0.2.0
-   - Publish to PyPI
-   - Create GitHub Release
-```
-
-### Release Checklist
-
-Before any release:
-
-- [ ] All tests pass (small, medium, large)
-- [ ] Coverage thresholds met
-- [ ] Type checking passes (strict)
-- [ ] Linting passes
-- [ ] Security scan clean
-- [ ] Documentation builds without warnings
-- [ ] Doctests pass
-- [ ] Changelog updated (commitizen)
-- [ ] Version bumped correctly
-- [ ] README examples work
-- [ ] User guide accurate
-- [ ] API docs generated
-
-For RC releases, additionally:
-
-- [ ] Independent agent test in real project
-- [ ] Documentation review by fresh eyes
-- [ ] Breaking changes documented
-- [ ] Migration guide if needed
-
-### Commitizen Commands
+### How to Release
 
 ```bash
-# Bump version (determines type from commits)
-uv run cz bump
+# Auto-detect bump type from conventional commits (recommended)
+./scripts/release.sh
 
-# Bump specific version
-uv run cz bump --increment PATCH
-uv run cz bump --increment MINOR
-uv run cz bump --increment MAJOR
-
-# Create RC
-uv run cz bump --prerelease rc
-
-# Generate changelog
-uv run cz changelog
-
-# Check commits since last tag
-uv run cz check --rev-range HEAD~5..HEAD
+# Or force a specific bump type
+./scripts/release.sh --patch
+./scripts/release.sh --minor
+./scripts/release.sh --major
 ```
+
+This runs commitizen to bump the version, update CHANGELOG.md, and push the tag.
+The existing release pipeline handles the rest (tests, benchmarks, PyPI, GitHub Release).
+
+### When to Release
+
+- After merging 3-5 PRs (routine)
+- After any security fix (immediately)
+- After a significant bug fix users are waiting on
+
+### When NOT to Use This Script
+
+- Breaking changes: Think carefully, write migration notes first
+- Major versions: Discuss with the team before bumping
+
+### One-Click Release via GitHub Actions
+
+The `cut-release.yml` workflow enables releasing directly from the GitHub Actions UI:
+
+1. Go to **Actions → Cut Release → Run workflow**
+2. Select the bump type (`auto`, `patch`, `minor`, `major`)
+3. The workflow bumps the version, pushes the commit + tag, and triggers `release.yml`
+
+**Prerequisites:** A fine-grained PAT with `contents: write` scope stored as the
+`RELEASE_PAT` repository secret. See Phase 2 setup in the release plan.
 
 ### MLP Definition
 
