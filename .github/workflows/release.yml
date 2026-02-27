@@ -39,7 +39,8 @@ jobs:
           PYTHONPATH: .
         run: |
           uv run coverage run -m pytest tests -m "small or medium" -v
-          uv run coverage combine --quiet || true
+          # Expected: coverage combine exits non-zero with a single data file.
+          uv run coverage combine --quiet || echo "::notice::coverage combine found nothing to combine (single data file). This is normal."
           uv run coverage report --show-missing
 
       - name: Run benchmark tests (correctness only, no coverage threshold)
@@ -77,8 +78,12 @@ jobs:
       - name: Find latest results file
         id: find_results
         run: |
-          LATEST=$(ls -t benchmarks/results/benchmark_*.json | head -1)
-          echo "results_file=$LATEST" >> $GITHUB_OUTPUT
+          LATEST=$(ls -t benchmarks/results/benchmark_*.json 2>/dev/null | head -1 || true)
+          if [[ -z "$LATEST" ]]; then
+            echo "::error::No benchmark result files found in benchmarks/results/. The benchmark run may have failed silently."
+            exit 1
+          fi
+          echo "results_file=$LATEST" >> "$GITHUB_OUTPUT"
           echo "Found results file: $LATEST"
 
       - name: Check for regression
@@ -89,6 +94,19 @@ jobs:
             --current "${{ steps.find_results.outputs.results_file }}" \
             --threshold 10 | tee regression_report.txt
         continue-on-error: true
+
+      - name: Annotate benchmark regression
+        if: steps.check_regression.outcome == 'failure'
+        run: |
+          echo "::warning::Benchmark regression detected (>10% threshold). Review regression_report.txt in the 'benchmark-results' artifact."
+          echo "### Benchmark Regression Detected" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The benchmark regression check exceeded the 10% threshold." >> "$GITHUB_STEP_SUMMARY"
+          echo "The release will proceed, but review the regression report in the artifacts." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat regression_report.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
