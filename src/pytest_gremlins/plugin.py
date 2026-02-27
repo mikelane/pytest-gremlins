@@ -1799,8 +1799,12 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
         rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
         raw_html_dir = config.getoption('gremlins_html_dir', default=None)
         html_dir = Path(raw_html_dir) if raw_html_dir is not None else None
-        report_path = _write_html_report(score, rootdir=rootdir, html_dir=html_dir)
-        terminalreporter.write_line(f'HTML report written to: {report_path}')
+        try:
+            report_path = _write_html_report(score, rootdir=rootdir, html_dir=html_dir)
+            terminalreporter.write_line(f'HTML report written to: {report_path}')
+        except OSError as exc:
+            logger.warning('Failed to write HTML report: %s', exc)
+            terminalreporter.write_line(f'HTML report write failed: {exc}')
 
     terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
     terminalreporter.write_line('')

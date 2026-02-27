@@ -5,6 +5,7 @@ These tests verify the end-to-end plugin behavior using pytester.
 
 from __future__ import annotations
 
+from pathlib import Path
 import re
 
 import pytest
@@ -251,3 +252,40 @@ def test_is_adult():
         content = report_path.read_text()
         assert '<!DOCTYPE html>' in content
         assert 'pytest-gremlins' in content.lower() or 'mutation' in content.lower()
+
+    def it_prints_score_summary_when_html_report_write_fails(
+        self, pytester_with_markers: pytest.Pytester, tmp_path: Path
+    ):
+        # Force a write failure by pointing --gremlins-html-dir at a read-only directory.
+        # The console mutation summary must still appear even when the HTML write fails.
+        read_only_dir = tmp_path / 'no-write'
+        read_only_dir.mkdir()
+        read_only_dir.chmod(0o444)
+
+        pytester_with_markers.makepyfile(
+            target_module="""
+def is_adult(age):
+    return age >= 18
+""",
+        )
+        pytester_with_markers.makepyfile(
+            test_target="""
+from target_module import is_adult
+
+def test_is_adult():
+    assert is_adult(21) is True
+""",
+        )
+
+        result = pytester_with_markers.runpytest(
+            '--gremlins',
+            '--gremlin-targets=target_module.py',
+            '--gremlin-report=html',
+            f'--gremlins-html-dir={read_only_dir}',
+            '-v',
+        )
+
+        # The score summary is printed even though the HTML write failed.
+        result.stdout.fnmatch_lines(['*mutation report*'])
+        # No unhandled exception traceback in the output.
+        result.stdout.no_fnmatch_line('*Traceback (most recent call last)*')
