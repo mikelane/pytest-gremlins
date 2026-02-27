@@ -328,11 +328,11 @@ class DescribeResolveHtmlOutputPath:
         assert tmp_path not in result.parents or result.is_relative_to(different_rootdir)
 
     def it_resolves_relative_html_dir_against_rootdir(self, tmp_path: Path):
-        # When --gremlins-html-dir is passed as a relative string (e.g. "reports"),
+        # When --gremlins-html-dir is passed as a relative path string (e.g. "reports"),
         # resolve_html_output_path must anchor it to rootdir, not to cwd.
-        # A naïve impl that uses html_dir as-is returns a relative path like
+        # A naïve impl that uses html_dir as-is would return a relative path like
         # 'reports/index.html' instead of '<rootdir>/reports/index.html'.
-        relative_html_dir = Path('reports')
+        relative_html_dir = Path('reports')  # simulates Path(config.getoption(...)) for a relative CLI value
 
         result = resolve_html_output_path(rootdir=tmp_path, html_dir=relative_html_dir)
 
@@ -702,6 +702,20 @@ class DescribeHtmlReporterHistorySection:
 
         assert 'No historical data' in html
 
+    def it_renders_no_history_message_when_history_has_exactly_one_entry(self, make_result):
+        # The JS chart requires >= 2 entries to draw. With only 1 entry the canvas
+        # element is rendered but the chart is never initialised, producing a blank
+        # section. The "no historical data" placeholder must appear instead.
+        score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
+        history = [
+            {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
+        ]
+
+        html = HtmlReporter().to_html(score, history=history)
+
+        assert 'No historical data' in html
+        assert '<canvas id="historyChart"' not in html
+
     def it_renders_history_canvas_when_two_or_more_entries_present(self, make_result):
         score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
         history = [
@@ -724,3 +738,32 @@ class DescribeHtmlReporterHistorySection:
 
         assert '2026-01-01' in html
         assert '80.0' in html
+
+    def it_does_not_produce_malformed_html_when_file_path_contains_single_quote(self, make_result):
+        # The history canvas originally embedded JSON in a single-quoted attribute:
+        #   data-history='...'
+        # A file path like "it's/file.py" produces a literal ' inside the JSON string.
+        # That bare single quote terminates the attribute early, breaking HTML parsing
+        # and causing JSON.parse in JS to silently fail.
+        # Fix: use a double-quoted attribute (data-history="...") instead, since
+        # json.dumps only uses double quotes for object/string delimiters and a
+        # bare single quote in a value is harmless inside a double-quoted attribute.
+        score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
+        history = [
+            {
+                'timestamp': '2026-01-01T00:00:00+00:00',
+                'score': 80.0,
+                'by_file': {"it's/file.py": 80.0},
+                'by_operator': {},
+            },
+            {'timestamp': '2026-01-02T00:00:00+00:00', 'score': 85.0, 'by_file': {}, 'by_operator': {}},
+        ]
+
+        html = HtmlReporter().to_html(score, history=history)
+
+        # Canvas must be present (2 entries → chart renders).
+        assert '<canvas id="historyChart"' in html
+        # The attribute must use double-quote delimiters so the single quote is safe.
+        assert 'data-history="' in html
+        # The file path with its single quote must be present in the output (not dropped).
+        assert "it's" in html

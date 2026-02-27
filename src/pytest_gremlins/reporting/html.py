@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 _SCORE_GREEN_THRESHOLD = 80
 _SCORE_AMBER_THRESHOLD = 60
+_HISTORY_MIN_ENTRIES_FOR_CHART = 2
 
 
 def resolve_html_output_path(rootdir: Path, html_dir: Path | None) -> Path:
@@ -920,7 +921,7 @@ class HtmlReporter:
         Returns:
             HTML string for the history section.
         """
-        if not history:
+        if len(history) < _HISTORY_MIN_ENTRIES_FOR_CHART:
             return """
         <div class="history-section" id="historySection">
             <h2>Historical Trend</h2>
@@ -933,7 +934,7 @@ class HtmlReporter:
         <div class="history-section" id="historySection">
             <h2>Historical Trend</h2>
             <div class="chart-container-tall">
-                <canvas id="historyChart" data-history='{history_json}'
+                <canvas id="historyChart" data-history="{history_json}"
                     aria-label="Historical mutation score trend"></canvas>
             </div>
         </div>
