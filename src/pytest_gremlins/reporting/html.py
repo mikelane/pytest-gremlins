@@ -148,7 +148,7 @@ def append_history_entry(
     existing: list[dict[str, Any]] = []
     if path.exists():
         try:
-            existing = json.loads(path.read_text())
+            existing = json.loads(path.read_text(encoding='utf-8'))
         except (json.JSONDecodeError, OSError):
             existing = []
 
@@ -181,7 +181,7 @@ def load_history(history_path: Path) -> list[dict[str, Any]]:
     if not history_path.exists():
         return []
     try:
-        result: list[dict[str, Any]] = json.loads(history_path.read_text())
+        result: list[dict[str, Any]] = json.loads(history_path.read_text(encoding='utf-8'))
     except (json.JSONDecodeError, OSError):
         return []
     else:
