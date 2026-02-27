@@ -56,7 +56,7 @@ from pytest_gremlins.instrumentation.transformer import (
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.pool import WorkerPool
-from pytest_gremlins.reporting.html import HtmlReporter
+from pytest_gremlins.reporting.html import HtmlReporter, resolve_html_output_path
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
@@ -361,6 +361,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=10,
         dest='gremlin_batch_size',
         help='Number of gremlins per batch (default: 10)',
+    )
+    group.addoption(
+        '--gremlins-html-dir',
+        action='store',
+        default=None,
+        dest='gremlins_html_dir',
+        help='Custom output directory for the HTML report (default: coverage/gremlins/)',
     )
 
 
@@ -1734,18 +1741,20 @@ def _test_gremlin(
         )
 
 
-def _write_html_report(score: MutationScore, rootdir: Path) -> Path:
+def _write_html_report(score: MutationScore, rootdir: Path, html_dir: Path | None = None) -> Path:
     """Write HTML report to file.
 
     Args:
         score: The MutationScore to write.
         rootdir: Root directory of the project.
+        html_dir: Custom output directory, or ``None`` for the default
+            ``<rootdir>/coverage/gremlins/`` location.
 
     Returns:
         Path to the written HTML report.
     """
     reporter = HtmlReporter()
-    output_path = rootdir / 'gremlin-report.html'
+    output_path = resolve_html_output_path(rootdir=rootdir, html_dir=html_dir)
     reporter.write_report(score, output_path)
     return output_path
 
@@ -1788,7 +1797,9 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     # Write HTML report if requested
     if gremlin_session.report_format == 'html':
         rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
-        report_path = _write_html_report(score, rootdir)
+        raw_html_dir = config.getoption('gremlins_html_dir', default=None)
+        html_dir = Path(raw_html_dir) if raw_html_dir is not None else None
+        report_path = _write_html_report(score, rootdir=rootdir, html_dir=html_dir)
         terminalreporter.write_line(f'HTML report written to: {report_path}')
 
     terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
