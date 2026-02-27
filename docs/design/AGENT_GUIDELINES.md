@@ -843,8 +843,9 @@ The `cut-release.yml` workflow enables releasing directly from the GitHub Action
 2. Select the bump type (`auto`, `patch`, `minor`, `major`)
 3. The workflow bumps the version, pushes the commit + tag, and triggers `release.yml`
 
-**Prerequisites:** A fine-grained PAT with `contents: write` scope stored as the
-`RELEASE_PAT` repository secret. See Phase 2 setup in the release plan.
+**Prerequisites:** A fine-grained PAT with **Repository permissions → Contents: Read and write**
+stored as the `RELEASE_PAT` repository secret. Set a 90-day expiry and renew before it
+lapses. See Phase 2 setup in the release plan.
 
 ### MLP Definition
 
