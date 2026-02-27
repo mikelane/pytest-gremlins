@@ -6,12 +6,11 @@ and visual highlighting of surviving gremlins.
 
 from __future__ import annotations
 
-import ast
-import difflib
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pytest_gremlins.reporting.diff import _compute_diff, _node_to_source
 from pytest_gremlins.reporting.history import (
     _build_operator_data,
     append_history_entry,
@@ -65,42 +64,6 @@ def resolve_html_output_path(rootdir: Path, html_dir: Path | None) -> Path:
         resolved_dir = html_dir if html_dir.is_absolute() else rootdir / html_dir
         return resolved_dir / 'index.html'
     return rootdir / 'coverage' / 'gremlins' / 'index.html'
-
-
-def _node_to_source(node: ast.AST) -> str:
-    """Convert an AST node to a source string using ast.unparse.
-
-    Args:
-        node: An AST node to unparse.
-
-    Returns:
-        Source code string for the node, or empty string if unparsing fails.
-    """
-    try:
-        return ast.unparse(node)
-    except Exception:
-        return ''
-
-
-def _compute_diff(original: str, mutated: str) -> list[str]:
-    """Compute unified diff lines between original and mutated source.
-
-    Args:
-        original: The original (Mogwai) source string.
-        mutated: The mutated (Gremlin) source string.
-
-    Returns:
-        List of unified diff lines with 3 context lines.
-    """
-    return list(
-        difflib.unified_diff(
-            original.splitlines(keepends=True),
-            mutated.splitlines(keepends=True),
-            fromfile='mogwai',
-            tofile='gremlin',
-            n=3,
-        )
-    )
 
 
 class HtmlReporter:
