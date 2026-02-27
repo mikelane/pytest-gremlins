@@ -787,3 +787,140 @@ class DescribeHtmlReporterHistorySection:
         assert 'data-history="' in html
         # The file path with its single quote must be present in the output (not dropped).
         assert "it's" in html
+
+
+@pytest.mark.small
+class DescribeHtmlReporterA11y:
+    """Tests for WCAG-compliant accessibility in the HTML report.
+
+    References: #214
+    """
+
+    def it_adds_role_img_to_score_gauge_canvas(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'id="scoreGauge"' in html
+        assert 'role="img"' in html
+
+    def it_adds_aria_label_to_score_gauge_canvas(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'id="scoreGauge"' in html
+        assert 'aria-label=' in html
+
+    def it_adds_fallback_text_inside_score_gauge_canvas(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'Chart requires JavaScript' in html
+
+    def it_adds_role_img_to_outcome_chart_canvas(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'id="outcomeChart"' in html
+        assert 'role="img"' in html
+
+    def it_adds_role_img_to_file_chart_canvas(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'id="fileChart"' in html
+        assert 'role="img"' in html
+
+    def it_adds_role_img_to_operator_chart_canvas(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'id="operatorChart"' in html
+        assert 'role="img"' in html
+
+    def it_adds_role_img_to_history_chart_canvas(self, make_result):
+        score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
+        history = [
+            {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
+            {'timestamp': '2026-01-02T00:00:00+00:00', 'score': 85.0, 'by_file': {}, 'by_operator': {}},
+        ]
+
+        html = HtmlReporter().to_html(score, history=history)
+
+        assert 'id="historyChart"' in html
+        assert 'role="img"' in html
+
+    def it_adds_focus_visible_css_rule(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert ':focus-visible' in html
+
+    def it_adds_aria_pressed_to_theme_toggle_button(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'aria-pressed=' in html
+
+    def it_sets_min_height_44px_on_expand_btn(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'min-height: 44px' in html
+
+    def it_sets_min_width_44px_on_expand_btn(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'min-width: 44px' in html
+
+    def it_wraps_main_content_in_main_landmark(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert '<main' in html
+        assert '</main>' in html
+
+    def it_adds_prefers_reduced_motion_media_query(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'prefers-reduced-motion' in html
+
+    def it_has_h2_before_first_h3_in_charts_section(self, make_result):
+        # WCAG heading hierarchy: h3 inside chart cards requires a parent h2 section
+        # heading to appear first. Without an h2 the hierarchy jumps h1 -> h3.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        h2_pos = html.find('<h2')
+        h3_pos = html.find('<h3')
+        # h3 elements exist in the chart section; there must be an h2 before them
+        assert h3_pos != -1, 'Expected <h3> elements in chart cards'
+        assert h2_pos != -1, 'Expected at least one <h2> section heading before <h3> chart titles'
+        assert h2_pos < h3_pos

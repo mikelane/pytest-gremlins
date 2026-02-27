@@ -227,14 +227,17 @@ class HtmlReporter:
     <div class="container">
         <header class="report-header">
             <h1>pytest-gremlins Mutation Report</h1>
-            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle light/dark mode">
+            <button class="theme-toggle" onclick="toggleTheme()"
+                aria-label="Toggle light/dark mode" aria-pressed="true">
                 Toggle Theme
             </button>
         </header>
+        <main>
         {self._render_summary(score)}
         {self._render_charts(score, chart_data)}
         {self._render_results_table(score)}
         {history_html}
+        </main>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script>
@@ -437,6 +440,8 @@ class HtmlReporter:
             cursor: pointer;
             font-family: inherit;
             font-size: 0.85em;
+            min-height: 44px;
+            min-width: 44px;
         }
 
         details { margin-top: 8px; }
@@ -447,6 +452,17 @@ class HtmlReporter:
             font-size: 0.85em;
             user-select: none;
             padding: 4px 0;
+            min-height: 44px;
+            min-width: 44px;
+        }
+
+        :focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { transition: none !important; animation: none !important; }
         }
 
         .diff-panels {
@@ -794,11 +810,14 @@ class HtmlReporter:
         file_chart_height = max(200, len(chart_data['file_labels']) * 28)
 
         return f"""
+        <h2>Charts</h2>
         <div class="charts-grid">
             <div class="chart-card">
                 <h3>Mutation Score</h3>
                 <div class="chart-container">
-                    <canvas id="scoreGauge" aria-label="Mutation score gauge: {score.percentage:.0f}%"></canvas>
+                    <canvas id="scoreGauge" role="img" aria-label="Mutation score gauge: {score.percentage:.0f}%">
+                        Mutation score: {score.percentage:.0f}%. Chart requires JavaScript.
+                    </canvas>
                 </div>
                 <p style="text-align:center;font-size:1.5em;font-weight:700;color:var(--text-heading);margin:8px 0 0">
                     {score.percentage:.0f}%
@@ -807,19 +826,25 @@ class HtmlReporter:
             <div class="chart-card">
                 <h3>Outcomes</h3>
                 <div class="chart-container">
-                    <canvas id="outcomeChart" aria-label="Outcome distribution pie chart"></canvas>
+                    <canvas id="outcomeChart" role="img" aria-label="Outcome distribution pie chart">
+                        Outcome distribution chart. Chart requires JavaScript.
+                    </canvas>
                 </div>
             </div>
             <div class="chart-card" style="grid-column: 1 / -1;">
                 <h3>Per-File Score</h3>
                 <div style="position:relative;height:{file_chart_height}px;">
-                    <canvas id="fileChart" aria-label="Per-file mutation scores bar chart"></canvas>
+                    <canvas id="fileChart" role="img" aria-label="Per-file mutation scores bar chart">
+                        Per-file mutation scores chart. Chart requires JavaScript.
+                    </canvas>
                 </div>
             </div>
             <div class="chart-card" style="grid-column: 1 / -1;">
                 <h3>Operator Distribution</h3>
                 <div class="chart-container">
-                    <canvas id="operatorChart" aria-label="Operator distribution bar chart"></canvas>
+                    <canvas id="operatorChart" role="img" aria-label="Operator distribution bar chart">
+                        Operator distribution chart. Chart requires JavaScript.
+                    </canvas>
                 </div>
             </div>
         </div>
@@ -940,8 +965,10 @@ class HtmlReporter:
         <div class="history-section" id="historySection">
             <h2>Historical Trend</h2>
             <div class="chart-container-tall">
-                <canvas id="historyChart" data-history="{history_json}"
-                    aria-label="Historical mutation score trend"></canvas>
+                <canvas id="historyChart" role="img" data-history="{history_json}"
+                    aria-label="Historical mutation score trend">
+                    Historical mutation score trend chart. Chart requires JavaScript.
+                </canvas>
             </div>
         </div>
         """
