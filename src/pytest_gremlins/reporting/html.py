@@ -935,7 +935,7 @@ class HtmlReporter:
         </div>
         """
 
-        history_json = json.dumps(history)
+        history_json = self._escape_html(json.dumps(history))
         return f"""
         <div class="history-section" id="historySection">
             <h2>Historical Trend</h2>

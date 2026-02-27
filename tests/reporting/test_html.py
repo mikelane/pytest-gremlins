@@ -739,6 +739,26 @@ class DescribeHtmlReporterHistorySection:
         assert '2026-01-01' in html
         assert '80.0' in html
 
+    def it_escapes_double_quotes_in_history_json_attribute(self, make_result):
+        # json.dumps uses double-quote delimiters for all JSON keys and string values.
+        # Embedding that unescaped inside a double-quoted HTML attribute produces:
+        #   data-history="[{"timestamp": "…"}]"
+        # An HTML parser stops at the second `"` — the attribute value becomes `[{`
+        # and the JS JSON.parse silently fails, hiding the history chart entirely.
+        # The fix: HTML-escape the JSON so `"` becomes `&quot;` inside the attribute.
+        score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
+        history = [
+            {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
+            {'timestamp': '2026-01-02T00:00:00+00:00', 'score': 85.0, 'by_file': {}, 'by_operator': {}},
+        ]
+
+        html = HtmlReporter().to_html(score, history=history)
+
+        # Raw double-quotes inside the attribute value break HTML parsing.
+        assert 'data-history="[{"' not in html
+        # The attribute must use &quot; so the JSON string delimiters are safe.
+        assert '&quot;timestamp&quot;' in html
+
     def it_does_not_produce_malformed_html_when_file_path_contains_single_quote(self, make_result):
         # The history canvas originally embedded JSON in a single-quoted attribute:
         #   data-history='...'
