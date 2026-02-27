@@ -40,7 +40,8 @@ def resolve_html_output_path(rootdir: Path, html_dir: Path | None) -> Path:
         ('out', 'index.html')
     """
     if html_dir is not None:
-        return html_dir / 'index.html'
+        resolved_dir = html_dir if html_dir.is_absolute() else rootdir / html_dir
+        return resolved_dir / 'index.html'
     return rootdir / 'coverage' / 'gremlins' / 'index.html'
 
 

@@ -325,3 +325,15 @@ class DescribeResolveHtmlOutputPath:
         # The default path must be anchored at rootdir, not at tmp_path or cwd.
         assert result == different_rootdir / 'coverage' / 'gremlins' / 'index.html'
         assert tmp_path not in result.parents or result.is_relative_to(different_rootdir)
+
+    def it_resolves_relative_html_dir_against_rootdir(self, tmp_path: Path):
+        # When --gremlins-html-dir is passed as a relative string (e.g. "reports"),
+        # resolve_html_output_path must anchor it to rootdir, not to cwd.
+        # A naïve impl that uses html_dir as-is returns a relative path like
+        # 'reports/index.html' instead of '<rootdir>/reports/index.html'.
+        relative_html_dir = Path('reports')
+
+        result = resolve_html_output_path(rootdir=tmp_path, html_dir=relative_html_dir)
+
+        assert result.is_absolute()
+        assert result == tmp_path / 'reports' / 'index.html'
