@@ -244,8 +244,8 @@ def test_is_adult():
         )
         result.assert_outcomes(passed=1)
 
-        # The HTML report should be written to the default location
-        report_path = pytester_with_markers.path / 'gremlin-report.html'
+        # The HTML report should be written to the default location (coverage/gremlins/index.html)
+        report_path = pytester_with_markers.path / 'coverage' / 'gremlins' / 'index.html'
         assert report_path.exists(), f'HTML report not found at {report_path}'
 
         content = report_path.read_text()
