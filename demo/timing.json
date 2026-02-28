@@ -1,0 +1,9 @@
+[
+  {"name": "intro", "duration": 12.260136},
+  {"name": "score_gauge", "duration": 18.715283},
+  {"name": "outcome_pie", "duration": 17.647166},
+  {"name": "file_bar", "duration": 13.931973},
+  {"name": "operator_chart", "duration": 18.436644},
+  {"name": "perfect_score", "duration": 11.656417},
+  {"name": "outro", "duration": 11.006259}
+]
