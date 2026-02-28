@@ -186,3 +186,7 @@ service-account.json
 
 # MkDocs build output
 site/
+
+# Demo videos (hosted on YouTube, not committed to repo)
+*.mp4
+*.webm
