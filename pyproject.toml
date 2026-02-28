@@ -56,6 +56,7 @@ dev = [
     "commitizen>=3.13.0",
     "mypy>=1.7.0",
     "pip-audit>=2.6.0",
+    "playwright>=1.58.0",
     "pre-commit>=3.6.0",
     "pytest-cov>=4.1.0",
     "pytest-test-categories>=1.0.0",
