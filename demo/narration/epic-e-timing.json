@@ -1,0 +1,44 @@
+[
+  {
+    "name": "intro",
+    "text": "pytest-gremlins keeps a history of every run — so you can see at a glance whether your mutation score is climbing, holding, or quietly slipping.",
+    "duration": 8.54,
+    "clip": "epic-e_intro.mp3"
+  },
+  {
+    "name": "first_run",
+    "text": "First run. One point on the chart, 63 percent. That's your baseline.",
+    "duration": 4.32,
+    "clip": "epic-e_first_run.mp3"
+  },
+  {
+    "name": "second_run",
+    "text": "Second run. Score is still 63 — the chart now has two points. Consistent results, nothing surprising.",
+    "duration": 5.39,
+    "clip": "epic-e_second_run.mp3"
+  },
+  {
+    "name": "third_run",
+    "text": "Third run, same score. Three runs flat. That kind of stability means your tests are holding the line.",
+    "duration": 5.67,
+    "clip": "epic-e_third_run.mp3"
+  },
+  {
+    "name": "trend_chart",
+    "text": "Down in the history section you get the full picture — three data points, nearly a straight line. This is what a healthy test suite looks like over time.",
+    "duration": 8.68,
+    "clip": "epic-e_trend_chart.mp3"
+  },
+  {
+    "name": "regression",
+    "text": "Fourth run — but a test got removed. Score drops. The chart catches it immediately: one dip, right there, exactly when it happened.",
+    "duration": 7.66,
+    "clip": "epic-e_regression.mp3"
+  },
+  {
+    "name": "outro",
+    "text": "One glance at the trend and you know if things are getting better or drifting. pytest-gremlins surfaces that automatically, every single run.",
+    "duration": 8.73,
+    "clip": "epic-e_outro.mp3"
+  }
+]

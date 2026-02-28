@@ -1,0 +1,102 @@
+[
+  {
+    "timestamp": "2026-02-27T23:27:28.973733+00:00",
+    "score": 63.64,
+    "by_file": {
+      "/tmp/gremlin-demo-epice/calculator.py": 63.64
+    },
+    "by_operator": {
+      "arithmetic": {
+        "total": 4,
+        "survived": 1
+      },
+      "comparison": {
+        "total": 2,
+        "survived": 1
+      },
+      "boundary": {
+        "total": 3,
+        "survived": 1
+      },
+      "return_value": {
+        "total": 2,
+        "survived": 0
+      }
+    }
+  },
+  {
+    "timestamp": "2026-02-28T00:27:28.973947+00:00",
+    "score": 63.64,
+    "by_file": {
+      "/tmp/gremlin-demo-epice/calculator.py": 63.64
+    },
+    "by_operator": {
+      "arithmetic": {
+        "total": 4,
+        "survived": 1
+      },
+      "comparison": {
+        "total": 2,
+        "survived": 1
+      },
+      "boundary": {
+        "total": 3,
+        "survived": 1
+      },
+      "return_value": {
+        "total": 2,
+        "survived": 0
+      }
+    }
+  },
+  {
+    "timestamp": "2026-02-28T01:27:28.973968+00:00",
+    "score": 63.64,
+    "by_file": {
+      "/tmp/gremlin-demo-epice/calculator.py": 63.64
+    },
+    "by_operator": {
+      "arithmetic": {
+        "total": 4,
+        "survived": 1
+      },
+      "comparison": {
+        "total": 2,
+        "survived": 1
+      },
+      "boundary": {
+        "total": 3,
+        "survived": 1
+      },
+      "return_value": {
+        "total": 2,
+        "survived": 0
+      }
+    }
+  },
+  {
+    "timestamp": "2026-02-28T02:27:28.973968+00:00",
+    "score": 45.45,
+    "by_file": {
+      "/tmp/gremlin-demo-epice/calculator.py": 45.45
+    },
+    "by_operator": {
+      "arithmetic": {
+        "total": 4,
+        "survived": 3
+      },
+      "comparison": {
+        "total": 2,
+        "survived": 1
+      },
+      "boundary": {
+        "total": 3,
+        "survived": 2
+      },
+      "return_value": {
+        "total": 2,
+        "survived": 0
+      }
+    }
+  }
+]
