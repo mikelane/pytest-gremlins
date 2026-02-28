@@ -1,0 +1,44 @@
+[
+  {
+    "name": "intro",
+    "text": "Each surviving gremlin shows the original Mogwai and the mutated Gremlin side by side. You can see exactly what changed and start asking why your tests missed it.",
+    "duration": 9.85,
+    "clip": "epic-d_intro.mp3"
+  },
+  {
+    "name": "collapsed",
+    "text": "By default, all diffs are collapsed. The table stays clean \u2014 file, line, operator, outcome \u2014 without pulling you into diffs you didn't ask for.",
+    "duration": 8.08,
+    "clip": "epic-d_collapsed.mp3"
+  },
+  {
+    "name": "expand_one",
+    "text": "Click any survivor's summary and the diff opens inline. Mogwai on the left, Gremlin on the right, with syntax highlighting on both sides.",
+    "duration": 8.41,
+    "clip": "epic-d_expand_one.mp3"
+  },
+  {
+    "name": "expand_all",
+    "text": "Hit Expand all diffs and everything opens at once. No reload, no navigation \u2014 it just happens.",
+    "duration": 5.2,
+    "clip": "epic-d_expand_all.mp3"
+  },
+  {
+    "name": "collapse_all",
+    "text": "Collapse all diffs closes everything back down. The table returns to the compact view immediately.",
+    "duration": 5.39,
+    "clip": "epic-d_collapse_all.mp3"
+  },
+  {
+    "name": "light_theme",
+    "text": "In light mode the diffs are just as readable. The highlighting adapts \u2014 no washed-out colors, nothing lost.",
+    "duration": 6.08,
+    "clip": "epic-d_light_theme.mp3"
+  },
+  {
+    "name": "outro",
+    "text": "Every survivor shows exactly what changed and why it survived. The diff is right there next to the mutation score, so you never have to go digging through source files to understand what a gremlin actually did.",
+    "duration": 11.66,
+    "clip": "epic-d_outro.mp3"
+  }
+]
