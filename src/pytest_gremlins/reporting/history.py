@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,8 @@ from pytest_gremlins.reporting.results import GremlinResultStatus
 
 if TYPE_CHECKING:
     from pytest_gremlins.reporting.score import MutationScore
+
+logger = logging.getLogger(__name__)
 
 
 def _build_operator_data(score: MutationScore) -> dict[str, dict[str, int]]:
@@ -75,6 +78,7 @@ def append_history_entry(
         try:
             existing = json.loads(path.read_text(encoding='utf-8'))
         except (json.JSONDecodeError, OSError):
+            logger.warning('Could not read existing history from %s, starting fresh', path, exc_info=True)
             existing = []
 
     by_file = {fp: round(fs.percentage, 2) for fp, fs in score.by_file().items()}
@@ -108,6 +112,7 @@ def load_history(history_path: Path) -> list[dict[str, Any]]:
     try:
         result: list[dict[str, Any]] = json.loads(history_path.read_text(encoding='utf-8'))
     except (json.JSONDecodeError, OSError):
+        logger.warning('Could not load history from %s', history_path, exc_info=True)
         return []
     else:
         return result

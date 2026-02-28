@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import json
+import logging
 from pathlib import Path
 
 import pytest
 
+from pytest_gremlins.reporting.diff import _node_to_source
 from pytest_gremlins.reporting.html import (
     HtmlReporter,
     _build_operator_data,
@@ -1042,3 +1045,72 @@ class DescribeBuildOperatorData:
         result = _build_operator_data(score)
 
         assert result['comparison'] == {'total': 4, 'survived': 1}
+
+
+@pytest.mark.small
+class DescribeNodeToSourceLogging:
+    """Tests for logging in _node_to_source when AST unparsing fails."""
+
+    def it_logs_warning_when_node_to_source_fails(self, caplog: pytest.LogCaptureFixture):
+        # Build a minimal AST node then corrupt it so ast.unparse raises.
+        node = ast.parse('x + 1', mode='eval').body
+        # Remove the required attributes so ast.unparse raises an AttributeError.
+        del node.left
+
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.reporting.diff'):
+            result = _node_to_source(node)
+
+        assert result == ''
+        assert 'Failed to get source for AST node' in caplog.text
+
+
+@pytest.mark.small
+class DescribeAppendHistoryEntryLogging:
+    """Tests for logging in append_history_entry when history file is corrupt."""
+
+    def it_logs_warning_when_history_file_is_corrupt(
+        self, make_result, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ):
+        corrupt = tmp_path / 'history.json'
+        corrupt.write_text('not json', encoding='utf-8')
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.reporting.history'):
+            append_history_entry(rootdir=tmp_path, score=score, history_path=corrupt)
+
+        assert 'Could not read existing history' in caplog.text
+        assert str(corrupt) in caplog.text
+
+
+@pytest.mark.small
+class DescribeLoadHistoryLogging:
+    """Tests for logging in load_history when history file is corrupt."""
+
+    def it_logs_warning_when_history_file_is_corrupt(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        corrupt = tmp_path / 'history.json'
+        corrupt.write_text('not json', encoding='utf-8')
+
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.reporting.history'):
+            result = load_history(corrupt)
+
+        assert result == []
+        assert 'Could not load history' in caplog.text
+        assert str(corrupt) in caplog.text
+
+
+@pytest.mark.small
+class DescribeWriteReportLogging:
+    """Tests for logging in HtmlReporter.write_report."""
+
+    def it_logs_info_with_output_path(self, make_result, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        output_path = tmp_path / 'report.html'
+        reporter = HtmlReporter()
+
+        with caplog.at_level(logging.INFO, logger='pytest_gremlins.reporting.html'):
+            reporter.write_report(score, output_path)
+
+        assert 'HTML report written to' in caplog.text
+        assert str(output_path) in caplog.text
