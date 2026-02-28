@@ -6,14 +6,16 @@ and visual highlighting of surviving gremlins.
 
 from __future__ import annotations
 
-import ast
-from datetime import UTC, datetime
-import difflib
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.reporting.diff import _compute_diff, _node_to_source
+from pytest_gremlins.reporting.history import (
+    _build_operator_data,
+    append_history_entry,
+    load_history,
+)
 
 
 if TYPE_CHECKING:
@@ -21,29 +23,16 @@ if TYPE_CHECKING:
     from pytest_gremlins.reporting.results import GremlinResult
     from pytest_gremlins.reporting.score import MutationScore
 
+__all__ = [
+    'HtmlReporter',
+    'append_history_entry',
+    'load_history',
+    'resolve_html_output_path',
+]
+
 _SCORE_GREEN_THRESHOLD = 80
 _SCORE_AMBER_THRESHOLD = 60
 _HISTORY_MIN_ENTRIES_FOR_CHART = 2
-
-
-def _build_operator_data(score: MutationScore) -> dict[str, dict[str, int]]:
-    """Aggregate per-operator totals and survivor counts from a MutationScore.
-
-    Args:
-        score: The MutationScore whose results are aggregated.
-
-    Returns:
-        Mapping of operator name to ``{'total': int, 'survived': int}``.
-    """
-    op_data: dict[str, dict[str, int]] = {}
-    for result in score.results:
-        op = result.gremlin.operator_name
-        if op not in op_data:
-            op_data[op] = {'total': 0, 'survived': 0}
-        op_data[op]['total'] += 1
-        if result.status == GremlinResultStatus.SURVIVED:
-            op_data[op]['survived'] += 1
-    return op_data
 
 
 def resolve_html_output_path(rootdir: Path, html_dir: Path | None) -> Path:
@@ -75,117 +64,6 @@ def resolve_html_output_path(rootdir: Path, html_dir: Path | None) -> Path:
         resolved_dir = html_dir if html_dir.is_absolute() else rootdir / html_dir
         return resolved_dir / 'index.html'
     return rootdir / 'coverage' / 'gremlins' / 'index.html'
-
-
-def _node_to_source(node: ast.AST) -> str:
-    """Convert an AST node to a source string using ast.unparse.
-
-    Args:
-        node: An AST node to unparse.
-
-    Returns:
-        Source code string for the node, or empty string if unparsing fails.
-    """
-    try:
-        return ast.unparse(node)
-    except Exception:
-        return ''
-
-
-def _compute_diff(original: str, mutated: str) -> list[str]:
-    """Compute unified diff lines between original and mutated source.
-
-    Args:
-        original: The original (Mogwai) source string.
-        mutated: The mutated (Gremlin) source string.
-
-    Returns:
-        List of unified diff lines with 3 context lines.
-    """
-    return list(
-        difflib.unified_diff(
-            original.splitlines(keepends=True),
-            mutated.splitlines(keepends=True),
-            fromfile='mogwai',
-            tofile='gremlin',
-            n=3,
-        )
-    )
-
-
-def append_history_entry(
-    rootdir: Path,
-    score: MutationScore,
-    history_limit: int = 30,
-    history_path: Path | None = None,
-) -> Path:
-    """Append a history entry to the JSON history file and enforce the cap.
-
-    The history file lives at ``<rootdir>/coverage/gremlins/history.json``
-    unless overridden by *history_path*.
-
-    Each entry has the shape::
-
-        {
-            "timestamp": "<ISO8601>",
-            "score": <float>,
-            "by_file": {"<path>": <score_float>, ...},
-            "by_operator": {"<op>": {"total": <int>, "survived": <int>}, ...}
-        }
-
-    Args:
-        rootdir: Project root directory (anchor for default history path).
-        score: The MutationScore to record.
-        history_limit: Maximum number of history entries to retain (oldest dropped).
-        history_path: Override the default history file path.
-
-    Returns:
-        Path to the history JSON file.
-    """
-    path = history_path or (rootdir / 'coverage' / 'gremlins' / 'history.json')
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    existing: list[dict[str, Any]] = []
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding='utf-8'))
-        except (json.JSONDecodeError, OSError):
-            existing = []
-
-    by_file = {fp: round(fs.percentage, 2) for fp, fs in score.by_file().items()}
-
-    entry = {
-        'timestamp': datetime.now(UTC).isoformat(),
-        'score': round(score.percentage, 2),
-        'by_file': by_file,
-        'by_operator': _build_operator_data(score),
-    }
-
-    existing.append(entry)
-    if len(existing) > history_limit:
-        existing = existing[-history_limit:]
-
-    path.write_text(json.dumps(existing, indent=2), encoding='utf-8')
-    return path
-
-
-def load_history(history_path: Path) -> list[dict[str, Any]]:
-    """Load history entries from the JSON file.
-
-    Args:
-        history_path: Path to the history JSON file.
-
-    Returns:
-        List of history entry dicts, or empty list if file is absent/corrupt.
-    """
-    if not history_path.exists():
-        return []
-    try:
-        result: list[dict[str, Any]] = json.loads(history_path.read_text(encoding='utf-8'))
-    except (json.JSONDecodeError, OSError):
-        return []
-    else:
-        return result
 
 
 class HtmlReporter:
