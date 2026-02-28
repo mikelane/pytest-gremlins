@@ -1,0 +1,13 @@
+[
+  {"name": "intro",          "duration": 12.956735},
+  {"name": "run",            "duration": 14.628571},
+  {"name": "dark_mode",      "duration": 12.306576},
+  {"name": "light_toggle",   "duration": 11.006259},
+  {"name": "score_gauge",    "duration": 9.984580},
+  {"name": "outcome_pie",    "duration": 11.192018},
+  {"name": "file_bar",       "duration": 12.724535},
+  {"name": "operator_chart", "duration": 15.232290},
+  {"name": "diff_expand",    "duration": 16.021769},
+  {"name": "history",        "duration": 11.609977},
+  {"name": "outro",          "duration": 12.027937}
+]
