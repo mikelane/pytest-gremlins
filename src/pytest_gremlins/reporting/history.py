@@ -12,13 +12,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-logger = logging.getLogger(__name__)
-
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 
 if TYPE_CHECKING:
     from pytest_gremlins.reporting.score import MutationScore
+
+logger = logging.getLogger(__name__)
 
 
 def _build_operator_data(score: MutationScore) -> dict[str, dict[str, int]]:

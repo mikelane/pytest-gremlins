@@ -825,7 +825,6 @@ class DescribeHtmlReporterHistorySection:
 
 
 @pytest.mark.small
-<<<<<<< HEAD
 class DescribeHtmlReporterA11y:
     """Tests for WCAG-compliant accessibility in the HTML report.
 
@@ -1046,6 +1045,8 @@ class DescribeBuildOperatorData:
         result = _build_operator_data(score)
 
         assert result['comparison'] == {'total': 4, 'survived': 1}
+
+
 @pytest.mark.small
 class DescribeNodeToSourceLogging:
     """Tests for logging in _node_to_source when AST unparsing fails."""
