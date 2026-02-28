@@ -471,6 +471,31 @@ class DescribeHtmlReporterResponsive:
 
 
 @pytest.mark.small
+class DescribeHtmlReporterCdnSecurity:
+    """Tests for CDN security: pinned versions and SRI hashes.
+
+    References: #217
+    """
+
+    def it_pins_chartjs_to_specific_version(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'chart.js@4.4.4' in html
+        assert 'integrity="sha384-' in html
+
+    def it_does_not_embed_google_fonts_import(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert 'fonts.googleapis.com' not in html
+
+
+@pytest.mark.small
 class DescribeHtmlReporterChartJs:
     """Tests for Epic C: Chart.js visualisations.
 
