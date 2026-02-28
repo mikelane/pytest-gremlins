@@ -33,4 +33,4 @@ Click a row to expand the diff. Left panel is the Mogwai — the original. Right
 The history section plots mutation score across runs. Sixty-three, seventy-one, seventy-eight, then sixty-six. Run four dropped twelve points. The chart is right there in the same report, same file.
 
 <!-- SEGMENT: outro -->
-That is the full report. Single H T M L file, no server, no dependencies at runtime. Location, theming, charts, diffs, history — all five epics in one artifact. That is Pie Test Gremlins at version one.
+That is the full report. Single H T M L file, no server, no dependencies at runtime. Location, theming, charts, diffs, history — all five epics in one artifact. That is Pie Test Gremlins at version one point three.
