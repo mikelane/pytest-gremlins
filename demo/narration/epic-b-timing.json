@@ -1,0 +1,38 @@
+[
+  {
+    "name": "intro",
+    "text": "When you open a pytest-gremlins report, it comes up dark by default. No settings, no config \u2014 just dark, with the gremlin-green scores standing out right away.",
+    "duration": 10.17,
+    "clip": "epic-b_intro.mp3"
+  },
+  {
+    "name": "dark_mode",
+    "text": "Here it is at full width. The mutation scores are front and center, styled so you can read the results fast, even after a long test run.",
+    "duration": 8.64,
+    "clip": "epic-b_dark_mode.mp3"
+  },
+  {
+    "name": "toggle",
+    "text": "Up in the corner there's a theme toggle. One click and you're in light mode.",
+    "duration": 4.09,
+    "clip": "epic-b_toggle.mp3"
+  },
+  {
+    "name": "persist",
+    "text": "Now reload the page. It comes back in light mode \u2014 no flash, no reset. The preference is saved in local storage.",
+    "duration": 6.13,
+    "clip": "epic-b_persist.mp3"
+  },
+  {
+    "name": "mobile",
+    "text": "At 375 pixels \u2014 phone width \u2014 everything stacks cleanly. You can scroll vertically. No horizontal overflow.",
+    "duration": 7.57,
+    "clip": "epic-b_mobile.mp3"
+  },
+  {
+    "name": "outro",
+    "text": "Dark by default, one-click toggle, and it remembers your choice. It also just works on a phone. Small things, but they're the difference between a report you actually check and one you ignore.",
+    "duration": 11.94,
+    "clip": "epic-b_outro.mp3"
+  }
+]
