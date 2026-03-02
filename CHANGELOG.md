@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.4.0 (2026-03-02)
+
+### Feat
+
+- **demo**: Epic F capstone narrated demo — Rich HTML Reports milestone (#229)
+- **demo**: narrated Epic E historical trend tracking demo (#228)
+- **demo**: narrated Epic D code diff sections demo (#224)
+- **demo**: narrated Epic C chart visualizations demo (#226)
+- **demo**: narrated MP4 demo for epic-a report location (#225)
+- **reporting**: Epics B–E — theme, charts, diffs, history (#212)
+- **reporting**: Epic A — default output path + --gremlins-html-dir option (#211)
+- **release**: adopt frequent stable releases (FastAPI/Ruff model) (#210)
+
+### Fix
+
+- **demo**: correct version number in capstone outro to 1.3.0 (#231)
+- **reporting**: add logging to silent exception handlers in html.py (#223)
+- **reporting**: pin Chart.js to 4.4.4 with SRI hash and remove Google Fonts (#222)
+- **reporting**: WCAG 2.2 AA accessibility for HTML report (#219)
+- **docs**: add project.optional-dependencies for RTD compatibility (#209)
+- **docs**: replace --gremlin-workers=auto with --gremlin-parallel (#195)
+
+### Refactor
+
+- **reporting**: extract history.py and diff.py from html.py (#220)
+- **tests**: domain-organized directories, explicit markers, fixture consolidation (#208)
+
 ## v1.3.0 (2026-02-21)
 
 ### Added
