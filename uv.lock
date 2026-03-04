@@ -1419,7 +1419,7 @@ dev = [
     { name = "playwright", specifier = ">=1.58.0" },
     { name = "pre-commit", specifier = ">=3.6.0" },
     { name = "pytest-cov", specifier = ">=4.1.0" },
-    { name = "pytest-test-categories", specifier = ">=1.0.0" },
+    { name = "pytest-test-categories", specifier = ">=1.2.1" },
     { name = "pytest-xdist", specifier = ">=3.5.0" },
     { name = "ruff", specifier = ">=0.1.6" },
     { name = "tox", specifier = ">=4.11.0" },
