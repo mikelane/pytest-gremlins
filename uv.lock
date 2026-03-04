@@ -1434,7 +1434,7 @@ docs = [
 
 [[package]]
 name = "pytest-test-categories"
-version = "1.1.0"
+version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beartype" },
@@ -1442,9 +1442,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pytest" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fe/2e/39385ec00af768dc1b76dee1346fc21b600406ffb682c2919faa71415669/pytest_test_categories-1.1.0.tar.gz", hash = "sha256:866dd8bee918e2c855a4a80a0dc2bee7b0b96e9b56a582a37751067cc6220a52", size = 456841, upload-time = "2025-12-04T15:03:40.103Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a8/ce/12127a1253be181574c0ce838274e7a0c44e0b4b9f0bc19fc73f9ebf35bb/pytest_test_categories-1.2.1.tar.gz", hash = "sha256:0d9d28825d72617d8957d69ddd8455a739cbc6e3ff40835a9e3d125e6c569792", size = 979159, upload-time = "2026-03-04T04:18:08.943Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/bd/a84f9a0e8847156033798e5a970951c8adf5755ddeb977b341f9e5c30cc5/pytest_test_categories-1.1.0-py3-none-any.whl", hash = "sha256:f8d87ae3137995c3270afa835200da98ef39df1ab9c4b9f1835c5a0fcc61b523", size = 124384, upload-time = "2025-12-04T15:03:38.226Z" },
+    { url = "https://files.pythonhosted.org/packages/58/0f/ac43c71925a2a518714380ed6771245e4ee5325cf902a41285e45bced756/pytest_test_categories-1.2.1-py3-none-any.whl", hash = "sha256:0c117df4d5c53fa04ba26c6570d54df9cd1a60f0ca1de3a172acc16fe0365808", size = 138175, upload-time = "2026-03-04T04:18:07.409Z" },
 ]
 
 [[package]]
