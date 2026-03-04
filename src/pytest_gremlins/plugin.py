@@ -714,8 +714,8 @@ del _gremlin_os
     instrumented_sources: dict[str, str] = {}
     for original_path, tree in instrumented_asts.items():
         module_name = _path_to_module_name(Path(original_path), rootdir)
-        tree.body = _prepend_injection(tree.body, injection_nodes)
-        instrumented_sources[module_name] = ast.unparse(tree)
+        injected_body = _prepend_injection(tree.body, injection_nodes)
+        instrumented_sources[module_name] = ast.unparse(ast.Module(body=injected_body, type_ignores=tree.type_ignores))
 
     sources_file = temp_dir / 'sources.json'
     sources_file.write_text(json.dumps(instrumented_sources))
@@ -750,8 +750,12 @@ def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) ->
     """
     split = 0
 
-    first = body[0] if body else None
-    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
         split = 1
 
     while split < len(body):

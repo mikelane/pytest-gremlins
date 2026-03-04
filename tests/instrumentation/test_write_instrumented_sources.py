@@ -61,15 +61,10 @@ class DescribeWriteInstrumentedSources:
         assert labels.index('future_import') < labels.index('assign:__gremlin_active__')
 
     def it_produces_valid_syntax_when_source_has_future_import(self, tmp_path: Path) -> None:
+        # The core regression: prepending before future import causes SyntaxError.
+        # Asserting ast.parse succeeds (via _parse_final_source) AND that __future__ is still first.
         source = 'from __future__ import annotations\n\ndef foo(x: int) -> str:\n    return str(x)\n'
-        tree = ast.parse(source)
-        original_path = str(tmp_path / 'mymod.py')
-        result_dir = _write_instrumented_sources({original_path: tree}, tmp_path)
-        sources = json.loads((result_dir / 'sources.json').read_text())
-        # The core regression: prepending before future import causes SyntaxError
-        # Asserting ast.parse succeeds AND that __future__ is still first
-        parsed_body = ast.parse(sources['mymod']).body
-        labels = _node_names(parsed_body)
+        labels = _node_names(_parse_final_source(tmp_path, source))
         assert labels[0] == 'future_import', f'Expected future_import first, got: {labels}'
 
     def it_places_module_docstring_before_future_import_and_injection(self, tmp_path: Path) -> None:
