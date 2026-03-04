@@ -748,7 +748,7 @@ def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) ->
     Returns:
         A new statement list with injection nodes placed at the correct position.
     """
-    split = 0
+    insert_position = 0
 
     if (
         body
@@ -756,16 +756,16 @@ def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) ->
         and isinstance(body[0].value, ast.Constant)
         and isinstance(body[0].value.value, str)
     ):
-        split = 1
+        insert_position = 1
 
-    while split < len(body):
-        node = body[split]
+    while insert_position < len(body):
+        node = body[insert_position]
         if isinstance(node, ast.ImportFrom) and node.module == '__future__':
-            split += 1
+            insert_position += 1
         else:
             break
 
-    return body[:split] + injection_nodes + body[split:]
+    return body[:insert_position] + injection_nodes + body[insert_position:]
 
 
 def _path_to_module_name(file_path: Path, rootdir: Path) -> str:
@@ -1357,8 +1357,8 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
             try:
                 worker_result = future.result()
                 aggregator.add_result(worker_result)
-            except Exception as e:
-                aggregator.add_error(gremlin_id, e)
+            except Exception as execution_error:
+                aggregator.add_error(gremlin_id, execution_error)
 
             # Progress reporting
             completed, total = aggregator.get_progress()

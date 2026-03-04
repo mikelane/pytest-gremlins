@@ -17,7 +17,8 @@ def _parse_final_source(tmp_path: Path, source: str) -> list[ast.stmt]:
     original_path = str(tmp_path / 'mymod.py')
     result_dir = _write_instrumented_sources({original_path: tree}, tmp_path)
     sources = json.loads((result_dir / 'sources.json').read_text())
-    return ast.parse(sources['mymod']).body
+    parsed: list[ast.stmt] = ast.parse(sources['mymod']).body
+    return parsed
 
 
 def _node_names(nodes: list[ast.stmt]) -> list[str]:
@@ -101,3 +102,40 @@ class DescribeWriteInstrumentedSources:
         result_dir = _write_instrumented_sources({original_path: tree}, tmp_path)
         sources = json.loads((result_dir / 'sources.json').read_text())
         assert '__gremlin_active__' in sources['mymod']
+
+    def it_handles_empty_module_body(self, tmp_path: Path) -> None:
+        body = _parse_final_source(tmp_path, '')
+        labels = _node_names(body)
+
+        # Empty source gets only the injection nodes -- no user code at all
+        assert 'assign:__gremlin_active__' in labels
+        assert labels[0] == 'import', f'Expected import (_gremlin_os) first, got: {labels}'
+
+    def it_places_injection_after_multiple_future_imports(self, tmp_path: Path) -> None:
+        source = 'from __future__ import annotations\nfrom __future__ import division\nimport os\n'
+        body = _parse_final_source(tmp_path, source)
+        labels = _node_names(body)
+
+        future_indices = [i for i, label in enumerate(labels) if label == 'future_import']
+        injection_index = labels.index('assign:__gremlin_active__')
+
+        assert len(future_indices) == 2, f'Expected 2 future imports, got {len(future_indices)}: {labels}'
+        assert all(fi < injection_index for fi in future_indices), (
+            f'All future imports must precede injection: {labels}'
+        )
+
+    def it_places_injection_after_docstring_and_multiple_future_imports(self, tmp_path: Path) -> None:
+        source = '"""Module docstring."""\nfrom __future__ import annotations\nfrom __future__ import division\nx = 1\n'
+        body = _parse_final_source(tmp_path, source)
+        labels = _node_names(body)
+
+        assert labels[0] == 'docstring', f'Expected docstring first, got: {labels}'
+        future_indices = [i for i, label in enumerate(labels) if label == 'future_import']
+        injection_index = labels.index('assign:__gremlin_active__')
+        user_code_index = labels.index('assign:x')
+
+        assert len(future_indices) == 2, f'Expected 2 future imports, got {len(future_indices)}: {labels}'
+        assert all(fi < injection_index for fi in future_indices), (
+            f'All future imports must precede injection: {labels}'
+        )
+        assert injection_index < user_code_index, f'Injection must precede user code: {labels}'
