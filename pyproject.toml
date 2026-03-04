@@ -333,6 +333,7 @@ directory = "htmlcov"
 # =============================================================================
 [tool.commitizen]
 name = "cz_conventional_commits"
+annotated_tag = true
 version = "1.4.0"
 version_files = [
     "pyproject.toml:version",

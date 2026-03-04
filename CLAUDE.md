@@ -127,3 +127,42 @@ uv run pytest --doctest-modules src/pytest_gremlins
 - `.github/workflows/release.yml` - Release pipeline with Test PyPI
 - `.github/workflows/cut-release.yml` - One-click version bump + tag (triggers release.yml)
 - `scripts/release.sh` - Local release script (same thing, from your terminal)
+
+## Release Process
+
+**Never run `cz bump` locally.** The `no-commit-to-branch` pre-commit hook blocks commits
+to `main`, so a local bump will fail mid-run and leave a dirty version bump to revert.
+
+Use the workflow dispatch instead:
+
+```bash
+gh workflow run cut-release.yml --repo SayMoreAI/pytest-gremlins
+```
+
+This runs `cz bump` on the GitHub Actions runner (no local hooks), commits the version,
+creates an annotated tag, and pushes — which triggers `release.yml`.
+
+After dispatching, verify the tag landed:
+
+```bash
+git fetch --tags
+git ls-remote --tags origin | tail -5
+```
+
+If the tag is missing, `--follow-tags` silently skipped a lightweight tag. Root cause:
+`[tool.commitizen]` must have `annotated_tag = true`. Without it, commitizen creates
+lightweight tags that `--follow-tags` ignores.
+
+**RELEASE_PAT secret**: The workflow requires a `RELEASE_PAT` repo secret with
+`contents: write` and `workflows: write` scopes. Set it to never expire — an expired
+PAT causes a silent checkout failure with no useful error message.
+
+## Demo Videos
+
+Narrated MP4 demos live on YouTube (not committed to git). The `.gitignore` excludes `*.mp4` and `*.webm`.
+
+Demo project files live under `/tmp/gremlin-demo-<epic>` (or similar per-epic dirs).
+Each demo project's `pyproject.toml` must include `pytest-xdist` as a dependency —
+the dev plugin registers a `pytest_configure_node` hook that pluggy rejects at
+`check_pending()` if xdist is absent, causing silent `pytest_sessionfinish` failure
+(the HTML report never writes).
