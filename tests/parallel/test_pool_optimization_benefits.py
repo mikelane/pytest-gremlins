@@ -44,7 +44,7 @@ class DescribeStartMethodOptimization:
         assert method == 'spawn'
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeWarmupBenefits:
     """Tests demonstrating warmup benefits."""
 
@@ -129,7 +129,7 @@ class DescribePoolConfigIntegrationWithBatchExecutor:
         assert config.batch_size == 15
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribePoolPerformanceCharacteristics:
     """Tests documenting expected performance characteristics."""
 
