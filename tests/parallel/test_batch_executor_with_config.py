@@ -48,7 +48,7 @@ class DescribeBatchExecutorWithConfig:
         assert executor.max_workers >= 1
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeBatchExecutorConfigIntegration:
     """Integration tests for BatchExecutor with PoolConfig."""
 
