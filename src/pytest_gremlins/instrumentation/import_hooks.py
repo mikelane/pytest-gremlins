@@ -85,7 +85,7 @@ class GremlinLoader(Loader):
             module: The module to execute code in.
         """
         # Inject __gremlin_active__ from environment variable
-        module.__gremlin_active__ = os.environ.get(ACTIVE_GREMLIN_ENV_VAR)  # type: ignore[attr-defined]
+        module.__dict__['__gremlin_active__'] = os.environ.get(ACTIVE_GREMLIN_ENV_VAR)
 
         # Compile and execute the instrumented AST
         # Note: This exec is intentional - we're executing pre-validated, transformed AST
