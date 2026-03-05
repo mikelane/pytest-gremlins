@@ -21,10 +21,9 @@ Example:
 
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING
+
+from pytest_gremlins.coverage.types import PrioritizedSelectionStats
 
 
 if TYPE_CHECKING:
@@ -123,7 +122,7 @@ class PrioritizedSelector:
     def select_tests_with_stats(
         self,
         gremlin: Gremlin,
-    ) -> tuple[list[str], dict[str, Any]]:
+    ) -> tuple[list[str], PrioritizedSelectionStats]:
         """Select prioritized tests for a gremlin and return statistics.
 
         Args:
@@ -139,17 +138,19 @@ class PrioritizedSelector:
         tests = self.select_tests_prioritized(gremlin)
         specificity = self.get_test_specificity()
 
-        stats: dict[str, Any] = {
-            'selected_count': len(tests),
-            'coverage_location': f'{gremlin.file_path}:{gremlin.line_number}',
-        }
-
         if tests:
             test_specificities = [specificity.get(t, 0) for t in tests]
-            stats['most_specific_test'] = tests[0]
-            stats['specificity_range'] = (min(test_specificities), max(test_specificities))
+            most_specific_test: str | None = tests[0]
+            specificity_range = (min(test_specificities), max(test_specificities))
         else:
-            stats['most_specific_test'] = None
-            stats['specificity_range'] = (0, 0)
+            most_specific_test = None
+            specificity_range = (0, 0)
+
+        stats = PrioritizedSelectionStats(
+            selected_count=len(tests),
+            coverage_location=f'{gremlin.file_path}:{gremlin.line_number}',
+            most_specific_test=most_specific_test,
+            specificity_range=specificity_range,
+        )
 
         return tests, stats
