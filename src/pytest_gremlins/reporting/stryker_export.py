@@ -12,7 +12,6 @@ from collections import defaultdict
 import json
 from typing import (
     TYPE_CHECKING,
-    Any,
 )
 
 import pytest_gremlins
@@ -25,6 +24,14 @@ if TYPE_CHECKING:
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.reporting.results import GremlinResult
     from pytest_gremlins.reporting.score import MutationScore
+    from pytest_gremlins.reporting.types import (
+        StrykerFileResult,
+        StrykerFramework,
+        StrykerLocation,
+        StrykerMutant,
+        StrykerPosition,
+        StrykerReport,
+    )
 
 
 STATUS_MAP: dict[GremlinResultStatus, str] = {
@@ -98,7 +105,7 @@ class StrykerExporter:
         """
         output_path.write_text(self.to_json(score))
 
-    def _build_report_data(self, score: MutationScore) -> dict[str, Any]:
+    def _build_report_data(self, score: MutationScore) -> StrykerReport:
         """Build the complete report data structure.
 
         Args:
@@ -107,17 +114,18 @@ class StrykerExporter:
         Returns:
             Dictionary conforming to mutation-testing-report-schema.
         """
+        framework: StrykerFramework = {
+            'name': 'pytest-gremlins',
+            'version': pytest_gremlins.__version__,
+        }
         return {
             'schemaVersion': '1.0',
             'thresholds': self._thresholds,
             'files': self._build_files(score),
-            'framework': {
-                'name': 'pytest-gremlins',
-                'version': pytest_gremlins.__version__,
-            },
+            'framework': framework,
         }
 
-    def _build_files(self, score: MutationScore) -> dict[str, dict[str, Any]]:
+    def _build_files(self, score: MutationScore) -> dict[str, StrykerFileResult]:
         """Build the files section grouping mutants by file.
 
         Args:
@@ -138,7 +146,7 @@ class StrykerExporter:
             for file_path, results in results_by_file.items()
         }
 
-    def _build_mutant(self, result: GremlinResult) -> dict[str, Any]:
+    def _build_mutant(self, result: GremlinResult) -> StrykerMutant:
         """Build a single mutant entry.
 
         Args:
@@ -148,7 +156,7 @@ class StrykerExporter:
             Dictionary representing this mutant in Stryker format.
         """
         gremlin = result.gremlin
-        mutant: dict[str, Any] = {
+        mutant: StrykerMutant = {
             'id': gremlin.gremlin_id,
             'mutatorName': gremlin.operator_name,
             'location': self._build_location(gremlin),
@@ -164,7 +172,7 @@ class StrykerExporter:
 
         return mutant
 
-    def _build_location(self, gremlin: Gremlin) -> dict[str, Any]:
+    def _build_location(self, gremlin: Gremlin) -> StrykerPosition:
         """Build location object from gremlin's AST node.
 
         Args:
@@ -174,17 +182,17 @@ class StrykerExporter:
             Location dictionary with start and optionally end positions.
         """
         node = gremlin.original_node
-        location: dict[str, Any] = {
-            'start': {
-                'line': node.lineno,
-                'column': node.col_offset,
-            },
+        start: StrykerLocation = {
+            'line': node.lineno,
+            'column': node.col_offset,
         }
+        location: StrykerPosition = {'start': start}
 
         if node.end_lineno is not None:
-            location['end'] = {
+            end: StrykerLocation = {
                 'line': node.end_lineno,
                 'column': node.end_col_offset,
             }
+            location['end'] = end
 
         return location

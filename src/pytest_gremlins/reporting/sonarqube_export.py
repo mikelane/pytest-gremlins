@@ -9,10 +9,7 @@ See: https://docs.sonarsource.com/sonarqube/latest/analyzing-source-code/importi
 from __future__ import annotations
 
 import json
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING
 
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
@@ -22,6 +19,10 @@ if TYPE_CHECKING:
 
     from pytest_gremlins.reporting.results import GremlinResult
     from pytest_gremlins.reporting.score import MutationScore
+    from pytest_gremlins.reporting.types import (
+        SonarIssue,
+        SonarReport,
+    )
 
 
 class SonarQubeExporter:
@@ -77,7 +78,7 @@ class SonarQubeExporter:
         """
         output_path.write_text(self.to_json(score))
 
-    def _build_report_data(self, score: MutationScore) -> dict[str, Any]:
+    def _build_report_data(self, score: MutationScore) -> SonarReport:
         """Build the complete report data structure.
 
         Args:
@@ -91,7 +92,7 @@ class SonarQubeExporter:
         ]
         return {'issues': issues}
 
-    def _build_issue(self, result: GremlinResult) -> dict[str, Any]:
+    def _build_issue(self, result: GremlinResult) -> SonarIssue:
         """Build a single issue entry for a surviving mutant.
 
         Args:
