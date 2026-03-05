@@ -7,6 +7,7 @@ on subsequent runs.
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.store import ResultStore
+from pytest_gremlins.cache.types import CachedGremlinResult, JsonValue
 
 
-__all__ = ['ContentHasher', 'IncrementalCache', 'ResultStore']
+__all__ = ['CachedGremlinResult', 'ContentHasher', 'IncrementalCache', 'JsonValue', 'ResultStore']

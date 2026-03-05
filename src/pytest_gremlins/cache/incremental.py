@@ -6,10 +6,7 @@ to implement smart cache invalidation based on content changes.
 
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore
@@ -17,6 +14,8 @@ from pytest_gremlins.cache.store import ResultStore
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from pytest_gremlins.cache.types import CachedGremlinResult
 
 
 class IncrementalCache:
@@ -90,7 +89,7 @@ class IncrementalCache:
         gremlin_id: str,
         source_hash: str,
         test_hashes: dict[str, str],
-    ) -> dict[str, Any] | None:
+    ) -> CachedGremlinResult | None:
         """Retrieve a cached result if available.
 
         Returns None (cache miss) if:
@@ -122,7 +121,7 @@ class IncrementalCache:
         gremlin_id: str,
         source_hash: str,
         test_hashes: dict[str, str],
-        result: dict[str, Any],
+        result: CachedGremlinResult,
     ) -> None:
         """Cache a gremlin test result.
 
@@ -144,7 +143,7 @@ class IncrementalCache:
         gremlin_id: str,
         source_hash: str,
         test_hashes: dict[str, str],
-        result: dict[str, Any],
+        result: CachedGremlinResult,
     ) -> None:
         """Cache a gremlin test result without committing immediately.
 
