@@ -40,9 +40,13 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     def _size_priority(item: pytest.Item) -> int:
         markers = {m.name for m in item.iter_markers()}
         if 'large' in markers:
-            return 3
+            return 4
         if 'medium' in markers:
-            return 2
+            # Pytester-based medium tests reset sys.settrace when their inner
+            # pytest session ends, killing coverage for subsequent tests.
+            # Run non-pytester medium tests first so they get coverage tracked.
+            uses_pytester = bool({'pytester', 'pytester_with_markers'} & set(getattr(item, 'fixturenames', [])))
+            return 3 if uses_pytester else 2
         return 1  # small or unmarked runs first
 
     items.sort(key=_size_priority)
