@@ -300,6 +300,7 @@ omit = [
     "src/pytest_gremlins/instrumentation/switcher.py",
     "src/pytest_gremlins/reporting/results.py",
     "src/pytest_gremlins/reporting/score.py",
+    "src/pytest_gremlins/reporting/types.py",
 ]
 
 [tool.coverage.report]
