@@ -78,10 +78,17 @@ jobs:
           echo "new_tag=${new_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Push commit and tag
+        env:
+          NEW_TAG: ${{ steps.bump.outputs.new_tag }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          echo "Pushing ${{ steps.bump.outputs.new_tag }} to origin..."
-          if ! git push origin HEAD:refs/heads/${{ github.ref_name }} --follow-tags 2>&1; then
+          echo "Pushing ${NEW_TAG} to origin..."
+          if ! git push origin "HEAD:refs/heads/${REF_NAME}" --follow-tags 2>&1; then
             echo "::error::git push failed. The RELEASE_PAT secret may have expired (90-day expiry). Verify the token at Settings > Secrets > RELEASE_PAT."
+            exit 1
+          fi
+          if ! git push origin "${NEW_TAG}" 2>&1; then
+            echo "::error::Tag push failed for ${NEW_TAG}. Verify the RELEASE_PAT secret has not expired."
             exit 1
           fi
 
