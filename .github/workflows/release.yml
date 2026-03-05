@@ -243,9 +243,16 @@ jobs:
           VERSION="${GIT_REF#refs/tags/v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-          # Extract changelog section for this version
-          # This assumes commitizen changelog format
-          awk "/^## v?$VERSION/,/^## v?[0-9]/" CHANGELOG.md | head -n -1 > release_notes.md
+          # Extract changelog section for this version.
+          # The range pattern /start/,/end/ misfires when the start line also matches
+          # the end pattern (e.g. "## v1.4.0" matches both /v?1.4.0/ and /v?[0-9]/).
+          # Use a stateful awk instead: print lines after the version header is found,
+          # stopping (without printing) when the next section header appears.
+          awk "
+            found && /^## v?[0-9]/ { exit }
+            /^## v?$VERSION/       { found=1 }
+            found                  { print }
+          " CHANGELOG.md > release_notes.md
 
           # If no specific section found, use a default message
           if [ ! -s release_notes.md ]; then
