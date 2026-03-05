@@ -7,11 +7,30 @@ to identify and activate the mutation during test execution.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Protocol,
+    runtime_checkable,
+)
 
 
 if TYPE_CHECKING:
     import ast
+
+
+@runtime_checkable
+class ASTLocated(Protocol):
+    """Protocol for AST nodes that carry source location information.
+
+    All ``ast.expr`` and ``ast.stmt`` nodes satisfy this protocol.
+    Use it when you only need location attributes and want to avoid
+    an unsafe ``cast``.
+    """
+
+    lineno: int
+    col_offset: int
+    end_lineno: int | None
+    end_col_offset: int | None
 
 
 @dataclass(frozen=True)
@@ -31,7 +50,7 @@ class Gremlin:
     gremlin_id: str
     file_path: str
     line_number: int
-    original_node: ast.AST
-    mutated_node: ast.AST
+    original_node: ast.expr | ast.stmt
+    mutated_node: ast.expr | ast.stmt
     operator_name: str
     description: str
