@@ -19,7 +19,7 @@ class StrykerLocation(TypedDict):
     column: int | None
 
 
-class StrykerPosition(TypedDict, total=False):
+class StrykerPosition(TypedDict):
     """Start and optional end location for a mutant.
 
     ``start`` is always present; ``end`` is only present when the
@@ -27,10 +27,10 @@ class StrykerPosition(TypedDict, total=False):
     """
 
     start: StrykerLocation
-    end: StrykerLocation
+    end: NotRequired[StrykerLocation]
 
 
-class StrykerMutant(TypedDict, total=False):
+class StrykerMutant(TypedDict):
     """A single mutant entry in the Stryker report.
 
     Required keys: id, mutatorName, location, status, description.
@@ -42,8 +42,8 @@ class StrykerMutant(TypedDict, total=False):
     location: StrykerPosition
     status: str
     description: str
-    killedBy: list[str]
-    duration: int
+    killedBy: NotRequired[list[str]]
+    duration: NotRequired[int]
 
 
 class StrykerFileResult(TypedDict):
