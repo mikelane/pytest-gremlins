@@ -84,7 +84,7 @@ class DescribeBatchExecutorPartitioning:
         assert batches[0] == ['g001', 'g002', 'g003']
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeBatchExecutorExecution:
     """Tests for BatchExecutor execution."""
 
