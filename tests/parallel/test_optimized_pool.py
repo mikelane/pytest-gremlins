@@ -60,7 +60,7 @@ class DescribePersistentWorkerPoolWithConfig:
         assert pool.timeout == 120
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribePersistentWorkerPoolWarmup:
     """Tests for worker warmup functionality."""
 
@@ -138,7 +138,7 @@ class DescribePersistentWorkerPoolMpContext:
             assert call_kwargs['mp_context'].get_start_method() == 'spawn'
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribePersistentWorkerPoolIntegration:
     """Integration tests for optimized pool with actual execution."""
 
