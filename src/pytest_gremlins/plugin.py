@@ -79,6 +79,15 @@ logger = logging.getLogger(__name__)
 GREMLIN_SOURCES_ENV_VAR = 'PYTEST_GREMLINS_SOURCES_FILE'
 
 
+def _get_rootdir(config: pytest.Config) -> Path:
+    """Return the rootdir of the pytest session as a Path.
+
+    pytest.Config.rootdir is not part of the public typed API,
+    so we centralise the single type: ignore here.
+    """
+    return Path(config.rootdir)  # type: ignore[attr-defined]
+
+
 class CoverageMode(Enum):
     """Coverage collection strategy for mutation testing.
 
@@ -397,7 +406,7 @@ def pytest_configure(config: pytest.Config) -> None:
             returncode=4,
         )
 
-    rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
+    rootdir = _get_rootdir(config)
 
     # Load config from pyproject.toml and merge with CLI args
     file_config = load_config(rootdir)
@@ -590,7 +599,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     # In some contexts (e.g. pytester) node IDs can include absolute paths, and
     # some plugins (e.g. pytest-test-categories) add display suffixes like
     # "[SMALL]" which are not valid when passed back to pytest.
-    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    rootdir = _get_rootdir(session.config)
     node_ids = [item.nodeid for item in session.items]
     normalized_node_ids = _make_node_ids_relative(node_ids, rootdir)
     gremlin_session.test_node_ids = {
@@ -609,7 +618,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
             with contextlib.suppress(FileNotFoundError):
                 gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
 
-    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    rootdir = _get_rootdir(session.config)
     all_gremlins: list[Gremlin] = []
     instrumented_asts: dict[str, ast.Module] = {}
 
@@ -639,7 +648,7 @@ def _discover_source_files(
         Dictionary mapping file paths to their source code.
     """
     source_files: dict[str, str] = {}
-    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    rootdir = _get_rootdir(session.config)
 
     for target_path in gremlin_session.target_paths:
         resolved_path = target_path if target_path.is_absolute() else rootdir / target_path
@@ -904,7 +913,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
         return
 
     config = session.config
-    rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
+    rootdir = _get_rootdir(config)
     _collect_coverage(gremlin_session, rootdir)
 
     # If pytest-cov is active (--cov was passed), reload its in-memory coverage
@@ -1171,7 +1180,7 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901
     Returns:
         List of results for each gremlin.
     """
-    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    rootdir = _get_rootdir(session.config)
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
     gremlins = gremlin_session.gremlins
 
@@ -1291,7 +1300,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
     Returns:
         List of results for each gremlin.
     """
-    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    rootdir = _get_rootdir(session.config)
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
     gremlins = gremlin_session.gremlins
 
@@ -1412,7 +1421,7 @@ def _run_mutation_testing(
         List of results for each gremlin.
     """
     results: list[GremlinResult] = []
-    rootdir = Path(session.config.rootdir)  # type: ignore[attr-defined]
+    rootdir = _get_rootdir(session.config)
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
 
     for i, gremlin in enumerate(gremlin_session.gremlins, 1):
@@ -1846,7 +1855,7 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
 
     # Write HTML report if requested
     if gremlin_session.report_format == 'html':
-        rootdir = Path(config.rootdir)  # type: ignore[attr-defined]
+        rootdir = _get_rootdir(config)
         raw_html_dir = config.getoption('gremlins_html_dir', default=None)
         html_dir = Path(raw_html_dir) if raw_html_dir is not None else None
         try:
