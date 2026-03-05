@@ -709,12 +709,13 @@ __gremlin_active__ = _gremlin_os.environ.get('{ACTIVE_GREMLIN_ENV_VAR}')
 del _gremlin_os
 """
 
+    injection_nodes = ast.parse(gremlin_active_injection).body
+
     instrumented_sources: dict[str, str] = {}
     for original_path, tree in instrumented_asts.items():
         module_name = _path_to_module_name(Path(original_path), rootdir)
-        instrumented_source = ast.unparse(tree)
-        final_source = gremlin_active_injection + instrumented_source
-        instrumented_sources[module_name] = final_source
+        injected_body = _prepend_injection(tree.body, injection_nodes)
+        instrumented_sources[module_name] = ast.unparse(ast.Module(body=injected_body, type_ignores=tree.type_ignores))
 
     sources_file = temp_dir / 'sources.json'
     sources_file.write_text(json.dumps(instrumented_sources))
@@ -723,6 +724,48 @@ del _gremlin_os
     bootstrap_script.write_text(_get_bootstrap_script())
 
     return temp_dir
+
+
+def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) -> list[ast.stmt]:
+    """Insert injection nodes after any module docstring and future imports.
+
+    Python requires that ``from __future__`` imports appear before all other
+    statements (except the module docstring).  Inserting the gremlin activation
+    code via text concatenation before ``ast.unparse`` output violates this rule
+    when the source already contains a ``from __future__`` import, causing a
+    ``SyntaxError``.  This function inserts the injection at the AST level so
+    the final ordering is always:
+
+    1. Module docstring (if present)
+    2. ``from __future__`` imports (if present)
+    3. Injection nodes
+    4. Remaining statements
+
+    Args:
+        body: The top-level statement list from an instrumented ``ast.Module``.
+        injection_nodes: Parsed AST nodes for the gremlin activation code.
+
+    Returns:
+        A new statement list with injection nodes placed at the correct position.
+    """
+    insert_position = 0
+
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        insert_position = 1
+
+    while insert_position < len(body):
+        node = body[insert_position]
+        if isinstance(node, ast.ImportFrom) and node.module == '__future__':
+            insert_position += 1
+        else:
+            break
+
+    return body[:insert_position] + injection_nodes + body[insert_position:]
 
 
 def _path_to_module_name(file_path: Path, rootdir: Path) -> str:
@@ -1314,8 +1357,8 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
             try:
                 worker_result = future.result()
                 aggregator.add_result(worker_result)
-            except Exception as e:
-                aggregator.add_error(gremlin_id, e)
+            except Exception as execution_error:
+                aggregator.add_error(gremlin_id, execution_error)
 
             # Progress reporting
             completed, total = aggregator.get_progress()

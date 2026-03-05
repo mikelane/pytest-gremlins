@@ -83,10 +83,10 @@ class DescribeWorkerPoolShutdown:
         assert pool._shutdown_called
 
 
-@pytest.mark.small
 class DescribeWorkerPoolSubmit:
     """Tests for submitting work to the worker pool."""
 
+    @pytest.mark.small
     def it_submit_requires_active_context(self, tmp_path: Path) -> None:
         """Submit raises error when pool is not in context."""
         pool = WorkerPool(max_workers=2)
@@ -99,6 +99,7 @@ class DescribeWorkerPoolSubmit:
                 env_vars={},
             )
 
+    @pytest.mark.medium  # Pool shutdown waits for subprocess completion
     def it_submit_returns_future(self, tmp_path: Path) -> None:
         """Submit returns a Future object."""
         with WorkerPool(max_workers=2) as pool:
@@ -111,6 +112,7 @@ class DescribeWorkerPoolSubmit:
             )
             assert isinstance(future, Future)
 
+    @pytest.mark.medium  # Pool shutdown waits for subprocess completion
     def it_submit_multiple_gremlins(self, tmp_path: Path) -> None:
         """Multiple gremlins can be submitted to pool."""
         with WorkerPool(max_workers=2) as pool:
@@ -143,7 +145,7 @@ class DescribeWorkerPoolSubmit:
 class DescribeWorkerPoolExecution:
     """Tests for actual execution in worker pool."""
 
-    @pytest.mark.small
+    @pytest.mark.medium  # Spawns real subprocess via WorkerPool
     def it_successful_test_returns_zapped_status(self, tmp_path: Path) -> None:
         """When tests fail (mutation caught), result is ZAPPED."""
         with WorkerPool(max_workers=1, timeout=5) as pool:
@@ -157,7 +159,7 @@ class DescribeWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.ZAPPED
 
-    @pytest.mark.small
+    @pytest.mark.medium  # Spawns real subprocess via WorkerPool
     def it_failed_test_returns_survived_status(self, tmp_path: Path) -> None:
         """When tests pass (mutation not caught), result is SURVIVED."""
         with WorkerPool(max_workers=1, timeout=5) as pool:
@@ -171,7 +173,7 @@ class DescribeWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.SURVIVED
 
-    @pytest.mark.small
+    @pytest.mark.medium  # Spawns real subprocess via WorkerPool
     def it_non_test_exit_code_returns_error_status(self, tmp_path: Path) -> None:
         """Non-test failures (e.g., import/collection errors) are ERROR, not ZAPPED."""
         with WorkerPool(max_workers=1, timeout=5) as pool:
@@ -199,7 +201,7 @@ class DescribeWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.status == GremlinResultStatus.TIMEOUT
 
-    @pytest.mark.small
+    @pytest.mark.medium  # Spawns real subprocess via WorkerPool
     def it_includes_gremlin_id(self, tmp_path: Path) -> None:
         """Result includes the gremlin ID that was tested."""
         with WorkerPool(max_workers=1, timeout=5) as pool:
@@ -213,7 +215,7 @@ class DescribeWorkerPoolExecution:
             result = future.result(timeout=5)
             assert result.gremlin_id == 'g042'
 
-    @pytest.mark.small
+    @pytest.mark.medium  # Spawns real subprocess via WorkerPool
     def it_env_vars_passed_to_subprocess(self, tmp_path: Path) -> None:
         """Environment variables are passed to the worker subprocess."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
@@ -235,7 +237,7 @@ class DescribeWorkerPoolExecution:
         finally:
             Path(script_path).unlink()
 
-    @pytest.mark.small
+    @pytest.mark.medium  # Spawns real subprocess via WorkerPool
     def it_suppresses_coverage_process_start_in_subprocess(
         self,
         tmp_path: Path,
@@ -267,7 +269,7 @@ class DescribeWorkerPoolExecution:
         finally:
             Path(script_path).unlink()
 
-    @pytest.mark.small
+    @pytest.mark.medium  # Spawns real subprocess via WorkerPool
     def it_instrumented_dir_sets_sources_env_var(self, tmp_path: Path) -> None:
         """When instrumented_dir is provided, PYTEST_GREMLINS_SOURCES_FILE is set in the subprocess env."""
         expected_sources_path = str(tmp_path / 'sources.json')
