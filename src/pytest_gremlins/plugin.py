@@ -15,6 +15,7 @@ from dataclasses import (
     field,
 )
 from enum import Enum
+import importlib.util
 import json
 import logging
 import os
@@ -70,6 +71,8 @@ if TYPE_CHECKING:
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.operators import GremlinOperator
 
+
+_XDIST_AVAILABLE = importlib.util.find_spec('xdist') is not None
 
 logger = logging.getLogger(__name__)
 
@@ -460,27 +463,29 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
-def pytest_configure_node(node: object) -> None:
-    """Inject gremlins tmpdir into xdist worker input for PRIVATE coverage mode.
+if _XDIST_AVAILABLE:
 
-    Called on the controller for each xdist worker node before it starts.
-    Injects ``gremlins_tmpdir`` so workers can write their coverage data to a
-    shared directory that the controller combines in ``pytest_sessionfinish``.
+    def pytest_configure_node(node: object) -> None:
+        """Inject gremlins tmpdir into xdist worker input for PRIVATE coverage mode.
 
-    Only active in PRIVATE mode; PIGGYBACK mode relies on pytest-cov's own
-    xdist integration for coverage combining.
+        Called on the controller for each xdist worker node before it starts.
+        Injects ``gremlins_tmpdir`` so workers can write their coverage data to a
+        shared directory that the controller combines in ``pytest_sessionfinish``.
 
-    Args:
-        node: The xdist worker node object.  Must have a ``workerinput`` dict.
-    """
-    gremlin_session = _get_session()
-    if gremlin_session is None or not gremlin_session.enabled:
-        return
+        Only active in PRIVATE mode; PIGGYBACK mode relies on pytest-cov's own
+        xdist integration for coverage combining.
 
-    if gremlin_session.coverage_mode != CoverageMode.PRIVATE:
-        return
+        Args:
+            node: The xdist worker node object.  Must have a ``workerinput`` dict.
+        """
+        gremlin_session = _get_session()
+        if gremlin_session is None or not gremlin_session.enabled:
+            return
 
-    cast('Any', node).workerinput['gremlins_tmpdir'] = gremlin_session.gremlins_tmpdir
+        if gremlin_session.coverage_mode != CoverageMode.PRIVATE:
+            return
+
+        cast('Any', node).workerinput['gremlins_tmpdir'] = gremlin_session.gremlins_tmpdir
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -516,25 +521,27 @@ def pytest_sessionstart(session: pytest.Session) -> None:
         session.config.pluginmanager.register(context_plugin)
 
 
-def pytest_xdist_node_collection_finished(node: object, ids: list[str]) -> None:  # noqa: ARG001
-    """Capture item IDs reported by the first xdist worker after it finishes collection.
+if _XDIST_AVAILABLE:
 
-    xdist workers each collect all test items independently and report them
-    via this hook.  All workers collect identically, so we only store the
-    first worker's list and ignore subsequent calls.
+    def pytest_xdist_node_collection_finished(node: object, ids: list[str]) -> None:  # noqa: ARG001
+        """Capture item IDs reported by the first xdist worker after it finishes collection.
 
-    Args:
-        node: The xdist worker node (unused; all workers collect the same items).
-        ids: The list of test node IDs collected by this worker.
-    """
-    gremlin_session = _get_session()
-    if gremlin_session is None or not gremlin_session.enabled:
-        return
+        xdist workers each collect all test items independently and report them
+        via this hook.  All workers collect identically, so we only store the
+        first worker's list and ignore subsequent calls.
 
-    if gremlin_session.xdist_item_ids is not None:
-        return
+        Args:
+            node: The xdist worker node (unused; all workers collect the same items).
+            ids: The list of test node IDs collected by this worker.
+        """
+        gremlin_session = _get_session()
+        if gremlin_session is None or not gremlin_session.enabled:
+            return
 
-    gremlin_session.xdist_item_ids = list(ids)
+        if gremlin_session.xdist_item_ids is not None:
+            return
+
+        gremlin_session.xdist_item_ids = list(ids)
 
 
 @pytest.hookimpl(hookwrapper=True)
