@@ -93,9 +93,10 @@ jobs:
           fi
 
       - name: Summarize release
+        env:
+          NEW_TAG: ${{ steps.bump.outputs.new_tag }}
         run: |
-          new_tag="${{ steps.bump.outputs.new_tag }}"
-          echo "### Released ${new_tag}" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Released ${NEW_TAG}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "The tag push triggers the release pipeline, which runs tests, publishes to PyPI, and creates a GitHub Release." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
