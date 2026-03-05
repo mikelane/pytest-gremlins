@@ -10,14 +10,13 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from pytest_gremlins.cache.types import CachedGremlinResult
 
 
 logger = logging.getLogger(__name__)
@@ -96,7 +95,7 @@ class ResultStore:
         )
         conn.commit()
 
-    def get(self, cache_key: str) -> dict[str, Any] | None:
+    def get(self, cache_key: str) -> CachedGremlinResult | None:
         """Retrieve a cached result by key.
 
         Args:
@@ -112,10 +111,10 @@ class ResultStore:
         row = cursor.fetchone()
         if row is None:
             return None
-        result: dict[str, Any] = json.loads(row[0])
+        result: CachedGremlinResult = json.loads(row[0])
         return result
 
-    def put(self, cache_key: str, result: dict[str, Any]) -> None:
+    def put(self, cache_key: str, result: CachedGremlinResult) -> None:
         """Store a result in the cache.
 
         Args:
@@ -129,7 +128,7 @@ class ResultStore:
         )
         self._conn.commit()
 
-    def put_deferred(self, cache_key: str, result: dict[str, Any]) -> None:
+    def put_deferred(self, cache_key: str, result: CachedGremlinResult) -> None:
         """Store a result without committing immediately.
 
         Results are batched and committed on flush() or close(). This is

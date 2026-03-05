@@ -38,6 +38,7 @@ import pytest
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
+from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.config import (
     discover_source_paths,
     load_config,
@@ -1567,11 +1568,11 @@ def _cache_gremlin_result(
         gremlin_id=gremlin.gremlin_id,
         source_hash=source_hash,
         test_hashes=test_hashes,
-        result={
-            'status': result.status.value,
-            'killing_test': result.killing_test,
-            'execution_time_ms': result.execution_time_ms,
-        },
+        result=CachedGremlinResult(
+            status=result.status.value,
+            killing_test=result.killing_test,
+            execution_time_ms=result.execution_time_ms,
+        ),
     )
 
 
