@@ -13,7 +13,6 @@ import json
 from typing import (
     TYPE_CHECKING,
     Any,
-    cast,
 )
 
 import pytest_gremlins
@@ -21,7 +20,6 @@ from pytest_gremlins.reporting.results import GremlinResultStatus
 
 
 if TYPE_CHECKING:
-    import ast
     from pathlib import Path
 
     from pytest_gremlins.instrumentation.gremlin import Gremlin
@@ -175,7 +173,7 @@ class StrykerExporter:
         Returns:
             Location dictionary with start and optionally end positions.
         """
-        node = cast('ast.expr', gremlin.original_node)
+        node = gremlin.original_node
         location: dict[str, Any] = {
             'start': {
                 'line': node.lineno,

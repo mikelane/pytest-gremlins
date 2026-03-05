@@ -110,7 +110,7 @@ def generate_comparison_mutations(node: ast.Compare) -> list[ast.Compare]:
 
 
 def create_gremlins_for_node(
-    node: ast.AST,
+    node: ast.expr | ast.stmt,
     operator: GremlinOperator,
     file_path: str,
     id_generator: Callable[[], str],
@@ -133,6 +133,8 @@ def create_gremlins_for_node(
     gremlins: list[Gremlin] = []
 
     for mutated_node in mutations:
+        if not isinstance(mutated_node, (ast.expr, ast.stmt)):
+            continue  # pragma: no cover
         description = _get_mutation_description(node, mutated_node, operator)
         gremlin = Gremlin(
             gremlin_id=id_generator(),
@@ -163,7 +165,7 @@ def _get_arithmetic_description(original: ast.BinOp, mutated: ast.BinOp) -> str:
     return f'{original_sym} to {mutated_sym}'
 
 
-def _get_boolean_description(original: ast.AST, mutated: ast.AST) -> str | None:
+def _get_boolean_description(original: ast.expr | ast.stmt, mutated: ast.expr | ast.stmt) -> str | None:
     """Get description for boolean mutation."""
     if isinstance(original, ast.BoolOp) and isinstance(mutated, ast.BoolOp):
         orig = 'and' if isinstance(original.op, ast.And) else 'or'
@@ -176,7 +178,7 @@ def _get_boolean_description(original: ast.AST, mutated: ast.AST) -> str | None:
     return None  # pragma: no cover
 
 
-def _get_return_description(original: ast.AST, mutated: ast.AST) -> str | None:
+def _get_return_description(original: ast.expr | ast.stmt, mutated: ast.expr | ast.stmt) -> str | None:
     """Get description for return mutation."""
     if isinstance(mutated, ast.Return) and mutated.value is None:
         return 'return value to None'
@@ -191,8 +193,8 @@ def _get_return_description(original: ast.AST, mutated: ast.AST) -> str | None:
 
 
 def _get_mutation_description(
-    original: ast.AST,
-    mutated: ast.AST,
+    original: ast.expr | ast.stmt,
+    mutated: ast.expr | ast.stmt,
     operator: GremlinOperator,
 ) -> str:
     """Generate a human-readable description of a mutation.
@@ -313,7 +315,7 @@ def build_switching_expression(original: ast.expr, gremlins: list[Gremlin]) -> a
             ops=[ast.Eq()],
             comparators=[ast.Constant(value=gremlin.gremlin_id)],
         )
-        # mutated_node is stored as ast.AST but is actually an expr for comparison mutations
+        # mutated_node is ast.expr | ast.stmt; we know only expr gremlins reach here
         mutated_expr: ast.expr = copy.deepcopy(gremlin.mutated_node)  # type: ignore[assignment]
         result = ast.IfExp(
             test=condition,
@@ -350,6 +352,7 @@ def build_switching_statement(
             ops=[ast.Eq()],
             comparators=[ast.Constant(value=gremlin.gremlin_id)],
         )
+        # mutated_node is ast.expr | ast.stmt; we know only stmt gremlins reach here
         mutated_stmt: ast.stmt = copy.deepcopy(gremlin.mutated_node)  # type: ignore[assignment]
         result = ast.If(
             test=condition,
@@ -401,11 +404,11 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
         """Create gremlins for a comparison node."""
         return create_gremlins_for_compare(node, self.file_path, self._next_gremlin_id)
 
-    def _get_operators_for_node(self, node: ast.AST) -> list[GremlinOperator]:
+    def _get_operators_for_node(self, node: ast.expr | ast.stmt) -> list[GremlinOperator]:
         """Get all operators that can mutate the given node."""
         return [op for op in self._operators if op.can_mutate(node)]
 
-    def _create_gremlins_for_node(self, node: ast.AST) -> list[Gremlin]:
+    def _create_gremlins_for_node(self, node: ast.expr | ast.stmt) -> list[Gremlin]:
         """Create gremlins for any node using all applicable operators."""
         all_gremlins: list[Gremlin] = []
         for operator in self._get_operators_for_node(node):
