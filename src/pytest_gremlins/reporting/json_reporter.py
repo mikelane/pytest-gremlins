@@ -7,10 +7,7 @@ and automated analysis of mutation testing results.
 from __future__ import annotations
 
 import json
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
@@ -18,6 +15,12 @@ if TYPE_CHECKING:
 
     from pytest_gremlins.reporting.results import GremlinResult
     from pytest_gremlins.reporting.score import MutationScore
+    from pytest_gremlins.reporting.types import (
+        JsonFileStats,
+        JsonReport,
+        JsonResultEntry,
+        JsonSummary,
+    )
 
 
 class JsonReporter:
@@ -73,7 +76,7 @@ class JsonReporter:
         """
         output_path.write_text(self.to_json(score))
 
-    def _build_report_data(self, score: MutationScore) -> dict[str, Any]:
+    def _build_report_data(self, score: MutationScore) -> JsonReport:
         """Build the complete report data structure.
 
         Args:
@@ -88,7 +91,7 @@ class JsonReporter:
             'results': [self._build_result(r) for r in score.results],
         }
 
-    def _build_summary(self, score: MutationScore) -> dict[str, Any]:
+    def _build_summary(self, score: MutationScore) -> JsonSummary:
         """Build the summary section.
 
         Args:
@@ -106,7 +109,7 @@ class JsonReporter:
             'percentage': score.percentage,
         }
 
-    def _build_file_breakdown(self, score: MutationScore) -> dict[str, dict[str, Any]]:
+    def _build_file_breakdown(self, score: MutationScore) -> dict[str, JsonFileStats]:
         """Build per-file breakdown section.
 
         Args:
@@ -126,7 +129,7 @@ class JsonReporter:
             for file_path, file_score in file_scores.items()
         }
 
-    def _build_result(self, result: GremlinResult) -> dict[str, Any]:
+    def _build_result(self, result: GremlinResult) -> JsonResultEntry:
         """Build a single result entry.
 
         Args:
@@ -136,7 +139,7 @@ class JsonReporter:
             Dictionary representing this result.
         """
         gremlin = result.gremlin
-        entry: dict[str, Any] = {
+        entry: JsonResultEntry = {
             'gremlin_id': gremlin.gremlin_id,
             'file_path': gremlin.file_path,
             'line_number': gremlin.line_number,
