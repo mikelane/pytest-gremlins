@@ -15,11 +15,11 @@ from __future__ import annotations
 
 from typing import (
     TYPE_CHECKING,
-    Any,
     Protocol,
 )
 
 from pytest_gremlins.coverage.mapper import CoverageMap
+from pytest_gremlins.coverage.types import CollectorStats
 
 
 if TYPE_CHECKING:
@@ -96,7 +96,7 @@ class CoverageCollector:
                 result[file_path] = list(lines)
         return result
 
-    def get_stats(self) -> dict[str, Any]:
+    def get_stats(self) -> CollectorStats:
         """Get statistics about collected coverage data.
 
         Returns:
@@ -105,8 +105,8 @@ class CoverageCollector:
                 - total_locations: Number of unique source locations
                 - total_mappings: Total number of test-to-location mappings
         """
-        return {
-            'total_tests': len(self.recorded_tests),
-            'total_locations': len(self.coverage_map),
-            'total_mappings': self._total_mappings,
-        }
+        return CollectorStats(
+            total_tests=len(self.recorded_tests),
+            total_locations=len(self.coverage_map),
+            total_mappings=self._total_mappings,
+        )

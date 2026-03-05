@@ -16,10 +16,9 @@ Example:
 
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING
+
+from pytest_gremlins.coverage.types import SelectionStats
 
 
 if TYPE_CHECKING:
@@ -97,7 +96,7 @@ class TestSelector:
     def select_tests_with_stats(
         self,
         gremlin: Gremlin,
-    ) -> tuple[set[str], dict[str, Any]]:
+    ) -> tuple[set[str], SelectionStats]:
         """Select tests for a gremlin and return statistics.
 
         Args:
@@ -109,8 +108,8 @@ class TestSelector:
                 - coverage_location: The location string (file:line)
         """
         tests = self.select_tests(gremlin)
-        stats = {
-            'selected_count': len(tests),
-            'coverage_location': f'{gremlin.file_path}:{gremlin.line_number}',
-        }
+        stats = SelectionStats(
+            selected_count=len(tests),
+            coverage_location=f'{gremlin.file_path}:{gremlin.line_number}',
+        )
         return tests, stats
