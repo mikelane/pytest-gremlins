@@ -1,0 +1,441 @@
+"""Tests for extended TOML configuration: workers, cache, report, batch_size fields."""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
+
+import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+from pytest_gremlins import plugin
+from pytest_gremlins.config import (
+    GremlinConfig,
+    discover_source_paths,
+    load_config,
+    merge_configs,
+)
+
+
+def _make_gremlins_config(
+    tmp_path: Path,
+    *,
+    gremlin_workers: int | None = None,
+    gremlin_cache: bool = False,
+    gremlin_report: str | None = None,
+    gremlin_batch_size: int | None = None,
+) -> object:
+    """Build a minimal mock pytest.Config for plugin integration tests."""
+
+    class _MockOption:
+        gremlins = True
+        gremlin_operators = None
+        gremlin_targets = None
+        gremlin_clear_cache = False
+        gremlin_parallel = False
+        gremlin_batch = False
+
+    option = _MockOption()
+    option.gremlin_workers = gremlin_workers  # type: ignore[attr-defined]
+    option.gremlin_cache = gremlin_cache  # type: ignore[attr-defined]
+    option.gremlin_report = gremlin_report  # type: ignore[attr-defined]
+    option.gremlin_batch_size = gremlin_batch_size  # type: ignore[attr-defined]
+
+    pm = MagicMock()
+    pm.hasplugin.return_value = False
+    pm.get_plugin.return_value = None
+
+    class _MockConfig:
+        pass
+
+    mock_config = _MockConfig()
+    mock_config.option = option  # type: ignore[attr-defined]
+    mock_config.rootdir = tmp_path  # type: ignore[attr-defined]
+    mock_config.pluginmanager = pm  # type: ignore[attr-defined]
+    return mock_config
+
+
+@pytest.mark.small
+class DescribeGremlinConfigNewFields:
+    """GremlinConfig supports workers, cache, report, batch_size fields."""
+
+    def it_defaults_workers_to_none(self):
+        config = GremlinConfig()
+
+        assert config.workers is None
+
+    def it_defaults_cache_to_none(self):
+        config = GremlinConfig()
+
+        assert config.cache is None
+
+    def it_defaults_report_to_none(self):
+        config = GremlinConfig()
+
+        assert config.report is None
+
+    def it_defaults_batch_size_to_none(self):
+        config = GremlinConfig()
+
+        assert config.batch_size is None
+
+    def it_accepts_workers_as_int(self):
+        config = GremlinConfig(workers=4)
+
+        assert config.workers == 4
+
+    def it_accepts_workers_as_auto_string(self):
+        config = GremlinConfig(workers='auto')
+
+        assert config.workers == 'auto'
+
+    def it_accepts_cache_as_bool(self):
+        config = GremlinConfig(cache=True)
+
+        assert config.cache is True
+
+    def it_accepts_report_as_string(self):
+        config = GremlinConfig(report='html')
+
+        assert config.report == 'html'
+
+    def it_accepts_batch_size_as_int(self):
+        config = GremlinConfig(batch_size=50)
+
+        assert config.batch_size == 50
+
+
+@pytest.mark.small
+class DescribeLoadConfigNewFields:
+    """load_config reads workers, cache, report, batch_size from pyproject.toml."""
+
+    def it_reads_workers_as_int(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 4\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.workers == 4
+
+    def it_reads_workers_as_auto_string(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = "auto"\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.workers == 'auto'
+
+    def it_reads_cache_as_true(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = true\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.cache is True
+
+    def it_reads_cache_as_false(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = false\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.cache is False
+
+    def it_reads_report_as_html(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "html"\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.report == 'html'
+
+    def it_reads_batch_size(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 50\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.batch_size == 50
+
+    def it_defaults_new_fields_to_none_when_absent(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\noperators = ["comparison"]\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.workers is None
+        assert loaded_config.cache is None
+        assert loaded_config.report is None
+        assert loaded_config.batch_size is None
+
+    @pytest.mark.parametrize(
+        'workers_value',
+        ['notauto', 'zero', ''],
+    )
+    def it_raises_on_invalid_string_workers(self, tmp_path, workers_value):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text(f'[tool.pytest-gremlins]\nworkers = "{workers_value}"\n')
+
+        with pytest.raises(ValueError, match='workers'):
+            load_config(tmp_path)
+
+    def it_raises_on_zero_workers(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 0\n')
+
+        with pytest.raises(ValueError, match='workers'):
+            load_config(tmp_path)
+
+    def it_raises_on_negative_workers(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = -1\n')
+
+        with pytest.raises(ValueError, match='workers'):
+            load_config(tmp_path)
+
+
+@pytest.mark.small
+class DescribeMergeConfigsNewFields:
+    """merge_configs merges workers, cache, report, batch_size with CLI-beats-TOML precedence."""
+
+    def it_cli_workers_overrides_toml_workers(self):
+        file_config = GremlinConfig(workers=2)
+
+        merged_config = merge_configs(file_config, cli_workers=8)
+
+        assert merged_config.workers == 8
+
+    def it_uses_toml_workers_when_cli_workers_is_none(self):
+        file_config = GremlinConfig(workers=4)
+
+        merged_config = merge_configs(file_config, cli_workers=None)
+
+        assert merged_config.workers == 4
+
+    def it_resolves_auto_workers_from_toml(self):
+        file_config = GremlinConfig(workers='auto')
+
+        merged_config = merge_configs(file_config, cli_workers=None)
+
+        assert merged_config.workers == (os.cpu_count() or 4)
+
+    def it_cli_cache_overrides_toml_cache(self):
+        file_config = GremlinConfig(cache=False)
+
+        merged_config = merge_configs(file_config, cli_cache=True)
+
+        assert merged_config.cache is True
+
+    def it_uses_toml_cache_when_cli_cache_is_none(self):
+        file_config = GremlinConfig(cache=True)
+
+        merged_config = merge_configs(file_config, cli_cache=None)
+
+        assert merged_config.cache is True
+
+    def it_cli_report_overrides_toml_report(self):
+        file_config = GremlinConfig(report='console')
+
+        merged_config = merge_configs(file_config, cli_report='html')
+
+        assert merged_config.report == 'html'
+
+    def it_uses_toml_report_when_cli_report_is_none(self):
+        file_config = GremlinConfig(report='html')
+
+        merged_config = merge_configs(file_config, cli_report=None)
+
+        assert merged_config.report == 'html'
+
+    def it_cli_batch_size_overrides_toml_batch_size(self):
+        file_config = GremlinConfig(batch_size=20)
+
+        merged_config = merge_configs(file_config, cli_batch_size=100)
+
+        assert merged_config.batch_size == 100
+
+    def it_uses_toml_batch_size_when_cli_batch_size_is_none(self):
+        file_config = GremlinConfig(batch_size=50)
+
+        merged_config = merge_configs(file_config, cli_batch_size=None)
+
+        assert merged_config.batch_size == 50
+
+    def it_returns_none_for_new_fields_when_both_are_none(self):
+        file_config = GremlinConfig()
+
+        merged_config = merge_configs(file_config)
+
+        assert merged_config.workers is None
+        assert merged_config.cache is None
+        assert merged_config.report is None
+        assert merged_config.batch_size is None
+
+
+@pytest.mark.small
+class DescribePluginPassesNewFieldsThrough:
+    """pytest_configure passes workers, cache, report, batch_size from TOML into the session."""
+
+    def it_toml_workers_flows_into_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 4\n')
+
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.parallel_workers == 4
+
+    def it_toml_cache_true_flows_into_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = true\n')
+
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.cache_enabled is True
+
+        # Close the sqlite3 cache connection to avoid ResourceWarning in subsequent tests
+        if session.cache is not None:
+            session.cache.close()
+        plugin._set_session(None)
+
+    def it_toml_report_flows_into_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\n')
+
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.report_format == 'json'
+
+    def it_toml_batch_size_flows_into_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 25\n')
+
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.batch_size == 25
+
+    def it_cli_workers_overrides_toml_workers_in_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 2\n')
+
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_make_gremlins_config(tmp_path, gremlin_workers=8))  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.parallel_workers == 8
+
+    def it_cli_report_overrides_toml_report_in_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\n')
+
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_make_gremlins_config(tmp_path, gremlin_report='html'))  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.report_format == 'html'
+
+    def it_cli_batch_size_overrides_toml_batch_size_in_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 50\n')
+
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_make_gremlins_config(tmp_path, gremlin_batch_size=100))  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.batch_size == 100
+
+
+@pytest.mark.small
+class DescribeDiscoverSourcePathsLogging:
+    """discover_source_paths logs a warning when pyproject.toml contains invalid TOML."""
+
+    def it_logs_warning_on_malformed_toml(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.setuptools\npackages = ["broken"')
+
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'):
+            discovered_paths = discover_source_paths(tmp_path)
+
+        assert discovered_paths == []
+        assert len(caplog.records) == 1
+        assert 'malformed' in caplog.records[0].message.lower() or 'TOML' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
+
+@pytest.mark.small
+class DescribeLoadConfigLogging:
+    """load_config logs a warning when pyproject.toml contains invalid TOML."""
+
+    def it_logs_warning_on_malformed_toml(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins\nworkers = 4')
+
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'):
+            loaded_config = load_config(tmp_path)
+
+        assert loaded_config == GremlinConfig()
+        assert len(caplog.records) == 1
+        assert 'malformed' in caplog.records[0].message.lower() or 'TOML' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message

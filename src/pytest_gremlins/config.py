@@ -7,12 +7,16 @@ section and provides sensible defaults when configuration is absent.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+import os
 import tomllib
 from tomllib import TOMLDecodeError
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,11 +30,48 @@ class GremlinConfig:
         operators: List of mutation operator names to enable.
         paths: List of paths to scan for source files to mutate.
         exclude: List of glob patterns for files to exclude from mutation.
+        workers: Number of parallel workers, "auto" for CPU count, or None.
+        cache: Whether to enable incremental analysis cache.
+        report: Report format string (e.g. "console", "html", "json").
+        batch_size: Number of gremlins per batch in batch mode.
     """
 
     operators: list[str] | None = None
     paths: list[str] | None = None
     exclude: list[str] | None = None
+    workers: int | str | None = None
+    cache: bool | None = None
+    report: str | None = None
+    batch_size: int | None = None
+
+
+def _resolve_workers(value: int | str | None) -> int | None:
+    """Resolve a workers value to an int, handling "auto" and validating range.
+
+    Args:
+        value: An integer, the string "auto", or None.
+
+    Returns:
+        Resolved integer worker count, or None if value is None.
+
+    Raises:
+        ValueError: If value is a non-"auto" string or a non-positive integer.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        if value == 'auto':
+            return os.cpu_count() or 4
+        raise ValueError(
+            f'Invalid workers value "{value}". '
+            f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
+        )
+    if value <= 0:
+        raise ValueError(
+            f'Invalid workers value {value}. '
+            f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
+        )
+    return value
 
 
 def load_config(rootdir: Path) -> GremlinConfig:
@@ -51,15 +92,26 @@ def load_config(rootdir: Path) -> GremlinConfig:
     if not pyproject_path.exists():
         return GremlinConfig()
 
-    with pyproject_path.open('rb') as f:
-        data = tomllib.load(f)
+    try:
+        with pyproject_path.open('rb') as f:
+            pyproject_content = tomllib.load(f)
+    except TOMLDecodeError:
+        logger.warning('Skipping gremlin config: malformed TOML in %s', pyproject_path)
+        return GremlinConfig()
 
-    tool_config = data.get('tool', {}).get('pytest-gremlins', {})
+    tool_config = pyproject_content.get('tool', {}).get('pytest-gremlins', {})
+
+    workers_raw = tool_config.get('workers')
+    _resolve_workers(workers_raw)  # validate early; "auto" stays as str, resolved lazily in merge_configs
 
     return GremlinConfig(
         operators=tool_config.get('operators'),
         paths=tool_config.get('paths'),
         exclude=tool_config.get('exclude'),
+        workers=workers_raw,
+        cache=tool_config.get('cache'),
+        report=tool_config.get('report'),
+        batch_size=tool_config.get('batch_size'),
     )
 
 
@@ -124,30 +176,35 @@ def discover_source_paths(rootdir: Path) -> list[str]:
 
     try:
         with pyproject_path.open('rb') as f:
-            data = tomllib.load(f)
+            pyproject_content = tomllib.load(f)
     except TOMLDecodeError:
+        logger.warning('Skipping source path discovery: malformed TOML in %s', pyproject_path)
         return []
 
-    setuptools_config = data.get('tool', {}).get('setuptools', {})
+    setuptools_config = pyproject_content.get('tool', {}).get('setuptools', {})
     if not setuptools_config:
         return []
 
     candidates = _collect_setuptools_candidates(setuptools_config)
 
     seen: set[str] = set()
-    result: list[str] = []
+    validated_paths: list[str] = []
     for candidate in candidates:
         if candidate not in seen and (rootdir / candidate).is_dir():
             seen.add(candidate)
-            result.append(candidate)
+            validated_paths.append(candidate)
 
-    return result
+    return validated_paths
 
 
 def merge_configs(
     file_config: GremlinConfig,
     cli_operators: str | None = None,
     cli_targets: str | None = None,
+    cli_workers: int | None = None,
+    cli_cache: bool | None = None,
+    cli_report: str | None = None,
+    cli_batch_size: int | None = None,
 ) -> GremlinConfig:
     """Merge CLI arguments with file configuration.
 
@@ -158,6 +215,10 @@ def merge_configs(
         file_config: Configuration loaded from pyproject.toml.
         cli_operators: Comma-separated operator names from CLI (--gremlin-operators).
         cli_targets: Comma-separated target paths from CLI (--gremlin-targets).
+        cli_workers: Worker count from CLI (--gremlin-workers), already resolved to int.
+        cli_cache: Cache flag from CLI (--gremlin-cache).
+        cli_report: Report format from CLI (--gremlin-report).
+        cli_batch_size: Batch size from CLI (--gremlin-batch-size).
 
     Returns:
         GremlinConfig with CLI values overriding file config where provided.
@@ -174,8 +235,17 @@ def merge_configs(
     elif file_config.paths is not None:
         paths = file_config.paths
 
+    workers: int | None = cli_workers if cli_workers is not None else _resolve_workers(file_config.workers)
+    cache: bool | None = cli_cache if cli_cache is not None else file_config.cache
+    report: str | None = cli_report if cli_report is not None else file_config.report
+    batch_size: int | None = cli_batch_size if cli_batch_size is not None else file_config.batch_size
+
     return GremlinConfig(
         operators=operators,
         paths=paths,
         exclude=file_config.exclude,
+        workers=workers,
+        cache=cache,
+        report=report,
+        batch_size=batch_size,
     )
