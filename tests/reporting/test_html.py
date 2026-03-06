@@ -1157,7 +1157,8 @@ class DescribeWriteReportHistoryPersistence:
 
         reporter.write_report(score, output_path)  # must not raise
 
-        assert output_path.exists()
+        content = output_path.read_text(encoding='utf-8')
+        assert '<!DOCTYPE html>' in content
 
     def it_logs_a_warning_when_history_raises(
         self, make_result, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -1175,4 +1176,8 @@ class DescribeWriteReportHistoryPersistence:
         with caplog.at_level(logging.WARNING, logger='pytest_gremlins.reporting.html'):
             reporter.write_report(score, output_path)
 
-        assert 'history' in caplog.text.lower()
+        assert len(caplog.records) == 1
+        record = caplog.records[0]
+        assert record.levelno == logging.WARNING
+        assert 'history' in record.message.lower()
+        assert str(output_path) in record.message
