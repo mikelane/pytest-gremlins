@@ -40,6 +40,7 @@ from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.config import (
+    GremlinConfig,
     discover_source_paths,
     load_config,
     merge_configs,
@@ -441,6 +442,24 @@ def _init_cache(
     return cache
 
 
+def _extract_toml_fields(merged_config: object) -> tuple[bool | None, int | str | None, str | None, int | None]:
+    """Extract merged-config fields, guarding against test mock objects.
+
+    Returns (cache, workers, report, batch_size) from merged_config only when it is a
+    real GremlinConfig instance; otherwise returns all-None so pytest_configure falls
+    back to argparse defaults.
+
+    Args:
+        merged_config: The result of merge_configs (GremlinConfig or a test mock).
+
+    Returns:
+        Tuple of (cache, workers, report, batch_size), each None if unset.
+    """
+    if not isinstance(merged_config, GremlinConfig):
+        return None, None, None, None
+    return merged_config.cache, merged_config.workers, merged_config.report, merged_config.batch_size
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
@@ -500,20 +519,22 @@ def pytest_configure(config: pytest.Config) -> None:
             if src_path.exists():
                 target_paths.append(src_path)
 
+    toml_cache, toml_workers, toml_report, toml_batch_size = _extract_toml_fields(merged_config)
+
     # Cache: merge_configs already resolved CLI-beats-TOML; default False
-    cache_enabled: bool = bool(merged_config.cache)
+    cache_enabled: bool = bool(toml_cache)
     cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache)
 
     parallel_enabled, parallel_workers = _read_parallel_config(config)
-    merged_workers = merged_config.workers if isinstance(merged_config.workers, int) else None
+    merged_workers = toml_workers if isinstance(toml_workers, int) else None
     if parallel_workers is None and merged_workers is not None:
         parallel_workers = merged_workers
         parallel_enabled = True
 
     # Batch and report: merge_configs already resolved CLI-beats-TOML
     batch_enabled = config.option.gremlin_batch
-    batch_size: int = merged_config.batch_size if merged_config.batch_size is not None else 10
-    report_format: str = merged_config.report if merged_config.report is not None else 'console'
+    batch_size: int = toml_batch_size if toml_batch_size is not None else 10
+    report_format: str = toml_report if toml_report is not None else 'console'
 
     _set_session(
         GremlinSession(
