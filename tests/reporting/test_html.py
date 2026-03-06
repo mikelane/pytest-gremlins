@@ -1182,7 +1182,7 @@ class DescribeWriteReportHistoryPersistence:
         assert 'history' in record.message.lower()
         assert str(output_path) in record.message
 
-    def it_passes_empty_list_when_no_history_exists(self, make_result, tmp_path: Path):
+    def it_renders_no_data_placeholder_with_single_history_entry(self, make_result, tmp_path: Path):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output_path = tmp_path / 'index.html'
@@ -1204,3 +1204,43 @@ class DescribeWriteReportHistoryPersistence:
 
         content = output_path.read_text(encoding='utf-8')
         assert 'data-history' in content
+
+    def it_still_writes_html_when_load_history_raises(
+        self, make_result, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        output_path = tmp_path / 'index.html'
+        reporter = HtmlReporter()
+
+        def _boom(*_args, **_kwargs):
+            raise PermissionError('access denied')
+
+        monkeypatch.setattr('pytest_gremlins.reporting.html.load_history', _boom)
+
+        reporter.write_report(score, output_path)  # must not raise
+
+        content = output_path.read_text(encoding='utf-8')
+        assert '<!DOCTYPE html>' in content
+
+    def it_logs_a_warning_when_load_history_raises(
+        self, make_result, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        output_path = tmp_path / 'index.html'
+        reporter = HtmlReporter()
+
+        def _boom(*_args, **_kwargs):
+            raise PermissionError('access denied')
+
+        monkeypatch.setattr('pytest_gremlins.reporting.html.load_history', _boom)
+
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.reporting.html'):
+            reporter.write_report(score, output_path)
+
+        assert len(caplog.records) == 1
+        record = caplog.records[0]
+        assert record.levelno == logging.WARNING
+        assert 'history' in record.message.lower()
+        assert str(output_path) in record.message
