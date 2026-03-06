@@ -121,10 +121,16 @@ def load_config(rootdir: Path) -> GremlinConfig:
     batch_size_raw = tool_config.get('batch_size')
     if batch_size_raw is not None and (not isinstance(batch_size_raw, int) or isinstance(batch_size_raw, bool)):
         logger.warning('Invalid batch_size in %s: expected positive integer, got %r', pyproject_path, batch_size_raw)
-        raise ValueError(f'[tool.pytest-gremlins].batch_size must be a positive integer, got {batch_size_raw!r}')
+        raise ValueError(
+            f'[tool.pytest-gremlins].batch_size must be a positive integer (e.g. batch_size = 50), '
+            f'got {batch_size_raw!r}'
+        )
     if isinstance(batch_size_raw, int) and not isinstance(batch_size_raw, bool) and batch_size_raw <= 0:
         logger.warning('Invalid batch_size in %s: expected positive integer, got %r', pyproject_path, batch_size_raw)
-        raise ValueError(f'[tool.pytest-gremlins].batch_size must be a positive integer, got {batch_size_raw!r}')
+        raise ValueError(
+            f'[tool.pytest-gremlins].batch_size must be a positive integer (e.g. batch_size = 50), '
+            f'got {batch_size_raw!r}'
+        )
 
     cache_raw = tool_config.get('cache')
     if cache_raw is not None and not isinstance(cache_raw, bool):
