@@ -197,6 +197,155 @@ class DescribeLoadConfigNewFields:
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
+    def it_raises_on_float_workers(self, tmp_path):
+        toml = tmp_path / 'pyproject.toml'
+        toml.write_text('[tool.pytest-gremlins]\nworkers = 2.5\n')
+        with pytest.raises(ValueError, match='workers'):
+            load_config(tmp_path)
+
+    def it_raises_on_boolean_workers(self, tmp_path):
+        toml = tmp_path / 'pyproject.toml'
+        toml.write_text('[tool.pytest-gremlins]\nworkers = true\n')
+        with pytest.raises(ValueError, match='workers'):
+            load_config(tmp_path)
+
+    def it_raises_on_boolean_batch_size(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = true\n')
+
+        with pytest.raises(ValueError, match='batch_size'):
+            load_config(tmp_path)
+
+    def it_raises_on_non_integer_batch_size(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = "large"\n')
+
+        with pytest.raises(ValueError, match='batch_size'):
+            load_config(tmp_path)
+
+    def it_raises_on_zero_batch_size(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 0\n')
+
+        with pytest.raises(ValueError, match='batch_size'):
+            load_config(tmp_path)
+
+    def it_raises_on_negative_batch_size(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = -5\n')
+
+        with pytest.raises(ValueError, match='batch_size'):
+            load_config(tmp_path)
+
+    def it_raises_on_non_boolean_cache(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = 42\n')
+
+        with pytest.raises(ValueError, match='cache'):
+            load_config(tmp_path)
+
+    def it_raises_on_string_cache(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = "yes"\n')
+
+        with pytest.raises(ValueError, match='cache'):
+            load_config(tmp_path)
+
+    def it_raises_on_non_string_report(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = true\n')
+
+        with pytest.raises(ValueError, match='report'):
+            load_config(tmp_path)
+
+    def it_raises_on_integer_report(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = 42\n')
+
+        with pytest.raises(ValueError, match='report'):
+            load_config(tmp_path)
+
+
+@pytest.mark.small
+class DescribeLoadConfigValidationLogging:
+    """load_config logs a warning before raising ValueError on invalid field types."""
+
+    def it_logs_warning_on_invalid_batch_size_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = "large"\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='batch_size'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'batch_size' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
+    def it_logs_warning_on_non_positive_batch_size(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = -5\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='batch_size'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'batch_size' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
+    def it_logs_warning_on_invalid_cache_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = 42\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='cache'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'cache' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
+    def it_logs_warning_on_invalid_string_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        toml = tmp_path / 'pyproject.toml'
+        toml.write_text('[tool.pytest-gremlins]\nworkers = "banana"\n')
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='workers'),
+        ):
+            load_config(tmp_path)
+        assert any('workers' in r.message.lower() for r in caplog.records if r.levelno == logging.WARNING)
+
+    def it_logs_warning_on_boolean_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        toml = tmp_path / 'pyproject.toml'
+        toml.write_text('[tool.pytest-gremlins]\nworkers = true\n')
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='workers'),
+        ):
+            load_config(tmp_path)
+        assert any('workers' in r.message.lower() for r in caplog.records if r.levelno == logging.WARNING)
+
+    def it_logs_warning_on_invalid_report_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = true\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='report'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'report' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
 
 @pytest.mark.small
 class DescribeMergeConfigsNewFields:

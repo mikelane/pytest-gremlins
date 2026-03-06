@@ -59,16 +59,26 @@ def _resolve_workers(value: int | str | None) -> int | None:
     """
     if value is None:
         return None
+    if isinstance(value, bool):
+        raise ValueError(  # noqa: TRY004 — config validation uses ValueError consistently
+            f'Invalid workers value {value!r}. '
+            f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
+        )
     if isinstance(value, str):
         if value == 'auto':
             return os.cpu_count() or 4
         raise ValueError(
-            f'Invalid workers value "{value}". '
+            f'Invalid workers value {value!r}. '
+            f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
+        )
+    if not isinstance(value, int):
+        raise ValueError(  # noqa: TRY004 — config validation uses ValueError consistently
+            f'Invalid workers value {value!r}. '
             f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
         )
     if value <= 0:
         raise ValueError(
-            f'Invalid workers value {value}. '
+            f'Invalid workers value {value!r}. '
             f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
         )
     return value
@@ -102,16 +112,44 @@ def load_config(rootdir: Path) -> GremlinConfig:
     tool_config = pyproject_content.get('tool', {}).get('pytest-gremlins', {})
 
     workers_raw = tool_config.get('workers')
-    _resolve_workers(workers_raw)  # validate early; "auto" stays as str, resolved lazily in merge_configs
+    try:
+        _resolve_workers(workers_raw)  # validate early; "auto" stays as str, resolved lazily in merge_configs
+    except ValueError:
+        logger.warning('Invalid workers in %s: got %r', pyproject_path, workers_raw)
+        raise
+
+    batch_size_raw = tool_config.get('batch_size')
+    if batch_size_raw is not None and (not isinstance(batch_size_raw, int) or isinstance(batch_size_raw, bool)):
+        logger.warning('Invalid batch_size in %s: expected positive integer, got %r', pyproject_path, batch_size_raw)
+        raise ValueError(
+            f'[tool.pytest-gremlins].batch_size must be a positive integer (e.g. batch_size = 50), '
+            f'got {batch_size_raw!r}'
+        )
+    if isinstance(batch_size_raw, int) and not isinstance(batch_size_raw, bool) and batch_size_raw <= 0:
+        logger.warning('Invalid batch_size in %s: expected positive integer, got %r', pyproject_path, batch_size_raw)
+        raise ValueError(
+            f'[tool.pytest-gremlins].batch_size must be a positive integer (e.g. batch_size = 50), '
+            f'got {batch_size_raw!r}'
+        )
+
+    cache_raw = tool_config.get('cache')
+    if cache_raw is not None and not isinstance(cache_raw, bool):
+        logger.warning('Invalid cache in %s: expected boolean, got %r', pyproject_path, cache_raw)
+        raise ValueError(f'[tool.pytest-gremlins].cache must be a boolean (e.g. cache = true), got {cache_raw!r}')
+
+    report_raw = tool_config.get('report')
+    if report_raw is not None and not isinstance(report_raw, str):
+        logger.warning('Invalid report in %s: expected string, got %r', pyproject_path, report_raw)
+        raise ValueError(f'[tool.pytest-gremlins].report must be a string (e.g. report = "html"), got {report_raw!r}')
 
     return GremlinConfig(
         operators=tool_config.get('operators'),
         paths=tool_config.get('paths'),
         exclude=tool_config.get('exclude'),
         workers=workers_raw,
-        cache=tool_config.get('cache'),
-        report=tool_config.get('report'),
-        batch_size=tool_config.get('batch_size'),
+        cache=cache_raw,
+        report=report_raw,
+        batch_size=batch_size_raw,
     )
 
 
