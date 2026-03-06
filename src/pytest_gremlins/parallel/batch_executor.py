@@ -30,7 +30,6 @@ from typing import (
 from pytest_gremlins.parallel.persistent_pool import PersistentWorkerPool
 from pytest_gremlins.parallel.pool_config import PoolConfig
 
-
 if TYPE_CHECKING:
     from pytest_gremlins.parallel.pool import WorkerResult
 

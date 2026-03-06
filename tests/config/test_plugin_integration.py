@@ -11,7 +11,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

@@ -12,7 +12,6 @@ import pytest
 
 from pytest_gremlins.plugin import _set_session
 
-
 # Enable pytester fixture for plugin testing
 pytest_plugins = ['pytester']
 

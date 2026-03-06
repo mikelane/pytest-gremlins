@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-
 if TYPE_CHECKING:
     import coverage as coverage_module
 

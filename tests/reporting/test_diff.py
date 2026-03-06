@@ -6,7 +6,10 @@ import ast
 
 import pytest
 
-from pytest_gremlins.reporting.diff import _compute_diff, _node_to_source
+from pytest_gremlins.reporting.diff import (
+    _compute_diff,
+    _node_to_source,
+)
 
 
 @pytest.mark.small

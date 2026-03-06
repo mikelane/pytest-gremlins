@@ -6,8 +6,10 @@ each export format: Stryker Dashboard, internal JSON, and SonarQube.
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
-
+from typing import (
+    NotRequired,
+    TypedDict,
+)
 
 # ── Stryker Dashboard format ──────────────────────────────────────────
 

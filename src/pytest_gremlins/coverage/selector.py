@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING
 
 from pytest_gremlins.coverage.types import SelectionStats
 
-
 if TYPE_CHECKING:
     from collections.abc import Iterable
 

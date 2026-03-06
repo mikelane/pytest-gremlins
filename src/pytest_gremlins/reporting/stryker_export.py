@@ -10,13 +10,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 import json
-from typing import (
-    TYPE_CHECKING,
-)
+from typing import TYPE_CHECKING
 
 import pytest_gremlins
 from pytest_gremlins.reporting.results import GremlinResultStatus
-
 
 if TYPE_CHECKING:
     from pathlib import Path

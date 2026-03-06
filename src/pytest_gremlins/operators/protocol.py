@@ -11,7 +11,6 @@ from typing import (
     runtime_checkable,
 )
 
-
 if TYPE_CHECKING:
     import ast
 

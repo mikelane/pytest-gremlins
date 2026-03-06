@@ -8,7 +8,6 @@ import pytest
 
 from pytest_gremlins.operators.protocol import GremlinOperator
 
-
 if TYPE_CHECKING:
     import ast
 

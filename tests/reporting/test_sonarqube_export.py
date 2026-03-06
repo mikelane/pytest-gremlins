@@ -18,7 +18,6 @@ from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.reporting.sonarqube_export import SonarQubeExporter
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

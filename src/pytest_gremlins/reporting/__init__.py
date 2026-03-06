@@ -19,7 +19,6 @@ from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.reporting.sonarqube_export import SonarQubeExporter
 from pytest_gremlins.reporting.stryker_export import StrykerExporter
 
-
 __all__ = [
     'ConsoleReporter',
     'GremlinResult',

@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING
 
 from pytest_gremlins.coverage.types import PrioritizedSelectionStats
 
-
 if TYPE_CHECKING:
     from pytest_gremlins.coverage.mapper import CoverageMap
     from pytest_gremlins.instrumentation.gremlin import Gremlin

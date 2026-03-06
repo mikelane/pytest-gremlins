@@ -13,7 +13,6 @@ import pytest
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.pool_config import PoolConfig
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

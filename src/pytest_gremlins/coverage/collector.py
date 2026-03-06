@@ -21,7 +21,6 @@ from typing import (
 from pytest_gremlins.coverage.mapper import CoverageMap
 from pytest_gremlins.coverage.types import CollectorStats
 
-
 if TYPE_CHECKING:
     from collections.abc import Iterable
 

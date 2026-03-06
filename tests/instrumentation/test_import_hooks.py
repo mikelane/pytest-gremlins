@@ -26,7 +26,6 @@ from pytest_gremlins.instrumentation.import_hooks import (
 )
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 
-
 if TYPE_CHECKING:
     from collections.abc import Generator
 

@@ -11,7 +11,6 @@ import tempfile
 
 import pytest
 
-
 # Add benchmarks directory to path for imports (needed for runtime)
 _benchmarks_path = str(Path(__file__).parents[2] / 'benchmarks')
 if _benchmarks_path not in sys.path:

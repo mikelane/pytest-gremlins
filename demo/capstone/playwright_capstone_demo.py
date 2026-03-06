@@ -33,8 +33,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from playwright.sync_api import Page, sync_playwright
-
+from playwright.sync_api import (
+    Page,
+    sync_playwright,
+)
 
 _TIMING_PATH = Path(__file__).parent / 'timing.json'
 _REPORT_PATH = Path('/tmp/gremlin-demo-epicf/report/index.html')  # noqa: S108  # nosec B108

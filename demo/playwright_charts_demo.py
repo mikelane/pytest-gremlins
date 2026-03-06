@@ -12,8 +12,10 @@ from __future__ import annotations
 import json
 import pathlib
 
-from playwright.sync_api import Page, sync_playwright
-
+from playwright.sync_api import (
+    Page,
+    sync_playwright,
+)
 
 TIMING_FILE = pathlib.Path(__file__).parent / 'timing.json'
 NORMAL_REPORT = 'file:///tmp/gremlin-demo-epicc/report-normal/index.html'  # nosec B108

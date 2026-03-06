@@ -10,5 +10,4 @@ Reference: https://coverage.readthedocs.io/en/latest/subprocess.html
 
 import coverage
 
-
 coverage.process_startup()

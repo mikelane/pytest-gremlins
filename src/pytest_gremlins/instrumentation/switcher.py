@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 
-
 ACTIVE_GREMLIN_ENV_VAR = 'ACTIVE_GREMLIN'
 
 

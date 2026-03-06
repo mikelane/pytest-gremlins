@@ -540,6 +540,15 @@ wheels = [
 ]
 
 [[package]]
+name = "isort"
+version = "8.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ef/7c/ec4ab396d31b3b395e2e999c8f46dec78c5e29209fac49d1f4dace04041d/isort-8.0.1.tar.gz", hash = "sha256:171ac4ff559cdc060bcfff550bc8404a486fee0caab245679c2abe7cb253c78d", size = 769592, upload-time = "2026-02-28T10:08:20.685Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3e/95/c7c34aa53c16353c56d0b802fba48d5f5caa2cdee7958acbcb795c830416/isort-8.0.1-py3-none-any.whl", hash = "sha256:28b89bc70f751b559aeca209e6120393d43fbe2490de0559662be7a9787e3d75", size = 89733, upload-time = "2026-02-28T10:08:19.466Z" },
+]
+
+[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1374,6 +1383,7 @@ docs = [
 [package.dev-dependencies]
 dev = [
     { name = "commitizen" },
+    { name = "isort" },
     { name = "mkdocs" },
     { name = "mkdocs-material" },
     { name = "mkdocs-minify-plugin" },
@@ -1410,6 +1420,7 @@ provides-extras = ["docs"]
 [package.metadata.requires-dev]
 dev = [
     { name = "commitizen", specifier = ">=3.13.0" },
+    { name = "isort", specifier = ">=8.0.1" },
     { name = "mkdocs", specifier = ">=1.5.0" },
     { name = "mkdocs-material", specifier = ">=9.0.0" },
     { name = "mkdocs-minify-plugin", specifier = ">=0.7.0" },
