@@ -59,16 +59,26 @@ def _resolve_workers(value: int | str | None) -> int | None:
     """
     if value is None:
         return None
+    if isinstance(value, bool):
+        raise ValueError(  # noqa: TRY004 — config validation uses ValueError consistently
+            f'Invalid workers value {value!r}. '
+            f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
+        )
     if isinstance(value, str):
         if value == 'auto':
             return os.cpu_count() or 4
         raise ValueError(
-            f'Invalid workers value "{value}". '
+            f'Invalid workers value {value!r}. '
+            f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
+        )
+    if not isinstance(value, int):
+        raise ValueError(  # noqa: TRY004 — config validation uses ValueError consistently
+            f'Invalid workers value {value!r}. '
             f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
         )
     if value <= 0:
         raise ValueError(
-            f'Invalid workers value {value}. '
+            f'Invalid workers value {value!r}. '
             f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
         )
     return value
@@ -102,7 +112,11 @@ def load_config(rootdir: Path) -> GremlinConfig:
     tool_config = pyproject_content.get('tool', {}).get('pytest-gremlins', {})
 
     workers_raw = tool_config.get('workers')
-    _resolve_workers(workers_raw)  # validate early; "auto" stays as str, resolved lazily in merge_configs
+    try:
+        _resolve_workers(workers_raw)  # validate early; "auto" stays as str, resolved lazily in merge_configs
+    except ValueError:
+        logger.warning('Invalid workers in %s: got %r', pyproject_path, workers_raw)
+        raise
 
     batch_size_raw = tool_config.get('batch_size')
     if batch_size_raw is not None and (not isinstance(batch_size_raw, int) or isinstance(batch_size_raw, bool)):
@@ -115,12 +129,12 @@ def load_config(rootdir: Path) -> GremlinConfig:
     cache_raw = tool_config.get('cache')
     if cache_raw is not None and not isinstance(cache_raw, bool):
         logger.warning('Invalid cache in %s: expected boolean, got %r', pyproject_path, cache_raw)
-        raise ValueError(f'[tool.pytest-gremlins].cache must be a boolean, got {cache_raw!r}')
+        raise ValueError(f'[tool.pytest-gremlins].cache must be a boolean (e.g. cache = true), got {cache_raw!r}')
 
     report_raw = tool_config.get('report')
     if report_raw is not None and not isinstance(report_raw, str):
         logger.warning('Invalid report in %s: expected string, got %r', pyproject_path, report_raw)
-        raise ValueError(f'[tool.pytest-gremlins].report must be a string, got {report_raw!r}')
+        raise ValueError(f'[tool.pytest-gremlins].report must be a string (e.g. report = "html"), got {report_raw!r}')
 
     return GremlinConfig(
         operators=tool_config.get('operators'),

@@ -197,6 +197,18 @@ class DescribeLoadConfigNewFields:
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
+    def it_raises_on_float_workers(self, tmp_path):
+        toml = tmp_path / 'pyproject.toml'
+        toml.write_text('[tool.pytest-gremlins]\nworkers = 2.5\n')
+        with pytest.raises(ValueError, match='workers'):
+            load_config(tmp_path)
+
+    def it_raises_on_boolean_workers(self, tmp_path):
+        toml = tmp_path / 'pyproject.toml'
+        toml.write_text('[tool.pytest-gremlins]\nworkers = true\n')
+        with pytest.raises(ValueError, match='workers'):
+            load_config(tmp_path)
+
     def it_raises_on_boolean_batch_size(self, tmp_path):
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = true\n')
@@ -299,6 +311,26 @@ class DescribeLoadConfigValidationLogging:
         assert len(caplog.records) == 1
         assert 'cache' in caplog.records[0].message
         assert str(tmp_path) in caplog.records[0].message
+
+    def it_logs_warning_on_invalid_string_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        toml = tmp_path / 'pyproject.toml'
+        toml.write_text('[tool.pytest-gremlins]\nworkers = "banana"\n')
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='workers'),
+        ):
+            load_config(tmp_path)
+        assert any('workers' in r.message.lower() for r in caplog.records if r.levelno == logging.WARNING)
+
+    def it_logs_warning_on_boolean_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        toml = tmp_path / 'pyproject.toml'
+        toml.write_text('[tool.pytest-gremlins]\nworkers = true\n')
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='workers'),
+        ):
+            load_config(tmp_path)
+        assert any('workers' in r.message.lower() for r in caplog.records if r.levelno == logging.WARNING)
 
     def it_logs_warning_on_invalid_report_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         pyproject = tmp_path / 'pyproject.toml'
