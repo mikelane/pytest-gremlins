@@ -6,6 +6,7 @@ into the pytest test runner.
 
 from __future__ import annotations
 
+import argparse
 import ast
 import collections.abc
 from concurrent.futures import as_completed
@@ -308,6 +309,29 @@ def _set_session(session: GremlinSession | None) -> None:
     _gremlin_session = session
 
 
+def _workers_type(value: str) -> int:
+    """Parse the --gremlin-workers argument, accepting 'auto' or a positive integer.
+
+    Args:
+        value: The raw string value from the CLI.
+
+    Returns:
+        The number of workers as an integer.
+
+    Raises:
+        argparse.ArgumentTypeError: When value is not 'auto' or a valid integer.
+    """
+    if value == 'auto':
+        return os.cpu_count() or 4
+    try:
+        workers = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f'Invalid workers value: {value!r}') from exc
+    if workers <= 0:
+        raise argparse.ArgumentTypeError(f'Workers must be a positive integer, got {value!r}')
+    return workers
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Add command-line options for pytest-gremlins."""
     group = parser.getgroup('gremlins', 'mutation testing with gremlins')
@@ -363,7 +387,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption(
         '--gremlin-workers',
         action='store',
-        type=int,
+        type=_workers_type,
         default=None,
         dest='gremlin_workers',
         help='Number of parallel workers; implies --gremlin-parallel (default: CPU count)',
