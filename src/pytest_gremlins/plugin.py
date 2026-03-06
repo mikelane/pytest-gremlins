@@ -316,9 +316,12 @@ def _workers_type(value: str) -> int:
     if value == 'auto':
         return os.cpu_count() or 4
     try:
-        return int(value)
+        workers = int(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f'Invalid workers value: {value!r}') from exc
+    if workers <= 0:
+        raise argparse.ArgumentTypeError(f'Workers must be a positive integer, got {value!r}')
+    return workers
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

@@ -32,3 +32,13 @@ class DescribeWorkersType:
         """A non-numeric, non-'auto' string raises argparse.ArgumentTypeError."""
         with pytest.raises(argparse.ArgumentTypeError):
             _workers_type('invalid')
+
+    def it_raises_argument_type_error_for_zero(self) -> None:
+        """Zero is not a valid worker count and raises argparse.ArgumentTypeError."""
+        with pytest.raises(argparse.ArgumentTypeError):
+            _workers_type('0')
+
+    def it_raises_argument_type_error_for_negative_integer(self) -> None:
+        """A negative integer is not a valid worker count and raises argparse.ArgumentTypeError."""
+        with pytest.raises(argparse.ArgumentTypeError):
+            _workers_type('-1')
