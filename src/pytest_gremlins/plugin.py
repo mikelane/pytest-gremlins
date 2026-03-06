@@ -28,8 +28,7 @@ import sys
 import tempfile
 from typing import (
     TYPE_CHECKING,
-    Any,
-    cast,
+    Protocol,
 )
 import warnings
 
@@ -76,6 +75,13 @@ if TYPE_CHECKING:
 
 
 _XDIST_AVAILABLE = importlib.util.find_spec('xdist') is not None
+
+
+class _XdistWorkerNode(Protocol):
+    """Structural type for an xdist worker node that exposes ``workerinput``."""
+
+    workerinput: dict[str, object]
+
 
 logger = logging.getLogger(__name__)
 
@@ -477,7 +483,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 if _XDIST_AVAILABLE:
 
-    def pytest_configure_node(node: object) -> None:
+    def pytest_configure_node(node: _XdistWorkerNode) -> None:
         """Inject gremlins tmpdir into xdist worker input for PRIVATE coverage mode.
 
         Called on the controller for each xdist worker node before it starts.
@@ -497,7 +503,7 @@ if _XDIST_AVAILABLE:
         if gremlin_session.coverage_mode != CoverageMode.PRIVATE:
             return
 
-        cast('Any', node).workerinput['gremlins_tmpdir'] = gremlin_session.gremlins_tmpdir
+        node.workerinput['gremlins_tmpdir'] = gremlin_session.gremlins_tmpdir
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
