@@ -255,6 +255,67 @@ class DescribeLoadConfigNewFields:
 
 
 @pytest.mark.small
+class DescribeLoadConfigValidationLogging:
+    """load_config logs a warning before raising ValueError on invalid field types."""
+
+    def it_logs_warning_on_invalid_batch_size_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = "large"\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='batch_size'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'batch_size' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
+    def it_logs_warning_on_non_positive_batch_size(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = -5\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='batch_size'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'batch_size' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
+    def it_logs_warning_on_invalid_cache_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = 42\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='cache'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'cache' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
+    def it_logs_warning_on_invalid_report_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = true\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='report'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'report' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
+
+@pytest.mark.small
 class DescribeMergeConfigsNewFields:
     """merge_configs merges workers, cache, report, batch_size with CLI-beats-TOML precedence."""
 
