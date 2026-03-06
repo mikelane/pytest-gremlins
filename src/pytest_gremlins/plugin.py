@@ -352,7 +352,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption(
         '--gremlin-report',
         action='store',
-        default='console',
+        default=None,
         dest='gremlin_report',
         help='Report format: console, html, json (default: console)',
     )
@@ -403,7 +403,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         '--gremlin-batch-size',
         action='store',
         type=int,
-        default=10,
+        default=None,
         dest='gremlin_batch_size',
         help='Number of gremlins per batch (default: 10)',
     )
@@ -416,13 +416,39 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+def _init_cache(
+    rootdir: Path,
+    cache_enabled: bool,
+    clear_cache: bool,
+) -> IncrementalCache | None:
+    """Initialise the incremental cache when enabled, optionally clearing it first.
+
+    Args:
+        rootdir: Project root directory where the cache directory is created.
+        cache_enabled: Whether to create a cache instance at all.
+        clear_cache: Whether to wipe the cache before use.
+
+    Returns:
+        An open IncrementalCache, or None when caching is disabled.
+    """
+    if not cache_enabled:
+        return None
+    cache_dir = rootdir / '.gremlins_cache'
+    cache = IncrementalCache(cache_dir)
+    if clear_cache:
+        cache.clear()
+        print('pytest-gremlins: cache cleared')
+    return cache
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
     Configuration precedence (highest to lowest):
-    1. CLI arguments (--gremlin-operators, --gremlin-targets)
+    1. CLI arguments (--gremlin-operators, --gremlin-targets, --gremlin-workers,
+       --gremlin-report, --gremlin-batch-size, --gremlin-cache)
     2. pyproject.toml [tool.pytest-gremlins] section
-    3. Built-in defaults (all operators, src/ directory)
+    3. Built-in defaults (all operators, src/ directory, console report, batch-size 10)
     """
     if not config.option.gremlins:
         _set_session(GremlinSession(enabled=False))
@@ -447,6 +473,10 @@ def pytest_configure(config: pytest.Config) -> None:
         file_config,
         cli_operators=config.option.gremlin_operators,
         cli_targets=config.option.gremlin_targets,
+        cli_workers=config.option.gremlin_workers,
+        cli_cache=config.option.gremlin_cache or None,
+        cli_report=config.option.gremlin_report,
+        cli_batch_size=config.option.gremlin_batch_size,
     )
 
     registry = get_default_registry()
@@ -470,29 +500,26 @@ def pytest_configure(config: pytest.Config) -> None:
             if src_path.exists():
                 target_paths.append(src_path)
 
-    # Initialize cache if enabled
-    cache: IncrementalCache | None = None
-    cache_enabled = config.option.gremlin_cache
-    if cache_enabled:
-        cache_dir = rootdir / '.gremlins_cache'
-        cache = IncrementalCache(cache_dir)
-
-        # Clear cache if requested
-        if config.option.gremlin_clear_cache:
-            cache.clear()
-            print('pytest-gremlins: cache cleared')
+    # Cache: merge_configs already resolved CLI-beats-TOML; default False
+    cache_enabled: bool = bool(merged_config.cache)
+    cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache)
 
     parallel_enabled, parallel_workers = _read_parallel_config(config)
+    merged_workers = merged_config.workers if isinstance(merged_config.workers, int) else None
+    if parallel_workers is None and merged_workers is not None:
+        parallel_workers = merged_workers
+        parallel_enabled = True
 
-    # Read batch execution options
+    # Batch and report: merge_configs already resolved CLI-beats-TOML
     batch_enabled = config.option.gremlin_batch
-    batch_size = config.option.gremlin_batch_size
+    batch_size: int = merged_config.batch_size if merged_config.batch_size is not None else 10
+    report_format: str = merged_config.report if merged_config.report is not None else 'console'
 
     _set_session(
         GremlinSession(
             enabled=True,
             operators=operators,
-            report_format=config.option.gremlin_report,
+            report_format=report_format,
             target_paths=target_paths,
             cache_enabled=cache_enabled,
             cache=cache,
