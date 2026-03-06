@@ -205,75 +205,75 @@ class DescribeMergeConfigsNewFields:
     def it_cli_workers_overrides_toml_workers(self):
         file_config = GremlinConfig(workers=2)
 
-        result = merge_configs(file_config, cli_workers=8)
+        merged_config = merge_configs(file_config, cli_workers=8)
 
-        assert result.workers == 8
+        assert merged_config.workers == 8
 
     def it_uses_toml_workers_when_cli_workers_is_none(self):
         file_config = GremlinConfig(workers=4)
 
-        result = merge_configs(file_config, cli_workers=None)
+        merged_config = merge_configs(file_config, cli_workers=None)
 
-        assert result.workers == 4
+        assert merged_config.workers == 4
 
     def it_resolves_auto_workers_from_toml(self):
         file_config = GremlinConfig(workers='auto')
 
-        result = merge_configs(file_config, cli_workers=None)
+        merged_config = merge_configs(file_config, cli_workers=None)
 
-        assert result.workers == (os.cpu_count() or 4)
+        assert merged_config.workers == (os.cpu_count() or 4)
 
     def it_cli_cache_overrides_toml_cache(self):
         file_config = GremlinConfig(cache=False)
 
-        result = merge_configs(file_config, cli_cache=True)
+        merged_config = merge_configs(file_config, cli_cache=True)
 
-        assert result.cache is True
+        assert merged_config.cache is True
 
     def it_uses_toml_cache_when_cli_cache_is_none(self):
         file_config = GremlinConfig(cache=True)
 
-        result = merge_configs(file_config, cli_cache=None)
+        merged_config = merge_configs(file_config, cli_cache=None)
 
-        assert result.cache is True
+        assert merged_config.cache is True
 
     def it_cli_report_overrides_toml_report(self):
         file_config = GremlinConfig(report='console')
 
-        result = merge_configs(file_config, cli_report='html')
+        merged_config = merge_configs(file_config, cli_report='html')
 
-        assert result.report == 'html'
+        assert merged_config.report == 'html'
 
     def it_uses_toml_report_when_cli_report_is_none(self):
         file_config = GremlinConfig(report='html')
 
-        result = merge_configs(file_config, cli_report=None)
+        merged_config = merge_configs(file_config, cli_report=None)
 
-        assert result.report == 'html'
+        assert merged_config.report == 'html'
 
     def it_cli_batch_size_overrides_toml_batch_size(self):
         file_config = GremlinConfig(batch_size=20)
 
-        result = merge_configs(file_config, cli_batch_size=100)
+        merged_config = merge_configs(file_config, cli_batch_size=100)
 
-        assert result.batch_size == 100
+        assert merged_config.batch_size == 100
 
     def it_uses_toml_batch_size_when_cli_batch_size_is_none(self):
         file_config = GremlinConfig(batch_size=50)
 
-        result = merge_configs(file_config, cli_batch_size=None)
+        merged_config = merge_configs(file_config, cli_batch_size=None)
 
-        assert result.batch_size == 50
+        assert merged_config.batch_size == 50
 
     def it_returns_none_for_new_fields_when_both_are_none(self):
         file_config = GremlinConfig()
 
-        result = merge_configs(file_config)
+        merged_config = merge_configs(file_config)
 
-        assert result.workers is None
-        assert result.cache is None
-        assert result.report is None
-        assert result.batch_size is None
+        assert merged_config.workers is None
+        assert merged_config.cache is None
+        assert merged_config.report is None
+        assert merged_config.batch_size is None
 
 
 @pytest.mark.small
@@ -416,9 +416,9 @@ class DescribeDiscoverSourcePathsLogging:
         pyproject.write_text('[tool.setuptools\npackages = ["broken"')
 
         with caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'):
-            result = discover_source_paths(tmp_path)
+            discovered_paths = discover_source_paths(tmp_path)
 
-        assert result == []
+        assert discovered_paths == []
         assert len(caplog.records) == 1
         assert 'malformed' in caplog.records[0].message.lower() or 'TOML' in caplog.records[0].message
         assert str(tmp_path) in caplog.records[0].message
@@ -433,9 +433,9 @@ class DescribeLoadConfigLogging:
         pyproject.write_text('[tool.pytest-gremlins\nworkers = 4')
 
         with caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'):
-            result = load_config(tmp_path)
+            loaded_config = load_config(tmp_path)
 
-        assert result == GremlinConfig()
+        assert loaded_config == GremlinConfig()
         assert len(caplog.records) == 1
         assert 'malformed' in caplog.records[0].message.lower() or 'TOML' in caplog.records[0].message
         assert str(tmp_path) in caplog.records[0].message
