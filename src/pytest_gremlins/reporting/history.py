@@ -6,14 +6,19 @@ file so that trend charts can be rendered across multiple runs.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import (
+    UTC,
+    datetime,
+)
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 from pytest_gremlins.reporting.results import GremlinResultStatus
-
 
 if TYPE_CHECKING:
     from pytest_gremlins.reporting.score import MutationScore

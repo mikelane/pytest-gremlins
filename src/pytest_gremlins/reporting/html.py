@@ -9,15 +9,20 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
-from pytest_gremlins.reporting.diff import _compute_diff, _node_to_source
+from pytest_gremlins.reporting.diff import (
+    _compute_diff,
+    _node_to_source,
+)
 from pytest_gremlins.reporting.history import (
     _build_operator_data,
     append_history_entry,
     load_history,
 )
-
 
 logger = logging.getLogger(__name__)
 

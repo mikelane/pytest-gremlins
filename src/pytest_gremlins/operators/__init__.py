@@ -12,7 +12,6 @@ from pytest_gremlins.operators.protocol import GremlinOperator
 from pytest_gremlins.operators.registry import OperatorRegistry
 from pytest_gremlins.operators.return_value import ReturnOperator
 
-
 __all__ = [
     'ArithmeticOperator',
     'BooleanOperator',

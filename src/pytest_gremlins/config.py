@@ -11,7 +11,6 @@ import tomllib
 from tomllib import TOMLDecodeError
 from typing import TYPE_CHECKING
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

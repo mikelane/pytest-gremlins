@@ -16,7 +16,6 @@ import pytest
 
 from pytest_gremlins.plugin import pytest_configure
 
-
 _UNSET: object = object()  # sentinel: numprocesses attribute absent (xdist not installed)
 
 

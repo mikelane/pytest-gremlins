@@ -25,7 +25,6 @@ from typing import Self
 
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
-
 logger = logging.getLogger(__name__)
 
 

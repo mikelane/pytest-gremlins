@@ -31,7 +31,6 @@ from pytest_gremlins.instrumentation.switcher import (
 )
 from pytest_gremlins.instrumentation.transformer import transform_source
 
-
 __all__ = [
     'ACTIVE_GREMLIN_ENV_VAR',
     'Gremlin',

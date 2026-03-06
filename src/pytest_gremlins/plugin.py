@@ -58,13 +58,15 @@ from pytest_gremlins.instrumentation.transformer import (
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.pool import WorkerPool
-from pytest_gremlins.reporting.html import HtmlReporter, resolve_html_output_path
+from pytest_gremlins.reporting.html import (
+    HtmlReporter,
+    resolve_html_output_path,
+)
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
 )
 from pytest_gremlins.reporting.score import MutationScore
-
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

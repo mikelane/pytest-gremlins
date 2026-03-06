@@ -9,7 +9,6 @@ import pytest
 from pytest_gremlins.operators.protocol import GremlinOperator
 from pytest_gremlins.operators.registry import OperatorRegistry
 
-
 if TYPE_CHECKING:
     import ast
 

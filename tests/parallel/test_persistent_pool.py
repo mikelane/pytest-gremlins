@@ -20,7 +20,6 @@ from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

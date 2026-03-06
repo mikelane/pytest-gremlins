@@ -37,7 +37,6 @@ from typing import TYPE_CHECKING
 
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 
-
 if TYPE_CHECKING:
     import ast
     from collections.abc import Sequence

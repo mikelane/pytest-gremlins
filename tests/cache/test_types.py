@@ -6,7 +6,10 @@ correctly structured, and usable at cache boundaries.
 
 import pytest
 
-from pytest_gremlins.cache.types import CachedGremlinResult, JsonValue  # noqa: TC001
+from pytest_gremlins.cache.types import (  # noqa: TC001
+    CachedGremlinResult,
+    JsonValue,
+)
 
 
 @pytest.mark.small

@@ -25,6 +25,13 @@ repos:
         args: [--branch, main]
         stages: [pre-commit]
 
+  # Import sorting
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+
   # Ruff - linting and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.1

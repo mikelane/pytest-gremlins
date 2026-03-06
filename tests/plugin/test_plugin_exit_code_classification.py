@@ -15,7 +15,6 @@ from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import _test_gremlin
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

@@ -11,7 +11,6 @@ from pytest_gremlins.reporting.json_reporter import JsonReporter
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from pytest_gremlins.reporting.history import append_history_entry, load_history
+from pytest_gremlins.reporting.history import (
+    append_history_entry,
+    load_history,
+)
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 

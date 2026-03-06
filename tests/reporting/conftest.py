@@ -17,7 +17,6 @@ from pytest_gremlins.reporting.results import (
     GremlinResultStatus,
 )
 
-
 # Type aliases for factory fixture return types
 MakeGremlinFactory = Callable[..., Gremlin]
 MakeResultFactory = Callable[..., GremlinResult]

@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

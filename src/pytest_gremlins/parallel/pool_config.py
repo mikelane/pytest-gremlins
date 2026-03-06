@@ -30,7 +30,6 @@ import multiprocessing
 import os
 from typing import Literal
 
-
 StartMethod = Literal['auto', 'spawn', 'fork', 'forkserver']
 VALID_START_METHODS: frozenset[str] = frozenset(('auto', 'spawn', 'fork', 'forkserver'))
 

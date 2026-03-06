@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

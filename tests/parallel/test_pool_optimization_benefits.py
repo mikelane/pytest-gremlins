@@ -18,7 +18,6 @@ from pytest_gremlins.parallel.pool_config import (
     get_optimal_start_method,
 )
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

@@ -6,8 +6,10 @@ Provides ``JsonValue`` for generic JSON-serialisable data and
 
 from __future__ import annotations
 
-from typing import TypeAlias, TypedDict
-
+from typing import (
+    TypeAlias,
+    TypedDict,
+)
 
 JsonValue: TypeAlias = str | int | float | bool | None | list['JsonValue'] | dict[str, 'JsonValue']
 

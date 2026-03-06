@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

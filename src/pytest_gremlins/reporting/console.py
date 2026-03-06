@@ -12,7 +12,6 @@ from typing import (
     TextIO,
 )
 
-
 if TYPE_CHECKING:
     from pytest_gremlins.reporting.score import MutationScore
 

@@ -38,14 +38,12 @@ from typing import (
     Self,
 )
 
-
 if TYPE_CHECKING:
     import multiprocessing
 
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
-
 
 logger = logging.getLogger(__name__)
 

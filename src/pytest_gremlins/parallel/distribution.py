@@ -11,7 +11,6 @@ from typing import (
     Protocol,
 )
 
-
 if TYPE_CHECKING:
     from pytest_gremlins.instrumentation.gremlin import Gremlin
 

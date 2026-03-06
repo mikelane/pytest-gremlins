@@ -15,7 +15,6 @@ from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
-
 if TYPE_CHECKING:
     from pathlib import Path
 

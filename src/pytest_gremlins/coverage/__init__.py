@@ -27,5 +27,4 @@ from pytest_gremlins.coverage.mapper import CoverageMap
 from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
 from pytest_gremlins.coverage.selector import TestSelector
 
-
 __all__ = ['CoverageCollector', 'CoverageMap', 'PrioritizedSelector', 'TestSelector']
