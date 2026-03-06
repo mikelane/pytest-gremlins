@@ -197,6 +197,13 @@ class DescribeLoadConfigNewFields:
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
+    def it_raises_on_boolean_batch_size(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = true\n')
+
+        with pytest.raises(ValueError, match='batch_size'):
+            load_config(tmp_path)
+
     def it_raises_on_non_integer_batch_size(self, tmp_path):
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = "large"\n')
