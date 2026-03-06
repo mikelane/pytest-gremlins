@@ -29,8 +29,10 @@ import json
 from pathlib import Path
 import re
 
-from playwright.sync_api import Page, sync_playwright
-
+from playwright.sync_api import (
+    Page,
+    sync_playwright,
+)
 
 _TIMING_PATH = Path(__file__).parent / 'narration' / 'epic-e-timing.json'
 _REPORT_PATH = Path('/tmp/gremlin-demo-epice/report/index.html')  # noqa: S108  # nosec B108

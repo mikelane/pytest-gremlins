@@ -30,7 +30,6 @@ import os
 from pathlib import Path
 import sys
 
-
 try:
     import requests
 except ImportError:

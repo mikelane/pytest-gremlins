@@ -27,7 +27,6 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-
 _TIMING_PATH = Path(__file__).parent / 'narration' / 'epic-b-timing.json'
 _REPORT_PATH = Path('/tmp/gremlin-demo-epicb/report/index.html')  # noqa: S108  # nosec B108
 _VIDEO_DIR = Path('/tmp/epic-b-demo')  # noqa: S108  # nosec B108

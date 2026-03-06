@@ -31,7 +31,6 @@ import time
 
 from playwright.sync_api import sync_playwright
 
-
 _TIMING_PATH = Path(__file__).parent / 'narration' / 'epic-d-timing.json'
 _REPORT_DIR = Path('/tmp/gremlin-demo-epicd/report')  # noqa: S108  # nosec B108
 _VIDEO_DIR = Path('/tmp/epic-d-demo')  # noqa: S108  # nosec B108

@@ -25,7 +25,6 @@ import ast
 import copy
 from typing import ClassVar
 
-
 # =============================================================================
 # Example 1: Simple String Mutation Operator
 # =============================================================================

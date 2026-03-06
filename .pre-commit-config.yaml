@@ -27,10 +27,11 @@ repos:
 
   # Import sorting
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: 8.0.1
     hooks:
       - id: isort
         args: ["--profile", "black"]
+        files: ^(src|tests)/
 
   # Ruff - linting and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
