@@ -1181,3 +1181,26 @@ class DescribeWriteReportHistoryPersistence:
         assert record.levelno == logging.WARNING
         assert 'history' in record.message.lower()
         assert str(output_path) in record.message
+
+    def it_passes_empty_list_when_no_history_exists(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        output_path = tmp_path / 'index.html'
+        reporter = HtmlReporter()
+
+        reporter.write_report(score, output_path)
+
+        content = output_path.read_text(encoding='utf-8')
+        assert 'No historical data yet.' in content
+
+    def it_passes_history_to_html_when_history_exists(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        output_path = tmp_path / 'index.html'
+        reporter = HtmlReporter()
+
+        reporter.write_report(score, output_path)
+        reporter.write_report(score, output_path)
+
+        content = output_path.read_text(encoding='utf-8')
+        assert 'data-history' in content

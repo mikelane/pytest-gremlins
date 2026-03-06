@@ -149,15 +149,17 @@ class HtmlReporter:
             output_path: Path to the output HTML file.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path = output_path.parent / 'history.json'
         try:
             append_history_entry(
                 rootdir=output_path.parent,
                 score=score,
-                history_path=output_path.parent / 'history.json',
+                history_path=history_path,
             )
         except Exception:
             logger.warning('Failed to persist history for report at %s', output_path, exc_info=True)
-        output_path.write_text(self.to_html(score), encoding='utf-8')
+        history = load_history(history_path)
+        output_path.write_text(self.to_html(score, history=history), encoding='utf-8')
         logger.info('HTML report written to %s', output_path)
 
     def _get_styles(self) -> str:
