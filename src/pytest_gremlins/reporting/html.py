@@ -137,15 +137,26 @@ class HtmlReporter:
 </html>"""
 
     def write_report(self, score: MutationScore, output_path: Path) -> None:
-        """Write mutation report to an HTML file.
+        """Write mutation report to an HTML file and persist history.
 
-        Creates any missing parent directories before writing.
+        Creates any missing parent directories before writing.  History is
+        appended to ``history.json`` in the same directory as the report.
+        If history persistence fails, a warning is logged and the HTML report
+        is still written.
 
         Args:
             score: The MutationScore to write.
             output_path: Path to the output HTML file.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            append_history_entry(
+                rootdir=output_path.parent,
+                score=score,
+                history_path=output_path.parent / 'history.json',
+            )
+        except Exception:
+            logger.warning('Failed to persist history for report at %s', output_path, exc_info=True)
         output_path.write_text(self.to_html(score), encoding='utf-8')
         logger.info('HTML report written to %s', output_path)
 

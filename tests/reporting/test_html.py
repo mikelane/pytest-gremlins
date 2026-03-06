@@ -1114,3 +1114,70 @@ class DescribeWriteReportLogging:
 
         assert 'HTML report written to' in caplog.text
         assert str(output_path) in caplog.text
+
+
+@pytest.mark.small
+class DescribeWriteReportHistoryPersistence:
+    """Tests that write_report persists history alongside the HTML file."""
+
+    def it_creates_history_json_next_to_the_html_report(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        output_path = tmp_path / 'coverage' / 'gremlins' / 'index.html'
+        reporter = HtmlReporter()
+
+        reporter.write_report(score, output_path)
+
+        history_path = output_path.parent / 'history.json'
+        assert history_path.exists()
+
+    def it_appends_a_score_entry_to_history_json(self, make_result, tmp_path: Path):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        output_path = tmp_path / 'index.html'
+        reporter = HtmlReporter()
+
+        reporter.write_report(score, output_path)
+
+        history_path = output_path.parent / 'history.json'
+        entries = json.loads(history_path.read_text())
+        assert len(entries) == 1
+        assert entries[0]['score'] == 100.0
+
+    def it_still_writes_html_when_history_raises(self, make_result, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        output_path = tmp_path / 'index.html'
+        reporter = HtmlReporter()
+
+        def _boom(*_args, **_kwargs):
+            raise OSError('disk full')
+
+        monkeypatch.setattr('pytest_gremlins.reporting.html.append_history_entry', _boom)
+
+        reporter.write_report(score, output_path)  # must not raise
+
+        content = output_path.read_text(encoding='utf-8')
+        assert '<!DOCTYPE html>' in content
+
+    def it_logs_a_warning_when_history_raises(
+        self, make_result, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        output_path = tmp_path / 'index.html'
+        reporter = HtmlReporter()
+
+        def _boom(*_args, **_kwargs):
+            raise OSError('disk full')
+
+        monkeypatch.setattr('pytest_gremlins.reporting.html.append_history_entry', _boom)
+
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.reporting.html'):
+            reporter.write_report(score, output_path)
+
+        assert len(caplog.records) == 1
+        record = caplog.records[0]
+        assert record.levelno == logging.WARNING
+        assert 'history' in record.message.lower()
+        assert str(output_path) in record.message
