@@ -30,7 +30,6 @@ repos:
     rev: 8.0.1
     hooks:
       - id: isort
-        args: ["--profile", "black"]
         files: ^(src|tests)/
 
   # Ruff - linting and formatting
