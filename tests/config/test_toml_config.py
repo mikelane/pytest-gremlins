@@ -197,6 +197,55 @@ class DescribeLoadConfigNewFields:
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
+    def it_raises_on_non_integer_batch_size(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = "large"\n')
+
+        with pytest.raises(ValueError, match='batch_size'):
+            load_config(tmp_path)
+
+    def it_raises_on_zero_batch_size(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 0\n')
+
+        with pytest.raises(ValueError, match='batch_size'):
+            load_config(tmp_path)
+
+    def it_raises_on_negative_batch_size(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = -5\n')
+
+        with pytest.raises(ValueError, match='batch_size'):
+            load_config(tmp_path)
+
+    def it_raises_on_non_boolean_cache(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = 42\n')
+
+        with pytest.raises(ValueError, match='cache'):
+            load_config(tmp_path)
+
+    def it_raises_on_string_cache(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = "yes"\n')
+
+        with pytest.raises(ValueError, match='cache'):
+            load_config(tmp_path)
+
+    def it_raises_on_non_string_report(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = true\n')
+
+        with pytest.raises(ValueError, match='report'):
+            load_config(tmp_path)
+
+    def it_raises_on_integer_report(self, tmp_path):
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = 42\n')
+
+        with pytest.raises(ValueError, match='report'):
+            load_config(tmp_path)
+
 
 @pytest.mark.small
 class DescribeMergeConfigsNewFields:
