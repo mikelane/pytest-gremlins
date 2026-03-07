@@ -207,6 +207,7 @@ class GremlinSession:
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
     private_coverage: coverage.Coverage | None = None
     gremlins_tmpdir: str | None = None
+    strict_pardons: bool = False
 
 
 _gremlin_session: GremlinSession | None = None
@@ -414,6 +415,20 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         dest='gremlins_html_dir',
         help='Custom output directory for the HTML report (default: coverage/gremlins/)',
+    )
+    group.addoption(
+        '--strict-pardons',
+        action='store_true',
+        default=False,
+        dest='strict_pardons',
+        help='Treat pardoned gremlins as CI failures',
+    )
+    group.addoption(
+        '--gremlin-audit-pardons',
+        action='store_true',
+        default=False,
+        dest='gremlin_audit_pardons',
+        help='List all active suppression pragmas with location, reason, and justification',
     )
 
 
