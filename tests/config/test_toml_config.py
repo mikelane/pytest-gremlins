@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 import os
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 import pytest
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
+    from typing import Any
 
 from pytest_gremlins import plugin
 from pytest_gremlins.config import (
@@ -19,48 +20,6 @@ from pytest_gremlins.config import (
     load_config,
     merge_configs,
 )
-
-
-def _make_gremlins_config(
-    tmp_path: Path,
-    *,
-    gremlin_workers: int | None = None,
-    gremlin_cache: bool = False,
-    gremlin_report: str | None = None,
-    gremlin_batch_size: int | None = None,
-    gremlin_max_pardons_pct: float | None = None,
-) -> object:
-    """Build a minimal mock pytest.Config for plugin integration tests."""
-
-    class _MockOption:
-        gremlins = True
-        gremlin_operators = None
-        gremlin_targets = None
-        gremlin_clear_cache = False
-        gremlin_parallel = False
-        gremlin_batch = False
-        strict_pardons = False
-        gremlin_audit_pardons = False
-
-    option = _MockOption()
-    option.gremlin_workers = gremlin_workers  # type: ignore[attr-defined]
-    option.gremlin_cache = gremlin_cache  # type: ignore[attr-defined]
-    option.gremlin_report = gremlin_report  # type: ignore[attr-defined]
-    option.gremlin_batch_size = gremlin_batch_size  # type: ignore[attr-defined]
-    option.gremlin_max_pardons_pct = gremlin_max_pardons_pct  # type: ignore[attr-defined]
-
-    pm = MagicMock()
-    pm.hasplugin.return_value = False
-    pm.get_plugin.return_value = None
-
-    class _MockConfig:
-        pass
-
-    mock_config = _MockConfig()
-    mock_config.option = option  # type: ignore[attr-defined]
-    mock_config.rootdir = tmp_path  # type: ignore[attr-defined]
-    mock_config.pluginmanager = pm  # type: ignore[attr-defined]
-    return mock_config
 
 
 @pytest.mark.small
@@ -469,7 +428,9 @@ class DescribeMergeConfigsNewFields:
 class DescribePluginPassesNewFieldsThrough:
     """pytest_configure passes workers, cache, report, batch_size from TOML into the session."""
 
-    def it_toml_workers_flows_into_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_toml_workers_flows_into_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nworkers = 4\n')
 
@@ -480,13 +441,15 @@ class DescribePluginPassesNewFieldsThrough:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
         assert session.parallel_workers == 4
 
-    def it_toml_cache_true_flows_into_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_toml_cache_true_flows_into_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\ncache = true\n')
 
@@ -497,7 +460,7 @@ class DescribePluginPassesNewFieldsThrough:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
@@ -508,7 +471,9 @@ class DescribePluginPassesNewFieldsThrough:
             session.cache.close()
         plugin._set_session(None)
 
-    def it_toml_report_flows_into_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_toml_report_flows_into_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\n')
 
@@ -519,13 +484,15 @@ class DescribePluginPassesNewFieldsThrough:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
         assert session.report_format == 'json'
 
-    def it_toml_batch_size_flows_into_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_toml_batch_size_flows_into_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 25\n')
 
@@ -536,13 +503,15 @@ class DescribePluginPassesNewFieldsThrough:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_make_gremlins_config(tmp_path))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
         assert session.batch_size == 25
 
-    def it_cli_workers_overrides_toml_workers_in_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_cli_workers_overrides_toml_workers_in_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nworkers = 2\n')
 
@@ -553,13 +522,15 @@ class DescribePluginPassesNewFieldsThrough:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_make_gremlins_config(tmp_path, gremlin_workers=8))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path, gremlin_workers=8))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
         assert session.parallel_workers == 8
 
-    def it_cli_report_overrides_toml_report_in_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_cli_report_overrides_toml_report_in_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\n')
 
@@ -570,14 +541,14 @@ class DescribePluginPassesNewFieldsThrough:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_make_gremlins_config(tmp_path, gremlin_report='html'))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path, gremlin_report='html'))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
         assert session.report_format == 'html'
 
     def it_cli_batch_size_overrides_toml_batch_size_in_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
     ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 50\n')
@@ -589,13 +560,15 @@ class DescribePluginPassesNewFieldsThrough:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_make_gremlins_config(tmp_path, gremlin_batch_size=100))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path, gremlin_batch_size=100))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
         assert session.batch_size == 100
 
-    def it_cli_max_pardons_pct_overrides_toml_in_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_cli_max_pardons_pct_overrides_toml_in_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 5.0\n')
 
@@ -606,7 +579,7 @@ class DescribePluginPassesNewFieldsThrough:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(_make_gremlins_config(tmp_path, gremlin_max_pardons_pct=15.0))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path, gremlin_max_pardons_pct=15.0))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None

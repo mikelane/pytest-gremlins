@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import (
     MagicMock,
     patch,
 )
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
 
 from pytest_gremlins import plugin
 from pytest_gremlins.config import (
@@ -122,38 +127,15 @@ class DescribeMaxPardonsPct:
 
         assert merged.max_pardons_pct == 15.0
 
-    def it_toml_max_pardons_pct_flows_into_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_toml_max_pardons_pct_flows_into_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 7.5\n')
 
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        class _MockOption:
-            gremlins = True
-            gremlin_report = 'console'
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-            gremlin_operators = None
-            gremlin_targets = None
-            gremlin_max_pardons_pct: float | None = None
-            strict_pardons = False
-            gremlin_audit_pardons = False
-
-        class _MockConfig:
-            pass
-
-        cfg = _MockConfig()
-        cfg.option = _MockOption()  # type: ignore[attr-defined]
-        cfg.rootdir = tmp_path  # type: ignore[attr-defined]
-        mock_pm = MagicMock()
-        mock_pm.get_plugin.return_value = None
-        cfg.pluginmanager = mock_pm  # type: ignore[attr-defined]
-
-        pytest_configure(cfg)  # type: ignore[arg-type]
+        pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
 
         session = plugin._get_session()
         assert session is not None
@@ -281,36 +263,13 @@ class DescribeMaxPardonsPct:
 
         assert loaded_config.max_pardons_pct == 5
 
-    def it_rejects_out_of_range_max_pardons_pct_via_cli(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_rejects_out_of_range_max_pardons_pct_via_cli(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        class _MockOption:
-            gremlins = True
-            gremlin_report = 'console'
-            gremlin_cache = False
-            gremlin_clear_cache = False
-            gremlin_parallel = False
-            gremlin_workers: int | None = None
-            gremlin_batch = False
-            gremlin_batch_size = 10
-            gremlin_operators = None
-            gremlin_targets = None
-            gremlin_max_pardons_pct: float | None = 150.0
-            strict_pardons = False
-            gremlin_audit_pardons = False
-
-        class _MockConfig:
-            pass
-
-        cfg = _MockConfig()
-        cfg.option = _MockOption()  # type: ignore[attr-defined]
-        cfg.rootdir = tmp_path  # type: ignore[attr-defined]
-        mock_pm = MagicMock()
-        mock_pm.get_plugin.return_value = None
-        cfg.pluginmanager = mock_pm  # type: ignore[attr-defined]
-
         with patch('pytest_gremlins.plugin.pytest') as mock_pytest:
-            pytest_configure(cfg)  # type: ignore[arg-type]
+            pytest_configure(make_pytest_config(tmp_path, gremlin_max_pardons_pct=150.0))  # type: ignore[arg-type]
 
         mock_pytest.exit.assert_called_once()
         assert mock_pytest.exit.call_args.kwargs.get('returncode') == 4

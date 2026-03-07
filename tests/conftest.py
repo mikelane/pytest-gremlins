@@ -6,7 +6,13 @@ This file is for test-specific fixtures only.
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import (
+    Callable,
+    Generator,
+)
+from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -60,6 +66,76 @@ def reset_gremlin_session() -> Generator[None, None, None]:
     """
     yield
     _set_session(None)
+
+
+@pytest.fixture
+def make_pytest_config() -> Callable[..., Any]:
+    """Factory fixture for building minimal mock pytest.Config objects.
+
+    Covers the full union of option attributes used across plugin integration
+    and config tests. All options default to falsy/None so TOML values flow
+    through unobstructed; pass explicit kwargs to override for a specific test.
+
+    Example::
+
+        def it_something(self, tmp_path, make_pytest_config):
+            cfg = make_pytest_config(tmp_path, gremlin_operators='boolean')
+            plugin.pytest_configure(cfg)  # type: ignore[arg-type]
+    """
+
+    def _factory(
+        rootdir: Path,
+        *,
+        gremlins: bool = True,
+        gremlin_operators: str | None = None,
+        gremlin_targets: str | None = None,
+        gremlin_report: str | None = None,
+        gremlin_cache: bool = False,
+        gremlin_clear_cache: bool = False,
+        gremlin_parallel: bool = False,
+        gremlin_workers: int | None = None,
+        gremlin_batch: bool = False,
+        gremlin_batch_size: int | None = None,
+        strict_pardons: bool = False,
+        gremlin_audit_pardons: bool = False,
+        gremlin_max_pardons_pct: float | None = None,
+        pluginmanager: MagicMock | None = None,
+    ) -> object:
+        class _Option:
+            pass
+
+        option = _Option()
+        option.gremlins = gremlins  # type: ignore[attr-defined]
+        option.gremlin_operators = gremlin_operators  # type: ignore[attr-defined]
+        option.gremlin_targets = gremlin_targets  # type: ignore[attr-defined]
+        option.gremlin_report = gremlin_report  # type: ignore[attr-defined]
+        option.gremlin_cache = gremlin_cache  # type: ignore[attr-defined]
+        option.gremlin_clear_cache = gremlin_clear_cache  # type: ignore[attr-defined]
+        option.gremlin_parallel = gremlin_parallel  # type: ignore[attr-defined]
+        option.gremlin_workers = gremlin_workers  # type: ignore[attr-defined]
+        option.gremlin_batch = gremlin_batch  # type: ignore[attr-defined]
+        option.gremlin_batch_size = gremlin_batch_size  # type: ignore[attr-defined]
+        option.strict_pardons = strict_pardons  # type: ignore[attr-defined]
+        option.gremlin_audit_pardons = gremlin_audit_pardons  # type: ignore[attr-defined]
+        option.gremlin_max_pardons_pct = gremlin_max_pardons_pct  # type: ignore[attr-defined]
+
+        if pluginmanager is None:
+            pm: MagicMock = MagicMock()
+            pm.hasplugin.return_value = False
+            pm.get_plugin.return_value = None
+        else:
+            pm = pluginmanager
+
+        class _Config:
+            pass
+
+        cfg = _Config()
+        cfg.option = option  # type: ignore[attr-defined]
+        cfg.rootdir = rootdir  # type: ignore[attr-defined]
+        cfg.pluginmanager = pm  # type: ignore[attr-defined]
+        return cfg
+
+    return _factory
 
 
 @pytest.fixture
