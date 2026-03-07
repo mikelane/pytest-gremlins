@@ -209,6 +209,7 @@ class GremlinSession:
     gremlins_tmpdir: str | None = None
     strict_pardons: bool = False
     audit_pardons: bool = False
+    max_pardons_pct: float | None = None
 
 
 _gremlin_session: GremlinSession | None = None
@@ -431,6 +432,14 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest='gremlin_audit_pardons',
         help='List all active suppression pragmas with location, reason, and justification',
     )
+    group.addoption(
+        '--gremlin-max-pardons-pct',
+        action='store',
+        type=float,
+        default=None,
+        dest='gremlin_max_pardons_pct',
+        help='Fail if pardoned (pragma-suppressed) gremlins exceed this %% of total (default: disabled)',
+    )
 
 
 def _init_cache(
@@ -458,22 +467,30 @@ def _init_cache(
     return cache
 
 
-def _extract_toml_fields(merged_config: object) -> tuple[bool | None, int | str | None, str | None, int | None]:
+def _extract_toml_fields(
+    merged_config: object,
+) -> tuple[bool | None, int | str | None, str | None, int | None, float | None]:
     """Extract merged-config fields, guarding against test mock objects.
 
-    Returns (cache, workers, report, batch_size) from merged_config only when it is a
-    real GremlinConfig instance; otherwise returns all-None so pytest_configure falls
-    back to argparse defaults.
+    Returns (cache, workers, report, batch_size, max_pardons_pct) from merged_config
+    only when it is a real GremlinConfig instance; otherwise returns all-None so
+    pytest_configure falls back to argparse defaults.
 
     Args:
         merged_config: The result of merge_configs (GremlinConfig or a test mock).
 
     Returns:
-        Tuple of (cache, workers, report, batch_size), each None if unset.
+        Tuple of (cache, workers, report, batch_size, max_pardons_pct), each None if unset.
     """
     if not isinstance(merged_config, GremlinConfig):
-        return None, None, None, None
-    return merged_config.cache, merged_config.workers, merged_config.report, merged_config.batch_size
+        return None, None, None, None, None
+    return (
+        merged_config.cache,
+        merged_config.workers,
+        merged_config.report,
+        merged_config.batch_size,
+        merged_config.max_pardons_pct,
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -502,6 +519,13 @@ def pytest_configure(config: pytest.Config) -> None:
 
     rootdir = _get_rootdir(config)
 
+    cli_max_pardons_pct: float | None = getattr(config.option, 'gremlin_max_pardons_pct', None)
+    if cli_max_pardons_pct is not None and not (0 <= cli_max_pardons_pct <= 100):  # noqa: PLR2004
+        pytest.exit(
+            f'--gremlin-max-pardons-pct must be between 0 and 100, got {cli_max_pardons_pct!r}.',
+            returncode=4,
+        )
+
     # Load config from pyproject.toml and merge with CLI args
     file_config = load_config(rootdir)
     merged_config = merge_configs(
@@ -512,6 +536,7 @@ def pytest_configure(config: pytest.Config) -> None:
         cli_cache=config.option.gremlin_cache or None,
         cli_report=config.option.gremlin_report,
         cli_batch_size=config.option.gremlin_batch_size,
+        cli_max_pardons_pct=cli_max_pardons_pct,
     )
 
     registry = get_default_registry()
@@ -535,7 +560,7 @@ def pytest_configure(config: pytest.Config) -> None:
             if src_path.exists():
                 target_paths.append(src_path)
 
-    toml_cache, toml_workers, toml_report, toml_batch_size = _extract_toml_fields(merged_config)
+    toml_cache, toml_workers, toml_report, toml_batch_size, toml_max_pardons_pct = _extract_toml_fields(merged_config)
 
     # Cache: merge_configs already resolved CLI-beats-TOML; default False
     cache_enabled: bool = bool(toml_cache)
@@ -567,6 +592,7 @@ def pytest_configure(config: pytest.Config) -> None:
             coverage_mode=_detect_coverage_mode(config),
             strict_pardons=bool(config.option.strict_pardons),
             audit_pardons=bool(config.option.gremlin_audit_pardons),
+            max_pardons_pct=toml_max_pardons_pct,
         )
     )
 
@@ -2048,6 +2074,35 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
 
     if gremlin_session.strict_pardons and score.pardoned > 0:
         pytest.exit(f'--strict-pardons: {score.pardoned} pardoned gremlins exist', returncode=1)
+
+    max_pardons_pct = gremlin_session.max_pardons_pct
+    if max_pardons_pct is not None and score.total > 0:
+        pardoned_pct = score.pardoned / score.total * 100
+        if pardoned_pct > max_pardons_pct:
+            logger.warning(
+                'max-pardons-pct exceeded: %.1f%% pardoned (%d of %d) — limit is %.1f%%',
+                pardoned_pct,
+                score.pardoned,
+                score.total,
+                max_pardons_pct,
+            )
+            terminalreporter.write_line(
+                f'Max pardons exceeded: {pardoned_pct:.1f}% pardoned ({score.pardoned} of {score.total})'
+                f' — limit is {max_pardons_pct:.1f}%'
+            )
+            pytest.exit(
+                f'Pardoned gremlins ({pardoned_pct:.1f}%) exceed the {max_pardons_pct:.1f}% limit.'
+                f' Zap the {score.pardoned} pardoned gremlins or raise --gremlin-max-pardons-pct.',
+                returncode=1,
+            )
+        else:
+            logger.info(
+                'max-pardons-pct OK: %.1f%% pardoned (%d of %d) — limit is %.1f%%',
+                pardoned_pct,
+                score.pardoned,
+                score.total,
+                max_pardons_pct,
+            )
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:  # noqa: ARG001

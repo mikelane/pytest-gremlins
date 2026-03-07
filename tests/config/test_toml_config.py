@@ -28,6 +28,7 @@ def _make_gremlins_config(
     gremlin_cache: bool = False,
     gremlin_report: str | None = None,
     gremlin_batch_size: int | None = None,
+    gremlin_max_pardons_pct: float | None = None,
 ) -> object:
     """Build a minimal mock pytest.Config for plugin integration tests."""
 
@@ -46,6 +47,7 @@ def _make_gremlins_config(
     option.gremlin_cache = gremlin_cache  # type: ignore[attr-defined]
     option.gremlin_report = gremlin_report  # type: ignore[attr-defined]
     option.gremlin_batch_size = gremlin_batch_size  # type: ignore[attr-defined]
+    option.gremlin_max_pardons_pct = gremlin_max_pardons_pct  # type: ignore[attr-defined]
 
     pm = MagicMock()
     pm.hasplugin.return_value = False
@@ -348,6 +350,34 @@ class DescribeLoadConfigValidationLogging:
         assert 'report' in caplog.records[0].message
         assert str(tmp_path) in caplog.records[0].message
 
+    def it_logs_warning_on_invalid_max_pardons_pct_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = "five"\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='max-pardons-pct'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'max-pardons-pct' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
+    def it_logs_warning_on_out_of_range_max_pardons_pct(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 150.0\n')
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
+            pytest.raises(ValueError, match='max-pardons-pct'),
+        ):
+            load_config(tmp_path)
+
+        assert len(caplog.records) == 1
+        assert 'max-pardons-pct' in caplog.records[0].message
+        assert str(tmp_path) in caplog.records[0].message
+
 
 @pytest.mark.small
 class DescribeMergeConfigsNewFields:
@@ -416,6 +446,13 @@ class DescribeMergeConfigsNewFields:
 
         assert merged_config.batch_size == 50
 
+    def it_uses_toml_max_pardons_pct_when_cli_max_pardons_pct_is_none(self):
+        file_config = GremlinConfig(max_pardons_pct=10.0)
+
+        merged_config = merge_configs(file_config, cli_max_pardons_pct=None)
+
+        assert merged_config.max_pardons_pct == 10.0
+
     def it_returns_none_for_new_fields_when_both_are_none(self):
         file_config = GremlinConfig()
 
@@ -425,6 +462,7 @@ class DescribeMergeConfigsNewFields:
         assert merged_config.cache is None
         assert merged_config.report is None
         assert merged_config.batch_size is None
+        assert merged_config.max_pardons_pct is None
 
 
 @pytest.mark.small
@@ -556,6 +594,23 @@ class DescribePluginPassesNewFieldsThrough:
         session = plugin._get_session()
         assert session is not None
         assert session.batch_size == 100
+
+    def it_cli_max_pardons_pct_overrides_toml_in_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 5.0\n')
+
+        src_dir = tmp_path / 'src'
+        src_dir.mkdir()
+        (src_dir / 'module.py').write_text('x = 1')
+
+        plugin._set_session(None)
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        plugin.pytest_configure(_make_gremlins_config(tmp_path, gremlin_max_pardons_pct=15.0))  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.max_pardons_pct == 15.0
 
 
 @pytest.mark.small
