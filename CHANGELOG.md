@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.5.0b0 (2026-03-07)
+
+### Feat
+
+- **reporting**: wire append_history_entry into HtmlReporter.write_report (#257)
+- **config**: pyproject.toml config support for workers, cache, report, batch_size (#254)
+- **parallel**: add --gremlin-workers=auto support (#251)
+
+### Fix
+
+- **reporting**: load and pass history to to_html() for trend chart rendering (#259)
+- **config**: validate TOML types for batch_size, cache, report (#253) (#258)
+- **types**: replace cast(Any, node) with _XdistWorkerNode Protocol (#250)
+- **plugin**: guard xdist hooks when pytest-xdist is absent (#243)
+- **release**: move new_tag to env: block on Summarize release step (#242)
+- **tests**: reclassify parallel process pool tests as medium (#241)
+- **release**: add explicit tag push as safety net in cut-release.yml (#239)
+- **instrumentation**: insert gremlin injection after future imports at AST level (#238)
+- **release**: add annotated_tag and fix changelog extraction (#235)
+
+### Refactor
+
+- **types**: define TypedDict hierarchies for reporting export formats (#247)
+- **types**: use module.__dict__ for __gremlin_active__ access (#248)
+- **types**: define TypedDicts for coverage stats return types (#246)
+- **types**: define JsonValue TypeAlias and CachedGremlinResult TypedDict (#245)
+- **types**: centralise config.rootdir access via _get_rootdir helper (#244)
+- **types**: narrow Gremlin.mutated_node and define ASTLocated Protocol (#249)
+
 ## v1.4.0 (2026-03-02)
 
 ### Feat
