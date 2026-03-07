@@ -33,6 +33,7 @@ class MutationScore:
         survived: Number of gremlins that escaped tests.
         timeout: Number of gremlins that caused test timeouts.
         error: Number of gremlins that caused errors.
+        pardoned: Number of gremlins explicitly pardoned (excluded from scoring).
         results: The underlying list of results.
     """
 

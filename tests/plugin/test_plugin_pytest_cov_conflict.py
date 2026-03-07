@@ -274,6 +274,7 @@ def _make_configure_config(*, gremlins: bool, has_pytest_cov: bool, no_cov: bool
         gremlin_workers=None,
         gremlin_batch=False,
         gremlin_batch_size=10,
+        gremlin_max_pardons_pct=None,
         n=None,
         strict_pardons=False,
         gremlin_audit_pardons=False,

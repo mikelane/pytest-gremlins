@@ -29,6 +29,9 @@ class DescribeGremlinResultStatus:
     def it_status_has_error_value(self):
         assert GremlinResultStatus.ERROR.value == 'error'
 
+    def it_status_has_pardoned_value(self):
+        assert GremlinResultStatus.PARDONED.value == 'pardoned'
+
 
 @pytest.fixture
 def sample_gremlin():
