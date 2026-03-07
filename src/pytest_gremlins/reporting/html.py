@@ -23,6 +23,7 @@ from pytest_gremlins.reporting.history import (
     append_history_entry,
     load_history,
 )
+from pytest_gremlins.reporting.results import GremlinResultStatus
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,7 @@ class HtmlReporter:
         {self._render_summary(score)}
         {self._render_charts(score, chart_data)}
         {self._render_results_table(score)}
+        {self._render_pardoned_section(score)}
         {history_html}
         </main>
     </div>
@@ -688,6 +690,14 @@ class HtmlReporter:
                 <div class="stat-label">Error</div>
             </div>"""
 
+        pardoned_card = ''
+        if score.pardoned > 0:
+            pardoned_card = f"""
+            <div class="stat-card">
+                <div class="stat-value">{score.pardoned}</div>
+                <div class="stat-label">Pardoned</div>
+            </div>"""
+
         return f"""
         <div class="summary">
             <div class="stat-card">
@@ -701,12 +711,57 @@ class HtmlReporter:
             <div class="stat-card stat-survived">
                 <div class="stat-value">{score.survived}</div>
                 <div class="stat-label">Survived</div>
-            </div>{timeout_card}{error_card}
+            </div>{timeout_card}{error_card}{pardoned_card}
             <div class="stat-card">
                 <div class="stat-value">{score.percentage:.0f}%</div>
                 <div class="stat-label">Mutation Score</div>
             </div>
         </div>
+        """
+
+    def _render_pardoned_section(self, score: MutationScore) -> str:
+        """Render a table of pardoned gremlins with their pardon reasons.
+
+        Args:
+            score: The MutationScore containing result data.
+
+        Returns:
+            HTML string for the pardoned section, or empty string when none exist.
+        """
+        pardoned_results = [r for r in score.results if r.status == GremlinResultStatus.PARDONED]
+        if not pardoned_results:
+            return ''
+
+        rows = ''
+        for result in pardoned_results:
+            gremlin = result.gremlin
+            pardon_reason = self._escape_html(gremlin.pardon_reason or '')
+            rows += f"""
+                <tr>
+                    <td>{self._escape_html(gremlin.file_path)}</td>
+                    <td>{gremlin.line_number}</td>
+                    <td>{self._escape_html(gremlin.operator_name)}</td>
+                    <td>{self._escape_html(gremlin.description)}</td>
+                    <td>{pardon_reason}</td>
+                </tr>"""
+
+        return f"""
+        <h2>Pardoned Gremlins</h2>
+        <table>
+            <caption>Gremlins suppressed by inline pragma</caption>
+            <thead>
+                <tr>
+                    <th scope="col">File</th>
+                    <th scope="col">Line</th>
+                    <th scope="col">Operator</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Pardon Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
         """
 
     def _render_charts(self, score: MutationScore, chart_data: dict[str, Any]) -> str:
