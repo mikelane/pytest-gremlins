@@ -44,6 +44,7 @@ class GremlinConfig:
     report: str | None = None
     batch_size: int | None = None
     max_pardons_pct: float | None = None
+    max_pardons: int | None = None
 
 
 def _resolve_workers(value: int | str | None) -> int | None:
@@ -85,7 +86,7 @@ def _resolve_workers(value: int | str | None) -> int | None:
     return value
 
 
-def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901
+def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912
     """Load configuration from pyproject.toml.
 
     Reads the [tool.pytest-gremlins] section from pyproject.toml in the
@@ -166,6 +167,28 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901
                 f'(e.g. max-pardons-pct = 5.0), got {max_pardons_pct_raw!r}'
             )
 
+    max_pardons_raw = tool_config.get('max_pardons')
+    if max_pardons_raw is not None:
+        if isinstance(max_pardons_raw, bool) or not isinstance(max_pardons_raw, int):
+            logger.warning(
+                'Invalid max_pardons in %s: expected non-negative integer, got %r',
+                pyproject_path,
+                max_pardons_raw,
+            )
+            raise ValueError(
+                f'[tool.pytest-gremlins].max_pardons must be a non-negative integer '
+                f'(e.g. max_pardons = 5), got {max_pardons_raw!r}'
+            )
+        if max_pardons_raw < 0:
+            logger.warning(
+                'Invalid max_pardons in %s: expected non-negative integer, got %r',
+                pyproject_path,
+                max_pardons_raw,
+            )
+            raise ValueError(
+                f'[tool.pytest-gremlins].max_pardons must be >= 0 (e.g. max_pardons = 5), got {max_pardons_raw!r}'
+            )
+
     return GremlinConfig(
         operators=tool_config.get('operators'),
         paths=tool_config.get('paths'),
@@ -175,6 +198,7 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901
         report=report_raw,
         batch_size=batch_size_raw,
         max_pardons_pct=max_pardons_pct_raw,
+        max_pardons=max_pardons_raw,
     )
 
 
@@ -269,6 +293,7 @@ def merge_configs(
     cli_report: str | None = None,
     cli_batch_size: int | None = None,
     cli_max_pardons_pct: float | None = None,
+    cli_max_pardons: int | None = None,
 ) -> GremlinConfig:
     """Merge CLI arguments with file configuration.
 
@@ -284,6 +309,7 @@ def merge_configs(
         cli_report: Report format from CLI (--gremlin-report).
         cli_batch_size: Batch size from CLI (--gremlin-batch-size).
         cli_max_pardons_pct: Max pardoned % from CLI (--gremlin-max-pardons-pct).
+        cli_max_pardons: Max absolute pardon count from CLI (--max-pardons).
 
     Returns:
         GremlinConfig with CLI values overriding file config where provided.
@@ -307,6 +333,7 @@ def merge_configs(
     max_pardons_pct: float | None = (
         cli_max_pardons_pct if cli_max_pardons_pct is not None else file_config.max_pardons_pct
     )
+    max_pardons: int | None = cli_max_pardons if cli_max_pardons is not None else file_config.max_pardons
 
     return GremlinConfig(
         operators=operators,
@@ -317,4 +344,5 @@ def merge_configs(
         report=report,
         batch_size=batch_size,
         max_pardons_pct=max_pardons_pct,
+        max_pardons=max_pardons,
     )
