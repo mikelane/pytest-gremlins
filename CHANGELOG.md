@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.5.0b2 (2026-03-07)
+
+### Feat
+
+- **config**: add --gremlin-max-pardons-pct threshold enforcement (#268)
+- **pragma**: inline suppression pragma for equivalent/untestable mutations (#261) (#266)
+
 ## v1.5.0b1 (2026-03-07)
 
 ### Fix
