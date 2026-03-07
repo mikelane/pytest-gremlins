@@ -1,9 +1,12 @@
 """Mutation score calculation for gremlin test results.
 
 The mutation score represents test suite effectiveness at catching mutations:
-  score = zapped / total * 100
+  score = (zapped + timeout) / (total - pardoned) * 100
 
-A higher score means tests are better at catching bugs.
+Pardoned gremlins are excluded from the denominator — they represent
+intentionally suppressed mutations (equivalent code, untestable paths, etc.)
+and should not penalise the score. A higher score means tests are better
+at catching bugs.
 """
 
 from __future__ import annotations
@@ -71,8 +74,10 @@ class MutationScore:
     def percentage(self) -> float:
         """Calculate mutation score as a percentage.
 
-        The score is (zapped + timeout) / total * 100.
+        The score is (zapped + timeout) / (total - pardoned) * 100.
         Timeouts count as zapped because the test detected something wrong.
+        Pardoned gremlins are excluded from the denominator — they are
+        intentionally suppressed and should not affect the score.
 
         Returns:
             Mutation score percentage (0.0 to 100.0).

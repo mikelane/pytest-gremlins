@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import dataclasses
 import hashlib
 import logging
 from pathlib import Path
@@ -531,14 +532,8 @@ def transform_source(
         if g.line_number in pardoned_lines:
             reason_code, justification = pardoned_lines[g.line_number]
             pardoned_gremlins.append(
-                Gremlin(
-                    gremlin_id=g.gremlin_id,
-                    file_path=g.file_path,
-                    line_number=g.line_number,
-                    original_node=g.original_node,
-                    mutated_node=g.mutated_node,
-                    operator_name=g.operator_name,
-                    description=g.description,
+                dataclasses.replace(
+                    g,
                     pardoned=True,
                     pardon_reason=f'{reason_code}: {justification}',
                 )

@@ -47,6 +47,10 @@ class Gremlin:
         mutated_node: The mutated AST node.
         operator_name: Name of the operator that created this mutation.
         description: Human-readable description of the mutation.
+        pardoned: True when an inline suppression pragma covers this mutation.
+        pardon_reason: The reason code and justification from the pragma, e.g.
+            ``'equivalent: floor division is integer arithmetic'``. None when
+            not pardoned.
     """
 
     gremlin_id: str
