@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import copy
 import hashlib
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
+from pytest_gremlins.instrumentation.pragma import parse_pardoned_lines
 from pytest_gremlins.operators import (
     ArithmeticOperator,
     BooleanOperator,
@@ -509,4 +511,39 @@ def transform_source(
     new_tree = transformer.visit(tree)
     if not isinstance(new_tree, ast.Module):  # pragma: no cover
         raise TypeError(f'Expected ast.Module, got {type(new_tree).__name__}')
-    return transformer.gremlins, new_tree
+
+    pardoned_lines = parse_pardoned_lines(source)
+    gremlins_by_line: dict[int, list[int]] = {}
+    for i, g in enumerate(transformer.gremlins):
+        gremlins_by_line.setdefault(g.line_number, []).append(i)
+
+    _logger = logging.getLogger(__name__)
+    for line_number in pardoned_lines:
+        if line_number not in gremlins_by_line:
+            _logger.warning(
+                'Dead gremlin pragma at line %d of %s: no gremlins on that line',
+                line_number,
+                file_path,
+            )
+
+    pardoned_gremlins: list[Gremlin] = []
+    for g in transformer.gremlins:
+        if g.line_number in pardoned_lines:
+            reason_code, justification = pardoned_lines[g.line_number]
+            pardoned_gremlins.append(
+                Gremlin(
+                    gremlin_id=g.gremlin_id,
+                    file_path=g.file_path,
+                    line_number=g.line_number,
+                    original_node=g.original_node,
+                    mutated_node=g.mutated_node,
+                    operator_name=g.operator_name,
+                    description=g.description,
+                    pardoned=True,
+                    pardon_reason=f'{reason_code}: {justification}',
+                )
+            )
+        else:
+            pardoned_gremlins.append(g)
+
+    return pardoned_gremlins, new_tree
