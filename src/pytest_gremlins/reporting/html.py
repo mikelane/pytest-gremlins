@@ -178,7 +178,6 @@ class HtmlReporter:
             --border-color: #333333;
             --color-primary: #2e7d32;
             --color-primary-light: #4caf50;
-            --color-primary-dark: #1b5e20;
             --link-color: #4caf50;
             --color-zapped: #4caf50;
             --color-survived: #ef5350;
@@ -205,7 +204,6 @@ class HtmlReporter:
             --border-color: #e0e0e0;
             --color-primary: #2e7d32;
             --color-primary-light: #4caf50;
-            --color-primary-dark: #1b5e20;
             --link-color: #1b5e20;
             --color-zapped: #2e7d32;
             --color-survived: #c62828;
