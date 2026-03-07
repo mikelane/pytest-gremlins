@@ -55,7 +55,7 @@ def _make_unpardoned_gremlin() -> Gremlin:
 
 
 @pytest.mark.small
-class DescribePardonnedGremlinNeverRunsSubprocess:
+class DescribePardonedGremlinNeverRunsSubprocess:
     """Guard: subprocess tests are NEVER run for pardoned gremlins.
 
     Tests the wiring between the execution loop and the pardon short-circuit.

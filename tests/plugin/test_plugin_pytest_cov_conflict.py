@@ -275,6 +275,8 @@ def _make_configure_config(*, gremlins: bool, has_pytest_cov: bool, no_cov: bool
         gremlin_batch=False,
         gremlin_batch_size=10,
         n=None,
+        strict_pardons=False,
+        gremlin_audit_pardons=False,
     )
     config.pluginmanager = MagicMock()
     config.pluginmanager.hasplugin.return_value = has_pytest_cov

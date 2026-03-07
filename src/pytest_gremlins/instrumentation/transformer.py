@@ -527,18 +527,18 @@ def transform_source(
                 file_path,
             )
 
-    pardoned_gremlins: list[Gremlin] = []
-    for g in transformer.gremlins:
-        if g.line_number in pardoned_lines:
-            reason_code, justification = pardoned_lines[g.line_number]
-            pardoned_gremlins.append(
+    resolved_gremlins: list[Gremlin] = []
+    for gremlin in transformer.gremlins:
+        if gremlin.line_number in pardoned_lines:
+            reason_code, justification = pardoned_lines[gremlin.line_number]
+            resolved_gremlins.append(
                 dataclasses.replace(
-                    g,
+                    gremlin,
                     pardoned=True,
                     pardon_reason=f'{reason_code}: {justification}',
                 )
             )
         else:
-            pardoned_gremlins.append(g)
+            resolved_gremlins.append(gremlin)
 
-    return pardoned_gremlins, new_tree
+    return resolved_gremlins, new_tree

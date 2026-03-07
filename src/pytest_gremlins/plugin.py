@@ -208,6 +208,7 @@ class GremlinSession:
     private_coverage: coverage.Coverage | None = None
     gremlins_tmpdir: str | None = None
     strict_pardons: bool = False
+    audit_pardons: bool = False
 
 
 _gremlin_session: GremlinSession | None = None
@@ -564,6 +565,8 @@ def pytest_configure(config: pytest.Config) -> None:
             batch_enabled=batch_enabled,
             batch_size=batch_size,
             coverage_mode=_detect_coverage_mode(config),
+            strict_pardons=bool(config.option.strict_pardons),
+            audit_pardons=bool(config.option.gremlin_audit_pardons),
         )
     )
 
@@ -2008,7 +2011,7 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
         if score.error > 0:
             terminalreporter.write_line(f'Error: {score.error} gremlins ({error_pct}%)')
         if score.pardoned > 0:
-            terminalreporter.write_line(f'Pardoned: {score.pardoned} gremlins')
+            terminalreporter.write_line(f'Pardoned: {score.pardoned} gremlins (excluded from score)')
 
         # Show cache statistics if caching was enabled
         if gremlin_session.cache_enabled:
@@ -2035,8 +2038,16 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
         terminalreporter.write_line('Run with --gremlin-report=html for detailed report.')
     terminalreporter.write_sep('=', '')
 
+    if gremlin_session.audit_pardons and score.pardoned > 0:
+        terminalreporter.write_line('')
+        terminalreporter.write_line('Pardoned gremlins audit:')
+        for result in score.results:
+            if result.status == GremlinResultStatus.PARDONED:
+                g = result.gremlin
+                terminalreporter.write_line(f'  {g.file_path}:{g.line_number}  {g.pardon_reason or "(no reason)"}')
+
     if gremlin_session.strict_pardons and score.pardoned > 0:
-        pytest.exit('--strict-pardons: pardoned gremlins exist', returncode=1)
+        pytest.exit(f'--strict-pardons: {score.pardoned} pardoned gremlins exist', returncode=1)
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:  # noqa: ARG001

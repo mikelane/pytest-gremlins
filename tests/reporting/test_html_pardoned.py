@@ -42,8 +42,9 @@ class DescribeHtmlScoreLineWithPardoned:
         ]
         score = MutationScore.from_results(results)
         html = HtmlReporter().to_html(score)
-        # Score line should mention pardoned
-        assert '1 pardoned' in html or 'pardoned' in html
+        # Pardoned stat card renders the count value and label
+        assert '>1<' in html
+        assert 'Pardoned' in html
 
 
 @pytest.mark.small
@@ -57,7 +58,8 @@ class DescribeHtmlPardonedSection:
                 GremlinResultStatus.PARDONED,
                 file_path='auth.py',
                 line_number=42,
-                description='equivalent: floor division',
+                description='// to /',
+                pardon_reason='equivalent: floor division is integer arithmetic',
             ),
         ]
         score = MutationScore.from_results(results)
@@ -65,6 +67,7 @@ class DescribeHtmlPardonedSection:
         assert 'Pardoned Gremlins' in html
         assert 'auth.py' in html
         assert '42' in html
+        assert 'equivalent: floor division is integer arithmetic' in html
 
     def it_omits_pardoned_section_when_no_pardoned_results(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]

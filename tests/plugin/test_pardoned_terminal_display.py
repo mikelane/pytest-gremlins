@@ -89,6 +89,50 @@ class DescribeTerminalSummaryPardoned:
 
 
 @pytest.mark.small
+class DescribeAuditPardonsTerminalListing:
+    """--gremlin-audit-pardons must print each pardoned gremlin's details."""
+
+    def it_shows_file_line_and_reason_for_each_pardoned_gremlin(self) -> None:
+        gremlin = _make_pardoned_gremlin()
+        pardoned = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.PARDONED)
+        session = GremlinSession(enabled=True, audit_pardons=True, gremlins=[gremlin], results=[pardoned])
+        _set_session(session)
+
+        written_lines: list[str] = []
+        tr = MagicMock()
+        tr.config.getoption.return_value = None
+        tr.config.pluginmanager.get_plugin.return_value = None
+        tr.write_line.side_effect = written_lines.append
+
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+
+        output = '\n'.join(written_lines)
+        assert 'src/example.py' in output, f'File path missing from audit output: {written_lines}'
+        assert '5' in output, f'Line number missing from audit output: {written_lines}'
+        assert 'equivalent: floor division is integer arithmetic' in output, (
+            f'Pardon reason missing from audit output: {written_lines}'
+        )
+
+    def it_does_not_show_audit_listing_when_flag_is_false(self) -> None:
+        gremlin = _make_pardoned_gremlin()
+        pardoned = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.PARDONED)
+        session = GremlinSession(enabled=True, audit_pardons=False, gremlins=[gremlin], results=[pardoned])
+        _set_session(session)
+
+        written_lines: list[str] = []
+        tr = MagicMock()
+        tr.config.getoption.return_value = None
+        tr.config.pluginmanager.get_plugin.return_value = None
+        tr.write_line.side_effect = written_lines.append
+
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+
+        assert not any('equivalent: floor division' in line for line in written_lines), (
+            f'Audit output appeared when audit_pardons=False: {written_lines}'
+        )
+
+
+@pytest.mark.small
 class DescribeStrictPardonsCIFailure:
     """--strict-pardons must cause non-zero exit when any pardons exist."""
 
@@ -113,6 +157,28 @@ class DescribeStrictPardonsCIFailure:
 
         assert len(exit_calls) == 1, 'pytest.exit was not called for strict_pardons=True with pardons'
         assert exit_calls[0][1] == 1, f'Expected exit returncode 1, got {exit_calls[0][1]}'
+
+    def it_exit_message_includes_pardoned_count(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        gremlin = _make_pardoned_gremlin()
+        pardoned = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.PARDONED)
+        session = GremlinSession(enabled=True, strict_pardons=True, gremlins=[gremlin], results=[pardoned])
+        _set_session(session)
+
+        exit_calls: list[tuple[str, int]] = []
+
+        def fake_exit(msg: str, returncode: int = 1) -> None:  # type: ignore[misc]
+            exit_calls.append((msg, returncode))
+
+        monkeypatch.setattr(pytest, 'exit', fake_exit)
+
+        tr = MagicMock()
+        tr.config.getoption.return_value = None
+        tr.config.pluginmanager.get_plugin.return_value = None
+
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+
+        assert len(exit_calls) == 1
+        assert '1' in exit_calls[0][0], f'Exit message missing count: {exit_calls[0][0]}'
 
     def it_does_not_exit_when_strict_pardons_false_and_pardons_exist(self, monkeypatch: pytest.MonkeyPatch) -> None:
         gremlin = _make_pardoned_gremlin()

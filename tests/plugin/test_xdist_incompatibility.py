@@ -50,6 +50,8 @@ def _make_config(
         'gremlin_clear_cache': gremlin_clear_cache,
         'gremlin_batch': gremlin_batch,
         'gremlin_batch_size': gremlin_batch_size,
+        'strict_pardons': False,
+        'gremlin_audit_pardons': False,
     }
     if numprocesses is not _UNSET:
         attrs['numprocesses'] = numprocesses

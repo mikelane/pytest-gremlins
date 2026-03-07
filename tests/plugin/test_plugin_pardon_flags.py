@@ -48,3 +48,16 @@ class DescribePytestAddoptionPardons:
 
         added_option_names = [call.args[0] for call in group.addoption.call_args_list]
         assert '--gremlin-audit-pardons' in added_option_names
+
+
+@pytest.mark.small
+class DescribeGremlinSessionAuditPardons:
+    """Tests for audit_pardons field on GremlinSession."""
+
+    def it_defaults_audit_pardons_to_false(self):
+        session = GremlinSession()
+        assert session.audit_pardons is False
+
+    def it_accepts_audit_pardons_true(self):
+        session = GremlinSession(audit_pardons=True)
+        assert session.audit_pardons is True
