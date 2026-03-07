@@ -38,6 +38,7 @@ class MutationScore:
     survived: int
     timeout: int
     error: int
+    pardoned: int
     results: tuple[GremlinResult, ...]
 
     @classmethod
@@ -54,6 +55,7 @@ class MutationScore:
         survived = sum(1 for r in results if r.status == GremlinResultStatus.SURVIVED)
         timeout = sum(1 for r in results if r.status == GremlinResultStatus.TIMEOUT)
         error = sum(1 for r in results if r.status == GremlinResultStatus.ERROR)
+        pardoned = sum(1 for r in results if r.status == GremlinResultStatus.PARDONED)
 
         return cls(
             total=len(results),
@@ -61,6 +63,7 @@ class MutationScore:
             survived=survived,
             timeout=timeout,
             error=error,
+            pardoned=pardoned,
             results=tuple(results),
         )
 
@@ -74,9 +77,10 @@ class MutationScore:
         Returns:
             Mutation score percentage (0.0 to 100.0).
         """
-        if self.total == 0:
+        effective_total = self.total - self.pardoned
+        if effective_total == 0:
             return 0.0
-        return (self.zapped + self.timeout) / self.total * 100
+        return (self.zapped + self.timeout) / effective_total * 100
 
     def by_file(self) -> dict[str, MutationScore]:
         """Break down mutation score by file.

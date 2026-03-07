@@ -29,6 +29,7 @@ class GremlinResultStatus(Enum):
     SURVIVED = 'survived'
     TIMEOUT = 'timeout'
     ERROR = 'error'
+    PARDONED = 'pardoned'
 
 
 @dataclass(frozen=True)
