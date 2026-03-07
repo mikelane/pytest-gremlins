@@ -1259,7 +1259,7 @@ def _decode_numbits(numbits: bytes) -> list[int]:
     ]
 
 
-def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901
+def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -1291,6 +1291,10 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901
     uncached_gremlins: list[Gremlin] = []
 
     for gremlin in gremlins:
+        pardoned_result = _immediate_result_if_pardoned(gremlin)
+        if pardoned_result is not None:
+            cached_results.append(pardoned_result)
+            continue
         selected_tests = gremlin_tests[gremlin.gremlin_id]
         cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
         if cached_result is not None:
@@ -1380,7 +1384,7 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901
     return results
 
 
-def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
+def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, PLR0915
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -1411,6 +1415,10 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
     uncached_gremlins: list[Gremlin] = []
 
     for gremlin in gremlins:
+        pardoned_result = _immediate_result_if_pardoned(gremlin)
+        if pardoned_result is not None:
+            cached_results.append(pardoned_result)
+            continue
         selected_tests = gremlin_tests[gremlin.gremlin_id]
         cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
         if cached_result is not None:
@@ -1521,6 +1529,10 @@ def _run_mutation_testing(
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
 
     for i, gremlin in enumerate(gremlin_session.gremlins, 1):
+        pardoned_result = _immediate_result_if_pardoned(gremlin)
+        if pardoned_result is not None:
+            results.append(pardoned_result)
+            continue
         selected_tests = _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
         test_count = len(selected_tests)
         total = gremlin_session.total_tests
@@ -1826,6 +1838,23 @@ def _build_test_command(instrumented_dir: Path | None) -> list[str]:
     ]
 
 
+def _immediate_result_if_pardoned(gremlin: Gremlin) -> GremlinResult | None:
+    """Return a PARDONED result immediately if the gremlin is pardoned, else None.
+
+    Called at the top of every execution loop. Pardoned gremlins must never
+    have subprocess tests run against them — they exit the loop here.
+
+    Args:
+        gremlin: The gremlin to check.
+
+    Returns:
+        A GremlinResult with PARDONED status if pardoned, otherwise None.
+    """
+    if gremlin.pardoned:
+        return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.PARDONED)
+    return None
+
+
 def _test_gremlin(
     gremlin: Gremlin,
     test_command: list[str],
@@ -1978,6 +2007,8 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
             terminalreporter.write_line(f'Timeout: {score.timeout} gremlins ({timeout_pct}%)')
         if score.error > 0:
             terminalreporter.write_line(f'Error: {score.error} gremlins ({error_pct}%)')
+        if score.pardoned > 0:
+            terminalreporter.write_line(f'Pardoned: {score.pardoned} gremlins')
 
         # Show cache statistics if caching was enabled
         if gremlin_session.cache_enabled:
@@ -2003,6 +2034,9 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     if gremlin_session.report_format != 'html':
         terminalreporter.write_line('Run with --gremlin-report=html for detailed report.')
     terminalreporter.write_sep('=', '')
+
+    if gremlin_session.strict_pardons and score.pardoned > 0:
+        pytest.exit('--strict-pardons: pardoned gremlins exist', returncode=1)
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:  # noqa: ARG001
