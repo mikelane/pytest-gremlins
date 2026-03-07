@@ -1302,7 +1302,7 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901
     batch_size = gremlin_session.batch_size
     num_batches = (len(uncached_gremlins) + batch_size - 1) // batch_size
     print(
-        f'pytest-gremlins: Starting batch execution '
+        f'\npytest-gremlins: Starting batch execution '
         f'({len(uncached_gremlins)} gremlins, {num_batches} batches of {batch_size})'
     )
 
@@ -1422,7 +1422,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901
     # Map gremlin_id -> Gremlin for result reconstruction
     gremlin_by_id = {g.gremlin_id: g for g in uncached_gremlins}
 
-    print(f'pytest-gremlins: Starting parallel execution with {gremlin_session.parallel_workers or "auto"} workers')
+    print(f'\npytest-gremlins: Starting parallel execution with {gremlin_session.parallel_workers or "auto"} workers')
 
     with WorkerPool(
         max_workers=gremlin_session.parallel_workers,

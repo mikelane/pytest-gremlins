@@ -1204,3 +1204,67 @@ class DescribeWriteReportHistoryPersistence:
 
         content = output_path.read_text(encoding='utf-8')
         assert 'data-history' in content
+
+
+@pytest.mark.small
+class DescribeHtmlReporterCssUx:
+    """Tests for CSS UX correctness: contrast and overflow."""
+
+    def it_uses_a_wcag_compliant_link_color_in_light_mode(self, make_result):
+        # #4caf50 on white = 3.07:1 contrast ratio — WCAG AA requires 4.5:1.
+        # The light theme must define --link-color with a darker value (#1b5e20 = 7.06:1).
+        results = [make_result(GremlinResultStatus.SURVIVED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        assert '--link-color: #1b5e20' in html
+
+    def it_uses_link_color_for_details_summary_not_color_primary_light(self, make_result):
+        # details summary was using --color-primary-light (#4caf50) which fails contrast
+        # in light mode. It must use --link-color instead.
+        results = [make_result(GremlinResultStatus.SURVIVED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        assert 'details summary' in html
+        # Find the details summary rule and confirm it uses --link-color
+        style_start = html.index('<style>')
+        style_end = html.index('</style>')
+        css = html[style_start:style_end]
+        summary_rule_start = css.index('details summary')
+        summary_rule_end = css.index('}', summary_rule_start)
+        summary_rule = css[summary_rule_start:summary_rule_end]
+        assert 'var(--link-color)' in summary_rule
+        assert 'var(--color-primary-light)' not in summary_rule
+
+    def it_sets_table_layout_fixed_to_prevent_diff_overflow(self, make_result):
+        # Without table-layout: fixed, opening diff panels inside a <td> expands
+        # the entire table causing extreme horizontal overflow.
+        results = [make_result(GremlinResultStatus.SURVIVED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        assert 'table-layout: fixed' in html
+
+    def it_sets_min_width_zero_on_diff_panel_to_allow_grid_shrinking(self, make_result):
+        # CSS grid children default to min-width: auto, preventing them from shrinking
+        # below content width. min-width: 0 allows the grid to constrain them.
+        results = [make_result(GremlinResultStatus.SURVIVED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        style_start = html.index('<style>')
+        style_end = html.index('</style>')
+        css = html[style_start:style_end]
+        panel_rule_start = css.index('.diff-panel {')
+        panel_rule_end = css.index('}', panel_rule_start)
+        panel_rule = css[panel_rule_start:panel_rule_end]
+        assert 'min-width: 0' in panel_rule
