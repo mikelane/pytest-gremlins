@@ -361,7 +361,7 @@ class HtmlReporter:
         }
 
         :focus-visible {
-            outline: 3px solid var(--accent);
+            outline: 3px solid var(--color-primary-light);
             outline-offset: 2px;
         }
 
@@ -617,6 +617,12 @@ class HtmlReporter:
             var next = current === 'dark' ? 'light' : 'dark';
             html.setAttribute('data-theme', next);
             localStorage.setItem('gremlins-theme', next);
+            var btn = document.querySelector('.theme-toggle');
+            if (next === 'dark') {{
+                btn.setAttribute('aria-pressed', 'true');
+            }} else {{
+                btn.setAttribute('aria-pressed', 'false');
+            }}
         }}
         """
 
@@ -767,13 +773,14 @@ class HtmlReporter:
             <button class="expand-btn" onclick="collapseAllDiffs()">Collapse all diffs</button>
         </div>
         <table>
+            <caption>Gremlin mutation testing results</caption>
             <thead>
                 <tr>
-                    <th>File</th>
-                    <th>Line</th>
-                    <th>Operator</th>
-                    <th>Description</th>
-                    <th>Status</th>
+                    <th scope="col">File</th>
+                    <th scope="col">Line</th>
+                    <th scope="col">Operator</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Status</th>
                 </tr>
             </thead>
             <tbody>

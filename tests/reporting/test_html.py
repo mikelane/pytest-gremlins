@@ -960,6 +960,70 @@ class DescribeHtmlReporterA11y:
         assert h2_pos != -1, 'Expected at least one <h2> section heading before <h3> chart titles'
         assert h2_pos < h3_pos
 
+    def it_uses_a_defined_css_variable_for_focus_visible_outline(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        style_start = html.index('<style>')
+        style_end = html.index('</style>')
+        css = html[style_start:style_end]
+        focus_rule_start = css.index(':focus-visible')
+        focus_rule_end = css.index('}', focus_rule_start)
+        focus_rule = css[focus_rule_start:focus_rule_end]
+        assert 'var(--color-primary-light)' in focus_rule
+        assert 'var(--accent)' not in focus_rule
+
+    def it_updates_aria_pressed_when_toggling_to_dark_theme(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        script_start = html.index('function toggleTheme()')
+        script_end = html.index('\n        }', script_start) + len('\n        }')
+        toggle_fn = html[script_start:script_end]
+        assert "btn.setAttribute('aria-pressed', 'true')" in toggle_fn
+
+    def it_updates_aria_pressed_when_toggling_to_light_theme(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        script_start = html.index('function toggleTheme()')
+        script_end = html.index('\n        }', script_start) + len('\n        }')
+        toggle_fn = html[script_start:script_end]
+        assert "btn.setAttribute('aria-pressed', 'false')" in toggle_fn
+
+    def it_includes_a_caption_in_the_results_table(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        assert '<caption>Gremlin mutation testing results</caption>' in html
+
+    def it_adds_scope_col_to_all_th_elements(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        table_start = html.index('<table>')
+        table_end = html.index('</table>', table_start)
+        table_html = html[table_start:table_end]
+        th_count = table_html.count('<th>')
+        scope_col_count = table_html.count('scope="col"')
+        assert th_count == 0
+        assert scope_col_count == 5
+
 
 @pytest.mark.small
 class DescribeLoadHistory:
