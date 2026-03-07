@@ -13,6 +13,16 @@ on:
           - patch
           - minor
           - major
+      prerelease:
+        description: 'Pre-release identifier. Leave empty for a stable release.'
+        required: false
+        default: ''
+        type: choice
+        options:
+          - ''
+          - alpha
+          - beta
+          - rc
 
 jobs:
   cut-release:
@@ -66,12 +76,21 @@ jobs:
 
       - name: Bump version and create tag
         id: bump
+        env:
+          BUMP_TYPE: ${{ inputs.bump }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          bump_type="${{ inputs.bump }}"
-          if [[ "$bump_type" == "auto" ]]; then
-            uv run cz bump --yes 2>&1 | tee /tmp/cz-bump-output.txt
+          prerelease_args=""
+          if [[ -n "$PRERELEASE" ]]; then
+            prerelease_args="--prerelease ${PRERELEASE}"
+          fi
+
+          if [[ "$BUMP_TYPE" == "auto" ]]; then
+            # shellcheck disable=SC2086
+            uv run cz bump --yes $prerelease_args 2>&1 | tee /tmp/cz-bump-output.txt
           else
-            uv run cz bump --yes --increment "${bump_type^^}" 2>&1 | tee /tmp/cz-bump-output.txt
+            # shellcheck disable=SC2086
+            uv run cz bump --yes --increment "${BUMP_TYPE^^}" $prerelease_args 2>&1 | tee /tmp/cz-bump-output.txt
           fi
 
           new_tag=$(git describe --tags --abbrev=0)
