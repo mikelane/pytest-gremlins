@@ -103,6 +103,25 @@ uv run mkdocs build --strict
 uv run pytest --doctest-modules src/pytest_gremlins
 ```
 
+## CI Caching
+
+pytest-gremlins uses a two-layer cache in CI:
+
+1. **CI platform cache** (outer) — stores `.gremlins_cache/` between jobs
+2. **IncrementalCache** (inner) — per-gremlin results by content hash
+
+**Critical rules for CI cache configuration:**
+
+- Use `hashFiles` on source + test files + `pyproject.toml` (NOT commit SHA)
+- Always use `restore-keys` prefix fallback (so a file change gets a warm cache)
+- Save the cache with `if: always()` — threshold check failures must NOT discard the cache
+- Use split restore/save steps (not combined `actions/cache`) so `if: always()` works
+
+**Why `if: always()` matters:** A failing threshold check exits the job non-zero. CI
+skips subsequent steps by default, so the cache save never runs and the next job starts
+cold. `if: always()` overrides that — the save runs even when the score gate fails, so
+the next run only re-tests what changed.
+
 ## TDD Laws (STRICTLY ENFORCED)
 
 1. **No production code without a failing test**

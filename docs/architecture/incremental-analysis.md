@@ -201,27 +201,59 @@ pytest --gremlins --clear-cache
 
 ### Cache Sharing
 
-For teams, the cache can be shared via CI artifacts:
+The cache can be shared across CI jobs using the CI platform's caching mechanism. See
+[CI/CD Integration](../cookbook/ci-integration.md) for full configurations.
+
+The pattern on every platform is:
+
+1. Restore `.gremlins_cache/` before the mutation run
+2. Run mutation testing with `--gremlin-cache`
+3. Save `.gremlins_cache/` after the run — even if the threshold check failed
 
 ```yaml
 # .github/workflows/gremlins.yml
 - name: Restore gremlins cache
-  uses: actions/cache@v3
+  uses: actions/cache/restore@v4
   with:
     path: .gremlins_cache
-    key: gremlins-${{ hashFiles('src/**/*.py', 'tests/**/*.py') }}
+    key: ${{ runner.os }}-gremlins-${{ hashFiles('src/**/*.py', 'tests/**/*.py', 'pyproject.toml') }}
     restore-keys: |
-      gremlins-
+      ${{ runner.os }}-gremlins-
 
 - name: Run mutation testing
-  run: pytest --gremlins
+  run: pytest --gremlins --gremlin-cache --gremlin-report=html
 
 - name: Save gremlins cache
-  uses: actions/cache@v3
+  uses: actions/cache/save@v4
+  if: always()   # Save even if threshold check fails
   with:
     path: .gremlins_cache
-    key: gremlins-${{ hashFiles('src/**/*.py', 'tests/**/*.py') }}
+    key: ${{ runner.os }}-gremlins-${{ hashFiles('src/**/*.py', 'tests/**/*.py', 'pyproject.toml') }}
 ```
+
+Note: Use `actions/cache/restore` and `actions/cache/save` separately (not the combined
+`actions/cache`). The combined action cannot have `if: always()` applied to the save step
+independently — it either saves on success or not at all.
+
+### How CI Caching Interacts with IncrementalCache
+
+The CI platform cache and IncrementalCache do different jobs:
+
+- **CI platform cache (outer):** moves `.gremlins_cache/` onto the runner's disk before the job starts
+- **IncrementalCache (inner):** reads that directory and decides which gremlins to skip
+
+When you change one file, the outer cache key changes (it hashes all source files), so the exact
+key misses. `restore-keys` falls back to the previous warm cache. The full `.gremlins_cache/`
+directory lands on disk, IncrementalCache finds cache hits for every unchanged file, and only the
+changed file's gremlins actually run.
+
+Without the outer cache, IncrementalCache starts empty on every CI job — all gremlins run every
+time. Without IncrementalCache, the outer cache is all-or-nothing: one changed file forces a full
+re-run. They need each other.
+
+**Why content hashes instead of commit SHAs:** a commit SHA changes on every push, even when no
+Python file changed. With a SHA-keyed cache, every commit starts cold. With a content hash, two
+commits that touch only documentation or CI config share the same warm cache.
 
 ## Performance Characteristics
 

@@ -2,6 +2,36 @@
 
 Complete CI/CD configurations for running pytest-gremlins in your pipelines.
 
+## How Caching Works in CI
+
+pytest-gremlins uses two cache layers that work together:
+
+**Layer 1: CI platform cache (outer)**
+
+The CI platform stores the entire `.gremlins_cache/` directory between job runs. The cache key
+is a hash of your source files, not the commit SHA. When one file changes, the key changes and
+the outer cache misses — but `restore-keys` finds the previous warm cache as a fallback.
+
+**Layer 2: IncrementalCache (inner)**
+
+Inside `.gremlins_cache/`, results are keyed per-gremlin by `gremlin_id:source_hash:test_hash`.
+When the outer cache is restored, the inner cache hits on unchanged files and misses only on
+gremlins in the file you changed.
+
+**Net result:** change one file, re-run only that file's gremlins. Everything else returns from
+the inner cache instantly.
+
+### Why `if: always()` on cache save
+
+If the mutation score falls below the configured threshold, the threshold check step fails and
+the job exits non-zero. Without explicit handling, CI skips the cache save. The next run starts
+cold and re-analyzes everything — even the code that didn't change.
+
+Save the cache with `if: always()` so that a failing score gate preserves the warm cache.
+Subsequent runs only re-test what changed.
+
+---
+
 ## GitHub Actions
 
 ### Goal
@@ -61,19 +91,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Restore mutation cache
-        uses: actions/cache@v4
+      - name: Restore gremlins cache
+        uses: actions/cache/restore@v4
         with:
           path: .gremlins_cache
-          key: gremlins-${{ runner.os }}-${{ hashFiles('src/**/*.py', 'tests/**/*.py') }}
+          key: ${{ runner.os }}-gremlins-${{ hashFiles('src/**/*.py', 'tests/**/*.py', 'pyproject.toml') }}
           restore-keys: |
-            gremlins-${{ runner.os }}-
+            ${{ runner.os }}-gremlins-
 
       - name: Run mutation testing
         run: |
           pytest --gremlins \
             --gremlin-report=html \
             --gremlin-cache
+
+      - name: Save gremlins cache
+        uses: actions/cache/save@v4
+        if: always()   # Save even if threshold check fails
+        with:
+          path: .gremlins_cache
+          key: ${{ runner.os }}-gremlins-${{ hashFiles('src/**/*.py', 'tests/**/*.py', 'pyproject.toml') }}
 
       - name: Upload mutation report
         uses: actions/upload-artifact@v4
@@ -83,6 +120,14 @@ jobs:
           path: gremlin-report.html
           retention-days: 30
 ```
+
+Note: The restore and save steps use `actions/cache/restore` and `actions/cache/save` separately,
+not the combined `actions/cache`. The combined action ties the save to the step's success condition,
+which means `if: always()` cannot be applied independently. The split approach lets the save run
+regardless of whether the threshold check passed.
+
+The cache key includes `pyproject.toml` because operator configuration lives there — changing which
+operators run changes mutation results, so the old cache is invalid.
 
 Add to `pyproject.toml`:
 
@@ -129,14 +174,6 @@ jobs:
     pytest --gremlins ${{ steps.changed.outputs.all_changed_files }}
 ```
 
-#### Cache not restoring properly
-
-Ensure the cache key includes all relevant files:
-
-```yaml
-key: gremlins-${{ hashFiles('src/**/*.py', 'tests/**/*.py', 'pyproject.toml') }}
-```
-
 ---
 
 ## GitLab CI
@@ -176,12 +213,6 @@ variables:
     - pip install --upgrade pip
     - pip install -e ".[dev]"
 
-cache:
-  key: "${CI_COMMIT_REF_SLUG}"
-  paths:
-    - .cache/pip
-    - .gremlins_cache
-
 # Run unit tests first
 unit-tests:
   <<: *python-setup
@@ -204,6 +235,14 @@ mutation-testing:
     - pytest --gremlins
         --gremlin-report=html
         --gremlin-cache
+  cache:
+    key:
+      files:
+        - "**/*.py"       # GitLab hashes the listed files natively
+        - pyproject.toml
+    paths:
+      - .gremlins_cache/
+    policy: pull-push     # Restore before job, save after (even on failure)
   artifacts:
     paths:
       - gremlin-report.html
@@ -221,10 +260,22 @@ mutation-quick:
     - pytest --gremlins
         --gremlin-operators=comparison,boolean
         --gremlin-cache
+  cache:
+    key:
+      files:
+        - "**/*.py"
+        - pyproject.toml
+    paths:
+      - .gremlins_cache/
+    policy: pull-push
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   allow_failure: true
 ```
+
+GitLab's `cache.key.files` accepts a list of files and computes a hash of their contents natively.
+This is equivalent to GitHub's `hashFiles()`. Using `policy: pull-push` restores the cache before
+the job starts and saves it after the job finishes, including on failure.
 
 Add to `pyproject.toml`:
 
@@ -257,18 +308,6 @@ before_script:
   - pytest --gremlins --collect-only  # Verify collection
 ```
 
-#### Cache not working across pipelines
-
-GitLab caches are branch-specific by default. For shared cache:
-
-```yaml
-cache:
-  key: "gremlins-global"
-  paths:
-    - .gremlins_cache
-  policy: pull-push
-```
-
 ---
 
 ## CircleCI
@@ -290,6 +329,9 @@ Run mutation testing in CircleCI with parallelism and workspace sharing.
 3. Set up parallelism for faster runs
 
 ### Configuration
+
+CircleCI's `checksum` command accepts only a single file path — globs are not supported. To hash
+multiple source files, generate a combined hash file first and pass that to `checksum`.
 
 Create `.circleci/config.yml`:
 
@@ -313,19 +355,28 @@ commands:
           pip-dependency-file: pyproject.toml
           args: -e ".[dev]"
 
+  generate-cache-key:
+    description: Hash all source and config files into a single file
+    steps:
+      - run:
+          name: Generate gremlins cache key
+          command: |
+            find src tests -name '*.py' | sort | xargs md5sum > /tmp/gremlins-sources.txt
+            md5sum pyproject.toml >> /tmp/gremlins-sources.txt
+
   restore-gremlin-cache:
     description: Restore mutation testing cache
     steps:
       - restore_cache:
           keys:
-            - gremlin-v1-{{ checksum "src/**/*.py" }}-{{ checksum "tests/**/*.py" }}
+            - gremlin-v1-{{ checksum "/tmp/gremlins-sources.txt" }}
             - gremlin-v1-
 
   save-gremlin-cache:
     description: Save mutation testing cache
     steps:
       - save_cache:
-          key: gremlin-v1-{{ checksum "src/**/*.py" }}-{{ checksum "tests/**/*.py" }}
+          key: gremlin-v1-{{ checksum "/tmp/gremlins-sources.txt" }}
           paths:
             - .gremlins_cache
 
@@ -344,6 +395,7 @@ jobs:
     steps:
       - checkout
       - setup-deps
+      - generate-cache-key
       - restore-gremlin-cache
       - run:
           name: Quick mutation check
@@ -359,11 +411,11 @@ jobs:
     steps:
       - checkout
       - setup-deps
+      - generate-cache-key
       - restore-gremlin-cache
       - run:
           name: Split mutation testing
           command: |
-            # Get list of source files and split across workers
             FILES=$(find src -name "*.py" | circleci tests split)
             pytest --gremlins \
               --gremlin-targets=$FILES \
@@ -406,6 +458,11 @@ workflows:
             - test
 ```
 
+Note: CircleCI does not have a `when: always` equivalent on `save_cache`. The cache is saved
+after the final step in the job. If the mutation step exits non-zero (threshold failure), CircleCI
+marks the job failed but still executes subsequent steps — so `save-gremlin-cache` runs regardless.
+Ensure the cache save step comes after the mutation run step, not before.
+
 Add to `pyproject.toml`:
 
 ```toml
@@ -436,20 +493,74 @@ Ensure files are split correctly:
     name: Debug split
     command: |
       find src -name "*.py" | circleci tests split | tee /tmp/split.txt
-      echo "This worker will test: $(cat /tmp/split.txt | wc -l) files"
+      echo "This worker will test: $(wc -l < /tmp/split.txt) files"
 ```
 
-#### Cache key too long
+---
 
-CircleCI has a 900-character limit for cache keys. Simplify:
+## Dagger
 
-```yaml
-- restore_cache:
-    keys:
-      - gremlin-v1-{{ .Branch }}-{{ .Revision }}
-      - gremlin-v1-{{ .Branch }}-
-      - gremlin-v1-
+### Goal
+
+Run mutation testing in a Dagger pipeline with automatic cross-run cache persistence.
+
+### Prerequisites
+
+- Dagger CLI installed
+- Python project with pytest-gremlins installed
+- `dagger` Python SDK installed
+
+### How Dagger Caching Works
+
+Dagger's `dag.cache_volume()` creates a named volume that persists across pipeline runs on the
+same host (local or CI runner). No key management is needed — Dagger handles cache identity by
+volume name. The inner IncrementalCache still handles per-gremlin invalidation inside the volume.
+
+### Configuration
+
+Create `dagger/src/main/__init__.py`:
+
+```python
+import dagger
+from dagger import dag, function, object_type
+
+
+@object_type
+class GremlinsCI:
+    @function
+    async def mutation_test(self, source: dagger.Directory) -> str:
+        gremlins_cache = dag.cache_volume("gremlins-cache")
+
+        return await (
+            dag.container()
+            .from_("python:3.12-slim")
+            .with_mounted_directory("/src", source)
+            .with_mounted_cache("/src/.gremlins_cache", gremlins_cache)
+            .with_workdir("/src")
+            .with_exec(["pip", "install", "-e", ".[dev]"])
+            .with_exec([
+                "pytest", "--gremlins",
+                "--gremlin-cache",
+                "--gremlin-report=html",
+            ])
+            .stdout()
+        )
 ```
+
+Run it with:
+
+```bash
+dagger call mutation-test --source=.
+```
+
+The `gremlins-cache` volume persists between calls. The first run populates it; subsequent runs
+restore it and let the inner IncrementalCache skip unchanged gremlins.
+
+### Verification
+
+1. Run `dagger call mutation-test --source=.` twice
+2. The second run completes faster — the inner cache hits on unchanged gremlins
+3. Modify a source file and run again — only that file's gremlins re-run
 
 ---
 
@@ -463,8 +574,9 @@ Apply mutation testing best practices to any CI system.
 
 1. **Cache the mutation results**
    - pytest-gremlins caches results in `.gremlins_cache/`
-   - Key cache by source and test file hashes
-   - Restore cache before running, save after
+   - Key cache by source and test file hashes, not commit SHA
+   - Use `restore-keys` prefix fallback so a file change gets a warm partial cache
+   - Save the cache with `if: always()` (or equivalent) — threshold failures must not discard it
 
 2. **Use incremental caching**
    - Use `--gremlin-cache` to skip unchanged code
