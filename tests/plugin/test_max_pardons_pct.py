@@ -140,6 +140,8 @@ class DescribeMaxPardonsPct:
             gremlin_operators = None
             gremlin_targets = None
             gremlin_max_pardons_pct: float | None = None
+            strict_pardons = False
+            gremlin_audit_pardons = False
 
         class _MockConfig:
             pass
@@ -294,6 +296,8 @@ class DescribeMaxPardonsPct:
             gremlin_operators = None
             gremlin_targets = None
             gremlin_max_pardons_pct: float | None = 150.0
+            strict_pardons = False
+            gremlin_audit_pardons = False
 
         class _MockConfig:
             pass

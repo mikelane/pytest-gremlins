@@ -105,8 +105,8 @@ class DescribeMutationScorePercentage:
         # 2 out of 3 (zapped + timeout) = 66.67%
         assert score.percentage == pytest.approx(66.67, rel=0.01)
 
-    def it_percentage_denominator_includes_pardoned_gremlins(self, make_result):
-        """Pardoned gremlins are counted in total, reducing the effective score."""
+    def it_percentage_denominator_excludes_pardoned_gremlins(self, make_result):
+        """Pardoned gremlins are excluded from the percentage denominator."""
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.ZAPPED),
@@ -114,10 +114,10 @@ class DescribeMutationScorePercentage:
             make_result(GremlinResultStatus.PARDONED),
         ]
         score = MutationScore.from_results(results)
-        # 2 zapped out of 4 total (pardoned inflate denominator) = 50.0%
+        # 2 zapped out of 2 effective (4 total - 2 pardoned) = 100.0%
         assert score.total == 4
         assert score.pardoned == 2
-        assert score.percentage == 50.0
+        assert score.percentage == 100.0
 
 
 @pytest.mark.small
