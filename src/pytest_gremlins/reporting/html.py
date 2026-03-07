@@ -178,7 +178,6 @@ class HtmlReporter:
             --border-color: #333333;
             --color-primary: #2e7d32;
             --color-primary-light: #4caf50;
-            --color-primary-dark: #1b5e20;
             --link-color: #4caf50;
             --color-zapped: #4caf50;
             --color-survived: #ef5350;
@@ -205,7 +204,6 @@ class HtmlReporter:
             --border-color: #e0e0e0;
             --color-primary: #2e7d32;
             --color-primary-light: #4caf50;
-            --color-primary-dark: #1b5e20;
             --link-color: #1b5e20;
             --color-zapped: #2e7d32;
             --color-survived: #c62828;
@@ -361,7 +359,7 @@ class HtmlReporter:
         }
 
         :focus-visible {
-            outline: 3px solid var(--accent);
+            outline: 3px solid var(--color-primary-light);
             outline-offset: 2px;
         }
 
@@ -455,9 +453,16 @@ class HtmlReporter:
         return """
         (function() {
             var saved = localStorage.getItem('gremlins-theme');
-            if (saved) {
+            if (saved === 'dark' || saved === 'light') {
                 document.documentElement.setAttribute('data-theme', saved);
             }
+            document.addEventListener('DOMContentLoaded', function() {
+                var theme = document.documentElement.getAttribute('data-theme');
+                var btn = document.querySelector('.theme-toggle');
+                if (btn) {
+                    btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+                }
+            });
         })();
         """
 
@@ -617,6 +622,12 @@ class HtmlReporter:
             var next = current === 'dark' ? 'light' : 'dark';
             html.setAttribute('data-theme', next);
             localStorage.setItem('gremlins-theme', next);
+            var btn = document.querySelector('.theme-toggle');
+            if (next === 'dark') {{
+                btn.setAttribute('aria-pressed', 'true');
+            }} else {{
+                btn.setAttribute('aria-pressed', 'false');
+            }}
         }}
         """
 
@@ -767,13 +778,14 @@ class HtmlReporter:
             <button class="expand-btn" onclick="collapseAllDiffs()">Collapse all diffs</button>
         </div>
         <table>
+            <caption>Gremlin mutation testing results</caption>
             <thead>
                 <tr>
-                    <th>File</th>
-                    <th>Line</th>
-                    <th>Operator</th>
-                    <th>Description</th>
-                    <th>Status</th>
+                    <th scope="col">File</th>
+                    <th scope="col">Line</th>
+                    <th scope="col">Operator</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Status</th>
                 </tr>
             </thead>
             <tbody>

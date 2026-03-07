@@ -6,6 +6,7 @@ import ast
 import json
 import logging
 from pathlib import Path
+import re
 
 import pytest
 
@@ -19,6 +20,14 @@ from pytest_gremlins.reporting.html import (
 )
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
+
+
+def _extract_canvas_tag(html: str, canvas_id: str) -> str:
+    """Extract the full <canvas ...>...</canvas> tag for the given id."""
+    pattern = rf'<canvas\s[^>]*id="{canvas_id}"[^>]*>.*?</canvas>'
+    match = re.search(pattern, html, re.DOTALL)
+    assert match is not None, f'No <canvas id="{canvas_id}"> found in HTML'
+    return match.group(0)
 
 
 @pytest.mark.small
@@ -309,33 +318,33 @@ class DescribeResolveHtmlOutputPath:
     """
 
     def it_returns_coverage_gremlins_index_when_no_custom_dir(self, tmp_path: Path):
-        result = resolve_html_output_path(rootdir=tmp_path, html_dir=None)
+        resolved_path = resolve_html_output_path(rootdir=tmp_path, html_dir=None)
 
         # Must be exactly <rootdir>/coverage/gremlins/index.html, not rootdir/gremlin-report.html.
-        assert result == tmp_path / 'coverage' / 'gremlins' / 'index.html'
+        assert resolved_path == tmp_path / 'coverage' / 'gremlins' / 'index.html'
 
     def it_returns_custom_dir_slash_index_when_html_dir_provided(self, tmp_path: Path):
         custom = tmp_path / 'my-reports'
-        result = resolve_html_output_path(rootdir=tmp_path, html_dir=custom)
+        resolved_path = resolve_html_output_path(rootdir=tmp_path, html_dir=custom)
 
         # Must append index.html to the custom dir, not the default subpath.
-        assert result == custom / 'index.html'
+        assert resolved_path == custom / 'index.html'
 
     def it_does_not_embed_coverage_gremlins_when_custom_dir_given(self, tmp_path: Path):
         custom = tmp_path / 'out'
-        result = resolve_html_output_path(rootdir=tmp_path, html_dir=custom)
+        resolved_path = resolve_html_output_path(rootdir=tmp_path, html_dir=custom)
 
         # A naïve impl that always appends coverage/gremlins would fail here.
-        assert 'coverage' not in result.parts
-        assert 'gremlins' not in result.parts
+        assert 'coverage' not in resolved_path.parts
+        assert 'gremlins' not in resolved_path.parts
 
     def it_uses_rootdir_not_cwd_for_default_path(self, tmp_path: Path):
         different_rootdir = tmp_path / 'project-root'
-        result = resolve_html_output_path(rootdir=different_rootdir, html_dir=None)
+        resolved_path = resolve_html_output_path(rootdir=different_rootdir, html_dir=None)
 
         # The default path must be anchored at rootdir, not at tmp_path or cwd.
-        assert result == different_rootdir / 'coverage' / 'gremlins' / 'index.html'
-        assert result.is_relative_to(different_rootdir)
+        assert resolved_path == different_rootdir / 'coverage' / 'gremlins' / 'index.html'
+        assert resolved_path.is_relative_to(different_rootdir)
 
     def it_resolves_relative_html_dir_against_rootdir(self, tmp_path: Path):
         # When --gremlins-html-dir is passed as a relative path string (e.g. "reports"),
@@ -344,10 +353,10 @@ class DescribeResolveHtmlOutputPath:
         # 'reports/index.html' instead of '<rootdir>/reports/index.html'.
         relative_html_dir = Path('reports')  # simulates Path(config.getoption(...)) for a relative CLI value
 
-        result = resolve_html_output_path(rootdir=tmp_path, html_dir=relative_html_dir)
+        resolved_path = resolve_html_output_path(rootdir=tmp_path, html_dir=relative_html_dir)
 
-        assert result.is_absolute()
-        assert result == tmp_path / 'reports' / 'index.html'
+        assert resolved_path.is_absolute()
+        assert resolved_path == tmp_path / 'reports' / 'index.html'
 
 
 @pytest.mark.small
@@ -837,8 +846,8 @@ class DescribeHtmlReporterA11y:
 
         html = HtmlReporter().to_html(score)
 
-        assert 'id="scoreGauge"' in html
-        assert 'role="img"' in html
+        canvas = _extract_canvas_tag(html, 'scoreGauge')
+        assert 'role="img"' in canvas
 
     def it_adds_aria_label_to_score_gauge_canvas(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
@@ -846,8 +855,8 @@ class DescribeHtmlReporterA11y:
 
         html = HtmlReporter().to_html(score)
 
-        assert 'id="scoreGauge"' in html
-        assert 'aria-label=' in html
+        canvas = _extract_canvas_tag(html, 'scoreGauge')
+        assert 'aria-label="Mutation score gauge: 100%"' in canvas
 
     def it_adds_fallback_text_inside_score_gauge_canvas(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
@@ -855,36 +864,48 @@ class DescribeHtmlReporterA11y:
 
         html = HtmlReporter().to_html(score)
 
-        assert 'Chart requires JavaScript' in html
+        canvas = _extract_canvas_tag(html, 'scoreGauge')
+        assert 'Chart requires JavaScript' in canvas
 
-    def it_adds_role_img_to_outcome_chart_canvas(self, make_result):
+    def it_adds_role_img_and_aria_label_to_outcome_chart_canvas(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
 
         html = HtmlReporter().to_html(score)
 
-        assert 'id="outcomeChart"' in html
-        assert 'role="img"' in html
+        canvas = _extract_canvas_tag(html, 'outcomeChart')
+        assert 'role="img"' in canvas
+        assert 'aria-label="Outcome distribution pie chart"' in canvas
 
-    def it_adds_role_img_to_file_chart_canvas(self, make_result):
+    def it_adds_role_img_and_aria_label_to_file_chart_canvas(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
 
         html = HtmlReporter().to_html(score)
 
-        assert 'id="fileChart"' in html
-        assert 'role="img"' in html
+        canvas = _extract_canvas_tag(html, 'fileChart')
+        assert 'role="img"' in canvas
+        assert 'aria-label="Per-file mutation scores bar chart"' in canvas
 
-    def it_adds_role_img_to_operator_chart_canvas(self, make_result):
+    def it_restricts_theme_init_to_valid_values(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
 
         html = HtmlReporter().to_html(score)
 
-        assert 'id="operatorChart"' in html
-        assert 'role="img"' in html
+        assert "if (saved === 'dark' || saved === 'light')" in html
 
-    def it_adds_role_img_to_history_chart_canvas(self, make_result):
+    def it_adds_role_img_and_aria_label_to_operator_chart_canvas(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        canvas = _extract_canvas_tag(html, 'operatorChart')
+        assert 'role="img"' in canvas
+        assert 'aria-label="Operator distribution bar chart"' in canvas
+
+    def it_adds_role_img_and_aria_label_to_history_chart_canvas(self, make_result):
         score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
         history = [
             {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
@@ -893,24 +914,36 @@ class DescribeHtmlReporterA11y:
 
         html = HtmlReporter().to_html(score, history=history)
 
-        assert 'id="historyChart"' in html
-        assert 'role="img"' in html
+        canvas = _extract_canvas_tag(html, 'historyChart')
+        assert 'role="img"' in canvas
+        assert 'aria-label="Historical mutation score trend"' in canvas
 
-    def it_adds_focus_visible_css_rule(self, make_result):
+    def it_sets_3px_outline_with_offset_on_focus_visible(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
 
         html = HtmlReporter().to_html(score)
 
-        assert ':focus-visible' in html
+        style_start = html.index('<style>')
+        style_end = html.index('</style>')
+        css = html[style_start:style_end]
+        focus_rule_start = css.index(':focus-visible')
+        focus_rule_end = css.index('}', focus_rule_start)
+        focus_rule = css[focus_rule_start:focus_rule_end]
+        assert 'outline: 3px solid' in focus_rule
+        assert 'outline-offset: 2px' in focus_rule
 
-    def it_adds_aria_pressed_to_theme_toggle_button(self, make_result):
+    def it_adds_aria_pressed_true_to_theme_toggle_button_in_default_dark_mode(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
 
         html = HtmlReporter().to_html(score)
 
-        assert 'aria-pressed=' in html
+        # The toggle button must have aria-pressed matching the default dark theme
+        button_match = re.search(r'<button\s[^>]*class="theme-toggle"[^>]*>', html)
+        assert button_match is not None, 'Theme toggle button not found'
+        button_tag = button_match.group(0)
+        assert 'aria-pressed="true"' in button_tag
 
     def it_sets_min_height_44px_on_expand_btn(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
@@ -937,13 +970,22 @@ class DescribeHtmlReporterA11y:
         assert '<main' in html
         assert '</main>' in html
 
-    def it_adds_prefers_reduced_motion_media_query(self, make_result):
+    def it_disables_transitions_and_animations_when_prefers_reduced_motion(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
 
         html = HtmlReporter().to_html(score)
 
-        assert 'prefers-reduced-motion' in html
+        style_start = html.index('<style>')
+        style_end = html.index('</style>')
+        css = html[style_start:style_end]
+        motion_start = css.index('prefers-reduced-motion')
+        # Find the closing brace of the @media block (two levels: @media { * { } })
+        inner_brace = css.index('}', motion_start)
+        outer_brace = css.index('}', inner_brace + 1)
+        motion_block = css[motion_start:outer_brace]
+        assert 'transition: none !important' in motion_block
+        assert 'animation: none !important' in motion_block
 
     def it_has_h2_before_first_h3_in_charts_section(self, make_result):
         # WCAG heading hierarchy: h3 inside chart cards requires a parent h2 section
@@ -960,41 +1002,121 @@ class DescribeHtmlReporterA11y:
         assert h2_pos != -1, 'Expected at least one <h2> section heading before <h3> chart titles'
         assert h2_pos < h3_pos
 
+    def it_uses_a_defined_css_variable_for_focus_visible_outline(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        style_start = html.index('<style>')
+        style_end = html.index('</style>')
+        css = html[style_start:style_end]
+        focus_rule_start = css.index(':focus-visible')
+        focus_rule_end = css.index('}', focus_rule_start)
+        focus_rule = css[focus_rule_start:focus_rule_end]
+        assert 'var(--color-primary-light)' in focus_rule
+        assert 'var(--accent)' not in focus_rule
+
+    def it_updates_aria_pressed_when_toggling_to_dark_theme(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        script_start = html.index('function toggleTheme()')
+        script_end = html.index('\n        }', script_start) + len('\n        }')
+        toggle_fn = html[script_start:script_end]
+        assert "btn.setAttribute('aria-pressed', 'true')" in toggle_fn
+
+    def it_updates_aria_pressed_when_toggling_to_light_theme(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        script_start = html.index('function toggleTheme()')
+        script_end = html.index('\n        }', script_start) + len('\n        }')
+        toggle_fn = html[script_start:script_end]
+        assert "btn.setAttribute('aria-pressed', 'false')" in toggle_fn
+
+    def it_syncs_aria_pressed_with_restored_theme_on_page_load(self, make_result):
+        # The theme init script runs in <head> before <body> is parsed.
+        # document.querySelector('.theme-toggle') returns null in <head>.
+        # aria-pressed sync must use DOMContentLoaded to defer until the button exists.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        init_script_start = html.index('(function()')
+        init_script_end = html.index('})();', init_script_start) + len('})();')
+        init_script = html[init_script_start:init_script_end]
+        assert 'DOMContentLoaded' in init_script
+        assert "setAttribute('aria-pressed'" in init_script
+
+    def it_includes_a_caption_in_the_results_table(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        assert '<caption>Gremlin mutation testing results</caption>' in html
+
+    def it_adds_scope_col_to_all_th_elements(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        table_start = html.index('<table>')
+        table_end = html.index('</table>', table_start)
+        table_html = html[table_start:table_end]
+        th_count = table_html.count('<th>')
+        scope_col_count = table_html.count('scope="col"')
+        assert th_count == 0
+        assert scope_col_count == 5
+
 
 @pytest.mark.small
 class DescribeLoadHistory:
     """Tests for the load_history module-level function."""
 
     def it_returns_empty_list_when_file_is_missing(self, tmp_path: Path):
-        result = load_history(tmp_path / 'nonexistent.json')
+        loaded_entries = load_history(tmp_path / 'nonexistent.json')
 
-        assert result == []
+        assert loaded_entries == []
 
     def it_returns_parsed_list_from_valid_json_file(self, tmp_path: Path):
         history_path = tmp_path / 'history.json'
-        entries = [
+        expected_entries = [
             {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
             {'timestamp': '2026-01-02T00:00:00+00:00', 'score': 90.0, 'by_file': {}, 'by_operator': {}},
         ]
-        history_path.write_text(json.dumps(entries), encoding='utf-8')
+        history_path.write_text(json.dumps(expected_entries), encoding='utf-8')
 
-        result = load_history(history_path)
+        loaded_entries = load_history(history_path)
 
-        assert result == entries
+        assert loaded_entries == expected_entries
 
     def it_returns_empty_list_for_corrupt_json(self, tmp_path: Path):
         history_path = tmp_path / 'history.json'
         history_path.write_text('invalid json', encoding='utf-8')
 
-        result = load_history(history_path)
+        loaded_entries = load_history(history_path)
 
-        assert result == []
+        assert loaded_entries == []
 
     def it_returns_empty_list_when_path_is_a_directory(self, tmp_path: Path):
         # Passing a directory where a file is expected raises OSError on read_text.
-        result = load_history(tmp_path)
+        loaded_entries = load_history(tmp_path)
 
-        assert result == []
+        assert loaded_entries == []
 
 
 @pytest.mark.small
@@ -1004,9 +1126,9 @@ class DescribeBuildOperatorData:
     def it_returns_empty_dict_when_score_has_no_results(self):
         score = MutationScore.from_results([])
 
-        result = _build_operator_data(score)
+        operator_data = _build_operator_data(score)
 
-        assert result == {}
+        assert operator_data == {}
 
     def it_returns_correct_keys_and_values_for_single_operator(self, make_result):
         results = [
@@ -1016,9 +1138,9 @@ class DescribeBuildOperatorData:
         ]
         score = MutationScore.from_results(results)
 
-        result = _build_operator_data(score)
+        operator_data = _build_operator_data(score)
 
-        assert result == {'comparison': {'total': 3, 'survived': 1}}
+        assert operator_data == {'comparison': {'total': 3, 'survived': 1}}
 
     def it_returns_separate_entries_for_multiple_operators(self, make_result):
         results = [
@@ -1028,10 +1150,10 @@ class DescribeBuildOperatorData:
         ]
         score = MutationScore.from_results(results)
 
-        result = _build_operator_data(score)
+        operator_data = _build_operator_data(score)
 
-        assert result['comparison'] == {'total': 1, 'survived': 0}
-        assert result['arithmetic'] == {'total': 2, 'survived': 2}
+        assert operator_data['comparison'] == {'total': 1, 'survived': 0}
+        assert operator_data['arithmetic'] == {'total': 2, 'survived': 2}
 
     def it_counts_only_survived_status_as_survived(self, make_result):
         results = [
@@ -1042,9 +1164,9 @@ class DescribeBuildOperatorData:
         ]
         score = MutationScore.from_results(results)
 
-        result = _build_operator_data(score)
+        operator_data = _build_operator_data(score)
 
-        assert result['comparison'] == {'total': 4, 'survived': 1}
+        assert operator_data['comparison'] == {'total': 4, 'survived': 1}
 
 
 @pytest.mark.small
@@ -1058,9 +1180,9 @@ class DescribeNodeToSourceLogging:
         del node.left
 
         with caplog.at_level(logging.WARNING, logger='pytest_gremlins.reporting.diff'):
-            result = _node_to_source(node)
+            source_text = _node_to_source(node)
 
-        assert result == ''
+        assert source_text == ''
         assert 'Failed to get source for AST node' in caplog.text
 
 
@@ -1092,9 +1214,9 @@ class DescribeLoadHistoryLogging:
         corrupt.write_text('not json', encoding='utf-8')
 
         with caplog.at_level(logging.WARNING, logger='pytest_gremlins.reporting.history'):
-            result = load_history(corrupt)
+            loaded_entries = load_history(corrupt)
 
-        assert result == []
+        assert loaded_entries == []
         assert 'Could not load history' in caplog.text
         assert str(corrupt) in caplog.text
 
