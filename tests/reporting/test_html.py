@@ -875,6 +875,14 @@ class DescribeHtmlReporterA11y:
         assert 'id="fileChart"' in html
         assert 'role="img"' in html
 
+    def it_restricts_theme_init_to_valid_values(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+
+        html = HtmlReporter().to_html(score)
+
+        assert "if (saved === 'dark' || saved === 'light')" in html
+
     def it_adds_role_img_to_operator_chart_canvas(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
@@ -999,6 +1007,22 @@ class DescribeHtmlReporterA11y:
         script_end = html.index('\n        }', script_start) + len('\n        }')
         toggle_fn = html[script_start:script_end]
         assert "btn.setAttribute('aria-pressed', 'false')" in toggle_fn
+
+    def it_syncs_aria_pressed_with_restored_theme_on_page_load(self, make_result):
+        # The theme init script runs in <head> before <body> is parsed.
+        # document.querySelector('.theme-toggle') returns null in <head>.
+        # aria-pressed sync must use DOMContentLoaded to defer until the button exists.
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        init_script_start = html.index('(function()')
+        init_script_end = html.index('})();', init_script_start) + len('})();')
+        init_script = html[init_script_start:init_script_end]
+        assert 'DOMContentLoaded' in init_script
+        assert "setAttribute('aria-pressed'" in init_script
 
     def it_includes_a_caption_in_the_results_table(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]

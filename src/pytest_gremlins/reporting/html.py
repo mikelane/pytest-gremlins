@@ -455,9 +455,16 @@ class HtmlReporter:
         return """
         (function() {
             var saved = localStorage.getItem('gremlins-theme');
-            if (saved) {
+            if (saved === 'dark' || saved === 'light') {
                 document.documentElement.setAttribute('data-theme', saved);
             }
+            document.addEventListener('DOMContentLoaded', function() {
+                var theme = document.documentElement.getAttribute('data-theme');
+                var btn = document.querySelector('.theme-toggle');
+                if (btn) {
+                    btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+                }
+            });
         })();
         """
 
