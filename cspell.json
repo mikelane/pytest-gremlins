@@ -135,6 +135,7 @@
     "serializable",
     "sitecustomize",
     "behaviour",
+    "centralise",
     "channelexec",
     "collectionfinish",
     "coveragerc",
