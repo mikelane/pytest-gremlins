@@ -179,6 +179,7 @@ class HtmlReporter:
             --color-primary: #2e7d32;
             --color-primary-light: #4caf50;
             --color-primary-dark: #1b5e20;
+            --link-color: #4caf50;
             --color-zapped: #4caf50;
             --color-survived: #ef5350;
             --color-timeout: #ffa726;
@@ -205,6 +206,7 @@ class HtmlReporter:
             --color-primary: #2e7d32;
             --color-primary-light: #4caf50;
             --color-primary-dark: #1b5e20;
+            --link-color: #1b5e20;
             --color-zapped: #2e7d32;
             --color-survived: #c62828;
             --color-timeout: #e65100;
@@ -310,6 +312,7 @@ class HtmlReporter:
         table {
             width: 100%;
             border-collapse: collapse;
+            table-layout: fixed;
             margin-top: 20px;
         }
 
@@ -349,7 +352,7 @@ class HtmlReporter:
 
         details summary {
             cursor: pointer;
-            color: var(--color-primary-light);
+            color: var(--link-color);
             font-size: 0.85em;
             user-select: none;
             padding: 4px 0;
@@ -381,6 +384,7 @@ class HtmlReporter:
             background: var(--bg-details);
             border-radius: 6px;
             overflow: hidden;
+            min-width: 0;
             border: 1px solid var(--border-color);
         }
 
