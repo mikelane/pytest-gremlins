@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable
+import dataclasses
 
 import pytest
 
@@ -78,6 +79,7 @@ def make_result(make_gremlin: MakeGremlinFactory) -> MakeResultFactory:
         description: str = '>= to >',
         killing_test: str | None = None,
         execution_time_ms: float | None = None,
+        pardon_reason: str | None = None,
     ) -> GremlinResult:
         gremlin = make_gremlin(
             file_path=file_path,
@@ -85,6 +87,12 @@ def make_result(make_gremlin: MakeGremlinFactory) -> MakeResultFactory:
             operator_name=operator_name,
             description=description,
         )
+        if status == GremlinResultStatus.PARDONED:
+            gremlin = dataclasses.replace(
+                gremlin,
+                pardoned=True,
+                pardon_reason=pardon_reason or 'equivalent: default test reason',
+            )
         return GremlinResult(
             gremlin=gremlin,
             status=status,

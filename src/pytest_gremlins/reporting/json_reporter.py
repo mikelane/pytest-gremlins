@@ -105,6 +105,7 @@ class JsonReporter:
             'survived': score.survived,
             'timeout': score.timeout,
             'error': score.error,
+            'pardoned': score.pardoned,
             'percentage': score.percentage,
         }
 

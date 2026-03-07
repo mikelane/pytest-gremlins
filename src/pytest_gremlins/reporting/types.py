@@ -82,6 +82,7 @@ class JsonSummary(TypedDict):
     survived: int
     timeout: int
     error: int
+    pardoned: int
     percentage: float
 
 

@@ -38,6 +38,8 @@ def _make_gremlins_config(
         gremlin_clear_cache = False
         gremlin_parallel = False
         gremlin_batch = False
+        strict_pardons = False
+        gremlin_audit_pardons = False
 
     option = _MockOption()
     option.gremlin_workers = gremlin_workers  # type: ignore[attr-defined]

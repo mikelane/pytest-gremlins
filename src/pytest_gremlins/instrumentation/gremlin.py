@@ -6,7 +6,10 @@ to identify and activate the mutation during test execution.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    field,
+)
 from typing import (
     TYPE_CHECKING,
     Protocol,
@@ -44,6 +47,10 @@ class Gremlin:
         mutated_node: The mutated AST node.
         operator_name: Name of the operator that created this mutation.
         description: Human-readable description of the mutation.
+        pardoned: True when an inline suppression pragma covers this mutation.
+        pardon_reason: The reason code and justification from the pragma, e.g.
+            ``'equivalent: floor division is integer arithmetic'``. None when
+            not pardoned.
     """
 
     gremlin_id: str
@@ -53,3 +60,5 @@ class Gremlin:
     mutated_node: ast.expr | ast.stmt
     operator_name: str
     description: str
+    pardoned: bool = field(default=False)
+    pardon_reason: str | None = field(default=None)

@@ -1,9 +1,12 @@
 """Mutation score calculation for gremlin test results.
 
 The mutation score represents test suite effectiveness at catching mutations:
-  score = zapped / total * 100
+  score = (zapped + timeout) / (total - pardoned) * 100
 
-A higher score means tests are better at catching bugs.
+Pardoned gremlins are excluded from the denominator — they represent
+intentionally suppressed mutations (equivalent code, untestable paths, etc.)
+and should not penalise the score. A higher score means tests are better
+at catching bugs.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ class MutationScore:
     survived: int
     timeout: int
     error: int
+    pardoned: int
     results: tuple[GremlinResult, ...]
 
     @classmethod
@@ -54,6 +58,7 @@ class MutationScore:
         survived = sum(1 for r in results if r.status == GremlinResultStatus.SURVIVED)
         timeout = sum(1 for r in results if r.status == GremlinResultStatus.TIMEOUT)
         error = sum(1 for r in results if r.status == GremlinResultStatus.ERROR)
+        pardoned = sum(1 for r in results if r.status == GremlinResultStatus.PARDONED)
 
         return cls(
             total=len(results),
@@ -61,6 +66,7 @@ class MutationScore:
             survived=survived,
             timeout=timeout,
             error=error,
+            pardoned=pardoned,
             results=tuple(results),
         )
 
@@ -68,15 +74,18 @@ class MutationScore:
     def percentage(self) -> float:
         """Calculate mutation score as a percentage.
 
-        The score is (zapped + timeout) / total * 100.
+        The score is (zapped + timeout) / (total - pardoned) * 100.
         Timeouts count as zapped because the test detected something wrong.
+        Pardoned gremlins are excluded from the denominator — they are
+        intentionally suppressed and should not affect the score.
 
         Returns:
             Mutation score percentage (0.0 to 100.0).
         """
-        if self.total == 0:
+        effective_total = self.total - self.pardoned
+        if effective_total == 0:
             return 0.0
-        return (self.zapped + self.timeout) / self.total * 100
+        return (self.zapped + self.timeout) / effective_total * 100
 
     def by_file(self) -> dict[str, MutationScore]:
         """Break down mutation score by file.
