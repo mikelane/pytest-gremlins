@@ -260,7 +260,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GIT_REF: ${{ github.ref }}
         with:
