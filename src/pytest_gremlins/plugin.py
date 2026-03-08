@@ -41,6 +41,9 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.config import (
     GremlinConfig,
+    discover_by_importlib_metadata,
+    discover_by_project_name,
+    discover_by_setup_cfg,
     discover_source_paths,
     load_config,
     merge_configs,
@@ -571,7 +574,12 @@ def pytest_configure(config: pytest.Config) -> None:  # noqa: C901
             if path.exists():
                 target_paths.append(path)
     else:
-        discovered = discover_source_paths(rootdir)
+        discovered = (
+            discover_source_paths(rootdir)
+            or discover_by_project_name(rootdir)
+            or discover_by_setup_cfg(rootdir)
+            or discover_by_importlib_metadata(rootdir)
+        )
         if discovered:
             target_paths.extend(rootdir / p for p in discovered)
         else:
@@ -2023,7 +2031,10 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
             terminalreporter.write_line('  1. --gremlin-targets CLI option')
             terminalreporter.write_line('  2. [tool.pytest-gremlins] paths in pyproject.toml')
             terminalreporter.write_line('  3. [tool.setuptools] package config in pyproject.toml')
-            terminalreporter.write_line('  4. src/ directory')
+            terminalreporter.write_line('  4. [project].name heuristic in pyproject.toml')
+            terminalreporter.write_line('  5. setup.cfg [options] / [options.packages.find]')
+            terminalreporter.write_line('  6. Installed package metadata (importlib.metadata)')
+            terminalreporter.write_line('  7. src/ directory')
             terminalreporter.write_line('')
             terminalreporter.write_line(
                 'If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_package'

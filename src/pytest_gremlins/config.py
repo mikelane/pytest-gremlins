@@ -6,15 +6,16 @@ section and provides sensible defaults when configuration is absent.
 
 from __future__ import annotations
 
+import configparser
 from dataclasses import dataclass
+import importlib.metadata
+import importlib.util
 import logging
 import os
+from pathlib import Path
+import re
 import tomllib
 from tomllib import TOMLDecodeError
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +283,175 @@ def discover_source_paths(rootdir: Path) -> list[str]:
             validated_paths.append(candidate)
 
     return validated_paths
+
+
+def discover_by_project_name(rootdir: Path) -> list[str]:
+    """Discover source path from [project].name in pyproject.toml.
+
+    Normalizes the project name (replace - and . with _, lowercase), then checks:
+
+    1. ``rootdir / normalized_name`` (e.g. ``my_package/``)
+    2. ``rootdir / 'src' / normalized_name`` (e.g. ``src/my_package/``)
+
+    Returns the first candidate that exists and contains ``__init__.py``, or ``[]``.
+
+    Args:
+        rootdir: Directory containing pyproject.toml.
+
+    Returns:
+        List with one discovered path string, or empty list if none found.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> discover_by_project_name(Path('/nonexistent'))
+        []
+    """
+    pyproject_path = rootdir / 'pyproject.toml'
+
+    if not pyproject_path.exists():
+        return []
+
+    try:
+        with pyproject_path.open('rb') as f:
+            pyproject_content = tomllib.load(f)
+    except TOMLDecodeError:
+        return []
+
+    name = pyproject_content.get('project', {}).get('name')
+    if not isinstance(name, str) or not name:
+        return []
+
+    normalized = re.sub(r'[-.]', '_', name).lower()
+
+    candidates = [
+        rootdir / normalized,
+        rootdir / 'src' / normalized,
+    ]
+    for candidate in candidates:
+        if (candidate / '__init__.py').exists():
+            return [str(candidate.relative_to(rootdir))]
+
+    return []
+
+
+def discover_by_setup_cfg(rootdir: Path) -> list[str]:
+    """Discover source paths from setup.cfg.
+
+    Reads:
+
+    - ``[options].packages`` (comma-separated package names)
+    - ``[options.packages.find].where`` (directory to search)
+
+    Only returns paths that exist on disk. Returns ``[]`` if setup.cfg is
+    absent or cannot be parsed.
+
+    Args:
+        rootdir: Directory that may contain setup.cfg.
+
+    Returns:
+        List of discovered path strings that exist on disk.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> discover_by_setup_cfg(Path('/nonexistent'))
+        []
+    """
+    setup_cfg_path = rootdir / 'setup.cfg'
+
+    if not setup_cfg_path.exists():
+        return []
+
+    parser = configparser.ConfigParser()
+    try:
+        parser.read(setup_cfg_path)
+    except Exception:
+        return []
+
+    candidates: list[str] = []
+
+    if parser.has_option('options', 'packages'):
+        raw = parser.get('options', 'packages')
+        candidates.extend(pkg.strip() for pkg in raw.split(',') if pkg.strip())
+
+    if parser.has_option('options.packages.find', 'where'):
+        where = parser.get('options.packages.find', 'where').strip()
+        if where:
+            candidates.append(where)
+
+    seen: set[str] = set()
+    validated: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen and (rootdir / candidate).is_dir():
+            seen.add(candidate)
+            validated.append(candidate)
+
+    return validated
+
+
+def _packages_distributions() -> dict[str, list[str]]:
+    """Return importlib.metadata.packages_distributions().
+
+    Isolated into its own function so tests can monkeypatch it without
+    patching deep into importlib internals.
+
+    Returns:
+        Mapping of top-level package name to list of distribution names.
+    """
+    return dict(importlib.metadata.packages_distributions())
+
+
+def discover_by_importlib_metadata(rootdir: Path) -> list[str]:
+    """Discover source paths from installed package metadata.
+
+    Uses ``importlib.metadata.packages_distributions()`` to map package names
+    to installed distributions, then filters to packages whose top-level
+    ``__init__.py`` lives under ``rootdir``.
+
+    Returns ``[]`` on any failure (package not found, missing metadata, etc.).
+
+    Args:
+        rootdir: The project root to search within.
+
+    Returns:
+        List of relative path strings for packages found under rootdir.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> discover_by_importlib_metadata(Path('/nonexistent'))
+        []
+    """
+    try:
+        pkg_map = _packages_distributions()
+    except Exception:
+        return []
+
+    discovered: list[str] = []
+    seen: set[str] = set()
+
+    for pkg_name in pkg_map:
+        try:
+            spec = importlib.util.find_spec(pkg_name)
+        except Exception:
+            logger.debug('Skipping package %r: find_spec raised', pkg_name)
+            continue
+
+        if spec is None or spec.origin is None:
+            continue
+
+        origin = Path(spec.origin)
+        try:
+            rel = origin.relative_to(rootdir)
+        except ValueError:
+            continue
+
+        top_level = rel.parts[0]
+        if top_level.startswith('.'):
+            continue
+        if top_level not in seen:
+            seen.add(top_level)
+            discovered.append(top_level)
+
+    return discovered
 
 
 def merge_configs(
