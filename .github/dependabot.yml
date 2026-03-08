@@ -1,0 +1,60 @@
+version: 2
+updates:
+  # ── Python / uv ───────────────────────────────────────────────────────────
+  # Dependabot reads pyproject.toml + uv.lock natively (uv ecosystem support
+  # added Oct 2024).  Groups batch-update related packages to avoid PR spam.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - python
+    commit-message:
+      prefix: 'chore(deps)'
+    groups:
+      docs-deps:
+        # mkdocs + mkdocstrings update together — they have coupled version reqs
+        patterns:
+          - 'mkdocs*'
+          - 'mkdocstrings*'
+
+  # ── GitHub Actions ─────────────────────────────────────────────────────────
+  # Groups keep all actions/* in one PR and all astral-sh/* in another,
+  # rather than generating a separate PR per action per week.
+  #
+  # Note: pypa/gh-action-pypi-publish is pinned to a branch (release/v1),
+  # not a tag — Dependabot cannot auto-update branch-pinned actions.
+  # Review https://github.com/pypa/gh-action-pypi-publish/releases manually.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: 'chore(deps)'
+    groups:
+      actions-core:
+        # actions/checkout, upload-artifact, download-artifact, setup-node
+        patterns:
+          - 'actions/*'
+      astral-sh:
+        patterns:
+          - 'astral-sh/*'
+      third-party-actions:
+        # dorny, codecov, lycheeverse, softprops
+        patterns:
+          - 'dorny/*'
+          - 'codecov/*'
+          - 'lycheeverse/*'
+          - 'softprops/*'
