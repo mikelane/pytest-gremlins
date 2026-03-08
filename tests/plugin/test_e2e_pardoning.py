@@ -50,6 +50,7 @@ class DescribeE2EPardoning:
         )
 
         assert result.ret != 0
+        assert 'Max pardons exceeded' in result.stdout.str()
 
     def it_max_pardons_passes_when_within_limit(self, pardoned_project: pytest.Pytester) -> None:
         result = pardoned_project.runpytest(
@@ -68,6 +69,7 @@ class DescribeE2EPardoning:
         )
 
         assert result.ret != 0
+        assert 'Max pardons exceeded' in result.stdout.str()
 
     def it_strict_pardons_fails_with_any_pardon(self, pardoned_project: pytest.Pytester) -> None:
         result = pardoned_project.runpytest(
@@ -77,6 +79,7 @@ class DescribeE2EPardoning:
         )
 
         assert result.ret != 0
+        assert '--strict-pardons' in result.stderr.str()
 
     def it_audit_pardons_lists_pardon_details(self, pardoned_project: pytest.Pytester) -> None:
         result = pardoned_project.runpytest(
