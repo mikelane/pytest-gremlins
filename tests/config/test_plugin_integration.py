@@ -53,7 +53,7 @@ class DescribePytestConfigureWithFileConfig:
     ) -> None:
         """CLI --gremlin-operators takes precedence over pyproject.toml."""
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\noperators = ["comparison", "arithmetic"]\n')
+        pyproject.write_text('[tool.pytest-gremlins]\noperators = ["comparison", "arithmetic"]\npaths = ["src"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
@@ -113,6 +113,7 @@ class DescribePytestConfigureWithFileConfig:
 
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+        monkeypatch.setattr('pytest_gremlins.config._packages_distributions', dict)
 
         plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
 
@@ -203,6 +204,7 @@ class DescribePytestConfigureCoverageMode:
 
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+        monkeypatch.setattr('pytest_gremlins.config._packages_distributions', dict)
 
         pm = MagicMock()
         pm.get_plugin.return_value = MagicMock()
@@ -225,6 +227,7 @@ class DescribePytestConfigureCoverageMode:
 
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+        monkeypatch.setattr('pytest_gremlins.config._packages_distributions', dict)
 
         pm = MagicMock()
         pm.get_plugin.return_value = None

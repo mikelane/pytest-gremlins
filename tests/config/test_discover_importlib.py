@@ -115,3 +115,34 @@ class DescribeDiscoverByImportlibMetadata:
         result = discover_by_importlib_metadata(tmp_path)
 
         assert result == []
+
+
+@pytest.mark.medium
+class DescribeDiscoverByImportlibMetadataRealScan:
+    """Integration tests using the real importlib.metadata scan — no mocking.
+
+    Creates actual dist-info directories in tmp_path and adds tmp_path to
+    sys.path so that packages_distributions() and find_spec() both use the
+    real Python metadata machinery, not fakes.
+    """
+
+    def it_discovers_package_from_real_dist_info(self, tmp_path, monkeypatch):
+        """Finds a package whose dist-info lives under rootdir via real metadata scan."""
+        pkg_name = 'gremlin_testpkg'
+        pkg_dir = tmp_path / pkg_name
+        pkg_dir.mkdir()
+        (pkg_dir / '__init__.py').write_text('')
+
+        dist_info = tmp_path / f'{pkg_name}-1.0.dist-info'
+        dist_info.mkdir()
+        (dist_info / 'METADATA').write_text('Metadata-Version: 2.1\nName: gremlin-testpkg\nVersion: 1.0\n')
+        (dist_info / 'top_level.txt').write_text(f'{pkg_name}\n')
+        (dist_info / 'RECORD').write_text(f'{pkg_name}/__init__.py,,\n')
+
+        # tmp_path must be on sys.path for both packages_distributions()
+        # (reads dist-info) and find_spec() (locates the package) to work.
+        monkeypatch.syspath_prepend(str(tmp_path))
+
+        result = discover_by_importlib_metadata(tmp_path)
+
+        assert pkg_name in result
