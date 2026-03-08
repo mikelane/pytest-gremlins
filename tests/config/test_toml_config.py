@@ -432,7 +432,7 @@ class DescribePluginPassesNewFieldsThrough:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
     ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 4\n')
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 4\npaths = ["src"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
@@ -451,7 +451,7 @@ class DescribePluginPassesNewFieldsThrough:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
     ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\ncache = true\n')
+        pyproject.write_text('[tool.pytest-gremlins]\ncache = true\npaths = ["src"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
@@ -475,7 +475,7 @@ class DescribePluginPassesNewFieldsThrough:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
     ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\n')
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\npaths = ["src"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
@@ -494,7 +494,7 @@ class DescribePluginPassesNewFieldsThrough:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
     ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 25\n')
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 25\npaths = ["src"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
@@ -513,7 +513,7 @@ class DescribePluginPassesNewFieldsThrough:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
     ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 2\n')
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 2\npaths = ["src"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
@@ -532,7 +532,7 @@ class DescribePluginPassesNewFieldsThrough:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
     ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\n')
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\npaths = ["src"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
@@ -551,7 +551,7 @@ class DescribePluginPassesNewFieldsThrough:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
     ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 50\n')
+        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 50\npaths = ["src"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
@@ -570,7 +570,7 @@ class DescribePluginPassesNewFieldsThrough:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
     ) -> None:
         pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 5.0\n')
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 5.0\npaths = ["src"]\n')
 
         src_dir = tmp_path / 'src'
         src_dir.mkdir()
