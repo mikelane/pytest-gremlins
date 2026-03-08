@@ -20,7 +20,7 @@ _PRAGMA_RE = re.compile(
 )
 
 
-def parse_pardoned_lines(source: str) -> dict[int, tuple[str, str]]:
+def parse_pardoned_lines(source: str, *, file_path: str = '<unknown>') -> dict[int, tuple[str, str]]:
     r"""Parse inline suppression pragmas from Python source code.
 
     Scans each line for ``# gremlin: pardon[<reason>] <justification>``
@@ -30,6 +30,9 @@ def parse_pardoned_lines(source: str) -> dict[int, tuple[str, str]]:
 
     Args:
         source: Raw Python source code as a string.
+        file_path: Path to the source file, included in warning messages to
+            identify the offending pragma without grepping the entire codebase.
+            Defaults to ``'<unknown>'`` when no path is available.
 
     Returns:
         Mapping of 1-indexed line numbers to ``(reason_code, justification)``
@@ -55,7 +58,8 @@ def parse_pardoned_lines(source: str) -> dict[int, tuple[str, str]]:
 
         if reason_code not in _VALID_REASON_CODES:
             logger.warning(
-                'gremlin pragma on line %d has unknown reason code %r (valid codes: %s) — pragma ignored',
+                'gremlin pragma at %s:%d has unknown reason code %r (valid codes: %s) — pragma ignored',
+                file_path,
                 lineno,
                 reason_code,
                 ', '.join(sorted(_VALID_REASON_CODES)),
@@ -64,7 +68,9 @@ def parse_pardoned_lines(source: str) -> dict[int, tuple[str, str]]:
 
         if not justification:
             logger.warning(
-                'gremlin pragma on line %d is missing a justification — pragma ignored',
+                'gremlin pragma at %s:%d is missing a justification'
+                ' (expected: # gremlin: pardon[reason] your justification) — pragma ignored',
+                file_path,
                 lineno,
             )
             continue

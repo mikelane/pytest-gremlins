@@ -513,7 +513,7 @@ def transform_source(
     if not isinstance(new_tree, ast.Module):  # pragma: no cover
         raise TypeError(f'Expected ast.Module, got {type(new_tree).__name__}')
 
-    pardoned_lines = parse_pardoned_lines(source)
+    pardoned_lines = parse_pardoned_lines(source, file_path=file_path)
     gremlins_by_line: dict[int, list[int]] = {}
     for i, g in enumerate(transformer.gremlins):
         gremlins_by_line.setdefault(g.line_number, []).append(i)
