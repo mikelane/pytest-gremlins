@@ -1,6 +1,6 @@
 """Inline suppression pragma parsing for gremlin mutation testing.
 
-Parses ``# gremlin: survivor[<reason>] <justification>`` comments from Python
+Parses ``# gremlin: pardon[<reason>] <justification>`` comments from Python
 source code and returns a mapping of line numbers to (reason_code, justification)
 tuples.  Lines with invalid reason codes or missing justification are logged as
 warnings and excluded from the result.
@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 _VALID_REASON_CODES = frozenset({'equivalent', 'untestable', 'out_of_scope'})
 
 _PRAGMA_RE = re.compile(
-    r'#\s*gremlin:\s*survivor\[([^\]]*)\](.*)',
+    r'#\s*gremlin:\s*pardon\[([^\]]*)\](.*)',
 )
 
 
 def parse_pardoned_lines(source: str) -> dict[int, tuple[str, str]]:
     r"""Parse inline suppression pragmas from Python source code.
 
-    Scans each line for ``# gremlin: survivor[<reason>] <justification>``
+    Scans each line for ``# gremlin: pardon[<reason>] <justification>``
     comments.  Only lines with a valid reason code *and* non-empty justification
     are included in the result.  Invalid or incomplete pragmas are logged as
     warnings and skipped.
@@ -36,7 +36,7 @@ def parse_pardoned_lines(source: str) -> dict[int, tuple[str, str]]:
         tuples for every valid suppression pragma found.
 
     Examples:
-        >>> src = 'x = a // 2  # gremlin: survivor[equivalent] integer division\n'
+        >>> src = 'x = a // 2  # gremlin: pardon[equivalent] integer division\n'
         >>> parse_pardoned_lines(src)
         {1: ('equivalent', 'integer division')}
 

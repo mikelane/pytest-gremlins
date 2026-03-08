@@ -1,6 +1,6 @@
 """Medium pytester E2E tests for pardoning features.
 
-Covers the full pardoning workflow end-to-end: the ``# gremlin: survivor[...]``
+Covers the full pardoning workflow end-to-end: the ``# gremlin: pardon[...]``
 pragma, threshold flags (--max-pardons, --gremlin-max-pardons-pct),
 --strict-pardons, --gremlin-audit-pardons, and --gremlin-batch with pardons.
 """
@@ -16,7 +16,7 @@ def pardoned_project(pytester_with_markers: pytest.Pytester) -> pytest.Pytester:
     pytester_with_markers.makepyfile(
         src_module="""
 def add(a, b):
-    return a + b  # gremlin: survivor[equivalent] addition is equivalent here
+    return a + b  # gremlin: pardon[equivalent] addition is equivalent here
 """,
     )
     pytester_with_markers.makepyfile(
@@ -50,6 +50,7 @@ class DescribeE2EPardoning:
         )
 
         assert result.ret != 0
+        assert 'Max pardons exceeded' in result.stdout.str()
 
     def it_max_pardons_passes_when_within_limit(self, pardoned_project: pytest.Pytester) -> None:
         result = pardoned_project.runpytest(
@@ -68,6 +69,7 @@ class DescribeE2EPardoning:
         )
 
         assert result.ret != 0
+        assert 'Max pardons exceeded' in result.stdout.str()
 
     def it_strict_pardons_fails_with_any_pardon(self, pardoned_project: pytest.Pytester) -> None:
         result = pardoned_project.runpytest(
@@ -77,6 +79,7 @@ class DescribeE2EPardoning:
         )
 
         assert result.ret != 0
+        assert '--strict-pardons' in result.stderr.str()
 
     def it_audit_pardons_lists_pardon_details(self, pardoned_project: pytest.Pytester) -> None:
         result = pardoned_project.runpytest(
