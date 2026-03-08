@@ -99,6 +99,7 @@ def make_pytest_config() -> Callable[..., Any]:
         strict_pardons: bool = False,
         gremlin_audit_pardons: bool = False,
         gremlin_max_pardons_pct: float | None = None,
+        max_pardons: int | None = None,
         pluginmanager: MagicMock | None = None,
     ) -> object:
         class _Option:
@@ -118,6 +119,7 @@ def make_pytest_config() -> Callable[..., Any]:
         option.strict_pardons = strict_pardons  # type: ignore[attr-defined]
         option.gremlin_audit_pardons = gremlin_audit_pardons  # type: ignore[attr-defined]
         option.gremlin_max_pardons_pct = gremlin_max_pardons_pct  # type: ignore[attr-defined]
+        option.max_pardons = max_pardons  # type: ignore[attr-defined]
 
         if pluginmanager is None:
             pm: MagicMock = MagicMock()
