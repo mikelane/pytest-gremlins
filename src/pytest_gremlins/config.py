@@ -445,6 +445,8 @@ def discover_by_importlib_metadata(rootdir: Path) -> list[str]:
             continue
 
         top_level = rel.parts[0]
+        if top_level.startswith('.'):
+            continue
         if top_level not in seen:
             seen.add(top_level)
             discovered.append(top_level)
