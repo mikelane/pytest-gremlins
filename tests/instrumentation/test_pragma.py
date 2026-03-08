@@ -95,3 +95,22 @@ class DescribeParsePardonedLines:
         result = parse_pardoned_lines(source)
         assert 2 in result
         assert 0 not in result
+
+    def it_includes_filename_in_unknown_reason_code_warning(self, caplog):
+        source = 'x = a // 2  # gremlin: pardon[bad_reason] some text\n'
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.instrumentation.pragma'):
+            parse_pardoned_lines(source, file_path='mymodule.py')
+        assert 'mymodule.py' in caplog.text
+        assert 'bad_reason' in caplog.text
+
+    def it_includes_filename_in_missing_justification_warning(self, caplog):
+        source = 'x = a // 2  # gremlin: pardon[equivalent]\n'
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.instrumentation.pragma'):
+            parse_pardoned_lines(source, file_path='other.py')
+        assert 'other.py' in caplog.text
+
+    def it_defaults_file_path_to_unknown(self, caplog):
+        source = 'x = a // 2  # gremlin: pardon[bad_reason] some text\n'
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.instrumentation.pragma'):
+            parse_pardoned_lines(source)
+        assert '<unknown>' in caplog.text
