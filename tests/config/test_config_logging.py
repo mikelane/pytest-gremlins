@@ -64,8 +64,8 @@ class DescribeLoadConfigValidationLogging:
         assert str(tmp_path) in caplog.records[0].message
 
     def it_logs_warning_on_invalid_string_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        toml = tmp_path / 'pyproject.toml'
-        toml.write_text('[tool.pytest-gremlins]\nworkers = "banana"\n')
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = "banana"\n')
 
         with (
             caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
@@ -78,8 +78,8 @@ class DescribeLoadConfigValidationLogging:
         assert str(tmp_path) in caplog.records[0].message
 
     def it_logs_warning_on_boolean_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        toml = tmp_path / 'pyproject.toml'
-        toml.write_text('[tool.pytest-gremlins]\nworkers = true\n')
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = true\n')
 
         with (
             caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
