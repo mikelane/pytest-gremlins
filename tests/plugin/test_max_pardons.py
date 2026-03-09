@@ -26,7 +26,7 @@ from pytest_gremlins.plugin import (
 from pytest_gremlins.reporting.score import MutationScore
 
 
-@pytest.mark.medium
+@pytest.mark.small
 class DescribeMaxPardons:
     """GremlinSession.max_pardons field and enforcement."""
 
@@ -44,14 +44,6 @@ class DescribeMaxPardons:
         session = GremlinSession(max_pardons=0)
 
         assert session.max_pardons == 0
-
-    def it_reads_max_pardons_from_toml(self, tmp_path: Path) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax_pardons = 5\n')
-
-        loaded_config = load_config(tmp_path)
-
-        assert loaded_config.max_pardons == 5
 
     def it_registers_cli_flag(self) -> None:
         mock_group = MagicMock()
@@ -165,6 +157,58 @@ class DescribeMaxPardons:
 
         assert merged.max_pardons == 3
 
+    def it_logs_info_when_pardoned_within_limit(self, caplog: pytest.LogCaptureFixture) -> None:
+        mock_gremlin = MagicMock()
+        session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=5)
+        # 2 pardoned — within limit of 5
+        score = MutationScore(total=10, zapped=8, survived=0, timeout=0, error=0, pardoned=2, results=())
+        mock_reporter = MagicMock()
+
+        with (
+            caplog.at_level(logging.INFO, logger='pytest_gremlins.plugin'),
+            patch('pytest_gremlins.plugin._get_session', return_value=session),
+            patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
+            patch('pytest_gremlins.plugin.pytest'),
+        ):
+            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
+
+        info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+        assert len(info_records) == 1
+        assert '2' in info_records[0].message
+        assert '5' in info_records[0].message
+
+    def it_logs_warning_when_pardoned_exceeds_limit(self, caplog: pytest.LogCaptureFixture) -> None:
+        mock_gremlin = MagicMock()
+        session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=5)
+        score = MutationScore(total=10, zapped=3, survived=0, timeout=0, error=0, pardoned=7, results=())
+        mock_reporter = MagicMock()
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.plugin'),
+            patch('pytest_gremlins.plugin._get_session', return_value=session),
+            patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
+            patch('pytest_gremlins.plugin.pytest'),
+        ):
+            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
+
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert '7' in caplog.records[0].message
+        assert '5' in caplog.records[0].message
+
+
+@pytest.mark.medium
+class DescribeMaxPardonsFileIO:
+    """GremlinSession.max_pardons — tests that read/write real pyproject.toml files."""
+
+    def it_reads_max_pardons_from_toml(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax_pardons = 5\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.max_pardons == 5
+
     def it_toml_max_pardons_flows_into_session(
         self,
         tmp_path: Path,
@@ -237,45 +281,6 @@ class DescribeMaxPardons:
 
         assert len(caplog.records) == 1
         assert 'max_pardons' in caplog.records[0].message
-
-    def it_logs_info_when_pardoned_within_limit(self, caplog: pytest.LogCaptureFixture) -> None:
-        mock_gremlin = MagicMock()
-        session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=5)
-        # 2 pardoned — within limit of 5
-        score = MutationScore(total=10, zapped=8, survived=0, timeout=0, error=0, pardoned=2, results=())
-        mock_reporter = MagicMock()
-
-        with (
-            caplog.at_level(logging.INFO, logger='pytest_gremlins.plugin'),
-            patch('pytest_gremlins.plugin._get_session', return_value=session),
-            patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
-            patch('pytest_gremlins.plugin.pytest'),
-        ):
-            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
-
-        info_records = [r for r in caplog.records if r.levelno == logging.INFO]
-        assert len(info_records) == 1
-        assert '2' in info_records[0].message
-        assert '5' in info_records[0].message
-
-    def it_logs_warning_when_pardoned_exceeds_limit(self, caplog: pytest.LogCaptureFixture) -> None:
-        mock_gremlin = MagicMock()
-        session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=5)
-        score = MutationScore(total=10, zapped=3, survived=0, timeout=0, error=0, pardoned=7, results=())
-        mock_reporter = MagicMock()
-
-        with (
-            caplog.at_level(logging.WARNING, logger='pytest_gremlins.plugin'),
-            patch('pytest_gremlins.plugin._get_session', return_value=session),
-            patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
-            patch('pytest_gremlins.plugin.pytest'),
-        ):
-            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
-
-        assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.WARNING
-        assert '7' in caplog.records[0].message
-        assert '5' in caplog.records[0].message
 
     def it_rejects_out_of_range_max_pardons_via_cli(
         self,

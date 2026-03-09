@@ -31,7 +31,7 @@ from pytest_gremlins.plugin import (
 from pytest_gremlins.reporting.score import MutationScore
 
 
-@pytest.mark.medium
+@pytest.mark.small
 class DescribeMaxPardonsPct:
     """GremlinSession.max_pardons_pct field and threshold enforcement."""
 
@@ -44,14 +44,6 @@ class DescribeMaxPardonsPct:
         session = GremlinSession(max_pardons_pct=5.0)
 
         assert session.max_pardons_pct == 5.0
-
-    def it_reads_max_pardons_pct_from_toml(self, tmp_path: Path) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 5.0\n')
-
-        loaded_config = load_config(tmp_path)
-
-        assert loaded_config.max_pardons_pct == 5.0
 
     def it_registers_cli_flag(self) -> None:
         mock_group = MagicMock()
@@ -126,48 +118,6 @@ class DescribeMaxPardonsPct:
         merged = merge_configs(file_config, cli_max_pardons_pct=15.0)
 
         assert merged.max_pardons_pct == 15.0
-
-    def it_toml_max_pardons_pct_flows_into_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
-    ) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 7.5\n')
-
-        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
-
-        pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
-
-        session = plugin._get_session()
-        assert session is not None
-        assert session.max_pardons_pct == 7.5
-
-    def it_rejects_non_numeric_max_pardons_pct_in_toml(self, tmp_path: Path) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = "five"\n')
-
-        with pytest.raises(ValueError, match='max-pardons-pct'):
-            load_config(tmp_path)
-
-    def it_rejects_boolean_max_pardons_pct_in_toml(self, tmp_path: Path) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = true\n')
-
-        with pytest.raises(ValueError, match='max-pardons-pct'):
-            load_config(tmp_path)
-
-    def it_rejects_negative_max_pardons_pct_in_toml(self, tmp_path: Path) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = -1.0\n')
-
-        with pytest.raises(ValueError, match='max-pardons-pct'):
-            load_config(tmp_path)
-
-    def it_rejects_max_pardons_pct_above_100_in_toml(self, tmp_path: Path) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 101.0\n')
-
-        with pytest.raises(ValueError, match='max-pardons-pct'):
-            load_config(tmp_path)
 
     def it_no_exit_when_total_is_zero(self) -> None:
         mock_gremlin = MagicMock()
@@ -254,6 +204,61 @@ class DescribeMaxPardonsPct:
             pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
 
         mock_pytest.exit.assert_not_called()
+
+
+@pytest.mark.medium
+class DescribeMaxPardonsPctFileIO:
+    """GremlinSession.max_pardons_pct — tests that read/write real pyproject.toml files."""
+
+    def it_reads_max_pardons_pct_from_toml(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 5.0\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.max_pardons_pct == 5.0
+
+    def it_toml_max_pardons_pct_flows_into_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
+    ) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 7.5\n')
+
+        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
+
+        pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
+
+        session = plugin._get_session()
+        assert session is not None
+        assert session.max_pardons_pct == 7.5
+
+    def it_rejects_non_numeric_max_pardons_pct_in_toml(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = "five"\n')
+
+        with pytest.raises(ValueError, match='max-pardons-pct'):
+            load_config(tmp_path)
+
+    def it_rejects_boolean_max_pardons_pct_in_toml(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = true\n')
+
+        with pytest.raises(ValueError, match='max-pardons-pct'):
+            load_config(tmp_path)
+
+    def it_rejects_negative_max_pardons_pct_in_toml(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = -1.0\n')
+
+        with pytest.raises(ValueError, match='max-pardons-pct'):
+            load_config(tmp_path)
+
+    def it_rejects_max_pardons_pct_above_100_in_toml(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 101.0\n')
+
+        with pytest.raises(ValueError, match='max-pardons-pct'):
+            load_config(tmp_path)
 
     def it_reads_integer_max_pardons_pct_from_toml(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
