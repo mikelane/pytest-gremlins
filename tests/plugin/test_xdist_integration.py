@@ -154,6 +154,7 @@ def test_boundary():
 
 
 @pytest.mark.medium
+@pytest.mark.wip
 @pytest.mark.xdist_integration
 class DescribeXdistCoexistenceWithNAuto:
     """pytest-gremlins succeeds when invoked with --gremlins and -n auto.
@@ -187,6 +188,7 @@ class DescribeXdistCoexistenceWithNAuto:
 
 
 @pytest.mark.medium
+@pytest.mark.wip
 @pytest.mark.xdist_integration
 class DescribeXdistCoexistenceWithNInteger:
     """pytest-gremlins succeeds when invoked with --gremlins and -n 2.
@@ -213,6 +215,7 @@ class DescribeXdistCoexistenceWithNInteger:
 
 
 @pytest.mark.medium
+@pytest.mark.wip
 @pytest.mark.xdist_integration
 class DescribeGremlinWorkersOverridesN:
     """--gremlin-workers takes precedence over -n for the mutation phase.
@@ -243,6 +246,7 @@ class DescribeGremlinWorkersOverridesN:
 
 
 @pytest.mark.medium
+@pytest.mark.wip
 @pytest.mark.xdist_integration
 class DescribeXdistNZeroIsNotAnError:
     """--gremlins -n 0 treats xdist as disabled and runs normally.
@@ -302,6 +306,7 @@ class DescribeXdistAloneIsUnaffected:
 
 
 @pytest.mark.medium
+@pytest.mark.wip
 @pytest.mark.xdist_integration
 class DescribePytestConfigureDoesNotExitWithXdist:
     """pytest_configure does not call pytest.exit when --gremlins and -n are combined.
