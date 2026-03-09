@@ -72,7 +72,7 @@ class DescribeGremlinConfigNewFields:
         assert config.batch_size == 50
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfigNewFields:
     """load_config reads workers, cache, report, batch_size from pyproject.toml."""
 
@@ -229,7 +229,7 @@ class DescribeLoadConfigNewFields:
             load_config(tmp_path)
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfigValidationLogging:
     """load_config logs a warning before raising ValueError on invalid field types."""
 
@@ -424,7 +424,7 @@ class DescribeMergeConfigsNewFields:
         assert merged_config.max_pardons_pct is None
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribePluginPassesNewFieldsThrough:
     """pytest_configure passes workers, cache, report, batch_size from TOML into the session."""
 
@@ -586,7 +586,7 @@ class DescribePluginPassesNewFieldsThrough:
         assert session.max_pardons_pct == 15.0
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeDiscoverSourcePathsLogging:
     """discover_source_paths logs a warning when pyproject.toml contains invalid TOML."""
 
@@ -603,7 +603,7 @@ class DescribeDiscoverSourcePathsLogging:
         assert str(tmp_path) in caplog.records[0].message
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfigLogging:
     """load_config logs a warning when pyproject.toml contains invalid TOML."""
 

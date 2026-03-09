@@ -9,7 +9,7 @@ import pytest
 from pytest_gremlins.config import discover_source_paths
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeDiscoverSourcePaths:
     """Tests for discover_source_paths function."""
 

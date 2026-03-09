@@ -123,7 +123,7 @@ class DescribeHtmlReporterContent:
         assert 'survived' in html.lower()
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeHtmlReporterFileOutput:
     """Tests for writing HTML to file."""
 
@@ -264,7 +264,7 @@ class DescribeHtmlReporterAllOutcomeCategories:
         assert '>1<' in html  # 1 survived, 1 timeout, 1 error
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeHtmlReporterOutputLocation:
     """Tests for Epic A: write_report creates parent directories automatically.
 
@@ -658,7 +658,7 @@ class DescribeHtmlReporterDiffPanels:
         assert 'collapseAll' in html
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeAppendHistoryEntry:
     """Tests for Epic E: appending a history entry to history.json.
 
@@ -1083,7 +1083,7 @@ class DescribeHtmlReporterA11y:
         assert scope_col_count == 5
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadHistory:
     """Tests for the load_history module-level function."""
 
@@ -1186,7 +1186,7 @@ class DescribeNodeToSourceLogging:
         assert 'Failed to get source for AST node' in caplog.text
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeAppendHistoryEntryLogging:
     """Tests for logging in append_history_entry when history file is corrupt."""
 
@@ -1205,7 +1205,7 @@ class DescribeAppendHistoryEntryLogging:
         assert str(corrupt) in caplog.text
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadHistoryLogging:
     """Tests for logging in load_history when history file is corrupt."""
 
@@ -1221,7 +1221,7 @@ class DescribeLoadHistoryLogging:
         assert str(corrupt) in caplog.text
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeWriteReportLogging:
     """Tests for logging in HtmlReporter.write_report."""
 
@@ -1238,7 +1238,7 @@ class DescribeWriteReportLogging:
         assert str(output_path) in caplog.text
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeWriteReportHistoryPersistence:
     """Tests that write_report persists history alongside the HTML file."""
 

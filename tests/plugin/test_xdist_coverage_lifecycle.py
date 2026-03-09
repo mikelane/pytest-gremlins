@@ -49,22 +49,6 @@ class DescribeConfigureNode:
         assert 'gremlins_tmpdir' in node.workerinput
         assert node.workerinput['gremlins_tmpdir'] == str(tmp_path)
 
-    def it_injects_different_tmpdir_ruling_out_hardcoding(self, tmp_path: Path) -> None:
-        """Different tmpdir path is injected into workerinput - rules out hardcoding."""
-        other_path = tmp_path / 'subdir'
-        other_path.mkdir()
-
-        gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE)
-        gs.gremlins_tmpdir = str(other_path)
-        _set_session(gs)
-
-        node = MagicMock()
-        node.workerinput = {}
-
-        pytest_configure_node(node=node)
-
-        assert node.workerinput['gremlins_tmpdir'] == str(other_path)
-
     def it_skips_when_session_disabled(self) -> None:
         """No injection when GremlinSession is disabled."""
         gs = GremlinSession(enabled=False)
@@ -100,6 +84,27 @@ class DescribeConfigureNode:
         pytest_configure_node(node=node)
 
         assert 'gremlins_tmpdir' not in node.workerinput
+
+
+@pytest.mark.medium
+class DescribeConfigureNodeFileIO:
+    """Filesystem tests for pytest_configure_node — require real directory creation."""
+
+    def it_injects_different_tmpdir_ruling_out_hardcoding(self, tmp_path: Path) -> None:
+        """Different tmpdir path is injected into workerinput - rules out hardcoding."""
+        other_path = tmp_path / 'subdir'
+        other_path.mkdir()
+
+        gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE)
+        gs.gremlins_tmpdir = str(other_path)
+        _set_session(gs)
+
+        node = MagicMock()
+        node.workerinput = {}
+
+        pytest_configure_node(node=node)
+
+        assert node.workerinput['gremlins_tmpdir'] == str(other_path)
 
 
 @pytest.mark.small

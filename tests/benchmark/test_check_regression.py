@@ -235,6 +235,13 @@ class DescribeCheckRegression:
 
 @pytest.mark.small
 class DescribeLoadBenchmarkResults:
+    def it_load_missing_file_raises(self):
+        with pytest.raises(FileNotFoundError):
+            load_benchmark_results(Path('/nonexistent/path.json'))
+
+
+@pytest.mark.medium
+class DescribeLoadBenchmarkResultsFileIO:
     def it_load_valid_json_file(self):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write('{"gremlins_sequential": 45.63, "gremlins_parallel": 10.36}')
@@ -245,10 +252,6 @@ class DescribeLoadBenchmarkResults:
                 'gremlins_sequential': 45.63,
                 'gremlins_parallel': 10.36,
             }
-
-    def it_load_missing_file_raises(self):
-        with pytest.raises(FileNotFoundError):
-            load_benchmark_results(Path('/nonexistent/path.json'))
 
     def it_load_invalid_json_raises(self):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:

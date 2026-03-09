@@ -20,6 +20,9 @@ class DescribeLoadHistory:
     def it_returns_empty_list_when_file_does_not_exist(self, tmp_path: Path):
         assert load_history(tmp_path / 'missing.json') == []
 
+
+@pytest.mark.medium
+class DescribeLoadHistoryFileIO:
     def it_returns_entries_from_valid_file(self, tmp_path: Path):
         history_file = tmp_path / 'history.json'
         history_file.write_text(json.dumps([{'score': 100.0}]), encoding='utf-8')
@@ -31,7 +34,7 @@ class DescribeLoadHistory:
         assert load_history(corrupt) == []
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeAppendHistoryEntryCorruptRecovery:
     def it_starts_fresh_when_existing_file_is_corrupt(self, make_result, tmp_path: Path):
         corrupt = tmp_path / 'history.json'

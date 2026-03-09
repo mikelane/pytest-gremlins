@@ -31,7 +31,7 @@ from pytest_gremlins.plugin import (
 from pytest_gremlins.reporting.score import MutationScore
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeMaxPardonsPct:
     """GremlinSession.max_pardons_pct field and threshold enforcement."""
 
