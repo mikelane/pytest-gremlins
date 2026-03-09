@@ -19,6 +19,8 @@ Scenarios:
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import (
     MagicMock,
@@ -27,6 +29,11 @@ from unittest.mock import (
 
 import pytest
 
+# Ensure xdist is present before any test in this module runs.
+# Without this guard, pytester subprocesses receive '-n' but xdist is absent,
+# causing CLI-parse errors that make negative assertions pass on broken code.
+pytest.importorskip('xdist')
+
 from pytest_gremlins.plugin import pytest_configure
 
 # ---------------------------------------------------------------------------
@@ -34,6 +41,24 @@ from pytest_gremlins.plugin import pytest_configure
 # ---------------------------------------------------------------------------
 
 _UNSET: object = object()  # sentinel: numprocesses attribute absent
+
+
+@contextmanager
+def _patch_configure_deps() -> Generator[MagicMock, None, None]:
+    """Patch pytest_configure's external dependencies for unit testing.
+
+    Yields the mock_pytest object so callers can assert on pytest.exit calls.
+    Centralised here so that when pytest_configure gains new dependencies
+    during issue #296 implementation, only this one block needs updating.
+    """
+    with (
+        patch('pytest_gremlins.plugin.pytest') as mock_pytest,
+        patch('pytest_gremlins.plugin.load_config'),
+        patch('pytest_gremlins.plugin.merge_configs'),
+        patch('pytest_gremlins.plugin.get_default_registry'),
+        patch('pytest_gremlins.plugin.discover_source_paths', return_value=[]),
+    ):
+        yield mock_pytest
 
 
 def _make_config(
@@ -83,9 +108,19 @@ def _make_config(
     }
     if numprocesses is not _UNSET:
         attrs['numprocesses'] = numprocesses
+    # spec=pytest.Config is intentionally omitted: pytest.Config sets `option`
+    # dynamically in __init__, so MagicMock(spec=pytest.Config) would raise
+    # AttributeError on config.option. Instead we explicitly configure every
+    # attribute that production code reads, which achieves the same drift-detection
+    # goal without the spec= footgun.
     config = MagicMock()
     config.option = SimpleNamespace(**attrs)
     config.rootdir = '/fake/rootdir'
+    # Prevent _detect_coverage_mode from seeing a truthy auto-mock for the
+    # coverage plugin. MagicMock auto-creates attributes, so without this line
+    # get_plugin('_cov') returns MagicMock() (truthy) instead of None, causing
+    # _detect_coverage_mode to return CoverageMode.PIGGYBACK silently.
+    config.pluginmanager.get_plugin.return_value = None
     return config
 
 
@@ -127,25 +162,23 @@ class DescribeXdistCoexistenceWithNAuto:
     Expected behavior after issue #296: exits 0, mutation report in stdout.
     """
 
-    def it_exits_zero_and_zaps_at_least_one_gremlin(self, pytester_with_markers: pytest.Pytester) -> None:
-        """Running --gremlins -n auto actually executes mutations and zaps at least one."""
+    def it_exits_zero_zaps_at_least_one_gremlin_and_omits_incompatibility_error(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        """Running --gremlins -n auto executes mutations, exits 0, and emits no incompatibility message."""
         pytester_with_markers.makepyfile(target_module=_IS_ADULT_MODULE)
         pytester_with_markers.makepyfile(test_target=_IS_ADULT_TEST)
 
-        result = pytester_with_markers.runpytest('--gremlins', '-n', 'auto', '-v')
+        pytest_run_result = pytester_with_markers.runpytest('--gremlins', '-n', 'auto', '-v')
 
-        assert result.ret == 0, f'Expected exit code 0, got {result.ret}'
-        output = result.stdout.str()
-        assert 'Zapped:' in output, 'Expected at least one gremlin to be zapped — mutations did not run'
-
-    def it_does_not_print_incompatibility_error(self, pytester_with_markers: pytest.Pytester) -> None:
-        """Running --gremlins -n auto must not emit the old incompatibility message."""
-        pytester_with_markers.makepyfile(target_module=_IS_ADULT_MODULE)
-        pytester_with_markers.makepyfile(test_target=_IS_ADULT_TEST)
-
-        result = pytester_with_markers.runpytest('--gremlins', '-n', 'auto', '-v')
-
-        assert 'incompatible' not in result.stdout.str().lower()
+        assert pytest_run_result.ret == 0, f'Expected exit code 0, got {pytest_run_result.ret}'
+        stdout = pytest_run_result.stdout.str()
+        # 'Zapped:' proves mutations actually ran — exit 0 with no mutations would pass
+        # the exit-code check but deliver nothing, defeating the purpose of the feature.
+        assert 'Zapped:' in stdout, 'Expected at least one gremlin to be zapped — mutations did not run'
+        # 'incompatible' absence proves the old guard at plugin.py:525 was removed,
+        # not merely suppressed while still blocking mutation execution.
+        assert 'incompatible' not in stdout.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -167,11 +200,11 @@ class DescribeXdistCoexistenceWithNInteger:
         pytester_with_markers.makepyfile(target_module=_IS_ADULT_MODULE)
         pytester_with_markers.makepyfile(test_target=_IS_ADULT_TEST)
 
-        result = pytester_with_markers.runpytest('--gremlins', '-n', '2', '-v')
+        pytest_run_result = pytester_with_markers.runpytest('--gremlins', '-n', '2', '-v')
 
-        assert result.ret == 0, f'Expected exit code 0, got {result.ret}'
-        output = result.stdout.str()
-        assert 'Zapped:' in output, 'Expected at least one gremlin to be zapped — mutations did not run'
+        assert pytest_run_result.ret == 0, f'Expected exit code 0, got {pytest_run_result.ret}'
+        stdout = pytest_run_result.stdout.str()
+        assert 'Zapped:' in stdout, 'Expected at least one gremlin to be zapped — mutations did not run'
 
 
 # ---------------------------------------------------------------------------
@@ -193,11 +226,15 @@ class DescribeGremlinWorkersOverridesN:
         pytester_with_markers.makepyfile(target_module=_IS_ADULT_MODULE)
         pytester_with_markers.makepyfile(test_target=_IS_ADULT_TEST)
 
-        result = pytester_with_markers.runpytest('--gremlins', '-n', '4', '--gremlin-workers', '2', '-v')
+        pytest_run_result = pytester_with_markers.runpytest('--gremlins', '-n', '4', '--gremlin-workers', '2', '-v')
 
-        assert result.ret == 0, f'Expected exit code 0, got {result.ret}'
-        output = result.stdout.str()
-        assert 'Zapped:' in output, 'Expected at least one gremlin to be zapped — mutations did not run'
+        assert pytest_run_result.ret == 0, f'Expected exit code 0, got {pytest_run_result.ret}'
+        stdout = pytest_run_result.stdout.str()
+        assert 'Zapped:' in stdout, 'Expected at least one gremlin to be zapped — mutations did not run'
+        # NOTE: The worker-count override (--gremlin-workers 2 beats -n 4) cannot be
+        # asserted here without knowing the output format the implementation will emit.
+        # That is an implementation detail belonging to issue #296. The unit tests for
+        # the worker-selection logic in that issue should carry this assertion.
 
 
 # ---------------------------------------------------------------------------
@@ -221,11 +258,11 @@ class DescribeXdistNZeroIsNotAnError:
         pytester_with_markers.makepyfile(target_module=_IS_ADULT_MODULE)
         pytester_with_markers.makepyfile(test_target=_IS_ADULT_TEST)
 
-        result = pytester_with_markers.runpytest('--gremlins', '-n', '0', '-v')
+        pytest_run_result = pytester_with_markers.runpytest('--gremlins', '-n', '0', '-v')
 
-        assert result.ret == 0, f'Expected exit code 0, got {result.ret}'
-        output = result.stdout.str()
-        assert 'Zapped:' in output, 'Expected at least one gremlin to be zapped — mutations did not run'
+        assert pytest_run_result.ret == 0, f'Expected exit code 0, got {pytest_run_result.ret}'
+        stdout = pytest_run_result.stdout.str()
+        assert 'Zapped:' in stdout, 'Expected at least one gremlin to be zapped — mutations did not run'
 
 
 # ---------------------------------------------------------------------------
@@ -249,10 +286,14 @@ class DescribeXdistAloneIsUnaffected:
         pytester_with_markers.makepyfile(target_module=_IS_ADULT_MODULE)
         pytester_with_markers.makepyfile(test_target=_IS_ADULT_TEST)
 
-        result = pytester_with_markers.runpytest('-n', 'auto', '-v')
+        pytest_run_result = pytester_with_markers.runpytest('-n', 'auto', '-v')
 
-        assert result.ret == 0, f'Expected exit code 0, got {result.ret}'
-        assert 'pytest-gremlins mutation report' not in result.stdout.str()
+        # Positive assertion first: all 3 tests must have actually run and passed.
+        # Without this, a silent plugin crash that exits 0 with no output would
+        # satisfy the two negative assertions below, giving a false green.
+        pytest_run_result.assert_outcomes(passed=3)
+        assert pytest_run_result.ret == 0, f'Expected exit code 0, got {pytest_run_result.ret}'
+        assert 'pytest-gremlins mutation report' not in pytest_run_result.stdout.str()
 
 
 # ---------------------------------------------------------------------------
@@ -275,40 +316,22 @@ class DescribePytestConfigureDoesNotExitWithXdist:
         """pytest_configure with gremlins=True, numprocesses='auto' must not call pytest.exit."""
         config = _make_config(gremlins=True, numprocesses='auto')
 
-        with patch('pytest_gremlins.plugin.pytest') as mock_pytest:
-            with (
-                patch('pytest_gremlins.plugin.load_config'),
-                patch('pytest_gremlins.plugin.merge_configs'),
-                patch('pytest_gremlins.plugin.get_default_registry'),
-                patch('pytest_gremlins.plugin.discover_source_paths', return_value=[]),
-            ):
-                pytest_configure(config)
-            mock_pytest.exit.assert_not_called()
+        with _patch_configure_deps() as mock_pytest:
+            pytest_configure(config)
+        mock_pytest.exit.assert_not_called()
 
     def it_does_not_call_pytest_exit_with_gremlins_and_n_integer(self) -> None:
         """pytest_configure with gremlins=True, numprocesses=2 must not call pytest.exit."""
         config = _make_config(gremlins=True, numprocesses=2)
 
-        with patch('pytest_gremlins.plugin.pytest') as mock_pytest:
-            with (
-                patch('pytest_gremlins.plugin.load_config'),
-                patch('pytest_gremlins.plugin.merge_configs'),
-                patch('pytest_gremlins.plugin.get_default_registry'),
-                patch('pytest_gremlins.plugin.discover_source_paths', return_value=[]),
-            ):
-                pytest_configure(config)
-            mock_pytest.exit.assert_not_called()
+        with _patch_configure_deps() as mock_pytest:
+            pytest_configure(config)
+        mock_pytest.exit.assert_not_called()
 
     def it_does_not_call_pytest_exit_with_gremlins_and_n_zero(self) -> None:
         """pytest_configure with gremlins=True, numprocesses=0 must not call pytest.exit."""
         config = _make_config(gremlins=True, numprocesses=0)
 
-        with patch('pytest_gremlins.plugin.pytest') as mock_pytest:
-            with (
-                patch('pytest_gremlins.plugin.load_config'),
-                patch('pytest_gremlins.plugin.merge_configs'),
-                patch('pytest_gremlins.plugin.get_default_registry'),
-                patch('pytest_gremlins.plugin.discover_source_paths', return_value=[]),
-            ):
-                pytest_configure(config)
-            mock_pytest.exit.assert_not_called()
+        with _patch_configure_deps() as mock_pytest:
+            pytest_configure(config)
+        mock_pytest.exit.assert_not_called()
