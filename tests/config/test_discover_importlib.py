@@ -8,7 +8,7 @@ import pytest
 from pytest_gremlins.config import discover_by_importlib_metadata
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeDiscoverByImportlibMetadata:
     """Tests for discover_by_importlib_metadata function."""
 

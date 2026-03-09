@@ -33,7 +33,7 @@ def sample_gremlin() -> Gremlin:
     )
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeGremlinExitCodeClassification:
     """Tests for _test_gremlin exit code handling."""
 

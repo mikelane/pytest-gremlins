@@ -135,7 +135,7 @@ class DescribeJsonReporterResultFormat:
         assert data['results'][0]['killing_test'] == 'test_age_validation'
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeJsonReporterFileOutput:
     """Tests for writing JSON to file."""
 

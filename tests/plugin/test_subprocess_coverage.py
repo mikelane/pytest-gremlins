@@ -18,7 +18,7 @@ import sys
 import pytest
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeSitecustomizeExists:
     """Verify sitecustomize.py is present at the project root."""
 
@@ -66,7 +66,7 @@ class DescribeSitecustomizeExists:
         assert imports, 'sitecustomize.py must import coverage'
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeCoverageRunConfig:
     """Verify pyproject.toml coverage config enables parallel subprocess tracking."""
 

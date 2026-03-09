@@ -32,7 +32,7 @@ from pytest_gremlins.plugin import (
 )
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeCoverageSubprocessClearsAddopts:
     """Verify the coverage subprocess includes -o addopts= to clear user config."""
 
@@ -284,7 +284,7 @@ def _make_configure_config(*, gremlins: bool, has_pytest_cov: bool, no_cov: bool
     return config
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeOuterSessionCovNotSuppressed:
     """Verify --cov is NOT suppressed in the outer gremlins session.
 
@@ -360,7 +360,7 @@ def _write_coverage_sqlite(
     conn.close()
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeCoverageSQLiteReading:
     """Verify _run_tests_with_coverage reads per-test data from the .coverage SQLite DB."""
 

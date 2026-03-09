@@ -12,7 +12,7 @@ from pytest_gremlins.config import (
 )
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfig:
     """Tests for load_config function."""
 

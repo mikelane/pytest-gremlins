@@ -72,7 +72,7 @@ class DescribeGremlinConfigNewFields:
         assert config.batch_size == 50
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfigNewFields:
     """load_config reads workers, cache, report, batch_size from pyproject.toml."""
 
@@ -161,14 +161,14 @@ class DescribeLoadConfigNewFields:
             load_config(tmp_path)
 
     def it_raises_on_float_workers(self, tmp_path):
-        toml = tmp_path / 'pyproject.toml'
-        toml.write_text('[tool.pytest-gremlins]\nworkers = 2.5\n')
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 2.5\n')
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
     def it_raises_on_boolean_workers(self, tmp_path):
-        toml = tmp_path / 'pyproject.toml'
-        toml.write_text('[tool.pytest-gremlins]\nworkers = true\n')
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = true\n')
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
@@ -229,7 +229,7 @@ class DescribeLoadConfigNewFields:
             load_config(tmp_path)
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfigValidationLogging:
     """load_config logs a warning before raising ValueError on invalid field types."""
 
@@ -276,24 +276,30 @@ class DescribeLoadConfigValidationLogging:
         assert str(tmp_path) in caplog.records[0].message
 
     def it_logs_warning_on_invalid_string_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        toml = tmp_path / 'pyproject.toml'
-        toml.write_text('[tool.pytest-gremlins]\nworkers = "banana"\n')
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = "banana"\n')
         with (
             caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
             pytest.raises(ValueError, match='workers'),
         ):
             load_config(tmp_path)
-        assert any('workers' in r.message.lower() for r in caplog.records if r.levelno == logging.WARNING)
+        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_records) == 1
+        assert 'workers' in warning_records[0].message.lower()
+        assert str(tmp_path) in warning_records[0].message
 
     def it_logs_warning_on_boolean_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        toml = tmp_path / 'pyproject.toml'
-        toml.write_text('[tool.pytest-gremlins]\nworkers = true\n')
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nworkers = true\n')
         with (
             caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
             pytest.raises(ValueError, match='workers'),
         ):
             load_config(tmp_path)
-        assert any('workers' in r.message.lower() for r in caplog.records if r.levelno == logging.WARNING)
+        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_records) == 1
+        assert 'workers' in warning_records[0].message.lower()
+        assert str(tmp_path) in warning_records[0].message
 
     def it_logs_warning_on_invalid_report_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         pyproject = tmp_path / 'pyproject.toml'
@@ -424,7 +430,7 @@ class DescribeMergeConfigsNewFields:
         assert merged_config.max_pardons_pct is None
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribePluginPassesNewFieldsThrough:
     """pytest_configure passes workers, cache, report, batch_size from TOML into the session."""
 
@@ -586,7 +592,7 @@ class DescribePluginPassesNewFieldsThrough:
         assert session.max_pardons_pct == 15.0
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeDiscoverSourcePathsLogging:
     """discover_source_paths logs a warning when pyproject.toml contains invalid TOML."""
 
@@ -603,7 +609,7 @@ class DescribeDiscoverSourcePathsLogging:
         assert str(tmp_path) in caplog.records[0].message
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfigLogging:
     """load_config logs a warning when pyproject.toml contains invalid TOML."""
 

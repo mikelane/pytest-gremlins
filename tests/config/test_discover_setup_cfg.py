@@ -5,7 +5,7 @@ import pytest
 from pytest_gremlins.config import discover_by_setup_cfg
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeDiscoverBySetupCfg:
     """Tests for discover_by_setup_cfg function."""
 
