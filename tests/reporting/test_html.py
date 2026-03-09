@@ -66,6 +66,15 @@ class DescribeHtmlReporterBasicStructure:
         assert '<body>' in html
         assert '</body>' in html
 
+    def it_includes_embedded_styles(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        assert '<style>' in html
+
 
 @pytest.mark.small
 class DescribeHtmlReporterContent:
@@ -138,16 +147,6 @@ class DescribeHtmlReporterFileOutput:
         assert output_file.exists()
         content = output_file.read_text()
         assert '<!DOCTYPE html>' in content
-
-    def it_includes_styles(self, make_result):
-        results = [make_result(GremlinResultStatus.ZAPPED)]
-        score = MutationScore.from_results(results)
-        reporter = HtmlReporter()
-
-        html = reporter.to_html(score)
-
-        # Should have embedded CSS for standalone report
-        assert '<style>' in html
 
 
 @pytest.mark.small

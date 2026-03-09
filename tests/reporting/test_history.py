@@ -15,7 +15,7 @@ from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.reporting.score import MutationScore
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadHistory:
     def it_returns_empty_list_when_file_does_not_exist(self, tmp_path: Path):
         assert load_history(tmp_path / 'missing.json') == []

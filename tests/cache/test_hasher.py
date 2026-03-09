@@ -156,6 +156,6 @@ class DescribeContentHasherEdgeCases:
     def it_hash_combined_with_single_element_equals_hash_string(self):
         """hash_combined([h]) equals hash_string(h)."""
         hasher = ContentHasher()
-        h = 'abc123def456'  # pragma: allowlist secret
+        input_hash = 'abc123def456'  # pragma: allowlist secret
 
-        assert hasher.hash_combined([h]) == hasher.hash_string(h)
+        assert hasher.hash_combined([input_hash]) == hasher.hash_string(input_hash)

@@ -15,7 +15,6 @@ _benchmarks_path = str(Path(__file__).parents[2] / 'benchmarks')
 if _benchmarks_path not in sys.path:
     sys.path.insert(0, _benchmarks_path)
 
-# Import will fail until we implement check_regression.py
 from benchmarks.check_regression import (  # noqa: E402
     RegressionCheckResult,
     RegressionDetail,

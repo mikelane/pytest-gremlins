@@ -30,43 +30,20 @@ from pytest_gremlins.plugin import (
 class DescribeShouldIncludeFile:
     """Tests for _should_include_file function."""
 
-    def it_excludes_test_files_with_test_prefix(self, tmp_path: Path) -> None:
-        """Files starting with test_ are excluded."""
-        test_file = tmp_path / 'test_something.py'
-        test_file.touch()
-        assert _should_include_file(test_file) is False
+    def it_excludes_test_files_with_test_prefix(self) -> None:
+        assert _should_include_file(Path('test_something.py')) is False
 
-    def it_excludes_test_files_with_test_suffix(self, tmp_path: Path) -> None:
-        """Files ending with _test.py are excluded."""
-        test_file = tmp_path / 'something_test.py'
-        test_file.touch()
-        assert _should_include_file(test_file) is False
+    def it_excludes_test_files_with_test_suffix(self) -> None:
+        assert _should_include_file(Path('something_test.py')) is False
 
-    def it_excludes_conftest(self, tmp_path: Path) -> None:
-        """conftest.py files are excluded."""
-        conftest = tmp_path / 'conftest.py'
-        conftest.touch()
-        assert _should_include_file(conftest) is False
+    def it_excludes_conftest(self) -> None:
+        assert _should_include_file(Path('conftest.py')) is False
 
-    def it_includes_regular_source_files(self, tmp_path: Path) -> None:
-        """Regular source files are included."""
-        source_file = tmp_path / 'module.py'
-        source_file.touch()
-        assert _should_include_file(source_file) is True
+    def it_includes_regular_source_files(self) -> None:
+        assert _should_include_file(Path('module.py')) is True
 
-
-@pytest.mark.medium
-class DescribeShouldIncludeFileFileIO:
-    """Filesystem tests for _should_include_file — require real directory creation."""
-
-    def it_excludes_pycache_files(self, tmp_path: Path) -> None:
-        """Files in __pycache__ are excluded."""
-        pycache = tmp_path / '__pycache__'
-        pycache.mkdir()
-        cached_file = pycache / 'module.cpython-311.pyc'
-        cached_file.touch()
-        # The path contains __pycache__
-        assert _should_include_file(cached_file) is False
+    def it_excludes_pycache_files(self) -> None:
+        assert _should_include_file(Path('__pycache__/module.cpython-311.pyc')) is False
 
 
 @pytest.mark.medium
@@ -468,11 +445,8 @@ class DescribeCleanupInstrumentedDir:
         """None path causes the function to return without error."""
         _cleanup_instrumented_dir(None)  # must not raise
 
-    def it_does_nothing_when_directory_does_not_exist(self, tmp_path: Path) -> None:
-        """Non-existent path causes the function to return without error."""
-        missing = tmp_path / 'not_here'
-        _cleanup_instrumented_dir(missing)  # must not raise
-        assert not missing.exists()
+    def it_does_nothing_when_directory_does_not_exist(self) -> None:
+        _cleanup_instrumented_dir(Path('/nonexistent/path/not_here'))  # must not raise
 
 
 @pytest.mark.medium
