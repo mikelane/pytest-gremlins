@@ -149,7 +149,10 @@ jobs:
         run: uv sync
 
       - name: Run doctests
-        run: uv run pytest --doctest-modules src/pytest_gremlins
+        # Disable test-category hermeticity enforcement for doctests: doctests
+        # have no mechanism to declare a size marker, so pytest-test-categories
+        # flags incidental reads (e.g. ~/.pdbrc from pdb internals) as violations.
+        run: uv run pytest --doctest-modules src/pytest_gremlins --override-ini="test_categories_enforcement=disabled"
 
       - name: Build docs
         run: uv run mkdocs build --strict
