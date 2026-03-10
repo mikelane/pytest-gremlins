@@ -110,6 +110,7 @@ def _make_config(
         'strict_pardons': False,
         'gremlin_audit_pardons': False,
         'gremlin_max_pardons_pct': None,
+        'max_pardons': None,
     }
     if numprocesses is not _UNSET:
         attrs['numprocesses'] = numprocesses
@@ -239,10 +240,6 @@ class DescribeGremlinWorkersOverridesN:
         assert pytest_run_result.ret == 0, f'Expected exit code 0, got {pytest_run_result.ret}'
         stdout = pytest_run_result.stdout.str()
         assert 'Zapped:' in stdout, 'Expected at least one gremlin to be zapped — mutations did not run'
-        # NOTE: The worker-count override (--gremlin-workers 2 beats -n 4) cannot be
-        # asserted here without knowing the output format the implementation will emit.
-        # That is an implementation detail belonging to issue #296. The unit tests for
-        # the worker-selection logic in that issue should carry this assertion.
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +342,15 @@ class DescribePytestConfigureDoesNotExitWithXdist:
         with _patch_configure_deps() as mock_pytest:
             pytest_configure(config)
         mock_pytest.exit.assert_not_called()
+
+    def it_calls_pytest_exit_when_max_pardons_is_negative(self) -> None:
+        """pytest_configure with max_pardons=-1 calls pytest.exit regardless of xdist state."""
+        config = _make_config(gremlins=True, numprocesses=2)
+        config.option.max_pardons = -1
+
+        with _patch_configure_deps() as mock_pytest:
+            pytest_configure(config)
+        mock_pytest.exit.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -59,7 +59,6 @@ def test_is_adult():
 
         result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=target_module.py', '-v')
         result.assert_outcomes(passed=1)
-        # Should have generated gremlins
         output = result.stdout.str()
         assert 'Zapped:' in output or 'Survived:' in output
 
