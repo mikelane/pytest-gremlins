@@ -17,7 +17,7 @@ from pytest_gremlins.config import (
 )
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfigValidationLogging:
     """load_config logs a warning before raising ValueError on invalid field types."""
 
@@ -134,7 +134,7 @@ class DescribeLoadConfigValidationLogging:
         assert str(tmp_path) in caplog.records[0].message
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeDiscoverSourcePathsLogging:
     """discover_source_paths logs a warning when pyproject.toml contains invalid TOML."""
 
@@ -151,7 +151,7 @@ class DescribeDiscoverSourcePathsLogging:
         assert str(tmp_path) in caplog.records[0].message
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfigLogging:
     """load_config logs a warning when pyproject.toml contains invalid TOML."""
 
