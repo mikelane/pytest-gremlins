@@ -670,7 +670,15 @@ if _XDIST_AVAILABLE:
         if gremlin_session.coverage_mode != CoverageMode.PRIVATE:
             return
 
+        if gremlin_session.gremlins_tmpdir is None:
+            logger.warning(
+                'pytest_configure_node: gremlins_tmpdir is None in PRIVATE mode; '
+                'worker coverage data will not be combined'
+            )
+            return
+
         node.workerinput['gremlins_tmpdir'] = gremlin_session.gremlins_tmpdir
+        logger.debug('pytest_configure_node: injected gremlins_tmpdir=%s', gremlin_session.gremlins_tmpdir)
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -727,6 +735,13 @@ if _XDIST_AVAILABLE:
             return
 
         gremlin_session.xdist_item_ids = list(ids)
+        if not ids:
+            logger.warning(
+                'pytest_xdist_node_collection_finished: first worker reported zero collected items; '
+                'Phase 2 gremlin generation will have no tests to run against'
+            )
+        else:
+            logger.debug('pytest_xdist_node_collection_finished: captured %d item IDs from first worker', len(ids))
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -800,6 +815,10 @@ def pytest_collection_finish(session: pytest.Session) -> None:
                 gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
 
     if gremlin_session.xdist_active and not session.items:
+        logger.debug(
+            'pytest_collection_finish: xdist controller has zero items; '
+            'deferring gremlin generation to pytest_sessionfinish'
+        )
         return
 
     _generate_gremlins(gremlin_session, source_files, rootdir)
@@ -825,7 +844,11 @@ def _generate_gremlins(
     instrumented_asts: dict[str, ast.Module] = {}
 
     for file_path, source in source_files.items():
-        gremlins, instrumented_tree = transform_source(source, file_path, gremlin_session.operators)
+        try:
+            gremlins, instrumented_tree = transform_source(source, file_path, gremlin_session.operators)
+        except Exception:
+            logger.exception('Failed to transform %s; skipping file', file_path)
+            continue
         all_gremlins.extend(gremlins)
         instrumented_asts[file_path] = instrumented_tree
 
@@ -1125,12 +1148,20 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
 
     if gremlin_session.xdist_active:
         xdist_ids = gremlin_session.xdist_item_ids or []
+        if not xdist_ids:
+            logger.warning(
+                'pytest_sessionfinish: xdist Phase 2 starting with zero item IDs; '
+                'pytest_xdist_node_collection_finished may not have fired'
+            )
         normalized = _make_node_ids_relative(xdist_ids, rootdir)
         gremlin_session.test_node_ids = {nid: nid for nid in normalized}
         gremlin_session.total_tests = len(normalized)
+        logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
         source_files = _discover_source_files(session, gremlin_session)
         gremlin_session.source_files = source_files
+        logger.debug('pytest_sessionfinish: xdist Phase 2 discovered %d source files', len(source_files))
         _generate_gremlins(gremlin_session, source_files, rootdir)
+        logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
 
     if not gremlin_session.gremlins:
         return
@@ -1177,7 +1208,7 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     Returns:
         List of node IDs with paths made relative to rootdir.
     """
-    result = []
+    relative_node_ids = []
     for node_id in node_ids:
         # Strip any plugin-added suffixes like "[SMALL]", "[MEDIUM]", etc.
         # These are display decorations, not part of the actual node ID
@@ -1191,18 +1222,18 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
             if path_obj.is_absolute() and path_obj.is_relative_to(rootdir):
                 relative_path = path_obj.relative_to(rootdir)
                 # Use forward slashes for consistency in pytest node IDs
-                result.append(f'{relative_path.as_posix()}::{test_part}')
+                relative_node_ids.append(f'{relative_path.as_posix()}::{test_part}')
             else:
-                result.append(cleaned_node_id)
+                relative_node_ids.append(cleaned_node_id)
         # No :: separator, just a path - make it relative if absolute
         else:
             path_obj = Path(cleaned_node_id)
             if path_obj.is_absolute() and path_obj.is_relative_to(rootdir):
                 relative_path = path_obj.relative_to(rootdir)
-                result.append(relative_path.as_posix())
+                relative_node_ids.append(relative_path.as_posix())
             else:
-                result.append(cleaned_node_id)
-    return result
+                relative_node_ids.append(cleaned_node_id)
+    return relative_node_ids
 
 
 def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
@@ -1316,7 +1347,7 @@ dynamic_context = test_function
         coveragerc_path.unlink(missing_ok=True)
         return {}
 
-    result: dict[str, dict[str, list[int]]] = {}
+    coverage_by_test: dict[str, dict[str, list[int]]] = {}
 
     try:
         if not coverage_db_path.exists():  # pragma: no cover
@@ -1344,11 +1375,11 @@ dynamic_context = test_function
 
             lines = _decode_numbits(numbits)
 
-            if test_name not in result:
-                result[test_name] = {}
-            if file_path not in result[test_name]:
-                result[test_name][file_path] = []
-            result[test_name][file_path].extend(lines)
+            if test_name not in coverage_by_test:
+                coverage_by_test[test_name] = {}
+            if file_path not in coverage_by_test[test_name]:
+                coverage_by_test[test_name][file_path] = []
+            coverage_by_test[test_name][file_path].extend(lines)
 
         conn.close()
 
@@ -1361,7 +1392,7 @@ dynamic_context = test_function
         except OSError as exc:  # pragma: no cover
             logger.debug('Failed to clean up coverage files: %s', exc)
 
-    return result
+    return coverage_by_test
 
 
 def _decode_numbits(numbits: bytes) -> list[int]:
@@ -1681,7 +1712,7 @@ def _run_mutation_testing(
             selected_tests,
             gremlin_session,
         )
-        result = _test_gremlin(
+        gremlin_result = _test_gremlin(
             gremlin,
             test_command,
             rootdir,
@@ -1689,9 +1720,9 @@ def _run_mutation_testing(
         )
 
         # Cache the result for next run
-        _cache_gremlin_result(gremlin, selected_tests, result, gremlin_session)
+        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
 
-        results.append(result)
+        results.append(gremlin_result)
 
     return results
 
@@ -2009,7 +2040,7 @@ def _test_gremlin(
         env[GREMLIN_SOURCES_ENV_VAR] = str(sources_file)
 
     try:
-        result = subprocess.run(  # Intentional: runs pytest test commands
+        subprocess_outcome = subprocess.run(  # Intentional: runs pytest test commands
             test_command,
             cwd=str(rootdir),
             env=env,
@@ -2022,12 +2053,12 @@ def _test_gremlin(
         # and failed (i.e. the mutation was caught). Other non-zero exit codes
         # indicate errors (collection/import/internal) and should not be counted
         # as zapped.
-        if result.returncode == 0:
+        if subprocess_outcome.returncode == 0:
             return GremlinResult(
                 gremlin=gremlin,
                 status=GremlinResultStatus.SURVIVED,
             )
-        if result.returncode == 1:
+        if subprocess_outcome.returncode == 1:
             return GremlinResult(
                 gremlin=gremlin,
                 status=GremlinResultStatus.ZAPPED,
@@ -2166,10 +2197,12 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     if gremlin_session.audit_pardons and score.pardoned > 0:
         terminalreporter.write_line('')
         terminalreporter.write_line('Pardoned gremlins audit:')
-        for result in score.results:
-            if result.status == GremlinResultStatus.PARDONED:
-                g = result.gremlin
-                terminalreporter.write_line(f'  {g.file_path}:{g.line_number}  {g.pardon_reason or "(no reason)"}')
+        for gremlin_result in score.results:
+            if gremlin_result.status == GremlinResultStatus.PARDONED:
+                pardoned_gremlin = gremlin_result.gremlin
+                reason = pardoned_gremlin.pardon_reason or '(no reason)'
+                location = f'{pardoned_gremlin.file_path}:{pardoned_gremlin.line_number}'
+                terminalreporter.write_line(f'  {location}  {reason}')
 
     if gremlin_session.strict_pardons and score.pardoned > 0:
         pytest.exit(f'--strict-pardons: {score.pardoned} pardoned gremlins exist', returncode=1)
