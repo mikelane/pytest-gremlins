@@ -207,6 +207,8 @@ class GremlinSession:
     batch_enabled: bool = False
     batch_size: int = 10
     xdist_item_ids: list[str] | None = None
+    xdist_active: bool = False
+    xdist_workers: int | None = None
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
     private_coverage: coverage.Coverage | None = None
     gremlins_tmpdir: str | None = None
@@ -287,23 +289,28 @@ def _is_xdist_worker(config: pytest.Config) -> bool:
     return hasattr(config, 'workerinput')
 
 
-def _read_parallel_config(config: pytest.Config) -> tuple[bool, int | None]:
+def _read_parallel_config(config: pytest.Config, xdist_workers: int | None = None) -> tuple[bool, int | None]:
     """Determine parallel_enabled and parallel_workers from config options.
 
-    Only called when ``--gremlins`` is active and xdist is not active (because
-    ``pytest_configure`` exits with code 4 if xdist ``-n`` is detected alongside
-    ``--gremlins``).  Reads ``--gremlin-parallel`` and ``--gremlin-workers``
-    from the config options.
+    Reads ``--gremlin-parallel`` and ``--gremlin-workers`` from the config
+    options.  When neither is set and xdist was active, falls back to using
+    the xdist worker count as the default parallel worker count.
 
     Args:
         config: The pytest config object after option parsing.
+        xdist_workers: Resolved integer worker count from xdist ``-n`` flag,
+            or None if xdist is not active.  Callers must convert ``'auto'``
+            to None before passing (``ProcessPoolExecutor`` rejects strings).
+            Used as a fallback when ``--gremlin-workers`` is not explicitly set.
 
     Returns:
         A tuple of (parallel_enabled, parallel_workers).
     """
-    parallel_workers: int | None = config.option.gremlin_workers
-    parallel_enabled: bool = config.option.gremlin_parallel or parallel_workers is not None
-    return parallel_enabled, parallel_workers
+    cli_workers: int | None = config.option.gremlin_workers
+    if cli_workers is None and xdist_workers is not None:
+        return True, xdist_workers
+    parallel_enabled: bool = config.option.gremlin_parallel or cli_workers is not None
+    return parallel_enabled, cli_workers
 
 
 def _get_session() -> GremlinSession | None:
@@ -507,7 +514,7 @@ def _extract_toml_fields(
     )
 
 
-def pytest_configure(config: pytest.Config) -> None:  # noqa: C901
+def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
     Configuration precedence (highest to lowest):
@@ -520,16 +527,11 @@ def pytest_configure(config: pytest.Config) -> None:  # noqa: C901
         _set_session(GremlinSession(enabled=False))
         return
 
-    # xdist distributes *test items* across workers, which conflicts with
-    # gremlins' subprocess-per-mutation model. Use --gremlin-workers instead.
-    if hasattr(config.option, 'numprocesses') and config.option.numprocesses is not None:
-        pytest.exit(
-            'pytest-gremlins is incompatible with pytest-xdist test distribution.\n'
-            'Remove -n from your invocation (or from addopts) when running mutation tests.\n'
-            'Use --gremlin-workers=N to parallelise mutation execution instead.\n'
-            'Deep xdist integration is tracked in https://github.com/mikelane/pytest-gremlins/issues/181',
-            returncode=4,
-        )
+    # xdist with -n > 0 distributes test items across workers; gremlins runs
+    # its mutation phase sequentially after xdist tears down (two-phase mode).
+    # -n 0 means "no distribution" — treat it the same as xdist not present.
+    xdist_numprocesses = getattr(config.option, 'numprocesses', None)
+    xdist_active = xdist_numprocesses not in (None, 0)
 
     rootdir = _get_rootdir(config)
 
@@ -586,6 +588,16 @@ def pytest_configure(config: pytest.Config) -> None:  # noqa: C901
             src_path = rootdir / 'src'
             if src_path.exists():
                 target_paths.append(src_path)
+            else:
+                logger.warning(
+                    'No source paths discovered; scanning the entire project root (%s). '
+                    'This may be slower and include files you did not intend to mutate. '
+                    'Add paths to pyproject.toml to target only your source code:\n'
+                    '  [tool.pytest-gremlins]\n'
+                    '  paths = ["src/your_package"]',
+                    rootdir,
+                )
+                target_paths.append(rootdir)
 
     (
         toml_cache,
@@ -600,7 +612,9 @@ def pytest_configure(config: pytest.Config) -> None:  # noqa: C901
     cache_enabled: bool = bool(toml_cache)
     cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache)
 
-    parallel_enabled, parallel_workers = _read_parallel_config(config)
+    xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
+    xdist_workers_for_parallel = xdist_worker_int if xdist_active else None
+    parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers=xdist_workers_for_parallel)
     merged_workers = toml_workers if isinstance(toml_workers, int) else None
     if parallel_workers is None and merged_workers is not None:
         parallel_workers = merged_workers
@@ -628,6 +642,8 @@ def pytest_configure(config: pytest.Config) -> None:  # noqa: C901
             audit_pardons=bool(config.option.gremlin_audit_pardons),
             max_pardons_pct=toml_max_pardons_pct,
             max_pardons=toml_max_pardons,
+            xdist_active=xdist_active,
+            xdist_workers=xdist_worker_int if xdist_active else None,
         )
     )
 
@@ -654,7 +670,15 @@ if _XDIST_AVAILABLE:
         if gremlin_session.coverage_mode != CoverageMode.PRIVATE:
             return
 
+        if gremlin_session.gremlins_tmpdir is None:  # pragma: no cover
+            logger.warning(
+                'pytest_configure_node: gremlins_tmpdir is None in PRIVATE mode; '
+                'worker coverage data will not be combined'
+            )
+            return
+
         node.workerinput['gremlins_tmpdir'] = gremlin_session.gremlins_tmpdir
+        logger.debug('pytest_configure_node: injected gremlins_tmpdir=%s', gremlin_session.gremlins_tmpdir)
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -711,6 +735,13 @@ if _XDIST_AVAILABLE:
             return
 
         gremlin_session.xdist_item_ids = list(ids)
+        if not ids:
+            logger.warning(
+                'pytest_xdist_node_collection_finished: first worker reported zero collected items; '
+                'Phase 2 gremlin generation will have no tests to run against'
+            )
+        else:
+            logger.debug('pytest_xdist_node_collection_finished: captured %d item IDs from first worker', len(ids))
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -742,7 +773,12 @@ def pytest_runtestloop(session: pytest.Session) -> collections.abc.Generator[Non
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
-    """After test collection, discover source files and generate gremlins."""
+    """After test collection, discover source files and generate gremlins.
+
+    In xdist mode the controller has zero items; this hook records test files
+    and normalises node IDs but skips gremlin generation — that happens in
+    ``pytest_sessionfinish`` once worker item IDs are available.
+    """
     gremlin_session = _get_session()
     if gremlin_session is None or not gremlin_session.enabled:
         return
@@ -778,12 +814,41 @@ def pytest_collection_finish(session: pytest.Session) -> None:
             with contextlib.suppress(FileNotFoundError):
                 gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
 
-    rootdir = _get_rootdir(session.config)
+    if gremlin_session.xdist_active and not session.items:
+        logger.debug(
+            'pytest_collection_finish: xdist controller has zero items; '
+            'deferring gremlin generation to pytest_sessionfinish'
+        )
+        return
+
+    _generate_gremlins(gremlin_session, source_files, rootdir)
+
+
+def _generate_gremlins(
+    gremlin_session: GremlinSession,
+    source_files: dict[str, str],
+    rootdir: Path,
+) -> None:
+    """Generate gremlins from source files and write instrumented sources.
+
+    Transforms each source file into a set of gremlins and an instrumented AST,
+    stores the gremlins on the session, and writes the instrumented sources to a
+    temporary directory for use during mutation testing.
+
+    Args:
+        gremlin_session: The current gremlin session.
+        source_files: Mapping of file paths to their source code.
+        rootdir: Root directory of the project.
+    """
     all_gremlins: list[Gremlin] = []
     instrumented_asts: dict[str, ast.Module] = {}
 
     for file_path, source in source_files.items():
-        gremlins, instrumented_tree = transform_source(source, file_path, gremlin_session.operators)
+        try:
+            gremlins, instrumented_tree = transform_source(source, file_path, gremlin_session.operators)
+        except Exception:
+            logger.exception('Failed to transform %s; skipping file', file_path)
+            continue
         all_gremlins.extend(gremlins)
         instrumented_asts[file_path] = instrumented_tree
 
@@ -1060,8 +1125,17 @@ def _cleanup_instrumented_dir(instrumented_dir: Path | None) -> None:
         shutil.rmtree(instrumented_dir, ignore_errors=True)
 
 
+@pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
-    """After all tests run, execute mutation testing."""
+    """After all tests run, execute mutation testing.
+
+    **Two-phase xdist flow**: when xdist is active, this hook (decorated with
+    ``trylast=True``) fires after xdist tears down its workers.  It reconstructs
+    the full item list from ``xdist_item_ids`` collected by
+    ``pytest_xdist_node_collection_finished``, then runs gremlin generation and
+    mutation testing as normal.  Phase 1 (xdist test run) and Phase 2 (gremlins
+    mutations) are therefore temporally isolated with no shared mutable state.
+    """
     gremlin_session = _get_session()
     if gremlin_session is None or not gremlin_session.enabled:
         return
@@ -1069,11 +1143,29 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     if _is_xdist_worker(session.config):
         return
 
+    config = session.config
+    rootdir = _get_rootdir(config)
+
+    if gremlin_session.xdist_active:
+        xdist_ids = gremlin_session.xdist_item_ids or []
+        if not xdist_ids:
+            logger.warning(
+                'pytest_sessionfinish: xdist Phase 2 starting with zero item IDs; '
+                'pytest_xdist_node_collection_finished may not have fired'
+            )
+        normalized = _make_node_ids_relative(xdist_ids, rootdir)
+        gremlin_session.test_node_ids = {nid: nid for nid in normalized}
+        gremlin_session.total_tests = len(normalized)
+        logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
+        source_files = _discover_source_files(session, gremlin_session)
+        gremlin_session.source_files = source_files
+        logger.debug('pytest_sessionfinish: xdist Phase 2 discovered %d source files', len(source_files))
+        _generate_gremlins(gremlin_session, source_files, rootdir)
+        logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
+
     if not gremlin_session.gremlins:
         return
 
-    config = session.config
-    rootdir = _get_rootdir(config)
     _collect_coverage(gremlin_session, rootdir)
 
     # If pytest-cov is active (--cov was passed), reload its in-memory coverage
@@ -1116,7 +1208,7 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     Returns:
         List of node IDs with paths made relative to rootdir.
     """
-    result = []
+    relative_node_ids = []
     for node_id in node_ids:
         # Strip any plugin-added suffixes like "[SMALL]", "[MEDIUM]", etc.
         # These are display decorations, not part of the actual node ID
@@ -1130,18 +1222,18 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
             if path_obj.is_absolute() and path_obj.is_relative_to(rootdir):
                 relative_path = path_obj.relative_to(rootdir)
                 # Use forward slashes for consistency in pytest node IDs
-                result.append(f'{relative_path.as_posix()}::{test_part}')
+                relative_node_ids.append(f'{relative_path.as_posix()}::{test_part}')
             else:
-                result.append(cleaned_node_id)
+                relative_node_ids.append(cleaned_node_id)
         # No :: separator, just a path - make it relative if absolute
         else:
             path_obj = Path(cleaned_node_id)
             if path_obj.is_absolute() and path_obj.is_relative_to(rootdir):
                 relative_path = path_obj.relative_to(rootdir)
-                result.append(relative_path.as_posix())
+                relative_node_ids.append(relative_path.as_posix())
             else:
-                result.append(cleaned_node_id)
-    return result
+                relative_node_ids.append(cleaned_node_id)
+    return relative_node_ids
 
 
 def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
@@ -1255,7 +1347,7 @@ dynamic_context = test_function
         coveragerc_path.unlink(missing_ok=True)
         return {}
 
-    result: dict[str, dict[str, list[int]]] = {}
+    coverage_by_test: dict[str, dict[str, list[int]]] = {}
 
     try:
         if not coverage_db_path.exists():  # pragma: no cover
@@ -1283,11 +1375,11 @@ dynamic_context = test_function
 
             lines = _decode_numbits(numbits)
 
-            if test_name not in result:
-                result[test_name] = {}
-            if file_path not in result[test_name]:
-                result[test_name][file_path] = []
-            result[test_name][file_path].extend(lines)
+            if test_name not in coverage_by_test:
+                coverage_by_test[test_name] = {}
+            if file_path not in coverage_by_test[test_name]:
+                coverage_by_test[test_name][file_path] = []
+            coverage_by_test[test_name][file_path].extend(lines)
 
         conn.close()
 
@@ -1300,7 +1392,7 @@ dynamic_context = test_function
         except OSError as exc:  # pragma: no cover
             logger.debug('Failed to clean up coverage files: %s', exc)
 
-    return result
+    return coverage_by_test
 
 
 def _decode_numbits(numbits: bytes) -> list[int]:
@@ -1620,7 +1712,7 @@ def _run_mutation_testing(
             selected_tests,
             gremlin_session,
         )
-        result = _test_gremlin(
+        gremlin_result = _test_gremlin(
             gremlin,
             test_command,
             rootdir,
@@ -1628,9 +1720,9 @@ def _run_mutation_testing(
         )
 
         # Cache the result for next run
-        _cache_gremlin_result(gremlin, selected_tests, result, gremlin_session)
+        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
 
-        results.append(result)
+        results.append(gremlin_result)
 
     return results
 
@@ -1948,7 +2040,7 @@ def _test_gremlin(
         env[GREMLIN_SOURCES_ENV_VAR] = str(sources_file)
 
     try:
-        result = subprocess.run(  # Intentional: runs pytest test commands
+        subprocess_outcome = subprocess.run(  # Intentional: runs pytest test commands
             test_command,
             cwd=str(rootdir),
             env=env,
@@ -1961,12 +2053,12 @@ def _test_gremlin(
         # and failed (i.e. the mutation was caught). Other non-zero exit codes
         # indicate errors (collection/import/internal) and should not be counted
         # as zapped.
-        if result.returncode == 0:
+        if subprocess_outcome.returncode == 0:
             return GremlinResult(
                 gremlin=gremlin,
                 status=GremlinResultStatus.SURVIVED,
             )
-        if result.returncode == 1:
+        if subprocess_outcome.returncode == 1:
             return GremlinResult(
                 gremlin=gremlin,
                 status=GremlinResultStatus.ZAPPED,
@@ -2105,10 +2197,12 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     if gremlin_session.audit_pardons and score.pardoned > 0:
         terminalreporter.write_line('')
         terminalreporter.write_line('Pardoned gremlins audit:')
-        for result in score.results:
-            if result.status == GremlinResultStatus.PARDONED:
-                g = result.gremlin
-                terminalreporter.write_line(f'  {g.file_path}:{g.line_number}  {g.pardon_reason or "(no reason)"}')
+        for gremlin_result in score.results:
+            if gremlin_result.status == GremlinResultStatus.PARDONED:
+                pardoned_gremlin = gremlin_result.gremlin
+                reason = pardoned_gremlin.pardon_reason or '(no reason)'
+                location = f'{pardoned_gremlin.file_path}:{pardoned_gremlin.line_number}'
+                terminalreporter.write_line(f'  {location}  {reason}')
 
     if gremlin_session.strict_pardons and score.pardoned > 0:
         pytest.exit(f'--strict-pardons: {score.pardoned} pardoned gremlins exist', returncode=1)

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+import logging
 from types import SimpleNamespace
 from unittest.mock import (
     MagicMock,
@@ -34,7 +35,12 @@ import pytest
 # causing CLI-parse errors that make negative assertions pass on broken code.
 pytest.importorskip('xdist')
 
-from pytest_gremlins.plugin import pytest_configure
+from pytest_gremlins.plugin import (
+    GremlinSession,
+    _set_session,
+    pytest_configure,
+    pytest_sessionfinish,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -105,6 +111,7 @@ def _make_config(
         'strict_pardons': False,
         'gremlin_audit_pardons': False,
         'gremlin_max_pardons_pct': None,
+        'max_pardons': None,
     }
     if numprocesses is not _UNSET:
         attrs['numprocesses'] = numprocesses
@@ -234,10 +241,6 @@ class DescribeGremlinWorkersOverridesN:
         assert pytest_run_result.ret == 0, f'Expected exit code 0, got {pytest_run_result.ret}'
         stdout = pytest_run_result.stdout.str()
         assert 'Zapped:' in stdout, 'Expected at least one gremlin to be zapped — mutations did not run'
-        # NOTE: The worker-count override (--gremlin-workers 2 beats -n 4) cannot be
-        # asserted here without knowing the output format the implementation will emit.
-        # That is an implementation detail belonging to issue #296. The unit tests for
-        # the worker-selection logic in that issue should carry this assertion.
 
 
 # ---------------------------------------------------------------------------
@@ -340,3 +343,74 @@ class DescribePytestConfigureDoesNotExitWithXdist:
         with _patch_configure_deps() as mock_pytest:
             pytest_configure(config)
         mock_pytest.exit.assert_not_called()
+
+    def it_calls_pytest_exit_when_max_pardons_is_negative(self) -> None:
+        """pytest_configure with max_pardons=-1 calls pytest.exit regardless of xdist state."""
+        config = _make_config(gremlins=True, numprocesses=2)
+        config.option.max_pardons = -1
+
+        with _patch_configure_deps() as mock_pytest:
+            pytest_configure(config)
+        mock_pytest.exit.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Scenario 7 — pytest_sessionfinish sets total_tests from xdist_item_ids
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.small
+class DescribeSessionFinishSetsTotalTestsInXdistMode:
+    """pytest_sessionfinish sets total_tests from xdist_item_ids in xdist two-phase mode.
+
+    In xdist mode the controller collects no items, so pytest_collection_finish
+    sets total_tests=0. pytest_sessionfinish must correct this from xdist_item_ids
+    so that progress output shows 'running N/M' not 'running N/0'.
+    """
+
+    def it_sets_total_tests_to_the_count_of_normalized_xdist_item_ids(self) -> None:
+        """total_tests is updated to len(normalized xdist_item_ids) before mutation runs."""
+        gs = GremlinSession(
+            enabled=True,
+            xdist_active=True,
+            xdist_item_ids=['tests/test_m.py::test_a', 'tests/test_m.py::test_b', 'tests/test_m.py::test_c'],
+            total_tests=0,
+        )
+        _set_session(gs)
+
+        mock_session = MagicMock()
+        mock_session.config.rootdir = '/fake/root'
+        mock_session.config.workerinput = MagicMock(side_effect=AttributeError)
+
+        with (
+            patch('pytest_gremlins.plugin._is_xdist_worker', return_value=False),
+            patch('pytest_gremlins.plugin._get_rootdir', return_value=MagicMock(__str__=lambda _: '/fake/root')),
+            patch('pytest_gremlins.plugin._make_node_ids_relative', return_value=['test_a', 'test_b', 'test_c']),
+            patch('pytest_gremlins.plugin._discover_source_files', return_value={}),
+            patch('pytest_gremlins.plugin._generate_gremlins'),
+            patch('pytest_gremlins.plugin._collect_coverage'),
+            patch('pytest_gremlins.plugin._run_mutation_testing', return_value=[]),
+        ):
+            pytest_sessionfinish(mock_session, exitstatus=0)
+
+        assert gs.total_tests == 3
+
+    def it_logs_warning_when_no_xdist_item_ids_are_available(self, caplog: pytest.LogCaptureFixture) -> None:
+        """When xdist_item_ids is None, pytest_sessionfinish logs a warning and proceeds."""
+        gs = GremlinSession(enabled=True, xdist_active=True, xdist_item_ids=None)
+        _set_session(gs)
+
+        mock_session = MagicMock()
+        mock_session.config.workerinput = MagicMock(side_effect=AttributeError)
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.plugin'),
+            patch('pytest_gremlins.plugin._is_xdist_worker', return_value=False),
+            patch('pytest_gremlins.plugin._get_rootdir', return_value=MagicMock(__str__=lambda _: '/fake/root')),
+            patch('pytest_gremlins.plugin._make_node_ids_relative', return_value=[]),
+            patch('pytest_gremlins.plugin._discover_source_files', return_value={}),
+            patch('pytest_gremlins.plugin._generate_gremlins'),
+        ):
+            pytest_sessionfinish(mock_session, exitstatus=0)
+
+        assert any('pytest_xdist_node_collection_finished may not have fired' in r.message for r in caplog.records)

@@ -5,8 +5,13 @@ These tests cover the utility functions in plugin.py that can be tested in isola
 
 from __future__ import annotations
 
+import argparse
+import logging
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 
 import pytest
 
@@ -17,12 +22,15 @@ from pytest_gremlins.plugin import (
     _build_test_command,
     _cleanup_instrumented_dir,
     _decode_numbits,
+    _extract_test_name_from_context,
+    _generate_gremlins,
     _is_xdist_worker,
     _make_node_ids_relative,
     _path_to_module_name,
     _read_parallel_config,
     _select_tests_for_gremlin_prioritized,
     _should_include_file,
+    _workers_type,
 )
 
 
@@ -303,6 +311,19 @@ class DescribeReadParallelConfig:
         assert parallel_enabled is True
         assert parallel_workers == 2
 
+    @pytest.mark.small
+    def it_uses_xdist_int_worker_count_when_no_cli_workers(self) -> None:
+        """When xdist provides an int worker count and --gremlin-workers is unset, use it."""
+        config = MagicMock(spec=['option'])
+        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers'])
+        config.option.gremlin_parallel = False
+        config.option.gremlin_workers = None
+
+        parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers=4)
+
+        assert parallel_enabled is True
+        assert parallel_workers == 4
+
 
 @pytest.mark.small
 class DescribeSelectTestsForGremlinPrioritized:
@@ -462,3 +483,181 @@ class DescribeCleanupInstrumentedDirFileIO:
         _cleanup_instrumented_dir(instrumented)
 
         assert not instrumented.exists()
+
+
+@pytest.mark.small
+class DescribeWorkersType:
+    """Tests for _workers_type — argument parser for --gremlin-workers.
+
+    Four distinct branches: 'auto', valid positive integer, non-integer string
+    (raises), and zero/negative integer (raises). A hardcoded return value
+    cannot survive all four branches simultaneously.
+    """
+
+    def it_returns_cpu_count_or_four_for_auto(self) -> None:
+        # ARRANGE / ACT
+        result = _workers_type('auto')
+
+        # ASSERT — must be a positive integer; cannot be hardcoded to a fixed
+        # value because os.cpu_count() is environment-dependent.
+        assert isinstance(result, int)
+        assert result >= 1
+
+    def it_returns_integer_for_valid_positive_string(self) -> None:
+        # ARRANGE / ACT
+        result = _workers_type('4')
+
+        # ASSERT — specific value proves the int() conversion path ran.
+        assert result == 4
+
+    def it_raises_for_non_integer_string(self) -> None:
+        # ARRANGE / ACT / ASSERT
+        with pytest.raises(argparse.ArgumentTypeError, match='Invalid workers value'):
+            _workers_type('banana')
+
+    def it_raises_for_zero(self) -> None:
+        # ARRANGE / ACT / ASSERT — zero is not a positive integer.
+        with pytest.raises(argparse.ArgumentTypeError, match='positive integer'):
+            _workers_type('0')
+
+    def it_raises_for_negative_integer(self) -> None:
+        # ARRANGE / ACT / ASSERT — negative values must also be rejected.
+        with pytest.raises(argparse.ArgumentTypeError, match='positive integer'):
+            _workers_type('-1')
+
+
+@pytest.mark.small
+class DescribeExtractTestNameFromContext:
+    """Tests for _extract_test_name_from_context.
+
+    Three branches exist in production:
+      1. Pipe-format (new GremlinContextPlugin): 'nodeid|when'
+      2. Double-colon format (old coverage): 'path::test_name'
+      3. Plain name or dot-separated class: 'TestClass.test_method' or 'test_name'
+
+    Hardcoding 'test_bar' passes most cases but fails on the dot-only and
+    single-name-only branches — both are tested explicitly.
+    """
+
+    def it_extracts_function_name_from_pipe_format_with_colons(self) -> None:
+        # ARRANGE
+        context = 'tests/test_foo.py::TestFoo::test_bar|run'
+
+        # ACT
+        result = _extract_test_name_from_context(context)
+
+        # ASSERT — must return the function name, not the class or file path.
+        assert result == 'test_bar'
+
+    def it_extracts_function_name_from_pipe_format_setup_phase(self) -> None:
+        # ARRANGE — 'setup' phase; the when-segment must be stripped.
+        context = 'tests/test_foo.py::test_bar|setup'
+
+        # ACT
+        result = _extract_test_name_from_context(context)
+
+        # ASSERT
+        assert result == 'test_bar'
+
+    def it_returns_raw_nodeid_when_pipe_format_has_no_colons(self) -> None:
+        # ARRANGE — nodeid contains no '::'; returned as-is after stripping '|when'.
+        context = 'test_bar|run'
+
+        # ACT
+        result = _extract_test_name_from_context(context)
+
+        # ASSERT — the full nodeid portion (before '|') is returned.
+        assert result == 'test_bar'
+
+    def it_extracts_function_name_from_double_colon_format(self) -> None:
+        # ARRANGE — old coverage format: path::function_name
+        context = 'tests/test_foo.py::test_func'
+
+        # ACT
+        result = _extract_test_name_from_context(context)
+
+        # ASSERT
+        assert result == 'test_func'
+
+    def it_extracts_method_name_from_dot_separated_class_format(self) -> None:
+        # ARRANGE — old coverage format: ClassName.method_name
+        context = 'TestClass.test_method'
+
+        # ACT
+        result = _extract_test_name_from_context(context)
+
+        # ASSERT — must return 'test_method', not 'TestClass'.
+        assert result == 'test_method'
+
+    def it_returns_plain_name_unchanged(self) -> None:
+        # ARRANGE — bare function name with no separators.
+        context = 'test_bar'
+
+        # ACT
+        result = _extract_test_name_from_context(context)
+
+        # ASSERT — rsplit('.', maxsplit=1)[-1] on a name with no dot returns the name.
+        assert result == 'test_bar'
+
+
+@pytest.mark.small
+class DescribeReadParallelConfigMissingBranches:
+    """Additional branch coverage for _read_parallel_config.
+
+    The existing suite misses two branches:
+      - gremlin_parallel=True with no cli_workers (flag alone enables parallel).
+      - xdist_workers=0 with no cli_workers (zero is not None, so the xdist
+        fallback branch fires and returns (True, 0)).
+
+    A hardcoded '(False, None)' return fails both; a hardcoded '(True, N)'
+    fails the first existing test that expects (False, None).
+    """
+
+    def it_enables_parallel_when_gremlin_parallel_flag_set_and_no_workers(self) -> None:
+        # ARRANGE
+        config = MagicMock(spec=['option'])
+        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers'])
+        config.option.gremlin_parallel = True
+        config.option.gremlin_workers = None
+
+        # ACT
+        parallel_enabled, parallel_workers = _read_parallel_config(config)
+
+        # ASSERT — flag alone must enable parallel; worker count stays None (use CPU count).
+        assert parallel_enabled is True
+        assert parallel_workers is None
+
+    def it_uses_xdist_workers_zero_as_fallback_count(self) -> None:
+        # ARRANGE — xdist_workers=0 means xdist ran with -n 0 (no distribution).
+        # The function does not interpret zero specially; it forwards it as-is.
+        config = MagicMock(spec=['option'])
+        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers'])
+        config.option.gremlin_parallel = False
+        config.option.gremlin_workers = None
+
+        # ACT
+        parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers=0)
+
+        # ASSERT — xdist_workers=0 is not None, so the early-return branch fires.
+        assert parallel_enabled is True
+        assert parallel_workers == 0
+
+
+@pytest.mark.small
+class DescribeGenerateGremlins:
+    """Tests for _generate_gremlins error-handling path."""
+
+    def it_skips_file_and_logs_exception_when_transform_source_raises(self, caplog: pytest.LogCaptureFixture) -> None:
+        gs = GremlinSession(enabled=True)
+        source_files = {'bad_file.py': 'x = 1'}
+
+        with (
+            caplog.at_level(logging.ERROR, logger='pytest_gremlins.plugin'),
+            patch('pytest_gremlins.plugin.transform_source', side_effect=ValueError('boom')),
+        ):
+            _generate_gremlins(gs, source_files, Path('/fake/root'))
+
+        # File is skipped: no gremlins collected.
+        assert gs.gremlins == []
+        # Exception is logged (logger.exception emits at ERROR level).
+        assert any('Failed to transform bad_file.py' in r.message for r in caplog.records)
