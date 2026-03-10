@@ -289,7 +289,7 @@ def _is_xdist_worker(config: pytest.Config) -> bool:
     return hasattr(config, 'workerinput')
 
 
-def _read_parallel_config(config: pytest.Config, xdist_workers: int | None = None) -> tuple[bool, int | None]:
+def _read_parallel_config(config: pytest.Config, xdist_workers: str | int | None = None) -> tuple[bool, int | None]:
     """Determine parallel_enabled and parallel_workers from config options.
 
     Reads ``--gremlin-parallel`` and ``--gremlin-workers`` from the config
@@ -300,14 +300,16 @@ def _read_parallel_config(config: pytest.Config, xdist_workers: int | None = Non
         config: The pytest config object after option parsing.
         xdist_workers: Worker count from xdist ``-n`` flag, or None if xdist
             is not active.  Used as a fallback when ``--gremlin-workers`` is
-            not explicitly set.
+            not explicitly set.  Non-integer values (e.g. ``'auto'``) are
+            treated as None because ``ProcessPoolExecutor`` rejects strings.
 
     Returns:
         A tuple of (parallel_enabled, parallel_workers).
     """
     cli_workers: int | None = config.option.gremlin_workers
     if cli_workers is None and xdist_workers is not None:
-        return True, xdist_workers
+        int_xdist_workers: int | None = xdist_workers if isinstance(xdist_workers, int) else None
+        return True, int_xdist_workers
     parallel_enabled: bool = config.option.gremlin_parallel or cli_workers is not None
     return parallel_enabled, cli_workers
 
@@ -603,7 +605,8 @@ def pytest_configure(config: pytest.Config) -> None:
     cache_enabled: bool = bool(toml_cache)
     cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache)
 
-    xdist_workers_for_parallel = xdist_numprocesses if xdist_active else None
+    xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
+    xdist_workers_for_parallel = xdist_worker_int if xdist_active else None
     parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers=xdist_workers_for_parallel)
     merged_workers = toml_workers if isinstance(toml_workers, int) else None
     if parallel_workers is None and merged_workers is not None:
@@ -633,7 +636,7 @@ def pytest_configure(config: pytest.Config) -> None:
             max_pardons_pct=toml_max_pardons_pct,
             max_pardons=toml_max_pardons,
             xdist_active=xdist_active,
-            xdist_workers=xdist_numprocesses if xdist_active else None,
+            xdist_workers=xdist_worker_int if xdist_active else None,
         )
     )
 
@@ -1105,6 +1108,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
         xdist_ids = gremlin_session.xdist_item_ids or []
         normalized = _make_node_ids_relative(xdist_ids, rootdir)
         gremlin_session.test_node_ids = {nid: nid for nid in normalized}
+        gremlin_session.total_tests = len(normalized)
         source_files = _discover_source_files(session, gremlin_session)
         gremlin_session.source_files = source_files
         _generate_gremlins(gremlin_session, source_files, rootdir)

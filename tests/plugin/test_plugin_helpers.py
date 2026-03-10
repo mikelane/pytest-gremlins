@@ -303,6 +303,19 @@ class DescribeReadParallelConfig:
         assert parallel_enabled is True
         assert parallel_workers == 2
 
+    @pytest.mark.small
+    def it_treats_xdist_auto_string_as_none_worker_count(self) -> None:
+        """'auto' must yield None worker count — ProcessPoolExecutor rejects strings."""
+        config = MagicMock(spec=['option'])
+        config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers'])
+        config.option.gremlin_parallel = False
+        config.option.gremlin_workers = None
+
+        parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers='auto')
+
+        assert parallel_enabled is True
+        assert parallel_workers is None
+
 
 @pytest.mark.small
 class DescribeSelectTestsForGremlinPrioritized:

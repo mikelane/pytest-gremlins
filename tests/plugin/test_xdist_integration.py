@@ -34,7 +34,12 @@ import pytest
 # causing CLI-parse errors that make negative assertions pass on broken code.
 pytest.importorskip('xdist')
 
-from pytest_gremlins.plugin import pytest_configure
+from pytest_gremlins.plugin import (
+    GremlinSession,
+    _set_session,
+    pytest_configure,
+    pytest_sessionfinish,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -340,3 +345,45 @@ class DescribePytestConfigureDoesNotExitWithXdist:
         with _patch_configure_deps() as mock_pytest:
             pytest_configure(config)
         mock_pytest.exit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Scenario 7 — pytest_sessionfinish sets total_tests from xdist_item_ids
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.small
+class DescribeSessionFinishSetsTotalTestsInXdistMode:
+    """pytest_sessionfinish sets total_tests from xdist_item_ids in xdist two-phase mode.
+
+    In xdist mode the controller collects no items, so pytest_collection_finish
+    sets total_tests=0. pytest_sessionfinish must correct this from xdist_item_ids
+    so that progress output shows 'running N/M' not 'running N/0'.
+    """
+
+    def it_sets_total_tests_to_the_count_of_normalized_xdist_item_ids(self) -> None:
+        """total_tests is updated to len(normalized xdist_item_ids) before mutation runs."""
+        gs = GremlinSession(
+            enabled=True,
+            xdist_active=True,
+            xdist_item_ids=['tests/test_m.py::test_a', 'tests/test_m.py::test_b', 'tests/test_m.py::test_c'],
+            total_tests=0,
+        )
+        _set_session(gs)
+
+        mock_session = MagicMock()
+        mock_session.config.rootdir = '/fake/root'
+        mock_session.config.workerinput = MagicMock(side_effect=AttributeError)
+
+        with (
+            patch('pytest_gremlins.plugin._is_xdist_worker', return_value=False),
+            patch('pytest_gremlins.plugin._get_rootdir', return_value=MagicMock(__str__=lambda _: '/fake/root')),
+            patch('pytest_gremlins.plugin._make_node_ids_relative', return_value=['test_a', 'test_b', 'test_c']),
+            patch('pytest_gremlins.plugin._discover_source_files', return_value={}),
+            patch('pytest_gremlins.plugin._generate_gremlins'),
+            patch('pytest_gremlins.plugin._collect_coverage'),
+            patch('pytest_gremlins.plugin._run_mutation_testing', return_value=[]),
+        ):
+            pytest_sessionfinish(mock_session, exitstatus=0)
+
+        assert gs.total_tests == 3
