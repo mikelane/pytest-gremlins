@@ -67,7 +67,7 @@ class DescribeGremlinConfigNewFields:
         assert config.batch_size == 50
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeLoadConfigNewFields:
     """load_config reads workers, cache, report, batch_size from pyproject.toml."""
 
