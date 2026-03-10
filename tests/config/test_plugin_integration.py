@@ -20,7 +20,7 @@ from pytest_gremlins import plugin
 from pytest_gremlins.plugin import CoverageMode
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribePytestConfigureWithFileConfig:
     """Tests for pytest_configure loading file config."""
 
@@ -187,7 +187,7 @@ class DescribePytestConfigureWithFileConfig:
         assert session.target_paths[0].name == 'cogapp'
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribePytestConfigureCoverageMode:
     """pytest_configure sets coverage_mode from _detect_coverage_mode."""
 

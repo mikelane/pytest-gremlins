@@ -190,7 +190,7 @@ class DescribeSonarQubeExporterIssueFormat:
         assert issue['effortMinutes'] == 10
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeSonarQubeExporterFileOutput:
     """Tests for writing SonarQube format to file."""
 

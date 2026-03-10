@@ -5,7 +5,7 @@ import pytest
 from pytest_gremlins.config import discover_by_project_name
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeDiscoverByProjectName:
     """Tests for discover_by_project_name function."""
 

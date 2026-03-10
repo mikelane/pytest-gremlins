@@ -50,6 +50,32 @@ class DescribeContentHasher:
 
         assert hash1 != hash2
 
+    def it_produces_single_hash_from_combined_inputs(self):
+        """hash_combined combines multiple hashes into one."""
+        hasher = ContentHasher()
+        hashes = ['abc123', 'def456', 'ghi789']
+
+        result = hasher.hash_combined(hashes)
+
+        assert isinstance(result, str)
+        assert len(result) == 64
+
+    def it_produces_different_combined_hashes_for_different_orderings(self):
+        """Order of hashes affects combined hash."""
+        hasher = ContentHasher()
+        hashes1 = ['abc123', 'def456']
+        hashes2 = ['def456', 'abc123']
+
+        result1 = hasher.hash_combined(hashes1)
+        result2 = hasher.hash_combined(hashes2)
+
+        assert result1 != result2
+
+
+@pytest.mark.medium
+class DescribeContentHasherFileIO:
+    """File I/O tests for ContentHasher — require real filesystem access."""
+
     def it_reads_and_hashes_file_content(self, tmp_path):
         """hash_file reads file content and returns hash."""
         hasher = ContentHasher()
@@ -96,27 +122,6 @@ class DescribeContentHasher:
         assert str(file2) in result
         assert result[str(file1)] != result[str(file2)]
 
-    def it_produces_single_hash_from_combined_inputs(self):
-        """hash_combined combines multiple hashes into one."""
-        hasher = ContentHasher()
-        hashes = ['abc123', 'def456', 'ghi789']
-
-        result = hasher.hash_combined(hashes)
-
-        assert isinstance(result, str)
-        assert len(result) == 64
-
-    def it_produces_different_combined_hashes_for_different_orderings(self):
-        """Order of hashes affects combined hash."""
-        hasher = ContentHasher()
-        hashes1 = ['abc123', 'def456']
-        hashes2 = ['def456', 'abc123']
-
-        result1 = hasher.hash_combined(hashes1)
-        result2 = hasher.hash_combined(hashes2)
-
-        assert result1 != result2
-
 
 @pytest.mark.small
 class DescribeContentHasherEdgeCases:
@@ -151,6 +156,6 @@ class DescribeContentHasherEdgeCases:
     def it_hash_combined_with_single_element_equals_hash_string(self):
         """hash_combined([h]) equals hash_string(h)."""
         hasher = ContentHasher()
-        h = 'abc123def456'  # pragma: allowlist secret
+        input_hash = 'abc123def456'  # pragma: allowlist secret
 
-        assert hasher.hash_combined([h]) == hasher.hash_string(h)
+        assert hasher.hash_combined([input_hash]) == hasher.hash_string(input_hash)

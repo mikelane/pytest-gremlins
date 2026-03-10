@@ -100,7 +100,9 @@ uv run tox
 uv run mkdocs build --strict
 
 # Run doctests
-uv run pytest --doctest-modules src/pytest_gremlins
+# Filesystem isolation checks are disabled: doctests can't carry pytest markers,
+# so pytest-test-categories flags pdb reading its config file as a violation.
+uv run pytest --doctest-modules src/pytest_gremlins --override-ini="test_categories_enforcement=disabled"
 ```
 
 ## CI Caching

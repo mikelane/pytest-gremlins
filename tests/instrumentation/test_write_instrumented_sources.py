@@ -40,7 +40,7 @@ def _node_names(nodes: list[ast.stmt]) -> list[str]:
     return labels
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeWriteInstrumentedSources:
     """_write_instrumented_sources places injection after future imports and docstrings."""
 

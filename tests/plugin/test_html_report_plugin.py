@@ -18,7 +18,7 @@ def _empty_score() -> MutationScore:
     return MutationScore.from_results([])
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeWriteHtmlReportDefaultOutputPath:
     """_write_html_report writes to coverage/gremlins/index.html by default.
 
@@ -55,7 +55,7 @@ class DescribeWriteHtmlReportDefaultOutputPath:
         assert not (tmp_path / 'gremlin-report.html').exists()
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeWriteHtmlReportCustomDir:
     """_write_html_report respects a custom html_dir argument.
 

@@ -30,41 +30,23 @@ from pytest_gremlins.plugin import (
 class DescribeShouldIncludeFile:
     """Tests for _should_include_file function."""
 
-    def it_excludes_test_files_with_test_prefix(self, tmp_path: Path) -> None:
-        """Files starting with test_ are excluded."""
-        test_file = tmp_path / 'test_something.py'
-        test_file.touch()
-        assert _should_include_file(test_file) is False
+    def it_excludes_test_files_with_test_prefix(self) -> None:
+        assert _should_include_file(Path('test_something.py')) is False
 
-    def it_excludes_test_files_with_test_suffix(self, tmp_path: Path) -> None:
-        """Files ending with _test.py are excluded."""
-        test_file = tmp_path / 'something_test.py'
-        test_file.touch()
-        assert _should_include_file(test_file) is False
+    def it_excludes_test_files_with_test_suffix(self) -> None:
+        assert _should_include_file(Path('something_test.py')) is False
 
-    def it_excludes_conftest(self, tmp_path: Path) -> None:
-        """conftest.py files are excluded."""
-        conftest = tmp_path / 'conftest.py'
-        conftest.touch()
-        assert _should_include_file(conftest) is False
+    def it_excludes_conftest(self) -> None:
+        assert _should_include_file(Path('conftest.py')) is False
 
-    def it_excludes_pycache_files(self, tmp_path: Path) -> None:
-        """Files in __pycache__ are excluded."""
-        pycache = tmp_path / '__pycache__'
-        pycache.mkdir()
-        cached_file = pycache / 'module.cpython-311.pyc'
-        cached_file.touch()
-        # The path contains __pycache__
-        assert _should_include_file(cached_file) is False
+    def it_includes_regular_source_files(self) -> None:
+        assert _should_include_file(Path('module.py')) is True
 
-    def it_includes_regular_source_files(self, tmp_path: Path) -> None:
-        """Regular source files are included."""
-        source_file = tmp_path / 'module.py'
-        source_file.touch()
-        assert _should_include_file(source_file) is True
+    def it_excludes_pycache_files(self) -> None:
+        assert _should_include_file(Path('__pycache__/module.cpython-311.pyc')) is False
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeAddSourceFile:
     """Tests for _add_source_file function."""
 
@@ -175,6 +157,11 @@ class DescribePathToModuleName:
         result = _path_to_module_name(file_path, tmp_path)
         assert result == 'mypackage.module'
 
+
+@pytest.mark.medium
+class DescribePathToModuleNameFileIO:
+    """Filesystem tests for _path_to_module_name — require real directory creation."""
+
     def it_handles_file_not_relative_to_rootdir(self, tmp_path: Path) -> None:
         """When file is not under rootdir, uses just the filename.
 
@@ -194,17 +181,6 @@ class DescribePathToModuleName:
 class DescribeBuildTestCommand:
     """Tests for _build_test_command function."""
 
-    def it_builds_command_with_instrumented_dir(self, tmp_path: Path) -> None:
-        """When instrumented_dir provided, uses bootstrap script."""
-        instrumented_dir = tmp_path / 'instrumented'
-        instrumented_dir.mkdir()
-
-        result = _build_test_command(instrumented_dir)
-
-        assert 'gremlin_bootstrap.py' in result[1]
-        assert '-x' in result
-        assert '--tb=no' in result
-
     def it_builds_command_without_instrumented_dir(self) -> None:
         """When instrumented_dir is None, runs pytest directly.
 
@@ -214,6 +190,35 @@ class DescribeBuildTestCommand:
 
         assert '-m' in result
         assert 'pytest' in result
+        assert '-x' in result
+        assert '--tb=no' in result
+
+    def it_suppresses_addopts_when_instrumented_dir_is_none(self) -> None:
+        """When instrumented_dir is None, resets addopts to prevent inherited flags."""
+        result = _build_test_command(None)
+
+        assert '-o' in result
+        assert 'addopts=' in result
+
+    def it_disables_coverage_when_instrumented_dir_is_none(self) -> None:
+        """When instrumented_dir is None, disables coverage to avoid exit code 2."""
+        result = _build_test_command(None)
+
+        assert '--no-cov' in result
+
+
+@pytest.mark.medium
+class DescribeBuildTestCommandFileIO:
+    """Filesystem tests for _build_test_command — require real directory creation."""
+
+    def it_builds_command_with_instrumented_dir(self, tmp_path: Path) -> None:
+        """When instrumented_dir provided, uses bootstrap script."""
+        instrumented_dir = tmp_path / 'instrumented'
+        instrumented_dir.mkdir()
+
+        result = _build_test_command(instrumented_dir)
+
+        assert 'gremlin_bootstrap.py' in result[1]
         assert '-x' in result
         assert '--tb=no' in result
 
@@ -227,25 +232,12 @@ class DescribeBuildTestCommand:
         assert '-o' in result
         assert 'addopts=' in result
 
-    def it_suppresses_addopts_when_instrumented_dir_is_none(self) -> None:
-        """When instrumented_dir is None, resets addopts to prevent inherited flags."""
-        result = _build_test_command(None)
-
-        assert '-o' in result
-        assert 'addopts=' in result
-
     def it_disables_coverage_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """When instrumented_dir provided, disables coverage to avoid exit code 2."""
         instrumented_dir = tmp_path / 'instrumented'
         instrumented_dir.mkdir()
 
         result = _build_test_command(instrumented_dir)
-
-        assert '--no-cov' in result
-
-    def it_disables_coverage_when_instrumented_dir_is_none(self) -> None:
-        """When instrumented_dir is None, disables coverage to avoid exit code 2."""
-        result = _build_test_command(None)
 
         assert '--no-cov' in result
 
@@ -449,6 +441,18 @@ class DescribeCleanupInstrumentedDir:
     Both branches (None and existing path) tested so a hardcoded no-op fails.
     """
 
+    def it_does_nothing_when_path_is_none(self) -> None:
+        """None path causes the function to return without error."""
+        _cleanup_instrumented_dir(None)  # must not raise
+
+    def it_does_nothing_when_directory_does_not_exist(self) -> None:
+        _cleanup_instrumented_dir(Path('/nonexistent/path/not_here'))  # must not raise
+
+
+@pytest.mark.medium
+class DescribeCleanupInstrumentedDirFileIO:
+    """Filesystem tests for _cleanup_instrumented_dir — require real directory creation."""
+
     def it_removes_existing_directory(self, tmp_path: Path) -> None:
         """When the directory exists, shutil.rmtree removes it."""
         instrumented = tmp_path / 'instrumented'
@@ -458,13 +462,3 @@ class DescribeCleanupInstrumentedDir:
         _cleanup_instrumented_dir(instrumented)
 
         assert not instrumented.exists()
-
-    def it_does_nothing_when_path_is_none(self) -> None:
-        """None path causes the function to return without error."""
-        _cleanup_instrumented_dir(None)  # must not raise
-
-    def it_does_nothing_when_directory_does_not_exist(self, tmp_path: Path) -> None:
-        """Non-existent path causes the function to return without error."""
-        missing = tmp_path / 'not_here'
-        _cleanup_instrumented_dir(missing)  # must not raise
-        assert not missing.exists()

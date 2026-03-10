@@ -265,6 +265,7 @@ disallow_untyped_decorators = false
 testpaths = ["tests"]
 python_classes = ["Describe"]
 python_functions = ["it_"]
+test_categories_enforcement = "strict"
 addopts = [
     "-ra",
     "--strict-markers",

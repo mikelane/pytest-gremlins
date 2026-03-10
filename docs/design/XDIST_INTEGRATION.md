@@ -355,5 +355,4 @@ No new CLI flags. No new dependencies. xdist is not modified.
 | File | What changes |
 |------|-------------|
 | `src/pytest_gremlins/plugin.py` | `_is_xdist_worker`, `pytest_xdist_node_collection_finished`, guards in `pytest_collection_finish` and `pytest_sessionfinish`, `-p no:xdist` in pre-scan command, `xdist_item_ids` field on `GremlinSession` |
-| `tests/medium/` | Sub-issue A, B, C, D tests |
-| `tests/large/` | Sub-issue E end-to-end test |
+| `tests/plugin/` | Sub-issue A, B, C, D tests (medium) and Sub-issue E end-to-end test (large) |

@@ -210,11 +210,14 @@ uv run pre-commit run --all-files
 
 We use [pytest-test-categories](https://github.com/mikelane/pytest-test-categories):
 
-| Category | Location        | Characteristics                                | Timeout |
-| -------- | --------------- | ---------------------------------------------- | ------- |
-| Small    | `tests/small/`  | Pure functions, no I/O, mocked deps            | < 100ms |
-| Medium   | `tests/medium/` | Real filesystem, database, multiple components | < 10s   |
-| Large    | `tests/large/`  | End-to-end, external services                  | < 60s   |
+| Category | Marker                 | Characteristics                                | Timeout |
+| -------- | ---------------------- | ---------------------------------------------- | ------- |
+| Small    | `@pytest.mark.small`   | Pure functions, no I/O, no subprocess          | < 100ms |
+| Medium   | `@pytest.mark.medium`  | Real filesystem, subprocess, localhost only    | < 10s   |
+| Large    | `@pytest.mark.large`   | End-to-end, external services                  | < 60s   |
+
+Tests are organized by **domain** (`tests/cache/`, `tests/config/`, `tests/plugin/`, etc.),
+not by size. All sizes coexist within each domain directory, distinguished only by their marker.
 
 ### Documentation
 

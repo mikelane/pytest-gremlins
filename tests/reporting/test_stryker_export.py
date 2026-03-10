@@ -240,7 +240,7 @@ class DescribeStrykerExporterOptionalFields:
         assert 'duration' not in mutant
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeStrykerExporterFileOutput:
     """Tests for writing Stryker format to file."""
 

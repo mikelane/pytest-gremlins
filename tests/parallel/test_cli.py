@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeParallelCLIOptions:
     """Tests for parallel CLI option parsing via pytest."""
 
