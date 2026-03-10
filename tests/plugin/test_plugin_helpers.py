@@ -6,8 +6,12 @@ These tests cover the utility functions in plugin.py that can be tested in isola
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 
 import pytest
 
@@ -19,6 +23,7 @@ from pytest_gremlins.plugin import (
     _cleanup_instrumented_dir,
     _decode_numbits,
     _extract_test_name_from_context,
+    _generate_gremlins,
     _is_xdist_worker,
     _make_node_ids_relative,
     _path_to_module_name,
@@ -636,3 +641,23 @@ class DescribeReadParallelConfigMissingBranches:
         # ASSERT — xdist_workers=0 is not None, so the early-return branch fires.
         assert parallel_enabled is True
         assert parallel_workers == 0
+
+
+@pytest.mark.small
+class DescribeGenerateGremlins:
+    """Tests for _generate_gremlins error-handling path."""
+
+    def it_skips_file_and_logs_exception_when_transform_source_raises(self, caplog: pytest.LogCaptureFixture) -> None:
+        gs = GremlinSession(enabled=True)
+        source_files = {'bad_file.py': 'x = 1'}
+
+        with (
+            caplog.at_level(logging.ERROR, logger='pytest_gremlins.plugin'),
+            patch('pytest_gremlins.plugin.transform_source', side_effect=ValueError('boom')),
+        ):
+            _generate_gremlins(gs, source_files, Path('/fake/root'))
+
+        # File is skipped: no gremlins collected.
+        assert gs.gremlins == []
+        # Exception is logged (logger.exception emits at ERROR level).
+        assert any('Failed to transform bad_file.py' in r.message for r in caplog.records)

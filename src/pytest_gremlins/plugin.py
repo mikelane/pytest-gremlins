@@ -670,7 +670,7 @@ if _XDIST_AVAILABLE:
         if gremlin_session.coverage_mode != CoverageMode.PRIVATE:
             return
 
-        if gremlin_session.gremlins_tmpdir is None:
+        if gremlin_session.gremlins_tmpdir is None:  # pragma: no cover
             logger.warning(
                 'pytest_configure_node: gremlins_tmpdir is None in PRIVATE mode; '
                 'worker coverage data will not be combined'

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+import logging
 from types import SimpleNamespace
 from unittest.mock import (
     MagicMock,
@@ -393,3 +394,23 @@ class DescribeSessionFinishSetsTotalTestsInXdistMode:
             pytest_sessionfinish(mock_session, exitstatus=0)
 
         assert gs.total_tests == 3
+
+    def it_logs_warning_when_no_xdist_item_ids_are_available(self, caplog: pytest.LogCaptureFixture) -> None:
+        """When xdist_item_ids is None, pytest_sessionfinish logs a warning and proceeds."""
+        gs = GremlinSession(enabled=True, xdist_active=True, xdist_item_ids=None)
+        _set_session(gs)
+
+        mock_session = MagicMock()
+        mock_session.config.workerinput = MagicMock(side_effect=AttributeError)
+
+        with (
+            caplog.at_level(logging.WARNING, logger='pytest_gremlins.plugin'),
+            patch('pytest_gremlins.plugin._is_xdist_worker', return_value=False),
+            patch('pytest_gremlins.plugin._get_rootdir', return_value=MagicMock(__str__=lambda _: '/fake/root')),
+            patch('pytest_gremlins.plugin._make_node_ids_relative', return_value=[]),
+            patch('pytest_gremlins.plugin._discover_source_files', return_value={}),
+            patch('pytest_gremlins.plugin._generate_gremlins'),
+        ):
+            pytest_sessionfinish(mock_session, exitstatus=0)
+
+        assert any('pytest_xdist_node_collection_finished may not have fired' in r.message for r in caplog.records)
