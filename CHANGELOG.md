@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.5.0b7 (2026-03-10)
+
+### Fix
+
+- **tests**: prevent TC006 timing violations in test_toml_config.py (#293)
+- **ci**: disable hermeticity enforcement for doctest run (#299) (#300)
+- **tests**: eliminate importlib package scan from small tests (#291)
+
 ## v1.5.0b6 (2026-03-08)
 
 ### Fix
