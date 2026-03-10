@@ -5,6 +5,7 @@ These tests verify the end-to-end plugin behavior using pytester.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import re
 
@@ -323,3 +324,24 @@ def test_is_adult():
 
         content = custom_report.read_text()
         assert '<!DOCTYPE html>' in content
+
+
+@pytest.mark.medium
+class DescribeRootdirFallbackWarning:
+    """Plugin emits a warning when no source paths can be discovered."""
+
+    def it_warns_when_falling_back_to_project_root(
+        self, pytester_with_markers: pytest.Pytester, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """When discovery finds nothing and no src/ exists, warn before falling back."""
+        pytester_with_markers.makepyfile(
+            test_example="""
+def test_pass():
+    assert True
+""",
+        )
+
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.plugin'):
+            pytester_with_markers.runpytest('--gremlins')
+
+        assert any('No source paths discovered' in r.message for r in caplog.records)

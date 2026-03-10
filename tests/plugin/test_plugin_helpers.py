@@ -304,17 +304,17 @@ class DescribeReadParallelConfig:
         assert parallel_workers == 2
 
     @pytest.mark.small
-    def it_treats_xdist_auto_string_as_none_worker_count(self) -> None:
-        """'auto' must yield None worker count — ProcessPoolExecutor rejects strings."""
+    def it_uses_xdist_int_worker_count_when_no_cli_workers(self) -> None:
+        """When xdist provides an int worker count and --gremlin-workers is unset, use it."""
         config = MagicMock(spec=['option'])
         config.option = MagicMock(spec=['gremlin_parallel', 'gremlin_workers'])
         config.option.gremlin_parallel = False
         config.option.gremlin_workers = None
 
-        parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers='auto')
+        parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers=4)
 
         assert parallel_enabled is True
-        assert parallel_workers is None
+        assert parallel_workers == 4
 
 
 @pytest.mark.small

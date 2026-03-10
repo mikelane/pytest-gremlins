@@ -289,7 +289,7 @@ def _is_xdist_worker(config: pytest.Config) -> bool:
     return hasattr(config, 'workerinput')
 
 
-def _read_parallel_config(config: pytest.Config, xdist_workers: str | int | None = None) -> tuple[bool, int | None]:
+def _read_parallel_config(config: pytest.Config, xdist_workers: int | None = None) -> tuple[bool, int | None]:
     """Determine parallel_enabled and parallel_workers from config options.
 
     Reads ``--gremlin-parallel`` and ``--gremlin-workers`` from the config
@@ -298,18 +298,17 @@ def _read_parallel_config(config: pytest.Config, xdist_workers: str | int | None
 
     Args:
         config: The pytest config object after option parsing.
-        xdist_workers: Worker count from xdist ``-n`` flag, or None if xdist
-            is not active.  Used as a fallback when ``--gremlin-workers`` is
-            not explicitly set.  Non-integer values (e.g. ``'auto'``) are
-            treated as None because ``ProcessPoolExecutor`` rejects strings.
+        xdist_workers: Resolved integer worker count from xdist ``-n`` flag,
+            or None if xdist is not active.  Callers must convert ``'auto'``
+            to None before passing (``ProcessPoolExecutor`` rejects strings).
+            Used as a fallback when ``--gremlin-workers`` is not explicitly set.
 
     Returns:
         A tuple of (parallel_enabled, parallel_workers).
     """
     cli_workers: int | None = config.option.gremlin_workers
     if cli_workers is None and xdist_workers is not None:
-        int_xdist_workers: int | None = xdist_workers if isinstance(xdist_workers, int) else None
-        return True, int_xdist_workers
+        return True, xdist_workers
     parallel_enabled: bool = config.option.gremlin_parallel or cli_workers is not None
     return parallel_enabled, cli_workers
 
@@ -590,6 +589,14 @@ def pytest_configure(config: pytest.Config) -> None:
             if src_path.exists():
                 target_paths.append(src_path)
             else:
+                logger.warning(
+                    'No source paths discovered; scanning the entire project root (%s). '
+                    'This may be slower and include files you did not intend to mutate. '
+                    'Add paths to pyproject.toml to target only your source code:\n'
+                    '  [tool.pytest-gremlins]\n'
+                    '  paths = ["src/your_package"]',
+                    rootdir,
+                )
                 target_paths.append(rootdir)
 
     (
@@ -751,7 +758,12 @@ def pytest_runtestloop(session: pytest.Session) -> collections.abc.Generator[Non
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
-    """After test collection, discover source files and generate gremlins."""
+    """After test collection, discover source files and generate gremlins.
+
+    In xdist mode the controller has zero items; this hook records test files
+    and normalises node IDs but skips gremlin generation — that happens in
+    ``pytest_sessionfinish`` once worker item IDs are available.
+    """
     gremlin_session = _get_session()
     if gremlin_session is None or not gremlin_session.enabled:
         return
@@ -790,7 +802,6 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     if gremlin_session.xdist_active and not session.items:
         return
 
-    rootdir = _get_rootdir(session.config)
     _generate_gremlins(gremlin_session, source_files, rootdir)
 
 
@@ -1093,7 +1104,15 @@ def _cleanup_instrumented_dir(instrumented_dir: Path | None) -> None:
 
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
-    """After all tests run, execute mutation testing."""
+    """After all tests run, execute mutation testing.
+
+    **Two-phase xdist flow**: when xdist is active, this hook (decorated with
+    ``trylast=True``) fires after xdist tears down its workers.  It reconstructs
+    the full item list from ``xdist_item_ids`` collected by
+    ``pytest_xdist_node_collection_finished``, then runs gremlin generation and
+    mutation testing as normal.  Phase 1 (xdist test run) and Phase 2 (gremlins
+    mutations) are therefore temporally isolated with no shared mutable state.
+    """
     gremlin_session = _get_session()
     if gremlin_session is None or not gremlin_session.enabled:
         return
