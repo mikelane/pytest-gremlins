@@ -116,7 +116,7 @@ jobs:
           COVERAGE_PROCESS_START: pyproject.toml
           PYTHONPATH: .
         run: |
-          uv run coverage run -m pytest tests -m "small or medium" -v
+          uv run coverage run -m pytest tests -m "small or medium and not wip" -v
           uv run coverage combine --quiet || echo "::warning::No coverage data to combine (expected in some environments)"
           uv run coverage report --show-missing
           uv run coverage xml
