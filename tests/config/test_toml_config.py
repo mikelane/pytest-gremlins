@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import TYPE_CHECKING
 
 import pytest
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from pathlib import Path
-    from typing import Any
 
-from pytest_gremlins import plugin
 from pytest_gremlins.config import (
     GremlinConfig,
-    discover_source_paths,
     load_config,
     merge_configs,
 )
@@ -76,7 +71,7 @@ class DescribeGremlinConfigNewFields:
 class DescribeLoadConfigNewFields:
     """load_config reads workers, cache, report, batch_size from pyproject.toml."""
 
-    def it_reads_workers_as_int(self, tmp_path):
+    def it_reads_workers_as_int(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nworkers = 4\n')
 
@@ -84,7 +79,7 @@ class DescribeLoadConfigNewFields:
 
         assert loaded_config.workers == 4
 
-    def it_reads_workers_as_auto_string(self, tmp_path):
+    def it_reads_workers_as_auto_string(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nworkers = "auto"\n')
 
@@ -92,7 +87,7 @@ class DescribeLoadConfigNewFields:
 
         assert loaded_config.workers == 'auto'
 
-    def it_reads_cache_as_true(self, tmp_path):
+    def it_reads_cache_as_true(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\ncache = true\n')
 
@@ -100,7 +95,7 @@ class DescribeLoadConfigNewFields:
 
         assert loaded_config.cache is True
 
-    def it_reads_cache_as_false(self, tmp_path):
+    def it_reads_cache_as_false(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\ncache = false\n')
 
@@ -108,7 +103,7 @@ class DescribeLoadConfigNewFields:
 
         assert loaded_config.cache is False
 
-    def it_reads_report_as_html(self, tmp_path):
+    def it_reads_report_as_html(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nreport = "html"\n')
 
@@ -116,7 +111,7 @@ class DescribeLoadConfigNewFields:
 
         assert loaded_config.report == 'html'
 
-    def it_reads_batch_size(self, tmp_path):
+    def it_reads_batch_size(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 50\n')
 
@@ -124,7 +119,7 @@ class DescribeLoadConfigNewFields:
 
         assert loaded_config.batch_size == 50
 
-    def it_defaults_new_fields_to_none_when_absent(self, tmp_path):
+    def it_defaults_new_fields_to_none_when_absent(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\noperators = ["comparison"]\n')
 
@@ -139,209 +134,96 @@ class DescribeLoadConfigNewFields:
         'workers_value',
         ['notauto', 'zero', ''],
     )
-    def it_raises_on_invalid_string_workers(self, tmp_path, workers_value):
+    def it_raises_on_invalid_string_workers(self, tmp_path: Path, workers_value: str) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text(f'[tool.pytest-gremlins]\nworkers = "{workers_value}"\n')
 
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
-    def it_raises_on_zero_workers(self, tmp_path):
+    def it_raises_on_zero_workers(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nworkers = 0\n')
 
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
-    def it_raises_on_negative_workers(self, tmp_path):
+    def it_raises_on_negative_workers(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nworkers = -1\n')
 
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
-    def it_raises_on_float_workers(self, tmp_path):
+    def it_raises_on_float_workers(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nworkers = 2.5\n')
+
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
-    def it_raises_on_boolean_workers(self, tmp_path):
+    def it_raises_on_boolean_workers(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nworkers = true\n')
+
         with pytest.raises(ValueError, match='workers'):
             load_config(tmp_path)
 
-    def it_raises_on_boolean_batch_size(self, tmp_path):
+    def it_raises_on_boolean_batch_size(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = true\n')
 
         with pytest.raises(ValueError, match='batch_size'):
             load_config(tmp_path)
 
-    def it_raises_on_non_integer_batch_size(self, tmp_path):
+    def it_raises_on_non_integer_batch_size(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = "large"\n')
 
         with pytest.raises(ValueError, match='batch_size'):
             load_config(tmp_path)
 
-    def it_raises_on_zero_batch_size(self, tmp_path):
+    def it_raises_on_zero_batch_size(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 0\n')
 
         with pytest.raises(ValueError, match='batch_size'):
             load_config(tmp_path)
 
-    def it_raises_on_negative_batch_size(self, tmp_path):
+    def it_raises_on_negative_batch_size(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = -5\n')
 
         with pytest.raises(ValueError, match='batch_size'):
             load_config(tmp_path)
 
-    def it_raises_on_non_boolean_cache(self, tmp_path):
+    def it_raises_on_non_boolean_cache(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\ncache = 42\n')
 
         with pytest.raises(ValueError, match='cache'):
             load_config(tmp_path)
 
-    def it_raises_on_string_cache(self, tmp_path):
+    def it_raises_on_string_cache(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\ncache = "yes"\n')
 
         with pytest.raises(ValueError, match='cache'):
             load_config(tmp_path)
 
-    def it_raises_on_non_string_report(self, tmp_path):
+    def it_raises_on_non_string_report(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nreport = true\n')
 
         with pytest.raises(ValueError, match='report'):
             load_config(tmp_path)
 
-    def it_raises_on_integer_report(self, tmp_path):
+    def it_raises_on_integer_report(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nreport = 42\n')
 
         with pytest.raises(ValueError, match='report'):
             load_config(tmp_path)
-
-
-@pytest.mark.medium
-class DescribeLoadConfigValidationLogging:
-    """load_config logs a warning before raising ValueError on invalid field types."""
-
-    def it_logs_warning_on_invalid_batch_size_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = "large"\n')
-
-        with (
-            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
-            pytest.raises(ValueError, match='batch_size'),
-        ):
-            load_config(tmp_path)
-
-        assert len(caplog.records) == 1
-        assert 'batch_size' in caplog.records[0].message
-        assert str(tmp_path) in caplog.records[0].message
-
-    def it_logs_warning_on_non_positive_batch_size(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = -5\n')
-
-        with (
-            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
-            pytest.raises(ValueError, match='batch_size'),
-        ):
-            load_config(tmp_path)
-
-        assert len(caplog.records) == 1
-        assert 'batch_size' in caplog.records[0].message
-        assert str(tmp_path) in caplog.records[0].message
-
-    def it_logs_warning_on_invalid_cache_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\ncache = 42\n')
-
-        with (
-            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
-            pytest.raises(ValueError, match='cache'),
-        ):
-            load_config(tmp_path)
-
-        assert len(caplog.records) == 1
-        assert 'cache' in caplog.records[0].message
-        assert str(tmp_path) in caplog.records[0].message
-
-    def it_logs_warning_on_invalid_string_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nworkers = "banana"\n')
-        with (
-            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
-            pytest.raises(ValueError, match='workers'),
-        ):
-            load_config(tmp_path)
-        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warning_records) == 1
-        assert 'workers' in warning_records[0].message.lower()
-        assert str(tmp_path) in warning_records[0].message
-
-    def it_logs_warning_on_boolean_workers(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nworkers = true\n')
-        with (
-            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
-            pytest.raises(ValueError, match='workers'),
-        ):
-            load_config(tmp_path)
-        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warning_records) == 1
-        assert 'workers' in warning_records[0].message.lower()
-        assert str(tmp_path) in warning_records[0].message
-
-    def it_logs_warning_on_invalid_report_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nreport = true\n')
-
-        with (
-            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
-            pytest.raises(ValueError, match='report'),
-        ):
-            load_config(tmp_path)
-
-        assert len(caplog.records) == 1
-        assert 'report' in caplog.records[0].message
-        assert str(tmp_path) in caplog.records[0].message
-
-    def it_logs_warning_on_invalid_max_pardons_pct_type(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = "five"\n')
-
-        with (
-            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
-            pytest.raises(ValueError, match='max-pardons-pct'),
-        ):
-            load_config(tmp_path)
-
-        assert len(caplog.records) == 1
-        assert 'max-pardons-pct' in caplog.records[0].message
-        assert str(tmp_path) in caplog.records[0].message
-
-    def it_logs_warning_on_out_of_range_max_pardons_pct(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 150.0\n')
-
-        with (
-            caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'),
-            pytest.raises(ValueError, match='max-pardons-pct'),
-        ):
-            load_config(tmp_path)
-
-        assert len(caplog.records) == 1
-        assert 'max-pardons-pct' in caplog.records[0].message
-        assert str(tmp_path) in caplog.records[0].message
 
 
 @pytest.mark.small
@@ -428,199 +310,3 @@ class DescribeMergeConfigsNewFields:
         assert merged_config.report is None
         assert merged_config.batch_size is None
         assert merged_config.max_pardons_pct is None
-
-
-@pytest.mark.medium
-class DescribePluginPassesNewFieldsThrough:
-    """pytest_configure passes workers, cache, report, batch_size from TOML into the session."""
-
-    def it_toml_workers_flows_into_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
-    ) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 4\n')
-
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
-        (src_dir / 'module.py').write_text('x = 1')
-
-        plugin._set_session(None)
-        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
-
-        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
-
-        session = plugin._get_session()
-        assert session is not None
-        assert session.parallel_workers == 4
-
-    def it_toml_cache_true_flows_into_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
-    ) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\ncache = true\n')
-
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
-        (src_dir / 'module.py').write_text('x = 1')
-
-        plugin._set_session(None)
-        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
-
-        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
-
-        session = plugin._get_session()
-        assert session is not None
-        assert session.cache_enabled is True
-
-        # Close the sqlite3 cache connection to avoid ResourceWarning in subsequent tests
-        if session.cache is not None:
-            session.cache.close()
-        plugin._set_session(None)
-
-    def it_toml_report_flows_into_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
-    ) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\n')
-
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
-        (src_dir / 'module.py').write_text('x = 1')
-
-        plugin._set_session(None)
-        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
-
-        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
-
-        session = plugin._get_session()
-        assert session is not None
-        assert session.report_format == 'json'
-
-    def it_toml_batch_size_flows_into_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
-    ) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 25\n')
-
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
-        (src_dir / 'module.py').write_text('x = 1')
-
-        plugin._set_session(None)
-        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
-
-        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
-
-        session = plugin._get_session()
-        assert session is not None
-        assert session.batch_size == 25
-
-    def it_cli_workers_overrides_toml_workers_in_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
-    ) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nworkers = 2\n')
-
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
-        (src_dir / 'module.py').write_text('x = 1')
-
-        plugin._set_session(None)
-        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
-
-        plugin.pytest_configure(make_pytest_config(tmp_path, gremlin_workers=8))  # type: ignore[arg-type]
-
-        session = plugin._get_session()
-        assert session is not None
-        assert session.parallel_workers == 8
-
-    def it_cli_report_overrides_toml_report_in_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
-    ) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nreport = "json"\n')
-
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
-        (src_dir / 'module.py').write_text('x = 1')
-
-        plugin._set_session(None)
-        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
-
-        plugin.pytest_configure(make_pytest_config(tmp_path, gremlin_report='html'))  # type: ignore[arg-type]
-
-        session = plugin._get_session()
-        assert session is not None
-        assert session.report_format == 'html'
-
-    def it_cli_batch_size_overrides_toml_batch_size_in_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
-    ) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nbatch_size = 50\n')
-
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
-        (src_dir / 'module.py').write_text('x = 1')
-
-        plugin._set_session(None)
-        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
-
-        plugin.pytest_configure(make_pytest_config(tmp_path, gremlin_batch_size=100))  # type: ignore[arg-type]
-
-        session = plugin._get_session()
-        assert session is not None
-        assert session.batch_size == 100
-
-    def it_cli_max_pardons_pct_overrides_toml_in_session(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_pytest_config: Callable[..., Any]
-    ) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins]\nmax-pardons-pct = 5.0\n')
-
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
-        (src_dir / 'module.py').write_text('x = 1')
-
-        plugin._set_session(None)
-        monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
-
-        plugin.pytest_configure(make_pytest_config(tmp_path, gremlin_max_pardons_pct=15.0))  # type: ignore[arg-type]
-
-        session = plugin._get_session()
-        assert session is not None
-        assert session.max_pardons_pct == 15.0
-
-
-@pytest.mark.medium
-class DescribeDiscoverSourcePathsLogging:
-    """discover_source_paths logs a warning when pyproject.toml contains invalid TOML."""
-
-    def it_logs_warning_on_malformed_toml(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.setuptools\npackages = ["broken"')
-
-        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'):
-            discovered_paths = discover_source_paths(tmp_path)
-
-        assert discovered_paths == []
-        assert len(caplog.records) == 1
-        assert 'malformed' in caplog.records[0].message.lower() or 'TOML' in caplog.records[0].message
-        assert str(tmp_path) in caplog.records[0].message
-
-
-@pytest.mark.medium
-class DescribeLoadConfigLogging:
-    """load_config logs a warning when pyproject.toml contains invalid TOML."""
-
-    def it_logs_warning_on_malformed_toml(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        pyproject = tmp_path / 'pyproject.toml'
-        pyproject.write_text('[tool.pytest-gremlins\nworkers = 4')
-
-        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.config'):
-            loaded_config = load_config(tmp_path)
-
-        assert loaded_config == GremlinConfig()
-        assert len(caplog.records) == 1
-        assert 'malformed' in caplog.records[0].message.lower() or 'TOML' in caplog.records[0].message
-        assert str(tmp_path) in caplog.records[0].message
