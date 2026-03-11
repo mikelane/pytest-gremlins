@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.5.0b8 (2026-03-11)
+
+### Feat
+
+- **xdist**: implement two-phase xdist integration (#296) (#301)
+
+### Fix
+
+- **xdist**: strip wip markers from BDD scenarios now that #296 is merged (#303)
+
 ## v1.5.0b7 (2026-03-10)
 
 ### Fix
