@@ -67,6 +67,7 @@
     "gremlins",
     "groovy",
     "hashFiles",
+    "hermeticity",
     "hashers",
     "hatchling",
     "hexagonal",
