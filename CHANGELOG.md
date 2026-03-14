@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.5.0 (2026-03-14)
+
+### Feat
+
+- **xdist**: two-phase integration — Phase 1 distributes the test suite with `-n auto`; Phase 2 uses xdist's
+  resolved worker count for mutation evaluation, making `-n auto` sufficient for both test distribution and
+  parallelism without `--gremlin-workers` (#296)
+- **pragma**: inline suppression `# gremlin: pardon[reason]` suppresses a mutation with a documented reason;
+  valid reasons are `equivalent`, `untestable`, `out_of_scope` (#261, #266, #275)
+- **pragma**: `--max-pardons` (absolute) and `--gremlin-max-pardons-pct` (percentage) enforce a ceiling on
+  pardoned mutations to prevent silent score inflation (#268, #270)
+- **config**: `[tool.pytest-gremlins]` in `pyproject.toml` now accepts `workers`, `cache`, `report`, and
+  `batch_size` — all CLI flags have a config-file equivalent (#254)
+- **config**: `--gremlin-workers=auto` resolves to `os.cpu_count()` at option parse time (#251)
+- **config**: source discovery now supports `project-name`, `setup.cfg`, and `importlib` strategies for
+  non-standard project layouts (#273)
+- **reporting**: HTML report shows a mutation score trend chart across runs; chart renders after ≥ 2 runs
+  (#257, #259)
+
+### Fix
+
+- **instrumentation**: gremlin injection now inserts after `__future__` imports at the AST level, fixing
+  `SyntaxError` in files using `from __future__ import annotations` (#238)
+- **plugin**: running without `pytest-xdist` installed no longer raises `check_pending()`
+  failures — the plugin operates in single-worker mode when xdist is absent (#243)
+- **config**: TOML type validation for `batch_size`, `cache`, and `report` with actionable error messages
+  (#253, #258)
+- **reporting**: HTML report WCAG 2.1 AA accessibility — contrast ratios, keyboard navigation, expand-all
+  overflow (#255, #262, #264)
+
+### Changed
+
+- **pragma**: suppression keyword renamed from `survivor` to `pardon`. Update existing pragmas:
+  `# gremlin: survivor[equivalent]` → `# gremlin: pardon[equivalent]`. The old keyword no longer works.
+  (#275)
+
 ## v1.5.0b8 (2026-03-11)
 
 ### Feat
