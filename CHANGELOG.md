@@ -28,8 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **instrumentation**: gremlin injection now inserts after `__future__` imports at the AST level, fixing
   `SyntaxError` in files using `from __future__ import annotations` (#238)
-- **plugin**: xdist integration hooks are guarded when `pytest-xdist` is absent, preventing
-  `check_pending()` failures (#243)
+- **plugin**: running without `pytest-xdist` installed no longer raises `check_pending()`
+  failures — the plugin operates in single-worker mode when xdist is absent (#243)
 - **config**: TOML type validation for `batch_size`, `cache`, and `report` with actionable error messages
   (#253, #258)
 - **reporting**: HTML report WCAG 2.1 AA accessibility — contrast ratios, keyboard navigation, expand-all
