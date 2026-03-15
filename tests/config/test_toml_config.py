@@ -263,6 +263,67 @@ class DescribeLoadConfigNewFields:
         with pytest.raises(ValueError, match='report must be a string or list of strings'):
             load_config(tmp_path)
 
+    def it_ignores_trailing_comma_in_report_string(self, tmp_path: Path) -> None:
+        """Trailing comma in report = "html," does not produce empty-string format."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "html,"\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.report == ['html']
+
+    def it_ignores_leading_comma_in_report_string(self, tmp_path: Path) -> None:
+        """Leading comma in report = ",json" does not produce empty-string format."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = ",json"\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.report == ['json']
+
+    def it_ignores_double_comma_in_report_string(self, tmp_path: Path) -> None:
+        """Double comma in report = "html,,json" does not produce empty-string format."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "html,,json"\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.report == ['html', 'json']
+
+    def it_deduplicates_report_formats_from_string(self, tmp_path: Path) -> None:
+        """Duplicate formats in report = "html,html" are collapsed to one."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "html,html"\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.report == ['html']
+
+    def it_deduplicates_report_formats_from_list(self, tmp_path: Path) -> None:
+        """Duplicate formats in report = ["html", "html"] are collapsed to one."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = ["html", "html"]\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.report == ['html']
+
+    def it_raises_on_all_empty_report_string(self, tmp_path: Path) -> None:
+        """report = "," (only commas) raises ValueError since no valid format remains."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = ","\n')
+
+        with pytest.raises(ValueError, match='report'):
+            load_config(tmp_path)
+
+    def it_raises_on_empty_report_list(self, tmp_path: Path) -> None:
+        """report = [] (empty list) raises ValueError since no valid format remains."""
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = []\n')
+
+        with pytest.raises(ValueError, match='at least one valid format'):
+            load_config(tmp_path)
+
 
 @pytest.mark.small
 class DescribeMergeConfigsNewFields:

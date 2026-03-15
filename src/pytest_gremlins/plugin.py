@@ -555,7 +555,12 @@ def pytest_configure(config: pytest.Config) -> None:  # noqa: C901, PLR0912, PLR
     cli_report_raw: str | None = config.option.gremlin_report
     cli_report_list: list[str] | None = None
     if cli_report_raw is not None:
-        cli_report_list = [fmt.strip() for fmt in cli_report_raw.split(',')]
+        cli_report_list = list(dict.fromkeys(fmt.strip() for fmt in cli_report_raw.split(',') if fmt.strip()))
+        if not cli_report_list:
+            pytest.exit(
+                f'--gremlin-report must contain at least one valid format. Valid: {sorted(_VALID_REPORT_FORMATS)}',
+                returncode=4,
+            )
         invalid = set(cli_report_list) - _VALID_REPORT_FORMATS
         if invalid:
             pytest.exit(

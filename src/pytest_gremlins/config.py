@@ -160,6 +160,19 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
                 f'[tool.pytest-gremlins].report must be a string or list of strings '
                 f'(e.g. report = "html" or report = ["html", "json"]), got {report_raw!r}'
             )
+        # Filter empty strings (trailing/leading/double commas) and deduplicate
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for fmt in report_raw:
+            if fmt and fmt not in seen:
+                seen.add(fmt)
+                deduped.append(fmt)
+        report_raw = deduped
+        if not report_raw:
+            raise ValueError(
+                '[tool.pytest-gremlins].report must contain at least one valid format '
+                f'(e.g. report = "html"). Valid formats: {sorted(_VALID_REPORT_FORMATS)}'
+            )
         invalid = set(report_raw) - _VALID_REPORT_FORMATS
         if invalid:
             raise ValueError(
