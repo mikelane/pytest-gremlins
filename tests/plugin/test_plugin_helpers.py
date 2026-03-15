@@ -13,6 +13,7 @@ from unittest.mock import (
     patch,
 )
 
+from _pytest.outcomes import Exit
 import pytest
 
 from pytest_gremlins.plugin import (
@@ -26,6 +27,7 @@ from pytest_gremlins.plugin import (
     _generate_gremlins,
     _is_xdist_worker,
     _make_node_ids_relative,
+    _parse_cli_report_formats,
     _path_to_module_name,
     _read_parallel_config,
     _select_tests_for_gremlin_prioritized,
@@ -661,3 +663,56 @@ class DescribeGenerateGremlins:
         assert gs.gremlins == []
         # Exception is logged (logger.exception emits at ERROR level).
         assert any('Failed to transform bad_file.py' in r.message for r in caplog.records)
+
+
+@pytest.mark.small
+class DescribeParseCliReportFormats:
+    """Tests for _parse_cli_report_formats helper.
+
+    Covers: None passthrough, single string, list from action='append',
+    comma-separated within list elements, deduplication, empty-after-filter,
+    and unknown format rejection.
+    """
+
+    def it_returns_none_when_raw_is_none(self) -> None:
+        result = _parse_cli_report_formats(None)
+
+        assert result is None
+
+    def it_parses_single_string_value(self) -> None:
+        result = _parse_cli_report_formats('html')
+
+        assert result == ['html']
+
+    def it_parses_comma_separated_string(self) -> None:
+        result = _parse_cli_report_formats('html,json')
+
+        assert result == ['html', 'json']
+
+    def it_parses_list_from_repeated_flags(self) -> None:
+        result = _parse_cli_report_formats(['html', 'json'])
+
+        assert result == ['html', 'json']
+
+    def it_flattens_comma_separated_elements_in_list(self) -> None:
+        result = _parse_cli_report_formats(['html,console', 'json'])
+
+        assert result == ['html', 'console', 'json']
+
+    def it_deduplicates_preserving_insertion_order(self) -> None:
+        result = _parse_cli_report_formats(['html', 'json', 'html'])
+
+        assert result == ['html', 'json']
+
+    def it_strips_whitespace_from_formats(self) -> None:
+        result = _parse_cli_report_formats(' html , json ')
+
+        assert result == ['html', 'json']
+
+    def it_exits_when_all_formats_are_empty(self) -> None:
+        with pytest.raises(Exit, match='at least one valid format'):
+            _parse_cli_report_formats(',,,')
+
+    def it_exits_on_unknown_format(self) -> None:
+        with pytest.raises(Exit, match='Unknown --gremlin-report format'):
+            _parse_cli_report_formats('xml')

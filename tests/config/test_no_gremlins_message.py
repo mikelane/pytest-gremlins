@@ -262,7 +262,7 @@ class DescribeMutationResultsReport:
             enabled=True,
             gremlins=[MagicMock()],
             results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
-            report_format='console',
+            report_formats=['console'],
         )
 
         lines = self._run_terminal_summary(gs)
@@ -271,12 +271,12 @@ class DescribeMutationResultsReport:
         assert '--gremlin-report=html' in output
 
     def it_writes_html_report_when_format_is_html(self) -> None:
-        """When report_format='html', the HTML report is written and its path displayed."""
+        """When report_formats=['html'], the HTML report is written and its path displayed."""
         gs = GremlinSession(
             enabled=True,
             gremlins=[MagicMock()],
             results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
-            report_format='html',
+            report_formats=['html'],
         )
 
         with patch(
@@ -288,3 +288,49 @@ class DescribeMutationResultsReport:
         output = '\n'.join(lines)
         mock_write_html.assert_called_once()
         assert 'HTML report written to:' in output
+
+    def it_writes_json_report_when_format_is_json(self) -> None:
+        """When report_formats=['json'], the JSON report is written and its path displayed."""
+        gs = GremlinSession(
+            enabled=True,
+            gremlins=[MagicMock()],
+            results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
+            report_formats=['json'],
+        )
+
+        with patch(
+            'pytest_gremlins.plugin._write_json_report',
+            return_value=Path('gremlins.json'),
+        ) as mock_write_json:
+            lines = self._run_terminal_summary(gs)
+
+        output = '\n'.join(lines)
+        mock_write_json.assert_called_once()
+        assert 'JSON report written to:' in output
+
+    def it_writes_both_html_and_json_when_both_requested(self) -> None:
+        """When report_formats=['html', 'json'], both reports are written."""
+        gs = GremlinSession(
+            enabled=True,
+            gremlins=[MagicMock()],
+            results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
+            report_formats=['html', 'json'],
+        )
+
+        with (
+            patch(
+                'pytest_gremlins.plugin._write_html_report',
+                return_value=Path('gremlin-report.html'),
+            ) as mock_write_html,
+            patch(
+                'pytest_gremlins.plugin._write_json_report',
+                return_value=Path('gremlins.json'),
+            ) as mock_write_json,
+        ):
+            lines = self._run_terminal_summary(gs)
+
+        output = '\n'.join(lines)
+        mock_write_html.assert_called_once()
+        mock_write_json.assert_called_once()
+        assert 'HTML report written to:' in output
+        assert 'JSON report written to:' in output

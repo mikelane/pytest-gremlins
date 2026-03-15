@@ -40,6 +40,7 @@ from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.config import (
+    VALID_REPORT_FORMATS,
     GremlinConfig,
     discover_by_importlib_metadata,
     discover_by_project_name,
@@ -66,6 +67,7 @@ from pytest_gremlins.reporting.html import (
     HtmlReporter,
     resolve_html_output_path,
 )
+from pytest_gremlins.reporting.json_reporter import JsonReporter
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
@@ -149,7 +151,7 @@ class GremlinSession:
     Attributes:
         enabled: Whether mutation testing is enabled.
         operators: List of operators to use for mutation.
-        report_format: Report format (console, html, json).
+        report_formats: List of report formats (console, html, json).
         gremlins: All gremlins found in the source code.
         results: Results from testing each gremlin.
         source_files: Mapping of file paths to their source code.
@@ -184,7 +186,7 @@ class GremlinSession:
 
     enabled: bool = False
     operators: list[GremlinOperator] = field(default_factory=list)
-    report_format: str = 'console'
+    report_formats: list[str] = field(default_factory=lambda: ['console'])
     gremlins: list[Gremlin] = field(default_factory=list)
     results: list[GremlinResult] = field(default_factory=list)
     source_files: dict[str, str] = field(default_factory=dict)
@@ -347,6 +349,48 @@ def _workers_type(value: str) -> int:
     return workers
 
 
+def _parse_cli_report_formats(raw: str | list[str] | None) -> list[str] | None:
+    """Parse raw --gremlin-report CLI value into a validated format list.
+
+    Handles both a single comma-separated string and a list of strings
+    (from ``action='append'``).  Joins all elements, splits on commas,
+    strips whitespace, filters empties, and deduplicates while preserving
+    insertion order.
+
+    Args:
+        raw: The raw value from ``config.option.gremlin_report``.
+            ``None`` when the flag was not passed, a ``list[str]`` when
+            passed one or more times via ``action='append'``.
+
+    Returns:
+        Deduplicated list of format strings, or ``None`` if *raw* is ``None``.
+
+    Raises:
+        SystemExit: Via ``pytest.exit`` when the value is empty after
+            filtering or contains unknown formats.
+    """
+    if raw is None:
+        return None
+
+    joined = ','.join(raw) if isinstance(raw, list) else raw
+    formats = list(dict.fromkeys(fmt.strip() for fmt in joined.split(',') if fmt.strip()))
+
+    if not formats:
+        pytest.exit(
+            f'--gremlin-report must contain at least one valid format. Valid: {sorted(VALID_REPORT_FORMATS)}',
+            returncode=4,
+        )
+
+    invalid = set(formats) - VALID_REPORT_FORMATS
+    if invalid:
+        pytest.exit(
+            f'Unknown --gremlin-report format(s): {sorted(invalid)}. Valid: {sorted(VALID_REPORT_FORMATS)}',
+            returncode=4,
+        )
+
+    return formats
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Add command-line options for pytest-gremlins."""
     group = parser.getgroup('gremlins', 'mutation testing with gremlins')
@@ -366,10 +410,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     group.addoption(
         '--gremlin-report',
-        action='store',
+        action='append',
         default=None,
         dest='gremlin_report',
-        help='Report format: console, html, json (default: console)',
+        help='Report format(s), comma-separated: console, html, json (default: console)',
     )
     group.addoption(
         '--gremlin-targets',
@@ -488,10 +532,10 @@ def _init_cache(
 
 def _extract_toml_fields(
     merged_config: object,
-) -> tuple[bool | None, int | str | None, str | None, int | None, float | None, int | None]:
+) -> tuple[bool | None, int | str | None, list[str] | None, int | None, float | None, int | None]:
     """Extract merged-config fields, guarding against test mock objects.
 
-    Returns (cache, workers, report, batch_size, max_pardons_pct, max_pardons) from
+    Returns (cache, workers, report_formats, batch_size, max_pardons_pct, max_pardons) from
     merged_config only when it is a real GremlinConfig instance; otherwise returns
     all-None so pytest_configure falls back to argparse defaults.
 
@@ -549,6 +593,8 @@ def pytest_configure(config: pytest.Config) -> None:
             returncode=4,
         )
 
+    cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
+
     # Load config from pyproject.toml and merge with CLI args
     file_config = load_config(rootdir)
     merged_config = merge_configs(
@@ -557,7 +603,7 @@ def pytest_configure(config: pytest.Config) -> None:
         cli_targets=config.option.gremlin_targets,
         cli_workers=config.option.gremlin_workers,
         cli_cache=config.option.gremlin_cache or None,
-        cli_report=config.option.gremlin_report,
+        cli_report=cli_report_list,
         cli_batch_size=config.option.gremlin_batch_size,
         cli_max_pardons_pct=cli_max_pardons_pct,
         cli_max_pardons=cli_max_pardons,
@@ -623,13 +669,13 @@ def pytest_configure(config: pytest.Config) -> None:
     # Batch and report: merge_configs already resolved CLI-beats-TOML
     batch_enabled = config.option.gremlin_batch
     batch_size: int = toml_batch_size if toml_batch_size is not None else 10
-    report_format: str = toml_report if toml_report is not None else 'console'
+    report_formats: list[str] = toml_report if toml_report is not None else ['console']
 
     _set_session(
         GremlinSession(
             enabled=True,
             operators=operators,
-            report_format=report_format,
+            report_formats=report_formats,
             target_paths=target_paths,
             cache_enabled=cache_enabled,
             cache=cache,
@@ -2099,6 +2145,24 @@ def _write_html_report(score: MutationScore, rootdir: Path, html_dir: Path | Non
     return output_path
 
 
+def _write_json_report(score: MutationScore, rootdir: Path) -> Path:
+    """Write JSON report to file.
+
+    Args:
+        score: The MutationScore to write.
+        rootdir: Root directory of the project.
+
+    Returns:
+        Path to the written JSON report.
+    """
+    reporter = JsonReporter()
+    # TODO(#308): add --gremlins-json-path flag for parity with --gremlins-html-dir
+    output_path = rootdir / 'coverage' / 'gremlins' / 'gremlins.json'
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    reporter.write_report(score, output_path)
+    return output_path
+
+
 def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     terminalreporter: pytest.TerminalReporter,
     exitstatus: int,  # noqa: ARG001
@@ -2137,9 +2201,10 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
 
     score = MutationScore.from_results(gremlin_session.results)
 
-    # Write HTML report if requested
-    if gremlin_session.report_format == 'html':
-        rootdir = _get_rootdir(config)
+    # Write file-based reports as requested
+    rootdir = _get_rootdir(config)
+
+    if 'html' in gremlin_session.report_formats:
         raw_html_dir = config.getoption('gremlins_html_dir', default=None)
         html_dir = Path(raw_html_dir) if raw_html_dir is not None else None
         try:
@@ -2148,6 +2213,14 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
         except OSError as exc:
             logger.warning('Failed to write HTML report: %s', exc)
             terminalreporter.write_line(f'HTML report write failed: {exc}')
+
+    if 'json' in gremlin_session.report_formats:
+        try:
+            json_path = _write_json_report(score, rootdir=rootdir)
+            terminalreporter.write_line(f'JSON report written to: {json_path}')
+        except OSError as exc:
+            logger.warning('Failed to write JSON report: %s', exc)
+            terminalreporter.write_line(f'JSON report write failed: {exc}')
 
     terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
     terminalreporter.write_line('')
@@ -2190,7 +2263,7 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
                 terminalreporter.write_line(f'  {location:<30} {gremlin.description:<20} ({gremlin.operator_name})')
 
     terminalreporter.write_line('')
-    if gremlin_session.report_format != 'html':
+    if 'html' not in gremlin_session.report_formats:
         terminalreporter.write_line('Run with --gremlin-report=html for detailed report.')
     terminalreporter.write_sep('=', '')
 

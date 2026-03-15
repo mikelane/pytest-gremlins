@@ -19,6 +19,8 @@ from tomllib import TOMLDecodeError
 
 logger = logging.getLogger(__name__)
 
+VALID_REPORT_FORMATS: frozenset[str] = frozenset({'console', 'html', 'json'})
+
 
 @dataclass
 class GremlinConfig:
@@ -33,7 +35,7 @@ class GremlinConfig:
         exclude: List of glob patterns for files to exclude from mutation.
         workers: Number of parallel workers, "auto" for CPU count, or None.
         cache: Whether to enable incremental analysis cache.
-        report: Report format string (e.g. "console", "html", "json").
+        report: List of report formats (e.g. ["html", "json"]).
         batch_size: Number of gremlins per batch in batch mode.
     """
 
@@ -42,7 +44,7 @@ class GremlinConfig:
     exclude: list[str] | None = None
     workers: int | str | None = None
     cache: bool | None = None
-    report: str | None = None
+    report: list[str] | None = None
     batch_size: int | None = None
     max_pardons_pct: float | None = None
     max_pardons: int | None = None
@@ -87,7 +89,7 @@ def _resolve_workers(value: int | str | None) -> int | None:
     return value
 
 
-def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912
+def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
     """Load configuration from pyproject.toml.
 
     Reads the [tool.pytest-gremlins] section from pyproject.toml in the
@@ -141,9 +143,41 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912
         raise ValueError(f'[tool.pytest-gremlins].cache must be a boolean (e.g. cache = true), got {cache_raw!r}')
 
     report_raw = tool_config.get('report')
-    if report_raw is not None and not isinstance(report_raw, str):
-        logger.warning('Invalid report in %s: expected string, got %r', pyproject_path, report_raw)
-        raise ValueError(f'[tool.pytest-gremlins].report must be a string (e.g. report = "html"), got {report_raw!r}')
+    if report_raw is not None:
+        if isinstance(report_raw, str):
+            report_raw = [fmt.strip() for fmt in report_raw.split(',')]
+        elif isinstance(report_raw, list):
+            if not all(isinstance(fmt, str) for fmt in report_raw):
+                logger.warning('Invalid report in %s: expected list of strings, got %r', pyproject_path, report_raw)
+                raise ValueError(
+                    f'[tool.pytest-gremlins].report must be a string or list of strings '
+                    f'(e.g. report = "html" or report = ["html", "json"]), got {report_raw!r}'
+                )
+            report_raw = [fmt.strip() for fmt in report_raw]
+        else:
+            logger.warning('Invalid report in %s: expected string or list, got %r', pyproject_path, report_raw)
+            raise ValueError(
+                f'[tool.pytest-gremlins].report must be a string or list of strings '
+                f'(e.g. report = "html" or report = ["html", "json"]), got {report_raw!r}'
+            )
+        # Filter empty strings (trailing/leading/double commas) and deduplicate
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for fmt in report_raw:
+            if fmt and fmt not in seen:
+                seen.add(fmt)
+                deduped.append(fmt)
+        report_raw = deduped
+        if not report_raw:
+            raise ValueError(
+                '[tool.pytest-gremlins].report must contain at least one valid format '
+                f'(e.g. report = "html"). Valid formats: {sorted(VALID_REPORT_FORMATS)}'
+            )
+        invalid = set(report_raw) - VALID_REPORT_FORMATS
+        if invalid:
+            raise ValueError(
+                f'Unknown report format(s): {sorted(invalid)}. Valid formats: {sorted(VALID_REPORT_FORMATS)}'
+            )
 
     max_pardons_pct_raw = tool_config.get('max-pardons-pct')
     if max_pardons_pct_raw is not None:
@@ -460,7 +494,7 @@ def merge_configs(
     cli_targets: str | None = None,
     cli_workers: int | None = None,
     cli_cache: bool | None = None,
-    cli_report: str | None = None,
+    cli_report: list[str] | None = None,
     cli_batch_size: int | None = None,
     cli_max_pardons_pct: float | None = None,
     cli_max_pardons: int | None = None,
@@ -476,7 +510,7 @@ def merge_configs(
         cli_targets: Comma-separated target paths from CLI (--gremlin-targets).
         cli_workers: Worker count from CLI (--gremlin-workers), already resolved to int.
         cli_cache: Cache flag from CLI (--gremlin-cache).
-        cli_report: Report format from CLI (--gremlin-report).
+        cli_report: Report format list from CLI (--gremlin-report).
         cli_batch_size: Batch size from CLI (--gremlin-batch-size).
         cli_max_pardons_pct: Max pardoned % from CLI (--gremlin-max-pardons-pct).
         cli_max_pardons: Max absolute pardon count from CLI (--max-pardons).
@@ -498,7 +532,7 @@ def merge_configs(
 
     workers: int | None = cli_workers if cli_workers is not None else _resolve_workers(file_config.workers)
     cache: bool | None = cli_cache if cli_cache is not None else file_config.cache
-    report: str | None = cli_report if cli_report is not None else file_config.report
+    report: list[str] | None = cli_report if cli_report is not None else file_config.report
     batch_size: int | None = cli_batch_size if cli_batch_size is not None else file_config.batch_size
     max_pardons_pct: float | None = (
         cli_max_pardons_pct if cli_max_pardons_pct is not None else file_config.max_pardons_pct
