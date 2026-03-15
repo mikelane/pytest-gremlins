@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.5.1 (2026-03-15)
+
+### Feat
+
+- **config**: `--gremlin-report` now accepts comma-separated formats (e.g.
+  `--gremlin-report=json,html`) to write multiple reports in a single run; TOML config
+  accepts both `report = "json,html"` and `report = ["json", "html"]` (#308, #309)
+- **reporting**: wire `JsonReporter` into the plugin dispatch — `--gremlin-report=json`
+  now writes `coverage/gremlins/gremlins.json` (previously implemented but never called)
+- **config**: validate report formats against an allowlist (`console`, `html`, `json`)
+  at both CLI and TOML layers with clear error messages for unknown formats
+
 ## v1.5.0 (2026-03-14)
 
 ### Feat
