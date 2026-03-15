@@ -19,7 +19,7 @@ from tomllib import TOMLDecodeError
 
 logger = logging.getLogger(__name__)
 
-_VALID_REPORT_FORMATS: frozenset[str] = frozenset({'console', 'html', 'json'})
+VALID_REPORT_FORMATS: frozenset[str] = frozenset({'console', 'html', 'json'})
 
 
 @dataclass
@@ -171,12 +171,12 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
         if not report_raw:
             raise ValueError(
                 '[tool.pytest-gremlins].report must contain at least one valid format '
-                f'(e.g. report = "html"). Valid formats: {sorted(_VALID_REPORT_FORMATS)}'
+                f'(e.g. report = "html"). Valid formats: {sorted(VALID_REPORT_FORMATS)}'
             )
-        invalid = set(report_raw) - _VALID_REPORT_FORMATS
+        invalid = set(report_raw) - VALID_REPORT_FORMATS
         if invalid:
             raise ValueError(
-                f'Unknown report format(s): {sorted(invalid)}. Valid formats: {sorted(_VALID_REPORT_FORMATS)}'
+                f'Unknown report format(s): {sorted(invalid)}. Valid formats: {sorted(VALID_REPORT_FORMATS)}'
             )
 
     max_pardons_pct_raw = tool_config.get('max-pardons-pct')
