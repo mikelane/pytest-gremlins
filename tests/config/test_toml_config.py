@@ -56,10 +56,10 @@ class DescribeGremlinConfigNewFields:
 
         assert config.cache is True
 
-    def it_accepts_report_as_string(self):
-        config = GremlinConfig(report='html')
+    def it_accepts_report_as_list(self):
+        config = GremlinConfig(report=['html'])
 
-        assert config.report == 'html'
+        assert config.report == ['html']
 
     def it_accepts_batch_size_as_int(self):
         config = GremlinConfig(batch_size=50)
@@ -103,13 +103,44 @@ class DescribeLoadConfigNewFields:
 
         assert loaded_config.cache is False
 
-    def it_reads_report_as_html(self, tmp_path: Path) -> None:
+    def it_parses_report_string_as_single_element_list(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nreport = "html"\n')
 
         loaded_config = load_config(tmp_path)
 
-        assert loaded_config.report == 'html'
+        assert loaded_config.report == ['html']
+
+    def it_parses_comma_separated_report_string(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "json,html"\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.report == ['json', 'html']
+
+    def it_parses_report_list(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = ["json", "html"]\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.report == ['json', 'html']
+
+    def it_strips_whitespace_from_report_formats(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = " json , html "\n')
+
+        loaded_config = load_config(tmp_path)
+
+        assert loaded_config.report == ['json', 'html']
+
+    def it_raises_on_unknown_report_format(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = "xml"\n')
+
+        with pytest.raises(ValueError, match='Unknown report format'):
+            load_config(tmp_path)
 
     def it_reads_batch_size(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
@@ -211,18 +242,25 @@ class DescribeLoadConfigNewFields:
         with pytest.raises(ValueError, match='cache'):
             load_config(tmp_path)
 
-    def it_raises_on_non_string_report(self, tmp_path: Path) -> None:
+    def it_raises_on_boolean_report(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nreport = true\n')
 
-        with pytest.raises(ValueError, match='report'):
+        with pytest.raises(ValueError, match='report must be a string or list'):
             load_config(tmp_path)
 
     def it_raises_on_integer_report(self, tmp_path: Path) -> None:
         pyproject = tmp_path / 'pyproject.toml'
         pyproject.write_text('[tool.pytest-gremlins]\nreport = 42\n')
 
-        with pytest.raises(ValueError, match='report'):
+        with pytest.raises(ValueError, match='report must be a string or list'):
+            load_config(tmp_path)
+
+    def it_raises_on_list_containing_non_strings(self, tmp_path: Path) -> None:
+        pyproject = tmp_path / 'pyproject.toml'
+        pyproject.write_text('[tool.pytest-gremlins]\nreport = ["html", 42]\n')
+
+        with pytest.raises(ValueError, match='report must be a string or list of strings'):
             load_config(tmp_path)
 
 
@@ -266,18 +304,25 @@ class DescribeMergeConfigsNewFields:
         assert merged_config.cache is True
 
     def it_cli_report_overrides_toml_report(self):
-        file_config = GremlinConfig(report='console')
+        file_config = GremlinConfig(report=['console'])
 
-        merged_config = merge_configs(file_config, cli_report='html')
+        merged_config = merge_configs(file_config, cli_report=['html'])
 
-        assert merged_config.report == 'html'
+        assert merged_config.report == ['html']
 
     def it_uses_toml_report_when_cli_report_is_none(self):
-        file_config = GremlinConfig(report='html')
+        file_config = GremlinConfig(report=['html'])
 
         merged_config = merge_configs(file_config, cli_report=None)
 
-        assert merged_config.report == 'html'
+        assert merged_config.report == ['html']
+
+    def it_cli_multi_report_overrides_toml(self):
+        file_config = GremlinConfig(report=['console'])
+
+        merged_config = merge_configs(file_config, cli_report=['json', 'html'])
+
+        assert merged_config.report == ['json', 'html']
 
     def it_cli_batch_size_overrides_toml_batch_size(self):
         file_config = GremlinConfig(batch_size=20)
