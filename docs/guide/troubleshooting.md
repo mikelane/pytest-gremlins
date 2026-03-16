@@ -749,7 +749,7 @@ Mutation testing works locally but fails in CI with:
    pytest --gremlins --gremlin-report=html
    ```
 
-   Then open `gremlin-report.html` in your browser for a detailed breakdown of all gremlins and
+   Then open `coverage/gremlins/index.html` in your browser for a detailed breakdown of all gremlins and
    their status.
 
 4. **Disable caching to rule out cache issues:**

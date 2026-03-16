@@ -306,7 +306,7 @@ Add a step to your CI pipeline:
 - name: Run mutation testing
   run: |
     pytest --gremlins --gremlin-report=json
-    SCORE=$(jq '.summary.percentage' gremlin-report.json)
+    SCORE=$(jq '.summary.percentage' coverage/gremlins/gremlins.json)
     if (( $(echo "$SCORE < 80" | bc -l) )); then
       echo "Mutation score $SCORE% is below threshold 80%"
       exit 1
