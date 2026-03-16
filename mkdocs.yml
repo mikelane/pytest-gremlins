@@ -120,12 +120,11 @@ plugins:
             heading_level: 2
 
   # Social cards for link previews (Open Graph/Twitter)
-  # Requires: pip install "mkdocs-material[imaging]"
-  # Uncomment when dependencies are installed:
-  # - social:
-  #     cards_layout_options:
-  #       background_color: "#1b5e20"
-  #       color: "#ffffff"
+  # System requirement: cairo graphics library (brew install cairo on macOS)
+  - social:
+      cards_layout_options:
+        background_color: "#1b5e20"
+        color: "#ffffff"
 
   # Minify HTML output for production (requires mkdocs-minify-plugin)
   # Uncomment when plugin is installed:

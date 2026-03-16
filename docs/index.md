@@ -1,5 +1,12 @@
 # pytest-gremlins
 
+[![PyPI version](https://img.shields.io/pypi/v/pytest-gremlins.svg)](https://pypi.org/project/pytest-gremlins/)
+[![Python versions](https://img.shields.io/pypi/pyversions/pytest-gremlins.svg)](https://pypi.org/project/pytest-gremlins/)
+[![CI](https://github.com/mikelane/pytest-gremlins/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelane/pytest-gremlins/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/mikelane/pytest-gremlins/branch/main/graph/badge.svg)](https://codecov.io/gh/mikelane/pytest-gremlins)
+[![Documentation](https://readthedocs.org/projects/pytest-gremlins/badge/?version=latest)](https://pytest-gremlins.readthedocs.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > Let the gremlins loose. See which ones survive.
 
 **pytest-gremlins** is a fast-first mutation testing plugin for pytest. It helps you evaluate the
@@ -27,6 +34,23 @@ Run mutation testing:
 
 ```bash
 pytest --gremlins
+```
+
+## See It In Action
+
+```text
+================== pytest-gremlins mutation report ==================
+
+Zapped: 8 gremlins (80%)
+Survived: 2 gremlins (20%)
+
+Top surviving gremlins:
+  src/auth.py:42    >= to >     (boundary not tested)
+  src/utils.py:17   + to -      (arithmetic not verified)
+  src/api.py:88     True to False (return value unchecked)
+
+Run with --gremlin-report=html for detailed report.
+=====================================================================
 ```
 
 ## Features
