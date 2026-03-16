@@ -45,9 +45,8 @@ Zapped: 8 gremlins (80%)
 Survived: 2 gremlins (20%)
 
 Top surviving gremlins:
-  src/auth.py:42    >= to >     (boundary not tested)
-  src/utils.py:17   + to -      (arithmetic not verified)
-  src/api.py:88     True to False (return value unchecked)
+  src/auth.py:42              >= to >              (comparison)
+  src/utils.py:17             + to -               (arithmetic)
 
 Run with --gremlin-report=html for detailed report.
 =====================================================================

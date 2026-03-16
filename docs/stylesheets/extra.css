@@ -7,22 +7,8 @@
    CSS Variables - Gremlin Theme
    ============================================ */
 :root {
-  /* Gremlin greens */
   --gremlin-green: #2e7d32;
-  --gremlin-green-light: #4caf50;
   --gremlin-green-dark: #1b5e20;
-  --gremlin-green-pale: #c8e6c9;
-
-  /* Mogwai browns (for contrast) */
-  --mogwai-tan: #d7ccc8;
-  --mogwai-brown: #8d6e63;
-
-  /* Status colors */
-  --zap-color: #ff5722;         /* Kill/zap - orange */
-  --survivor-color: #ffc107;    /* Surviving mutant - amber warning */
-
-  /* Spacing */
-  --content-max-width: 72rem;
 }
 
 /* ============================================
