@@ -2,6 +2,12 @@
 
 Complete CI/CD configurations for running pytest-gremlins in your pipelines.
 
+!!! tip "Prefer the GitHub Action?"
+    If you use GitHub Actions, the easiest way to add mutation testing is the
+    [`pytest-gremlins-action`](github-action.md). It handles installation, caching,
+    parallelism, and score enforcement in a single step. The manual workflows below
+    are for teams that need more control or use a different CI platform.
+
 ## How Caching Works in CI
 
 pytest-gremlins uses two cache layers that work together:

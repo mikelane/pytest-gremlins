@@ -143,6 +143,31 @@ operators = [
     "arithmetic",
     "return",
 ]
+
+# Number of parallel workers (integer or "auto" for os.cpu_count())
+# Default: 1 (sequential)
+workers = "auto"
+
+# Enable incremental analysis cache
+# Default: false
+cache = true
+
+# Report format(s): a single string, comma-separated string, or list
+# Valid formats: "console", "html", "json"
+# Default: "console"
+report = ["html", "json"]
+
+# Number of gremlins per batch in batch execution mode
+# Default: 10
+batch_size = 20
+
+# Maximum number of pardoned gremlins (absolute ceiling)
+# Default: no limit
+max_pardons = 10
+
+# Maximum percentage of pardoned gremlins (0-100)
+# Default: no limit
+max-pardons-pct = 5.0
 ```
 
 ### Configuration Options Table
@@ -152,6 +177,12 @@ operators = [
 | `paths` | list[string] | auto-discovered | Directories or files to scan for source code (falls back to `src/`) |
 | `exclude` | list[string] | `[]` | Glob patterns for files to exclude |
 | `operators` | list[string] | all | Operators to enable, in priority order |
+| `workers` | int or `"auto"` | `1` | Number of parallel workers; `"auto"` resolves to `os.cpu_count()` |
+| `cache` | boolean | `false` | Enable incremental analysis cache |
+| `report` | string or list | `"console"` | Report format(s): `"html"`, `"json"`, `"console"`, or a list like `["html", "json"]` |
+| `batch_size` | int | `10` | Number of gremlins per batch in batch execution mode |
+| `max_pardons` | int | no limit | Absolute ceiling on pardoned gremlins |
+| `max-pardons-pct` | float | no limit | Maximum percentage of pardoned gremlins (0-100) |
 
 ### Example Configurations
 
@@ -209,6 +240,94 @@ exclude = [
 ]
 ```
 
+## Inline Pardoning
+
+Some gremlins produce code that behaves identically to the original (equivalent mutants), or
+exercise paths you deliberately chose not to test. Rather than letting these inflate your
+survivor count, you can **pardon** them with an inline pragma.
+
+### Pragma Syntax
+
+```python
+return a // b  # gremlin: pardon[equivalent] integer division rounds same as subtraction
+```
+
+The pragma has three parts:
+
+1. `# gremlin: pardon` -- the keyword (must be `pardon`, not `survivor`)
+2. `[reason]` -- one of the valid reason codes (see below)
+3. Free-text justification -- explains *why* this gremlin is pardoned
+
+### Reason Codes
+
+| Code | When to use |
+|------|-------------|
+| `equivalent` | The mutation produces identical behavior to the original code |
+| `untestable` | The mutation affects code that cannot be exercised in a unit test (e.g., defensive `except` around OS calls) |
+| `out_of_scope` | The mutation is in code you intentionally exclude from quality targets |
+
+### Examples
+
+```python
+# Equivalent: both expressions evaluate to the same result
+flags = set(items) | set(extras)  # gremlin: pardon[equivalent] union is commutative
+
+# Untestable: requires hardware failure to trigger
+try:
+    fd = os.open(path, os.O_RDONLY)  # cspell:disable-line
+except OSError:  # gremlin: pardon[untestable] OS-level failure path
+    raise SystemExit(1)
+
+# Out of scope: legacy adapter scheduled for removal
+return legacy_convert(data)  # gremlin: pardon[out_of_scope] deprecated in Q3
+```
+
+### Enforcing Pardon Limits
+
+Pardons are useful, but too many can silently inflate your mutation score. Use limits to
+keep them in check:
+
+**CLI flags:**
+
+```bash
+pytest --gremlins --max-pardons=10                 # fail if more than 10 pardons
+pytest --gremlins --gremlin-max-pardons-pct=5.0    # fail if pardons exceed 5% of total
+```
+
+**pyproject.toml:**
+
+```toml
+[tool.pytest-gremlins]
+max_pardons = 10
+max-pardons-pct = 5.0
+```
+
+When either limit is exceeded, pytest-gremlins exits with a non-zero status and reports
+which limit was violated.
+
+### Migrating from `survivor` to `pardon`
+
+In v1.5.0, the pragma keyword changed from `survivor` to `pardon`. The old keyword no
+longer works. Update existing pragmas:
+
+```python
+# Old (no longer recognized)
+x = val  # gremlin: survivor[equivalent] ...
+
+# New
+x = val  # gremlin: pardon[equivalent] ...
+```
+
+A project-wide find-and-replace handles this:
+
+```bash
+# Preview changes
+grep -rn 'gremlin: survivor\[' src/
+
+# Apply
+sed -i 's/gremlin: survivor\[/gremlin: pardon\[/g' src/**/*.py
+```
+
 ## Performance Tuning
 
 ### Incremental Caching
@@ -246,8 +365,25 @@ pytest --gremlins --gremlin-workers=4       # use 4 workers (implies --gremlin-p
 `--gremlin-parallel` without `--gremlin-workers` defaults to `os.cpu_count()` workers.
 `--gremlin-workers=1` runs sequentially (useful for debugging).
 
-`--gremlins` and `-n` (pytest-xdist) cannot be combined — passing both raises an error. Use
-`--gremlin-workers` for parallel mutation execution.
+Since v1.5.0, `--gremlins` and `-n` (pytest-xdist) work together via a **two-phase integration**:
+
+- **Phase 1** distributes the test suite across xdist workers (the normal `-n auto` behavior)
+- **Phase 2** uses xdist's resolved worker count for parallel mutation evaluation
+
+This means `-n auto` is sufficient for both test distribution and mutation parallelism:
+
+```bash
+pytest --gremlins -n auto              # recommended: automatic parallelism
+pytest --gremlins -n 4                 # explicit worker count
+```
+
+`--gremlin-workers` and `--gremlin-parallel` still work as standalone alternatives when you do
+not want xdist involved in test distribution:
+
+```bash
+pytest --gremlins --gremlin-parallel   # use all CPU cores (no xdist)
+pytest --gremlins --gremlin-workers=4  # specific worker count (no xdist)
+```
 
 ### Batch Execution
 
@@ -363,14 +499,25 @@ pytest-gremlins looks for source code in this order:
   1. --gremlin-targets CLI option
   2. [tool.pytest-gremlins] paths in pyproject.toml
   3. [tool.setuptools] package config in pyproject.toml
-  4. src/ directory
+  4. [project].name heuristic
+  5. setup.cfg packages config
+  6. importlib.metadata (installed package metadata)
+  7. src/ directory
 
 If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_package
 ```
 
-The plugin auto-discovers source paths in this order: `--gremlin-targets` CLI option,
-`[tool.pytest-gremlins] paths` in `pyproject.toml`, `[tool.setuptools]` package config,
-then `src/` as a last resort. If none of these find your code:
+The plugin auto-discovers source paths using seven strategies, tried in order:
+
+1. `--gremlin-targets` CLI option
+2. `[tool.pytest-gremlins] paths` in `pyproject.toml`
+3. `[tool.setuptools]` package config in `pyproject.toml`
+4. `[project].name` heuristic (looks for a directory matching the project name)
+5. `setup.cfg` packages config
+6. `importlib.metadata` (installed package metadata)
+7. `src/` fallback
+
+The first strategy that finds source files wins. If none of them match your layout:
 
 1. Use `--gremlin-targets=your_package` to point at your source directly
 2. Verify files are not excluded by `exclude` patterns

@@ -212,12 +212,35 @@ xdg-open gremlin-report.html
 start gremlin-report.html
 ```
 
+### Trend Chart
+
+When you run mutation testing more than once with `--gremlin-report=html`, the HTML report
+includes a line chart showing your mutation score over time. The chart renders after two or
+more runs.
+
+Behind the scenes, `append_history_entry` writes a timestamped score record to a history
+file alongside the HTML report each time you generate one. On the next run, `load_history`
+reads previous entries and passes them to the chart renderer. If the history file is missing
+or corrupted, the report still generates -- you just won't see the chart until the next run
+rebuilds the file.
+
+This is useful for tracking whether your mutation score is trending up or down as your
+project evolves, without needing an external dashboard.
+
+### Accessibility
+
+The HTML report meets WCAG 2.1 AA standards:
+
+- **Contrast ratios** pass for all status colors against both light and dark backgrounds
+- **Keyboard navigation** works for expanding file sections and navigating the results table
+- **Expand-all** handles overflow gracefully so the page remains usable with many files
+
 ### When to Use HTML Report
 
 - Detailed analysis of mutation testing results
 - Code review discussions
 - Sharing results with team members
-- Archiving reports for historical comparison
+- Tracking mutation score trends across runs
 
 ## JSON Report
 
@@ -231,11 +254,13 @@ pytest --gremlins --gremlin-report=json
 
 ### Output Location
 
-By default, the JSON report is written to:
+The JSON report is written to:
 
 ```text
-gremlin-report.json
+coverage/gremlins/gremlins.json
 ```
+
+The directory is created automatically if it does not exist.
 
 ### JSON Schema
 
@@ -364,17 +389,35 @@ for g in survivors:
 
 ## Multiple Report Formats
 
-Generate multiple formats in a single run:
+Generate multiple formats in a single run using either syntax:
+
+**Comma-separated (v1.5.1+):**
 
 ```bash
-pytest --gremlins --gremlin-report=console,html,json
+pytest --gremlins --gremlin-report=json,html
 ```
 
-This produces:
+**Repeated flags:**
 
-- Console output (terminal)
-- `gremlin-report.html`
-- `gremlin-report.json`
+```bash
+pytest --gremlins --gremlin-report=json --gremlin-report=html
+```
+
+**pyproject.toml:**
+
+```toml
+[tool.pytest-gremlins]
+# List syntax
+report = ["json", "html"]
+
+# Or comma-separated string
+report = "json,html"
+```
+
+Console output always renders regardless of which formats you specify -- you do not need
+to include `console` in the list.
+
+Duplicate formats are deduplicated automatically, and trailing commas are ignored.
 
 ## Interpreting Results
 
