@@ -415,7 +415,23 @@ pytest --gremlins \
 
 ## CI Integration
 
-### GitHub Actions
+### GitHub Actions (Recommended)
+
+The [pytest-gremlins-action](https://github.com/marketplace/actions/pytest-gremlins)
+handles installation, parallel execution, caching, and score gating in a single step:
+
+```yaml
+- uses: mikelane/pytest-gremlins-action@v1
+  with:
+    threshold: 80
+    parallel: 'true'
+    cache: 'true'
+```
+
+See the [GitHub Action cookbook](../cookbook/github-action.md) for full configuration
+options, caching details, and advanced usage.
+
+If you need a manual workflow instead (e.g., self-hosted runners without marketplace access):
 
 ```yaml
 name: Mutation Testing
