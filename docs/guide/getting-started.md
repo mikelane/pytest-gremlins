@@ -254,7 +254,7 @@ pytest-gremlins uses several optimizations:
 - **Coverage-guided selection**: Only runs tests that cover the mutated code
 - **Early exit**: Stops testing a gremlin as soon as one test fails
 - **Incremental caching**: Skips unchanged code on subsequent runs (use `--gremlin-cache`)
-- **Parallel execution**: Distributes gremlins across CPU cores (use `--gremlin-parallel`)
+- **Parallel execution**: Distributes gremlins across CPU cores (use `-n auto` with xdist, or `--gremlin-parallel`)
 
 For a first run, expect 10-100x the time of a normal test run. Subsequent cached runs are much faster.
 
@@ -269,8 +269,9 @@ A good target depends on your project:
 | 80-90% | Good coverage for most projects |
 | > 90% | Excellent coverage (may have diminishing returns) |
 
-Some mutations are "equivalent" - they produce identical behavior to the original code. A 100%
-score is often impossible and not worth pursuing.
+Some mutations are "equivalent" -- they produce identical behavior to the original code. A 100%
+score is often impossible and not worth pursuing. You can mark these with an inline
+[pardon pragma](configuration.md#inline-pardoning) so they stop counting as survivors.
 
 ### Which files should I mutate?
 
@@ -305,7 +306,7 @@ Add a step to your CI pipeline:
 - name: Run mutation testing
   run: |
     pytest --gremlins --gremlin-report=json
-    SCORE=$(jq '.summary.percentage' gremlin-report.json)
+    SCORE=$(jq '.summary.percentage' coverage/gremlins/gremlins.json)
     if (( $(echo "$SCORE < 80" | bc -l) )); then
       echo "Mutation score $SCORE% is below threshold 80%"
       exit 1
@@ -340,5 +341,6 @@ Now that you understand the basics:
 | Target specific files | `pytest --gremlins --gremlin-targets=src/mymodule.py` |
 | Generate HTML report | `pytest --gremlins --gremlin-report=html` |
 | Use caching | `pytest --gremlins --gremlin-cache` |
-| Parallel execution | `pytest --gremlins --gremlin-parallel` |
+| Parallel execution (xdist) | `pytest --gremlins -n auto` |
+| Parallel execution (built-in) | `pytest --gremlins --gremlin-parallel` |
 | Use specific operators | `pytest --gremlins --gremlin-operators=comparison,boolean` |

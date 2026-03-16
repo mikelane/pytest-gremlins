@@ -31,10 +31,12 @@ pytest --gremlins
 
 ## Features
 
-- **Fast** - Mutation switching, coverage-guided selection, incremental analysis, parallel execution
-- **Native pytest integration** - Works with your existing test suite
-- **Configurable** - Enable/disable operators, set thresholds, exclude paths
-- **Great reports** - Console, HTML, and JSON output formats
+- **Fast** -- Mutation switching, coverage-guided selection, incremental analysis, parallel execution
+- **Native pytest integration** -- Works with your existing test suite, including pytest-xdist (`-n auto`)
+- **Inline pardoning** -- Suppress equivalent or untestable mutations with `# gremlin: pardon[reason]`
+- **Configurable** -- Full `pyproject.toml` support for all options, plus CLI flags
+- **Great reports** -- Console, HTML (with trend charts), and JSON output; multiple formats in one run
+- **GitHub Action** -- One-step CI with [`pytest-gremlins-action`](cookbook/github-action.md)
 
 ## The Gremlins Theme
 

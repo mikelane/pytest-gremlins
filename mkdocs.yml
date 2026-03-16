@@ -209,10 +209,12 @@ nav:
       - Configuration: guide/configuration.md
       - Operators: guide/operators.md
       - Reports: guide/reports.md
+      - Comparison: guide/comparison.md
       - Troubleshooting: guide/troubleshooting.md
 
   - Cookbook:
       - Overview: cookbook/index.md
+      - GitHub Action: cookbook/github-action.md
       - CI/CD Integration: cookbook/ci-integration.md
       - Monorepo Setup: cookbook/monorepo.md
       - Django Projects: cookbook/django.md

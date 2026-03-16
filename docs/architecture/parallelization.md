@@ -316,19 +316,40 @@ def db_session():
     session.rollback()
 ```
 
-## pytest-xdist Compatibility
+## pytest-xdist Integration (v1.5.0+)
 
-`--gremlins` and `-n` (pytest-xdist) cannot be combined — passing both raises an error.
-pytest-xdist distributes tests across workers, which conflicts with how pytest-gremlins
-controls mutation state per worker process.
+Since v1.5.0, `--gremlins` and `-n` work together via a two-phase model:
 
-To parallelize mutation execution, use `--gremlin-parallel`:
+**Phase 1 -- Test Distribution.** xdist distributes the test suite across workers using its
+normal `-n auto` scheduling. This phase collects coverage data and builds the test-to-line
+mapping that drives gremlin evaluation.
+
+**Phase 2 -- Mutation Evaluation.** pytest-gremlins reads xdist's resolved worker count
+and uses it for parallel mutation evaluation. Each worker sets its own
+`PYTEST_GREMLINS_ACTIVE` environment variable, so mutations never interfere.
+
+The practical upside: `-n auto` is all you need for both test distribution and mutation
+parallelism.
 
 ```bash
-pytest --gremlins --gremlin-parallel
+pytest --gremlins -n auto        # recommended
+pytest --gremlins -n 4           # explicit worker count
 ```
 
-This uses pytest-gremlins' own worker pool, which is built specifically for mutation isolation.
+### Standalone Worker Pool
+
+If you want parallel mutations *without* xdist test distribution, the built-in worker
+pool is still available:
+
+```bash
+pytest --gremlins --gremlin-parallel       # all CPU cores
+pytest --gremlins --gremlin-workers=4      # explicit count
+```
+
+### Running Without xdist
+
+When pytest-xdist is not installed, pytest-gremlins operates in single-worker mode
+automatically. No error is raised.
 
 ## Monitoring Parallel Execution
 

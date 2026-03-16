@@ -178,7 +178,10 @@ pytest-gremlins looks for source code in this order:
   1. --gremlin-targets CLI option
   2. [tool.pytest-gremlins] paths in pyproject.toml
   3. [tool.setuptools] package config in pyproject.toml
-  4. src/ directory
+  4. [project].name heuristic
+  5. setup.cfg packages config
+  6. importlib.metadata (installed package metadata)
+  7. src/ directory
 
 If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_package
 
@@ -479,7 +482,8 @@ Use valid configuration values via CLI arguments:
 pytest --gremlins --gremlin-workers=4
 ```
 
-Note: `workers` and `timeout` are not configurable via `pyproject.toml`. Use CLI arguments instead.
+Since v1.5.0, `workers` and `batch_size` are configurable via `pyproject.toml`. See
+[Configuration](configuration.md#complete-configuration-reference) for the full list of keys.
 
 ---
 
@@ -522,44 +526,62 @@ Coverage numbers are incorrect or missing when running mutation testing.
 
 ---
 
-### Error: Conflict with pytest-xdist
+### Using pytest-xdist with gremlins
+
+Since v1.5.0, `--gremlins` and `-n` work together. The recommended way to run parallel
+mutation testing is:
+
+```bash
+pytest --gremlins -n auto
+```
+
+This uses a two-phase model: Phase 1 distributes your test suite across xdist workers;
+Phase 2 reuses xdist's resolved worker count for mutation evaluation.
+
+**Common issues:**
+
+**Workers crash or hang with `-n auto`:**
+
+Reduce the worker count to give each process more memory:
+
+```bash
+pytest --gremlins -n 2
+```
+
+**You want parallel mutations without xdist test distribution:**
+
+Use the built-in worker pool instead:
+
+```bash
+pytest --gremlins --gremlin-parallel       # all CPU cores
+pytest --gremlins --gremlin-workers=4      # explicit count
+```
+
+**Running without xdist installed:**
+
+pytest-gremlins operates in single-worker mode when xdist is absent. No error is raised.
+
+---
+
+### Error: SyntaxError with `from __future__ import annotations`
 
 **Symptom:**
 
 ```text
-ERROR: --gremlins and -n cannot be used together. Use --gremlin-workers for parallel mutation execution.
+SyntaxError: from __future__ imports must occur at the beginning of the file
 ```
 
-**Cause:** `--gremlins` and `-n` (pytest-xdist) cannot be combined. pytest-xdist distributes
-tests across workers, which conflicts with how pytest-gremlins controls mutation state per
-worker process.
+**Cause:** In versions before v1.5.0, gremlin injection could insert code before `__future__`
+imports. Python requires `__future__` imports to appear before any other statements.
 
 **Solution:**
 
-Use `--gremlin-workers` instead:
+Upgrade to v1.5.0 or later. The instrumentation engine now inserts gremlin switches after
+`__future__` imports at the AST level, so this error no longer occurs.
 
 ```bash
-pytest --gremlins --gremlin-parallel   # parallel across all CPU cores
-pytest --gremlins --gremlin-workers=4      # specific worker count
+pip install --upgrade pytest-gremlins
 ```
-
-**Prevention:** Never combine `--gremlins` with `-n`.
-
----
-
-### Can I use pytest --gremlins with -n (pytest-xdist)?
-
-No. pytest-gremlins does not support using `-n` (pytest-xdist) for parallel mutation execution.
-Passing both `--gremlins` and `-n` produces an explicit error.
-
-For parallel mutation testing, use `--gremlin-workers` instead:
-
-```bash
-pytest --gremlins --gremlin-parallel   # parallel across all CPU cores
-```
-
-`--gremlin-workers=N` uses pytest-gremlins' own worker pool. Each worker runs with a different
-`PYTEST_GREMLINS_ACTIVE` environment variable, so mutations never interfere with each other.
 
 ---
 
@@ -727,7 +749,7 @@ Mutation testing works locally but fails in CI with:
    pytest --gremlins --gremlin-report=html
    ```
 
-   Then open `gremlin-report.html` in your browser for a detailed breakdown of all gremlins and
+   Then open `coverage/gremlins/index.html` in your browser for a detailed breakdown of all gremlins and
    their status.
 
 4. **Disable caching to rule out cache issues:**

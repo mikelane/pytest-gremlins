@@ -8,8 +8,8 @@ results and take action on surviving gremlins.
 | Format | Use Case | Output |
 |--------|----------|--------|
 | `console` | Quick feedback, local development | Terminal output |
-| `html` | Detailed analysis, code review | `gremlin-report.html` |
-| `json` | CI integration, custom tooling | `gremlin-report.json` |
+| `html` | Detailed analysis, code review | `coverage/gremlins/index.html` |
+| `json` | CI integration, custom tooling | `coverage/gremlins/gremlins.json` |
 
 ## Console Report (Default)
 
@@ -96,13 +96,13 @@ pytest --gremlins --gremlin-report=html
 By default, the HTML report is written to:
 
 ```text
-gremlin-report.html
+coverage/gremlins/index.html
 ```
 
 The location is shown in the console output:
 
 ```text
-HTML report written to: /path/to/project/gremlin-report.html
+HTML report written to: /path/to/project/coverage/gremlins/index.html
 ```
 
 ### Report Contents
@@ -203,21 +203,44 @@ The HTML report is self-contained with embedded CSS. Open it directly in any web
 
 ```bash
 # macOS
-open gremlin-report.html
+open coverage/gremlins/index.html
 
 # Linux
-xdg-open gremlin-report.html
+xdg-open coverage/gremlins/index.html
 
 # Windows
-start gremlin-report.html
+start coverage/gremlins/index.html
 ```
+
+### Trend Chart
+
+When you run mutation testing more than once with `--gremlin-report=html`, the HTML report
+includes a line chart showing your mutation score over time. The chart renders after two or
+more runs.
+
+Behind the scenes, `append_history_entry` writes a timestamped score record to a history
+file alongside the HTML report each time you generate one. On the next run, `load_history`
+reads previous entries and passes them to the chart renderer. If the history file is missing
+or corrupted, the report still generates -- you just won't see the chart until the next run
+rebuilds the file.
+
+This is useful for tracking whether your mutation score is trending up or down as your
+project evolves, without needing an external dashboard.
+
+### Accessibility
+
+The HTML report meets WCAG 2.1 AA standards:
+
+- **Contrast ratios** pass for all status colors against both light and dark backgrounds
+- **Keyboard navigation** works for expanding file sections and navigating the results table
+- **Expand-all** handles overflow gracefully so the page remains usable with many files
 
 ### When to Use HTML Report
 
 - Detailed analysis of mutation testing results
 - Code review discussions
 - Sharing results with team members
-- Archiving reports for historical comparison
+- Tracking mutation score trends across runs
 
 ## JSON Report
 
@@ -231,11 +254,13 @@ pytest --gremlins --gremlin-report=json
 
 ### Output Location
 
-By default, the JSON report is written to:
+The JSON report is written to:
 
 ```text
-gremlin-report.json
+coverage/gremlins/gremlins.json
 ```
+
+The directory is created automatically if it does not exist.
 
 ### JSON Schema
 
@@ -247,6 +272,7 @@ gremlin-report.json
     "survived": 18,
     "timeout": 0,
     "error": 0,
+    "pardoned": 0,
     "percentage": 88.75
   },
   "files": {
@@ -296,6 +322,7 @@ gremlin-report.json
 | `survived` | integer | Number of gremlins that escaped |
 | `timeout` | integer | Number of gremlins that caused timeouts |
 | `error` | integer | Number of gremlins that caused errors |
+| `pardoned` | integer | Number of gremlins pardoned via inline pragma |
 | `percentage` | float | Mutation score percentage (0-100) |
 
 **Files Object:**
@@ -318,7 +345,7 @@ A mapping of file paths to per-file statistics:
 | `line_number` | integer | Line number in source |
 | `operator` | string | Operator that created this gremlin |
 | `description` | string | Human-readable mutation description |
-| `status` | string | One of: `zapped`, `survived`, `timeout`, `error` |
+| `status` | string | One of: `zapped`, `survived`, `timeout`, `error`, `pardoned` |
 | `killing_test` | string | Test that caught the mutation (only present if zapped) |
 
 ### Processing JSON Reports
@@ -327,16 +354,16 @@ A mapping of file paths to per-file statistics:
 
 ```bash
 # Get mutation score
-jq '.summary.percentage' gremlin-report.json
+jq '.summary.percentage' coverage/gremlins/gremlins.json
 
 # List surviving gremlins
-jq '.results[] | select(.status == "survived") | "\(.file_path):\(.line_number) - \(.description)"' gremlin-report.json
+jq '.results[] | select(.status == "survived") | "\(.file_path):\(.line_number) - \(.description)"' coverage/gremlins/gremlins.json
 
 # Count gremlins by operator
-jq '.results | group_by(.operator) | map({operator: .[0].operator, count: length})' gremlin-report.json
+jq '.results | group_by(.operator) | map({operator: .[0].operator, count: length})' coverage/gremlins/gremlins.json
 
 # Get per-file breakdown
-jq '.files | to_entries[] | "\(.key): \(.value.percentage)%"' gremlin-report.json
+jq '.files | to_entries[] | "\(.key): \(.value.percentage)%"' coverage/gremlins/gremlins.json
 ```
 
 **Python script example:**
@@ -344,7 +371,7 @@ jq '.files | to_entries[] | "\(.key): \(.value.percentage)%"' gremlin-report.jso
 ```python
 import json
 
-with open('gremlin-report.json') as f:
+with open('coverage/gremlins/gremlins.json') as f:
     report = json.load(f)
 
 print(f"Mutation Score: {report['summary']['percentage']:.1f}%")
@@ -364,17 +391,35 @@ for g in survivors:
 
 ## Multiple Report Formats
 
-Generate multiple formats in a single run:
+Generate multiple formats in a single run using either syntax:
+
+**Comma-separated (v1.5.1+):**
 
 ```bash
-pytest --gremlins --gremlin-report=console,html,json
+pytest --gremlins --gremlin-report=json,html
 ```
 
-This produces:
+**Repeated flags:**
 
-- Console output (terminal)
-- `gremlin-report.html`
-- `gremlin-report.json`
+```bash
+pytest --gremlins --gremlin-report=json --gremlin-report=html
+```
+
+**pyproject.toml:**
+
+```toml
+[tool.pytest-gremlins]
+# List syntax
+report = ["json", "html"]
+
+# Or comma-separated string
+report = "json,html"
+```
+
+Console output always renders regardless of which formats you specify -- you do not need
+to include `console` in the list.
+
+Duplicate formats are deduplicated automatically, and trailing commas are ignored.
 
 ## Interpreting Results
 
@@ -383,8 +428,13 @@ This produces:
 The mutation score is calculated as:
 
 ```text
-score = (zapped + timeout) / total * 100
+score = (zapped + timeout) / (total - pardoned) * 100
 ```
+
+Pardoned gremlins are excluded from the denominator because they represent accepted
+exceptions (equivalent mutants, untestable paths, or out-of-scope code). This means
+pardoning a gremlin does not artificially inflate your score -- it removes the gremlin
+from the scoring pool entirely.
 
 Timeouts count as "zapped" because the mutation was detected (it caused the test to hang).
 
@@ -470,7 +520,7 @@ jobs:
 
       - name: Check mutation score
         run: |
-          SCORE=$(jq '.summary.percentage' gremlin-report.json)
+          SCORE=$(jq '.summary.percentage' coverage/gremlins/gremlins.json)
           echo "Mutation score: $SCORE%"
           if (( $(echo "$SCORE < 80" | bc -l) )); then
             echo "::error::Mutation score $SCORE% is below threshold 80%"
@@ -482,9 +532,7 @@ jobs:
         if: always()
         with:
           name: mutation-report
-          path: |
-            gremlin-report.html
-            gremlin-report.json
+          path: coverage/gremlins/
 ```
 
 ### GitLab CI with Artifacts
@@ -496,7 +544,7 @@ mutation_testing:
     - pip install uv && uv sync
     - uv run pytest --gremlins --gremlin-report=console,html,json
     - |
-      SCORE=$(jq '.summary.percentage' gremlin-report.json)
+      SCORE=$(jq '.summary.percentage' coverage/gremlins/gremlins.json)
       echo "Mutation score: $SCORE%"
       if (( $(echo "$SCORE < 80" | bc -l) )); then
         echo "Mutation score below threshold"
@@ -505,10 +553,9 @@ mutation_testing:
   artifacts:
     when: always
     paths:
-      - gremlin-report.html
-      - gremlin-report.json
+      - coverage/gremlins/
     reports:
-      junit: gremlin-report.json
+      junit: coverage/gremlins/gremlins.json
 ```
 
 ### Jenkins Pipeline
@@ -524,7 +571,7 @@ pipeline {
                 sh 'uv run pytest --gremlins --gremlin-report=json,html'
 
                 script {
-                    def report = readJSON file: 'gremlin-report.json'
+                    def report = readJSON file: 'coverage/gremlins/gremlins.json'
                     def score = report.summary.percentage
 
                     echo "Mutation Score: ${score}%"
@@ -536,13 +583,13 @@ pipeline {
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'gremlin-report.*'
+                    archiveArtifacts artifacts: 'coverage/gremlins/**'
                     publishHTML([
                         allowMissing: false,
                         alwaysLinkToLastBuild: true,
                         keepAll: true,
-                        reportDir: '.',
-                        reportFiles: 'gremlin-report.html',
+                        reportDir: 'coverage/gremlins',
+                        reportFiles: 'index.html',
                         reportName: 'Mutation Testing Report'
                     ])
                 }
@@ -666,7 +713,7 @@ jobs:
           from pathlib import Path
 
           # Load pytest-gremlins output
-          data = json.loads(Path('gremlin-report.json').read_text())
+          data = json.loads(Path('coverage/gremlins/gremlins.json').read_text())
 
           # Note: This requires creating MutationScore from the JSON data
           # In practice, you would save the Stryker format during test execution
@@ -870,10 +917,10 @@ Generate multiple formats in your CI workflow:
     pytest --gremlins --gremlin-report=json,html
 
     # Generate Stryker format
-    python scripts/export_stryker.py gremlin-report.json mutation.json
+    python scripts/export_stryker.py coverage/gremlins/gremlins.json mutation.json
 
     # Generate SonarQube format
-    python scripts/export_sonarqube.py gremlin-report.json mutation-sonar.json
+    python scripts/export_sonarqube.py coverage/gremlins/gremlins.json mutation-sonar.json
 
 - name: Upload to Stryker Dashboard
   run: curl -X PUT ... @mutation.json
