@@ -7,22 +7,8 @@
    CSS Variables - Gremlin Theme
    ============================================ */
 :root {
-  /* Gremlin greens */
   --gremlin-green: #2e7d32;
-  --gremlin-green-light: #4caf50;
   --gremlin-green-dark: #1b5e20;
-  --gremlin-green-pale: #c8e6c9;
-
-  /* Mogwai browns (for contrast) */
-  --mogwai-tan: #d7ccc8;
-  --mogwai-brown: #8d6e63;
-
-  /* Status colors */
-  --zap-color: #ff5722;         /* Kill/zap - orange */
-  --survivor-color: #ffc107;    /* Surviving mutant - amber warning */
-
-  /* Spacing */
-  --content-max-width: 72rem;
 }
 
 /* ============================================
@@ -78,67 +64,6 @@
 }
 
 /* ============================================
-   Admonition Styling - Gremlin Theme
-   ============================================ */
-
-/* Custom gremlin admonition */
-.md-typeset .admonition.gremlin,
-.md-typeset details.gremlin {
-  border-color: var(--gremlin-green);
-}
-
-.md-typeset .gremlin > .admonition-title,
-.md-typeset .gremlin > summary {
-  background-color: var(--gremlin-green-pale);
-  border-color: var(--gremlin-green);
-}
-
-.md-typeset .gremlin > .admonition-title::before,
-.md-typeset .gremlin > summary::before {
-  background-color: var(--gremlin-green);
-  -webkit-mask-image: var(--md-admonition-icon--bug);
-  mask-image: var(--md-admonition-icon--bug);
-}
-
-/* Zap (kill) admonition - for test success */
-.md-typeset .admonition.zap,
-.md-typeset details.zap {
-  border-color: var(--zap-color);
-}
-
-.md-typeset .zap > .admonition-title,
-.md-typeset .zap > summary {
-  background-color: #ffccbc;
-  border-color: var(--zap-color);
-}
-
-.md-typeset .zap > .admonition-title::before,
-.md-typeset .zap > summary::before {
-  background-color: var(--zap-color);
-  -webkit-mask-image: var(--md-admonition-icon--success);
-  mask-image: var(--md-admonition-icon--success);
-}
-
-/* Survivor admonition - for test weaknesses */
-.md-typeset .admonition.survivor,
-.md-typeset details.survivor {
-  border-color: var(--survivor-color);
-}
-
-.md-typeset .survivor > .admonition-title,
-.md-typeset .survivor > summary {
-  background-color: #fff8e1;
-  border-color: var(--survivor-color);
-}
-
-.md-typeset .survivor > .admonition-title::before,
-.md-typeset .survivor > summary::before {
-  background-color: var(--survivor-color);
-  -webkit-mask-image: var(--md-admonition-icon--warning);
-  mask-image: var(--md-admonition-icon--warning);
-}
-
-/* ============================================
    Code Annotations
    ============================================ */
 
@@ -181,161 +106,6 @@
 }
 
 /* ============================================
-   Content Cards (for homepage)
-   ============================================ */
-
-/* Feature cards grid */
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-  margin: 2rem 0;
-}
-
-.feature-card {
-  padding: 1.5rem;
-  border: 1px solid var(--md-default-fg-color--lightest);
-  border-radius: 0.5rem;
-  background-color: var(--md-default-bg-color);
-  transition: box-shadow 0.2s, transform 0.2s;
-}
-
-.feature-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
-}
-
-.feature-card h3 {
-  margin-top: 0;
-  color: var(--gremlin-green);
-}
-
-.feature-card p {
-  margin-bottom: 0;
-  color: var(--md-default-fg-color--light);
-}
-
-/* ============================================
-   Domain Language Highlighting
-   ============================================ */
-
-/* Highlight gremlin terminology */
-.gremlin-term {
-  font-weight: 600;
-  color: var(--gremlin-green);
-}
-
-.mogwai-term {
-  font-weight: 600;
-  color: var(--mogwai-brown);
-}
-
-/* ============================================
-   Status Badges
-   ============================================ */
-
-/* Page status indicators */
-.md-typeset .status {
-  display: inline-block;
-  padding: 0.2em 0.6em;
-  font-size: 0.75em;
-  font-weight: 600;
-  text-transform: uppercase;
-  border-radius: 0.25em;
-  vertical-align: middle;
-  margin-left: 0.5em;
-}
-
-.md-typeset .status--new {
-  background-color: var(--gremlin-green-pale);
-  color: var(--gremlin-green-dark);
-}
-
-.md-typeset .status--beta {
-  background-color: #e3f2fd;
-  color: #1565c0;
-}
-
-.md-typeset .status--deprecated {
-  background-color: #ffebee;
-  color: #c62828;
-}
-
-/* ============================================
-   Progress Bars (for mutation scores)
-   ============================================ */
-
-/* Mutation score progress bar */
-.mutation-score {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin: 1rem 0;
-}
-
-.mutation-score__bar {
-  flex: 1;
-  height: 1.5rem;
-  background-color: var(--md-default-fg-color--lightest);
-  border-radius: 0.25rem;
-  overflow: hidden;
-}
-
-.mutation-score__fill {
-  height: 100%;
-  background-color: var(--gremlin-green);
-  transition: width 0.3s ease;
-}
-
-.mutation-score__fill--warning {
-  background-color: var(--survivor-color);
-}
-
-.mutation-score__fill--danger {
-  background-color: var(--zap-color);
-}
-
-.mutation-score__value {
-  font-weight: 600;
-  min-width: 4rem;
-  text-align: right;
-}
-
-/* ============================================
-   Terminal/Console Output Styling
-   ============================================ */
-
-/* Terminal output styling */
-.md-typeset .terminal {
-  background-color: #1a1a1a;
-  color: #f5f5f5;
-  padding: 1rem;
-  border-radius: 0.5rem;
-  font-family: var(--md-code-font-family);
-  overflow-x: auto;
-}
-
-.md-typeset .terminal .prompt {
-  color: var(--gremlin-green-light);
-}
-
-.md-typeset .terminal .output {
-  color: #bdbdbd;
-}
-
-.md-typeset .terminal .success {
-  color: var(--gremlin-green-light);
-}
-
-.md-typeset .terminal .warning {
-  color: var(--survivor-color);
-}
-
-.md-typeset .terminal .error {
-  color: #ef5350;
-}
-
-/* ============================================
    Mobile Responsiveness
    ============================================ */
 
@@ -348,10 +118,6 @@
 
 @media screen and (max-width: 60em) {
   /* Mobile adjustments */
-  .feature-grid {
-    grid-template-columns: 1fr;
-  }
-
   .md-typeset table:not([class]) {
     font-size: 0.85rem;
   }

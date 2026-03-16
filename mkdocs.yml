@@ -121,7 +121,9 @@ plugins:
 
   # Social cards for link previews (Open Graph/Twitter)
   # Requires: pip install "mkdocs-material[imaging]"
-  # Uncomment when dependencies are installed:
+  # System requirement: cairo graphics library (brew install cairo on macOS,
+  # apt install libcairo2-dev on Ubuntu). RTD builds need .readthedocs.yaml
+  # updated with apt_packages before enabling.
   # - social:
   #     cards_layout_options:
   #       background_color: "#1b5e20"
