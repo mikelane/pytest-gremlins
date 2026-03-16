@@ -177,7 +177,7 @@ max-pardons-pct = 5.0
 | `paths` | list[string] | auto-discovered | Directories or files to scan for source code (falls back to `src/`) |
 | `exclude` | list[string] | `[]` | Glob patterns for files to exclude |
 | `operators` | list[string] | all | Operators to enable, in priority order |
-| `workers` | int or `"auto"` | `1` | Number of parallel workers; `"auto"` resolves to `os.cpu_count()` |
+| `workers` | int or `"auto"` | sequential | No parallelism unless `-n` or `--gremlin-parallel` is used; `"auto"` resolves to `os.cpu_count()` |
 | `cache` | boolean | `false` | Enable incremental analysis cache |
 | `report` | string or list | `"console"` | Report format(s): `"html"`, `"json"`, `"console"`, or a list like `["html", "json"]` |
 | `batch_size` | int | `10` | Number of gremlins per batch in batch execution mode |
@@ -450,7 +450,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mutation-report
-          path: gremlin-report.json
+          path: coverage/gremlins/gremlins.json
 ```
 
 ### GitLab CI
@@ -463,9 +463,9 @@ mutation_testing:
     - uv run pytest --gremlins --gremlin-cache --gremlin-parallel --gremlin-report=json
   artifacts:
     reports:
-      junit: gremlin-report.json
+      junit: coverage/gremlins/gremlins.json
     paths:
-      - gremlin-report.json
+      - coverage/gremlins/
 ```
 
 ### Pre-commit Hook

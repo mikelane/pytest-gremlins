@@ -123,7 +123,7 @@ jobs:
         if: always()
         with:
           name: mutation-report
-          path: gremlin-report.html
+          path: coverage/gremlins/
           retention-days: 30
 ```
 
@@ -251,7 +251,7 @@ mutation-testing:
     policy: pull-push     # Restore before job, save after (even on failure)
   artifacts:
     paths:
-      - gremlin-report.html
+      - coverage/gremlins/
     expire_in: 30 days
     when: always
   rules:
@@ -429,8 +429,8 @@ jobs:
               --gremlin-cache
       - save-gremlin-cache
       - store_artifacts:
-          path: gremlin-report.html
-          destination: mutation-report.html
+          path: coverage/gremlins/
+          destination: mutation-report
 
 workflows:
   version: 2

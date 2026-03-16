@@ -115,7 +115,7 @@ jobs:
         if: always()
         with:
           name: mutation-report
-          path: gremlin-report.html
+          path: coverage/gremlins/
           retention-days: 30
 ```
 
