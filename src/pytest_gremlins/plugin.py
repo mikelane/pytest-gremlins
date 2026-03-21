@@ -16,6 +16,7 @@ from dataclasses import (
     field,
 )
 from enum import Enum
+import functools
 import importlib.util
 import json
 import logging
@@ -941,6 +942,7 @@ def _discover_source_files(
     return source_files
 
 
+@functools.lru_cache(maxsize=256)
 def _glob_to_regex(pattern: str) -> re.Pattern[str]:
     """Convert a glob pattern to a compiled regex with proper ``**`` support.
 
