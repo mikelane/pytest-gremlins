@@ -238,7 +238,7 @@ jobs:
         if: always()
         with:
           name: mutation-report-${{ matrix.package }}
-          path: packages/${{ matrix.package }}/gremlin-report.html
+          path: packages/${{ matrix.package }}/coverage/gremlins/
           retention-days: 14
 
   # Summary job

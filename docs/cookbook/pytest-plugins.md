@@ -132,7 +132,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mutation-report
-          path: gremlin-report.html
+          path: coverage/gremlins/
 ```
 
 ### Verification
@@ -148,7 +148,7 @@ jobs:
 
    ```bash
    pytest --gremlins --gremlin-report=html
-   open gremlin-report.html
+   open coverage/gremlins/index.html
    ```
 
 3. Both should complete without errors
@@ -711,5 +711,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: mutation-report
-          path: gremlin-report.html
+          path: coverage/gremlins/
 ```

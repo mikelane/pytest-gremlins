@@ -57,10 +57,11 @@ A `Gremlin` represents a single mutation injected into source code.
 | `gremlin_id` | `str` | Unique identifier (e.g., 'g001', 'g002') |
 | `file_path` | `str` | Path to source file containing the mutation |
 | `line_number` | `int` | Line number where mutation occurs |
-| `original_node` | `ast.AST` | Original AST node before mutation |
-| `mutated_node` | `ast.AST` | Mutated AST node |
+| `original_node` | `ast.expr \| ast.stmt` | Original AST node before mutation |
+| `mutated_node` | `ast.expr \| ast.stmt` | Mutated AST node |
 | `operator_name` | `str` | Name of operator that created this mutation |
 | `description` | `str` | Human-readable description (e.g., '>= to >') |
+| `pardoned` | `bool` | True when an inline pardon pragma covers this mutation (default False) |
 
 ### Example
 

@@ -43,8 +43,10 @@ def is_adult(age):
     return age >= 18
 
 # Instrumented code (simplified)
+import os as __gremlin_os__
+
 def is_adult(age):
-    _g = __gremlin_active__
+    _g = __gremlin_os__.environ.get('ACTIVE_GREMLIN', '')
     if _g == "g001": return age > 18   # >= to >
     if _g == "g002": return age <= 18  # >= to <=
     if _g == "g003": return age < 18   # >= to <
@@ -241,7 +243,7 @@ A project with:
 
 | Approach | Time |
 |----------|------|
-| Naive (mutmut-style) | ~8 hours |
+| No coverage guidance or caching | ~8 hours |
 | Mutation switching only | ~2 hours |
 | + Coverage guidance | ~2-10 minutes |
 | + Parallel execution | ~15-75 seconds |
@@ -270,21 +272,24 @@ No tuning needed - it is always faster than file modification.
 
 ### Coverage Guidance
 
-```toml
-[tool.pytest-gremlins]
-# Minimum test execution threshold before coverage guidance kicks in
-coverage_guidance_threshold = 10
-```
+Coverage guidance is built in and always active. No separate configuration is needed.
 
 ### Incremental Analysis
 
 ```toml
 [tool.pytest-gremlins]
-# Cache location (default: .gremlins_cache)
-cache_dir = ".gremlins_cache"
+# Enable the incremental analysis cache
+cache = true
+```
+
+Or from the command line:
+
+```bash
+# Enable caching
+pytest --gremlins --gremlin-cache
 
 # Clear cache for fresh analysis
-# pytest --gremlins --clear-cache
+pytest --gremlins --gremlin-clear-cache
 ```
 
 ### Parallel Execution
@@ -294,8 +299,15 @@ cache_dir = ".gremlins_cache"
 # Number of worker processes (default: CPU count)
 workers = 8
 
-# Or use 'auto' to let pytest-gremlins decide
+# Or use "auto" to match your CPU count
 workers = "auto"
+```
+
+Or from the command line:
+
+```bash
+pytest --gremlins --gremlin-parallel
+pytest --gremlins --gremlin-workers=8
 ```
 
 ## When Speed Still Is Not Enough

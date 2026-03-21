@@ -16,11 +16,13 @@ After mutation testing completes, results need to be presented clearly:
 ```python
 from pytest_gremlins.reporting import (
     GremlinResult,       # Individual mutation test result
-    GremlinResultStatus, # Status enum (ZAPPED, SURVIVED, etc.)
+    GremlinResultStatus, # Status enum (ZAPPED, SURVIVED, PARDONED, etc.)
     MutationScore,       # Aggregated statistics
     ConsoleReporter,     # Terminal output
     HtmlReporter,        # HTML file output
     JsonReporter,        # JSON file output
+    SonarQubeExporter,   # SonarQube generic issue format
+    StrykerExporter,     # Stryker Dashboard compatible format
 )
 ```
 
@@ -90,6 +92,7 @@ Enum of possible mutation test outcomes.
 | `SURVIVED` | Mutation not caught | Bad - test gap found |
 | `TIMEOUT` | Test execution timed out | Neutral - may indicate infinite loop |
 | `ERROR` | Error during execution | Neutral - investigate |
+| `PARDONED` | Explicitly suppressed via pragma | Neutral - excluded from scoring |
 
 ### Usage Example
 
@@ -124,6 +127,7 @@ Aggregated mutation testing statistics.
 | `survived` | `int` | Gremlins that escaped |
 | `timeout` | `int` | Gremlins that timed out |
 | `error` | `int` | Gremlins with errors |
+| `pardoned` | `int` | Gremlins explicitly pardoned (excluded from scoring) |
 | `results` | `tuple[GremlinResult, ...]` | All results |
 
 ### MutationScore Methods
@@ -140,7 +144,7 @@ Aggregated mutation testing statistics.
 The mutation score represents test effectiveness:
 
 ```text
-score = (zapped + timeout) / total * 100
+score = (zapped + timeout) / (total - pardoned) * 100
 ```
 
 Timeouts count as "caught" because the test detected abnormal behavior.
@@ -388,8 +392,8 @@ pytest --gremlins --gremlin-report=console,html,json
 | Format | Default Location |
 |--------|------------------|
 | Console | stdout |
-| HTML | `mutation_report.html` |
-| JSON | `mutation_report.json` |
+| HTML | `coverage/gremlins/index.html` (customizable via `--gremlins-html-dir`) |
+| JSON | `coverage/gremlins/gremlins.json` |
 
 ---
 

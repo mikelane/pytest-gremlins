@@ -130,35 +130,14 @@ By default, pytest-gremlins stores the cache in your project:
 
 ```text
 .gremlins_cache/
-  metadata.json        # Version, timestamps
-  coverage_map.json    # Coverage data
-  results/
-    abc123.json        # Results keyed by hash
-    def456.json
-    ...
+  results.db           # SQLite database of cached gremlin results
 ```
 
 ### Cache Format
 
-Each cached result contains:
-
-```json
-{
-  "key": "abc123_def456_comparison_42_8_gt_0.1.0",
-  "mutation": {
-    "id": "g_auth_42_comparison_gt",
-    "file": "src/auth.py",
-    "line": 42,
-    "operator": "comparison",
-    "original": ">=",
-    "mutated": ">"
-  },
-  "result": "killed",
-  "killed_by": "tests/test_auth.py::test_boundary_age",
-  "execution_time_ms": 23,
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
+Results are stored in a SQLite database (`results.db`). Each row records
+the cache key (built from gremlin ID, source hash, and test hashes) along
+with the gremlin's outcome (zapped, survived, timeout, or error).
 
 ### Cache Size
 
@@ -174,29 +153,21 @@ Storage is cheap; re-running analysis is expensive.
 
 ## Configuration
 
-### Cache Location
+### Enabling Cache
+
+Pass `--gremlin-cache` on the command line, or set `cache = true` in `pyproject.toml`:
 
 ```toml
 [tool.pytest-gremlins]
-cache_dir = ".gremlins_cache"  # default
+cache = true
 ```
 
-Or use an environment variable:
+### Clearing Cache
+
+To discard all cached results and start fresh:
 
 ```bash
-export PYTEST_GREMLINS_CACHE_DIR="/tmp/gremlins_cache"
-```
-
-### Disabling Cache
-
-For CI or when you want fresh results:
-
-```bash
-# Ignore cache, run fresh analysis
-pytest --gremlins --no-cache
-
-# Clear cache, then run
-pytest --gremlins --clear-cache
+pytest --gremlins --gremlin-clear-cache
 ```
 
 ### Cache Sharing
@@ -326,60 +297,15 @@ Minor version bumps (0.1.0 -> 0.1.1) preserve cache compatibility. Major changes
 
 ## Debugging Cache Behavior
 
-### Cache Status
+To force a clean re-analysis, clear the cache before running:
 
 ```bash
-# Show cache statistics
-pytest --gremlins --cache-stats
+pytest --gremlins --gremlin-clear-cache --gremlin-cache
 ```
 
-Output:
+The cache directory (`.gremlins_cache/`) can also be deleted manually.
 
-```text
-Cache Statistics:
-  Location: .gremlins_cache
-  Total entries: 1,234
-  Cache size: 1.2 MB
-  Hit rate: 87%
-  Last full run: 2024-01-15 10:30:00
-
-By file:
-  src/auth.py: 150 entries (all valid)
-  src/shipping.py: 200 entries (50 invalidated)
-  src/utils.py: 100 entries (all valid)
-```
-
-### Why Was Something Re-Analyzed?
-
-```bash
-# Show why a mutation was not cached
-pytest --gremlins --explain-cache g_auth_42_comparison
-```
-
-Output:
-
-```text
-Mutation g_auth_42_comparison cache status: MISS
-
-Reason: source file changed
-  Previous hash: abc123
-  Current hash: xyz789
-  Changed lines: 40-45
-
-Will re-analyze with tests:
-  - test_login_success
-  - test_login_failure
-```
-
-### Force Re-Analysis
-
-```bash
-# Re-analyze specific files even if cached
-pytest --gremlins --reanalyze src/auth.py
-
-# Re-analyze mutations for a specific test
-pytest --gremlins --reanalyze-tests tests/test_auth.py
-```
+<!-- TODO: verify whether --cache-stats, --explain-cache, --reanalyze flags are planned -->
 
 ## Trade-offs
 
@@ -389,27 +315,24 @@ If cache invalidation has bugs, results could be stale. Mitigations:
 
 - Conservative invalidation (when in doubt, re-analyze)
 - Version-based cache clearing
-- `--no-cache` flag for verification
+- `--gremlin-clear-cache` flag for verification
 
 ### Disk Space
 
-The cache uses disk space. For most projects, this is negligible (< 10 MB). For very large projects, configure a size limit:
-
-```toml
-[tool.pytest-gremlins]
-cache_max_size_mb = 100  # Evict oldest entries when exceeded
-```
+The cache uses disk space. For most projects, this is negligible (< 10 MB). The
+`.gremlins_cache/` directory can be deleted at any time to reclaim space.
 
 ### Cache Warming
 
-The first run (or after cache clear) is slow. For CI, consider:
+The first run (or after cache clear) is slow. For CI, consider running a full
+analysis nightly and using the warmed cache for PR checks:
 
 ```bash
-# Nightly: full analysis, cache warm
-pytest --gremlins --full
+# Nightly: full analysis, populates cache
+pytest --gremlins --gremlin-cache
 
-# PR checks: use warmed cache
-pytest --gremlins --incremental
+# PR checks: reuses warmed cache, only re-tests changed files
+pytest --gremlins --gremlin-cache
 ```
 
 ## Inspiration and Prior Art

@@ -44,19 +44,26 @@ Four pillars drive our speed strategy:
 pytest-gremlins/
 ├── src/pytest_gremlins/      # Source code
 │   ├── __init__.py           # Package init with version
+│   ├── config.py             # Configuration loading from pyproject.toml
 │   ├── plugin.py             # pytest plugin hooks
-│   └── py.typed              # PEP 561 marker
+│   ├── py.typed              # PEP 561 marker
+│   ├── cache/                # Incremental analysis cache
+│   ├── coverage/             # Coverage-guided test selection
+│   ├── instrumentation/      # AST transformation and mutation switching
+│   ├── operators/            # Mutation operator definitions
+│   ├── parallel/             # Parallel execution support
+│   └── reporting/            # Result reporting (console, HTML, JSON)
 ├── tests/
 │   ├── conftest.py           # Shared fixtures
+│   ├── benchmark/            # Benchmark tests
 │   ├── cache/                # Cache domain tests
 │   ├── config/               # Config domain tests
-│   ├── coverage/             # Coverage domain tests
+│   ├── coverage_module/      # Coverage domain tests
 │   ├── instrumentation/      # Instrumentation domain tests
 │   ├── operators/            # Operator domain tests
 │   ├── parallel/             # Parallel domain tests
 │   ├── plugin/               # Plugin integration tests
-│   ├── reporting/            # Reporting domain tests
-│   └── large/                # E2E tests (< 60s)
+│   └── reporting/            # Reporting domain tests
 ├── features/                 # Gherkin scenarios
 ├── docs/
 │   └── design/               # Design documents
@@ -151,19 +158,21 @@ the next run only re-tests what changed.
 
 ## Release Process
 
-**Never run `cz bump` locally.** The `no-commit-to-branch` pre-commit hook blocks commits
-to `main`, so a local bump will fail mid-run and leave a dirty version bump to revert.
+**Step 1 -- Update CHANGELOG.md.** The workflow guard fails if there are no commits since
+the last tag -- the changelog commit is what satisfies it. Add a `## vX.Y.Z (date)` entry
+above the most recent section. Merge the CHANGELOG PR to main before proceeding.
 
-Use the workflow dispatch instead:
+**Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`
+pre-commit hook blocks commits to `main` and leaves a dirty version bump to revert.
 
 ```bash
-gh workflow run cut-release.yml --repo SayMoreAI/pytest-gremlins
+gh workflow run cut-release.yml --repo mikelane/pytest-gremlins
 ```
 
 This runs `cz bump` on the GitHub Actions runner (no local hooks), commits the version,
-creates an annotated tag, and pushes — which triggers `release.yml`.
+creates an annotated tag, and pushes -- which triggers `release.yml`.
 
-After dispatching, verify the tag landed:
+**Step 3 -- Verify the tag landed:**
 
 ```bash
 git fetch --tags

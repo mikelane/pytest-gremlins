@@ -21,7 +21,10 @@ Parallel execution:
 The mutation switching architecture makes parallelization safe because each worker operates
 independently with its own `ACTIVE_GREMLIN` environment variable.
 
-## Module Exports
+## Module Imports
+
+The parallel package does not re-export its classes from `__init__.py`.
+Import directly from the submodules:
 
 ```python
 from pytest_gremlins.parallel.pool import WorkerPool, WorkerResult

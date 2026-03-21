@@ -359,21 +359,19 @@ pytest --gremlins --gremlin-operators=comparison,boolean
 # And so on...
 ```
 
-## Operator Priority
+## Operator Execution Order
 
-When pytest-gremlins runs, operators execute in priority order. Higher-priority gremlins are tested
-first for faster feedback.
+When pytest-gremlins runs, operators execute in the order they are registered. The default
+registration order is:
 
-Default priority (highest first):
+1. **comparison**
+2. **arithmetic**
+3. **boolean**
+4. **boundary**
+5. **return**
 
-1. **comparison** - Most likely to catch real bugs
-2. **boundary** - Boundary conditions are critical
-3. **boolean** - Logic errors are common
-4. **return** - Return values must be verified
-5. **arithmetic** - Calculation errors
-
-This means if you have a time budget and need to stop early, the most valuable gremlins are
-tested first.
+When you specify operators via `--gremlin-operators` or `[tool.pytest-gremlins] operators`,
+they execute in the order you list them.
 
 ## Understanding Gremlin Output
 

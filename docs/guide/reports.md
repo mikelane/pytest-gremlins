@@ -48,7 +48,7 @@ Run with --gremlin-report=html for detailed report.
 =====================================================================
 ```
 
-Timeout and Error lines only appear when their count is greater than zero.
+Timeout, Error, and Pardoned lines only appear when their count is greater than zero.
 
 ### Console Output Sections
 
@@ -60,6 +60,7 @@ Timeout and Error lines only appear when their count is greater than zero.
 | Survived | Number and percentage of gremlins that escaped tests |
 | Timeout | Number and percentage of gremlins that caused test timeouts (shown when > 0) |
 | Error | Number and percentage of gremlins that caused errors (shown when > 0) |
+| Pardoned | Number of gremlins pardoned via inline pragma, excluded from score (shown when > 0) |
 
 **Top Surviving Gremlins:**
 
@@ -294,17 +295,17 @@ The directory is created automatically if it does not exist.
       "gremlin_id": "g001",
       "file_path": "src/auth.py",
       "line_number": 42,
+      "status": "survived",
       "operator": "comparison",
-      "description": ">= -> >",
-      "status": "survived"
+      "description": ">= -> >"
     },
     {
       "gremlin_id": "g002",
       "file_path": "src/utils.py",
       "line_number": 17,
+      "status": "zapped",
       "operator": "arithmetic",
       "description": "+ -> -",
-      "status": "zapped",
       "killing_test": "test_utils.py::test_calculate"
     }
   ]
@@ -343,9 +344,9 @@ A mapping of file paths to per-file statistics:
 | `gremlin_id` | string | Unique identifier for this gremlin |
 | `file_path` | string | Source file path |
 | `line_number` | integer | Line number in source |
+| `status` | string | One of: `zapped`, `survived`, `timeout`, `error`, `pardoned` |
 | `operator` | string | Operator that created this gremlin |
 | `description` | string | Human-readable mutation description |
-| `status` | string | One of: `zapped`, `survived`, `timeout`, `error`, `pardoned` |
 | `killing_test` | string | Test that caught the mutation (only present if zapped) |
 
 ### Processing JSON Reports

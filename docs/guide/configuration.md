@@ -7,14 +7,16 @@ documents all configuration options with examples.
 
 Configuration values are resolved in this order (highest priority first):
 
-1. **Command-line options** - Flags passed to pytest (e.g., `--gremlin-targets`)
-2. **pyproject.toml** - `[tool.pytest-gremlins]` section
-3. **Setuptools metadata** - `[tool.setuptools]` package config in `pyproject.toml`
-4. **Built-in defaults** - Falls back to `src/` directory
+1. **Command-line options** -- Flags passed to pytest (e.g., `--gremlin-targets`)
+2. **pyproject.toml** -- `[tool.pytest-gremlins]` section
 
-When the same option is specified at multiple levels, the higher-priority value wins. For most
-projects with a standard `pyproject.toml`, source paths are auto-discovered and no configuration
-is needed.
+When the same option is specified at both levels, the CLI value wins. This applies to all nine
+configurable fields (operators, paths, exclude, workers, cache, report, batch_size, max_pardons,
+max-pardons-pct).
+
+**Source path auto-discovery** is a separate mechanism that kicks in only when neither
+`--gremlin-targets` nor `[tool.pytest-gremlins] paths` is set. It tries seven strategies in
+order (see [Troubleshooting](#troubleshooting-configuration) for the full list).
 
 ## Command-Line Options Reference
 
@@ -28,7 +30,7 @@ All command-line options are prefixed with `--gremlin` or `--gremlins`.
 | `--gremlin-operators` | string | all | Comma-separated list of operators to use |
 | `--gremlin-targets` | string | auto-discovered | Comma-separated list of files/directories to mutate (see [precedence](#configuration-precedence)) |
 | `--gremlin-exclude` | string | none | Glob pattern to exclude from mutation (repeatable, overrides pyproject.toml) |
-| `--gremlin-report` | string | `console` | Report format: `console`, `html`, or `json` |
+| `--gremlin-report` | string | `console` | Report format: `console`, `html`, or `json` (repeatable: pass multiple times to combine formats) |
 
 ### Performance Options
 
@@ -40,6 +42,21 @@ All command-line options are prefixed with `--gremlin` or `--gremlins`.
 | `--gremlin-workers` | integer | CPU count | Number of parallel workers (implies `--gremlin-parallel`) |
 | `--gremlin-batch` | flag | `false` | Enable batch execution mode |
 | `--gremlin-batch-size` | integer | `10` | Number of gremlins per batch |
+
+### Output Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--gremlins-html-dir` | string | `coverage/gremlins/` | Custom output directory for the HTML report |
+
+### Pardon Enforcement Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--strict-pardons` | flag | `false` | Treat pardoned gremlins as CI failures |
+| `--gremlin-audit-pardons` | flag | `false` | List all active suppression pragmas with location, reason, and justification |
+| `--gremlin-max-pardons-pct` | float | disabled | Fail if pardoned gremlins exceed this percentage of total |
+| `--max-pardons` | integer | disabled | Fail if absolute pardoned gremlin count exceeds N |
 
 ### Usage Examples
 
@@ -85,6 +102,18 @@ pytest --gremlins --gremlin-operators=comparison,boolean
 pytest --gremlins --gremlin-report=html
 ```
 
+**Generate both HTML and JSON reports (repeatable flag):**
+
+```bash
+pytest --gremlins --gremlin-report=html --gremlin-report=json
+```
+
+**Custom HTML output directory:**
+
+```bash
+pytest --gremlins --gremlin-report=html --gremlins-html-dir=reports/mutations
+```
+
 **Enable incremental caching:**
 
 ```bash
@@ -113,6 +142,18 @@ pytest --gremlins --gremlin-workers=4
 
 ```bash
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
+```
+
+**Audit all active pardon pragmas:**
+
+```bash
+pytest --gremlins --gremlin-audit-pardons
+```
+
+**Treat pardoned gremlins as failures (strict mode):**
+
+```bash
+pytest --gremlins --strict-pardons
 ```
 
 **Combine multiple options:**

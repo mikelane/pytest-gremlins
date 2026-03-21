@@ -170,10 +170,10 @@ features/
 
 ```bash
 # 1. Create isolated worktree
-git worktree add ../pytest-gremlins-feature-xyz feature/xyz
+git worktree add .worktrees/feature-xyz -b feature/xyz
 
 # 2. Navigate to worktree
-cd ../pytest-gremlins-feature-xyz
+cd .worktrees/feature-xyz
 
 # 3. Write Gherkin scenarios (if not already done)
 # 4. Write step definitions (failing tests)
@@ -208,7 +208,7 @@ gt push
 
 ```bash
 # Remove worktree after merge
-git worktree remove ../pytest-gremlins-feature-xyz
+git worktree remove .worktrees/feature-xyz
 ```
 
 ---
@@ -271,11 +271,11 @@ Fixes #57
 # List active worktrees
 git worktree list
 
-# Create worktree for feature
-git worktree add ../pytest-gremlins-{branch-name} {branch-name}
+# Create worktree for feature (always inside .worktrees/)
+git worktree add .worktrees/{branch-name} -b {branch-name}
 
 # Remove when done
-git worktree remove ../pytest-gremlins-{branch-name}
+git worktree remove .worktrees/{branch-name}
 ```
 
 ---
@@ -295,49 +295,70 @@ pytest-gremlins/
 ├── src/
 │   └── pytest_gremlins/
 │       ├── __init__.py
+│       ├── config.py           # Configuration loading
 │       ├── plugin.py           # pytest plugin hooks
 │       ├── operators/
 │       │   ├── __init__.py
-│       │   ├── base.py         # GremlinOperator protocol
+│       │   ├── protocol.py     # GremlinOperator protocol
 │       │   ├── registry.py     # OperatorRegistry
 │       │   ├── comparison.py
 │       │   ├── arithmetic.py
-│       │   └── boolean.py
+│       │   ├── boolean.py
+│       │   ├── boundary.py
+│       │   └── return_value.py
 │       ├── instrumentation/
 │       │   ├── __init__.py
+│       │   ├── gremlin.py      # Gremlin dataclass
 │       │   ├── transformer.py  # AST transformation
-│       │   └── switcher.py     # Mutation switching logic
+│       │   ├── switcher.py     # Mutation switching logic
+│       │   ├── finder.py       # Mutation point finder
+│       │   ├── import_hooks.py # Import interception
+│       │   └── pragma.py       # Pardon pragma parsing
 │       ├── coverage/
 │       │   ├── __init__.py
-│       │   └── mapper.py       # Coverage-guided selection
-│       ├── history/
+│       │   ├── mapper.py       # Coverage-guided selection
+│       │   ├── collector.py    # Coverage data collection
+│       │   ├── context_plugin.py # Coverage.py dynamic context
+│       │   ├── selector.py     # Test selection
+│       │   └── prioritized_selector.py
+│       ├── cache/
 │       │   ├── __init__.py
-│       │   └── database.py     # Incremental analysis storage
+│       │   ├── hasher.py       # Content hashing
+│       │   ├── store.py        # SQLite result cache
+│       │   └── incremental.py  # Cache coordinator
+│       ├── parallel/
+│       │   ├── __init__.py
+│       │   ├── pool.py         # Worker pool
+│       │   ├── batch_executor.py
+│       │   ├── aggregator.py
+│       │   └── distribution.py
 │       └── reporting/
 │           ├── __init__.py
+│           ├── results.py      # GremlinResult dataclass
+│           ├── score.py        # MutationScore
 │           ├── console.py
-│           └── html.py
+│           ├── html.py
+│           ├── json_reporter.py
+│           └── history.py      # Run history tracking
 ├── tests/
 │   ├── conftest.py
-│   ├── small/                  # Fast, isolated unit tests
-│   │   └── pytest_gremlins/
-│   │       ├── operators/
-│   │       ├── instrumentation/
-│   │       └── ...
-│   ├── medium/                 # Integration tests
-│   │   └── pytest_gremlins/
-│   │       └── ...
-│   └── large/                  # End-to-end, real filesystem
-│       └── pytest_gremlins/
-│           └── ...
+│   ├── benchmark/              # Benchmark tests
+│   ├── cache/                  # Cache domain tests
+│   ├── config/                 # Config domain tests
+│   ├── coverage_module/        # Coverage domain tests
+│   ├── instrumentation/        # Instrumentation domain tests
+│   ├── operators/              # Operator domain tests
+│   ├── parallel/               # Parallel domain tests
+│   ├── plugin/                 # Plugin integration tests
+│   └── reporting/              # Reporting domain tests
 ├── features/                   # Gherkin scenarios
 │   └── ...
 ├── docs/
 │   ├── design/
 │   │   ├── NORTH_STAR.md
 │   │   ├── OPERATORS.md
-│   │   └── AGENT_GUIDELINES.md
-│   ├── user-guide/
+│   │   ├── AGENT_GUIDELINES.md
+│   │   └── XDIST_INTEGRATION.md
 │   ├── api/
 │   └── changelog.md
 ├── pyproject.toml
@@ -481,28 +502,21 @@ We dogfood [pytest-test-categories](https://github.com/mikelane/pytest-test-cate
 
 ### Test File Organization
 
+Tests are organized by domain module, not by test size. Test size categories
+(small, medium, large) are assigned via pytest markers, not directory nesting:
+
 ```text
 tests/
 ├── conftest.py              # Shared fixtures
-├── small/
-│   └── pytest_gremlins/
-│       ├── operators/
-│       │   ├── test_comparison.py
-│       │   ├── test_arithmetic.py
-│       │   └── test_boolean.py
-│       ├── instrumentation/
-│       │   ├── test_transformer.py
-│       │   └── test_switcher.py
-│       └── ...
-├── medium/
-│   └── pytest_gremlins/
-│       ├── test_plugin_integration.py
-│       ├── test_coverage_mapping.py
-│       └── ...
-└── large/
-    └── pytest_gremlins/
-        ├── test_real_project.py
-        └── test_cli_workflow.py
+├── benchmark/               # Benchmark tests
+├── cache/                   # Cache domain tests
+├── config/                  # Config domain tests
+├── coverage_module/         # Coverage domain tests
+├── instrumentation/         # Instrumentation domain tests
+├── operators/               # Operator domain tests
+├── parallel/                # Parallel domain tests
+├── plugin/                  # Plugin integration tests
+└── reporting/               # Reporting domain tests
 ```
 
 ### Test Naming
@@ -566,19 +580,19 @@ CI fails if coverage drops below thresholds.
 
 ```bash
 # All small tests (fast, always safe)
-uv run pytest tests/small -m small
+uv run pytest tests -m small
 
 # Small + medium (PR checks)
-uv run pytest tests/small tests/medium -m "small or medium"
+uv run pytest tests -m "small or medium"
 
 # All tests including large (nightly/release)
 uv run pytest
 
 # Single test file
-uv run pytest tests/small/pytest_gremlins/operators/test_comparison.py
+uv run pytest tests/operators/test_comparison.py
 
 # Single test
-uv run pytest tests/small/pytest_gremlins/operators/test_comparison.py::test_comparison_operator_returns_mutations
+uv run pytest tests/operators/test_comparison.py::test_comparison_operator_returns_mutations
 
 # With coverage
 uv run pytest --cov=pytest_gremlins --cov-report=html
@@ -726,7 +740,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: uv sync
-      - run: uv run pytest tests/small tests/medium --cov=pytest_gremlins
+      - run: uv run pytest tests -m "small or medium" --cov=pytest_gremlins
       - uses: codecov/codecov-action@v4
 
   docs:

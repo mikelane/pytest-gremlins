@@ -11,7 +11,7 @@ This guide provides a fair, factual comparison of pytest-gremlins with other Pyt
 | ------- | --------------- | ------ | ---------- | -------- |
 | **Speed Architecture** | Mutation switching | Environment variable switching (fork-based) | Import hooks (custom finder/loader) | `__pycache__` modification |
 | **pytest Integration** | Native plugin | Runs pytest externally | Standalone CLI | Standalone CLI |
-| **Parallelization** | Built-in (pytest-xdist) | Built-in (v3+) | Celery distributors (multi-machine) | Built-in (Python 3.8+) |
+| **Parallelization** | Built-in worker pool + pytest-xdist | Built-in (v3+) | Celery distributors (multi-machine) | Built-in (Python 3.8+) |
 | **Coverage Guidance** | Yes (built-in) | Yes (`mutate_only_covered_lines`) | Yes | Yes |
 | **Incremental Runs** | Yes (hash-based cache) | Limited (improvements being upstreamed) | Yes (session database) | Limited |
 | **GitHub Action** | Yes | No | No | No |
@@ -159,7 +159,7 @@ pytest-gremlins workflow:
 | Mutation switching | Yes (env var + subprocess) | Yes (env var + fork) | No | No |
 | Coverage-guided test selection | Yes | Yes (`mutate_only_covered_lines`) | Yes | Yes |
 | Incremental analysis | Hash-based | Yes (`mutants/` dir) | Session-based | Limited |
-| Parallel execution | pytest-xdist | Built-in | Celery distributors | Multiprocessing |
+| Parallel execution | Built-in worker pool + pytest-xdist | Built-in | Celery distributors | Multiprocessing |
 | GitHub Action | Yes | No | No | No |
 
 **Mutation switching** is the key architectural difference. Traditional tools modify files, reload

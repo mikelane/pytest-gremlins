@@ -1,7 +1,7 @@
 # xdist Deep Integration Design
 
 > **Issue:** #181 — `pytest --gremlins -n auto --cov` produces incorrect results
-> **Status:** Design proposal, pre-implementation
+> **Status:** Implemented
 > **Date:** 2026-02-20
 
 ---

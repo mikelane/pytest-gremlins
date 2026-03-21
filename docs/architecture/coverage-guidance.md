@@ -176,35 +176,12 @@ pytest-gremlins uses branch coverage when available to improve test selection ac
 
 ## Configuration
 
-### Enabling Coverage Guidance
+Coverage guidance is built into the plugin and is always active when `--gremlins` is
+enabled. There are no separate TOML keys or CLI flags to toggle it -- pytest-gremlins
+automatically collects per-test coverage data and uses it for test selection.
 
-Coverage guidance is enabled by default. Disable it if needed:
-
-```toml
-[tool.pytest-gremlins]
-coverage_guidance = true  # default
-```
-
-### Pre-existing Coverage Data
-
-If you already have coverage data from CI, pytest-gremlins can use it:
-
-```bash
-# Use existing coverage.json
-pytest --gremlins --coverage-data=coverage.json
-```
-
-### Coverage Collection Options
-
-```toml
-[tool.pytest-gremlins]
-# Include branch coverage (more accurate but slower to collect)
-coverage_branch = true
-
-# Minimum number of tests before coverage guidance kicks in
-# (for very small test suites, the overhead is not worth it)
-coverage_threshold = 10
-```
+<!-- TODO: verify whether coverage_guidance, coverage_branch,
+     coverage_threshold config keys are planned for a future version -->
 
 ## Edge Cases
 
@@ -248,51 +225,17 @@ pytest-gremlins tracks the actual runtime coverage, so if `test_click` only call
 
 ## Debugging Coverage Issues
 
-### Why did my test not run?
+To understand why a mutation survived, generate an HTML report which shows
+each gremlin's status, the covering tests, and the mutation applied:
 
 ```bash
-# Show which tests cover a specific line
-pytest --gremlins --show-coverage src/auth.py:42
+pytest --gremlins --gremlin-report=html
 ```
 
-Output:
+The HTML report lists each surviving gremlin with its file, line, operator,
+and description, giving you enough context to add the missing test.
 
-```text
-Line src/auth.py:42 is covered by:
-  - tests/test_auth.py::test_login_success
-  - tests/test_auth.py::test_login_failure
-```
-
-### Why did a mutation survive?
-
-If a mutation survives unexpectedly, check coverage:
-
-```bash
-# Show coverage report for a surviving gremlin
-pytest --gremlins --explain-survivor g_auth_42_comparison
-```
-
-Output:
-
-```text
-Gremlin g_auth_42_comparison (src/auth.py:42)
-  Mutation: >= to >
-  Covering tests: test_login_success, test_login_failure
-  Test results:
-    - test_login_success: PASSED (did not detect mutation)
-    - test_login_failure: PASSED (did not detect mutation)
-
-Suggestion: Add a test that verifies the boundary condition (age == 18)
-```
-
-### Refreshing Coverage Data
-
-Coverage data can become stale. Refresh it:
-
-```bash
-# Force coverage recollection
-pytest --gremlins --refresh-coverage
-```
+<!-- TODO: verify whether --show-coverage, --explain-survivor, --refresh-coverage flags are planned -->
 
 ## Performance Characteristics
 

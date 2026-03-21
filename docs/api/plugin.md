@@ -20,14 +20,20 @@ The plugin handles:
 |--------|---------|-------------|
 | `--gremlins` | `False` | Enable mutation testing |
 | `--gremlin-operators` | All | Comma-separated list of operators to use |
-| `--gremlin-report` | `console` | Report format: `console`, `html`, `json` |
-| `--gremlin-targets` | `src/` | Comma-separated source directories/files |
+| `--gremlin-report` | `console` | Report format: `console`, `html`, `json` (repeatable) |
+| `--gremlin-targets` | None (auto-discovered) | Comma-separated source directories/files |
+| `--gremlin-exclude` | None | Glob patterns to exclude from mutation (repeatable) |
 | `--gremlin-cache` | `False` | Enable incremental analysis cache |
 | `--gremlin-clear-cache` | `False` | Clear cache before running |
 | `--gremlin-parallel` | `False` | Enable parallel execution |
 | `--gremlin-workers` | CPU count | Number of parallel workers |
 | `--gremlin-batch` | `False` | Enable batch execution mode |
 | `--gremlin-batch-size` | `10` | Gremlins per batch |
+| `--gremlins-html-dir` | None | Output directory for HTML reports |
+| `--strict-pardons` | `False` | Treat pardoned gremlins as CI failures (exit non-zero if any exist) |
+| `--gremlin-audit-pardons` | `False` | Audit pardon pragma usage |
+| `--gremlin-max-pardons-pct` | None | Maximum percentage of pardoned gremlins |
+| `--max-pardons` | None | Maximum absolute number of pardoned gremlins |
 
 ## Usage Examples
 
@@ -89,8 +95,24 @@ operators = ["comparison", "arithmetic", "boolean"]
 # Source paths to mutate
 paths = ["src/mypackage"]
 
-# Patterns to exclude (not yet implemented)
+# Glob patterns to exclude from mutation
 exclude = ["**/migrations/**"]
+
+# Number of parallel workers ("auto" or an integer)
+workers = "auto"
+
+# Enable incremental analysis cache
+cache = true
+
+# Report formats
+report = ["html", "json"]
+
+# Gremlins per batch in batch mode
+batch_size = 20
+
+# Pardon budget (percentage and absolute cap)
+max-pardons-pct = 5.0
+max_pardons = 10
 ```
 
 ### Configuration Precedence
@@ -111,6 +133,12 @@ exclude = ["**/migrations/**"]
         - operators
         - paths
         - exclude
+        - workers
+        - cache
+        - report
+        - batch_size
+        - max_pardons_pct
+        - max_pardons
 
 ## Configuration Functions
 
@@ -141,7 +169,7 @@ The `GremlinSession` dataclass maintains state throughout a mutation testing run
 |-----------|------|-------------|
 | `enabled` | `bool` | Whether mutation testing is active |
 | `operators` | `list[GremlinOperator]` | Active mutation operators |
-| `report_format` | `str` | Output format (console/html/json) |
+| `report_formats` | `list[str]` | Output formats (console/html/json) |
 | `gremlins` | `list[Gremlin]` | All discovered gremlins |
 | `results` | `list[GremlinResult]` | Test results for each gremlin |
 | `source_files` | `dict[str, str]` | Map of file paths to source code |
@@ -163,6 +191,17 @@ The `GremlinSession` dataclass maintains state throughout a mutation testing run
 | `parallel_workers` | `int \| None` | Number of workers (None = auto) |
 | `batch_enabled` | `bool` | Whether batch mode is active |
 | `batch_size` | `int` | Gremlins per batch |
+| `xdist_item_ids` | `list[str] \| None` | Test IDs captured from xdist workers |
+| `xdist_active` | `bool` | Whether xdist is active |
+| `xdist_workers` | `int \| None` | Number of xdist workers |
+| `coverage_mode` | `CoverageMode` | PIGGYBACK (reuse pytest-cov) or PRIVATE |
+| `private_coverage` | `coverage.Coverage \| None` | Inline coverage instance (PRIVATE mode) |
+| `gremlins_tmpdir` | `str \| None` | Shared temp dir for xdist worker coverage data |
+| `exclude_patterns` | `list[str]` | Glob patterns to skip during source discovery |
+| `strict_pardons` | `bool` | Treat pardoned gremlins as CI failures (exit non-zero if any exist) |
+| `audit_pardons` | `bool` | Whether to audit pardon pragma usage |
+| `max_pardons_pct` | `float \| None` | Maximum percentage of pardoned gremlins |
+| `max_pardons` | `int \| None` | Maximum absolute pardon count |
 
 ---
 
@@ -182,10 +221,30 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 ### pytest_configure
 
 Initializes the gremlin session based on command-line options and pyproject.toml.
+When xdist is available, also registers `pytest_configure_node` and
+`pytest_xdist_node_collection_finished` hooks.
 
 ```python
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options."""
+```
+
+### pytest_sessionstart
+
+Sets up inline coverage collection in PRIVATE mode (when `--cov` is not active).
+
+```python
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Start inline coverage collection if needed."""
+```
+
+### pytest_runtestloop
+
+Hookimpl wrapper that saves and stops coverage data after the test loop completes.
+
+```python
+def pytest_runtestloop(session: pytest.Session) -> Generator[None, None, None]:
+    """Wrap the test loop to capture coverage data."""
 ```
 
 ### pytest_collection_finish
@@ -195,6 +254,24 @@ After test collection completes, discovers source files and generates gremlins.
 ```python
 def pytest_collection_finish(session: pytest.Session) -> None:
     """After test collection, discover source files and generate gremlins."""
+```
+
+### pytest_configure_node (xdist only)
+
+Passes gremlin temp directory path to xdist workers via `node.workerinput`.
+
+```python
+def pytest_configure_node(node: _XdistWorkerNode) -> None:
+    """Pass gremlins config to xdist worker nodes."""
+```
+
+### pytest_xdist_node_collection_finished (xdist only)
+
+Captures test node IDs from the first xdist worker's collection.
+
+```python
+def pytest_xdist_node_collection_finished(node: object, ids: list[str]) -> None:
+    """Capture collected test IDs from xdist workers."""
 ```
 
 ### pytest_sessionfinish
