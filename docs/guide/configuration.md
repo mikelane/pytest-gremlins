@@ -27,6 +27,7 @@ All command-line options are prefixed with `--gremlin` or `--gremlins`.
 | `--gremlins` | flag | `false` | Enable mutation testing |
 | `--gremlin-operators` | string | all | Comma-separated list of operators to use |
 | `--gremlin-targets` | string | auto-discovered | Comma-separated list of files/directories to mutate (see [precedence](#configuration-precedence)) |
+| `--gremlin-exclude` | string | none | Glob pattern to exclude from mutation (repeatable, overrides pyproject.toml) |
 | `--gremlin-report` | string | `console` | Report format: `console`, `html`, or `json` |
 
 ### Performance Options
@@ -58,6 +59,18 @@ pytest --gremlins --gremlin-targets=src/auth.py,src/api.py
 
 ```bash
 pytest --gremlins --gremlin-targets=src/mypackage
+```
+
+**Exclude files matching a glob pattern:**
+
+```bash
+pytest --gremlins --gremlin-exclude="**/migrations/*"
+```
+
+**Exclude multiple patterns (repeatable flag):**
+
+```bash
+pytest --gremlins --gremlin-exclude="**/migrations/*" --gremlin-exclude="**/generated/*"
 ```
 
 **Use specific operators only:**
@@ -107,6 +120,7 @@ pytest --gremlins --gremlin-batch --gremlin-batch-size=20
 ```bash
 pytest --gremlins \
     --gremlin-targets=src/core \
+    --gremlin-exclude="**/migrations/*" \
     --gremlin-operators=comparison,boundary \
     --gremlin-cache \
     --gremlin-parallel \
