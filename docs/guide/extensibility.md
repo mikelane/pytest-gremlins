@@ -213,9 +213,16 @@ class TestStringEmptyOperatorMutate:
 
 Once your operator is implemented and tested, register it so pytest-gremlins can discover it.
 
-### Method 1: Entry Points (Recommended for Packages)
+### Method 1: Entry Points (Planned for Packages)
 
-If you're distributing your operator as a package, use Python entry points:
+<!-- TODO: verify entry point discovery is implemented — as of v1.5.0,
+     no entry_points loading code exists in the plugin -->
+
+!!! warning "Not yet implemented"
+    Entry point discovery is planned but not yet available. Use direct registration
+    (Method 2) or decorator registration (Method 3) for now.
+
+If you're distributing your operator as a package, the planned approach uses Python entry points:
 
 ```toml
 # pyproject.toml
@@ -236,9 +243,7 @@ def register_operators() -> None:
     registry.register(StringEmptyOperator)
 ```
 
-pytest-gremlins automatically discovers and calls `register_operators()` at startup.
-
-### Method 2: Direct Registration (For Local Use)
+### Method 2: Direct Registration (Recommended)
 
 For operators used only in your project, register them in `conftest.py`:
 
@@ -536,20 +541,16 @@ class DjangoQuerySetOperator:
 
 ### Registration for the Django Example
 
-```toml
-# pyproject.toml for pytest-gremlins-django package
-[project.entry-points."pytest_gremlins.operators"]
-django = "pytest_gremlins_django:register_operators"
-```
+Register your custom operator in `conftest.py`:
 
 ```python
-# pytest_gremlins_django/__init__.py
+# conftest.py
 from pytest_gremlins.operators import OperatorRegistry
 
-from .queryset import DjangoQuerySetOperator
+from my_django_operators.queryset import DjangoQuerySetOperator
 
 
-def register_operators() -> None:
+def pytest_configure(config):
     """Register Django-specific operators."""
     registry = OperatorRegistry()
     registry.register(DjangoQuerySetOperator)
@@ -649,9 +650,9 @@ def get_users():
 
 ### My Operator Isn't Being Discovered
 
-1. Check entry point group name: must be `pytest_gremlins.operators`
-2. Verify your registration function is called
-3. Run `pytest --gremlins --help` to see registered operators
+1. Verify your `conftest.py` `pytest_configure` hook calls `registry.register()`
+2. Check that the conftest is in a directory pytest scans (project root or test dir)
+3. Add a `print(registry.available())` call to your `pytest_configure` to confirm registration
 
 ### Mutations Aren't Being Generated
 

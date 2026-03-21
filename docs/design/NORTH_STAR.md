@@ -94,13 +94,15 @@ restores files. Repeat 1000x.
 def is_adult(age):
     return age >= 18
 
-# Instrumented (all gremlins baked in)
+# Instrumented (all gremlins baked in) — conceptual illustration.
+# Actual mutations depend on which operators are enabled; the comparison
+# operator produces >= → > and >= → <.
 def is_adult(age):
     _g = __gremlin_active__
     if _g == "g001": return age > 18    # >= → >
-    if _g == "g002": return age <= 18   # >= → <=
-    if _g == "g003": return age < 18    # >= → <
-    if _g == "g004": return age == 18   # >= → ==
+    if _g == "g002": return age < 18    # >= → <
+    if _g == "g003": return age >= 17   # boundary shift −1
+    if _g == "g004": return age >= 19   # boundary shift +1
     return age >= 18                     # original
 ```
 

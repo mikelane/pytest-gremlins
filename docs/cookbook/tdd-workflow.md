@@ -477,13 +477,14 @@ behavior). Use pragmatic judgment:
 # Both produce the same result - not a real test gap
 ```
 
-Mark intentional exclusions:
+Mark intentional exclusions with the pardon pragma:
 
 ```python
 def calculate_discount(price):
-    # pragma: no gremlin
-    return price * 0  # Always free! (not a real example)
+    return price * 0  # gremlin: pardon[equivalent] always zero by design
 ```
+
+Valid reason codes are `equivalent`, `untestable`, and `out_of_scope`.
 
 ## Best Practices
 

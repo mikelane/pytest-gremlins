@@ -158,19 +158,11 @@ operators = [
     "arithmetic",
     "boolean",
 ]
-
-# Or exclude specific operators from the default set
-exclude_operators = ["string"]
-
-# Operator-specific configuration
-[tool.pytest-gremlins.operators.comparison]
-# Don't mutate == to != (too many false positives in your codebase)
-skip_mutations = ["eq_to_noteq"]
-
-[tool.pytest-gremlins.operators.arithmetic]
-# Only mutate + and -
-only_ops = ["add", "sub"]
 ```
+
+<!-- TODO: exclude_operators and per-operator configuration
+     (e.g. [tool.pytest-gremlins.operators.comparison] skip_mutations)
+     are not yet implemented. The design below is aspirational. -->
 
 ---
 

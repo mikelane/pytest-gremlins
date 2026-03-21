@@ -35,18 +35,22 @@ pytest_gremlins/
 │   ├── transformer.py    # AST transformer
 │   ├── switcher.py       # Environment-based switching
 │   ├── finder.py         # Mutation point finder
-│   └── import_hooks.py   # Import interception
+│   ├── import_hooks.py   # Import interception
+│   └── pragma.py         # Pardon pragma parsing
 │
 ├── coverage/             # Coverage-guided selection
 │   ├── mapper.py         # Line-to-test mapping
 │   ├── collector.py      # Coverage data collection
+│   ├── context_plugin.py # Coverage.py dynamic context plugin
 │   ├── selector.py       # Test selection
-│   └── prioritized_selector.py  # Prioritized selection
+│   ├── prioritized_selector.py  # Prioritized selection
+│   └── types.py          # Coverage type definitions
 │
 ├── cache/                # Incremental analysis
 │   ├── hasher.py         # Content hashing
 │   ├── store.py          # SQLite result cache
-│   └── incremental.py    # Cache coordinator
+│   ├── incremental.py    # Cache coordinator
+│   └── types.py          # Cache type definitions
 │
 ├── parallel/             # Parallel execution
 │   ├── pool.py           # Worker pool
@@ -61,7 +65,12 @@ pytest_gremlins/
     ├── score.py          # MutationScore aggregation
     ├── console.py        # Terminal output
     ├── html.py           # HTML reports
-    └── json_reporter.py  # JSON reports
+    ├── json_reporter.py  # JSON reports
+    ├── diff.py           # Source diff generation
+    ├── history.py        # Run history tracking
+    ├── sonarqube_export.py  # SonarQube export
+    ├── stryker_export.py    # Stryker Dashboard export
+    └── types.py          # Reporting type definitions
 ```
 
 ## Quick Navigation

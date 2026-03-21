@@ -60,7 +60,7 @@ pytest-gremlins instruments it to:
 import os as __gremlin_os__
 
 def is_adult(age):
-    __gremlin_id__ = __gremlin_os__.environ.get('PYTEST_GREMLINS_ACTIVE', '')
+    __gremlin_id__ = __gremlin_os__.environ.get('ACTIVE_GREMLIN', '')
 
     if __gremlin_id__ == 'g001':
         return age > 18    # Mutation: >= to >
@@ -79,7 +79,7 @@ def is_adult(age):
 To test mutation `g001`, we simply set an environment variable:
 
 ```bash
-PYTEST_GREMLINS_ACTIVE=g001 pytest tests/
+ACTIVE_GREMLIN=g001 pytest tests/
 ```
 
 The instrumented code checks this variable and executes the mutated path. No file modification, no reimporting, no waiting.
@@ -97,7 +97,7 @@ sequenceDiagram
     Python-->>Tool: Module loaded
 
     loop For each mutation
-        Tool->>Tool: Set PYTEST_GREMLINS_ACTIVE=gXXX
+        Tool->>Tool: Set ACTIVE_GREMLIN=gXXX
         Tool->>Tests: Run targeted tests
         Tests-->>Tool: Results
     end
@@ -208,7 +208,7 @@ The generated switch follows a consistent pattern:
 
 ```python
 # Check which gremlin is active
-__gremlin_id__ = __gremlin_os__.environ.get('PYTEST_GREMLINS_ACTIVE', '')
+__gremlin_id__ = __gremlin_os__.environ.get('ACTIVE_GREMLIN', '')
 
 # First mutation
 if __gremlin_id__ == 'g001':
@@ -288,26 +288,14 @@ The decorator wraps the instrumented function, not the original.
 
 ## Debugging Instrumented Code
 
-### Viewing Instrumented Source
-
-```bash
-# Show instrumented code for a file
-pytest --gremlins --show-instrumented src/mymodule.py
-```
-
 ### Validating a Specific Mutation
 
 ```bash
 # Run with a specific mutation active
-PYTEST_GREMLINS_ACTIVE=g001 pytest tests/test_specific.py -v
+ACTIVE_GREMLIN=g001 pytest tests/test_specific.py -v
 ```
 
-### Listing All Mutations
-
-```bash
-# List all mutations without running tests
-pytest --gremlins --list-gremlins
-```
+<!-- TODO: verify whether --show-instrumented and --list-gremlins flags exist in a future version -->
 
 ## Comparison with File-Based Mutation
 

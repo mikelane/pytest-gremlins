@@ -26,9 +26,10 @@ Run 3: 10 gremlins tested (30 seconds)   # Only changed file
 
 ```python
 from pytest_gremlins.cache import (
-    ContentHasher,     # SHA-256 content hashing
-    ResultStore,       # SQLite-backed result cache
-    IncrementalCache,  # Cache coordinator
+    CachedGremlinResult,  # TypedDict for cached result shape
+    ContentHasher,        # SHA-256 content hashing
+    IncrementalCache,     # Cache coordinator
+    ResultStore,          # SQLite-backed result cache
 )
 ```
 

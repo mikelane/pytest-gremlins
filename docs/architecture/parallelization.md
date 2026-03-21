@@ -59,10 +59,10 @@ Each worker receives a batch of mutation IDs to test:
 ```python
 # Worker 1 process
 import os
-os.environ["PYTEST_GREMLINS_ACTIVE"] = "g001"
+os.environ["ACTIVE_GREMLIN"] = "g001"
 run_tests(tests_for_g001)
 
-os.environ["PYTEST_GREMLINS_ACTIVE"] = "g005"
+os.environ["ACTIVE_GREMLIN"] = "g005"
 run_tests(tests_for_g005)
 # ...
 ```
@@ -326,7 +326,7 @@ mapping that drives gremlin evaluation.
 
 **Phase 2 -- Mutation Evaluation.** pytest-gremlins reads xdist's resolved worker count
 and uses it for parallel mutation evaluation. Each worker sets its own
-`PYTEST_GREMLINS_ACTIVE` environment variable, so mutations never interfere.
+`ACTIVE_GREMLIN` environment variable, so mutations never interfere.
 
 The practical upside: `-n auto` is all you need for both test distribution and mutation
 parallelism.
@@ -353,45 +353,14 @@ automatically. No error is raised.
 
 ## Monitoring Parallel Execution
 
-### Progress Reporting
+pytest-gremlins logs progress to the console as workers complete mutations.
+For detailed results, generate an HTML report:
 
 ```bash
-pytest --gremlins --progress
+pytest --gremlins --gremlin-parallel --gremlin-report=html
 ```
 
-Output:
-
-```text
-Testing mutations: [=============>      ] 65% (650/1000)
-  Worker 1: g0834 (tests/test_auth.py::test_login)
-  Worker 2: g0835 (tests/test_shipping.py::test_rate)
-  Worker 3: g0836 (tests/test_utils.py::test_parse)
-  Worker 4: idle (waiting for work)
-
-Completed: 650 | Killed: 580 | Survived: 60 | Errors: 10
-ETA: 45 seconds
-```
-
-### Worker Statistics
-
-```bash
-pytest --gremlins --worker-stats
-```
-
-Output:
-
-```text
-Worker Statistics:
-  Worker 1: 175 mutations, 89% killed, avg 12ms
-  Worker 2: 170 mutations, 91% killed, avg 15ms
-  Worker 3: 168 mutations, 87% killed, avg 11ms
-  Worker 4: 162 mutations, 88% killed, avg 14ms
-
-Load balance: 95% (good)
-Total wall time: 48 seconds
-Total CPU time: 185 seconds
-Parallelization efficiency: 96%
-```
+<!-- TODO: verify whether --progress and --worker-stats flags are planned -->
 
 ## Debugging Parallel Issues
 
@@ -407,7 +376,7 @@ pytest --gremlins --gremlin-workers=1
 
 ```bash
 # Run just one mutation in the main process
-PYTEST_GREMLINS_ACTIVE=g0834 pytest tests/test_auth.py -v
+ACTIVE_GREMLIN=g0834 pytest tests/test_auth.py -v
 ```
 
 ## Trade-offs

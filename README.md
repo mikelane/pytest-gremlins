@@ -52,10 +52,12 @@ would catch bugs.
 
 | Tool           | Limitation                                                 |
 | -------------- | ---------------------------------------------------------- |
-| **mutmut**     | Single-threaded by default, no incremental analysis        |
+| **mutmut**     | Unix/WSL only (requires `fork()`); not a pytest plugin     |
 | **Cosmic Ray** | Complex setup; distributed mode requires Celery            |
 | **MutPy**      | Unmaintained (last update 2019), Python 3.4-3.7 only       |
 | **mutatest**   | Unmaintained (last update 2022)                            |
+
+See the [full comparison guide](docs/guide/comparison.md) for detailed, fair comparisons.
 
 ### Our Solution: Speed Through Architecture
 
@@ -70,6 +72,7 @@ pytest-gremlins is fast because of *how* it works, not just parallelization:
 
 ## Performance
 
+<!-- TODO: verify benchmark — these numbers predate mutmut v3 parallelization; re-run and update -->
 Benchmarked against [mutmut](https://github.com/boxed/mutmut) on a synthetic project:
 
 | Mode                                                 | Time   | vs mutmut | Speedup           |
@@ -99,15 +102,15 @@ Timeout: 5 gremlins (3%)
 Error: 2 gremlins (1%)
 
 Top surviving gremlins:
-  src/auth.py:42                   >= -> >               (comparison)
-  src/utils.py:17                  + -> -                (arithmetic)
-  src/api.py:88                    True -> False         (boolean)
+  src/auth.py:42                   >= to >               (comparison)
+  src/utils.py:17                  + to -                (arithmetic)
+  src/api.py:88                    True to False         (boolean)
 
 Run with --gremlin-report=html for detailed report.
 =====================================================================
 ```
 
-Timeout and Error categories are only shown when their count is greater than zero.
+Timeout, Error, and Pardoned categories are only shown when their count is greater than zero.
 
 ---
 
@@ -136,8 +139,8 @@ doesn't find your code, configure paths explicitly:
 
 ```toml
 [tool.pytest-gremlins]
-# Operators to use (default: all)
-operators = ["comparison", "arithmetic", "boolean"]
+# Operators to use (default: all 5)
+operators = ["comparison", "arithmetic", "boolean", "boundary", "return"]
 
 # Paths to mutate (optional -- auto-discovered from setuptools metadata)
 paths = ["src"]
@@ -145,8 +148,14 @@ paths = ["src"]
 # Patterns to exclude
 exclude = ["**/migrations/*", "**/test_*"]
 
-# Minimum mutation score to pass
-min_score = 80
+# Report formats: "console", "html", "json" (default: console)
+report = ["console", "html"]
+
+# Enable incremental caching (default: false)
+cache = true
+
+# Fail if pardoned gremlins exceed 5% of total
+max-pardons-pct = 5.0
 ```
 
 ---
@@ -169,8 +178,8 @@ We use Gremlins movie references as our domain language:
 
 Full documentation: [pytest-gremlins.readthedocs.io](https://pytest-gremlins.readthedocs.io)
 
-- [User Guide](https://pytest-gremlins.readthedocs.io/en/latest/guide/)
-- [Configuration Reference](https://pytest-gremlins.readthedocs.io/en/latest/configuration/)
+- [Getting Started](https://pytest-gremlins.readthedocs.io/en/latest/guide/getting-started/)
+- [Configuration](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/)
 - [API Reference](https://pytest-gremlins.readthedocs.io/en/latest/api/)
 
 ---

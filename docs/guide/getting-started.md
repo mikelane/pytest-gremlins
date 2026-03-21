@@ -289,10 +289,11 @@ Skip:
 
 ### Why does it say "No gremlins found"?
 
-The plugin auto-discovers source paths from your `pyproject.toml`. It checks (in order):
-`--gremlin-targets` CLI option, `[tool.pytest-gremlins] paths`, `[tool.setuptools]` package
-metadata, and finally `src/` as a fallback. If none of these match your project layout, pass
-the path explicitly:
+The plugin auto-discovers source paths from your project metadata. It checks (in order):
+`--gremlin-targets` CLI option, `[tool.pytest-gremlins] paths` in pyproject.toml,
+`[tool.setuptools]` package config, `[project].name` heuristic, `setup.cfg` packages config,
+installed package metadata via `importlib.metadata`, and finally `src/` as a fallback. If none
+of these match your project layout, pass the path explicitly:
 
 ```bash
 pytest --gremlins --gremlin-targets=my_package
