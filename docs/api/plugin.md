@@ -21,7 +21,7 @@ The plugin handles:
 | `--gremlins` | `False` | Enable mutation testing |
 | `--gremlin-operators` | All | Comma-separated list of operators to use |
 | `--gremlin-report` | `console` | Report format: `console`, `html`, `json` (repeatable) |
-| `--gremlin-targets` | `src/` | Comma-separated source directories/files |
+| `--gremlin-targets` | None (auto-discovered) | Comma-separated source directories/files |
 | `--gremlin-exclude` | None | Glob patterns to exclude from mutation (repeatable) |
 | `--gremlin-cache` | `False` | Enable incremental analysis cache |
 | `--gremlin-clear-cache` | `False` | Clear cache before running |
@@ -30,7 +30,7 @@ The plugin handles:
 | `--gremlin-batch` | `False` | Enable batch execution mode |
 | `--gremlin-batch-size` | `10` | Gremlins per batch |
 | `--gremlins-html-dir` | None | Output directory for HTML reports |
-| `--strict-pardons` | `False` | Fail on invalid pardon pragmas |
+| `--strict-pardons` | `False` | Treat pardoned gremlins as CI failures (exit non-zero if any exist) |
 | `--gremlin-audit-pardons` | `False` | Audit pardon pragma usage |
 | `--gremlin-max-pardons-pct` | None | Maximum percentage of pardoned gremlins |
 | `--max-pardons` | None | Maximum absolute number of pardoned gremlins |
@@ -198,7 +198,7 @@ The `GremlinSession` dataclass maintains state throughout a mutation testing run
 | `private_coverage` | `coverage.Coverage \| None` | Inline coverage instance (PRIVATE mode) |
 | `gremlins_tmpdir` | `str \| None` | Shared temp dir for xdist worker coverage data |
 | `exclude_patterns` | `list[str]` | Glob patterns to skip during source discovery |
-| `strict_pardons` | `bool` | Whether to fail on invalid pardon pragmas |
+| `strict_pardons` | `bool` | Treat pardoned gremlins as CI failures (exit non-zero if any exist) |
 | `audit_pardons` | `bool` | Whether to audit pardon pragma usage |
 | `max_pardons_pct` | `float \| None` | Maximum percentage of pardoned gremlins |
 | `max_pardons` | `int \| None` | Maximum absolute pardon count |

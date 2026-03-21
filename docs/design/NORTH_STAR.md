@@ -14,7 +14,7 @@ The Python mutation testing landscape is broken:
 
 | Tool           | Fatal Flaw                                                                    |
 | -------------- | ----------------------------------------------------------------------------- |
-| **mutmut**     | Single-threaded, no incremental analysis, 65+ minute runs on medium projects  |
+| **mutmut**     | Unix/WSL only (requires `fork()`); not a pytest plugin; no incremental analysis |
 | **Cosmic Ray** | Complex setup with session management, multiple distributor options           |
 | **MutPy**      | Dead (last update 2019), Python 3.4-3.7 only                                  |
 | **mutatest**   | Dead (last update 2022), Python ≤3.8 only, random behavior                    |

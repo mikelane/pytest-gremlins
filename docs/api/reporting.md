@@ -144,7 +144,7 @@ Aggregated mutation testing statistics.
 The mutation score represents test effectiveness:
 
 ```text
-score = (zapped + timeout) / total * 100
+score = (zapped + timeout) / (total - pardoned) * 100
 ```
 
 Timeouts count as "caught" because the test detected abnormal behavior.

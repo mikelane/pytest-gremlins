@@ -57,7 +57,7 @@ would catch bugs.
 | **MutPy**      | Unmaintained (last update 2019), Python 3.4-3.7 only       |
 | **mutatest**   | Unmaintained (last update 2022)                            |
 
-See the [full comparison guide](docs/guide/comparison.md) for detailed, fair comparisons.
+See the [full comparison guide](https://pytest-gremlins.readthedocs.io/en/latest/guide/comparison/) for detailed, fair comparisons.
 
 ### Our Solution: Speed Through Architecture
 
