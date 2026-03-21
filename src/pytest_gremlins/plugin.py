@@ -16,6 +16,7 @@ from dataclasses import (
     field,
 )
 from enum import Enum
+import fnmatch
 import importlib.util
 import json
 import logging
@@ -182,6 +183,8 @@ class GremlinSession:
         gremlins_tmpdir: Path (as a string) to the shared temporary directory
             where xdist workers write their per-worker coverage data files in
             PRIVATE mode.  ``None`` when xdist is not active.
+        exclude_patterns: Glob patterns from ``[tool.pytest-gremlins] exclude``
+            used to skip matching files during source discovery.
     """
 
     enabled: bool = False
@@ -214,6 +217,7 @@ class GremlinSession:
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
     private_coverage: coverage.Coverage | None = None
     gremlins_tmpdir: str | None = None
+    exclude_patterns: list[str] = field(default_factory=list)
     strict_pardons: bool = False
     audit_pardons: bool = False
     max_pardons_pct: float | None = None
@@ -677,6 +681,7 @@ def pytest_configure(config: pytest.Config) -> None:
             operators=operators,
             report_formats=report_formats,
             target_paths=target_paths,
+            exclude_patterns=(merged_config.exclude or []) if isinstance(merged_config, GremlinConfig) else [],
             cache_enabled=cache_enabled,
             cache=cache,
             parallel_enabled=parallel_enabled,
@@ -921,17 +926,53 @@ def _discover_source_files(
     source_files: dict[str, str] = {}
     rootdir = _get_rootdir(session.config)
 
+    exclude_patterns = gremlin_session.exclude_patterns
+
     for target_path in gremlin_session.target_paths:
         resolved_path = target_path if target_path.is_absolute() else rootdir / target_path
 
         if resolved_path.is_file() and resolved_path.suffix == '.py':
-            _add_source_file(resolved_path, source_files)
+            if not _is_excluded(resolved_path, rootdir, exclude_patterns):
+                _add_source_file(resolved_path, source_files)
         elif resolved_path.is_dir():
             for py_file in resolved_path.rglob('*.py'):
-                if _should_include_file(py_file):
+                if _should_include_file(py_file) and not _is_excluded(py_file, rootdir, exclude_patterns):
                     _add_source_file(py_file, source_files)
 
     return source_files
+
+
+def _is_excluded(path: Path, rootdir: Path, exclude_patterns: list[str]) -> bool:
+    """Check if a path matches any exclude glob pattern.
+
+    Uses ``fnmatch.fnmatch`` against the path relative to *rootdir* so that
+    patterns like ``**/migrations/*`` and ``src/app/legacy.py`` both work
+    naturally.
+
+    Args:
+        path: Absolute path to the source file.
+        rootdir: Project root directory.
+        exclude_patterns: Glob patterns from the ``[tool.pytest-gremlins]``
+            ``exclude`` list.
+
+    Returns:
+        True if the file matches any exclude pattern.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> _is_excluded(
+        ...     Path('/p/src/app/migrations/0001.py'),
+        ...     Path('/p'),
+        ...     ['**/migrations/*'],
+        ... )
+        True
+        >>> _is_excluded(Path('/p/src/app/models.py'), Path('/p'), ['**/migrations/*'])
+        False
+    """
+    if not exclude_patterns:
+        return False
+    rel_path = str(path.relative_to(rootdir))
+    return any(fnmatch.fnmatch(rel_path, pattern) for pattern in exclude_patterns)
 
 
 def _should_include_file(path: Path) -> bool:
