@@ -60,6 +60,53 @@ class DescribeExcludeConfig:
         # The non-excluded file must appear (it has a mutable operator)
         assert 'core_module' in output
 
+    def it_cli_exclude_overrides_toml_exclude(self, pytester_with_markers: pytest.Pytester) -> None:
+        """CLI --gremlin-exclude overrides pyproject.toml exclude patterns."""
+        pytester_with_markers.makepyprojecttoml(
+            """
+            [tool.pytest-gremlins]
+            exclude = ["core_module.py"]
+            """
+        )
+
+        # Source file excluded by TOML but NOT by CLI
+        pytester_with_markers.makepyfile(
+            core_module='def sub(a, b):\n    return a - b\n',
+        )
+
+        # Source file excluded by CLI but NOT by TOML
+        pytester_with_markers.makepyfile(
+            generated_schema='def add(a, b):\n    return a + b\n',
+        )
+
+        # Tests covering both files
+        pytester_with_markers.makepyfile(
+            test_math=(
+                'from generated_schema import add\n'
+                'from core_module import sub\n'
+                '\n'
+                'def test_add():\n'
+                '    assert add(1, 2) == 3\n'
+                '\n'
+                'def test_sub():\n'
+                '    assert sub(3, 1) == 2\n'
+            ),
+        )
+
+        result = pytester_with_markers.runpytest(
+            '--gremlins',
+            '--gremlin-targets=generated_schema.py,core_module.py',
+            '--gremlin-exclude=generated_schema.py',
+        )
+
+        output = result.stdout.str()
+
+        # CLI exclude wins: generated_schema is excluded (not in output)
+        assert 'generated_schema' not in output
+
+        # TOML exclude is overridden: core_module is NOT excluded (appears in output)
+        assert 'core_module' in output
+
     def it_does_not_exclude_when_no_patterns_configured(self, pytester_with_markers: pytest.Pytester) -> None:
         """Without exclude config, all source files are mutated."""
         pytester_with_markers.makepyprojecttoml(
