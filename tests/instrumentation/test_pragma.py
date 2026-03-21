@@ -114,3 +114,102 @@ class DescribeParsePardonedLines:
         with caplog.at_level(logging.WARNING, logger='pytest_gremlins.instrumentation.pragma'):
             parse_pardoned_lines(source)
         assert '<unknown>' in caplog.text
+
+
+@pytest.mark.small
+class DescribeLineAbovePragma:
+    """Tests for standalone comment pragma placement (line-above)."""
+
+    # --- AC1: inline pragma still maps to same line (regression guard) ---
+
+    def it_keeps_inline_pragma_on_same_line(self):
+        source = 'x = a // 2  # gremlin: pardon[equivalent] floor division\n'
+        result = parse_pardoned_lines(source)
+        assert result == {1: ('equivalent', 'floor division')}
+
+    # --- AC2: standalone comment pragma maps to next line ---
+
+    def it_maps_standalone_pragma_to_next_line(self):
+        source = '# gremlin: pardon[equivalent] integer division rounds same as subtraction\nreturn a // b\n'
+        result = parse_pardoned_lines(source)
+        assert result == {2: ('equivalent', 'integer division rounds same as subtraction')}
+
+    def it_maps_indented_standalone_pragma_to_next_line(self):
+        source = '    # gremlin: pardon[untestable] cannot observe side effect\n    x = do_something()\n'
+        result = parse_pardoned_lines(source)
+        assert result == {2: ('untestable', 'cannot observe side effect')}
+
+    def it_handles_standalone_pragma_mid_file(self):
+        source = 'a = 1\nb = 2\n# gremlin: pardon[out_of_scope] scaffolding\nc = foo()\nd = 4\n'
+        result = parse_pardoned_lines(source)
+        assert result == {4: ('out_of_scope', 'scaffolding')}
+
+    # --- AC3: standalone pragma followed by blank line warns and is ignored ---
+
+    def it_warns_when_standalone_pragma_followed_by_blank_line(self, caplog):
+        source = '# gremlin: pardon[equivalent] integer division\n\nreturn a // b\n'
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.instrumentation.pragma'):
+            result = parse_pardoned_lines(source, file_path='module.py')
+        assert result == {}
+        assert any('not adjacent' in msg.lower() for msg in caplog.messages)
+
+    # --- AC4: standalone pragma on last line of file warns and is ignored ---
+
+    def it_warns_when_standalone_pragma_is_last_line(self, caplog):
+        source = 'x = 1\n# gremlin: pardon[equivalent] integer division\n'
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.instrumentation.pragma'):
+            result = parse_pardoned_lines(source, file_path='tail.py')
+        assert result == {}
+        assert any('no code line below' in msg.lower() for msg in caplog.messages)
+
+    # --- AC5: same-line pragma wins over line-above pragma for same target ---
+
+    def it_prefers_same_line_pragma_over_line_above(self, caplog):
+        source = '# gremlin: pardon[untestable] above reason\nx = a // 2  # gremlin: pardon[equivalent] inline reason\n'
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.instrumentation.pragma'):
+            result = parse_pardoned_lines(source)
+        assert result == {2: ('equivalent', 'inline reason')}
+        assert any('duplicate' in msg.lower() for msg in caplog.messages)
+
+    # --- AC6: existing validation still applies to standalone pragmas ---
+
+    def it_ignores_standalone_pragma_with_invalid_reason(self, caplog):
+        source = '# gremlin: pardon[bad_code] some justification\nx = a // 2\n'
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.instrumentation.pragma'):
+            result = parse_pardoned_lines(source)
+        assert result == {}
+        assert any('bad_code' in msg for msg in caplog.messages)
+
+    def it_ignores_standalone_pragma_with_missing_justification(self, caplog):
+        source = '# gremlin: pardon[equivalent]\nx = a // 2\n'
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.instrumentation.pragma'):
+            result = parse_pardoned_lines(source)
+        assert result == {}
+        assert any('justification' in msg.lower() for msg in caplog.messages)
+
+    # --- Edge cases from the issue ---
+
+    def it_pardons_decorator_line_when_pragma_above_decorator(self):
+        source = '# gremlin: pardon[out_of_scope] framework boilerplate\n@app.route("/api")\ndef handler():\n    pass\n'
+        result = parse_pardoned_lines(source)
+        assert result == {2: ('out_of_scope', 'framework boilerplate')}
+
+    def it_maps_two_consecutive_standalone_pragmas_each_to_their_next_line(self):
+        source = '# gremlin: pardon[equivalent] first reason\n# gremlin: pardon[untestable] second reason\nx = a + b\n'
+        result = parse_pardoned_lines(source)
+        # First pragma (line 1) targets line 2 (another comment -- effectively wasted)
+        # Second pragma (line 2) targets line 3 (actual code)
+        assert result[2] == ('equivalent', 'first reason')
+        assert result[3] == ('untestable', 'second reason')
+        assert len(result) == 2
+
+    def it_handles_mixed_inline_and_standalone_pragmas(self):
+        source = (
+            'a = 1  # gremlin: pardon[equivalent] inline first\n'
+            '# gremlin: pardon[untestable] standalone second\n'
+            'b = 2\n'
+            'c = 3\n'
+        )
+        result = parse_pardoned_lines(source)
+        assert result[1] == ('equivalent', 'inline first')
+        assert result[3] == ('untestable', 'standalone second')
