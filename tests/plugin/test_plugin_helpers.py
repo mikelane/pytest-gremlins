@@ -25,6 +25,7 @@ from pytest_gremlins.plugin import (
     _decode_numbits,
     _extract_test_name_from_context,
     _generate_gremlins,
+    _is_excluded,
     _is_xdist_worker,
     _make_node_ids_relative,
     _parse_cli_report_formats,
@@ -34,6 +35,81 @@ from pytest_gremlins.plugin import (
     _should_include_file,
     _workers_type,
 )
+
+
+@pytest.mark.small
+class DescribeGremlinSessionExcludePatterns:
+    """Tests for exclude_patterns field on GremlinSession.
+
+    Both the default and an explicit value are tested so a hardcoded
+    return cannot pass both.
+    """
+
+    def it_defaults_to_empty_list(self) -> None:
+        session = GremlinSession(enabled=True)
+        assert session.exclude_patterns == []
+
+    def it_stores_provided_patterns(self) -> None:
+        session = GremlinSession(enabled=True, exclude_patterns=['**/migrations/*', 'vendor/**'])
+        assert session.exclude_patterns == ['**/migrations/*', 'vendor/**']
+
+
+@pytest.mark.small
+class DescribeIsExcluded:
+    """Tests for _is_excluded function.
+
+    Both True and False branches are tested so a hardcoded return value fails.
+    Multiple pattern tests ensure the function iterates over all patterns.
+    """
+
+    def it_excludes_file_matching_migrations_glob(self) -> None:
+        path = Path('/project/src/app/migrations/0001_initial.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['**/migrations/*']) is True
+
+    def it_does_not_exclude_file_matching_no_patterns(self) -> None:
+        path = Path('/project/src/app/models.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['**/migrations/*']) is False
+
+    def it_returns_false_for_empty_exclude_list(self) -> None:
+        path = Path('/project/src/app/migrations/0001_initial.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, []) is False
+
+    def it_matches_second_pattern_in_list(self) -> None:
+        path = Path('/project/src/app/generated/schema.py')
+        rootdir = Path('/project')
+        patterns = ['**/migrations/*', '**/generated/*']
+        assert _is_excluded(path, rootdir, patterns) is True
+
+    def it_matches_exact_relative_path(self) -> None:
+        path = Path('/project/src/app/legacy.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['src/app/legacy.py']) is True
+
+    def it_does_not_exclude_partial_filename_match(self) -> None:
+        path = Path('/project/src/app/legacy_utils.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['src/app/legacy.py']) is False
+
+    def it_matches_doublestar_when_dir_is_directly_under_rootdir(self) -> None:
+        """``**/migrations/*`` must match even when migrations/ is at the top level."""
+        path = Path('/project/migrations/0001_initial.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['**/migrations/*']) is True
+
+    def it_matches_doublestar_in_middle_with_zero_intermediate_dirs(self) -> None:
+        """``src/**/migrations/*`` must match ``src/migrations/0001.py`` (zero dirs between)."""
+        path = Path('/project/src/migrations/0001.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['src/**/migrations/*']) is True
+
+    def it_returns_false_when_path_is_outside_rootdir(self) -> None:
+        """When the path is not under rootdir, _is_excluded returns False (not ValueError)."""
+        path = Path('/other/project/migrations/0001.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['**/migrations/*']) is False
 
 
 @pytest.mark.small
