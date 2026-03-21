@@ -16,7 +16,6 @@ from dataclasses import (
     field,
 )
 from enum import Enum
-import fnmatch
 import importlib.util
 import json
 import logging
@@ -942,12 +941,63 @@ def _discover_source_files(
     return source_files
 
 
+def _glob_to_regex(pattern: str) -> re.Pattern[str]:
+    """Convert a glob pattern to a compiled regex with proper ``**`` support.
+
+    ``fnmatch.fnmatch`` treats ``**`` the same as ``*`` and cannot match zero
+    intermediate directories.  This helper splits on ``/`` and emits a regex
+    where ``**`` correctly matches zero or more path segments.
+
+    - ``**``  at the start  → ``(?:.+/)?``  (zero-or-more dirs with trailing ``/``)
+    - ``**``  in the middle → ``(?:/.+)?/``  (zero-or-more dirs between separators)
+    - ``**``  at the end    → ``(?:/.*)?``   (anything remaining)
+    - ``*``                 → ``[^/]*``      (anything except ``/``)
+    - ``?``                 → ``[^/]``       (single char except ``/``)
+
+    Examples:
+        >>> import re
+        >>> bool(_glob_to_regex('**/migrations/*').match('migrations/0001.py'))
+        True
+        >>> bool(_glob_to_regex('**/migrations/*').match('src/app/migrations/0001.py'))
+        True
+        >>> bool(_glob_to_regex('src/**/migrations/*').match('src/migrations/0001.py'))
+        True
+    """
+    pattern = pattern.replace('\\', '/')
+    parts = pattern.split('/')
+    regex_parts: list[str] = []
+
+    for i, part in enumerate(parts):
+        if part == '**':
+            if i == 0 and i == len(parts) - 1:
+                regex_parts.append('.*')
+            elif i == 0:
+                regex_parts.append('(?:.+/)?')
+            elif i == len(parts) - 1:
+                regex_parts.append('(?:/.*)?')
+            else:
+                regex_parts.append('(?:/.+)?/')
+        else:
+            if i > 0 and parts[i - 1] != '**':
+                regex_parts.append('/')
+            for ch in part:
+                if ch == '*':
+                    regex_parts.append('[^/]*')
+                elif ch == '?':
+                    regex_parts.append('[^/]')
+                else:
+                    regex_parts.append(re.escape(ch))
+
+    return re.compile('^' + ''.join(regex_parts) + '$')
+
+
 def _is_excluded(path: Path, rootdir: Path, exclude_patterns: list[str]) -> bool:
     """Check if a path matches any exclude glob pattern.
 
-    Uses ``fnmatch.fnmatch`` against the path relative to *rootdir* so that
-    patterns like ``**/migrations/*`` and ``src/app/legacy.py`` both work
-    naturally.
+    Converts the path to a forward-slash-separated string relative to
+    *rootdir*, then tests each pattern using :func:`_glob_to_regex` which
+    handles ``**`` (zero-or-more directories) correctly — unlike
+    ``fnmatch.fnmatch`` which treats ``**`` the same as ``*``.
 
     Args:
         path: Absolute path to the source file.
@@ -956,7 +1006,9 @@ def _is_excluded(path: Path, rootdir: Path, exclude_patterns: list[str]) -> bool
             ``exclude`` list.
 
     Returns:
-        True if the file matches any exclude pattern.
+        True if the file matches any exclude pattern.  Returns False
+        when *path* is not relative to *rootdir* (e.g. an absolute target
+        pointing outside the project).
 
     Examples:
         >>> from pathlib import Path
@@ -968,11 +1020,20 @@ def _is_excluded(path: Path, rootdir: Path, exclude_patterns: list[str]) -> bool
         True
         >>> _is_excluded(Path('/p/src/app/models.py'), Path('/p'), ['**/migrations/*'])
         False
+        >>> _is_excluded(
+        ...     Path('/p/migrations/0001.py'),
+        ...     Path('/p'),
+        ...     ['**/migrations/*'],
+        ... )
+        True
     """
     if not exclude_patterns:
         return False
-    rel_path = str(path.relative_to(rootdir))
-    return any(fnmatch.fnmatch(rel_path, pattern) for pattern in exclude_patterns)
+    try:
+        rel_path = str(path.relative_to(rootdir)).replace('\\', '/')
+    except ValueError:
+        return False
+    return any(_glob_to_regex(pattern).match(rel_path) is not None for pattern in exclude_patterns)
 
 
 def _should_include_file(path: Path) -> bool:

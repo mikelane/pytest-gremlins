@@ -93,6 +93,24 @@ class DescribeIsExcluded:
         rootdir = Path('/project')
         assert _is_excluded(path, rootdir, ['src/app/legacy.py']) is False
 
+    def it_matches_doublestar_when_dir_is_directly_under_rootdir(self) -> None:
+        """``**/migrations/*`` must match even when migrations/ is at the top level."""
+        path = Path('/project/migrations/0001_initial.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['**/migrations/*']) is True
+
+    def it_matches_doublestar_in_middle_with_zero_intermediate_dirs(self) -> None:
+        """``src/**/migrations/*`` must match ``src/migrations/0001.py`` (zero dirs between)."""
+        path = Path('/project/src/migrations/0001.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['src/**/migrations/*']) is True
+
+    def it_returns_false_when_path_is_outside_rootdir(self) -> None:
+        """When the path is not under rootdir, _is_excluded returns False (not ValueError)."""
+        path = Path('/other/project/migrations/0001.py')
+        rootdir = Path('/project')
+        assert _is_excluded(path, rootdir, ['**/migrations/*']) is False
+
 
 @pytest.mark.small
 class DescribeShouldIncludeFile:
