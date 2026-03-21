@@ -243,7 +243,7 @@ A project with:
 
 | Approach | Time |
 |----------|------|
-| Naive (mutmut-style) | ~8 hours |
+| No coverage guidance or caching | ~8 hours |
 | Mutation switching only | ~2 hours |
 | + Coverage guidance | ~2-10 minutes |
 | + Parallel execution | ~15-75 seconds |

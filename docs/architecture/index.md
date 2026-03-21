@@ -173,7 +173,7 @@ Other Python mutation testing tools exist. Here is why we built another one:
 
 | Tool | The Problem |
 |------|-------------|
-| **mutmut** | Single-threaded, no incremental analysis - 65+ minute runs on medium projects |
+| **mutmut** | Unix/WSL only (requires `fork()`); limited incremental analysis (being upstreamed) |
 | **Cosmic Ray** | Requires Celery + RabbitMQ for parallelization - complex setup |
 | **MutPy** | Dead since 2019, only supports Python 3.4-3.7 |
 | **mutatest** | Dead since 2022, Python 3.8 only, random sampling behavior |

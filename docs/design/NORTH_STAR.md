@@ -282,7 +282,7 @@ We use Gremlins movie references as our ubiquitous language:
 
 - [PIT (Java)](https://pitest.org/) - Gold standard, incremental analysis, parallel execution
 - [Stryker (JS/TS)](https://stryker-mutator.io/) - Mutation switching architecture
-- [mutmut (Python)](https://github.com/boxed/mutmut) - What to avoid (slow, sequential)
+- [mutmut (Python)](https://github.com/boxed/mutmut) - Popular, fork-based isolation (Unix only), v3+ has parallelization
 - [Cosmic Ray (Python)](https://github.com/sixty-north/cosmic-ray) - Good operators, bad UX
 
 ---
