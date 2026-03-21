@@ -88,3 +88,27 @@ class DescribeMergeConfigs:
         result = merge_configs(file_config, cli_operators=cli_operators)
 
         assert result.operators == ['boolean', 'arithmetic']
+
+    def it_cli_exclude_overrides_toml_exclude(self):
+        """CLI --gremlin-exclude overrides pyproject.toml exclude patterns."""
+        file_config = GremlinConfig(exclude=['**/migrations/*'])
+
+        result = merge_configs(file_config, cli_exclude=['**/generated/*'])
+
+        assert result.exclude == ['**/generated/*']
+
+    def it_toml_exclude_used_when_cli_exclude_is_none(self):
+        """TOML exclude patterns used when no CLI --gremlin-exclude provided."""
+        file_config = GremlinConfig(exclude=['**/migrations/*', '**/vendor/*'])
+
+        result = merge_configs(file_config, cli_exclude=None)
+
+        assert result.exclude == ['**/migrations/*', '**/vendor/*']
+
+    def it_exclude_is_none_when_neither_cli_nor_toml(self):
+        """Exclude is None when neither CLI nor TOML provides patterns."""
+        file_config = GremlinConfig()
+
+        result = merge_configs(file_config, cli_exclude=None)
+
+        assert result.exclude is None

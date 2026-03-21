@@ -427,6 +427,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help='Comma-separated list of source directories/files to mutate',
     )
     group.addoption(
+        '--gremlin-exclude',
+        action='append',
+        default=None,
+        dest='gremlin_exclude',
+        help='Glob pattern to exclude from mutation (repeatable, overrides pyproject.toml)',
+    )
+    group.addoption(
         '--gremlin-cache',
         action='store_true',
         default=False,
@@ -566,8 +573,8 @@ def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
     Configuration precedence (highest to lowest):
-    1. CLI arguments (--gremlin-operators, --gremlin-targets, --gremlin-workers,
-       --gremlin-report, --gremlin-batch-size, --gremlin-cache)
+    1. CLI arguments (--gremlin-operators, --gremlin-targets, --gremlin-exclude,
+       --gremlin-workers, --gremlin-report, --gremlin-batch-size, --gremlin-cache)
     2. pyproject.toml [tool.pytest-gremlins] section
     3. Built-in defaults (all operators, src/ directory, console report, batch-size 10)
     """
@@ -605,6 +612,7 @@ def pytest_configure(config: pytest.Config) -> None:
         file_config,
         cli_operators=config.option.gremlin_operators,
         cli_targets=config.option.gremlin_targets,
+        cli_exclude=config.option.gremlin_exclude,
         cli_workers=config.option.gremlin_workers,
         cli_cache=config.option.gremlin_cache or None,
         cli_report=cli_report_list,

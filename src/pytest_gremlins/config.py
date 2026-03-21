@@ -492,6 +492,7 @@ def merge_configs(
     file_config: GremlinConfig,
     cli_operators: str | None = None,
     cli_targets: str | None = None,
+    cli_exclude: list[str] | None = None,
     cli_workers: int | None = None,
     cli_cache: bool | None = None,
     cli_report: list[str] | None = None,
@@ -508,6 +509,7 @@ def merge_configs(
         file_config: Configuration loaded from pyproject.toml.
         cli_operators: Comma-separated operator names from CLI (--gremlin-operators).
         cli_targets: Comma-separated target paths from CLI (--gremlin-targets).
+        cli_exclude: Glob patterns from CLI (--gremlin-exclude, repeatable).
         cli_workers: Worker count from CLI (--gremlin-workers), already resolved to int.
         cli_cache: Cache flag from CLI (--gremlin-cache).
         cli_report: Report format list from CLI (--gremlin-report).
@@ -530,6 +532,8 @@ def merge_configs(
     elif file_config.paths is not None:
         paths = file_config.paths
 
+    exclude: list[str] | None = cli_exclude if cli_exclude is not None else file_config.exclude
+
     workers: int | None = cli_workers if cli_workers is not None else _resolve_workers(file_config.workers)
     cache: bool | None = cli_cache if cli_cache is not None else file_config.cache
     report: list[str] | None = cli_report if cli_report is not None else file_config.report
@@ -542,7 +546,7 @@ def merge_configs(
     return GremlinConfig(
         operators=operators,
         paths=paths,
-        exclude=file_config.exclude,
+        exclude=exclude,
         workers=workers,
         cache=cache,
         report=report,
