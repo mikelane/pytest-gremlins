@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.6.0b0 (2026-03-22)
+
+### Feat
+
+- **config**: `--gremlin-exclude` CLI flag and `exclude` TOML key for glob patterns to skip
+  during source file discovery (e.g. `--gremlin-exclude="**/migrations/*"`); repeatable on
+  the command line, list in TOML (#322, #324)
+- **pragma**: pardon pragmas can now be placed on the line immediately above the code they
+  apply to, solving the line-length problem when inline pragmas push past 120 characters;
+  both same-line and line-above placements are supported (#327, #328)
+
+### Fix
+
+- **tests**: mock config fixtures now include `gremlin_exclude` attribute, fixing 20 medium
+  test failures introduced by #324 (#328)
+
+### Docs
+
+- comprehensive line-by-line documentation audit against the codebase — removed 13 fictional
+  CLI flags, 6 fictional TOML keys, fixed env var references, added 5 missing CLI flags to
+  the configuration reference, corrected score formula, and updated mutmut comparisons per
+  maintainer feedback (#315, #326)
+
 ## v1.5.1 (2026-03-15)
 
 ### Feat
