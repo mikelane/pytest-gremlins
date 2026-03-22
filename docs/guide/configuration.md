@@ -303,15 +303,34 @@ survivor count, you can **pardon** them with an inline pragma.
 
 ### Pragma Syntax
 
+The pragma can appear in two positions:
+
+**Same line** -- after the code it pardons:
+
 ```python
 return a // b  # gremlin: pardon[equivalent] integer division rounds same as subtraction
 ```
+
+**Line above** -- on a standalone comment line immediately above the code:
+
+```python
+# gremlin: pardon[equivalent] integer division rounds same as subtraction
+return a // b
+```
+
+The line-above form is useful when the same-line form would push past your line-length
+limit. Both forms require the pragma to be adjacent to the code -- a blank line between
+a line-above pragma and the code it targets will cause the pragma to be ignored with a
+warning.
 
 The pragma has three parts:
 
 1. `# gremlin: pardon` -- the keyword (must be `pardon`, not `survivor`)
 2. `[reason]` -- one of the valid reason codes (see below)
 3. Free-text justification -- explains *why* this gremlin is pardoned
+
+If both a line-above and same-line pragma target the same code line, the same-line
+pragma takes precedence.
 
 ### Reason Codes
 
@@ -324,17 +343,16 @@ The pragma has three parts:
 ### Examples
 
 ```python
-# Equivalent: both expressions evaluate to the same result
+# Same-line form (short justifications)
 flags = set(items) | set(extras)  # gremlin: pardon[equivalent] union is commutative
 
-# Untestable: requires hardware failure to trigger
-try:
-    fd = os.open(path, os.O_RDONLY)  # cspell:disable-line
-except OSError:  # gremlin: pardon[untestable] OS-level failure path
+# Line-above form (when same-line would exceed line length)
+# gremlin: pardon[untestable] OS-level failure path requires hardware fault to trigger
+except OSError:
     raise SystemExit(1)
 
-# Out of scope: legacy adapter scheduled for removal
-return legacy_convert(data)  # gremlin: pardon[out_of_scope] deprecated in Q3
+# gremlin: pardon[out_of_scope] legacy adapter scheduled for removal in Q3
+return legacy_convert(data)
 ```
 
 ### Enforcing Pardon Limits
