@@ -112,6 +112,7 @@ def _make_config(
         'gremlin_audit_pardons': False,
         'gremlin_max_pardons_pct': None,
         'max_pardons': None,
+        'gremlin_exclude': None,
     }
     if numprocesses is not _UNSET:
         attrs['numprocesses'] = numprocesses
