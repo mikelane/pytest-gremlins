@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.6.0b0 (2026-03-22)
+## v1.6.0 (2026-03-23)
 
 ### Feat
 
@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **tests**: mock config fixtures now include `gremlin_exclude` attribute, fixing 20 medium
   test failures introduced by #324 (#328)
+- **tests**: remove flaky `it_adds_minimal_overhead_for_cold_cache_over_no_cache` — timing
+  assertion on subprocess wall-clock was sensitive to CI runner jitter; remaining cache perf
+  tests already prove warm < cold speedup (#334)
 
 ### Docs
 
@@ -27,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI flags, 6 fictional TOML keys, fixed env var references, added 5 missing CLI flags to
   the configuration reference, corrected score formula, and updated mutmut comparisons per
   maintainer feedback (#315, #326)
+
+### Dependencies
+
+- bump dorny/paths-filter 3 → 4 (#316)
+- bump tox-uv 1.33.1 → 1.33.4 (#319)
+- bump tox 4.49.0 → 4.50.3 (#330)
+- bump pytest-cov 7.0.0 → 7.1.0 (#331)
+- bump coverage 7.13.4 → 7.13.5 (#332)
+- bump ruff 0.15.5 → 0.15.7 (#333)
 
 ## v1.5.1 (2026-03-15)
 
