@@ -34,7 +34,7 @@ uv venv "$BENCHMARK_DIR/.venv" --quiet
 source "$BENCHMARK_DIR/.venv/bin/activate"
 
 # Install pinned attrs + pytest
-uv pip install "attrs==$ATTRS_VERSION" pytest --quiet
+uv pip install "attrs==$ATTRS_VERSION" pytest hypothesis --quiet
 
 # Install pytest-gremlins from current source (editable so changes take effect)
 uv pip install -e "$GREMLINS_SRC" --quiet
