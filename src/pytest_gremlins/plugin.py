@@ -2129,7 +2129,7 @@ def _pytest_cov_available() -> bool:
         True when ``pytest-cov`` is importable, False otherwise.
     """
     try:
-        import pytest_cov  # type: ignore[import-not-found]  # noqa: F401, PLC0415
+        import pytest_cov  # type: ignore  # noqa: F401, PLC0415
     except ImportError:
         return False
     else:
