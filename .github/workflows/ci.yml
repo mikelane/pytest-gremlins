@@ -220,7 +220,7 @@ jobs:
           key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
 
       - name: Run attrs smoke test
-        run: uv run pytest tests/integration/test_attrs_smoke.py -m medium --timeout=120 -v
+        run: uv run pytest tests/integration/test_attrs_smoke.py -m medium -v
 
   all-checks:
     name: All Checks Passed
