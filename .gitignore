@@ -190,3 +190,10 @@ site/
 # Demo videos (hosted on YouTube, not committed to repo)
 *.mp4
 *.webm
+
+# Autoresearch generated files
+autoresearch/baseline_metrics.json
+autoresearch/best_metrics.json
+autoresearch/experiment_log.json
+autoresearch/.hypothesis
+autoresearch/.test_failed
