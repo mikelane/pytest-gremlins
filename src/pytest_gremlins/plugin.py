@@ -2118,12 +2118,34 @@ def _build_filtered_test_command(
     return command
 
 
+def _pytest_cov_available() -> bool:
+    """Check if pytest-cov is available in the current environment.
+
+    The check runs in the parent process (where gremlins is running),
+    not the subprocess.  This is correct because gremlins and the target
+    project share the same venv.
+
+    Returns:
+        True when ``pytest-cov`` is importable, False otherwise.
+    """
+    try:
+        import pytest_cov  # type: ignore[import-not-found]  # noqa: F401, PLC0415
+    except ImportError:
+        return False
+    else:
+        return True
+
+
 def _build_test_command(instrumented_dir: Path | None) -> list[str]:
     """Build the command to run tests.
 
     If an instrumented directory is provided, uses the bootstrap script
     to register import hooks before running pytest. Otherwise, runs
     pytest directly.
+
+    ``--no-cov`` is only appended when ``pytest-cov`` is installed so
+    that projects without the plugin do not receive an unknown CLI flag
+    (which causes pytest exit-code 4).
 
     Args:
         instrumented_dir: Directory containing bootstrap infrastructure, or None.
@@ -2133,7 +2155,7 @@ def _build_test_command(instrumented_dir: Path | None) -> list[str]:
     """
     if instrumented_dir is not None:
         bootstrap_script = instrumented_dir / 'gremlin_bootstrap.py'
-        return [
+        command = [
             sys.executable,
             str(bootstrap_script),
             '-x',
@@ -2141,19 +2163,23 @@ def _build_test_command(instrumented_dir: Path | None) -> list[str]:
             '-q',
             '-o',
             'addopts=',
-            '--no-cov',
         ]
-    return [
-        sys.executable,
-        '-m',
-        'pytest',
-        '-x',
-        '--tb=no',
-        '-q',
-        '-o',
-        'addopts=',
-        '--no-cov',
-    ]
+    else:
+        command = [
+            sys.executable,
+            '-m',
+            'pytest',
+            '-x',
+            '--tb=no',
+            '-q',
+            '-o',
+            'addopts=',
+        ]
+
+    if _pytest_cov_available():
+        command.append('--no-cov')
+
+    return command
 
 
 def _immediate_result_if_pardoned(gremlin: Gremlin) -> GremlinResult | None:
