@@ -67,7 +67,7 @@ entry = {
     'hypothesis': '''$hypothesis''',
     'wall_time_seconds': $wall_time,
     'gremlins_found': $gremlins,
-    'accepted': $accepted,
+    'accepted': '$accepted' == 'true',
     'reason': '$reason',
     'files_changed': json.loads('$files_changed')
 }
