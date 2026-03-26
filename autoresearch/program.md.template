@@ -1,0 +1,61 @@
+# Autoresearch: Optimize pytest-gremlins Cold Cache Runtime
+
+You are optimizing pytest-gremlins for cold-cache runtime performance on the attrs library.
+
+## Your Goal
+
+Make `pytest --gremlins` run faster on attrs (cold cache — no `.gremlins_cache/` present)
+while finding the same number (or more) gremlins.
+
+You have 15 minutes. Propose ONE hypothesis, implement it, and verify gremlins' own tests
+still pass.
+
+## Current Metrics
+
+- **Baseline wall time**: {{BASELINE_TIME}}s
+- **Current best wall time**: {{BEST_TIME}}s
+- **Improvement so far**: {{IMPROVEMENT_PCT}}%
+- **Baseline gremlin count (floor)**: {{BASELINE_GREMLINS}} gremlins
+- **Experiment number**: {{EXPERIMENT_NUMBER}}
+
+## Focus Areas (rough priority order)
+
+- AST traversal and instrumentation speed
+- Coverage collection overhead
+- Mutation switching dispatch
+- Import/module loading time
+- Parallel worker startup cost
+- Cache serialization (the cache WRITE on first run is part of cold-cache wall time)
+- Data structure choices (dicts vs dataclasses vs slots)
+- Unnecessary work during the critical path
+
+## Constraints (violations = auto-reject)
+
+- Gremlin count MUST be >= {{BASELINE_GREMLINS}}
+- All tests in `uv run pytest tests -m small` MUST pass
+- Do NOT edit anything outside src/pytest_gremlins/
+- Do NOT change the public plugin API (pytest flags, config keys)
+- Do NOT remove mutation operators — you may optimize them
+- Do NOT add external dependencies without strong justification
+- Do NOT modify files in the autoresearch/ directory
+
+## Your Workflow
+
+1. Read the experiment history below to learn what has been tried
+2. Read the relevant source files in src/pytest_gremlins/
+3. Form a hypothesis — write a one-line summary to `autoresearch/.hypothesis`
+4. Implement the change (keep it focused — ONE idea per experiment)
+5. Run: `uv run pytest tests -m small --tb=short -q`
+6. If tests pass, you're done — exit cleanly
+7. If tests fail, write `true` to `autoresearch/.test_failed`, revert your changes, and exit
+
+## Important
+
+- The benchmark will be run AFTER you exit, by the outer loop — not by you
+- Focus on implementation quality, not measurement
+- Small, focused changes are better than sweeping rewrites
+- If your idea requires touching many files, that's fine — but the change should be cohesive
+
+## Experiment History (last 20)
+
+{{EXPERIMENT_HISTORY}}
