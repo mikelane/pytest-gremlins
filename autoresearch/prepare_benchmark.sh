@@ -58,7 +58,7 @@ cd "$ATTRS_DIR"
 # Target src/attr/ (the main package with ~5800 LOC, not src/attrs/ which is just re-exports)
 # Use --gremlin-targets to override auto-discovery which picks up the wrong package
 # Tests live in tests/ at the repo root — pytest discovers them automatically
-pytest --gremlins -x --no-header -q --gremlin-targets src/attr 2>&1 | tee "$GREMLINS_OUTPUT_FILE" >&2 || true
+pytest --gremlins --gremlin-workers=auto -x --no-header -q --gremlin-targets src/attr 2>&1 | tee "$GREMLINS_OUTPUT_FILE" >&2 || true
 
 END_TIME=$(python3 -c "import time; print(time.monotonic())")
 
