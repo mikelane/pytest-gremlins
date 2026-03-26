@@ -113,3 +113,14 @@ class MutationScore:
         """
         survivors = [r for r in self.results if r.is_survived]
         return survivors[:limit]
+
+    def top_errors(self, limit: int = 5) -> list[GremlinResult]:
+        """Return the first N errored gremlins that have error_output.
+
+        Args:
+            limit: Maximum number of errored results to return.
+
+        Returns:
+            List of GremlinResult objects with ERROR status and non-empty error_output.
+        """
+        return [r for r in self.results if r.status == GremlinResultStatus.ERROR and r.error_output][:limit]

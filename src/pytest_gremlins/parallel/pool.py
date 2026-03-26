@@ -41,12 +41,14 @@ class WorkerResult:
         status: The outcome of testing the gremlin.
         killing_test: Name of test that killed the gremlin (if any).
         execution_time_ms: Time taken to test this gremlin.
+        error_output: Captured stderr or exception message when status is ERROR.
     """
 
     gremlin_id: str
     status: GremlinResultStatus
     killing_test: str | None = None
     execution_time_ms: float | None = None
+    error_output: str = ''
 
 
 def _run_gremlin_test(  # pragma: no cover
@@ -105,10 +107,14 @@ def _run_gremlin_test(  # pragma: no cover
                 killing_test='unknown',
                 execution_time_ms=execution_time_ms,
             )
+        error_output = ''
+        if result.stderr:
+            error_output = result.stderr.decode(errors='replace')[:2000]
         return WorkerResult(
             gremlin_id=gremlin_id,
             status=GremlinResultStatus.ERROR,
             execution_time_ms=execution_time_ms,
+            error_output=error_output,
         )
     except subprocess.TimeoutExpired:
         execution_time_ms = (time.monotonic() - start_time) * 1000
@@ -124,6 +130,7 @@ def _run_gremlin_test(  # pragma: no cover
             gremlin_id=gremlin_id,
             status=GremlinResultStatus.ERROR,
             execution_time_ms=execution_time_ms,
+            error_output=str(exc)[:2000],
         )
 
 

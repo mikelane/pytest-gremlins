@@ -149,4 +149,6 @@ class JsonReporter:
         }
         if result.killing_test is not None:
             entry['killing_test'] = result.killing_test
+        if result.error_output:
+            entry['error_output'] = result.error_output
         return entry

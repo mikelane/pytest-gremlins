@@ -167,6 +167,9 @@ class StrykerExporter:
         if result.execution_time_ms is not None:
             mutant['duration'] = int(result.execution_time_ms)
 
+        if result.error_output:
+            mutant['statusReason'] = result.error_output[:500]
+
         return mutant
 
     def _build_location(self, gremlin: Gremlin) -> StrykerPosition:

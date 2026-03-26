@@ -22,8 +22,10 @@ class CachedGremlinResult(TypedDict):
                 (``'zapped'``, ``'survived'``, ``'timeout'``, ``'error'``).
         killing_test: Name of the test that killed the gremlin, or ``None``.
         execution_time_ms: Wall-clock milliseconds for the gremlin run, or ``None``.
+        error_output: Captured stderr or exception text for errored gremlins.
     """
 
     status: str
     killing_test: str | None
     execution_time_ms: float | None
+    error_output: str

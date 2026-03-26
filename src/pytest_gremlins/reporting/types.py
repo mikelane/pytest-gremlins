@@ -46,6 +46,7 @@ class StrykerMutant(TypedDict):
     description: str
     killedBy: NotRequired[list[str]]
     duration: NotRequired[int]
+    statusReason: NotRequired[str]
 
 
 class StrykerFileResult(TypedDict):
@@ -105,6 +106,7 @@ class JsonResultEntry(TypedDict):
     operator: str
     description: str
     killing_test: NotRequired[str]
+    error_output: NotRequired[str]
 
 
 class JsonReport(TypedDict):

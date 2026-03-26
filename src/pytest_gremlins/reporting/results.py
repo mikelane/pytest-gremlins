@@ -41,12 +41,14 @@ class GremlinResult:
         status: Outcome of the mutation test.
         killing_test: Name of the test that killed this gremlin (if zapped).
         execution_time_ms: Time taken to test this gremlin in milliseconds.
+        error_output: Captured stderr or exception message when status is ERROR.
     """
 
     gremlin: Gremlin
     status: GremlinResultStatus
     killing_test: str | None = None
     execution_time_ms: float | None = None
+    error_output: str = ''
 
     @property
     def is_zapped(self) -> bool:

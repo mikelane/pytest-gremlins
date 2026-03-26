@@ -144,6 +144,7 @@ def _run_gremlin_batch(  # pragma: no cover
                     gremlin_id=gremlin_id,
                     status=GremlinResultStatus.ERROR,
                     execution_time_ms=execution_time_ms,
+                    error_output=str(exc)[:2000],
                 )
             )
             break
@@ -179,6 +180,7 @@ def _run_gremlin_test(  # pragma: no cover
         else WorkerResult(
             gremlin_id=gremlin_id,
             status=GremlinResultStatus.ERROR,
+            error_output='no results returned from batch',
         )
     )
 
