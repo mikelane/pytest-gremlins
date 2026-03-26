@@ -125,6 +125,7 @@ class HtmlReporter:
         {self._render_charts(score, chart_data)}
         {self._render_results_table(score)}
         {self._render_pardoned_section(score)}
+        {self._render_errors_section(score)}
         {history_html}
         </main>
     </div>
@@ -756,6 +757,54 @@ class HtmlReporter:
                     <th scope="col">Operator</th>
                     <th scope="col">Description</th>
                     <th scope="col">Pardon Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+        """
+
+    def _render_errors_section(self, score: MutationScore) -> str:
+        """Render a table of errored gremlins with collapsible stderr panels.
+
+        Args:
+            score: The MutationScore containing result data.
+
+        Returns:
+            HTML string for the errors section, or empty string when none exist.
+        """
+        error_results = [r for r in score.results if r.status == GremlinResultStatus.ERROR and r.error_output]
+        if not error_results:
+            return ''
+
+        rows = ''
+        for result in error_results:
+            gremlin = result.gremlin
+            escaped_output = self._escape_html(result.error_output)
+            rows += f"""
+                <tr>
+                    <td>{self._escape_html(gremlin.file_path)}</td>
+                    <td>{gremlin.line_number}</td>
+                    <td>{self._escape_html(gremlin.operator_name)}</td>
+                    <td>
+                        <details>
+                            <summary>Show stderr</summary>
+                            <pre>{escaped_output}</pre>
+                        </details>
+                    </td>
+                </tr>"""
+
+        return f"""
+        <h2>Errored Gremlins</h2>
+        <table>
+            <caption>Gremlins that failed with errors during testing</caption>
+            <thead>
+                <tr>
+                    <th scope="col">File</th>
+                    <th scope="col">Line</th>
+                    <th scope="col">Operator</th>
+                    <th scope="col">Error Output</th>
                 </tr>
             </thead>
             <tbody>

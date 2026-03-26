@@ -80,6 +80,7 @@ def make_result(make_gremlin: MakeGremlinFactory) -> MakeResultFactory:
         killing_test: str | None = None,
         execution_time_ms: float | None = None,
         pardon_reason: str | None = None,
+        error_output: str = '',
     ) -> GremlinResult:
         gremlin = make_gremlin(
             file_path=file_path,
@@ -98,6 +99,7 @@ def make_result(make_gremlin: MakeGremlinFactory) -> MakeResultFactory:
             status=status,
             killing_test=killing_test,
             execution_time_ms=execution_time_ms,
+            error_output=error_output,
         )
 
     return _make_result

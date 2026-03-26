@@ -63,6 +63,7 @@ class ConsoleReporter:
             self._write_summary(score)
             self._write_blank_line()
             self._write_survivors(score)
+            self._write_errors(score)
 
         self._write_hint()
         self._write_footer()
@@ -106,6 +107,23 @@ class ConsoleReporter:
             gremlin = result.gremlin
             location = f'{gremlin.file_path}:{gremlin.line_number}'
             self._write_line(f'  {location:<24} {gremlin.description:<16} ({gremlin.operator_name})')
+
+    def _write_errors(self, score: MutationScore) -> None:
+        """Write the top errored gremlins with stderr excerpts.
+
+        Uses limit=10 (vs top_errors() default of 5) to show more context
+        in the console, matching the limit used by _write_survivors().
+        """
+        errors = score.top_errors(limit=10)
+        if not errors:
+            return
+
+        self._write_line('Top errored gremlins:')
+        for result in errors:
+            gremlin = result.gremlin
+            location = f'{gremlin.file_path}:{gremlin.line_number}'
+            last_line = result.error_output.strip().split('\n')[-1][:120]
+            self._write_line(f'  {location:<40} {last_line}')
 
     def _write_hint(self) -> None:
         """Write hint about detailed report."""

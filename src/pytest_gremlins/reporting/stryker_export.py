@@ -167,6 +167,11 @@ class StrykerExporter:
         if result.execution_time_ms is not None:
             mutant['duration'] = int(result.execution_time_ms)
 
+        if result.error_output:
+            # Truncate to 500 chars for Stryker (vs 2000 at capture sites) to keep
+            # the JSON report size reasonable when many gremlins error.
+            mutant['statusReason'] = result.error_output[:500]
+
         return mutant
 
     def _build_location(self, gremlin: Gremlin) -> StrykerPosition:

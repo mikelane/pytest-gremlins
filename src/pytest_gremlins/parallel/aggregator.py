@@ -101,7 +101,7 @@ class ResultAggregator:
             self._results.append(result)
             self._update_status_count(result.status)
 
-    def add_error(self, gremlin_id: str, error: Exception) -> None:  # noqa: ARG002
+    def add_error(self, gremlin_id: str, error: Exception) -> None:
         """Record an error for a gremlin.
 
         Creates an ERROR status result when a worker fails.
@@ -113,6 +113,7 @@ class ResultAggregator:
         result = WorkerResult(
             gremlin_id=gremlin_id,
             status=GremlinResultStatus.ERROR,
+            error_output=str(error)[:2000],
         )
         self.add_result(result)
 

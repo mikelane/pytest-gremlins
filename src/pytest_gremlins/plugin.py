@@ -1688,6 +1688,7 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912
             status=worker_result.status,
             killing_test=worker_result.killing_test,
             execution_time_ms=worker_result.execution_time_ms,
+            error_output=worker_result.error_output,
         )
         results.append(gremlin_result)
 
@@ -1813,6 +1814,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
             status=worker_result.status,
             killing_test=worker_result.killing_test,
             execution_time_ms=worker_result.execution_time_ms,
+            error_output=worker_result.error_output,
         )
         results.append(gremlin_result)
 
@@ -1958,6 +1960,7 @@ def _check_cache_for_gremlin(
         status=status,
         killing_test=cached.get('killing_test'),
         execution_time_ms=cached.get('execution_time_ms'),
+        error_output=cached.get('error_output', ''),
     )
 
 
@@ -1993,6 +1996,7 @@ def _cache_gremlin_result(
             status=result.status.value,
             killing_test=result.killing_test,
             execution_time_ms=result.execution_time_ms,
+            error_output=result.error_output,
         ),
     )
 
@@ -2222,9 +2226,19 @@ def _test_gremlin(
                 status=GremlinResultStatus.ZAPPED,
                 killing_test='unknown',
             )
+        error_output = ''
+        if subprocess_outcome.stderr:
+            error_output = subprocess_outcome.stderr.decode(errors='replace')[:2000]
+        logger.debug(
+            'Gremlin %s error (exit %d): %s',
+            gremlin.gremlin_id,
+            subprocess_outcome.returncode,
+            error_output[:200],
+        )
         return GremlinResult(
             gremlin=gremlin,
             status=GremlinResultStatus.ERROR,
+            error_output=error_output,
         )
     except subprocess.TimeoutExpired:  # pragma: no cover
         return GremlinResult(
@@ -2236,6 +2250,7 @@ def _test_gremlin(
         return GremlinResult(
             gremlin=gremlin,
             status=GremlinResultStatus.ERROR,
+            error_output=str(exc)[:2000],
         )
 
 
