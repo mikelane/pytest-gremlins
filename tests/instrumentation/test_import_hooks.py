@@ -127,7 +127,7 @@ class DescribeGremlinLoader:
         record = caplog.records[0]
         assert 'bad_module' in record.message
         assert record.exc_info is not None
-        assert record.exc_info[1] is not None
+        assert isinstance(record.exc_info[1], RuntimeError)
 
     def it_exec_module_reads_active_gremlin_from_environment(self, monkeypatch):
         monkeypatch.setenv(ACTIVE_GREMLIN_ENV_VAR, 'g001')
