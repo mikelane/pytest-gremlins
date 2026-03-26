@@ -117,11 +117,54 @@ jobs:
             regression_report.txt
           retention-days: 90
 
+  # Full attrs compatibility gate
+  attrs-compat:
+    name: Attrs Compatibility
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Restore attrs checkout cache
+        id: attrs-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/attrs-checkout
+          key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
+
+      - name: Clone attrs on cache miss
+        if: steps.attrs-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/python-attrs/attrs.git /tmp/attrs-checkout
+          cd /tmp/attrs-checkout
+          git checkout bd2446d77736a164b59b268a3792ed3e4bfba088
+
+      - name: Save attrs checkout cache
+        if: steps.attrs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/attrs-checkout
+          key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
+
+      - name: Run full attrs compatibility test
+        run: uv run pytest tests/integration/test_attrs_full.py -m medium --timeout=600 -v
+
   # Build the package
   build:
     name: Build Package
     runs-on: ubuntu-latest
-    needs: [test, benchmark]
+    needs: [test, benchmark, attrs-compat]
     steps:
       - uses: actions/checkout@v6
 

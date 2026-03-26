@@ -179,10 +179,53 @@ jobs:
       - name: Run pip-audit
         run: uv run pip-audit
 
+  attrs-smoke:
+    name: Attrs Smoke Test
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.src == 'true'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Restore attrs checkout cache
+        id: attrs-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/attrs-checkout
+          key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
+
+      - name: Clone attrs on cache miss
+        if: steps.attrs-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/python-attrs/attrs.git /tmp/attrs-checkout
+          cd /tmp/attrs-checkout
+          git checkout bd2446d77736a164b59b268a3792ed3e4bfba088
+
+      - name: Save attrs checkout cache
+        if: steps.attrs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/attrs-checkout
+          key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
+
+      - name: Run attrs smoke test
+        run: uv run pytest tests/integration/test_attrs_smoke.py -m medium --timeout=120 -v
+
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [changes, lint, typecheck, test, docs, security]
+    needs: [changes, lint, typecheck, test, docs, security, attrs-smoke]
     if: always()
     steps:
       - name: Verify all jobs succeeded
@@ -194,13 +237,15 @@ jobs:
           TEST_RESULT: ${{ needs.test.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
+          ATTRS_SMOKE_RESULT: ${{ needs.attrs-smoke.result }}
         run: |
           # For docs-only changes, skip src-related checks
           if [[ "$SRC_CHANGED" == "true" ]]; then
             if [[ "$LINT_RESULT" != "success" ]] || \
                [[ "$TYPECHECK_RESULT" != "success" ]] || \
                [[ "$TEST_RESULT" != "success" ]] || \
-               [[ "$SECURITY_RESULT" != "success" ]]; then
+               [[ "$SECURITY_RESULT" != "success" ]] || \
+               [[ "$ATTRS_SMOKE_RESULT" != "success" ]]; then
               echo "Source code checks failed"
               exit 1
             fi
