@@ -7,6 +7,7 @@ Provides ``JsonValue`` for generic JSON-serialisable data and
 from __future__ import annotations
 
 from typing import (
+    NotRequired,
     TypeAlias,
     TypedDict,
 )
@@ -28,4 +29,4 @@ class CachedGremlinResult(TypedDict):
     status: str
     killing_test: str | None
     execution_time_ms: float | None
-    error_output: str
+    error_output: NotRequired[str]

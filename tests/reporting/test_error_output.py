@@ -11,6 +11,8 @@ import json
 
 import pytest
 
+from pytest_gremlins.cache.incremental import IncrementalCache
+from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.console import ConsoleReporter
@@ -220,6 +222,62 @@ class DescribeStrykerExporterErrorOutput:
         mutant = data['files']['test.py']['mutants'][0]
 
         assert 'statusReason' not in mutant
+
+
+@pytest.mark.medium
+class DescribeCachedGremlinResultErrorOutput:
+    """Tests for error_output in cache round-trip."""
+
+    def it_round_trips_error_output_through_cache(self, tmp_path) -> None:
+        cache = IncrementalCache(tmp_path / '.gremlins_cache')
+        cached_result = CachedGremlinResult(
+            status='error',
+            killing_test=None,
+            execution_time_ms=42.0,
+            error_output='ImportError: No module named foo',
+        )
+        cache.cache_result(
+            gremlin_id='g001',
+            source_hash='abc123',
+            test_hashes={'test_foo': 'def456'},
+            result=cached_result,
+        )
+
+        retrieved = cache.get_cached_result(
+            gremlin_id='g001',
+            source_hash='abc123',
+            test_hashes={'test_foo': 'def456'},
+        )
+
+        assert retrieved is not None
+        assert retrieved['error_output'] == 'ImportError: No module named foo'
+        cache.close()
+
+    def it_deserializes_old_cache_entries_without_error_output(self, tmp_path) -> None:
+        cache = IncrementalCache(tmp_path / '.gremlins_cache')
+        # Simulate an old-format entry by casting a dict without error_output
+        old_result: CachedGremlinResult = {  # type: ignore[typeddict-item]
+            'status': 'zapped',
+            'killing_test': 'test_foo',
+            'execution_time_ms': 10.0,
+        }
+        cache.cache_result(
+            gremlin_id='g002',
+            source_hash='abc123',
+            test_hashes={'test_foo': 'def456'},
+            result=old_result,
+        )
+
+        retrieved = cache.get_cached_result(
+            gremlin_id='g002',
+            source_hash='abc123',
+            test_hashes={'test_foo': 'def456'},
+        )
+
+        assert retrieved is not None
+        # Old entries lack the key — caller uses .get('error_output', '')
+        assert retrieved.get('error_output', '') == ''
+        cache.close()
 
 
 @pytest.mark.small

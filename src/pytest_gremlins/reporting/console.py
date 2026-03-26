@@ -109,7 +109,11 @@ class ConsoleReporter:
             self._write_line(f'  {location:<24} {gremlin.description:<16} ({gremlin.operator_name})')
 
     def _write_errors(self, score: MutationScore) -> None:
-        """Write the top errored gremlins with stderr excerpts."""
+        """Write the top errored gremlins with stderr excerpts.
+
+        Uses limit=10 (vs top_errors() default of 5) to show more context
+        in the console, matching the limit used by _write_survivors().
+        """
         errors = score.top_errors(limit=10)
         if not errors:
             return
