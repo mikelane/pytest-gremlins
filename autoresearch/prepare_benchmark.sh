@@ -39,22 +39,10 @@ uv pip install "attrs==$ATTRS_VERSION" pytest --quiet
 # Install pytest-gremlins from current source (editable so changes take effect)
 uv pip install -e "$GREMLINS_SRC" --quiet
 
-# Clone attrs test suite into the benchmark dir
-# We use pip download + extract to get the source with tests
-uv pip download "attrs==$ATTRS_VERSION" --no-binary :all: --dest "$BENCHMARK_DIR/downloads" --quiet
-tar xzf "$BENCHMARK_DIR/downloads"/attrs-*.tar.gz -C "$BENCHMARK_DIR" --strip-components=1 2>/dev/null \
-    || unzip -qo "$BENCHMARK_DIR/downloads"/attrs-*.zip -d "$BENCHMARK_DIR/attrs-src" 2>/dev/null
-
-# Find the attrs source directory (handles both tar.gz and zip layouts)
-ATTRS_DIR="$(find "$BENCHMARK_DIR" -name "pyproject.toml" -path "*/attrs*" -exec dirname {} \; | head -1)"
-if [[ -z "$ATTRS_DIR" ]]; then
-    # Fallback: find any pyproject.toml that isn't from gremlins itself
-    ATTRS_DIR="$(find "$BENCHMARK_DIR" -name "pyproject.toml" -not -path "$GREMLINS_SRC/*" -exec dirname {} \; | head -1)"
-fi
-if [[ -z "$ATTRS_DIR" ]]; then
-    echo '{"error": "Could not find attrs source directory"}' >&2
-    exit 1
-fi
+# Clone attrs source at pinned version (git tag)
+# This guarantees we get the full source tree including tests.
+ATTRS_DIR="$BENCHMARK_DIR/attrs"
+git clone --depth 1 --branch "$ATTRS_VERSION" https://github.com/python-attrs/attrs.git "$ATTRS_DIR" --quiet
 
 # Ensure no gremlins cache exists (cold cache guarantee)
 rm -rf "$ATTRS_DIR/.gremlins_cache"
