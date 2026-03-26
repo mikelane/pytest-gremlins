@@ -31,11 +31,14 @@ from importlib.abc import (
     MetaPathFinder,
 )
 from importlib.machinery import ModuleSpec
+import logging
 import os
 import sys
 from typing import TYPE_CHECKING
 
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import ast
@@ -89,8 +92,16 @@ class GremlinLoader(Loader):
         # Compile and execute the instrumented AST
         # Note: This exec is intentional - we're executing pre-validated, transformed AST
         # from our own instrumentation process, not arbitrary user input.
-        code = compile(self._tree, self._module_name, 'exec')
-        exec(code, module.__dict__)  # noqa: S102
+        try:
+            code = compile(self._tree, self._module_name, 'exec')
+            exec(code, module.__dict__)  # noqa: S102
+        except Exception:
+            logger.error(
+                'Failed to execute instrumented module %s',
+                self._module_name,
+                exc_info=True,
+            )
+            raise
 
 
 class GremlinFinder(MetaPathFinder):

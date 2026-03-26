@@ -12,6 +12,7 @@ from importlib.abc import (
     MetaPathFinder,
 )
 from importlib.machinery import ModuleSpec
+import logging
 import sys
 import types
 from typing import TYPE_CHECKING
@@ -108,6 +109,25 @@ class DescribeGremlinLoader:
 
         # The loader should inject __gremlin_active__ from environment
         assert hasattr(module, '__gremlin_active__')
+
+    def it_logs_and_reraises_when_instrumented_code_raises(self, caplog):
+        source = 'raise RuntimeError("boom")'
+        tree = ast.parse(source)
+        ast.fix_missing_locations(tree)
+        loader = GremlinLoader(tree, module_name='bad_module')
+
+        module = types.ModuleType('bad_module')
+        with (
+            caplog.at_level(logging.ERROR, logger='pytest_gremlins.instrumentation.import_hooks'),
+            pytest.raises(RuntimeError, match='boom'),
+        ):
+            loader.exec_module(module)
+
+        assert len(caplog.records) == 1
+        record = caplog.records[0]
+        assert 'bad_module' in record.message
+        assert record.exc_info is not None
+        assert isinstance(record.exc_info[1], RuntimeError)
 
     def it_exec_module_reads_active_gremlin_from_environment(self, monkeypatch):
         monkeypatch.setenv(ACTIVE_GREMLIN_ENV_VAR, 'g001')
