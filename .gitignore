@@ -156,6 +156,7 @@ mutants/
 # Coverage
 .coverage
 .coverage.*
+coverage.json
 htmlcov/
 
 # pytest
@@ -165,6 +166,11 @@ htmlcov/
 *.egg-info/
 dist/
 build/
+
+# Claude Code local config
+.claude/settings.local.json
+.claude/*.local.md
+.claude/todos/
 
 # Local development
 .env.local
