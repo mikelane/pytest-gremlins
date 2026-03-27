@@ -118,7 +118,10 @@ print(template.replace('{{EXPERIMENT_HISTORY}}', history))
 
 revert_changes() {
     cd "$PROJECT_ROOT"
-    git checkout -- src/pytest_gremlins/ 2>/dev/null || true
+    # Use HEAD explicitly: `git checkout --` restores from INDEX, which fails
+    # if the agent ran `git add` (index has agent's changes, not HEAD's).
+    # `git checkout HEAD --` resets both index AND working tree to last commit.
+    git checkout HEAD -- src/pytest_gremlins/ 2>/dev/null || true
     git clean -fd src/pytest_gremlins/ 2>/dev/null || true
 }
 
