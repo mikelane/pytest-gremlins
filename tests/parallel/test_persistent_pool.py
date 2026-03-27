@@ -332,12 +332,14 @@ sys.exit(1 if gremlin == 'g002' else 0)
             )
             results = future.result(timeout=10)
 
-            # g001 survives, g002 is zapped (caught), g003 should be skipped
-            assert len(results) == 2
+            # All gremlins tested: g001 survives, g002 zapped, g003 survives
+            assert len(results) == 3
             assert results[0].gremlin_id == 'g001'
             assert results[0].status == GremlinResultStatus.SURVIVED
             assert results[1].gremlin_id == 'g002'
             assert results[1].status == GremlinResultStatus.ZAPPED
+            assert results[2].gremlin_id == 'g003'
+            assert results[2].status == GremlinResultStatus.SURVIVED
 
     @pytest.mark.medium
     def it_submit_batch_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:

@@ -114,17 +114,15 @@ def _run_gremlin_batch(  # pragma: no cover
                         execution_time_ms=execution_time_ms,
                     )
                 )
-                # Early termination - stop after first zapped gremlin
-                break
-
-            # Mutation survived - test passed
-            results.append(
-                WorkerResult(
-                    gremlin_id=gremlin_id,
-                    status=GremlinResultStatus.SURVIVED,
-                    execution_time_ms=execution_time_ms,
+            else:
+                # Mutation survived - test passed
+                results.append(
+                    WorkerResult(
+                        gremlin_id=gremlin_id,
+                        status=GremlinResultStatus.SURVIVED,
+                        execution_time_ms=execution_time_ms,
+                    )
                 )
-            )
         except subprocess.TimeoutExpired:
             execution_time_ms = (time.monotonic() - start_time) * 1000
             results.append(
@@ -134,8 +132,6 @@ def _run_gremlin_batch(  # pragma: no cover
                     execution_time_ms=execution_time_ms,
                 )
             )
-            # Early termination on timeout too
-            break
         except Exception as exc:
             logger.warning('Error testing gremlin %s: %s', gremlin_id, exc)
             execution_time_ms = (time.monotonic() - start_time) * 1000
@@ -147,7 +143,6 @@ def _run_gremlin_batch(  # pragma: no cover
                     error_output=str(exc)[:2000],
                 )
             )
-            break
 
     return results
 
