@@ -41,6 +41,7 @@ from typing import (
 if TYPE_CHECKING:
     import multiprocessing
 
+from pytest_gremlins.parallel.lightweight import build_lightweight_command
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
@@ -67,11 +68,11 @@ def _run_gremlin_batch(  # pragma: no cover
     env_vars: dict[str, str],
     timeout: int,
 ) -> list[WorkerResult]:
-    """Execute tests for multiple gremlins in a single subprocess call.
+    """Execute tests for multiple gremlins, using the lightweight runner when available.
 
-    This function tests gremlins sequentially within a single process,
-    avoiding the subprocess startup overhead for each individual gremlin.
-    Uses early termination: stops after first zapped gremlin.
+    Tries the lightweight runner first (skips full pytest startup, ~50ms per
+    gremlin instead of ~950ms). Falls back to the standard subprocess approach
+    if the lightweight runner is not available.
 
     Args:
         gremlin_ids: List of gremlin IDs to test.
@@ -83,6 +84,9 @@ def _run_gremlin_batch(  # pragma: no cover
     Returns:
         List of WorkerResult for each tested gremlin.
     """
+    lightweight_cmd = build_lightweight_command(test_command, env_vars)
+    effective_command = lightweight_cmd if lightweight_cmd is not None else test_command
+
     results: list[WorkerResult] = []
 
     for gremlin_id in gremlin_ids:
@@ -91,10 +95,11 @@ def _run_gremlin_batch(  # pragma: no cover
         env = os.environ.copy()
         env.update(env_vars)
         env['ACTIVE_GREMLIN'] = gremlin_id
+        env['GREMLIN_ROOTDIR'] = rootdir
 
         try:
             result = subprocess.run(  # Intentional: runs pytest test commands
-                test_command,
+                effective_command,
                 cwd=rootdir,
                 env=env,
                 capture_output=True,
@@ -104,8 +109,20 @@ def _run_gremlin_batch(  # pragma: no cover
 
             execution_time_ms = (time.monotonic() - start_time) * 1000
 
-            if result.returncode != 0:
-                # Mutation caught - test failed
+            # Only return code 1 (tests failed) should be treated as a mutation
+            # being zapped. Other non-zero return codes indicate pytest errors
+            # (collection/import/internal) and should not inflate the score.
+            if result.returncode == 0:
+                # Mutation survived - tests passed
+                results.append(
+                    WorkerResult(
+                        gremlin_id=gremlin_id,
+                        status=GremlinResultStatus.SURVIVED,
+                        execution_time_ms=execution_time_ms,
+                    )
+                )
+            elif result.returncode == 1:
+                # Mutation caught - tests failed
                 results.append(
                     WorkerResult(
                         gremlin_id=gremlin_id,
@@ -114,17 +131,19 @@ def _run_gremlin_batch(  # pragma: no cover
                         execution_time_ms=execution_time_ms,
                     )
                 )
-                # Early termination - stop after first zapped gremlin
-                break
-
-            # Mutation survived - test passed
-            results.append(
-                WorkerResult(
-                    gremlin_id=gremlin_id,
-                    status=GremlinResultStatus.SURVIVED,
-                    execution_time_ms=execution_time_ms,
+            else:
+                # Other non-zero exit codes indicate errors
+                error_output = ''
+                if result.stderr:
+                    error_output = result.stderr.decode(errors='replace')[:2000]
+                results.append(
+                    WorkerResult(
+                        gremlin_id=gremlin_id,
+                        status=GremlinResultStatus.ERROR,
+                        execution_time_ms=execution_time_ms,
+                        error_output=error_output,
+                    )
                 )
-            )
         except subprocess.TimeoutExpired:
             execution_time_ms = (time.monotonic() - start_time) * 1000
             results.append(
@@ -134,8 +153,6 @@ def _run_gremlin_batch(  # pragma: no cover
                     execution_time_ms=execution_time_ms,
                 )
             )
-            # Early termination on timeout too
-            break
         except Exception as exc:
             logger.warning('Error testing gremlin %s: %s', gremlin_id, exc)
             execution_time_ms = (time.monotonic() - start_time) * 1000
@@ -147,7 +164,6 @@ def _run_gremlin_batch(  # pragma: no cover
                     error_output=str(exc)[:2000],
                 )
             )
-            break
 
     return results
 
@@ -399,7 +415,7 @@ class PersistentWorkerPool:
         """Submit a batch of gremlin tests for execution in a single subprocess.
 
         Batch execution reduces subprocess overhead by testing multiple gremlins
-        in one subprocess call. Uses early termination - stops after first zap.
+        in one subprocess call. Tests all gremlins in the batch independently.
 
         Args:
             gremlin_ids: List of gremlin IDs to test.

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from pytest_gremlins.parallel.lightweight import build_lightweight_command
 from pytest_gremlins.parallel.persistent_pool import PersistentWorkerPool
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
@@ -22,6 +23,100 @@ from pytest_gremlins.reporting.results import GremlinResultStatus
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@pytest.mark.small
+class DescribeBuildLightweightCommandEnvChecks:
+    """Tests for build_lightweight_command env var validation (no filesystem)."""
+
+    def it_returns_none_when_sources_file_not_in_env_vars(self) -> None:
+        """Missing PYTEST_GREMLINS_SOURCES_FILE means no lightweight runner."""
+        result = build_lightweight_command(
+            test_command=['python', 'bootstrap.py', '-x', 'tests/test_foo.py::test_bar'],
+            env_vars={},
+        )
+        assert result is None
+
+    def it_returns_none_when_sources_file_is_empty_string(self) -> None:
+        """Empty PYTEST_GREMLINS_SOURCES_FILE means no lightweight runner."""
+        result = build_lightweight_command(
+            test_command=['python', 'bootstrap.py', '-x', 'tests/test_foo.py::test_bar'],
+            env_vars={'PYTEST_GREMLINS_SOURCES_FILE': ''},
+        )
+        assert result is None
+
+
+@pytest.mark.medium
+class DescribeBuildLightweightCommandFilesystem:
+    """Tests for build_lightweight_command with filesystem interactions."""
+
+    def it_returns_none_when_runner_script_does_not_exist(self, tmp_path: Path) -> None:
+        """Non-existent runner script path means no lightweight runner."""
+        sources_file = str(tmp_path / 'sources.json')
+        # Do NOT create gremlin_lightweight_runner.py
+        result = build_lightweight_command(
+            test_command=['python', 'bootstrap.py', '-x', 'tests/test_foo.py::test_bar'],
+            env_vars={'PYTEST_GREMLINS_SOURCES_FILE': sources_file},
+        )
+        assert result is None
+
+    def it_returns_none_when_no_test_ids_in_args(self, tmp_path: Path) -> None:
+        """No arguments containing '::' means no test IDs to extract."""
+        sources_file = str(tmp_path / 'sources.json')
+        runner_path = tmp_path / 'gremlin_lightweight_runner.py'
+        runner_path.write_text('# runner')
+        result = build_lightweight_command(
+            test_command=['python', 'bootstrap.py', '-x', '--no-header'],
+            env_vars={'PYTEST_GREMLINS_SOURCES_FILE': sources_file},
+        )
+        assert result is None
+
+    def it_returns_lightweight_command_when_all_conditions_met(self, tmp_path: Path) -> None:
+        """Returns [python, runner_path, *test_ids] when runner exists and test IDs found."""
+        sources_file = str(tmp_path / 'sources.json')
+        runner_path = tmp_path / 'gremlin_lightweight_runner.py'
+        runner_path.write_text('# runner')
+        result = build_lightweight_command(
+            test_command=['python', 'bootstrap.py', '-x', 'tests/test_foo.py::test_bar'],
+            env_vars={'PYTEST_GREMLINS_SOURCES_FILE': sources_file},
+        )
+        assert result is not None
+        assert result[0] == 'python'
+        assert result[1] == str(runner_path)
+        assert result[2] == 'tests/test_foo.py::test_bar'
+
+    def it_extracts_multiple_test_ids_from_command(self, tmp_path: Path) -> None:
+        """Extracts all arguments containing '::' as test node IDs."""
+        sources_file = str(tmp_path / 'sources.json')
+        runner_path = tmp_path / 'gremlin_lightweight_runner.py'
+        runner_path.write_text('# runner')
+        result = build_lightweight_command(
+            test_command=[
+                'python',
+                'bootstrap.py',
+                '-x',
+                'tests/test_foo.py::test_bar',
+                'tests/test_baz.py::TestClass::test_method',
+            ],
+            env_vars={'PYTEST_GREMLINS_SOURCES_FILE': sources_file},
+        )
+        assert result is not None
+        assert len(result) == 4
+        assert result[2] == 'tests/test_foo.py::test_bar'
+        assert result[3] == 'tests/test_baz.py::TestClass::test_method'
+
+    def it_skips_non_test_id_args_before_extracting(self, tmp_path: Path) -> None:
+        """Only args after index 2 (skipping python and bootstrap) are checked for '::'."""
+        sources_file = str(tmp_path / 'sources.json')
+        runner_path = tmp_path / 'gremlin_lightweight_runner.py'
+        runner_path.write_text('# runner')
+        # The first two args (python, bootstrap.py) are never checked
+        result = build_lightweight_command(
+            test_command=['python', 'bootstrap.py', '--verbose', 'tests/test_a.py::test_x'],
+            env_vars={'PYTEST_GREMLINS_SOURCES_FILE': sources_file},
+        )
+        assert result is not None
+        assert result == ['python', str(runner_path), 'tests/test_a.py::test_x']
 
 
 @pytest.mark.small
@@ -259,6 +354,77 @@ class DescribePersistentWorkerPoolExecution:
             assert result.gremlin_id == 'g042'
 
 
+@pytest.mark.medium
+class DescribeReturnCodeSemantics:
+    """Tests for 3-way return code handling (0=survived, 1=zapped, other=error)."""
+
+    def it_treats_exit_code_0_as_survived(self, tmp_path: Path) -> None:
+        """Exit code 0 (tests passed) means the mutation survived."""
+        with PersistentWorkerPool(max_workers=1, timeout=5) as pool:
+            future = pool.submit(
+                gremlin_id='g001',
+                test_command=['python', '-c', 'import sys; sys.exit(0)'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            result = future.result(timeout=5)
+            assert result.status == GremlinResultStatus.SURVIVED
+
+    def it_treats_exit_code_1_as_zapped(self, tmp_path: Path) -> None:
+        """Exit code 1 (tests failed) means the mutation was caught."""
+        with PersistentWorkerPool(max_workers=1, timeout=5) as pool:
+            future = pool.submit(
+                gremlin_id='g001',
+                test_command=['python', '-c', 'import sys; sys.exit(1)'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            result = future.result(timeout=5)
+            assert result.status == GremlinResultStatus.ZAPPED
+
+    def it_treats_exit_code_2_as_error(self, tmp_path: Path) -> None:
+        """Exit code 2+ (pytest internal error) means error, not zapped."""
+        with PersistentWorkerPool(max_workers=1, timeout=5) as pool:
+            future = pool.submit(
+                gremlin_id='g001',
+                test_command=['python', '-c', 'import sys; sys.exit(2)'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            result = future.result(timeout=5)
+            assert result.status == GremlinResultStatus.ERROR
+
+    def it_treats_exit_code_5_as_error(self, tmp_path: Path) -> None:
+        """Exit code 5 (no tests collected) means error, not zapped."""
+        with PersistentWorkerPool(max_workers=1, timeout=5) as pool:
+            future = pool.submit(
+                gremlin_id='g001',
+                test_command=['python', '-c', 'import sys; sys.exit(5)'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            result = future.result(timeout=5)
+            assert result.status == GremlinResultStatus.ERROR
+
+    def it_batch_treats_exit_code_2_as_error(self, tmp_path: Path) -> None:
+        """Batch execution also treats exit code 2+ as error, not zapped."""
+        with PersistentWorkerPool(max_workers=1, timeout=5) as pool:
+            future = pool.submit_batch(
+                gremlin_ids=['g001'],
+                test_command=['python', '-c', 'import sys; sys.exit(2)'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+            results = future.result(timeout=5)
+            assert len(results) == 1
+            assert results[0].status == GremlinResultStatus.ERROR
+
+
 class DescribeBatchExecution:
     """Tests for batch execution - running multiple gremlins in one subprocess."""
 
@@ -307,8 +473,8 @@ class DescribeBatchExecution:
             assert gremlin_ids == ['g001', 'g002']
 
     @pytest.mark.medium
-    def it_submit_batch_stops_on_first_failure(self, tmp_path: Path) -> None:
-        """Batch uses early termination - first zapped gremlin stops the batch."""
+    def it_tests_all_gremlins_in_batch_even_after_zap(self, tmp_path: Path) -> None:
+        """Batch tests all gremlins independently, even after one is zapped."""
         # First gremlin survives (tests pass), second fails (tests fail)
         # When using the test command that checks ACTIVE_GREMLIN env var
         script = tmp_path / 'test_script.py'
@@ -332,12 +498,14 @@ sys.exit(1 if gremlin == 'g002' else 0)
             )
             results = future.result(timeout=10)
 
-            # g001 survives, g002 is zapped (caught), g003 should be skipped
-            assert len(results) == 2
+            # All gremlins tested: g001 survives, g002 zapped, g003 survives
+            assert len(results) == 3
             assert results[0].gremlin_id == 'g001'
             assert results[0].status == GremlinResultStatus.SURVIVED
             assert results[1].gremlin_id == 'g002'
             assert results[1].status == GremlinResultStatus.ZAPPED
+            assert results[2].gremlin_id == 'g003'
+            assert results[2].status == GremlinResultStatus.SURVIVED
 
     @pytest.mark.medium
     def it_submit_batch_sets_sources_file_env_when_instrumented_dir_provided(self, tmp_path: Path) -> None:

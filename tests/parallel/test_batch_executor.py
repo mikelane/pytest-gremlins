@@ -104,8 +104,8 @@ class DescribeBatchExecutorExecution:
         assert all(isinstance(r, WorkerResult) for r in results)
         assert {r.gremlin_id for r in results} == {'g001', 'g002', 'g003'}
 
-    def it_terminates_batch_early_when_configured(self, tmp_path: Path) -> None:
-        """Execute handles early termination within batches."""
+    def it_tests_all_gremlins_in_batch_regardless_of_zap(self, tmp_path: Path) -> None:
+        """Execute tests all gremlins in a batch independently."""
         script = tmp_path / 'test_script.py'
         script.write_text(
             """
@@ -127,12 +127,14 @@ sys.exit(1 if gremlin == 'g002' else 0)
             env_vars={},
         )
 
-        # g001 survives, g002 is zapped, g003 is skipped (within same batch)
-        assert len(results) == 2
+        # All gremlins tested: g001 survives, g002 zapped, g003 survives
+        assert len(results) == 3
         assert results[0].gremlin_id == 'g001'
         assert results[0].status == GremlinResultStatus.SURVIVED
         assert results[1].gremlin_id == 'g002'
         assert results[1].status == GremlinResultStatus.ZAPPED
+        assert results[2].gremlin_id == 'g003'
+        assert results[2].status == GremlinResultStatus.SURVIVED
 
     def it_returns_empty_list_for_empty_gremlin_ids(self, tmp_path: Path) -> None:
         """Execute returns empty list when no gremlins to test."""
