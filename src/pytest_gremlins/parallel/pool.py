@@ -23,6 +23,7 @@ import subprocess
 import time
 from typing import Self
 
+from pytest_gremlins.parallel.lightweight import build_lightweight_command
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 logger = logging.getLogger(__name__)
@@ -81,14 +82,8 @@ def _run_gremlin_test(  # pragma: no cover
     env['GREMLIN_ROOTDIR'] = rootdir
 
     # Use lightweight runner if available (skips full pytest startup)
-    effective_command = test_command
-    sources_file = env_vars.get('PYTEST_GREMLINS_SOURCES_FILE', '')
-    if sources_file:
-        runner_path = Path(sources_file).parent / 'gremlin_lightweight_runner.py'
-        if runner_path.exists():
-            test_ids = [arg for arg in test_command[2:] if '::' in arg]
-            if test_ids:
-                effective_command = [test_command[0], str(runner_path), *test_ids]
+    lightweight_cmd = build_lightweight_command(test_command, env_vars)
+    effective_command = lightweight_cmd if lightweight_cmd is not None else test_command
 
     try:
         result = subprocess.run(  # Intentional: runs pytest test commands

@@ -31,7 +31,6 @@ from concurrent.futures import (
 )
 import logging
 import os
-from pathlib import Path
 import subprocess
 import time
 from typing import (
@@ -42,6 +41,7 @@ from typing import (
 if TYPE_CHECKING:
     import multiprocessing
 
+from pytest_gremlins.parallel.lightweight import build_lightweight_command
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
@@ -59,38 +59,6 @@ def _warmup_noop() -> bool:  # pragma: no cover
         True to indicate successful warmup.
     """
     return True
-
-
-def _build_lightweight_command(
-    test_command: list[str],
-    env_vars: dict[str, str],
-) -> list[str] | None:
-    """Build a lightweight runner command if the runner script exists.
-
-    Extracts test node IDs from the full test command and builds a
-    command using the lightweight runner (no pytest overhead).
-
-    Args:
-        test_command: Original test command (e.g. [python, bootstrap.py, -x, ...]).
-        env_vars: Environment variables that may contain sources file path.
-
-    Returns:
-        Lightweight command list, or None if the runner is not available.
-    """
-    sources_file = env_vars.get('PYTEST_GREMLINS_SOURCES_FILE', '')
-    if not sources_file:
-        return None
-
-    runner_path = Path(sources_file).parent / 'gremlin_lightweight_runner.py'
-    if not runner_path.exists():
-        return None
-
-    # Extract test node IDs from test_command (args containing '::')
-    test_ids = [arg for arg in test_command[2:] if '::' in arg]
-    if not test_ids:
-        return None
-
-    return [test_command[0], str(runner_path), *test_ids]
 
 
 def _run_gremlin_batch(  # pragma: no cover
@@ -116,7 +84,7 @@ def _run_gremlin_batch(  # pragma: no cover
     Returns:
         List of WorkerResult for each tested gremlin.
     """
-    lightweight_cmd = _build_lightweight_command(test_command, env_vars)
+    lightweight_cmd = build_lightweight_command(test_command, env_vars)
     effective_command = lightweight_cmd if lightweight_cmd is not None else test_command
 
     results: list[WorkerResult] = []
@@ -141,8 +109,20 @@ def _run_gremlin_batch(  # pragma: no cover
 
             execution_time_ms = (time.monotonic() - start_time) * 1000
 
-            if result.returncode != 0:
-                # Mutation caught - test failed
+            # Only return code 1 (tests failed) should be treated as a mutation
+            # being zapped. Other non-zero return codes indicate pytest errors
+            # (collection/import/internal) and should not inflate the score.
+            if result.returncode == 0:
+                # Mutation survived - tests passed
+                results.append(
+                    WorkerResult(
+                        gremlin_id=gremlin_id,
+                        status=GremlinResultStatus.SURVIVED,
+                        execution_time_ms=execution_time_ms,
+                    )
+                )
+            elif result.returncode == 1:
+                # Mutation caught - tests failed
                 results.append(
                     WorkerResult(
                         gremlin_id=gremlin_id,
@@ -152,12 +132,16 @@ def _run_gremlin_batch(  # pragma: no cover
                     )
                 )
             else:
-                # Mutation survived - test passed
+                # Other non-zero exit codes indicate errors
+                error_output = ''
+                if result.stderr:
+                    error_output = result.stderr.decode(errors='replace')[:2000]
                 results.append(
                     WorkerResult(
                         gremlin_id=gremlin_id,
-                        status=GremlinResultStatus.SURVIVED,
+                        status=GremlinResultStatus.ERROR,
                         execution_time_ms=execution_time_ms,
+                        error_output=error_output,
                     )
                 )
         except subprocess.TimeoutExpired:
@@ -431,7 +415,7 @@ class PersistentWorkerPool:
         """Submit a batch of gremlin tests for execution in a single subprocess.
 
         Batch execution reduces subprocess overhead by testing multiple gremlins
-        in one subprocess call. Uses early termination - stops after first zap.
+        in one subprocess call. Tests all gremlins in the batch independently.
 
         Args:
             gremlin_ids: List of gremlin IDs to test.

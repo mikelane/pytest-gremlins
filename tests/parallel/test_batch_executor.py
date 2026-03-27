@@ -104,8 +104,8 @@ class DescribeBatchExecutorExecution:
         assert all(isinstance(r, WorkerResult) for r in results)
         assert {r.gremlin_id for r in results} == {'g001', 'g002', 'g003'}
 
-    def it_terminates_batch_early_when_configured(self, tmp_path: Path) -> None:
-        """Execute handles early termination within batches."""
+    def it_tests_all_gremlins_in_batch_regardless_of_zap(self, tmp_path: Path) -> None:
+        """Execute tests all gremlins in a batch independently."""
         script = tmp_path / 'test_script.py'
         script.write_text(
             """

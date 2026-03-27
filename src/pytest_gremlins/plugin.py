@@ -63,6 +63,7 @@ from pytest_gremlins.instrumentation.transformer import (
 )
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
+from pytest_gremlins.parallel.lightweight import build_lightweight_command
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.html import (
     HtmlReporter,
@@ -1360,27 +1361,27 @@ def run_test(test_spec, rootdir):
     try:
         module = load_test_module(full_path)
         if module is None:
-            return True  # Cannot load = skip
+            return False  # Cannot verify = treat as caught
 
         if len(parts) == 3:
             cls = getattr(module, parts[1], None)
             if cls is None:
-                return True
+                return False  # Cannot verify = treat as caught
             instance = cls()
             method = getattr(instance, parts[2], None)
             if method is None:
-                return True
+                return False  # Cannot verify = treat as caught
             method()
         elif len(parts) == 2:
             func = getattr(module, parts[1], None)
             if func is None:
-                return True
+                return False  # Cannot verify = treat as caught
             func()
         else:
-            return True
+            return False  # Unexpected node ID format = treat as caught
 
         return True
-    except (AssertionError, Exception):
+    except Exception:
         return False
 
 
@@ -2396,13 +2397,8 @@ def _test_gremlin(
         env[GREMLIN_SOURCES_ENV_VAR] = str(sources_file)
 
     # Use lightweight runner if available (skips full pytest startup)
-    effective_command = test_command
-    if instrumented_dir is not None:
-        runner_path = instrumented_dir / 'gremlin_lightweight_runner.py'
-        if runner_path.exists():
-            test_ids = [arg for arg in test_command[2:] if '::' in arg]
-            if test_ids:
-                effective_command = [sys.executable, str(runner_path), *test_ids]
+    lightweight_cmd = build_lightweight_command(test_command, env)
+    effective_command = lightweight_cmd if lightweight_cmd is not None else test_command
 
     try:
         subprocess_outcome = subprocess.run(  # Intentional: runs pytest test commands
