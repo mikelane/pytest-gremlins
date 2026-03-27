@@ -78,10 +78,21 @@ def _run_gremlin_test(  # pragma: no cover
     env = os.environ.copy()
     env.update(env_vars)
     env['ACTIVE_GREMLIN'] = gremlin_id
+    env['GREMLIN_ROOTDIR'] = rootdir
+
+    # Use lightweight runner if available (skips full pytest startup)
+    effective_command = test_command
+    sources_file = env_vars.get('PYTEST_GREMLINS_SOURCES_FILE', '')
+    if sources_file:
+        runner_path = Path(sources_file).parent / 'gremlin_lightweight_runner.py'
+        if runner_path.exists():
+            test_ids = [arg for arg in test_command[2:] if '::' in arg]
+            if test_ids:
+                effective_command = [test_command[0], str(runner_path), *test_ids]
 
     try:
         result = subprocess.run(  # Intentional: runs pytest test commands
-            test_command,
+            effective_command,
             cwd=rootdir,
             env=env,
             capture_output=True,

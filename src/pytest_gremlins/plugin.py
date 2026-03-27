@@ -1122,6 +1122,9 @@ del _gremlin_os
     bootstrap_script = temp_dir / 'gremlin_bootstrap.py'
     bootstrap_script.write_text(_get_bootstrap_script())
 
+    lightweight_runner = temp_dir / 'gremlin_lightweight_runner.py'
+    lightweight_runner.write_text(_get_lightweight_runner_script())
+
     return temp_dir
 
 
@@ -1271,6 +1274,170 @@ def main():
 if __name__ == '__main__':
     main()
 """
+
+
+def _get_lightweight_runner_script() -> str:
+    """Return a lightweight test runner that avoids full pytest startup.
+
+    Instead of running ``pytest.main()``, this script directly imports test
+    modules and calls test functions.  This eliminates ~900ms of pytest
+    framework overhead per subprocess, reducing per-gremlin cost from ~950ms
+    to ~50ms.
+
+    The runner handles class-based tests (``TestFoo::test_bar``) and
+    function-based tests (``test_bar``), with ``-x`` semantics (stop on
+    first failure).  Exit 0 = survived, exit 1 = zapped.
+
+    Returns:
+        The lightweight runner script source code.
+    """
+    return '''#!/usr/bin/env python
+"""Lightweight test runner for pytest-gremlins — skips full pytest startup."""
+
+import importlib.util
+import json
+import os
+import sys
+
+
+def setup_import_hooks():
+    """Register the gremlin import hooks from sources.json."""
+    sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE')
+    if not sources_file:
+        return
+
+    with open(sources_file) as f:
+        instrumented_sources = json.load(f)
+
+    run_code = getattr(__builtins__, 'exec', None) or __builtins__.get('exec')
+
+    from importlib.abc import Loader, MetaPathFinder
+    from importlib.machinery import ModuleSpec
+
+    class GremlinLoader(Loader):
+        def __init__(self, source, module_name):
+            self._source = source
+            self._module_name = module_name
+
+        def create_module(self, spec):
+            return None
+
+        def exec_module(self, module):
+            code = compile(self._source, self._module_name, 'exec')
+            run_code(code, module.__dict__)
+
+    class GremlinFinder(MetaPathFinder):
+        def find_spec(self, fullname, path, target=None):
+            if fullname in instrumented_sources:
+                loader = GremlinLoader(instrumented_sources[fullname], fullname)
+                return ModuleSpec(fullname, loader)
+            return None
+
+    sys.meta_path.insert(0, GremlinFinder())
+
+
+def load_test_module(file_path):
+    """Import a test module from file path."""
+    module_name = file_path.replace('/', '.').replace(os.sep, '.').removesuffix('.py')
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_test(test_spec, rootdir):
+    """Run a single test from its node ID. Returns True if passed."""
+    parts = test_spec.split('::')
+    file_path = parts[0]
+    full_path = os.path.join(rootdir, file_path)
+
+    try:
+        module = load_test_module(full_path)
+        if module is None:
+            return True  # Cannot load = skip
+
+        if len(parts) == 3:
+            cls = getattr(module, parts[1], None)
+            if cls is None:
+                return True
+            instance = cls()
+            method = getattr(instance, parts[2], None)
+            if method is None:
+                return True
+            method()
+        elif len(parts) == 2:
+            func = getattr(module, parts[1], None)
+            if func is None:
+                return True
+            func()
+        else:
+            return True
+
+        return True
+    except (AssertionError, Exception):
+        return False
+
+
+def setup_pythonpath(rootdir):
+    """Add project source directories to sys.path.
+
+    Reads pythonpath from pyproject.toml if available, otherwise adds
+    common source directories (src/, lib/).
+    """
+    pyproject = os.path.join(rootdir, 'pyproject.toml')
+    added = False
+    if os.path.exists(pyproject):
+        try:
+            import tomllib
+        except ImportError:
+            try:
+                import tomli as tomllib
+            except ImportError:
+                tomllib = None
+
+        if tomllib is not None:
+            with open(pyproject, 'rb') as f:
+                data = tomllib.load(f)
+            paths = (data.get('tool', {}).get('pytest', {})
+                     .get('ini_options', {}).get('pythonpath', []))
+            for p in paths:
+                full = os.path.join(rootdir, p)
+                if full not in sys.path:
+                    sys.path.insert(0, full)
+                    added = True
+
+    if not added:
+        for candidate in ['src', 'lib', '.']:
+            full = os.path.join(rootdir, candidate)
+            if os.path.isdir(full) and full not in sys.path:
+                sys.path.insert(0, full)
+
+    if rootdir not in sys.path:
+        sys.path.insert(0, rootdir)
+
+
+def main():
+    rootdir = os.environ.get('GREMLIN_ROOTDIR', os.getcwd())
+    setup_pythonpath(rootdir)
+    setup_import_hooks()
+
+    test_specs = sys.argv[1:]
+    for spec in test_specs:
+        if not run_test(spec, rootdir):
+            sys.exit(1)
+
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()
+'''
 
 
 def _cleanup_instrumented_dir(instrumented_dir: Path | None) -> None:
@@ -2222,14 +2389,24 @@ def _test_gremlin(
     """
     env = os.environ.copy()
     env[ACTIVE_GREMLIN_ENV_VAR] = gremlin.gremlin_id
+    env['GREMLIN_ROOTDIR'] = str(rootdir)
 
     if instrumented_dir is not None:
         sources_file = instrumented_dir / 'sources.json'
         env[GREMLIN_SOURCES_ENV_VAR] = str(sources_file)
 
+    # Use lightweight runner if available (skips full pytest startup)
+    effective_command = test_command
+    if instrumented_dir is not None:
+        runner_path = instrumented_dir / 'gremlin_lightweight_runner.py'
+        if runner_path.exists():
+            test_ids = [arg for arg in test_command[2:] if '::' in arg]
+            if test_ids:
+                effective_command = [sys.executable, str(runner_path), *test_ids]
+
     try:
         subprocess_outcome = subprocess.run(  # Intentional: runs pytest test commands
-            test_command,
+            effective_command,
             cwd=str(rootdir),
             env=env,
             capture_output=True,

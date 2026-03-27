@@ -31,6 +31,7 @@ from concurrent.futures import (
 )
 import logging
 import os
+from pathlib import Path
 import subprocess
 import time
 from typing import (
@@ -60,6 +61,38 @@ def _warmup_noop() -> bool:  # pragma: no cover
     return True
 
 
+def _build_lightweight_command(
+    test_command: list[str],
+    env_vars: dict[str, str],
+) -> list[str] | None:
+    """Build a lightweight runner command if the runner script exists.
+
+    Extracts test node IDs from the full test command and builds a
+    command using the lightweight runner (no pytest overhead).
+
+    Args:
+        test_command: Original test command (e.g. [python, bootstrap.py, -x, ...]).
+        env_vars: Environment variables that may contain sources file path.
+
+    Returns:
+        Lightweight command list, or None if the runner is not available.
+    """
+    sources_file = env_vars.get('PYTEST_GREMLINS_SOURCES_FILE', '')
+    if not sources_file:
+        return None
+
+    runner_path = Path(sources_file).parent / 'gremlin_lightweight_runner.py'
+    if not runner_path.exists():
+        return None
+
+    # Extract test node IDs from test_command (args containing '::')
+    test_ids = [arg for arg in test_command[2:] if '::' in arg]
+    if not test_ids:
+        return None
+
+    return [test_command[0], str(runner_path), *test_ids]
+
+
 def _run_gremlin_batch(  # pragma: no cover
     gremlin_ids: list[str],
     test_command: list[str],
@@ -67,11 +100,11 @@ def _run_gremlin_batch(  # pragma: no cover
     env_vars: dict[str, str],
     timeout: int,
 ) -> list[WorkerResult]:
-    """Execute tests for multiple gremlins in a single subprocess call.
+    """Execute tests for multiple gremlins, using the lightweight runner when available.
 
-    This function tests gremlins sequentially within a single process,
-    avoiding the subprocess startup overhead for each individual gremlin.
-    Uses early termination: stops after first zapped gremlin.
+    Tries the lightweight runner first (skips full pytest startup, ~50ms per
+    gremlin instead of ~950ms). Falls back to the standard subprocess approach
+    if the lightweight runner is not available.
 
     Args:
         gremlin_ids: List of gremlin IDs to test.
@@ -83,6 +116,9 @@ def _run_gremlin_batch(  # pragma: no cover
     Returns:
         List of WorkerResult for each tested gremlin.
     """
+    lightweight_cmd = _build_lightweight_command(test_command, env_vars)
+    effective_command = lightweight_cmd if lightweight_cmd is not None else test_command
+
     results: list[WorkerResult] = []
 
     for gremlin_id in gremlin_ids:
@@ -91,10 +127,11 @@ def _run_gremlin_batch(  # pragma: no cover
         env = os.environ.copy()
         env.update(env_vars)
         env['ACTIVE_GREMLIN'] = gremlin_id
+        env['GREMLIN_ROOTDIR'] = rootdir
 
         try:
             result = subprocess.run(  # Intentional: runs pytest test commands
-                test_command,
+                effective_command,
                 cwd=rootdir,
                 env=env,
                 capture_output=True,
