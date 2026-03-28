@@ -171,6 +171,7 @@ build/
 .claude/settings.local.json
 .claude/*.local.md
 .claude/todos/
+.claude/plans/
 
 # Local development
 .env.local
