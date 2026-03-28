@@ -1,5 +1,7 @@
 """Tests for source path discovery from setup.cfg."""
 
+from pathlib import Path
+
 import pytest
 
 from pytest_gremlins.config import discover_by_setup_cfg
@@ -20,7 +22,7 @@ class DescribeDiscoverBySetupCfg:
 
         result = discover_by_setup_cfg(tmp_path)
 
-        assert result == ['mypackage']
+        assert result == [Path('mypackage')]
 
     def it_discovers_find_where(self, tmp_path):
         (tmp_path / 'setup.cfg').write_text('[options.packages.find]\nwhere = src\n')
@@ -28,7 +30,7 @@ class DescribeDiscoverBySetupCfg:
 
         result = discover_by_setup_cfg(tmp_path)
 
-        assert result == ['src']
+        assert result == [Path('src')]
 
     def it_filters_nonexistent_paths(self, tmp_path):
         (tmp_path / 'setup.cfg').write_text('[options]\npackages = missing_pkg\n')

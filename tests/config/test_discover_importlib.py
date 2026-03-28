@@ -1,6 +1,7 @@
 """Tests for source path discovery via importlib.metadata."""
 
 import importlib.util
+from pathlib import Path
 import types
 
 import pytest
@@ -44,7 +45,7 @@ class DescribeDiscoverByImportlibMetadata:
 
         result = discover_by_importlib_metadata(tmp_path)
 
-        assert result == ['my_package']
+        assert result == [Path('my_package')]
 
     def it_excludes_venv_directories_inside_rootdir(self, tmp_path, monkeypatch):
         venv_pkg = tmp_path / '.venv' / 'lib' / 'python3.12' / 'site-packages' / 'requests'
@@ -86,8 +87,8 @@ class DescribeDiscoverByImportlibMetadata:
 
         result = discover_by_importlib_metadata(tmp_path)
 
-        assert 'good_pkg' in result
-        assert 'bad_pkg' not in result
+        assert Path('good_pkg') in result
+        assert Path('bad_pkg') not in result
 
     def it_skips_package_not_relative_to_rootdir(self, tmp_path, monkeypatch):
         outside_dir = tmp_path.parent / 'other_project' / 'some_pkg'
@@ -145,4 +146,4 @@ class DescribeDiscoverByImportlibMetadataRealScan:
 
         result = discover_by_importlib_metadata(tmp_path)
 
-        assert pkg_name in result
+        assert Path(pkg_name) in result
