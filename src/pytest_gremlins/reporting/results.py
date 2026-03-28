@@ -7,7 +7,10 @@ Results track whether the gremlin was zapped (caught by tests) or survived
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    field,
+)
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -42,6 +45,7 @@ class GremlinResult:
         killing_test: Name of the test that killed this gremlin (if zapped).
         execution_time_ms: Time taken to test this gremlin in milliseconds.
         error_output: Captured stderr or exception message when status is ERROR.
+        selected_tests: Test node IDs selected to run against this gremlin.
     """
 
     gremlin: Gremlin
@@ -49,6 +53,7 @@ class GremlinResult:
     killing_test: str | None = None
     execution_time_ms: float | None = None
     error_output: str = ''
+    selected_tests: list[str] = field(default_factory=list)
 
     @property
     def is_zapped(self) -> bool:

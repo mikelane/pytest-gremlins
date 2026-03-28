@@ -1887,17 +1887,18 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912
             continue
 
         gremlin = gremlin_by_id[gremlin_id]
+        selected_tests = gremlin_tests[gremlin_id]
         gremlin_result = GremlinResult(
             gremlin=gremlin,
             status=worker_result.status,
             killing_test=worker_result.killing_test,
             execution_time_ms=worker_result.execution_time_ms,
             error_output=worker_result.error_output,
+            selected_tests=selected_tests,
         )
         results.append(gremlin_result)
 
         # Cache the result
-        selected_tests = gremlin_tests[gremlin_id]
         _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
 
     return results
@@ -2013,17 +2014,18 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
             continue
 
         gremlin = gremlin_by_id[gremlin_id]
+        selected_tests = gremlin_tests[gremlin_id]
         gremlin_result = GremlinResult(
             gremlin=gremlin,
             status=worker_result.status,
             killing_test=worker_result.killing_test,
             execution_time_ms=worker_result.execution_time_ms,
             error_output=worker_result.error_output,
+            selected_tests=selected_tests,
         )
         results.append(gremlin_result)
 
         # Cache the result
-        selected_tests = gremlin_tests[gremlin_id]
         _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
 
     return results
@@ -2139,6 +2141,15 @@ def _run_mutation_testing(
             test_command,
             rootdir,
             gremlin_session.instrumented_dir,
+        )
+        # Attach selected tests for debuggability in reports
+        gremlin_result = GremlinResult(
+            gremlin=gremlin_result.gremlin,
+            status=gremlin_result.status,
+            killing_test=gremlin_result.killing_test,
+            execution_time_ms=gremlin_result.execution_time_ms,
+            error_output=gremlin_result.error_output,
+            selected_tests=selected_tests,
         )
 
         # Cache the result for next run

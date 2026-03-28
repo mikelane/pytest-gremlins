@@ -134,3 +134,32 @@ class DescribeGremlinResultProperties:
             status=GremlinResultStatus.ZAPPED,
         )
         assert result.is_survived is False
+
+
+@pytest.mark.small
+class DescribeGremlinResultSelectedTests:
+    """Tests for selected_tests field on GremlinResult."""
+
+    def it_stores_selected_tests(self, sample_gremlin):
+        result = GremlinResult(
+            gremlin=sample_gremlin,
+            status=GremlinResultStatus.ZAPPED,
+            selected_tests=['tests/test_a.py::test_foo', 'tests/test_b.py::test_bar'],
+        )
+        assert result.selected_tests == ['tests/test_a.py::test_foo', 'tests/test_b.py::test_bar']
+
+    def it_defaults_selected_tests_to_empty_list(self, sample_gremlin):
+        result = GremlinResult(
+            gremlin=sample_gremlin,
+            status=GremlinResultStatus.SURVIVED,
+        )
+        assert result.selected_tests == []
+
+    def it_preserves_selected_tests_order(self, sample_gremlin):
+        tests = ['tests/test_c.py::test_third', 'tests/test_a.py::test_first', 'tests/test_b.py::test_second']
+        result = GremlinResult(
+            gremlin=sample_gremlin,
+            status=GremlinResultStatus.ZAPPED,
+            selected_tests=tests,
+        )
+        assert result.selected_tests == tests
