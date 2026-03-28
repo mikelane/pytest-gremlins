@@ -151,4 +151,8 @@ class JsonReporter:
             entry['killing_test'] = result.killing_test
         if result.error_output:
             entry['error_output'] = result.error_output
+        if result.execution_time_ms is not None:
+            entry['execution_time_ms'] = result.execution_time_ms
+        if result.selected_tests:
+            entry['selected_tests'] = result.selected_tests
         return entry

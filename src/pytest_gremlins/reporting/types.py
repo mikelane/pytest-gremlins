@@ -107,6 +107,8 @@ class JsonResultEntry(TypedDict):
     description: str
     killing_test: NotRequired[str]
     error_output: NotRequired[str]
+    execution_time_ms: NotRequired[float]
+    selected_tests: NotRequired[list[str]]
 
 
 class JsonReport(TypedDict):
