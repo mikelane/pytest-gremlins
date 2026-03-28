@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.7.0 (2026-03-27)
+
+### Perf
+
+- **parallel**: lightweight test runner bypasses full pytest startup for per-gremlin subprocesses,
+  reducing per-gremlin cost from ~950ms to ~200ms; sequential mode 4.8x faster, parallel 3.4x
+  faster on the synthetic benchmark; attrs (681 gremlins) drops from ~315s to ~87s (#344)
+
+### Feat
+
+- **reporting**: surface `error_output` in all report formats (console, HTML, JSON) so users can
+  see why gremlins errored without re-running with verbose flags (#339)
+- **instrumentation**: log the exception before re-raising in the import hook, making instrumentation
+  failures diagnosable from logs instead of opaque tracebacks (#338)
+- **ci**: add attrs compatibility smoke test to CI matrix — catches real-world regressions on every
+  PR (#343)
+
+### Fix
+
+- **parallel**: remove early termination in `_run_gremlin_batch()` that silently skipped gremlins
+  after the first zap; batch mode was testing only 17/117 gremlins, producing incorrect mutation
+  scores (#344)
+- **plugin**: only pass `--no-cov` to per-gremlin subprocesses when pytest-cov is actually
+  installed; projects without it received an unknown CLI flag causing pytest exit-code 4 (#341)
+
 ## v1.6.0 (2026-03-23)
 
 ### Feat
