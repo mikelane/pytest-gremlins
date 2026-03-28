@@ -363,7 +363,7 @@ def discover_by_project_name(rootdir: Path) -> list[str]:
     ]
     for candidate in candidates:
         if (candidate / '__init__.py').exists():
-            return [str(candidate.relative_to(rootdir))]
+            return [candidate.relative_to(rootdir).as_posix()]
 
     return []
 
