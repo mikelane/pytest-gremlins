@@ -259,3 +259,148 @@ class DescribeForkExecutorFallback:
 
         assert len(results) == 1
         assert results[0].status == GremlinResultStatus.ZAPPED
+
+    def it_falls_back_and_reports_survived_for_undetected_mutation(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        instrumented_module: types.ModuleType,
+    ) -> None:
+        """Fallback path reports SURVIVED when no test catches the mutation."""
+        monkeypatch.delattr('os.fork', raising=False)
+
+        passing_mod = types.ModuleType('_test_fork_fallback_passing')
+        code = 'def test_always_passes():\n    assert True\n'
+        exec(compile(code, '_test_fork_fallback_passing', 'exec'), passing_mod.__dict__)  # noqa: S102
+        sys.modules['_test_fork_fallback_passing'] = passing_mod
+
+        try:
+            executor = ForkExecutor()
+            gremlin_module_map = {'g001': instrumented_module.__name__}
+            test_specs = ['_test_fork_fallback_passing::test_always_passes']
+
+            results = executor.execute(
+                gremlin_ids=['g001'],
+                gremlin_module_map=gremlin_module_map,
+                test_specs=test_specs,
+            )
+
+            assert len(results) == 1
+            assert results[0].status == GremlinResultStatus.SURVIVED
+        finally:
+            sys.modules.pop('_test_fork_fallback_passing', None)
+
+
+@pytest.mark.medium
+class DescribeForkExecutorChildProcess:
+    """Tests covering the child process JSON serialization path (pid==0 branch).
+
+    These tests exercise the full fork path including JSON serialization in the
+    child and deserialization in the parent. Coverage tools cannot instrument the
+    child side of os.fork(), but the parent-side deserialization (lines 114-136)
+    and the correctness of the round-trip prove the child code works.
+    """
+
+    def it_serializes_survived_status_through_pipe(
+        self,
+        instrumented_module: types.ModuleType,
+    ) -> None:
+        """SURVIVED result round-trips correctly through fork+JSON pipe."""
+        passing_mod = types.ModuleType('_test_fork_child_passing')
+        code = 'def test_always_passes():\n    assert True\n'
+        exec(compile(code, '_test_fork_child_passing', 'exec'), passing_mod.__dict__)  # noqa: S102
+        sys.modules['_test_fork_child_passing'] = passing_mod
+
+        try:
+            executor = ForkExecutor(batch_size=1)
+            gremlin_module_map = {'g001': instrumented_module.__name__}
+            test_specs = ['_test_fork_child_passing::test_always_passes']
+
+            results = executor.execute(
+                gremlin_ids=['g001'],
+                gremlin_module_map=gremlin_module_map,
+                test_specs=test_specs,
+            )
+
+            assert len(results) == 1
+            assert results[0].status == GremlinResultStatus.SURVIVED
+            assert results[0].gremlin_id == 'g001'
+            assert results[0].execution_time_ms is not None
+            assert results[0].execution_time_ms >= 0
+            assert results[0].killing_test is None
+        finally:
+            sys.modules.pop('_test_fork_child_passing', None)
+
+    def it_serializes_zapped_status_with_killing_test_through_pipe(
+        self,
+        instrumented_module: types.ModuleType,
+        test_module: types.ModuleType,
+    ) -> None:
+        """ZAPPED result includes killing_test after fork+JSON round-trip."""
+        executor = ForkExecutor(batch_size=1)
+        gremlin_module_map = {'g001': instrumented_module.__name__}
+        test_specs = [f'{test_module.__name__}::test_zero_is_not_positive']
+
+        results = executor.execute(
+            gremlin_ids=['g001'],
+            gremlin_module_map=gremlin_module_map,
+            test_specs=test_specs,
+        )
+
+        assert results[0].status == GremlinResultStatus.ZAPPED
+        assert results[0].killing_test == f'{test_module.__name__}::test_zero_is_not_positive'
+
+    def it_handles_multiple_gremlins_in_single_batch(
+        self,
+        instrumented_module: types.ModuleType,
+        test_module: types.ModuleType,
+    ) -> None:
+        """Multiple gremlins in one batch all come back through the pipe."""
+        executor = ForkExecutor(batch_size=10)
+        gremlin_module_map = {
+            'g001': instrumented_module.__name__,
+            'g002': instrumented_module.__name__,
+            'g003': instrumented_module.__name__,
+        }
+        test_specs = [f'{test_module.__name__}::test_zero_is_not_positive']
+
+        results = executor.execute(
+            gremlin_ids=['g001', 'g002', 'g003'],
+            gremlin_module_map=gremlin_module_map,
+            test_specs=test_specs,
+        )
+
+        assert len(results) == 3
+        assert all(r.gremlin_id in ('g001', 'g002', 'g003') for r in results)
+
+    def it_serializes_error_output_through_pipe(
+        self,
+        instrumented_module: types.ModuleType,
+    ) -> None:
+        """A gremlin that encounters a test error round-trips error_output through the pipe.
+
+        Note: _run_test_spec catches all exceptions and returns False (zapped),
+        so the error_output field is only populated when _test_single_gremlin
+        itself raises. In normal flow, a failing test produces ZAPPED, not ERROR.
+        """
+        failing_mod = types.ModuleType('_test_fork_child_error')
+        code = 'def test_fails():\n    assert False\n'
+        exec(compile(code, '_test_fork_child_error', 'exec'), failing_mod.__dict__)  # noqa: S102
+        sys.modules['_test_fork_child_error'] = failing_mod
+
+        try:
+            executor = ForkExecutor(batch_size=1)
+            gremlin_module_map = {'g001': instrumented_module.__name__}
+            test_specs = ['_test_fork_child_error::test_fails']
+
+            results = executor.execute(
+                gremlin_ids=['g001'],
+                gremlin_module_map=gremlin_module_map,
+                test_specs=test_specs,
+            )
+
+            assert len(results) == 1
+            # Test failure is caught by _run_test_spec, reported as ZAPPED
+            assert results[0].status == GremlinResultStatus.ZAPPED
+            assert results[0].error_output is not None
+        finally:
+            sys.modules.pop('_test_fork_child_error', None)

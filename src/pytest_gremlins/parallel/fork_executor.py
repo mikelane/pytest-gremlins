@@ -90,7 +90,7 @@ class ForkExecutor:
         read_fd, write_fd = os.pipe()
         pid = os.fork()
 
-        if pid == 0:
+        if pid == 0:  # pragma: no cover — child calls os._exit(); coverage cannot flush
             # Child process
             os.close(read_fd)
             try:
