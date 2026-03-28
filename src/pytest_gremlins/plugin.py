@@ -719,7 +719,7 @@ def pytest_configure(config: pytest.Config) -> None:
             audit_pardons=bool(config.option.gremlin_audit_pardons),
             max_pardons_pct=toml_max_pardons_pct,
             max_pardons=toml_max_pardons,
-            no_coverage_filter=bool(config.option.gremlin_no_coverage_filter),
+            no_coverage_filter=bool(getattr(config.option, 'gremlin_no_coverage_filter', False)),
             xdist_active=xdist_active,
             xdist_workers=xdist_worker_int if xdist_active else None,
         )
