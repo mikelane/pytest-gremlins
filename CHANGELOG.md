@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.8.0b6 (2026-03-29)
+
+### Fix
+
+- **Coverage selection**: replace O(n) linear suffix-match with O(1) reverse index — fixes attrs
+  compat timeout and 15.6% error rate from ambiguous bare-name matches (#363)
+- **Attrs compat test**: re-categorized as `large` with 1200s timeout (#360, #362)
+- **Release workflow**: attrs compat now runs with `-m "medium or large"` (#361)
+
 ## v1.8.0b2 (2026-03-29)
 
 ### Fix
