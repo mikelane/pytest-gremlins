@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import dataclasses
 
 import pytest
 
@@ -134,3 +135,81 @@ class DescribeGremlinResultProperties:
             status=GremlinResultStatus.ZAPPED,
         )
         assert result.is_survived is False
+
+
+@pytest.mark.small
+class DescribeGremlinResultSelectedTests:
+    """Tests for selected_tests field on GremlinResult."""
+
+    def it_stores_selected_tests(self, sample_gremlin):
+        result = GremlinResult(
+            gremlin=sample_gremlin,
+            status=GremlinResultStatus.ZAPPED,
+            selected_tests=['tests/test_a.py::test_foo', 'tests/test_b.py::test_bar'],
+        )
+        assert result.selected_tests == ['tests/test_a.py::test_foo', 'tests/test_b.py::test_bar']
+
+    def it_defaults_selected_tests_to_empty_list(self, sample_gremlin):
+        result = GremlinResult(
+            gremlin=sample_gremlin,
+            status=GremlinResultStatus.SURVIVED,
+        )
+        assert result.selected_tests == []
+
+    def it_preserves_selected_tests_order(self, sample_gremlin):
+        tests = ['tests/test_c.py::test_third', 'tests/test_a.py::test_first', 'tests/test_b.py::test_second']
+        result = GremlinResult(
+            gremlin=sample_gremlin,
+            status=GremlinResultStatus.ZAPPED,
+            selected_tests=tests,
+        )
+        assert result.selected_tests == tests
+
+
+@pytest.mark.small
+class DescribeGremlinResultReplacePreservesFields:
+    """Tests that dataclasses.replace() preserves all fields when overriding selected_tests.
+
+    Production code attaches selected_tests to a GremlinResult returned by
+    _test_gremlin. Using dataclasses.replace() guarantees that any field added
+    to GremlinResult in the future is preserved automatically, whereas manual
+    reconstruction silently drops unknown fields.
+    """
+
+    def it_preserves_all_fields_when_attaching_selected_tests(self, sample_gremlin):
+        original = GremlinResult(
+            gremlin=sample_gremlin,
+            status=GremlinResultStatus.ZAPPED,
+            killing_test='test_boundary',
+            execution_time_ms=123.4,
+            error_output='some stderr',
+            selected_tests=[],
+        )
+        new_tests = ['tests/test_a.py::test_foo', 'tests/test_b.py::test_bar']
+
+        replaced = dataclasses.replace(original, selected_tests=new_tests)
+
+        assert replaced.selected_tests == new_tests
+        assert replaced.gremlin is original.gremlin
+        assert replaced.status is original.status
+        assert replaced.killing_test == original.killing_test
+        assert replaced.execution_time_ms == original.execution_time_ms
+        assert replaced.error_output == original.error_output
+
+    def it_only_overrides_selected_tests_field(self, sample_gremlin):
+        original = GremlinResult(
+            gremlin=sample_gremlin,
+            status=GremlinResultStatus.ERROR,
+            killing_test=None,
+            execution_time_ms=999.9,
+            error_output='import failed',
+            selected_tests=['old_test'],
+        )
+
+        replaced = dataclasses.replace(original, selected_tests=['new_test'])
+
+        original_fields = {f.name: getattr(original, f.name) for f in dataclasses.fields(original)}
+        replaced_fields = {f.name: getattr(replaced, f.name) for f in dataclasses.fields(replaced)}
+        del original_fields['selected_tests']
+        del replaced_fields['selected_tests']
+        assert original_fields == replaced_fields

@@ -68,7 +68,7 @@ def make_result(make_gremlin: MakeGremlinFactory) -> MakeResultFactory:
 
     Supports all parameters needed across reporting tests:
     status, file_path, line_number, operator_name, description,
-    killing_test, and execution_time_ms.
+    killing_test, execution_time_ms, and selected_tests.
     """
 
     def _make_result(
@@ -81,6 +81,7 @@ def make_result(make_gremlin: MakeGremlinFactory) -> MakeResultFactory:
         execution_time_ms: float | None = None,
         pardon_reason: str | None = None,
         error_output: str = '',
+        selected_tests: list[str] | None = None,
     ) -> GremlinResult:
         gremlin = make_gremlin(
             file_path=file_path,
@@ -100,6 +101,7 @@ def make_result(make_gremlin: MakeGremlinFactory) -> MakeResultFactory:
             killing_test=killing_test,
             execution_time_ms=execution_time_ms,
             error_output=error_output,
+            selected_tests=selected_tests if selected_tests is not None else [],
         )
 
     return _make_result

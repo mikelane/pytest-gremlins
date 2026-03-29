@@ -15,6 +15,7 @@ from dataclasses import (
     dataclass,
     field,
 )
+from dataclasses import replace as dataclass_replace
 from enum import Enum
 import functools
 import importlib.util
@@ -225,6 +226,7 @@ class GremlinSession:
     audit_pardons: bool = False
     max_pardons_pct: float | None = None
     max_pardons: int | None = None
+    no_coverage_filter: bool = False
 
 
 _gremlin_session: GremlinSession | None = None
@@ -524,6 +526,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest='gremlin_executor',
         help='Execution strategy: subprocess (default), fork (faster, Unix), inprocess (fastest, no isolation).',
     )
+    group.addoption(
+        '--gremlin-no-coverage-filter',
+        action='store_true',
+        default=False,
+        dest='gremlin_no_coverage_filter',
+        help='Disable coverage-guided test selection (slow but useful for debugging).',
+    )
 
 
 def _init_cache(
@@ -711,6 +720,7 @@ def pytest_configure(config: pytest.Config) -> None:
             audit_pardons=bool(config.option.gremlin_audit_pardons),
             max_pardons_pct=toml_max_pardons_pct,
             max_pardons=toml_max_pardons,
+            no_coverage_filter=bool(getattr(config.option, 'gremlin_no_coverage_filter', False)),
             xdist_active=xdist_active,
             xdist_workers=xdist_worker_int if xdist_active else None,
         )
@@ -1887,17 +1897,18 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912
             continue
 
         gremlin = gremlin_by_id[gremlin_id]
+        selected_tests = gremlin_tests[gremlin_id]
         gremlin_result = GremlinResult(
             gremlin=gremlin,
             status=worker_result.status,
             killing_test=worker_result.killing_test,
             execution_time_ms=worker_result.execution_time_ms,
             error_output=worker_result.error_output,
+            selected_tests=selected_tests,
         )
         results.append(gremlin_result)
 
         # Cache the result
-        selected_tests = gremlin_tests[gremlin_id]
         _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
 
     return results
@@ -2013,17 +2024,18 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
             continue
 
         gremlin = gremlin_by_id[gremlin_id]
+        selected_tests = gremlin_tests[gremlin_id]
         gremlin_result = GremlinResult(
             gremlin=gremlin,
             status=worker_result.status,
             killing_test=worker_result.killing_test,
             execution_time_ms=worker_result.execution_time_ms,
             error_output=worker_result.error_output,
+            selected_tests=selected_tests,
         )
         results.append(gremlin_result)
 
         # Cache the result
-        selected_tests = gremlin_tests[gremlin_id]
         _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
 
     return results
@@ -2140,6 +2152,8 @@ def _run_mutation_testing(
             rootdir,
             gremlin_session.instrumented_dir,
         )
+        # Attach selected tests for debuggability in reports
+        gremlin_result = dataclass_replace(gremlin_result, selected_tests=selected_tests)
 
         # Cache the result for next run
         _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
@@ -2318,6 +2332,9 @@ def _select_tests_for_gremlin_prioritized(
     Returns:
         List of test names ordered by specificity (most specific first).
     """
+    if gremlin_session.no_coverage_filter:
+        return list(gremlin_session.test_node_ids.keys())
+
     if gremlin_session.prioritized_selector is None:
         return list(gremlin_session.test_node_ids.keys())
 

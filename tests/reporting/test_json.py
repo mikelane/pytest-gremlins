@@ -198,3 +198,54 @@ class DescribeJsonReporterFileBreakdown:
         assert auth_stats['zapped'] == 2
         assert auth_stats['survived'] == 1
         assert auth_stats['percentage'] == pytest.approx(66.67, rel=0.01)
+
+
+@pytest.mark.small
+class DescribeJsonReporterSelectedTests:
+    """Tests for selected_tests and execution_time_ms in JSON results."""
+
+    def it_includes_selected_tests_when_present(self, make_result):
+        results = [
+            make_result(
+                GremlinResultStatus.SURVIVED,
+                selected_tests=['tests/test_a.py::test_foo', 'tests/test_b.py::test_bar'],
+            ),
+        ]
+        score = MutationScore.from_results(results)
+        reporter = JsonReporter()
+
+        data = json.loads(reporter.to_json(score))
+
+        assert data['results'][0]['selected_tests'] == ['tests/test_a.py::test_foo', 'tests/test_b.py::test_bar']
+
+    def it_includes_execution_time_ms_when_present(self, make_result):
+        results = [
+            make_result(
+                GremlinResultStatus.ZAPPED,
+                execution_time_ms=123.45,
+            ),
+        ]
+        score = MutationScore.from_results(results)
+        reporter = JsonReporter()
+
+        data = json.loads(reporter.to_json(score))
+
+        assert data['results'][0]['execution_time_ms'] == 123.45
+
+    def it_omits_selected_tests_when_empty(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = JsonReporter()
+
+        data = json.loads(reporter.to_json(score))
+
+        assert 'selected_tests' not in data['results'][0]
+
+    def it_omits_execution_time_ms_when_none(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)]
+        score = MutationScore.from_results(results)
+        reporter = JsonReporter()
+
+        data = json.loads(reporter.to_json(score))
+
+        assert 'execution_time_ms' not in data['results'][0]
