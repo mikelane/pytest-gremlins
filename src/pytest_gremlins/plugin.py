@@ -15,6 +15,7 @@ from dataclasses import (
     dataclass,
     field,
 )
+from dataclasses import replace as dataclass_replace
 from enum import Enum
 import functools
 import importlib.util
@@ -2152,14 +2153,7 @@ def _run_mutation_testing(
             gremlin_session.instrumented_dir,
         )
         # Attach selected tests for debuggability in reports
-        gremlin_result = GremlinResult(
-            gremlin=gremlin_result.gremlin,
-            status=gremlin_result.status,
-            killing_test=gremlin_result.killing_test,
-            execution_time_ms=gremlin_result.execution_time_ms,
-            error_output=gremlin_result.error_output,
-            selected_tests=selected_tests,
-        )
+        gremlin_result = dataclass_replace(gremlin_result, selected_tests=selected_tests)
 
         # Cache the result for next run
         _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
