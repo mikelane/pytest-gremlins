@@ -1639,7 +1639,11 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
     # Pytest node IDs can be absolute paths in some contexts (e.g., pytester)
     relative_node_ids = _make_node_ids_relative(test_node_ids, rootdir)
 
-    coverage_data = _run_tests_with_coverage(relative_node_ids, rootdir)
+    coverage_data = _run_tests_with_coverage(
+        relative_node_ids,
+        rootdir,
+        name_to_node_ids=gremlin_session.test_name_to_node_ids,
+    )
 
     if not coverage_data:
         warnings.warn(
@@ -1677,9 +1681,46 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
     gremlin_session.prioritized_selector = PrioritizedSelector(collector.coverage_map)
 
 
+def _populate_coverage_from_line_bits(
+    rows: list[tuple[int, int, bytes]],
+    contexts: dict[int, str],
+    files: dict[int, str],
+    name_to_node_ids: dict[str, list[str]] | None,
+    coverage_by_test: dict[str, dict[str, list[int]]],
+) -> None:
+    """Populate coverage_by_test from SQLite line_bits rows.
+
+    Expands bare function names from coverage contexts to full node IDs
+    using the reverse index, so downstream lookups (test selection, cache
+    hashing) can match them against node-ID-keyed dicts.
+    """
+    for file_id, context_id, numbits in rows:
+        if context_id not in contexts or file_id not in files:
+            continue
+
+        context = contexts[context_id]
+        test_name = _extract_test_name_from_context(context)
+        file_path = files[file_id]
+        lines = _decode_numbits(numbits)
+
+        if '::' not in test_name and name_to_node_ids:
+            resolved_names = name_to_node_ids.get(test_name, [test_name])
+        else:
+            resolved_names = [test_name]
+
+        for resolved_name in resolved_names:
+            if resolved_name not in coverage_by_test:
+                coverage_by_test[resolved_name] = {}
+            if file_path not in coverage_by_test[resolved_name]:
+                coverage_by_test[resolved_name][file_path] = []
+            coverage_by_test[resolved_name][file_path].extend(lines)
+
+
 def _run_tests_with_coverage(
     test_node_ids: list[str],
     rootdir: Path,
+    *,
+    name_to_node_ids: dict[str, list[str]] | None = None,
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
 
@@ -1690,6 +1731,10 @@ def _run_tests_with_coverage(
     Args:
         test_node_ids: List of pytest node IDs to run.
         rootdir: Root directory of the project.
+        name_to_node_ids: Reverse index mapping bare function names to full
+            node IDs.  When coverage.py records a bare name (old-format
+            ``dynamic_context=test_function``), the map is used to expand it
+            to every matching full node ID so downstream lookups succeed.
 
     Returns:
         Dict mapping test names to their coverage data (file path -> lines).
@@ -1748,22 +1793,13 @@ dynamic_context = test_function
         files = {row[0]: row[1] for row in cursor.fetchall()}
 
         cursor.execute('SELECT file_id, context_id, numbits FROM line_bits')
-        for file_id, context_id, numbits in cursor.fetchall():
-            if context_id not in contexts or file_id not in files:
-                continue
-
-            context = contexts[context_id]
-            test_name = _extract_test_name_from_context(context)
-
-            file_path = files[file_id]
-
-            lines = _decode_numbits(numbits)
-
-            if test_name not in coverage_by_test:
-                coverage_by_test[test_name] = {}
-            if file_path not in coverage_by_test[test_name]:
-                coverage_by_test[test_name][file_path] = []
-            coverage_by_test[test_name][file_path].extend(lines)
+        _populate_coverage_from_line_bits(
+            cursor.fetchall(),
+            contexts,
+            files,
+            name_to_node_ids,
+            coverage_by_test,
+        )
 
         conn.close()
 
