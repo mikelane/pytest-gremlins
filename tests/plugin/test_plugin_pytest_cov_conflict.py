@@ -458,3 +458,111 @@ class DescribeCoverageSQLiteReading:
         # Only the valid row contributes; orphaned rows are silently skipped
         assert 'tests/test_mod.py::test_bar' in result
         assert 0 in result['tests/test_mod.py::test_bar']['src/module.py']
+
+    def it_expands_bare_function_names_to_full_node_ids(self, tmp_path: Path) -> None:
+        """When coverage context uses old format (bare name), expand via reverse index."""
+        numbits = bytes([0x03])  # lines 0 and 1
+
+        def create_bare_name_db(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
+            _write_coverage_sqlite(
+                tmp_path / '.coverage',
+                contexts=[(1, 'test_eq')],  # old format: bare function name
+                files=[(1, 'src/module.py')],
+                line_bits=[(1, 1, numbits)],
+            )
+
+            class FakeResult:
+                returncode = 0
+
+            return FakeResult()
+
+        name_to_node_ids = {
+            'test_eq': [
+                'tests/test_attrs.py::test_eq',
+                'tests/test_other.py::test_eq',
+            ],
+        }
+
+        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=create_bare_name_db):
+            result = _run_tests_with_coverage([], tmp_path, name_to_node_ids=name_to_node_ids)
+
+        # Bare name 'test_eq' should be expanded to both full node IDs
+        assert 'test_eq' not in result
+        assert 'tests/test_attrs.py::test_eq' in result
+        assert 'tests/test_other.py::test_eq' in result
+        assert 0 in result['tests/test_attrs.py::test_eq']['src/module.py']
+        assert 0 in result['tests/test_other.py::test_eq']['src/module.py']
+
+    def it_keeps_full_node_ids_unchanged_when_expanding(self, tmp_path: Path) -> None:
+        """When coverage context already has full node IDs, they pass through unchanged."""
+        numbits = bytes([0x01])
+
+        def create_full_node_db(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
+            _write_coverage_sqlite(
+                tmp_path / '.coverage',
+                contexts=[(1, 'tests/test_foo.py::test_bar|run')],
+                files=[(1, 'src/module.py')],
+                line_bits=[(1, 1, numbits)],
+            )
+
+            class FakeResult:
+                returncode = 0
+
+            return FakeResult()
+
+        name_to_node_ids = {'test_bar': ['tests/test_foo.py::test_bar']}
+
+        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=create_full_node_db):
+            result = _run_tests_with_coverage([], tmp_path, name_to_node_ids=name_to_node_ids)
+
+        assert 'tests/test_foo.py::test_bar' in result
+        assert 0 in result['tests/test_foo.py::test_bar']['src/module.py']
+
+    def it_falls_back_to_bare_name_when_not_in_reverse_index(self, tmp_path: Path) -> None:
+        """When a bare name has no reverse index entry, it is kept as-is."""
+        numbits = bytes([0x01])
+
+        def create_unknown_bare_db(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
+            _write_coverage_sqlite(
+                tmp_path / '.coverage',
+                contexts=[(1, 'test_unknown')],  # bare name not in index
+                files=[(1, 'src/module.py')],
+                line_bits=[(1, 1, numbits)],
+            )
+
+            class FakeResult:
+                returncode = 0
+
+            return FakeResult()
+
+        name_to_node_ids: dict[str, list[str]] = {}  # empty index
+
+        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=create_unknown_bare_db):
+            result = _run_tests_with_coverage([], tmp_path, name_to_node_ids=name_to_node_ids)
+
+        # Falls back to the bare name since reverse index has no entry
+        assert 'test_unknown' in result
+        assert 0 in result['test_unknown']['src/module.py']
+
+    def it_does_not_expand_when_no_reverse_index_provided(self, tmp_path: Path) -> None:
+        """When name_to_node_ids is None (default), bare names pass through unchanged."""
+        numbits = bytes([0x01])
+
+        def create_bare_no_index_db(cmd: list[str], **_kwargs: object) -> object:  # noqa: ARG001
+            _write_coverage_sqlite(
+                tmp_path / '.coverage',
+                contexts=[(1, 'test_bare')],
+                files=[(1, 'src/module.py')],
+                line_bits=[(1, 1, numbits)],
+            )
+
+            class FakeResult:
+                returncode = 0
+
+            return FakeResult()
+
+        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=create_bare_no_index_db):
+            result = _run_tests_with_coverage([], tmp_path)  # no name_to_node_ids
+
+        assert 'test_bare' in result
+        assert 0 in result['test_bare']['src/module.py']
