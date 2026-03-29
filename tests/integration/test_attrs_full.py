@@ -15,7 +15,7 @@ import pytest
 MAX_ERROR_RATE_PERCENT = 10.0
 
 
-@pytest.mark.medium
+@pytest.mark.large
 class DescribeAttrsFullCompatibility:
     """Full gremlins run against all attrs source."""
 
