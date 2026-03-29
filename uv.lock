@@ -1581,7 +1581,7 @@ wheels = [
 
 [[package]]
 name = "pytest-gremlins"
-version = "1.8.0b5"
+version = "1.8.0b6"
 source = { editable = "." }
 dependencies = [
     { name = "coverage" },
