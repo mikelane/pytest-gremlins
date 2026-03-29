@@ -158,7 +158,7 @@ jobs:
           key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
 
       - name: Run full attrs compatibility test
-        run: uv run pytest tests/integration/test_attrs_full.py -m medium -v
+        run: uv run pytest tests/integration/test_attrs_full.py -m "medium or large" -v
 
   # Build the package
   build:
