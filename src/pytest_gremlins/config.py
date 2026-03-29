@@ -267,7 +267,7 @@ def _collect_setuptools_candidates(setuptools_config: dict[str, object]) -> list
     return candidates
 
 
-def discover_source_paths(rootdir: Path) -> list[str]:
+def discover_source_paths(rootdir: Path) -> list[Path]:
     """Discover source paths from setuptools packaging metadata in pyproject.toml.
 
     Reads setuptools configuration as a fallback when [tool.pytest-gremlins].paths
@@ -284,7 +284,7 @@ def discover_source_paths(rootdir: Path) -> list[str]:
         rootdir: Directory containing pyproject.toml.
 
     Returns:
-        List of discovered source path strings, or empty list if none found.
+        List of discovered source paths, or empty list if none found.
 
     Examples:
         >>> from pathlib import Path
@@ -310,16 +310,16 @@ def discover_source_paths(rootdir: Path) -> list[str]:
     candidates = _collect_setuptools_candidates(setuptools_config)
 
     seen: set[str] = set()
-    validated_paths: list[str] = []
+    validated_paths: list[Path] = []
     for candidate in candidates:
         if candidate not in seen and (rootdir / candidate).is_dir():
             seen.add(candidate)
-            validated_paths.append(candidate)
+            validated_paths.append(Path(candidate))
 
     return validated_paths
 
 
-def discover_by_project_name(rootdir: Path) -> list[str]:
+def discover_by_project_name(rootdir: Path) -> list[Path]:
     """Discover source path from [project].name in pyproject.toml.
 
     Normalizes the project name (replace - and . with _, lowercase), then checks:
@@ -333,7 +333,7 @@ def discover_by_project_name(rootdir: Path) -> list[str]:
         rootdir: Directory containing pyproject.toml.
 
     Returns:
-        List with one discovered path string, or empty list if none found.
+        List with one discovered Path, or empty list if none found.
 
     Examples:
         >>> from pathlib import Path
@@ -363,12 +363,12 @@ def discover_by_project_name(rootdir: Path) -> list[str]:
     ]
     for candidate in candidates:
         if (candidate / '__init__.py').exists():
-            return [str(candidate.relative_to(rootdir))]
+            return [candidate.relative_to(rootdir)]
 
     return []
 
 
-def discover_by_setup_cfg(rootdir: Path) -> list[str]:
+def discover_by_setup_cfg(rootdir: Path) -> list[Path]:
     """Discover source paths from setup.cfg.
 
     Reads:
@@ -383,7 +383,7 @@ def discover_by_setup_cfg(rootdir: Path) -> list[str]:
         rootdir: Directory that may contain setup.cfg.
 
     Returns:
-        List of discovered path strings that exist on disk.
+        List of discovered paths that exist on disk.
 
     Examples:
         >>> from pathlib import Path
@@ -413,11 +413,11 @@ def discover_by_setup_cfg(rootdir: Path) -> list[str]:
             candidates.append(where)
 
     seen: set[str] = set()
-    validated: list[str] = []
+    validated: list[Path] = []
     for candidate in candidates:
         if candidate not in seen and (rootdir / candidate).is_dir():
             seen.add(candidate)
-            validated.append(candidate)
+            validated.append(Path(candidate))
 
     return validated
 
@@ -434,7 +434,7 @@ def _packages_distributions() -> dict[str, list[str]]:
     return dict(importlib.metadata.packages_distributions())
 
 
-def discover_by_importlib_metadata(rootdir: Path) -> list[str]:
+def discover_by_importlib_metadata(rootdir: Path) -> list[Path]:
     """Discover source paths from installed package metadata.
 
     Uses ``importlib.metadata.packages_distributions()`` to map package names
@@ -447,7 +447,7 @@ def discover_by_importlib_metadata(rootdir: Path) -> list[str]:
         rootdir: The project root to search within.
 
     Returns:
-        List of relative path strings for packages found under rootdir.
+        List of relative paths for packages found under rootdir.
 
     Examples:
         >>> from pathlib import Path
@@ -459,7 +459,7 @@ def discover_by_importlib_metadata(rootdir: Path) -> list[str]:
     except Exception:
         return []
 
-    discovered: list[str] = []
+    discovered: list[Path] = []
     seen: set[str] = set()
 
     for pkg_name in pkg_map:
@@ -483,7 +483,7 @@ def discover_by_importlib_metadata(rootdir: Path) -> list[str]:
             continue
         if top_level not in seen:
             seen.add(top_level)
-            discovered.append(top_level)
+            discovered.append(Path(top_level))
 
     return discovered
 

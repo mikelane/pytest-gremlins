@@ -1,5 +1,7 @@
 """Tests for source path discovery via [project].name heuristic in pyproject.toml."""
 
+from pathlib import Path
+
 import pytest
 
 from pytest_gremlins.config import discover_by_project_name
@@ -29,7 +31,7 @@ class DescribeDiscoverByProjectName:
 
         result = discover_by_project_name(tmp_path)
 
-        assert result == ['my_pkg']
+        assert result == [Path('my_pkg')]
 
     def it_discovers_src_layout_package(self, tmp_path):
         (tmp_path / 'pyproject.toml').write_text('[project]\nname = "my-pkg"\n')
@@ -39,7 +41,7 @@ class DescribeDiscoverByProjectName:
 
         result = discover_by_project_name(tmp_path)
 
-        assert result == ['src/my_pkg']
+        assert result == [Path('src/my_pkg')]
 
     def it_prefers_root_over_src_layout(self, tmp_path):
         (tmp_path / 'pyproject.toml').write_text('[project]\nname = "my-pkg"\n')
@@ -52,7 +54,7 @@ class DescribeDiscoverByProjectName:
 
         result = discover_by_project_name(tmp_path)
 
-        assert result == ['my_pkg']
+        assert result == [Path('my_pkg')]
 
     def it_requires_init_py(self, tmp_path):
         (tmp_path / 'pyproject.toml').write_text('[project]\nname = "my-pkg"\n')
@@ -70,7 +72,7 @@ class DescribeDiscoverByProjectName:
 
         result = discover_by_project_name(tmp_path)
 
-        assert result == ['my_pkg']
+        assert result == [Path('my_pkg')]
 
     def it_returns_empty_when_dir_does_not_exist(self, tmp_path):
         (tmp_path / 'pyproject.toml').write_text('[project]\nname = "my-pkg"\n')

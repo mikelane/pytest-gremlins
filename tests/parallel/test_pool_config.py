@@ -160,6 +160,24 @@ class DescribePoolConfigMpContext:
 
 
 @pytest.mark.small
+class DescribePoolConfigExecutor:
+    """Tests for PoolConfig executor strategy field."""
+
+    def it_defaults_to_subprocess(self) -> None:
+        config = PoolConfig()
+        assert config.executor == 'subprocess'
+
+    @pytest.mark.parametrize('executor', ['subprocess', 'fork', 'inprocess'])
+    def it_accepts_valid_executors(self, executor: str) -> None:
+        config = PoolConfig(executor=executor)
+        assert config.executor == executor
+
+    def it_rejects_unknown_executor(self) -> None:
+        with pytest.raises(ValueError, match='executor must be one of'):
+            PoolConfig(executor='magic')
+
+
+@pytest.mark.small
 class DescribePoolConfigEquality:
     """Tests for PoolConfig equality and hashing."""
 

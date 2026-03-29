@@ -4,6 +4,8 @@ When [tool.pytest-gremlins].paths is not configured, the plugin reads
 setuptools packaging metadata to find source directories.
 """
 
+from pathlib import Path
+
 import pytest
 
 from pytest_gremlins.config import discover_source_paths
@@ -36,7 +38,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['cogapp']
+        assert result == [Path('cogapp')]
 
     def it_discovers_multiple_setuptools_packages(self, tmp_path):
         """Reads multiple packages from [tool.setuptools].packages."""
@@ -47,7 +49,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['pkg_a', 'pkg_b']
+        assert result == [Path('pkg_a'), Path('pkg_b')]
 
     def it_discovers_setuptools_package_dir(self, tmp_path):
         """Reads [tool.setuptools].package-dir mapping."""
@@ -57,7 +59,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['lib']
+        assert result == [Path('lib')]
 
     def it_discovers_setuptools_packages_find_where(self, tmp_path):
         """Reads [tool.setuptools.packages.find].where list."""
@@ -67,7 +69,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['lib']
+        assert result == [Path('lib')]
 
     def it_discovers_multiple_find_where_dirs(self, tmp_path):
         """Reads multiple directories from packages.find.where."""
@@ -78,7 +80,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['lib', 'ext']
+        assert result == [Path('lib'), Path('ext')]
 
     def it_filters_nonexistent_packages(self, tmp_path):
         """Only returns packages whose directories actually exist on disk."""
@@ -88,7 +90,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['exists']
+        assert result == [Path('exists')]
 
     def it_filters_nonexistent_package_dir(self, tmp_path):
         """Only returns package-dir values whose directories exist."""
@@ -116,7 +118,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['lib']
+        assert result == [Path('lib')]
 
     def it_handles_empty_setuptools_section(self, tmp_path):
         """Returns empty list when [tool.setuptools] is empty."""
@@ -135,7 +137,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['src/mypkg']
+        assert result == [Path('src/mypkg')]
 
     def it_resolves_nested_dotted_package_to_top_level_directory(self, tmp_path):
         """Resolves dotted package name to its top-level directory."""
@@ -145,7 +147,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['cogapp']
+        assert result == [Path('cogapp')]
 
     def it_find_where_as_string_discovered(self, tmp_path):
         """Discovers source path when find.where is a string instead of a list."""
@@ -155,7 +157,7 @@ class DescribeDiscoverSourcePaths:
 
         result = discover_source_paths(tmp_path)
 
-        assert result == ['src']
+        assert result == [Path('src')]
 
     def it_malformed_toml_returns_empty_list(self, tmp_path):
         """Returns empty list when pyproject.toml contains invalid TOML."""

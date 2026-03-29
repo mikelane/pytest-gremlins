@@ -33,6 +33,8 @@ from typing import Literal
 StartMethod = Literal['auto', 'spawn', 'fork', 'forkserver']
 VALID_START_METHODS: frozenset[str] = frozenset(('auto', 'spawn', 'fork', 'forkserver'))
 
+_VALID_EXECUTORS: frozenset[str] = frozenset(('subprocess', 'fork', 'inprocess'))
+
 
 def get_optimal_start_method() -> Literal['spawn', 'fork', 'forkserver']:
     """Determine the optimal process start method for the current platform.
@@ -79,6 +81,7 @@ class PoolConfig:
         start_method: Process start method ('auto', 'spawn', 'fork', 'forkserver').
         warmup: Whether to pre-warm workers on pool startup. Defaults to True.
         batch_size: Number of gremlins per batch. Defaults to 10.
+        executor: Execution strategy ('subprocess', 'fork', 'inprocess'). Defaults to 'subprocess'.
 
     Example:
         >>> config = PoolConfig(max_workers=4, timeout=60)
@@ -93,6 +96,7 @@ class PoolConfig:
     start_method: StartMethod = 'auto'
     warmup: bool = True
     batch_size: int = 10
+    executor: str = 'subprocess'
 
     def __post_init__(self) -> None:
         """Validate configuration values.
@@ -100,6 +104,10 @@ class PoolConfig:
         Raises:
             ValueError: If any configuration value is invalid.
         """
+        if self.executor not in _VALID_EXECUTORS:
+            msg = f"executor must be one of {sorted(_VALID_EXECUTORS)}, got '{self.executor}'"
+            raise ValueError(msg)
+
         if self.start_method not in VALID_START_METHODS:
             msg = f'Invalid start method: {self.start_method!r}. Valid methods are: {sorted(VALID_START_METHODS)}'
             raise ValueError(msg)

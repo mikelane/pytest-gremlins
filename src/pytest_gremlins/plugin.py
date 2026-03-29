@@ -63,6 +63,8 @@ from pytest_gremlins.instrumentation.transformer import (
 )
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
+from pytest_gremlins.parallel.fork_executor import ForkExecutor
+from pytest_gremlins.parallel.inprocess_executor import InProcessExecutor
 from pytest_gremlins.parallel.lightweight import build_lightweight_command
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.html import (
@@ -514,6 +516,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         dest='max_pardons',
         help='Fail if absolute pardoned gremlin count exceeds N (default: disabled)',
+    )
+    group.addoption(
+        '--gremlin-executor',
+        default='subprocess',
+        choices=['subprocess', 'fork', 'inprocess'],
+        dest='gremlin_executor',
+        help='Execution strategy: subprocess (default), fork (faster, Unix), inprocess (fastest, no isolation).',
     )
 
 
@@ -1196,6 +1205,33 @@ def _path_to_module_name(file_path: Path, rootdir: Path) -> str:
         parts = parts[1:]
 
     return '.'.join(parts)
+
+
+def _build_gremlin_module_map(
+    gremlins: list[Gremlin],
+    rootdir: Path,
+) -> dict[str, str]:
+    """Map gremlin IDs to their module names for in-process execution.
+
+    Args:
+        gremlins: List of gremlins to map.
+        rootdir: Root directory of the project.
+
+    Returns:
+        Dictionary mapping gremlin IDs to dotted module names.
+    """
+    gremlin_module_map: dict[str, str] = {}
+    for gremlin in gremlins:
+        file_path = Path(gremlin.file_path)
+        try:
+            rel_path = file_path.relative_to(rootdir)
+        except ValueError:
+            rel_path = Path(file_path.name)
+        module_name = str(rel_path).replace(os.sep, '.').removesuffix('.py')
+        if module_name.endswith('.__init__'):
+            module_name = module_name.removesuffix('.__init__')
+        gremlin_module_map[gremlin.gremlin_id] = module_name
+    return gremlin_module_map
 
 
 def _get_bootstrap_script() -> str:
@@ -1993,6 +2029,52 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
     return results
 
 
+def _run_mutation_testing_inprocess(
+    executor_choice: str,
+    gremlin_session: GremlinSession,
+    rootdir: Path,
+    base_test_command: list[str],
+) -> list[GremlinResult]:
+    """Run mutation testing using fork or in-process executor."""
+    gremlin_module_map = _build_gremlin_module_map(gremlin_session.gremlins, rootdir)
+    test_specs = [arg for arg in base_test_command if '::' in arg]
+    timeout = gremlin_session.timeout if hasattr(gremlin_session, 'timeout') else 30
+    batch_size = gremlin_session.batch_size if hasattr(gremlin_session, 'batch_size') else 50
+
+    gremlin_ids = [g.gremlin_id for g in gremlin_session.gremlins if not g.pardoned]
+
+    if executor_choice == 'fork':
+        executor: InProcessExecutor | ForkExecutor = ForkExecutor(batch_size=batch_size, timeout=timeout)
+    else:
+        executor = InProcessExecutor(timeout=timeout)
+
+    worker_results = executor.execute(gremlin_ids, gremlin_module_map, test_specs)
+
+    results: list[GremlinResult] = []
+    gremlin_by_id = {g.gremlin_id: g for g in gremlin_session.gremlins}
+    for worker_result in worker_results:
+        gremlin = gremlin_by_id.get(worker_result.gremlin_id)
+        if gremlin is None:
+            continue
+        results.append(
+            GremlinResult(
+                gremlin=gremlin,
+                status=worker_result.status,
+                killing_test=worker_result.killing_test,
+                execution_time_ms=worker_result.execution_time_ms,
+                error_output=worker_result.error_output,
+            )
+        )
+
+    # Add pardoned gremlins
+    for gremlin in gremlin_session.gremlins:
+        pardoned_result = _immediate_result_if_pardoned(gremlin)
+        if pardoned_result is not None:
+            results.append(pardoned_result)
+
+    return results
+
+
 def _run_mutation_testing(
     session: pytest.Session,
     gremlin_session: GremlinSession,
@@ -2011,6 +2093,18 @@ def _run_mutation_testing(
     results: list[GremlinResult] = []
     rootdir = _get_rootdir(session.config)
     base_test_command = _build_test_command(gremlin_session.instrumented_dir)
+
+    executor_choice = (
+        session.config.option.gremlin_executor if hasattr(session.config.option, 'gremlin_executor') else 'subprocess'
+    )
+
+    if executor_choice in ('fork', 'inprocess'):
+        return _run_mutation_testing_inprocess(
+            executor_choice,
+            gremlin_session,
+            rootdir,
+            base_test_command,
+        )
 
     for i, gremlin in enumerate(gremlin_session.gremlins, 1):
         pardoned_result = _immediate_result_if_pardoned(gremlin)
