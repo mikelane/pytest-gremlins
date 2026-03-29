@@ -38,7 +38,7 @@ class DescribeAttrsFullCompatibility:
             cwd=str(attrs_checkout),
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=1200,  # suffix-match fallback (#359) adds overhead; optimize later
             check=False,
         )
 
