@@ -13,6 +13,7 @@ will route those to the subprocess executor.
 from __future__ import annotations
 
 from collections.abc import Callable
+import enum
 import logging
 import sys
 import time
@@ -20,6 +21,20 @@ from typing import Any
 
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.results import GremlinResultStatus
+
+
+class _TestOutcome(enum.Enum):
+    """Tri-state outcome from running a single test spec.
+
+    Distinguishes between a test that caught a mutation (FAILED),
+    a test that passed (PASSED), and an infrastructure error that
+    prevented the test from running at all (ERROR).
+    """
+
+    PASSED = 'passed'
+    FAILED = 'failed'
+    ERROR = 'error'
+
 
 logger = logging.getLogger(__name__)
 
@@ -83,21 +98,26 @@ class InProcessExecutor:
             if module is not None:
                 module.__gremlin_active__ = gremlin_id  # type: ignore[attr-defined]
 
-            zapped = False
             for spec in test_specs:
-                if not _run_test_spec(spec):
-                    zapped = True
-                    break
+                outcome = _run_test_spec(spec)
+                if outcome is _TestOutcome.FAILED:
+                    elapsed_ms = (time.monotonic() - start) * 1000
+                    return WorkerResult(
+                        gremlin_id=gremlin_id,
+                        status=GremlinResultStatus.ZAPPED,
+                        killing_test=spec,
+                        execution_time_ms=elapsed_ms,
+                    )
+                if outcome is _TestOutcome.ERROR:
+                    elapsed_ms = (time.monotonic() - start) * 1000
+                    return WorkerResult(
+                        gremlin_id=gremlin_id,
+                        status=GremlinResultStatus.ERROR,
+                        execution_time_ms=elapsed_ms,
+                        error_output=f'Infrastructure error running {spec}',
+                    )
 
             elapsed_ms = (time.monotonic() - start) * 1000
-
-            if zapped:
-                return WorkerResult(
-                    gremlin_id=gremlin_id,
-                    status=GremlinResultStatus.ZAPPED,
-                    killing_test=spec,
-                    execution_time_ms=elapsed_ms,
-                )
             return WorkerResult(
                 gremlin_id=gremlin_id,
                 status=GremlinResultStatus.SURVIVED,
@@ -117,8 +137,13 @@ class InProcessExecutor:
                 module.__gremlin_active__ = None  # type: ignore[attr-defined]
 
 
-def _run_test_spec(spec: str) -> bool:
-    """Run a single test spec in-process. Returns True if passed.
+def _run_test_spec(spec: str) -> _TestOutcome:
+    """Run a single test spec in-process.
+
+    Returns:
+        ``PASSED`` if the test callable ran without exception.
+        ``FAILED`` if the test callable raised an exception (mutation caught).
+        ``ERROR`` if the module or callable could not be resolved (infrastructure).
 
     Handles both function-level (``module::func``) and class-level
     (``module::Class::method``) test node IDs.
@@ -126,17 +151,17 @@ def _run_test_spec(spec: str) -> bool:
     parts = spec.split('::')
     module = sys.modules.get(parts[0])
     if module is None:
-        return False
+        return _TestOutcome.ERROR
 
     callable_fn = _resolve_test_callable(module, parts[1:])
     if callable_fn is None:
-        return False
+        return _TestOutcome.ERROR
 
     try:
         callable_fn()
     except Exception:
-        return False
-    return True
+        return _TestOutcome.FAILED
+    return _TestOutcome.PASSED
 
 
 def _resolve_test_callable(module: object, parts: list[str]) -> Callable[..., Any] | None:

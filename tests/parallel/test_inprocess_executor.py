@@ -15,6 +15,7 @@ from pytest_gremlins.parallel.inprocess_executor import (
     InProcessExecutor,
     _resolve_test_callable,
     _run_test_spec,
+    _TestOutcome,
 )
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.results import GremlinResultStatus
@@ -327,21 +328,21 @@ class DescribeInProcessExecutorModuleResolution:
 class DescribeRunTestSpec:
     """Tests for _run_test_spec free function."""
 
-    def it_returns_false_when_module_not_in_sys_modules(self) -> None:
+    def it_returns_error_when_module_not_in_sys_modules(self) -> None:
         result = _run_test_spec('nonexistent_module_xyz::test_foo')
-        assert result is False
+        assert result == _TestOutcome.ERROR
 
-    def it_returns_false_when_function_not_found_on_module(self) -> None:
+    def it_returns_error_when_function_not_found_on_module(self) -> None:
 
         mod = types.ModuleType('_test_run_spec_no_func')
         sys.modules['_test_run_spec_no_func'] = mod
         try:
             result = _run_test_spec('_test_run_spec_no_func::nonexistent_test')
-            assert result is False
+            assert result == _TestOutcome.ERROR
         finally:
             sys.modules.pop('_test_run_spec_no_func', None)
 
-    def it_returns_true_when_test_passes(self) -> None:
+    def it_returns_passed_when_test_passes(self) -> None:
 
         mod = types.ModuleType('_test_run_spec_pass')
         code = 'def test_pass():\n    assert True\n'
@@ -349,11 +350,11 @@ class DescribeRunTestSpec:
         sys.modules['_test_run_spec_pass'] = mod
         try:
             result = _run_test_spec('_test_run_spec_pass::test_pass')
-            assert result is True
+            assert result == _TestOutcome.PASSED
         finally:
             sys.modules.pop('_test_run_spec_pass', None)
 
-    def it_returns_false_when_test_raises_exception(self) -> None:
+    def it_returns_failed_when_test_raises_exception(self) -> None:
 
         mod = types.ModuleType('_test_run_spec_fail')
         code = 'def test_fail():\n    raise AssertionError("nope")\n'
@@ -361,7 +362,7 @@ class DescribeRunTestSpec:
         sys.modules['_test_run_spec_fail'] = mod
         try:
             result = _run_test_spec('_test_run_spec_fail::test_fail')
-            assert result is False
+            assert result == _TestOutcome.FAILED
         finally:
             sys.modules.pop('_test_run_spec_fail', None)
 
