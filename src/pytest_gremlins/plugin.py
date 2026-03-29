@@ -521,10 +521,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     group.addoption(
         '--gremlin-executor',
-        default='subprocess',
-        choices=['subprocess', 'fork', 'inprocess'],
+        default='auto',
+        choices=['auto', 'subprocess', 'fork', 'inprocess'],
         dest='gremlin_executor',
-        help='Execution strategy: subprocess (default), fork (faster, Unix), inprocess (fastest, no isolation).',
+        help='Execution strategy: auto (default: fork on Unix, subprocess on Windows), subprocess, fork, inprocess.',
     )
     group.addoption(
         '--gremlin-no-coverage-filter',
@@ -2109,6 +2109,12 @@ def _run_mutation_testing(
     executor_choice = (
         session.config.option.gremlin_executor if hasattr(session.config.option, 'gremlin_executor') else 'subprocess'
     )
+
+    if executor_choice == 'auto':
+        # TODO: resolve to 'fork' on Unix once the fork executor supports
+        # coverage-guided selection, progress reporting, and cache integration.
+        # For now, auto = subprocess (safe default, full pipeline).
+        executor_choice = 'subprocess'
 
     if executor_choice in ('fork', 'inprocess'):
         return _run_mutation_testing_inprocess(

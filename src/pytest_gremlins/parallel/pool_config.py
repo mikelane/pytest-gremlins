@@ -33,7 +33,7 @@ from typing import Literal
 StartMethod = Literal['auto', 'spawn', 'fork', 'forkserver']
 VALID_START_METHODS: frozenset[str] = frozenset(('auto', 'spawn', 'fork', 'forkserver'))
 
-_VALID_EXECUTORS: frozenset[str] = frozenset(('subprocess', 'fork', 'inprocess'))
+_VALID_EXECUTORS: frozenset[str] = frozenset(('auto', 'subprocess', 'fork', 'inprocess'))
 
 
 def get_optimal_start_method() -> Literal['spawn', 'fork', 'forkserver']:
@@ -81,7 +81,7 @@ class PoolConfig:
         start_method: Process start method ('auto', 'spawn', 'fork', 'forkserver').
         warmup: Whether to pre-warm workers on pool startup. Defaults to True.
         batch_size: Number of gremlins per batch. Defaults to 10.
-        executor: Execution strategy ('subprocess', 'fork', 'inprocess'). Defaults to 'subprocess'.
+        executor: Execution strategy ('auto', 'subprocess', 'fork', 'inprocess'). Defaults to 'subprocess'.
 
     Example:
         >>> config = PoolConfig(max_workers=4, timeout=60)
