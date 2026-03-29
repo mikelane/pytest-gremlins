@@ -18,6 +18,7 @@ from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.plugin import (
     GremlinSession,
     _build_gremlin_module_map,
+    _run_mutation_testing,
     _run_mutation_testing_inprocess,
     pytest_addoption,
 )
@@ -62,7 +63,7 @@ class DescribeGremlinExecutorOption:
         added_option_names = [call.args[0] for call in group.addoption.call_args_list]
         assert '--gremlin-executor' in added_option_names
 
-    def it_defaults_to_subprocess(self) -> None:
+    def it_defaults_to_auto(self) -> None:
         parser = MagicMock()
         group = MagicMock()
         parser.getgroup.return_value = group
@@ -71,9 +72,9 @@ class DescribeGremlinExecutorOption:
 
         added_options = {c.args[0]: c.kwargs for c in group.addoption.call_args_list if c.args}
         opt_kwargs = added_options['--gremlin-executor']
-        assert opt_kwargs['default'] == 'subprocess'
+        assert opt_kwargs['default'] == 'auto'
 
-    def it_accepts_three_choices(self) -> None:
+    def it_accepts_four_choices(self) -> None:
         parser = MagicMock()
         group = MagicMock()
         parser.getgroup.return_value = group
@@ -82,7 +83,27 @@ class DescribeGremlinExecutorOption:
 
         added_options = {c.args[0]: c.kwargs for c in group.addoption.call_args_list if c.args}
         opt_kwargs = added_options['--gremlin-executor']
-        assert set(opt_kwargs['choices']) == {'subprocess', 'fork', 'inprocess'}
+        assert set(opt_kwargs['choices']) == {'auto', 'subprocess', 'fork', 'inprocess'}
+
+
+@pytest.mark.small
+class DescribeAutoExecutorResolution:
+    """Tests that 'auto' resolves to subprocess (safe default, full pipeline)."""
+
+    def it_resolves_auto_to_subprocess(self) -> None:
+        """auto always resolves to subprocess until fork supports the full pipeline."""
+        mock_session = MagicMock()
+        mock_session.config.option.gremlin_executor = 'auto'
+        gremlin_session = GremlinSession(gremlins=[_make_gremlin('g1', '/project/src/pkg/mod.py')])
+
+        with (
+            patch('pytest_gremlins.plugin._get_rootdir', return_value=Path('/project/src')),
+            patch('pytest_gremlins.plugin._build_test_command', return_value=['pytest']),
+            patch('pytest_gremlins.plugin._run_mutation_testing_inprocess') as mock_inprocess,
+        ):
+            _run_mutation_testing(mock_session, gremlin_session)
+
+        mock_inprocess.assert_not_called()
 
 
 @pytest.mark.small

@@ -167,7 +167,7 @@ class DescribePoolConfigExecutor:
         config = PoolConfig()
         assert config.executor == 'subprocess'
 
-    @pytest.mark.parametrize('executor', ['subprocess', 'fork', 'inprocess'])
+    @pytest.mark.parametrize('executor', ['auto', 'subprocess', 'fork', 'inprocess'])
     def it_accepts_valid_executors(self, executor: str) -> None:
         config = PoolConfig(executor=executor)
         assert config.executor == executor
