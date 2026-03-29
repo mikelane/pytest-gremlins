@@ -189,6 +189,9 @@ class GremlinSession:
             PRIVATE mode.  ``None`` when xdist is not active.
         exclude_patterns: Glob patterns from ``[tool.pytest-gremlins] exclude``
             used to skip matching files during source discovery.
+        test_name_to_node_ids: Reverse index mapping bare function names to
+            their full pytest node IDs.  Built at session setup for O(1)
+            lookup when resolving coverage contexts.
     """
 
     enabled: bool = False
@@ -227,6 +230,7 @@ class GremlinSession:
     max_pardons_pct: float | None = None
     max_pardons: int | None = None
     no_coverage_filter: bool = False
+    test_name_to_node_ids: dict[str, list[str]] = field(default_factory=dict)
 
 
 _gremlin_session: GremlinSession | None = None
@@ -878,6 +882,12 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     normalized_node_ids = _make_node_ids_relative(node_ids, rootdir)
     gremlin_session.test_node_ids = {node_id: node_id for node_id in normalized_node_ids}
 
+    name_to_nodes: dict[str, list[str]] = {}
+    for node_id in normalized_node_ids:
+        func_name = node_id.split('::')[-1]
+        name_to_nodes.setdefault(func_name, []).append(node_id)
+    gremlin_session.test_name_to_node_ids = name_to_nodes
+
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
 
@@ -1524,6 +1534,11 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
             )
         normalized = _make_node_ids_relative(xdist_ids, rootdir)
         gremlin_session.test_node_ids = {nid: nid for nid in normalized}
+        xdist_name_to_nodes: dict[str, list[str]] = {}
+        for nid in normalized:
+            func_name = nid.split('::')[-1]
+            xdist_name_to_nodes.setdefault(func_name, []).append(nid)
+        gremlin_session.test_name_to_node_ids = xdist_name_to_nodes
         gremlin_session.total_tests = len(normalized)
         logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
         source_files = _discover_source_files(session, gremlin_session)
@@ -2191,11 +2206,13 @@ def _build_test_hashes_for_gremlin(
             node_id = gremlin_session.test_node_ids.get(simple_name, '')
         if not node_id:
             # Coverage map may use bare function names (old-format dynamic_context)
-            # while test_node_ids is keyed by full node ID.  Search by suffix match.
-            for nid in gremlin_session.test_node_ids:
-                if nid.endswith(('::' + test_name, '::' + test_name.split('.')[-1])):
-                    node_id = nid
-                    break
+            # while test_node_ids is keyed by full node ID.  Use the reverse index
+            # for O(1) lookup instead of O(n) linear suffix scan.
+            candidates = gremlin_session.test_name_to_node_ids.get(test_name, [])
+            if not candidates:
+                candidates = gremlin_session.test_name_to_node_ids.get(test_name.split('.')[-1], [])
+            if candidates:
+                node_id = candidates[0]
 
         if '::' in node_id:
             test_file = node_id.split('::')[0]
