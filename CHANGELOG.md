@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.8.0b2 (2026-03-29)
+
+### Fix
+
+- **Coverage selection**: use full pytest node IDs instead of bare function names — fixes silent
+  test dropping when multiple files contain functions with the same name (common in BDD-style
+  `it_*` naming) (#357)
+
 ## v1.8.0b1 (2026-03-28)
 
 ### Feat
