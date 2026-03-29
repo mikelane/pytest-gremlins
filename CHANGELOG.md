@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.8.0b0 (2026-03-28)
+
+### Feat
+
+- **InProcessExecutor**: toggle `__gremlin_active__` in-process instead of spawning subprocess —
+  263x faster per mutation on micro-benchmarks (#349)
+- **ForkExecutor**: fork-per-batch isolation wrapping InProcessExecutor — 22x faster with full
+  process isolation (#349)
+- **`--gremlin-executor`** CLI option: choose `subprocess` (default), `fork`, or `in-process`
+  execution strategy (#349)
+- **`selected_tests`** field in JSON report: see which tests were selected for each gremlin (#351)
+- **`execution_time_ms`** exported in JSON report (#351)
+- **`--gremlin-no-coverage-filter`** CLI flag: disable coverage-guided test selection for
+  debugging (#351)
+
+### Fix
+
+- Tri-state `_TestOutcome` in `_run_test_spec`: distinguishes test failures from infrastructure
+  errors — no more false-positive zaps (#349)
+- Use `dataclasses.replace()` for safe `GremlinResult` field attachment (#351)
+- Windows: `discover_by_*` functions return `Path` objects instead of `str` — eliminates
+  backslash path comparison failures (#349)
+
 ## v1.7.0 (2026-03-27)
 
 ### Perf
