@@ -233,45 +233,44 @@ _gremlin_session: GremlinSession | None = None
 
 
 def _extract_test_name_from_context(context: str) -> str:
-    """Extract the test function name from a coverage dynamic context string.
+    """Extract the test identifier from a coverage dynamic context string.
 
     Handles two context formats:
 
     - **New format** (GremlinContextPlugin): ``{nodeid}|{when}``
       e.g. ``tests/test_foo.py::TestClass::test_bar|run``
-      The nodeid part is everything before ``|``; the function name is the
-      last ``::``-separated segment of the nodeid.
+      Returns the full node ID (everything before ``|``), preserving the
+      file path and class qualifiers so that tests with the same function
+      name in different files are distinguishable.
 
     - **Old format** (coverage dynamic_context=test_function):
-      e.g. ``test_bar`` or ``TestClass.test_method`` or ``path::test_func``
-      The function name is the last ``::`` or ``.``-separated segment.
+      e.g. ``test_bar`` or ``TestClass.test_method``
+      Returns the value as-is (no ``|`` present, no transformation).
 
     Args:
         context: The raw context string from the coverage database.
 
     Returns:
-        The test function name extracted from the context.
+        The full node ID for new-format contexts, or the original value
+        for old-format contexts.
 
     Examples:
         >>> _extract_test_name_from_context('tests/test_foo.py::test_bar|run')
-        'test_bar'
+        'tests/test_foo.py::test_bar'
         >>> _extract_test_name_from_context('tests/test_foo.py::test_bar|setup')
-        'test_bar'
+        'tests/test_foo.py::test_bar'
         >>> _extract_test_name_from_context('tests/test_foo.py::TestFoo::test_bar|run')
-        'test_bar'
+        'tests/test_foo.py::TestFoo::test_bar'
         >>> _extract_test_name_from_context('test_bar')
         'test_bar'
         >>> _extract_test_name_from_context('TestClass.test_method')
-        'test_method'
+        'TestClass.test_method'
         >>> _extract_test_name_from_context('tests/test_foo.py::test_func')
-        'test_func'
+        'tests/test_foo.py::test_func'
     """
     if '|' in context:
-        nodeid = context.split('|', maxsplit=1)[0]
-        return nodeid.split('::')[-1] if '::' in nodeid else nodeid
-    if '::' in context:
-        return context.rsplit('::', maxsplit=1)[-1]
-    return context.rsplit('.', maxsplit=1)[-1]
+        return context.split('|', maxsplit=1)[0]
+    return context
 
 
 def _is_xdist_worker(config: pytest.Config) -> bool:
@@ -877,9 +876,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     rootdir = _get_rootdir(session.config)
     node_ids = [item.nodeid for item in session.items]
     normalized_node_ids = _make_node_ids_relative(node_ids, rootdir)
-    gremlin_session.test_node_ids = {
-        item.name: node_id for item, node_id in zip(session.items, normalized_node_ids, strict=True)
-    }
+    gremlin_session.test_node_ids = {node_id: node_id for node_id in normalized_node_ids}
 
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
@@ -2192,6 +2189,13 @@ def _build_test_hashes_for_gremlin(
         if not node_id:
             simple_name = test_name.split('.')[-1]
             node_id = gremlin_session.test_node_ids.get(simple_name, '')
+        if not node_id:
+            # Coverage map may use bare function names (old-format dynamic_context)
+            # while test_node_ids is keyed by full node ID.  Search by suffix match.
+            for nid in gremlin_session.test_node_ids:
+                if nid.endswith(('::' + test_name, '::' + test_name.split('.')[-1])):
+                    node_id = nid
+                    break
 
         if '::' in node_id:
             test_file = node_id.split('::')[0]

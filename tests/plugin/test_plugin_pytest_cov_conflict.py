@@ -169,7 +169,7 @@ def _make_session_finish_mocks(
     gremlin_session = GremlinSession(
         enabled=True,
         gremlins=[mock_gremlin],
-        test_node_ids={'test_foo': 'tests/test_mod.py::test_foo'},
+        test_node_ids={'tests/test_mod.py::test_foo': 'tests/test_mod.py::test_foo'},
     )
 
     return mock_session, gremlin_session
@@ -386,10 +386,10 @@ class DescribeCoverageSQLiteReading:
         with patch('pytest_gremlins.plugin.subprocess.run', side_effect=create_coverage_file):
             result = _run_tests_with_coverage(['tests/test_mod.py::test_foo'], tmp_path)
 
-        assert 'test_foo' in result
-        assert 'src/module.py' in result['test_foo']
-        assert 0 in result['test_foo']['src/module.py']
-        assert 1 in result['test_foo']['src/module.py']
+        assert 'tests/test_mod.py::test_foo' in result
+        assert 'src/module.py' in result['tests/test_mod.py::test_foo']
+        assert 0 in result['tests/test_mod.py::test_foo']['src/module.py']
+        assert 1 in result['tests/test_mod.py::test_foo']['src/module.py']
 
     def it_returns_empty_dict_when_coverage_file_absent(self, tmp_path: Path) -> None:
         """When subprocess runs but produces no .coverage file, an empty dict is returned."""
@@ -429,8 +429,8 @@ class DescribeCoverageSQLiteReading:
         with patch('pytest_gremlins.plugin.subprocess.run', side_effect=create_multi_row_db):
             result = _run_tests_with_coverage([], tmp_path)
 
-        assert 0 in result['test_foo']['src/module.py']
-        assert 1 in result['test_foo']['src/module.py']
+        assert 0 in result['tests/test_mod.py::test_foo']['src/module.py']
+        assert 1 in result['tests/test_mod.py::test_foo']['src/module.py']
 
     def it_skips_line_bits_rows_with_orphaned_context_or_file_id(self, tmp_path: Path) -> None:
         """line_bits rows whose context_id or file_id are not in their tables are skipped (hits continue)."""
@@ -456,5 +456,5 @@ class DescribeCoverageSQLiteReading:
             result = _run_tests_with_coverage([], tmp_path)
 
         # Only the valid row contributes; orphaned rows are silently skipped
-        assert 'test_bar' in result
-        assert 0 in result['test_bar']['src/module.py']
+        assert 'tests/test_mod.py::test_bar' in result
+        assert 0 in result['tests/test_mod.py::test_bar']['src/module.py']

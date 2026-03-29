@@ -675,8 +675,8 @@ class DescribeExtractTestNameFromContext:
         # ACT
         result = _extract_test_name_from_context(context)
 
-        # ASSERT — must return the function name, not the class or file path.
-        assert result == 'test_bar'
+        # ASSERT — full node ID preserved, only |when stripped
+        assert result == 'tests/test_foo.py::TestFoo::test_bar'
 
     def it_extracts_function_name_from_pipe_format_setup_phase(self) -> None:
         # ARRANGE — 'setup' phase; the when-segment must be stripped.
@@ -685,8 +685,8 @@ class DescribeExtractTestNameFromContext:
         # ACT
         result = _extract_test_name_from_context(context)
 
-        # ASSERT
-        assert result == 'test_bar'
+        # ASSERT — full node ID preserved, only |setup stripped
+        assert result == 'tests/test_foo.py::test_bar'
 
     def it_returns_raw_nodeid_when_pipe_format_has_no_colons(self) -> None:
         # ARRANGE — nodeid contains no '::'; returned as-is after stripping '|when'.
@@ -705,18 +705,18 @@ class DescribeExtractTestNameFromContext:
         # ACT
         result = _extract_test_name_from_context(context)
 
-        # ASSERT
-        assert result == 'test_func'
+        # ASSERT — full identifier preserved
+        assert result == 'tests/test_foo.py::test_func'
 
-    def it_extracts_method_name_from_dot_separated_class_format(self) -> None:
+    def it_returns_full_dot_separated_context(self) -> None:
         # ARRANGE — old coverage format: ClassName.method_name
         context = 'TestClass.test_method'
 
         # ACT
         result = _extract_test_name_from_context(context)
 
-        # ASSERT — must return 'test_method', not 'TestClass'.
-        assert result == 'test_method'
+        # ASSERT — full context preserved (no longer strips to bare function name)
+        assert result == 'TestClass.test_method'
 
     def it_returns_plain_name_unchanged(self) -> None:
         # ARRANGE — bare function name with no separators.
