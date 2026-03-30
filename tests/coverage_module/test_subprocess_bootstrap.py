@@ -15,9 +15,27 @@ from unittest.mock import (
 import pytest
 
 from pytest_gremlins.coverage.subprocess_bootstrap import (
+    _strip_nodeid_markers,
     _SubprocessContextPlugin,
     pytest_sessionstart,
 )
+
+
+@pytest.mark.small
+class DescribeStripNodeidMarkers:
+    """Tests for _strip_nodeid_markers."""
+
+    def it_strips_test_category_marker(self) -> None:
+        assert _strip_nodeid_markers('test_module.py::test_add [SMALL]') == 'test_module.py::test_add'
+
+    def it_strips_medium_marker(self) -> None:
+        assert _strip_nodeid_markers('test_module.py::test_add [MEDIUM]') == 'test_module.py::test_add'
+
+    def it_leaves_plain_nodeid_unchanged(self) -> None:
+        assert _strip_nodeid_markers('test_module.py::test_add') == 'test_module.py::test_add'
+
+    def it_leaves_parametrized_nodeid_unchanged(self) -> None:
+        assert _strip_nodeid_markers('test_module.py::test_add[param1]') == 'test_module.py::test_add[param1]'
 
 
 @pytest.mark.small
@@ -39,6 +57,16 @@ class DescribeSubprocessContextPluginSetup:
         plugin = _SubprocessContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
+
+        list(plugin.pytest_runtest_setup(mock_item))
+
+        mock_cov.switch_context.assert_called_once_with('tests/test_foo.py::test_bar|setup')
+
+    def it_strips_marker_from_nodeid(self) -> None:
+        mock_cov = MagicMock()
+        plugin = _SubprocessContextPlugin(mock_cov)
+        mock_item = MagicMock()
+        mock_item.nodeid = 'tests/test_foo.py::test_bar [SMALL]'
 
         list(plugin.pytest_runtest_setup(mock_item))
 
