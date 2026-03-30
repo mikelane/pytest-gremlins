@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.8.0 (2026-03-30)
+
+Stable release consolidating the v1.8.0 beta series.
+
+### Feat
+
+- **`--gremlin-executor=auto`** is now the default — resolves to `fork` on Unix, `subprocess`
+  on Windows (#354)
+- **InProcessExecutor + ForkExecutor** for up to 263x faster mutation testing (#349)
+- **`selected_tests`** and **`execution_time_ms`** in JSON report, **`--gremlin-no-coverage-filter`**
+  bypass flag (#351)
+
+### Fix
+
+- **Coverage-guided test selection**: full node IDs throughout the pipeline, eliminating
+  bare-name ambiguity for projects with duplicate test names (attrs, BDD-style naming).
+  Coverage subprocess now uses `Coverage.current()` + self-bootstrapping plugin instead
+  of `dynamic_context=test_function` (#357, #363, #365, #369)
+- **Cache invalidation**: strip `pytest-test-categories` markers from subprocess node IDs
+  so test-file modifications correctly invalidate cached results (#369)
+
+### Performance
+
+- **attrs compat**: 44s (was >1200s before coverage selection fix)
+
 ## v1.8.0b8 (2026-03-30)
 
 ### Fix
