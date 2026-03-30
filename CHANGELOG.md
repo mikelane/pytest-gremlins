@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.8.0b8 (2026-03-30)
+
+### Fix
+
+- **Coverage subprocess**: record full node IDs via `Coverage.current()` instead of bare function
+  names from `dynamic_context=test_function`. Eliminates the 10-20x test over-selection from #365's
+  bare-name expansion — attrs compat drops from >1200s back to ~44s. The coverage subprocess now
+  loads a self-bootstrapping pytest plugin that calls `switch_context()` with `{nodeid}|{when}`
+  format, matching the main session's `GremlinContextPlugin` behavior (#369).
+  Closes #368
+- **Cache invalidation**: strip `pytest-test-categories` markers (e.g. `[SMALL]`) from coverage
+  subprocess node IDs so they match the main session's `test_node_ids`, fixing test-file-modification
+  cache invalidation (#369)
+
 ## v1.8.0b7 (2026-03-29)
 
 ### Fix
