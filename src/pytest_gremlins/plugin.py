@@ -1745,7 +1745,6 @@ def _run_tests_with_coverage(
     coveragerc_path = rootdir / '.coveragerc.gremlins'
     coveragerc_content = """[run]
 source = .
-dynamic_context = test_function
 """
     coveragerc_path.write_text(coveragerc_content)
 
@@ -1757,6 +1756,10 @@ dynamic_context = test_function
         f'--rcfile={coveragerc_path}',
         '-m',
         'pytest',
+        '-p',
+        'pytest_gremlins.coverage.subprocess_bootstrap',
+        '-p',
+        'no:gremlins',
         '-o',
         'addopts=',
         *test_node_ids,
