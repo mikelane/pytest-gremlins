@@ -1,0 +1,76 @@
+"""Self-bootstrapping coverage context plugin for subprocess collection.
+
+When loaded via ``-p pytest_gremlins.coverage.subprocess_bootstrap`` inside a
+``coverage run -m pytest`` subprocess, this module grabs the running
+``Coverage`` instance and registers context-switching hooks so that coverage
+contexts contain full pytest node IDs instead of bare function names.
+
+Context format: ``{nodeid}|{when}``
+
+Without this, ``dynamic_context = test_function`` records bare names like
+``test_eq``, which are ambiguous when multiple files define functions with the
+same name.  Full node IDs (``tests/test_cmp.py::test_eq``) eliminate that
+ambiguity and avoid the expensive bare-name expansion in
+``_populate_coverage_from_line_bits``.
+
+Example:
+    >>> from unittest.mock import MagicMock
+    >>> cov = MagicMock()
+    >>> plugin = _SubprocessContextPlugin(cov)
+    >>> plugin.cov is cov
+    True
+"""
+
+from __future__ import annotations
+
+from collections.abc import Generator
+
+import coverage
+import pytest
+
+
+class _SubprocessContextPlugin:
+    """Switches coverage dynamic context for each test phase.
+
+    Identical in behavior to ``GremlinContextPlugin`` but designed to be
+    registered automatically via ``pytest_sessionstart`` using
+    ``Coverage.current()`` — no external ``cov`` wiring required.
+
+    Attributes:
+        cov: The ``coverage.Coverage`` instance to switch contexts on.
+    """
+
+    def __init__(self, cov: coverage.Coverage) -> None:
+        self.cov = cov
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_setup(self, item: pytest.Item) -> Generator[None, None, None]:
+        """Switch coverage context to ``{nodeid}|setup`` before test setup."""
+        self.cov.switch_context(f'{item.nodeid}|setup')
+        yield
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_call(self, item: pytest.Item) -> Generator[None, None, None]:
+        """Switch coverage context to ``{nodeid}|run`` before the test call."""
+        self.cov.switch_context(f'{item.nodeid}|run')
+        yield
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_teardown(self, item: pytest.Item) -> Generator[None, None, None]:
+        """Switch coverage context to ``{nodeid}|teardown`` before teardown."""
+        self.cov.switch_context(f'{item.nodeid}|teardown')
+        yield
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Register context-switching hooks if running under ``coverage run``.
+
+    Checks ``Coverage.current()`` for a running instance.  When found,
+    registers ``_SubprocessContextPlugin`` so every test phase gets a
+    full-node-ID context label.  When ``None`` (not under ``coverage run``),
+    does nothing — the #365 bare-name expansion handles that case.
+    """
+    cov = coverage.Coverage.current()
+    if cov is not None:
+        plugin = _SubprocessContextPlugin(cov)
+        session.config.pluginmanager.register(plugin, name='gremlin-subprocess-context')
