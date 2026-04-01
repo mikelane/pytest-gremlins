@@ -52,6 +52,22 @@ class DescribeGremlinContextPluginSetup:
 
         mock_cov.switch_context.assert_not_called()
 
+    def it_skips_switch_context_when_started_attr_missing(self) -> None:
+        """switch_context is NOT called when cov has no _started attribute.
+
+        Exercises the getattr default path -- if a future coverage.py
+        release removes _started, the guard silently skips the call.
+        """
+        mock_cov = MagicMock()
+        del mock_cov._started
+        plugin = GremlinContextPlugin(mock_cov)
+        mock_item = MagicMock()
+        mock_item.nodeid = 'tests/test_foo.py::test_bar'
+
+        list(plugin.pytest_runtest_setup(mock_item))
+
+        mock_cov.switch_context.assert_not_called()
+
     def it_yields_control_to_next_hook(self) -> None:
         """The generator yields exactly once (hookwrapper contract)."""
         mock_cov = MagicMock()
