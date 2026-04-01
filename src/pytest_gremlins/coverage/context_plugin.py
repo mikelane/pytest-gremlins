@@ -43,6 +43,18 @@ class GremlinContextPlugin:
         """
         self.cov = cov
 
+    def _safe_switch(self, context: str) -> None:
+        """Switch coverage context only if coverage is still running.
+
+        Guards against ``CoverageException`` when called after
+        ``Coverage.stop()`` -- e.g. during mutation-testing phase 2.
+
+        Args:
+            context: The context string to switch to.
+        """
+        if getattr(self.cov, '_started', False):
+            self.cov.switch_context(context)
+
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_setup(self, item: pytest.Item) -> Generator[None, None, None]:
         """Switch coverage context to ``{nodeid}|setup`` before test setup.
@@ -53,7 +65,7 @@ class GremlinContextPlugin:
         Yields:
             Control to the next hook implementation.
         """
-        self.cov.switch_context(f'{item.nodeid}|setup')
+        self._safe_switch(f'{item.nodeid}|setup')
         yield
 
     @pytest.hookimpl(hookwrapper=True)
@@ -66,7 +78,7 @@ class GremlinContextPlugin:
         Yields:
             Control to the next hook implementation.
         """
-        self.cov.switch_context(f'{item.nodeid}|run')
+        self._safe_switch(f'{item.nodeid}|run')
         yield
 
     @pytest.hookimpl(hookwrapper=True)
@@ -79,5 +91,5 @@ class GremlinContextPlugin:
         Yields:
             Control to the next hook implementation.
         """
-        self.cov.switch_context(f'{item.nodeid}|teardown')
+        self._safe_switch(f'{item.nodeid}|teardown')
         yield

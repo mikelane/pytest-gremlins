@@ -31,6 +31,7 @@ class DescribeGremlinContextPluginSetup:
     def it_switches_context_to_setup_phase(self) -> None:
         """switch_context is called with '{nodeid}|setup' before yielding."""
         mock_cov = MagicMock()
+        mock_cov._started = True
         plugin = GremlinContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
@@ -38,6 +39,18 @@ class DescribeGremlinContextPluginSetup:
         list(plugin.pytest_runtest_setup(mock_item))
 
         mock_cov.switch_context.assert_called_once_with('tests/test_foo.py::test_bar|setup')
+
+    def it_skips_switch_context_when_coverage_is_stopped(self) -> None:
+        """switch_context is NOT called when coverage._started is False."""
+        mock_cov = MagicMock()
+        mock_cov._started = False
+        plugin = GremlinContextPlugin(mock_cov)
+        mock_item = MagicMock()
+        mock_item.nodeid = 'tests/test_foo.py::test_bar'
+
+        list(plugin.pytest_runtest_setup(mock_item))
+
+        mock_cov.switch_context.assert_not_called()
 
     def it_yields_control_to_next_hook(self) -> None:
         """The generator yields exactly once (hookwrapper contract)."""
@@ -59,6 +72,7 @@ class DescribeGremlinContextPluginCall:
     def it_switches_context_to_run_phase(self) -> None:
         """switch_context is called with '{nodeid}|run' before yielding."""
         mock_cov = MagicMock()
+        mock_cov._started = True
         plugin = GremlinContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
@@ -67,9 +81,22 @@ class DescribeGremlinContextPluginCall:
 
         mock_cov.switch_context.assert_called_once_with('tests/test_foo.py::test_bar|run')
 
+    def it_skips_switch_context_when_coverage_is_stopped(self) -> None:
+        """switch_context is NOT called when coverage._started is False."""
+        mock_cov = MagicMock()
+        mock_cov._started = False
+        plugin = GremlinContextPlugin(mock_cov)
+        mock_item = MagicMock()
+        mock_item.nodeid = 'tests/test_foo.py::test_bar'
+
+        list(plugin.pytest_runtest_call(mock_item))
+
+        mock_cov.switch_context.assert_not_called()
+
     def it_nodeid_with_class_uses_full_nodeid(self) -> None:
         """Full nodeid including class name is passed to switch_context."""
         mock_cov = MagicMock()
+        mock_cov._started = True
         plugin = GremlinContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::TestClass::test_bar'
@@ -86,6 +113,7 @@ class DescribeGremlinContextPluginTeardown:
     def it_switches_context_to_teardown_phase(self) -> None:
         """switch_context is called with '{nodeid}|teardown' before yielding."""
         mock_cov = MagicMock()
+        mock_cov._started = True
         plugin = GremlinContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
@@ -93,3 +121,15 @@ class DescribeGremlinContextPluginTeardown:
         list(plugin.pytest_runtest_teardown(mock_item))
 
         mock_cov.switch_context.assert_called_once_with('tests/test_foo.py::test_bar|teardown')
+
+    def it_skips_switch_context_when_coverage_is_stopped(self) -> None:
+        """switch_context is NOT called when coverage._started is False."""
+        mock_cov = MagicMock()
+        mock_cov._started = False
+        plugin = GremlinContextPlugin(mock_cov)
+        mock_item = MagicMock()
+        mock_item.nodeid = 'tests/test_foo.py::test_bar'
+
+        list(plugin.pytest_runtest_teardown(mock_item))
+
+        mock_cov.switch_context.assert_not_called()
