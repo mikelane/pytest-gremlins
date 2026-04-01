@@ -55,6 +55,7 @@ class DescribeGremlinContextPluginSetup:
     def it_yields_control_to_next_hook(self) -> None:
         """The generator yields exactly once (hookwrapper contract)."""
         mock_cov = MagicMock()
+        mock_cov._started = True
         plugin = GremlinContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
