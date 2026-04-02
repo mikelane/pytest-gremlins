@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import coverage
 import pytest
 
 from pytest_gremlins.coverage.collector import CoverageCollector
@@ -75,7 +76,7 @@ class DescribeCoverageCollectorFromCoveragePy:
     def it_extract_from_coverage_data_with_no_measured_files(self) -> None:
         """measured_files() returns [] results in an empty dict."""
         collector = CoverageCollector()
-        mock_coverage_data = MagicMock()
+        mock_coverage_data = MagicMock(spec=coverage.CoverageData)
         mock_coverage_data.measured_files.return_value = []
 
         result = collector.extract_lines_from_coverage_data(mock_coverage_data)
@@ -86,7 +87,7 @@ class DescribeCoverageCollectorFromCoveragePy:
         collector = CoverageCollector()
 
         # Mimic coverage.py's CoverageData structure
-        mock_coverage_data = MagicMock()
+        mock_coverage_data = MagicMock(spec=coverage.CoverageData)
         mock_coverage_data.measured_files.return_value = ['src/auth.py', 'src/utils.py']
         mock_coverage_data.lines.side_effect = lambda f: {
             'src/auth.py': [10, 11, 12],
@@ -104,7 +105,7 @@ class DescribeCoverageCollectorFromCoveragePy:
         collector = CoverageCollector()
 
         # Mimic coverage.py's CoverageData structure where a file has no lines
-        mock_coverage_data = MagicMock()
+        mock_coverage_data = MagicMock(spec=coverage.CoverageData)
         mock_coverage_data.measured_files.return_value = ['src/auth.py', 'src/empty.py']
         mock_coverage_data.lines.side_effect = lambda f: {
             'src/auth.py': [10, 11],
@@ -121,7 +122,7 @@ class DescribeCoverageCollectorFromCoveragePy:
     def it_excludes_files_with_empty_lines_when_extracting(self):
         collector = CoverageCollector()
 
-        mock_coverage_data = MagicMock()
+        mock_coverage_data = MagicMock(spec=coverage.CoverageData)
         mock_coverage_data.measured_files.return_value = ['src/auth.py', 'src/empty.py']
         mock_coverage_data.lines.side_effect = lambda f: {
             'src/auth.py': [10, 11],

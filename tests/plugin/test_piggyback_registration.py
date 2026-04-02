@@ -15,6 +15,7 @@ from unittest.mock import (
     patch,
 )
 
+import coverage
 import pytest
 
 from pytest_gremlins.coverage.context_plugin import GremlinContextPlugin
@@ -53,16 +54,16 @@ class DescribePiggybackContextPluginRegistration:
 
     def it_registers_context_plugin_when_cov_plugin_present(self) -> None:
         """When _cov plugin exists, registers GremlinContextPlugin on its coverage."""
-        cov_controller = MagicMock()
-        cov_instance = MagicMock()
+        cov_controller = MagicMock()  # pytest-cov CovController: internal type, no public spec; bare-mock: ok
+        cov_instance = MagicMock(spec=coverage.Coverage)
         cov_controller.cov = cov_instance
 
-        cov_plugin = MagicMock()
+        cov_plugin = MagicMock()  # pytest-cov plugin: internal type, no public spec; bare-mock: ok
         cov_plugin.cov_controller = cov_controller
 
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config.pluginmanager.get_plugin.return_value = cov_plugin
-        session.config.pluginmanager.register = MagicMock()
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
 
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PIGGYBACK)
         _set_session(gs)
@@ -76,15 +77,15 @@ class DescribePiggybackContextPluginRegistration:
 
     def it_registers_context_plugin_on_private_coverage_not_cov_plugin(self) -> None:
         """In PRIVATE mode, GremlinContextPlugin is registered on private coverage, not _cov's."""
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config.pluginmanager.get_plugin.return_value = None
-        session.config.pluginmanager.register = MagicMock()
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
 
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE)
         _set_session(gs)
 
         with patch('pytest_gremlins.plugin.coverage') as mock_coverage_module:
-            mock_private_cov = MagicMock()
+            mock_private_cov = MagicMock(spec=coverage.Coverage)
             mock_coverage_module.Coverage.return_value = mock_private_cov
             pytest_sessionstart(session)
 
@@ -95,8 +96,8 @@ class DescribePiggybackContextPluginRegistration:
 
     def it_skips_registration_when_session_disabled(self) -> None:
         """No registration occurs when GremlinSession is disabled."""
-        session = MagicMock()
-        session.config.pluginmanager.register = MagicMock()
+        session = MagicMock(spec=pytest.Session)
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
 
         gs = GremlinSession(enabled=False)
         _set_session(gs)
@@ -107,8 +108,8 @@ class DescribePiggybackContextPluginRegistration:
 
     def it_skips_registration_when_no_session(self) -> None:
         """No registration occurs when no GremlinSession exists."""
-        session = MagicMock()
-        session.config.pluginmanager.register = MagicMock()
+        session = MagicMock(spec=pytest.Session)
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
 
         _set_session(None)
 
@@ -124,12 +125,12 @@ class DescribePiggybackContextPluginRegistration:
         the '_cov' plugin object exists, so pytest_sessionstart must guard
         against cov_controller being None before accessing .cov on it.
         """
-        cov_plugin = MagicMock()
+        cov_plugin = MagicMock()  # pytest-cov plugin: internal type, no public spec; bare-mock: ok
         cov_plugin.cov_controller = None  # --cov not passed
 
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config.pluginmanager.get_plugin.return_value = cov_plugin
-        session.config.pluginmanager.register = MagicMock()
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
 
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PIGGYBACK)
         _set_session(gs)

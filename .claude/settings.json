@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && uv run ruff check --fix --unsafe-fixes \"$f\"; } 2>/dev/null || true",
+            "timeout": 30,
+            "statusMessage": "Running ruff fix..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && uv run isort \"$f\"; } 2>/dev/null || true",
+            "timeout": 30,
+            "statusMessage": "Running isort..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read -r f; [[ \"$f\" == tests/*.py ]] && python scripts/check_mock_spec.py \"$f\"; } 2>/dev/null || true",
+            "timeout": 10,
+            "statusMessage": "Checking mock spec hygiene..."
+          }
+        ]
+      }
+    ]
+  }
+}

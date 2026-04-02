@@ -121,7 +121,7 @@ def _make_config(
     # AttributeError on config.option. Instead we explicitly configure every
     # attribute that production code reads, which achieves the same drift-detection
     # goal without the spec= footgun.
-    config = MagicMock()
+    config = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
     config.option = SimpleNamespace(**attrs)
     config.rootdir = '/fake/rootdir'
     # Prevent _detect_coverage_mode from seeing a truthy auto-mock for the
@@ -374,13 +374,17 @@ class DescribeSessionFinishSetsTotalTestsInXdistMode:
         )
         _set_session(gs)
 
-        mock_session = MagicMock()
+        mock_session = MagicMock(spec=pytest.Session)
+        mock_session.config = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
         mock_session.config.rootdir = '/fake/root'
-        mock_session.config.workerinput = MagicMock(side_effect=AttributeError)
+        mock_session.config.workerinput = MagicMock(side_effect=AttributeError)  # simulates missing attr; bare-mock: ok
 
         with (
             patch('pytest_gremlins.plugin._is_xdist_worker', return_value=False),
-            patch('pytest_gremlins.plugin._get_rootdir', return_value=MagicMock(__str__=lambda _: '/fake/root')),
+            patch(
+                'pytest_gremlins.plugin._get_rootdir',
+                return_value=MagicMock(__str__=lambda _: '/fake/root'),  # bare-mock: ok
+            ),
             patch('pytest_gremlins.plugin._make_node_ids_relative', return_value=['test_a', 'test_b', 'test_c']),
             patch('pytest_gremlins.plugin._discover_source_files', return_value={}),
             patch('pytest_gremlins.plugin._generate_gremlins'),
@@ -396,13 +400,17 @@ class DescribeSessionFinishSetsTotalTestsInXdistMode:
         gs = GremlinSession(enabled=True, xdist_active=True, xdist_item_ids=None)
         _set_session(gs)
 
-        mock_session = MagicMock()
-        mock_session.config.workerinput = MagicMock(side_effect=AttributeError)
+        mock_session = MagicMock(spec=pytest.Session)
+        mock_session.config = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
+        mock_session.config.workerinput = MagicMock(side_effect=AttributeError)  # simulates missing attr; bare-mock: ok
 
         with (
             caplog.at_level(logging.WARNING, logger='pytest_gremlins.plugin'),
             patch('pytest_gremlins.plugin._is_xdist_worker', return_value=False),
-            patch('pytest_gremlins.plugin._get_rootdir', return_value=MagicMock(__str__=lambda _: '/fake/root')),
+            patch(
+                'pytest_gremlins.plugin._get_rootdir',
+                return_value=MagicMock(__str__=lambda _: '/fake/root'),  # bare-mock: ok
+            ),
             patch('pytest_gremlins.plugin._make_node_ids_relative', return_value=[]),
             patch('pytest_gremlins.plugin._discover_source_files', return_value={}),
             patch('pytest_gremlins.plugin._generate_gremlins'),

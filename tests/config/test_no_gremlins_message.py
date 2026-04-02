@@ -12,6 +12,7 @@ from unittest.mock import (
     patch,
 )
 
+from _pytest.terminal import TerminalReporter
 import pytest
 
 from pytest_gremlins import plugin
@@ -30,11 +31,11 @@ class DescribeNoGremlinsMessage:
         """Run pytest_terminal_summary and capture written lines."""
         lines: list[str] = []
 
-        mock_reporter = MagicMock()
+        mock_reporter = MagicMock(spec=TerminalReporter)
         mock_reporter.write_line = lambda text='': lines.append(text)
         mock_reporter.write_sep = lambda char, text: lines.append(f'{char} {text}')
 
-        mock_config = MagicMock()
+        mock_config = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
 
         plugin._set_session(session)
         plugin.pytest_terminal_summary(mock_reporter, 0, mock_config)
@@ -128,7 +129,7 @@ class DescribeNoGremlinsMessage:
 
 def _make_gremlin_result(status: GremlinResultStatus) -> GremlinResult:
     """Build a GremlinResult with a mock Gremlin for terminal summary tests."""
-    mock_gremlin = MagicMock()
+    mock_gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
     mock_gremlin.file_path = 'src/module.py'
     mock_gremlin.line_number = 42
     mock_gremlin.description = 'replaced + with -'
@@ -147,10 +148,10 @@ class DescribeMutationResultsReport:
     def _run_terminal_summary(self, session: GremlinSession) -> list[str]:
         """Run pytest_terminal_summary and capture written lines."""
         lines: list[str] = []
-        mock_reporter = MagicMock()
+        mock_reporter = MagicMock(spec=TerminalReporter)
         mock_reporter.write_line = lambda text='': lines.append(text)
         mock_reporter.write_sep = lambda char, text: lines.append(f'{char} {text}')
-        mock_config = MagicMock()
+        mock_config = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
         plugin._set_session(session)
         plugin.pytest_terminal_summary(mock_reporter, 0, mock_config)
         return lines
@@ -159,7 +160,7 @@ class DescribeMutationResultsReport:
         """When results list is empty (total=0), 'No gremlins tested.' appears."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[],
         )
 
@@ -172,7 +173,7 @@ class DescribeMutationResultsReport:
         """Zapped and survived gremlins produce count lines in the report."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[
                 _make_gremlin_result(GremlinResultStatus.ZAPPED),
                 _make_gremlin_result(GremlinResultStatus.SURVIVED),
@@ -189,7 +190,7 @@ class DescribeMutationResultsReport:
         """A 'Timeout:' line appears only when at least one timeout result exists."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[_make_gremlin_result(GremlinResultStatus.TIMEOUT)],
         )
 
@@ -202,7 +203,7 @@ class DescribeMutationResultsReport:
         """An 'Error:' line appears only when at least one error result exists."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[_make_gremlin_result(GremlinResultStatus.ERROR)],
         )
 
@@ -215,7 +216,7 @@ class DescribeMutationResultsReport:
         """Cache hit/miss statistics appear when cache_enabled and total cache activity > 0."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
             cache_enabled=True,
             cache_hits=3,
@@ -232,7 +233,7 @@ class DescribeMutationResultsReport:
         """Cache stats do not appear when cache_enabled is False."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
             cache_enabled=False,
         )
@@ -246,7 +247,7 @@ class DescribeMutationResultsReport:
         """Survivors section appears when at least one gremlin survived."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[_make_gremlin_result(GremlinResultStatus.SURVIVED)],
         )
 
@@ -260,7 +261,7 @@ class DescribeMutationResultsReport:
         """Console report format includes a hint to use --gremlin-report=html."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
             report_formats=['console'],
         )
@@ -274,7 +275,7 @@ class DescribeMutationResultsReport:
         """When report_formats=['html'], the HTML report is written and its path displayed."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
             report_formats=['html'],
         )
@@ -293,7 +294,7 @@ class DescribeMutationResultsReport:
         """When report_formats=['json'], the JSON report is written and its path displayed."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
             report_formats=['json'],
         )
@@ -312,7 +313,7 @@ class DescribeMutationResultsReport:
         """When report_formats=['html', 'json'], both reports are written."""
         gs = GremlinSession(
             enabled=True,
-            gremlins=[MagicMock()],
+            gremlins=[MagicMock()],  # opaque filler: attrs never accessed; bare-mock: ok
             results=[_make_gremlin_result(GremlinResultStatus.ZAPPED)],
             report_formats=['html', 'json'],
         )

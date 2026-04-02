@@ -12,6 +12,7 @@ from unittest.mock import (
     patch,
 )
 
+import coverage
 import pytest
 
 from pytest_gremlins.coverage.subprocess_bootstrap import (
@@ -43,7 +44,7 @@ class DescribeSubprocessContextPluginInit:
     """Tests for _SubprocessContextPlugin.__init__."""
 
     def it_stores_coverage_instance(self) -> None:
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         plugin = _SubprocessContextPlugin(mock_cov)
         assert plugin.cov is mock_cov
 
@@ -53,10 +54,10 @@ class DescribeSubprocessContextPluginSetup:
     """Tests for pytest_runtest_setup hookwrapper."""
 
     def it_switches_context_to_setup_phase(self) -> None:
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         mock_cov._started = True
         plugin = _SubprocessContextPlugin(mock_cov)
-        mock_item = MagicMock()
+        mock_item = MagicMock(spec=pytest.Item)
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
 
         list(plugin.pytest_runtest_setup(mock_item))
@@ -64,10 +65,10 @@ class DescribeSubprocessContextPluginSetup:
         mock_cov.switch_context.assert_called_once_with('tests/test_foo.py::test_bar|setup')
 
     def it_strips_marker_from_nodeid(self) -> None:
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         mock_cov._started = True
         plugin = _SubprocessContextPlugin(mock_cov)
-        mock_item = MagicMock()
+        mock_item = MagicMock(spec=pytest.Item)
         mock_item.nodeid = 'tests/test_foo.py::test_bar [SMALL]'
 
         list(plugin.pytest_runtest_setup(mock_item))
@@ -80,10 +81,10 @@ class DescribeSubprocessContextPluginSetup:
         Exercises the getattr default path -- if a future coverage.py
         release removes _started, the guard silently skips the call.
         """
-        mock_cov = MagicMock()
+        mock_cov = MagicMock()  # guard test: needs bare mock for del _started; bare-mock: ok
         del mock_cov._started
         plugin = _SubprocessContextPlugin(mock_cov)
-        mock_item = MagicMock()
+        mock_item = MagicMock(spec=pytest.Item)
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
 
         list(plugin.pytest_runtest_setup(mock_item))
@@ -92,10 +93,10 @@ class DescribeSubprocessContextPluginSetup:
 
     def it_skips_switch_context_when_coverage_is_stopped(self) -> None:
         """switch_context is NOT called when coverage._started is False."""
-        mock_cov = MagicMock()
+        mock_cov = MagicMock()  # guard test: needs bare mock with explicit _started; bare-mock: ok
         mock_cov._started = False
         plugin = _SubprocessContextPlugin(mock_cov)
-        mock_item = MagicMock()
+        mock_item = MagicMock(spec=pytest.Item)
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
 
         list(plugin.pytest_runtest_setup(mock_item))
@@ -108,10 +109,10 @@ class DescribeSubprocessContextPluginCall:
     """Tests for pytest_runtest_call hookwrapper."""
 
     def it_switches_context_to_run_phase(self) -> None:
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         mock_cov._started = True
         plugin = _SubprocessContextPlugin(mock_cov)
-        mock_item = MagicMock()
+        mock_item = MagicMock(spec=pytest.Item)
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
 
         list(plugin.pytest_runtest_call(mock_item))
@@ -120,10 +121,10 @@ class DescribeSubprocessContextPluginCall:
 
     def it_skips_switch_context_when_coverage_is_stopped(self) -> None:
         """switch_context is NOT called when coverage._started is False."""
-        mock_cov = MagicMock()
+        mock_cov = MagicMock()  # guard test: needs bare mock with explicit _started; bare-mock: ok
         mock_cov._started = False
         plugin = _SubprocessContextPlugin(mock_cov)
-        mock_item = MagicMock()
+        mock_item = MagicMock(spec=pytest.Item)
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
 
         list(plugin.pytest_runtest_call(mock_item))
@@ -136,10 +137,10 @@ class DescribeSubprocessContextPluginTeardown:
     """Tests for pytest_runtest_teardown hookwrapper."""
 
     def it_switches_context_to_teardown_phase(self) -> None:
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         mock_cov._started = True
         plugin = _SubprocessContextPlugin(mock_cov)
-        mock_item = MagicMock()
+        mock_item = MagicMock(spec=pytest.Item)
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
 
         list(plugin.pytest_runtest_teardown(mock_item))
@@ -148,10 +149,10 @@ class DescribeSubprocessContextPluginTeardown:
 
     def it_skips_switch_context_when_coverage_is_stopped(self) -> None:
         """switch_context is NOT called when coverage._started is False."""
-        mock_cov = MagicMock()
+        mock_cov = MagicMock()  # guard test: needs bare mock with explicit _started; bare-mock: ok
         mock_cov._started = False
         plugin = _SubprocessContextPlugin(mock_cov)
-        mock_item = MagicMock()
+        mock_item = MagicMock(spec=pytest.Item)
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
 
         list(plugin.pytest_runtest_teardown(mock_item))
@@ -164,8 +165,8 @@ class DescribePytestSessionstart:
     """Tests for the module-level pytest_sessionstart hook."""
 
     def it_registers_plugin_when_coverage_is_running(self) -> None:
-        mock_cov = MagicMock()
-        mock_session = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
+        mock_session = MagicMock(spec=pytest.Session)
 
         with patch('pytest_gremlins.coverage.subprocess_bootstrap.coverage') as mock_coverage:
             mock_coverage.Coverage.current.return_value = mock_cov
@@ -177,7 +178,7 @@ class DescribePytestSessionstart:
         assert registered_plugin.cov is mock_cov
 
     def it_skips_registration_when_no_coverage_instance(self) -> None:
-        mock_session = MagicMock()
+        mock_session = MagicMock(spec=pytest.Session)
 
         with patch('pytest_gremlins.coverage.subprocess_bootstrap.coverage') as mock_coverage:
             mock_coverage.Coverage.current.return_value = None
@@ -186,8 +187,8 @@ class DescribePytestSessionstart:
         mock_session.config.pluginmanager.register.assert_not_called()
 
     def it_registers_with_named_plugin_id(self) -> None:
-        mock_cov = MagicMock()
-        mock_session = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
+        mock_session = MagicMock(spec=pytest.Session)
 
         with patch('pytest_gremlins.coverage.subprocess_bootstrap.coverage') as mock_coverage:
             mock_coverage.Coverage.current.return_value = mock_cov

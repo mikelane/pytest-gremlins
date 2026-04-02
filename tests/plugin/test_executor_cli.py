@@ -9,6 +9,10 @@ from unittest.mock import (
     patch,
 )
 
+from _pytest.config.argparsing import (
+    OptionGroup,
+    Parser,
+)
 import pytest
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
@@ -54,8 +58,8 @@ class DescribeGremlinExecutorOption:
     """Tests that --gremlin-executor CLI option is registered."""
 
     def it_registers_gremlin_executor_option(self) -> None:
-        parser = MagicMock()
-        group = MagicMock()
+        parser = MagicMock(spec=Parser)
+        group = MagicMock(spec=OptionGroup)
         parser.getgroup.return_value = group
 
         pytest_addoption(parser)
@@ -64,8 +68,8 @@ class DescribeGremlinExecutorOption:
         assert '--gremlin-executor' in added_option_names
 
     def it_defaults_to_auto(self) -> None:
-        parser = MagicMock()
-        group = MagicMock()
+        parser = MagicMock(spec=Parser)
+        group = MagicMock(spec=OptionGroup)
         parser.getgroup.return_value = group
 
         pytest_addoption(parser)
@@ -75,8 +79,8 @@ class DescribeGremlinExecutorOption:
         assert opt_kwargs['default'] == 'auto'
 
     def it_accepts_four_choices(self) -> None:
-        parser = MagicMock()
-        group = MagicMock()
+        parser = MagicMock(spec=Parser)
+        group = MagicMock(spec=OptionGroup)
         parser.getgroup.return_value = group
 
         pytest_addoption(parser)
@@ -92,7 +96,8 @@ class DescribeAutoExecutorResolution:
 
     def it_resolves_auto_to_subprocess(self) -> None:
         """auto always resolves to subprocess until fork supports the full pipeline."""
-        mock_session = MagicMock()
+        mock_session = MagicMock(spec=pytest.Session)
+        mock_session.config = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
         mock_session.config.option.gremlin_executor = 'auto'
         gremlin_session = GremlinSession(gremlins=[_make_gremlin('g1', '/project/src/pkg/mod.py')])
 

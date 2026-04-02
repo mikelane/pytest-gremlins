@@ -36,7 +36,7 @@ class DescribeXdistItemIds:
         gs = GremlinSession(enabled=True)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         ids = ['tests/test_foo.py::test_a', 'tests/test_foo.py::test_b']
 
         pytest_xdist_node_collection_finished(node=node, ids=ids)
@@ -48,7 +48,7 @@ class DescribeXdistItemIds:
         gs = GremlinSession(enabled=True)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         ids = ['tests/test_bar.py::test_x', 'tests/test_bar.py::test_y', 'tests/test_bar.py::test_z']
 
         pytest_xdist_node_collection_finished(node=node, ids=ids)
@@ -62,7 +62,7 @@ class DescribeXdistItemIds:
         gs.xdist_item_ids = list(first_ids)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         second_ids = ['tests/test_bar.py::test_b']
 
         pytest_xdist_node_collection_finished(node=node, ids=second_ids)
@@ -73,7 +73,7 @@ class DescribeXdistItemIds:
         """Hook is a no-op when no GremlinSession is active."""
         _set_session(None)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         ids = ['tests/test_foo.py::test_a']
 
         pytest_xdist_node_collection_finished(node=node, ids=ids)
@@ -83,7 +83,7 @@ class DescribeXdistItemIds:
         gs = GremlinSession(enabled=False)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         ids = ['tests/test_foo.py::test_a']
 
         pytest_xdist_node_collection_finished(node=node, ids=ids)
@@ -99,7 +99,7 @@ class DescribeXdistItemIds:
         gs = GremlinSession(enabled=True)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         pytest_xdist_node_collection_finished(node=node, ids=[])
 
         # After first call with empty ids, the session list must be [].
@@ -116,7 +116,7 @@ class DescribeXdistItemIds:
         gs = GremlinSession(enabled=True)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
 
         # First worker reports empty collection
         pytest_xdist_node_collection_finished(node=node, ids=[])

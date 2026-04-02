@@ -17,6 +17,7 @@ from unittest.mock import (
     patch,
 )
 
+import coverage
 import pytest
 
 from pytest_gremlins.coverage.context_plugin import GremlinContextPlugin
@@ -40,7 +41,7 @@ class DescribeGremlinSessionPrivateCoverageField:
 
     def it_allows_setting_private_coverage(self) -> None:
         """GremlinSession.private_coverage can hold a Coverage instance."""
-        cov = MagicMock()
+        cov = MagicMock(spec=coverage.Coverage)
         gs = GremlinSession(private_coverage=cov)
         assert gs.private_coverage is cov
 
@@ -51,15 +52,15 @@ class DescribePrivateModeSessionStart:
 
     def it_creates_coverage_instance_in_private_mode(self) -> None:
         """In PRIVATE mode, a Coverage instance is created and stored on the session."""
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config.pluginmanager.get_plugin.return_value = None
-        session.config.pluginmanager.register = MagicMock()
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
 
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE)
         _set_session(gs)
 
         with patch('pytest_gremlins.plugin.coverage') as mock_coverage_module:
-            mock_cov = MagicMock()
+            mock_cov = MagicMock(spec=coverage.Coverage)
             mock_coverage_module.Coverage.return_value = mock_cov
             pytest_sessionstart(session)
 
@@ -67,15 +68,15 @@ class DescribePrivateModeSessionStart:
 
     def it_registers_context_plugin_on_private_coverage(self) -> None:
         """In PRIVATE mode, a GremlinContextPlugin is registered on the private Coverage."""
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config.pluginmanager.get_plugin.return_value = None
-        session.config.pluginmanager.register = MagicMock()
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
 
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE)
         _set_session(gs)
 
         with patch('pytest_gremlins.plugin.coverage') as mock_coverage_module:
-            mock_cov = MagicMock()
+            mock_cov = MagicMock(spec=coverage.Coverage)
             mock_coverage_module.Coverage.return_value = mock_cov
             pytest_sessionstart(session)
 
@@ -86,12 +87,12 @@ class DescribePrivateModeSessionStart:
 
     def it_does_not_create_coverage_in_piggyback_mode(self) -> None:
         """In PIGGYBACK mode, no private Coverage instance is created."""
-        cov_plugin = MagicMock()
-        cov_plugin.cov_controller.cov = MagicMock()
+        cov_plugin = MagicMock()  # pytest-cov plugin: internal type, no public spec; bare-mock: ok
+        cov_plugin.cov_controller.cov = MagicMock(spec=coverage.Coverage)
 
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config.pluginmanager.get_plugin.return_value = cov_plugin
-        session.config.pluginmanager.register = MagicMock()
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
 
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PIGGYBACK)
         _set_session(gs)
@@ -109,11 +110,11 @@ class DescribePrivateModeRuntestLoop:
 
     def it_starts_coverage_before_tests_in_private_mode(self) -> None:
         """In PRIVATE mode, coverage.start() is called before the test loop yields."""
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE, private_coverage=mock_cov)
         _set_session(gs)
 
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         gen = pytest_runtestloop(session=session)
         next(gen)
 
@@ -121,11 +122,11 @@ class DescribePrivateModeRuntestLoop:
 
     def it_stops_and_saves_coverage_after_tests_in_private_mode(self) -> None:
         """In PRIVATE mode, coverage.stop() and save() are called after the test loop."""
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE, private_coverage=mock_cov)
         _set_session(gs)
 
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         gen = pytest_runtestloop(session=session)
         next(gen)
         with contextlib.suppress(StopIteration):
@@ -137,14 +138,14 @@ class DescribePrivateModeRuntestLoop:
     def it_stop_before_save_order(self) -> None:
         """coverage.stop() must be called before coverage.save()."""
         call_order: list[str] = []
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         mock_cov.stop.side_effect = lambda: call_order.append('stop')
         mock_cov.save.side_effect = lambda: call_order.append('save')
 
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE, private_coverage=mock_cov)
         _set_session(gs)
 
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         gen = pytest_runtestloop(session=session)
         next(gen)
         with contextlib.suppress(StopIteration):
@@ -157,7 +158,7 @@ class DescribePrivateModeRuntestLoop:
         gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PIGGYBACK, private_coverage=None)
         _set_session(gs)
 
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         gen = pytest_runtestloop(session=session)
         next(gen)
         with contextlib.suppress(StopIteration):
@@ -165,11 +166,11 @@ class DescribePrivateModeRuntestLoop:
 
     def it_does_not_touch_coverage_when_session_disabled(self) -> None:
         """When session is disabled, runtestloop hook is a no-op."""
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         gs = GremlinSession(enabled=False, private_coverage=mock_cov)
         _set_session(gs)
 
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         gen = pytest_runtestloop(session=session)
         next(gen)
         with contextlib.suppress(StopIteration):

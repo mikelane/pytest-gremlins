@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from _pytest.config.argparsing import (
+    OptionGroup,
+    Parser,
+)
 import pytest
 
 from pytest_gremlins.plugin import (
@@ -30,8 +34,8 @@ class DescribePytestAddoptionPardons:
     """Tests that pardon CLI options are registered."""
 
     def it_registers_strict_pardons_option(self):
-        parser = MagicMock()
-        group = MagicMock()
+        parser = MagicMock(spec=Parser)
+        group = MagicMock(spec=OptionGroup)
         parser.getgroup.return_value = group
 
         pytest_addoption(parser)
@@ -40,8 +44,8 @@ class DescribePytestAddoptionPardons:
         assert '--strict-pardons' in added_option_names
 
     def it_registers_gremlin_audit_pardons_option(self):
-        parser = MagicMock()
-        group = MagicMock()
+        parser = MagicMock(spec=Parser)
+        group = MagicMock(spec=OptionGroup)
         parser.getgroup.return_value = group
 
         pytest_addoption(parser)

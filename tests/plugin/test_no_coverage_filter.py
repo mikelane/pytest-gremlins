@@ -8,6 +8,10 @@ from unittest.mock import (
     create_autospec,
 )
 
+from _pytest.config.argparsing import (
+    OptionGroup,
+    Parser,
+)
 import pytest
 
 from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
@@ -24,8 +28,8 @@ class DescribeNoCoverageFilterOption:
     """Tests that --gremlin-no-coverage-filter CLI option is registered."""
 
     def it_registers_gremlin_no_coverage_filter_option(self):
-        parser = MagicMock()
-        group = MagicMock()
+        parser = MagicMock(spec=Parser)
+        group = MagicMock(spec=OptionGroup)
         parser.getgroup.return_value = group
 
         pytest_addoption(parser)
