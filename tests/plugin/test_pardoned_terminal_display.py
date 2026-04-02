@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from unittest.mock import MagicMock
 
+from _pytest.terminal import TerminalReporter
 import pytest
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
@@ -58,12 +59,13 @@ class DescribeTerminalSummaryPardoned:
         _set_session(session)
 
         written_lines: list[str] = []
-        tr = MagicMock()
+        tr = MagicMock(spec=TerminalReporter)
+        tr.config = MagicMock()  # TerminalReporter.config is set in __init__; bare-mock: ok
         tr.config.getoption.return_value = None
         tr.config.pluginmanager.get_plugin.return_value = None
         tr.write_line.side_effect = written_lines.append
 
-        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         pardoned_lines = [line for line in written_lines if 'Pardoned' in line or 'pardoned' in line]
         assert pardoned_lines, f'No pardoned line found in terminal output: {written_lines}'
@@ -76,12 +78,13 @@ class DescribeTerminalSummaryPardoned:
         _set_session(session)
 
         written_lines: list[str] = []
-        tr = MagicMock()
+        tr = MagicMock(spec=TerminalReporter)
+        tr.config = MagicMock()  # TerminalReporter.config is set in __init__; bare-mock: ok
         tr.config.getoption.return_value = None
         tr.config.pluginmanager.get_plugin.return_value = None
         tr.write_line.side_effect = written_lines.append
 
-        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         assert not any('Pardoned' in line or 'pardoned' in line for line in written_lines), (
             f'Unexpected pardoned line in terminal output: {written_lines}'
@@ -99,12 +102,13 @@ class DescribeAuditPardonsTerminalListing:
         _set_session(session)
 
         written_lines: list[str] = []
-        tr = MagicMock()
+        tr = MagicMock(spec=TerminalReporter)
+        tr.config = MagicMock()  # TerminalReporter.config is set in __init__; bare-mock: ok
         tr.config.getoption.return_value = None
         tr.config.pluginmanager.get_plugin.return_value = None
         tr.write_line.side_effect = written_lines.append
 
-        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         output = '\n'.join(written_lines)
         assert 'src/example.py' in output, f'File path missing from audit output: {written_lines}'
@@ -120,12 +124,13 @@ class DescribeAuditPardonsTerminalListing:
         _set_session(session)
 
         written_lines: list[str] = []
-        tr = MagicMock()
+        tr = MagicMock(spec=TerminalReporter)
+        tr.config = MagicMock()  # TerminalReporter.config is set in __init__; bare-mock: ok
         tr.config.getoption.return_value = None
         tr.config.pluginmanager.get_plugin.return_value = None
         tr.write_line.side_effect = written_lines.append
 
-        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         assert not any('equivalent: floor division' in line for line in written_lines), (
             f'Audit output appeared when audit_pardons=False: {written_lines}'
@@ -149,11 +154,12 @@ class DescribeStrictPardonsCIFailure:
 
         monkeypatch.setattr(pytest, 'exit', fake_exit)
 
-        tr = MagicMock()
+        tr = MagicMock(spec=TerminalReporter)
+        tr.config = MagicMock()  # TerminalReporter.config is set in __init__; bare-mock: ok
         tr.config.getoption.return_value = None
         tr.config.pluginmanager.get_plugin.return_value = None
 
-        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         assert len(exit_calls) == 1, 'pytest.exit was not called for strict_pardons=True with pardons'
         assert exit_calls[0][1] == 1, f'Expected exit returncode 1, got {exit_calls[0][1]}'
@@ -171,11 +177,12 @@ class DescribeStrictPardonsCIFailure:
 
         monkeypatch.setattr(pytest, 'exit', fake_exit)
 
-        tr = MagicMock()
+        tr = MagicMock(spec=TerminalReporter)
+        tr.config = MagicMock()  # TerminalReporter.config is set in __init__; bare-mock: ok
         tr.config.getoption.return_value = None
         tr.config.pluginmanager.get_plugin.return_value = None
 
-        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         assert len(exit_calls) == 1
         assert '1' in exit_calls[0][0], f'Exit message missing count: {exit_calls[0][0]}'
@@ -193,10 +200,11 @@ class DescribeStrictPardonsCIFailure:
 
         monkeypatch.setattr(pytest, 'exit', fake_exit)
 
-        tr = MagicMock()
+        tr = MagicMock(spec=TerminalReporter)
+        tr.config = MagicMock()  # TerminalReporter.config is set in __init__; bare-mock: ok
         tr.config.getoption.return_value = None
         tr.config.pluginmanager.get_plugin.return_value = None
 
-        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())
+        pytest_terminal_summary(tr, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         assert len(exit_calls) == 0, 'pytest.exit was called unexpectedly when strict_pardons=False'

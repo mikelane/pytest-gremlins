@@ -96,6 +96,16 @@ repos:
         args: [--config, cspell.json]
         files: \.(md|markdown)$
 
+  # Mock spec enforcement
+  - repo: local
+    hooks:
+      - id: no-bare-magicmock
+        name: no bare MagicMock()
+        entry: python scripts/check_mock_spec.py
+        language: system
+        files: ^tests/.*\.py$
+        types: [python]
+
   # Pre-push quality gate - run full CI checks before push
   - repo: local
     hooks:

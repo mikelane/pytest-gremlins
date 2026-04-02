@@ -21,6 +21,7 @@ from unittest.mock import (
 )
 import warnings
 
+import coverage
 import pytest
 
 from pytest_gremlins.plugin import (
@@ -149,7 +150,7 @@ def _make_session_finish_mocks(
     Returns:
         A tuple of (mock_session, gremlin_session).
     """
-    mock_pluginmanager = MagicMock()
+    mock_pluginmanager = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
     mock_pluginmanager.get_plugin.return_value = cov_plugin
 
     # spec=['rootdir', 'pluginmanager'] prevents workerinput from existing on the
@@ -158,12 +159,12 @@ def _make_session_finish_mocks(
     mock_config.rootdir = tmp_path
     mock_config.pluginmanager = mock_pluginmanager
 
-    mock_session = MagicMock()
+    mock_session = MagicMock(spec=pytest.Session)
     mock_session.config = mock_config
 
     # A minimal GremlinSession with one gremlin so pytest_sessionfinish
     # does not return early from the "no gremlins" guard.
-    mock_gremlin = MagicMock()
+    mock_gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
     mock_gremlin.file_path = str(tmp_path / 'src' / 'mod.py')
 
     gremlin_session = GremlinSession(
@@ -181,8 +182,8 @@ class DescribeCovReloadAfterPreScan:
 
     def it_cov_load_called_when_cov_plugin_active(self, tmp_path: Path) -> None:
         """When _cov plugin is present with a cov attribute, cov.load() is called."""
-        mock_cov = MagicMock()
-        mock_cov_plugin = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
+        mock_cov_plugin = MagicMock()  # pytest-cov plugin: internal type, no public spec; bare-mock: ok
         mock_cov_plugin.cov = mock_cov
 
         mock_session, gremlin_session = _make_session_finish_mocks(tmp_path, cov_plugin=mock_cov_plugin)
@@ -228,7 +229,7 @@ class DescribeCovReloadAfterPreScan:
 
     def it_cov_load_not_called_when_cov_attribute_is_none(self, tmp_path: Path) -> None:
         """When _cov plugin's cov attribute is None, no load is attempted."""
-        mock_cov_plugin = MagicMock()
+        mock_cov_plugin = MagicMock()  # pytest-cov plugin: internal type, no public spec; bare-mock: ok
         mock_cov_plugin.cov = None
 
         mock_session, gremlin_session = _make_session_finish_mocks(tmp_path, cov_plugin=mock_cov_plugin)
@@ -243,9 +244,9 @@ class DescribeCovReloadAfterPreScan:
 
     def it_cov_load_failure_propagates(self, tmp_path: Path) -> None:
         """When cov.load() raises, the exception propagates — a missing .coverage after pre-scan is a hard failure."""
-        mock_cov = MagicMock()
+        mock_cov = MagicMock(spec=coverage.Coverage)
         mock_cov.load.side_effect = Exception('coverage data missing')
-        mock_cov_plugin = MagicMock()
+        mock_cov_plugin = MagicMock()  # pytest-cov plugin: internal type, no public spec; bare-mock: ok
         mock_cov_plugin.cov = mock_cov
 
         mock_session, gremlin_session = _make_session_finish_mocks(tmp_path, cov_plugin=mock_cov_plugin)
@@ -280,7 +281,7 @@ def _make_configure_config(*, gremlins: bool, has_pytest_cov: bool, no_cov: bool
         gremlin_audit_pardons=False,
         gremlin_exclude=None,
     )
-    config.pluginmanager = MagicMock()
+    config.pluginmanager = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
     config.pluginmanager.hasplugin.return_value = has_pytest_cov
     return config
 

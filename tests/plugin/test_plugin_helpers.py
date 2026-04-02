@@ -16,6 +16,7 @@ from unittest.mock import (
 from _pytest.outcomes import Exit
 import pytest
 
+from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
 from pytest_gremlins.plugin import (
     GremlinSession,
     _add_source_file,
@@ -464,7 +465,7 @@ class DescribeSelectTestsForGremlinPrioritized:
             enabled=True,
             test_node_ids={'test_a': 'tests/test_m.py::test_a', 'test_b': 'tests/test_m.py::test_b'},
         )
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
 
         result = _select_tests_for_gremlin_prioritized(gremlin, gs)
 
@@ -472,14 +473,14 @@ class DescribeSelectTestsForGremlinPrioritized:
 
     def it_returns_all_tests_when_selector_returns_empty(self) -> None:
         """Falls back to all test_node_ids keys when selector finds no covering tests."""
-        mock_selector = MagicMock()
+        mock_selector = MagicMock(spec=PrioritizedSelector)
         mock_selector.select_tests_prioritized.return_value = []
         gs = GremlinSession(
             enabled=True,
             prioritized_selector=mock_selector,
             test_node_ids={'test_a': 'tests/test_m.py::test_a', 'test_b': 'tests/test_m.py::test_b'},
         )
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
 
         result = _select_tests_for_gremlin_prioritized(gremlin, gs)
 
@@ -487,14 +488,14 @@ class DescribeSelectTestsForGremlinPrioritized:
 
     def it_returns_selector_result_when_covering_tests_found(self) -> None:
         """Returns prioritized list when selector finds covering tests."""
-        mock_selector = MagicMock()
+        mock_selector = MagicMock(spec=PrioritizedSelector)
         mock_selector.select_tests_prioritized.return_value = ['test_a']
         gs = GremlinSession(
             enabled=True,
             prioritized_selector=mock_selector,
             test_node_ids={'test_a': 'tests/test_m.py::test_a', 'test_b': 'tests/test_m.py::test_b'},
         )
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
 
         result = _select_tests_for_gremlin_prioritized(gremlin, gs)
 

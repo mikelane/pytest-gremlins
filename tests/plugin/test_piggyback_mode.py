@@ -44,8 +44,8 @@ class DescribeDetectCoverageMode:
 
     def it_returns_piggyback_when_cov_plugin_present(self) -> None:
         """Returns PIGGYBACK when '_cov' plugin is registered."""
-        config = MagicMock()
-        config.pluginmanager.get_plugin.return_value = MagicMock()
+        config = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
+        config.pluginmanager.get_plugin.return_value = MagicMock()  # pytest-cov plugin: truthy filler; bare-mock: ok
 
         result = _detect_coverage_mode(config)
 
@@ -54,7 +54,7 @@ class DescribeDetectCoverageMode:
 
     def it_returns_private_when_cov_plugin_absent(self) -> None:
         """Returns PRIVATE when '_cov' plugin returns None."""
-        config = MagicMock()
+        config = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
         config.pluginmanager.get_plugin.return_value = None
 
         result = _detect_coverage_mode(config)
@@ -63,10 +63,10 @@ class DescribeDetectCoverageMode:
 
     def it_produces_different_results_for_piggyback_and_private(self) -> None:
         """Present vs absent plugin produces different modes - rules out hardcoding."""
-        config_with_cov = MagicMock()
-        config_with_cov.pluginmanager.get_plugin.return_value = MagicMock()
+        config_with_cov = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
+        config_with_cov.pluginmanager.get_plugin.return_value = MagicMock()  # truthy filler; bare-mock: ok
 
-        config_without_cov = MagicMock()
+        config_without_cov = MagicMock()  # pytest.Config sets attrs dynamically; bare-mock: ok
         config_without_cov.pluginmanager.get_plugin.return_value = None
 
         mode_with = _detect_coverage_mode(config_with_cov)

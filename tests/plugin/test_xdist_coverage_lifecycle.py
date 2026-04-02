@@ -41,7 +41,7 @@ class DescribeConfigureNode:
         gs.gremlins_tmpdir = str(tmp_path)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         node.workerinput = {}
 
         pytest_configure_node(node=node)
@@ -54,7 +54,7 @@ class DescribeConfigureNode:
         gs = GremlinSession(enabled=False)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         node.workerinput = {}
 
         pytest_configure_node(node=node)
@@ -65,7 +65,7 @@ class DescribeConfigureNode:
         """No injection when no GremlinSession exists."""
         _set_session(None)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         node.workerinput = {}
 
         pytest_configure_node(node=node)
@@ -78,7 +78,7 @@ class DescribeConfigureNode:
         gs.gremlins_tmpdir = str(tmp_path)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         node.workerinput = {}
 
         pytest_configure_node(node=node)
@@ -99,7 +99,7 @@ class DescribeConfigureNodeFileIO:
         gs.gremlins_tmpdir = str(other_path)
         _set_session(gs)
 
-        node = MagicMock()
+        node = MagicMock()  # xdist worker node: Protocol type, spec= not applicable; bare-mock: ok
         node.workerinput = {}
 
         pytest_configure_node(node=node)

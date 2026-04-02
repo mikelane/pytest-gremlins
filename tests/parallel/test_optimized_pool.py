@@ -124,9 +124,11 @@ class DescribePersistentWorkerPoolMpContext:
 
         # Mock ProcessPoolExecutor to verify mp_context is passed
         with patch('pytest_gremlins.parallel.persistent_pool.ProcessPoolExecutor') as mock_executor:
-            mock_executor.return_value.__enter__ = MagicMock(return_value=mock_executor.return_value)
-            mock_executor.return_value.__exit__ = MagicMock(return_value=False)
-            mock_executor.return_value.shutdown = MagicMock()
+            mock_executor.return_value.__enter__ = MagicMock(  # bare-mock: ok
+                return_value=mock_executor.return_value,
+            )
+            mock_executor.return_value.__exit__ = MagicMock(return_value=False)  # bare-mock: ok
+            mock_executor.return_value.shutdown = MagicMock()  # bare-mock: ok
 
             pool._start()
 

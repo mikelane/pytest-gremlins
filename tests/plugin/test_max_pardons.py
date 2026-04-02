@@ -9,6 +9,11 @@ from unittest.mock import (
     patch,
 )
 
+from _pytest.config.argparsing import (
+    OptionGroup,
+    Parser,
+)
+from _pytest.terminal import TerminalReporter
 import pytest
 
 from pytest_gremlins import plugin
@@ -46,8 +51,8 @@ class DescribeMaxPardons:
         assert session.max_pardons == 0
 
     def it_registers_cli_flag(self) -> None:
-        mock_group = MagicMock()
-        mock_parser = MagicMock()
+        mock_group = MagicMock(spec=OptionGroup)
+        mock_parser = MagicMock(spec=Parser)
         mock_parser.getgroup.return_value = mock_group
 
         pytest_addoption(mock_parser)
@@ -59,65 +64,65 @@ class DescribeMaxPardons:
         assert opt_kwargs.get('default') is None
 
     def it_no_exit_when_max_pardons_is_none(self) -> None:
-        mock_gremlin = MagicMock()
+        mock_gremlin = MagicMock()  # opaque filler: attrs never accessed (from_results is patched); bare-mock: ok
         session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=None)
         score = MutationScore(total=10, zapped=5, survived=3, timeout=0, error=0, pardoned=2, results=())
-        mock_reporter = MagicMock()
+        mock_reporter = MagicMock(spec=TerminalReporter)
 
         with (
             patch('pytest_gremlins.plugin._get_session', return_value=session),
             patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
             patch('pytest_gremlins.plugin.pytest') as mock_pytest,
         ):
-            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
+            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         mock_pytest.exit.assert_not_called()
 
     def it_no_exit_when_pardoned_within_limit(self) -> None:
-        mock_gremlin = MagicMock()
+        mock_gremlin = MagicMock()  # opaque filler: attrs never accessed (from_results is patched); bare-mock: ok
         session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=5)
         # 2 pardoned — within limit of 5
         score = MutationScore(total=10, zapped=8, survived=0, timeout=0, error=0, pardoned=2, results=())
-        mock_reporter = MagicMock()
+        mock_reporter = MagicMock(spec=TerminalReporter)
 
         with (
             patch('pytest_gremlins.plugin._get_session', return_value=session),
             patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
             patch('pytest_gremlins.plugin.pytest') as mock_pytest,
         ):
-            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
+            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         mock_pytest.exit.assert_not_called()
 
     def it_no_exit_when_pardoned_equals_limit(self) -> None:
-        mock_gremlin = MagicMock()
+        mock_gremlin = MagicMock()  # opaque filler: attrs never accessed (from_results is patched); bare-mock: ok
         session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=5)
         # exactly at limit — not exceeding
         score = MutationScore(total=10, zapped=5, survived=0, timeout=0, error=0, pardoned=5, results=())
-        mock_reporter = MagicMock()
+        mock_reporter = MagicMock(spec=TerminalReporter)
 
         with (
             patch('pytest_gremlins.plugin._get_session', return_value=session),
             patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
             patch('pytest_gremlins.plugin.pytest') as mock_pytest,
         ):
-            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
+            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         mock_pytest.exit.assert_not_called()
 
     def it_exits_when_pardoned_exceeds_limit(self) -> None:
-        mock_gremlin = MagicMock()
+        mock_gremlin = MagicMock()  # opaque filler: attrs never accessed (from_results is patched); bare-mock: ok
         session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=5)
         # 7 pardoned — exceeds limit of 5
         score = MutationScore(total=10, zapped=3, survived=0, timeout=0, error=0, pardoned=7, results=())
-        mock_reporter = MagicMock()
+        mock_reporter = MagicMock(spec=TerminalReporter)
 
         with (
             patch('pytest_gremlins.plugin._get_session', return_value=session),
             patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
             patch('pytest_gremlins.plugin.pytest') as mock_pytest,
         ):
-            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
+            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         mock_pytest.exit.assert_called_once()
         exit_call_args = mock_pytest.exit.call_args
@@ -128,18 +133,18 @@ class DescribeMaxPardons:
         assert '--max-pardons' in exit_message
 
     def it_exits_when_pardoned_exceeds_zero_limit(self) -> None:
-        mock_gremlin = MagicMock()
+        mock_gremlin = MagicMock()  # opaque filler: attrs never accessed (from_results is patched); bare-mock: ok
         session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=0)
         # 1 pardoned — exceeds 0 limit
         score = MutationScore(total=5, zapped=4, survived=0, timeout=0, error=0, pardoned=1, results=())
-        mock_reporter = MagicMock()
+        mock_reporter = MagicMock(spec=TerminalReporter)
 
         with (
             patch('pytest_gremlins.plugin._get_session', return_value=session),
             patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
             patch('pytest_gremlins.plugin.pytest') as mock_pytest,
         ):
-            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
+            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         mock_pytest.exit.assert_called_once()
 
@@ -158,11 +163,11 @@ class DescribeMaxPardons:
         assert merged.max_pardons == 3
 
     def it_logs_info_when_pardoned_within_limit(self, caplog: pytest.LogCaptureFixture) -> None:
-        mock_gremlin = MagicMock()
+        mock_gremlin = MagicMock()  # opaque filler: attrs never accessed (from_results is patched); bare-mock: ok
         session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=5)
         # 2 pardoned — within limit of 5
         score = MutationScore(total=10, zapped=8, survived=0, timeout=0, error=0, pardoned=2, results=())
-        mock_reporter = MagicMock()
+        mock_reporter = MagicMock(spec=TerminalReporter)
 
         with (
             caplog.at_level(logging.INFO, logger='pytest_gremlins.plugin'),
@@ -170,7 +175,7 @@ class DescribeMaxPardons:
             patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
             patch('pytest_gremlins.plugin.pytest'),
         ):
-            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
+            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         info_records = [r for r in caplog.records if r.levelno == logging.INFO]
         assert len(info_records) == 1
@@ -178,10 +183,10 @@ class DescribeMaxPardons:
         assert '5' in info_records[0].message
 
     def it_logs_warning_when_pardoned_exceeds_limit(self, caplog: pytest.LogCaptureFixture) -> None:
-        mock_gremlin = MagicMock()
+        mock_gremlin = MagicMock()  # opaque filler: attrs never accessed (from_results is patched); bare-mock: ok
         session = GremlinSession(enabled=True, gremlins=[mock_gremlin], max_pardons=5)
         score = MutationScore(total=10, zapped=3, survived=0, timeout=0, error=0, pardoned=7, results=())
-        mock_reporter = MagicMock()
+        mock_reporter = MagicMock(spec=TerminalReporter)
 
         with (
             caplog.at_level(logging.WARNING, logger='pytest_gremlins.plugin'),
@@ -189,7 +194,7 @@ class DescribeMaxPardons:
             patch('pytest_gremlins.plugin.MutationScore.from_results', return_value=score),
             patch('pytest_gremlins.plugin.pytest'),
         ):
-            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())
+            pytest_terminal_summary(mock_reporter, exitstatus=0, config=MagicMock())  # dynamic attrs; bare-mock: ok
 
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING

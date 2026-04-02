@@ -26,12 +26,12 @@ from pytest_gremlins.plugin import (
 
 def _make_controller_session(tmp_path: Path) -> MagicMock:
     """Build a mock pytest.Session configured as an xdist controller (no workerinput)."""
-    mock_pluginmanager = MagicMock()
+    mock_pluginmanager = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
     mock_pluginmanager.get_plugin.return_value = None
     mock_config = MagicMock(spec=['rootdir', 'pluginmanager'])
     mock_config.rootdir = str(tmp_path)
     mock_config.pluginmanager = mock_pluginmanager
-    session = MagicMock()
+    session = MagicMock(spec=pytest.Session)
     session.config = mock_config
     return session
 
@@ -42,7 +42,7 @@ class DescribeCollectionFinishWorkerGuard:
 
     def it_collection_finish_skips_processing_on_xdist_worker(self) -> None:
         """Worker config causes pytest_collection_finish to return without modifying session."""
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config = MagicMock(spec=['workerinput'])
         session.config.workerinput = {'slaveid': 'gw0'}
         session.items = []
@@ -58,7 +58,7 @@ class DescribeCollectionFinishWorkerGuard:
 
     def it_collection_finish_processes_normally_on_controller(self, tmp_path: Path) -> None:
         """Non-worker config causes pytest_collection_finish to proceed normally."""
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config = MagicMock(spec=[])
         session.config.rootdir = str(tmp_path)
         session.items = []
@@ -78,12 +78,12 @@ class DescribeSessionFinishWorkerGuard:
 
     def it_skips_mutation_testing_on_xdist_worker(self) -> None:
         """Worker config causes pytest_sessionfinish to return without running mutations."""
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config = MagicMock(spec=['workerinput'])
         session.config.workerinput = {'slaveid': 'gw0'}
 
         gs = GremlinSession(enabled=True)
-        gs.gremlins = [MagicMock()]
+        gs.gremlins = [MagicMock()]  # opaque filler: attrs never accessed; bare-mock: ok
         _set_session(gs)
 
         with patch('pytest_gremlins.plugin._collect_coverage') as mock_collect:
@@ -93,14 +93,14 @@ class DescribeSessionFinishWorkerGuard:
 
     def it_runs_mutation_testing_on_controller(self, tmp_path: Path) -> None:
         """Non-worker config causes pytest_sessionfinish to proceed with mutations."""
-        session = MagicMock()
+        session = MagicMock(spec=pytest.Session)
         session.config = MagicMock(spec=[])
         session.config.rootdir = str(tmp_path)
-        session.config.pluginmanager = MagicMock()
+        session.config.pluginmanager = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
         session.config.pluginmanager.get_plugin.return_value = None
 
         gs = GremlinSession(enabled=True)
-        gs.gremlins = [MagicMock()]
+        gs.gremlins = [MagicMock()]  # opaque filler: attrs never accessed; bare-mock: ok
         _set_session(gs)
 
         with (
@@ -134,7 +134,7 @@ class DescribeSessionFinishBranches:
         session = _make_controller_session(tmp_path)
 
         gs = GremlinSession(enabled=True, batch_enabled=True)
-        gs.gremlins = [MagicMock()]
+        gs.gremlins = [MagicMock()]  # opaque filler: attrs never accessed; bare-mock: ok
         _set_session(gs)
 
         with (
@@ -154,7 +154,7 @@ class DescribeSessionFinishBranches:
         session = _make_controller_session(tmp_path)
 
         gs = GremlinSession(enabled=True, parallel_enabled=True, batch_enabled=False)
-        gs.gremlins = [MagicMock()]
+        gs.gremlins = [MagicMock()]  # opaque filler: attrs never accessed; bare-mock: ok
         _set_session(gs)
 
         with (

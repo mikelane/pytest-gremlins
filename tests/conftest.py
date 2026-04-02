@@ -123,7 +123,7 @@ def make_pytest_config() -> Callable[..., Any]:
         option.gremlin_exclude = None  # type: ignore[attr-defined]
 
         if pluginmanager is None:
-            pm: MagicMock = MagicMock()
+            pm: MagicMock = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
             pm.hasplugin.return_value = False
             pm.get_plugin.return_value = None
         else:

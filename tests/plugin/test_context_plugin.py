@@ -13,6 +13,7 @@ from unittest.mock import (
     call,
 )
 
+import coverage
 import pytest
 
 from pytest_gremlins.coverage.context_plugin import GremlinContextPlugin
@@ -24,14 +25,14 @@ class DescribeGremlinContextPluginInit:
 
     def it_stores_coverage_instance(self) -> None:
         """The cov attribute holds the coverage instance passed at construction."""
-        cov = MagicMock()
+        cov = MagicMock(spec=coverage.Coverage)
         plugin = GremlinContextPlugin(cov)
         assert plugin.cov is cov
 
     def it_stores_different_coverage_instance(self) -> None:
         """A different coverage instance is stored correctly - rules out hardcoding."""
-        cov_a = MagicMock()
-        cov_b = MagicMock()
+        cov_a = MagicMock(spec=coverage.Coverage)
+        cov_b = MagicMock(spec=coverage.Coverage)
         plugin_a = GremlinContextPlugin(cov_a)
         plugin_b = GremlinContextPlugin(cov_b)
         assert plugin_a.cov is cov_a
@@ -44,9 +45,9 @@ class DescribeGremlinContextPluginSetup:
 
     def it_switches_context_to_setup_phase(self) -> None:
         """setup hook switches coverage context to nodeid|setup."""
-        cov = MagicMock()
+        cov = MagicMock(spec=coverage.Coverage)
         plugin = GremlinContextPlugin(cov)
-        item = MagicMock()
+        item = MagicMock(spec=pytest.Item)
         item.nodeid = 'tests/test_foo.py::test_bar'
 
         gen = plugin.pytest_runtest_setup(item=item)
@@ -57,9 +58,9 @@ class DescribeGremlinContextPluginSetup:
 
     def it_switches_context_using_item_nodeid(self) -> None:
         """Context uses the actual item nodeid - different nodeid produces different context."""
-        cov = MagicMock()
+        cov = MagicMock(spec=coverage.Coverage)
         plugin = GremlinContextPlugin(cov)
-        item = MagicMock()
+        item = MagicMock(spec=pytest.Item)
         item.nodeid = 'tests/test_other.py::test_something_else'
 
         gen = plugin.pytest_runtest_setup(item=item)
@@ -74,9 +75,9 @@ class DescribeGremlinContextPluginCall:
 
     def it_switches_context_to_run_phase(self) -> None:
         """call hook switches coverage context to nodeid|run."""
-        cov = MagicMock()
+        cov = MagicMock(spec=coverage.Coverage)
         plugin = GremlinContextPlugin(cov)
-        item = MagicMock()
+        item = MagicMock(spec=pytest.Item)
         item.nodeid = 'tests/test_foo.py::test_bar'
 
         gen = plugin.pytest_runtest_call(item=item)
@@ -87,9 +88,9 @@ class DescribeGremlinContextPluginCall:
 
     def it_switches_context_using_item_nodeid(self) -> None:
         """Context uses the actual item nodeid - different nodeid produces different context."""
-        cov = MagicMock()
+        cov = MagicMock(spec=coverage.Coverage)
         plugin = GremlinContextPlugin(cov)
-        item = MagicMock()
+        item = MagicMock(spec=pytest.Item)
         item.nodeid = 'tests/test_other.py::test_something_else'
 
         gen = plugin.pytest_runtest_call(item=item)
@@ -104,9 +105,9 @@ class DescribeGremlinContextPluginTeardown:
 
     def it_switches_context_to_teardown_phase(self) -> None:
         """teardown hook switches coverage context to nodeid|teardown."""
-        cov = MagicMock()
+        cov = MagicMock(spec=coverage.Coverage)
         plugin = GremlinContextPlugin(cov)
-        item = MagicMock()
+        item = MagicMock(spec=pytest.Item)
         item.nodeid = 'tests/test_foo.py::test_bar'
 
         gen = plugin.pytest_runtest_teardown(item=item)
@@ -117,9 +118,9 @@ class DescribeGremlinContextPluginTeardown:
 
     def it_switches_context_using_item_nodeid(self) -> None:
         """Context uses the actual item nodeid - different nodeid produces different context."""
-        cov = MagicMock()
+        cov = MagicMock(spec=coverage.Coverage)
         plugin = GremlinContextPlugin(cov)
-        item = MagicMock()
+        item = MagicMock(spec=pytest.Item)
         item.nodeid = 'tests/test_other.py::test_something_else'
 
         gen = plugin.pytest_runtest_teardown(item=item)
@@ -134,9 +135,9 @@ class DescribeGremlinContextPluginPhaseDistinction:
 
     def it_three_phases_produce_three_distinct_contexts(self) -> None:
         """setup, run and teardown each switch to a different context string."""
-        cov = MagicMock()
+        cov = MagicMock(spec=coverage.Coverage)
         plugin = GremlinContextPlugin(cov)
-        item = MagicMock()
+        item = MagicMock(spec=pytest.Item)
         item.nodeid = 'tests/test_foo.py::test_bar'
 
         next(plugin.pytest_runtest_setup(item=item))

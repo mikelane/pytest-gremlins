@@ -206,8 +206,8 @@ class DescribePytestConfigureCoverageMode:
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
         monkeypatch.setattr('pytest_gremlins.config._packages_distributions', dict)
 
-        pm = MagicMock()
-        pm.get_plugin.return_value = MagicMock()
+        pm = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
+        pm.get_plugin.return_value = MagicMock()  # pytest-cov plugin: internal type, no public spec; bare-mock: ok
         plugin.pytest_configure(make_pytest_config(tmp_path, pluginmanager=pm))  # type: ignore[arg-type]
 
         session = plugin._get_session()
@@ -229,7 +229,7 @@ class DescribePytestConfigureCoverageMode:
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
         monkeypatch.setattr('pytest_gremlins.config._packages_distributions', dict)
 
-        pm = MagicMock()
+        pm = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
         pm.get_plugin.return_value = None
         plugin.pytest_configure(make_pytest_config(tmp_path, pluginmanager=pm))  # type: ignore[arg-type]
 

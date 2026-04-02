@@ -14,6 +14,7 @@ from unittest.mock import (
 
 import pytest
 
+from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.plugin import (
     GREMLIN_SOURCES_ENV_VAR,
     GremlinSession,
@@ -69,7 +70,7 @@ class DescribeCheckCacheForGremlin:
     def it_returns_none_when_cache_disabled(self) -> None:
         """Returns None immediately when cache_enabled is False."""
         gs = GremlinSession(enabled=True, cache_enabled=False)
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
 
         result = _check_cache_for_gremlin(gremlin, [], gs)
 
@@ -77,9 +78,9 @@ class DescribeCheckCacheForGremlin:
 
     def it_returns_none_when_source_hash_missing(self) -> None:
         """Returns None when gremlin's file_path has no entry in source_hashes."""
-        mock_cache = MagicMock()
+        mock_cache = MagicMock(spec=IncrementalCache)
         gs = GremlinSession(enabled=True, cache_enabled=True, cache=mock_cache, source_hashes={})
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
         gremlin.file_path = 'src/module.py'
 
         result = _check_cache_for_gremlin(gremlin, [], gs)
@@ -89,7 +90,7 @@ class DescribeCheckCacheForGremlin:
 
     def it_returns_gremlin_result_on_cache_hit(self) -> None:
         """Returns a GremlinResult constructed from cached data when cache has a hit."""
-        mock_cache = MagicMock()
+        mock_cache = MagicMock(spec=IncrementalCache)
         mock_cache.get_cached_result.return_value = {'status': 'zapped', 'killing_test': 'test_foo'}
         gs = GremlinSession(
             enabled=True,
@@ -97,7 +98,7 @@ class DescribeCheckCacheForGremlin:
             cache=mock_cache,
             source_hashes={'src/module.py': 'hash123'},
         )
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
         gremlin.file_path = 'src/module.py'
 
         result = _check_cache_for_gremlin(gremlin, [], gs)
@@ -116,14 +117,14 @@ class DescribeCacheGremlinResult:
 
     def it_calls_cache_deferred_when_source_hash_exists(self) -> None:
         """cache_result_deferred is called when gremlin's file has a source hash."""
-        mock_cache = MagicMock()
+        mock_cache = MagicMock(spec=IncrementalCache)
         gs = GremlinSession(
             enabled=True,
             cache_enabled=True,
             cache=mock_cache,
             source_hashes={'src/module.py': 'hash123'},
         )
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
         gremlin.file_path = 'src/module.py'
         gremlin.gremlin_id = 'g001'
         result = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED)
@@ -134,14 +135,14 @@ class DescribeCacheGremlinResult:
 
     def it_skips_caching_when_source_hash_missing(self) -> None:
         """cache_result_deferred is NOT called when gremlin's file has no source hash."""
-        mock_cache = MagicMock()
+        mock_cache = MagicMock(spec=IncrementalCache)
         gs = GremlinSession(
             enabled=True,
             cache_enabled=True,
             cache=mock_cache,
             source_hashes={},
         )
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
         gremlin.file_path = 'src/module.py'
         result = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED)
 
@@ -160,7 +161,7 @@ class DescribeGremlinSubprocessEnvVars:
 
     def it_sets_sources_env_var_when_instrumented_dir_provided(self, tmp_path: Path) -> None:
         """GREMLIN_SOURCES_ENV_VAR is set to '<instrumented_dir>/sources.json' in env."""
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
         gremlin.gremlin_id = 'g001'
         captured_env: dict[str, str] = {}
 
@@ -168,7 +169,7 @@ class DescribeGremlinSubprocessEnvVars:
             env = kwargs.get('env')
             if isinstance(env, dict):
                 captured_env.update(env)
-            result = MagicMock()
+            result = MagicMock()  # subprocess.CompletedProcess: generic return mock; bare-mock: ok
             result.returncode = 0
             return result
 
@@ -180,7 +181,7 @@ class DescribeGremlinSubprocessEnvVars:
 
     def it_omits_sources_env_var_when_instrumented_dir_is_none(self, tmp_path: Path) -> None:
         """GREMLIN_SOURCES_ENV_VAR is NOT set when instrumented_dir is None."""
-        gremlin = MagicMock()
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
         gremlin.gremlin_id = 'g001'
         captured_env: dict[str, str] = {}
 
@@ -188,7 +189,7 @@ class DescribeGremlinSubprocessEnvVars:
             env = kwargs.get('env')
             if isinstance(env, dict):
                 captured_env.update(env)
-            result = MagicMock()
+            result = MagicMock()  # subprocess.CompletedProcess: generic return mock; bare-mock: ok
             result.returncode = 0
             return result
 

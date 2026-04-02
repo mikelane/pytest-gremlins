@@ -78,7 +78,7 @@ class DescribePardonedGremlinNeverRunsSubprocess:
         monkeypatch.setattr(plugin_module, '_check_cache_for_gremlin', lambda *_a, **_kw: None)
 
         pardoned = _make_pardoned_gremlin()
-        mock_session = MagicMock()
+        mock_session = MagicMock(spec=pytest.Session)
         gremlin_session = GremlinSession(gremlins=[pardoned])
 
         results = _run_mutation_testing(mock_session, gremlin_session)
@@ -101,7 +101,7 @@ class DescribePardonedGremlinNeverRunsSubprocess:
         monkeypatch.setattr(plugin_module, '_check_cache_for_gremlin', lambda *_a, **_kw: None)
 
         pardoned = _make_pardoned_gremlin()
-        mock_session = MagicMock()
+        mock_session = MagicMock(spec=pytest.Session)
         gremlin_session = GremlinSession(gremlins=[pardoned])
 
         results = _run_batch_mutation_testing(mock_session, gremlin_session)
@@ -123,7 +123,7 @@ class DescribePardonedGremlinNeverRunsSubprocess:
         monkeypatch.setattr(plugin_module, '_check_cache_for_gremlin', lambda *_a, **_kw: None)
 
         pardoned = _make_pardoned_gremlin()
-        mock_session = MagicMock()
+        mock_session = MagicMock(spec=pytest.Session)
         gremlin_session = GremlinSession(gremlins=[pardoned])
 
         results = _run_parallel_mutation_testing(mock_session, gremlin_session)
