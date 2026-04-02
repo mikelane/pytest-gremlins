@@ -54,6 +54,7 @@ class DescribeSubprocessContextPluginSetup:
 
     def it_switches_context_to_setup_phase(self) -> None:
         mock_cov = MagicMock()
+        mock_cov._started = True
         plugin = _SubprocessContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
@@ -64,6 +65,7 @@ class DescribeSubprocessContextPluginSetup:
 
     def it_strips_marker_from_nodeid(self) -> None:
         mock_cov = MagicMock()
+        mock_cov._started = True
         plugin = _SubprocessContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::test_bar [SMALL]'
@@ -72,6 +74,34 @@ class DescribeSubprocessContextPluginSetup:
 
         mock_cov.switch_context.assert_called_once_with('tests/test_foo.py::test_bar|setup')
 
+    def it_skips_switch_context_when_started_attr_missing(self) -> None:
+        """switch_context is NOT called when cov has no _started attribute.
+
+        Exercises the getattr default path -- if a future coverage.py
+        release removes _started, the guard silently skips the call.
+        """
+        mock_cov = MagicMock()
+        del mock_cov._started
+        plugin = _SubprocessContextPlugin(mock_cov)
+        mock_item = MagicMock()
+        mock_item.nodeid = 'tests/test_foo.py::test_bar'
+
+        list(plugin.pytest_runtest_setup(mock_item))
+
+        mock_cov.switch_context.assert_not_called()
+
+    def it_skips_switch_context_when_coverage_is_stopped(self) -> None:
+        """switch_context is NOT called when coverage._started is False."""
+        mock_cov = MagicMock()
+        mock_cov._started = False
+        plugin = _SubprocessContextPlugin(mock_cov)
+        mock_item = MagicMock()
+        mock_item.nodeid = 'tests/test_foo.py::test_bar'
+
+        list(plugin.pytest_runtest_setup(mock_item))
+
+        mock_cov.switch_context.assert_not_called()
+
 
 @pytest.mark.small
 class DescribeSubprocessContextPluginCall:
@@ -79,6 +109,7 @@ class DescribeSubprocessContextPluginCall:
 
     def it_switches_context_to_run_phase(self) -> None:
         mock_cov = MagicMock()
+        mock_cov._started = True
         plugin = _SubprocessContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
@@ -87,6 +118,18 @@ class DescribeSubprocessContextPluginCall:
 
         mock_cov.switch_context.assert_called_once_with('tests/test_foo.py::test_bar|run')
 
+    def it_skips_switch_context_when_coverage_is_stopped(self) -> None:
+        """switch_context is NOT called when coverage._started is False."""
+        mock_cov = MagicMock()
+        mock_cov._started = False
+        plugin = _SubprocessContextPlugin(mock_cov)
+        mock_item = MagicMock()
+        mock_item.nodeid = 'tests/test_foo.py::test_bar'
+
+        list(plugin.pytest_runtest_call(mock_item))
+
+        mock_cov.switch_context.assert_not_called()
+
 
 @pytest.mark.small
 class DescribeSubprocessContextPluginTeardown:
@@ -94,6 +137,7 @@ class DescribeSubprocessContextPluginTeardown:
 
     def it_switches_context_to_teardown_phase(self) -> None:
         mock_cov = MagicMock()
+        mock_cov._started = True
         plugin = _SubprocessContextPlugin(mock_cov)
         mock_item = MagicMock()
         mock_item.nodeid = 'tests/test_foo.py::test_bar'
@@ -101,6 +145,18 @@ class DescribeSubprocessContextPluginTeardown:
         list(plugin.pytest_runtest_teardown(mock_item))
 
         mock_cov.switch_context.assert_called_once_with('tests/test_foo.py::test_bar|teardown')
+
+    def it_skips_switch_context_when_coverage_is_stopped(self) -> None:
+        """switch_context is NOT called when coverage._started is False."""
+        mock_cov = MagicMock()
+        mock_cov._started = False
+        plugin = _SubprocessContextPlugin(mock_cov)
+        mock_item = MagicMock()
+        mock_item.nodeid = 'tests/test_foo.py::test_bar'
+
+        list(plugin.pytest_runtest_teardown(mock_item))
+
+        mock_cov.switch_context.assert_not_called()
 
 
 @pytest.mark.small
