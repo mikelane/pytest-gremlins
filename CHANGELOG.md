@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.8.1 (2026-04-02)
+
+### Fix
+
+- **switch_context() guard**: `GremlinContextPlugin` and `_SubprocessContextPlugin` no longer
+  call `cov.switch_context()` after coverage has been stopped. Previously, phase 2 (mutation
+  testing) triggered `CoverageException: Cannot switch context, coverage is not started` on
+  every test — harmless to results but causing exit code 1 and noisy output. Mirrors the
+  identical fix in pytest-cov ([PR #686](https://github.com/pytest-dev/pytest-cov/pull/686)).
+  (#376, #378)
+
+### Internal
+
+- Add `spec=` to 127 bare `MagicMock()` calls across 25 test files, with AST-based
+  enforcement via pre-commit hook and Claude Code PostToolUse hook (#379, #380)
+
 ## v1.8.0 (2026-03-30)
 
 Stable release consolidating the v1.8.0 beta series.
