@@ -88,8 +88,12 @@ def _build_session_with_drift(sample_gremlin: Gremlin) -> GremlinSession:
         {sample_gremlin.file_path: [sample_gremlin.line_number]},
     )
 
+    # Simulate the exact shape of the #387 bug: the selector returns the
+    # non-drifted test (a valid runnable key) but silently drops the drifted
+    # key, so ``covering_minus_selected`` is a single-element set naming the
+    # lost killer.
     mock_selector = create_autospec(PrioritizedSelector, instance=True)
-    mock_selector.select_tests_prioritized.return_value = []
+    mock_selector.select_tests_prioritized.return_value = ['tests/test_target.py::test_nonzero_case']
 
     return GremlinSession(
         enabled=True,
@@ -116,9 +120,15 @@ class DescribeEmitSelectionExplainerDrift:
             _emit_selection_explainer(session)
 
         output = buffer.getvalue()
-        assert sample_gremlin.gremlin_id in output
-        assert 'Covering set' in output
-        assert 'Selected' in output
+        # Banner identifies the gremlin under inspection.
+        assert f'--gremlin-explain: diagnostic for {sample_gremlin.gremlin_id}' in output
+        # Covering set shows the drifted key and its exact count.
+        assert 'Covering set (1 test(s)):' in output
+        assert "'tests/test_target.py::test_zero_case [custom-tag]'" in output
+        # Selected list contains the non-drifted test; the drifted key was
+        # silently dropped by the (simulated) selector — the exact #387 shape.
+        assert 'Selected list (1 test(s)):' in output
+        assert "'tests/test_target.py::test_nonzero_case'" in output
 
     def it_names_the_dropped_test_in_the_diff(self, sample_gremlin):
         session = _build_session_with_drift(sample_gremlin)
@@ -128,7 +138,11 @@ class DescribeEmitSelectionExplainerDrift:
             _emit_selection_explainer(session)
 
         output = buffer.getvalue()
-        assert 'tests/test_target.py::test_zero_case [custom-tag]' in output
+        # The drifted key must appear specifically in the "Covering minus selected" section,
+        # not merely in the header echo of the covering set.
+        _, dropped_section = output.split('Covering minus selected', 1)
+        assert "dropped    : 'tests/test_target.py::test_zero_case [custom-tag]'" in dropped_section
+        assert "stripped   : 'tests/test_target.py::test_zero_case'" in dropped_section
 
     def it_suggests_close_match_for_drifted_key(self, sample_gremlin):
         session = _build_session_with_drift(sample_gremlin)
@@ -138,8 +152,9 @@ class DescribeEmitSelectionExplainerDrift:
             _emit_selection_explainer(session)
 
         output = buffer.getvalue()
-        assert 'tests/test_target.py::test_zero_case' in output
-        assert 'close match' in output.lower() or 'close_match' in output.lower()
+        # The close-match line must name the intended runnable key, not just the label.
+        _, dropped_section = output.split('Covering minus selected', 1)
+        assert "close match: 'tests/test_target.py::test_zero_case'" in dropped_section
 
     def it_disables_gremlin_session_after_emitting(self, sample_gremlin):
         session = _build_session_with_drift(sample_gremlin)
