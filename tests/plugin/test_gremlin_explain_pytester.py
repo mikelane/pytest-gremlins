@@ -89,10 +89,13 @@ class DescribeGremlinExplainPytester:
         )
 
         output = result.stdout.str()
-        # Diagnostic banner and per-set breakdown are present.
+        # Diagnostic banner identifies the exact gremlin requested.
         assert f'--gremlin-explain: diagnostic for {gremlin_id}' in output, output
-        assert 'Covering set' in output, output
-        assert 'Selected list' in output, output
+        # Per-set breakdown must be structured (name + count + colon), not just a
+        # bare word — a regression that dropped the counts would pass a plain
+        # substring check.
+        assert re.search(r'Covering set \(\d+ test\(s\)\):', output), output
+        assert re.search(r'Selected list \(\d+ test\(s\)\):', output), output
         # Mutation loop is short-circuited: no per-gremlin progress after the diagnostic.
         post_explain = output.split('--gremlin-explain: diagnostic for', 1)[-1]
         assert 'Gremlin 1/' not in post_explain, post_explain
@@ -112,6 +115,14 @@ class DescribeGremlinExplainPytester:
         )
 
         output = result.stdout.str()
-        assert 'no_such_gremlin_id' in output, output
-        assert 'no gremlin with id' in output, output
+        # Assert the exact banner shape: both the "no gremlin with id" phrase and
+        # the offending id (``repr``-quoted by the production code) must appear
+        # on the same line. Two separate ``in`` checks could pass even if the id
+        # appeared only in an unrelated pytest frame.
+        assert "--gremlin-explain: no gremlin with id 'no_such_gremlin_id' in this session." in output, output
+        # None of the per-set breakdown should be emitted for an unknown id.
+        assert 'Covering set' not in output, output
+        assert 'Selected list' not in output, output
+        # Pytest still exits cleanly: unknown id short-circuits mutation but
+        # never fails the session on the user's behalf.
         assert result.ret == 0, output

@@ -548,9 +548,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         dest='gremlin_explain',
         help=(
-            'Print a diagnostic for the given gremlin id showing the covering set, '
-            'the selected list, their diff, and close-match suggestions for dropped '
-            'tests; then exit without running mutation testing.'
+            'Diagnose why a gremlin survived: for the given gremlin id (e.g. g001), '
+            'print the covering set, the selected list, their diff, and close-match '
+            'suggestions for any dropped tests, then skip the mutation loop so pytest '
+            'can finish normally.'
         ),
     )
 
@@ -2215,7 +2216,11 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
     )
 
     if target_gremlin is None:
-        print(f'--gremlin-explain: no gremlin with id {target_id!r} in this session.')
+        print(
+            f'--gremlin-explain: no gremlin with id {target_id!r} in this session. '
+            f'Run with --gremlins (without --gremlin-explain) to see the full list of '
+            f'gremlin ids in the progress log.'
+        )
         gremlin_session.enabled = False
         return
 
@@ -2228,7 +2233,11 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
     _print_explainer_header(target_gremlin, covering, selected)
 
     if not covering_minus_selected and not selected_minus_runnable:
-        print('  Result: selection is consistent with covering set (no drift).')
+        print(
+            '  Result: selection is consistent with covering set (no drift). '
+            'If this gremlin still survived, the cause is elsewhere (e.g. a weak '
+            'assertion in the covering tests).'
+        )
         gremlin_session.enabled = False
         return
 

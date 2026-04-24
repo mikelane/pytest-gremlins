@@ -21,8 +21,10 @@ from _pytest.config.argparsing import (
 )
 import pytest
 
-from pytest_gremlins.coverage.collector import CoverageCollector
-from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
+from pytest_gremlins.coverage import (
+    CoverageCollector,
+    PrioritizedSelector,
+)
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
     GremlinSession,
@@ -42,8 +44,22 @@ class DescribeGremlinExplainOption:
 
         pytest_addoption(parser)
 
-        added_option_names = [call.args[0] for call in group.addoption.call_args_list]
-        assert '--gremlin-explain' in added_option_names
+        # Locate the specific addoption call for --gremlin-explain so we can
+        # verify the registered shape, not just the presence of the flag name.
+        explain_calls = [call for call in group.addoption.call_args_list if call.args[0] == '--gremlin-explain']
+        assert len(explain_calls) == 1
+        explain_kwargs = explain_calls[0].kwargs
+        # Must default to ``None`` so the explainer no-ops when the flag is absent.
+        assert explain_kwargs.get('default') is None
+        # The value is consumed via ``getoption('gremlin_explain')``; a renamed
+        # dest would silently break the CLI without this assertion catching it.
+        assert explain_kwargs.get('dest') == 'gremlin_explain'
+        # ``action='store'`` (the default) is what makes ``--gremlin-explain=<id>``
+        # capture the argument rather than behave as a boolean flag.
+        assert explain_kwargs.get('action', 'store') == 'store'
+        # Flag must carry a non-empty help string so ``--help`` shows it to users.
+        assert isinstance(explain_kwargs.get('help'), str)
+        assert explain_kwargs['help']
 
 
 @pytest.mark.small
@@ -122,6 +138,9 @@ class DescribeEmitSelectionExplainerDrift:
         output = buffer.getvalue()
         # Banner identifies the gremlin under inspection.
         assert f'--gremlin-explain: diagnostic for {sample_gremlin.gremlin_id}' in output
+        # Header echoes the mutated file and line so a reader can confirm the
+        # diagnostic corresponds to the right source location.
+        assert f'  file: {sample_gremlin.file_path}:{sample_gremlin.line_number}' in output
         # Covering set shows the drifted key and its exact count.
         assert 'Covering set (1 test(s)):' in output
         assert "'tests/test_target.py::test_zero_case [custom-tag]'" in output
@@ -196,7 +215,17 @@ class DescribeEmitSelectionExplainerNoDrift:
             _emit_selection_explainer(session)
 
         output = buffer.getvalue()
-        assert 'consistent' in output.lower()
+        # Exact contract: banner, then the structured "no drift" result line.
+        assert f'--gremlin-explain: diagnostic for {sample_gremlin.gremlin_id}' in output
+        assert '  Result: selection is consistent with covering set (no drift).' in output
+        # Covering set header shows the exact count, not a hand-wave.
+        assert 'Covering set (1 test(s)):' in output
+        assert 'Selected list (1 test(s)):' in output
+        # No drift means no dropped-test breakdown is emitted.
+        assert 'Covering minus selected' not in output
+        assert 'Selected but not in test_node_ids' not in output
+        # Session must be disabled so the per-gremlin loop short-circuits.
+        assert session.enabled is False
 
 
 @pytest.mark.small
@@ -222,7 +251,13 @@ class DescribeEmitSelectionExplainerMissingGremlin:
             _emit_selection_explainer(session)
 
         output = buffer.getvalue()
-        assert 'nonexistent_gremlin_id' in output
+        # Exact banner — quoting the id via ``!r`` is part of the contract so a
+        # mutation that dropped the repr would not silently pass.
+        assert "--gremlin-explain: no gremlin with id 'nonexistent_gremlin_id' in this session." in output
+        # None of the drift-breakdown sections should appear for an unknown id.
+        assert 'Covering set' not in output
+        assert 'Selected list' not in output
+        assert 'Covering minus selected' not in output
         assert session.enabled is False
 
 
