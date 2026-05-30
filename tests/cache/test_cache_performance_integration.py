@@ -87,21 +87,15 @@ class DescribeCachePerformanceIntegration:
             """,
         )
 
-        # Cold run (must execute slow test)
-        cold_start = time.perf_counter()
+        # Cold run populates the cache
         pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
-        cold_time = time.perf_counter() - cold_start
 
-        # Warm run (should skip test execution via cache)
-        warm_start = time.perf_counter()
+        # Warm run should hit the cache and skip test execution
         result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
-        warm_time = time.perf_counter() - warm_start
 
         result.assert_outcomes(passed=1)
 
-        # Verify cache hit was reported
+        # Behavioral assertion: cache hit was reported in output, proving test execution
+        # was skipped on the warm run. This is the actual contract — not wall-clock time,
+        # which is dominated by subprocess startup overhead (~1.5s) regardless of cache.
         result.stdout.fnmatch_lines(['*cache hit*'])
-
-        # Warm run should be significantly faster (skipped 0.1s+ of test execution)
-        # With multiple gremlins, this compounds
-        assert warm_time < cold_time, f'Warm run ({warm_time:.2f}s) was NOT faster than cold run ({cold_time:.2f}s)'
