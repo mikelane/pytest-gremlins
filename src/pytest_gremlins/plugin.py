@@ -16,6 +16,7 @@ from dataclasses import (
     field,
 )
 from dataclasses import replace as dataclass_replace
+import difflib
 from enum import Enum
 import functools
 import importlib.util
@@ -231,6 +232,7 @@ class GremlinSession:
     max_pardons: int | None = None
     no_coverage_filter: bool = False
     test_name_to_node_ids: dict[str, list[str]] = field(default_factory=dict)
+    explain_gremlin_id: str | None = None
 
 
 _gremlin_session: GremlinSession | None = None
@@ -540,6 +542,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest='gremlin_no_coverage_filter',
         help='Disable coverage-guided test selection (slow but useful for debugging).',
     )
+    group.addoption(
+        '--gremlin-explain',
+        action='store',
+        default=None,
+        dest='gremlin_explain',
+        help=(
+            'Diagnose why a gremlin survived: for the given gremlin id (e.g. g001), '
+            'print the covering set, the selected list, their diff, and close-match '
+            'suggestions for any dropped tests, then skip the mutation loop so pytest '
+            'can finish normally.'
+        ),
+    )
 
 
 def _init_cache(
@@ -728,6 +742,7 @@ def pytest_configure(config: pytest.Config) -> None:
             max_pardons_pct=toml_max_pardons_pct,
             max_pardons=toml_max_pardons,
             no_coverage_filter=bool(getattr(config.option, 'gremlin_no_coverage_filter', False)),
+            explain_gremlin_id=getattr(config.option, 'gremlin_explain', None),
             xdist_active=xdist_active,
             xdist_workers=xdist_worker_int if xdist_active else None,
         )
@@ -1569,14 +1584,36 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     if cov_plugin is not None and hasattr(cov_plugin, 'cov') and cov_plugin.cov is not None:
         cov_plugin.cov.load()
 
-    # Choose execution mode based on configuration
+    if _maybe_short_circuit_for_explain(gremlin_session):
+        return
+
+    gremlin_session.results = _dispatch_mutation_run(session, gremlin_session)
+
+
+def _maybe_short_circuit_for_explain(gremlin_session: GremlinSession) -> bool:
+    """Run ``--gremlin-explain`` if requested and report whether to bail out.
+
+    When ``explain_gremlin_id`` is set we print the diagnostic, disable the
+    session, and tell the caller to skip the mutation loop. Returns ``True``
+    when the caller must return without running mutations.
+    """
+    if gremlin_session.explain_gremlin_id is None:
+        return False
+    _emit_selection_explainer(gremlin_session)
+    gremlin_session.results = []
+    return True
+
+
+def _dispatch_mutation_run(
+    session: pytest.Session,
+    gremlin_session: GremlinSession,
+) -> list[GremlinResult]:
+    """Pick the execution mode (batch / parallel / default) and run it."""
     if gremlin_session.batch_enabled:
-        results = _run_batch_mutation_testing(session, gremlin_session)
-    elif gremlin_session.parallel_enabled:
-        results = _run_parallel_mutation_testing(session, gremlin_session)
-    else:
-        results = _run_mutation_testing(session, gremlin_session)
-    gremlin_session.results = results
+        return _run_batch_mutation_testing(session, gremlin_session)
+    if gremlin_session.parallel_enabled:
+        return _run_parallel_mutation_testing(session, gremlin_session)
+    return _run_mutation_testing(session, gremlin_session)
 
 
 def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
@@ -2140,6 +2177,140 @@ def _run_mutation_testing_inprocess(
             results.append(pardoned_result)
 
     return results
+
+
+def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
+    """Print a selection-drift diagnostic for a single gremlin, then disable the session.
+
+    When ``gremlin_session.explain_gremlin_id`` is set, surfaces everything a
+    user needs to see *why* a particular gremlin's covering and selected test
+    sets disagree:
+
+    - The covering set (tests whose coverage map contains the mutated line).
+    - The selected list (tests the prioritized selector would actually run).
+    - The difference in both directions (covering minus selected, selected
+      minus runnable-via-``test_node_ids``).
+    - For every dropped test, the closest matches in the test-node-ID space
+      (via :func:`difflib.get_close_matches` with ``n=3, cutoff=0.7``) plus
+      the subprocess-style stripped form, so a reader can spot marker/path
+      drift at a glance.
+
+    The function is side-effect heavy on purpose: it emits diagnostic text to
+    stdout, then sets ``gremlin_session.enabled = False`` so the per-gremlin
+    loops driven by :func:`pytest_runtestloop` turn into no-ops. It does
+    **not** call :func:`sys.exit` or :func:`pytest.exit` — letting pytest
+    finish its own session cleanly preserves the user's regular test results
+    without masking them behind an early exit code.
+
+    Args:
+        gremlin_session: The current gremlin session. Must have
+            ``explain_gremlin_id`` set; when ``None`` the function no-ops.
+    """
+    target_id = gremlin_session.explain_gremlin_id
+    if target_id is None:
+        return
+
+    target_gremlin = next(
+        (g for g in gremlin_session.gremlins if g.gremlin_id == target_id),
+        None,
+    )
+
+    if target_gremlin is None:
+        print(
+            f'--gremlin-explain: no gremlin with id {target_id!r} in this session. '
+            f'Run with --gremlins (without --gremlin-explain) to see the full list of '
+            f'gremlin ids in the progress log.'
+        )
+        gremlin_session.enabled = False
+        return
+
+    covering = _covering_tests_for_gremlin(target_gremlin, gremlin_session)
+    selected = _select_tests_for_gremlin_prioritized(target_gremlin, gremlin_session)
+    runnable = set(gremlin_session.test_node_ids)
+    covering_minus_selected = sorted(covering - set(selected))
+    selected_minus_runnable = sorted(set(selected) - runnable)
+
+    _print_explainer_header(target_gremlin, covering, selected)
+
+    if not covering_minus_selected and not selected_minus_runnable:
+        print(
+            '  Result: selection is consistent with covering set (no drift). '
+            'If this gremlin still survived, the cause is elsewhere (e.g. a weak '
+            'assertion in the covering tests).'
+        )
+        gremlin_session.enabled = False
+        return
+
+    runnable_candidates = sorted(runnable)
+    _print_dropped_tests(covering_minus_selected, runnable_candidates)
+    _print_unrunnable_selections(selected_minus_runnable, runnable_candidates)
+
+    gremlin_session.enabled = False
+
+
+def _covering_tests_for_gremlin(gremlin: Gremlin, gremlin_session: GremlinSession) -> set[str]:
+    """Return the set of tests whose coverage map touches the mutated line."""
+    collector = gremlin_session.coverage_collector
+    if collector is None:
+        return set()
+    return collector.coverage_map.get_tests(gremlin.file_path, gremlin.line_number)
+
+
+def _print_explainer_header(gremlin: Gremlin, covering: set[str], selected: list[str]) -> None:
+    """Print the banner plus the covering and selected lists for the diagnostic."""
+    print(f'--gremlin-explain: diagnostic for {gremlin.gremlin_id}')
+    print(f'  file: {gremlin.file_path}:{gremlin.line_number}')
+    print(f'  Covering set ({len(covering)} test(s)):')
+    for key in sorted(covering):
+        print(f'    {key!r}')
+    print(f'  Selected list ({len(selected)} test(s)):')
+    for key in selected:
+        print(f'    {key!r}')
+
+
+def _close_matches_display(needle: str, haystack: list[str]) -> str:
+    """Render a comma-separated list of close matches, or a stable fallback."""
+    close = difflib.get_close_matches(needle, haystack, n=3, cutoff=0.7)
+    return ', '.join(repr(match) for match in close) if close else '<no close match>'
+
+
+def _print_dropped_tests(dropped: list[str], runnable_candidates: list[str]) -> None:
+    """Print the covering-minus-selected breakdown with close-match hints."""
+    if not dropped:
+        return
+    print(f'  Covering minus selected ({len(dropped)} dropped):')
+    for key in dropped:
+        print(f'    dropped    : {key!r}')
+        print(f'    stripped   : {_drop_bracketed_suffix(key)!r}')
+        print(f'    close match: {_close_matches_display(key, runnable_candidates)}')
+
+
+def _print_unrunnable_selections(orphans: list[str], runnable_candidates: list[str]) -> None:
+    """Print selections that can't be matched back to ``test_node_ids``."""
+    if not orphans:
+        return
+    print(f'  Selected but not in test_node_ids ({len(orphans)}):')
+    for key in orphans:
+        print(f'    selected   : {key!r}')
+        print(f'    close match: {_close_matches_display(key, runnable_candidates)}')
+
+
+def _drop_bracketed_suffix(nodeid: str) -> str:
+    """Return ``nodeid`` with a trailing ``' [...]'`` marker suffix removed.
+
+    Mirrors the stripping behavior used by the coverage subprocess bootstrap
+    (`_strip_nodeid_markers`): finds the first ``' ['`` and truncates there.
+    Used only by :func:`_emit_selection_explainer` to show the reader the
+    shape the subprocess would record for a drifted key.
+
+    Examples:
+        >>> _drop_bracketed_suffix('tests/test_foo.py::test_bar [custom-tag]')
+        'tests/test_foo.py::test_bar'
+        >>> _drop_bracketed_suffix('tests/test_foo.py::test_bar')
+        'tests/test_foo.py::test_bar'
+    """
+    idx = nodeid.find(' [')
+    return nodeid[:idx] if idx != -1 else nodeid
 
 
 def _run_mutation_testing(
