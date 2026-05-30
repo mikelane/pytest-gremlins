@@ -243,9 +243,11 @@ def _extract_test_name_from_context(context: str) -> str:
 
     - **New format** (GremlinContextPlugin): ``{nodeid}|{when}``
       e.g. ``tests/test_foo.py::TestClass::test_bar|run``
-      Returns the full node ID (everything before ``|``), preserving the
-      file path and class qualifiers so that tests with the same function
-      name in different files are distinguishable.
+      Returns the full node ID (everything before the *last* ``|``),
+      preserving the file path and class qualifiers so that tests with the
+      same function name in different files are distinguishable.  The split
+      uses ``rsplit`` so that parametrize values containing ``|`` (e.g.
+      ``test_add[a|b]|run``) are preserved intact.
 
     - **Old format** (coverage dynamic_context=test_function):
       e.g. ``test_bar`` or ``TestClass.test_method``
@@ -271,9 +273,11 @@ def _extract_test_name_from_context(context: str) -> str:
         'TestClass.test_method'
         >>> _extract_test_name_from_context('tests/test_foo.py::test_func')
         'tests/test_foo.py::test_func'
+        >>> _extract_test_name_from_context('tests/test_foo.py::test_add[a|b]|run')
+        'tests/test_foo.py::test_add[a|b]'
     """
     if '|' in context:
-        return context.split('|', maxsplit=1)[0]
+        return context.rsplit('|', maxsplit=1)[0]
     return context
 
 
