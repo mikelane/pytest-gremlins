@@ -42,11 +42,15 @@ class DescribeCachePerformanceIntegration:
             """,
         )
 
-        # Cold run populates the cache — no cache hits expected
+        # Cold run populates the cache — every gremlin is a cache miss
         cold_result = pytester_with_markers.runpytest(
             '--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache'
         )
         cold_result.assert_outcomes(passed=3)
+        # The cold run must NOT report cache hits — this proves the warm-run hit
+        # assertion below is meaningful and not an unconditionally printed string.
+        cold_result.stdout.fnmatch_lines(['*cache miss*'])
+        assert 'cache hit' not in cold_result.stdout.str()
 
         # Warm run should hit the cache for every gremlin
         warm_result = pytester_with_markers.runpytest(
@@ -55,9 +59,12 @@ class DescribeCachePerformanceIntegration:
         warm_result.assert_outcomes(passed=3)
 
         # Behavioral assertion: each gremlin reports a cache hit on the warm run,
-        # proving test execution was skipped for all 3. Wall-clock timing is not
-        # asserted — subprocess startup overhead (~1.5s) dominates and is not deterministic.
+        # proving test execution was skipped. Paired with the cold-run miss assertion
+        # above, this distinguishes a working cache from a no-op that always prints
+        # "cache hit". Wall-clock timing is not asserted — subprocess startup overhead
+        # (~1.5s) dominates and is not deterministic.
         warm_result.stdout.fnmatch_lines(['*cache hit*'])
+        assert 'cache miss' not in warm_result.stdout.str()
 
     def it_skips_test_execution_on_cache_hit(self, pytester_with_markers: pytest.Pytester) -> None:
         """Cache hits skip actual test execution, saving subprocess overhead."""
@@ -69,25 +76,31 @@ class DescribeCachePerformanceIntegration:
         )
         pytester_with_markers.makepyfile(
             test_module="""
-            import time
             from src_module import slow_function
 
             def test_slow():
-                # This test takes 0.1s to run
-                time.sleep(0.1)
                 assert slow_function() == 42
             """,
         )
 
-        # Cold run populates the cache
-        pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
+        # Cold run populates the cache — gremlins are cache misses
+        cold_result = pytester_with_markers.runpytest(
+            '--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache'
+        )
+        cold_result.stdout.fnmatch_lines(['*cache miss*'])
+        assert 'cache hit' not in cold_result.stdout.str()
 
         # Warm run should hit the cache and skip test execution
-        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
+        warm_result = pytester_with_markers.runpytest(
+            '--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache'
+        )
 
-        result.assert_outcomes(passed=1)
+        warm_result.assert_outcomes(passed=1)
 
-        # Behavioral assertion: cache hit was reported in output, proving test execution
-        # was skipped on the warm run. This is the actual contract — not wall-clock time,
-        # which is dominated by subprocess startup overhead (~1.5s) regardless of cache.
-        result.stdout.fnmatch_lines(['*cache hit*'])
+        # Behavioral assertion: cache hit was reported on the warm run, proving test
+        # execution was skipped. Paired with the cold-run miss assertion above, this
+        # distinguishes a working cache from a no-op that always prints "cache hit".
+        # Wall-clock time is not asserted — subprocess startup overhead (~1.5s) dominates
+        # regardless of cache.
+        warm_result.stdout.fnmatch_lines(['*cache hit*'])
+        assert 'cache miss' not in warm_result.stdout.str()
