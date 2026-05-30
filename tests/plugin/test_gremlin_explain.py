@@ -28,7 +28,11 @@ from pytest_gremlins.coverage import (
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
     GremlinSession,
+    _close_matches_display,
+    _covering_tests_for_gremlin,
     _emit_selection_explainer,
+    _print_dropped_tests,
+    _print_unrunnable_selections,
     pytest_addoption,
 )
 
@@ -278,3 +282,94 @@ class DescribeEmitSelectionExplainerNotRequested:
 
         assert buffer.getvalue() == ''
         assert session.enabled is True
+
+
+@pytest.mark.small
+class DescribeCoveringTestsForGremlin:
+    """Tests for _covering_tests_for_gremlin helper."""
+
+    def it_returns_empty_set_when_coverage_collector_is_none(self, sample_gremlin):
+        session = GremlinSession(
+            enabled=True,
+            gremlins=[sample_gremlin],
+            coverage_collector=None,
+            explain_gremlin_id=sample_gremlin.gremlin_id,
+        )
+
+        result = _covering_tests_for_gremlin(sample_gremlin, session)
+
+        assert result == set()
+
+
+@pytest.mark.small
+class DescribePrintUnrunnableSelections:
+    """Tests for _print_unrunnable_selections helper."""
+
+    def it_prints_selected_tests_not_in_test_node_ids(self, sample_gremlin):
+        # A selector returns a test key that is not present in test_node_ids —
+        # the selected-but-not-runnable shape, distinct from covering-minus-selected.
+        collector = CoverageCollector()
+        collector.record_test_coverage(
+            'tests/test_target.py::test_zero_case',
+            {sample_gremlin.file_path: [sample_gremlin.line_number]},
+        )
+
+        mock_selector = create_autospec(PrioritizedSelector, instance=True)
+        # Selector returns a key that does NOT appear in test_node_ids below.
+        mock_selector.select_tests_prioritized.return_value = ['tests/test_target.py::test_orphan_case']
+
+        session = GremlinSession(
+            enabled=True,
+            gremlins=[sample_gremlin],
+            test_node_ids={
+                'tests/test_target.py::test_zero_case': 'tests/test_target.py::test_zero_case',
+            },
+            coverage_collector=collector,
+            prioritized_selector=mock_selector,
+            explain_gremlin_id=sample_gremlin.gremlin_id,
+        )
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _emit_selection_explainer(session)
+
+        output = buffer.getvalue()
+        assert 'Selected but not in test_node_ids' in output
+        assert "'tests/test_target.py::test_orphan_case'" in output
+
+    def it_emits_nothing_when_orphans_list_is_empty(self):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _print_unrunnable_selections([], runnable_candidates=[])
+
+        assert buffer.getvalue() == ''
+
+
+@pytest.mark.small
+class DescribePrintDroppedTests:
+    """Tests for _print_dropped_tests helper."""
+
+    def it_emits_nothing_when_dropped_list_is_empty(self):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _print_dropped_tests([], runnable_candidates=[])
+
+        assert buffer.getvalue() == ''
+
+
+@pytest.mark.small
+class DescribeCloseMatchesDisplay:
+    """Tests for _close_matches_display helper."""
+
+    def it_returns_no_close_match_fallback_when_haystack_has_no_similar_entries(self):
+        result = _close_matches_display('tests/auth/test_login.py::test_admin', haystack=['tests/foo.py::test_bar'])
+
+        assert result == '<no close match>'
+
+    def it_returns_repr_quoted_matches_when_close_entries_exist(self):
+        needle = 'tests/test_target.py::test_zero_case [custom-tag]'
+        haystack = ['tests/test_target.py::test_zero_case', 'tests/test_other.py::test_something']
+
+        result = _close_matches_display(needle, haystack)
+
+        assert "'tests/test_target.py::test_zero_case'" in result
