@@ -2,12 +2,17 @@
 # run_autoresearch.sh — Outer loop for autoresearch optimization.
 #
 # Usage: ./autoresearch/run_autoresearch.sh [OPTIONS]
-#   --max-hours N      Maximum hours to run (default: 8)
-#   --max-plateau N    Stop after N consecutive non-improvements (default: 10)
-#   --timeout N        Seconds per Claude session (default: 900)
-#   --threshold N      Minimum improvement % to accept (default: 2)
-#   --model MODEL      Claude model to use (default: sonnet)
-#   --dry-run          Run one cycle and exit
+#   --max-hours N        Maximum hours to run (default: 8)
+#   --max-plateau N      Stop after N consecutive non-improvements (default: 10)
+#   --timeout N          Seconds per Claude session (default: 900)
+#   --threshold N        Minimum improvement % to accept (default: 2)
+#   --model MODEL        Claude model to use (default: sonnet)
+#   --max-turns N        Maximum turns per Claude session (default: 30)
+#   --max-budget-usd N   Stop loop when cumulative spend reaches N USD (default: unlimited)
+#   --dry-run            Run one cycle and exit
+#
+# Cost tracking: each session writes autoresearch/.last_session.json (claude -p JSON output).
+# Per-session cost + cumulative spend are logged and printed after every cycle.
 #
 # This script is IMMUTABLE during autoresearch runs.
 
@@ -19,6 +24,8 @@ MAX_PLATEAU="${MAX_PLATEAU:-10}"
 SESSION_TIMEOUT="${SESSION_TIMEOUT:-900}"
 IMPROVEMENT_THRESHOLD="${IMPROVEMENT_THRESHOLD:-2}"
 MODEL="${MODEL:-sonnet}"
+MAX_TURNS="${MAX_TURNS:-30}"
+MAX_BUDGET_USD="${MAX_BUDGET_USD:-}"
 DRY_RUN=false
 
 # Parse arguments
@@ -29,6 +36,8 @@ while [[ $# -gt 0 ]]; do
         --timeout) SESSION_TIMEOUT="$2"; shift 2 ;;
         --threshold) IMPROVEMENT_THRESHOLD="$2"; shift 2 ;;
         --model) MODEL="$2"; shift 2 ;;
+        --max-turns) MAX_TURNS="$2"; shift 2 ;;
+        --max-budget-usd) MAX_BUDGET_USD="$2"; shift 2 ;;
         --dry-run) DRY_RUN=true; shift ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -54,8 +63,28 @@ if ! command -v gtimeout &>/dev/null; then
     exit 1
 fi
 
+parse_session_cost() {
+    # Extract total_cost_usd and num_turns from .last_session.json.
+    # Returns "cost turns" on stdout. Defaults to "0 0" on any parse failure.
+    python3 -c "
+import json, sys, os
+path = '$SCRIPT_DIR/.last_session.json'
+if not os.path.exists(path):
+    print('0 0')
+    sys.exit(0)
+try:
+    data = json.load(open(path))
+    cost = float(data.get('total_cost_usd', 0) or 0)
+    turns = int(data.get('num_turns', 0) or 0)
+    print(f'{cost} {turns}')
+except Exception:
+    print('0 0')
+"
+}
+
 log_experiment() {
     local num="$1" hypothesis="$2" wall_time="$3" gremlins="$4" accepted="$5" reason="$6"
+    local session_cost="$7" session_turns="$8"
     local files_changed
     files_changed=$(git diff --name-only HEAD 2>/dev/null | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip().split('\n')))" 2>/dev/null || echo '[]')
 
@@ -69,6 +98,8 @@ entry = {
     'gremlins_found': $gremlins,
     'accepted': '$accepted' == 'true',
     'reason': '$reason',
+    'session_cost_usd': $session_cost,
+    'session_turns': $session_turns,
     'files_changed': json.loads('$files_changed')
 }
 log = json.loads(open('$LOG_FILE').read()) if __import__('os').path.exists('$LOG_FILE') else []
@@ -128,8 +159,13 @@ revert_changes() {
 # --- Main ---
 main() {
     echo "=== Autoresearch: Cold Cache Optimization ==="
-    echo "Model: $MODEL | Timeout: ${SESSION_TIMEOUT}s | Max hours: $MAX_HOURS"
+    echo "Model: $MODEL | Timeout: ${SESSION_TIMEOUT}s | Max hours: $MAX_HOURS | Max turns: $MAX_TURNS"
     echo "Improvement threshold: ${IMPROVEMENT_THRESHOLD}% | Plateau limit: $MAX_PLATEAU"
+    if [[ -n "$MAX_BUDGET_USD" ]]; then
+        echo "Budget cap: \$$MAX_BUDGET_USD USD"
+    else
+        echo "Budget cap: unlimited"
+    fi
     echo ""
 
     cd "$PROJECT_ROOT"
@@ -156,6 +192,7 @@ main() {
     # Step 4: Loop
     local experiment_num=1
     local consecutive_failures=0
+    local cumulative_spend=0
     local start_epoch
     start_epoch=$(now_epoch)
     local max_seconds=$((MAX_HOURS * 3600))
@@ -187,15 +224,34 @@ main() {
         # Clean signal files from prior iteration
         rm -f "$SCRIPT_DIR/.hypothesis" "$SCRIPT_DIR/.test_failed"
 
-        # Run Claude session with timeout (prompt via stdin for long content)
-        echo "Launching Claude Code session (${SESSION_TIMEOUT}s timeout)..."
+        # Run Claude session with timeout (prompt via stdin for long content).
+        # --output-format json emits a final JSON object with cost/usage fields.
+        # Captured to .last_session.json; stdout/stderr still suppressed so signal
+        # files (.hypothesis, .test_failed) remain the agent's only output channel.
+        echo "Launching Claude Code session (${SESSION_TIMEOUT}s timeout, max ${MAX_TURNS} turns)..."
         echo "$prompt" | gtimeout "$SESSION_TIMEOUT" \
             claude -p \
             --model "$MODEL" \
             --permission-mode bypassPermissions \
             --allowedTools "Edit Read Grep Glob Bash Write" \
+            --max-turns "$MAX_TURNS" \
+            --output-format json \
             --append-system-prompt "Working directory: $PROJECT_ROOT. Only edit files under src/pytest_gremlins/. Write your one-line hypothesis to autoresearch/.hypothesis before editing. If tests fail, write 'true' to autoresearch/.test_failed before reverting." \
-            > /dev/null 2>&1 || true
+            > "$SCRIPT_DIR/.last_session.json" 2>/dev/null || true
+
+        # Parse session cost and update cumulative spend
+        local session_cost session_turns cost_fields
+        cost_fields=$(parse_session_cost)
+        session_cost=$(echo "$cost_fields" | cut -d' ' -f1)
+        session_turns=$(echo "$cost_fields" | cut -d' ' -f2)
+        cumulative_spend=$(python3 -c "print(round($cumulative_spend + $session_cost, 6))")
+        echo "Session cost: \$$(printf '%.4f' "$session_cost") (${session_turns} turns) | Cumulative spend: \$$(printf '%.4f' "$cumulative_spend")"
+
+        # Budget cap check (only when MAX_BUDGET_USD is set)
+        if [[ -n "$MAX_BUDGET_USD" ]] && python3 -c "exit(0 if $cumulative_spend >= $MAX_BUDGET_USD else 1)"; then
+            echo "=== Budget cap reached (\$$cumulative_spend >= \$$MAX_BUDGET_USD) ==="
+            break
+        fi
 
         # Read hypothesis signal file (agent writes this before editing)
         local hypothesis="unknown"
@@ -207,7 +263,7 @@ main() {
         if [[ -f "$SCRIPT_DIR/.test_failed" ]]; then
             echo "Agent reported test failure. Reverting."
             revert_changes
-            log_experiment "$experiment_num" "$hypothesis" "0" "0" "false" "tests_failed"
+            log_experiment "$experiment_num" "$hypothesis" "0" "0" "false" "tests_failed" "$session_cost" "$session_turns"
             consecutive_failures=$((consecutive_failures + 1))
             experiment_num=$((experiment_num + 1))
             if "$DRY_RUN"; then break; fi
@@ -217,7 +273,7 @@ main() {
         # Check if anything changed
         if [[ -z "$(git status --porcelain src/pytest_gremlins/ 2>/dev/null)" ]]; then
             echo "No changes made. Logging and continuing."
-            log_experiment "$experiment_num" "$hypothesis" "0" "0" "false" "no_changes"
+            log_experiment "$experiment_num" "$hypothesis" "0" "0" "false" "no_changes" "$session_cost" "$session_turns"
             consecutive_failures=$((consecutive_failures + 1))
             experiment_num=$((experiment_num + 1))
 
@@ -231,7 +287,7 @@ main() {
         result_json=$("$BENCHMARK_SCRIPT" "$PROJECT_ROOT") || {
             echo "Benchmark failed. Reverting."
             revert_changes
-            log_experiment "$experiment_num" "benchmark error" "0" "0" "false" "benchmark_error"
+            log_experiment "$experiment_num" "benchmark error" "0" "0" "false" "benchmark_error" "$session_cost" "$session_turns"
             consecutive_failures=$((consecutive_failures + 1))
             experiment_num=$((experiment_num + 1))
             if "$DRY_RUN"; then break; fi
@@ -270,7 +326,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
             # Update best
             echo "$result_json" > "$BEST_FILE"
-            log_experiment "$experiment_num" "$hypothesis" "$wall_time" "$gremlins_found" "true" ""
+            log_experiment "$experiment_num" "$hypothesis" "$wall_time" "$gremlins_found" "true" "" "$session_cost" "$session_turns"
             consecutive_failures=0
         else
             local reason=""
@@ -281,7 +337,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
             fi
             echo "REJECTED: $reason"
             revert_changes
-            log_experiment "$experiment_num" "$hypothesis" "$wall_time" "$gremlins_found" "false" "$reason"
+            log_experiment "$experiment_num" "$hypothesis" "$wall_time" "$gremlins_found" "false" "$reason" "$session_cost" "$session_turns"
             consecutive_failures=$((consecutive_failures + 1))
         fi
 
@@ -307,6 +363,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
     echo "Baseline: ${baseline_time}s"
     echo "Best: ${final_best}s"
     echo "Total improvement: ${total_improvement}%"
+    echo "Total spend: \$$(printf '%.4f' "$cumulative_spend") USD"
     echo "Branch: $(git branch --show-current)"
     echo ""
     echo "Review the branch with: git log --oneline $branch"
