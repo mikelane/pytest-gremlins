@@ -200,7 +200,7 @@ jobs:
 
       - name: Restore attrs checkout cache
         id: attrs-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/attrs-checkout
           key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
@@ -214,7 +214,7 @@ jobs:
 
       - name: Save attrs checkout cache
         if: steps.attrs-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/attrs-checkout
           key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
