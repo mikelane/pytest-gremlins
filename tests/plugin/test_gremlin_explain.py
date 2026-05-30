@@ -372,4 +372,9 @@ class DescribeCloseMatchesDisplay:
 
         result = _close_matches_display(needle, haystack)
 
-        assert "'tests/test_target.py::test_zero_case'" in result
+        # Exact match: the only entry above the 0.7 cutoff is the stripped key,
+        # repr-quoted. A loosened cutoff (e.g. 0.0) would also admit the
+        # dissimilar 'test_other.py::test_something'; asserting equality on the
+        # full string proves that entry is excluded and that the result is the
+        # repr-quoted match alone, not just a substring of a wider list.
+        assert result == "'tests/test_target.py::test_zero_case'"
