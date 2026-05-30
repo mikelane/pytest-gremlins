@@ -64,3 +64,28 @@ class DescribeExtractTestNameFromContext:
         """Old format 'path::test_func' (no pipe) passes through unchanged."""
         result = _extract_test_name_from_context('tests/test_foo.py::test_func')
         assert result == 'tests/test_foo.py::test_func'
+
+    def it_strips_only_the_trailing_phase_suffix_when_param_contains_pipe(self) -> None:
+        """Parametrize values containing '|' must not be split mid-name.
+
+        pytest node IDs like ``test_add[a|b-c]`` embed ``|`` inside the
+        bracket expression.  Only the trailing ``|{when}`` suffix should be
+        stripped — not any ``|`` inside the brackets.
+        """
+        result = _extract_test_name_from_context('tests/test_calc.py::test_add[a|b-c]|run')
+        assert result == 'tests/test_calc.py::test_add[a|b-c]'
+
+    def it_handles_multiple_pipes_in_param_value(self) -> None:
+        """Multiple ``|`` characters inside brackets are all preserved."""
+        result = _extract_test_name_from_context('tests/test_calc.py::test_add[a|b-c-a|bc]|run')
+        assert result == 'tests/test_calc.py::test_add[a|b-c-a|bc]'
+
+    def it_strips_setup_phase_when_param_contains_pipe(self) -> None:
+        """The ``|setup`` suffix is stripped even when param value contains ``|``."""
+        result = _extract_test_name_from_context('tests/test_calc.py::test_add[a|b]|setup')
+        assert result == 'tests/test_calc.py::test_add[a|b]'
+
+    def it_strips_teardown_phase_when_param_contains_pipe(self) -> None:
+        """The ``|teardown`` suffix is stripped even when param value contains ``|``."""
+        result = _extract_test_name_from_context('tests/test_calc.py::test_add[a|b]|teardown')
+        assert result == 'tests/test_calc.py::test_add[a|b]'
