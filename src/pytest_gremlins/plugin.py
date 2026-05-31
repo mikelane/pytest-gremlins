@@ -1680,10 +1680,13 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
     # Pytest node IDs can be absolute paths in some contexts (e.g., pytester)
     relative_node_ids = _make_node_ids_relative(test_node_ids, rootdir)
 
+    coverage_include = sorted({str(Path(gremlin.file_path).resolve()) for gremlin in gremlin_session.gremlins})
+
     coverage_data = _run_tests_with_coverage(
         relative_node_ids,
         rootdir,
         name_to_node_ids=gremlin_session.test_name_to_node_ids,
+        coverage_include=coverage_include or None,
     )
 
     if not coverage_data:
@@ -1762,6 +1765,7 @@ def _run_tests_with_coverage(
     rootdir: Path,
     *,
     name_to_node_ids: dict[str, list[str]] | None = None,
+    coverage_include: list[str] | None = None,
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
 
@@ -1776,6 +1780,13 @@ def _run_tests_with_coverage(
             node IDs.  When coverage.py records a bare name (old-format
             ``dynamic_context=test_function``), the map is used to expand it
             to every matching full node ID so downstream lookups succeed.
+        coverage_include: Optional list of file paths to scope coverage
+            tracing to.  When non-empty, the generated coveragerc uses an
+            ``include =`` list of these paths instead of ``source = .``, so
+            coverage.py only traces the gremlin source files rather than the
+            entire tree.  Downstream post-processing discards coverage for
+            non-gremlin files anyway, so narrowing scope here avoids wasted
+            tracing and SQLite I/O without changing the resulting coverage map.
 
     Returns:
         Dict mapping test names to their coverage data (file path -> lines).
@@ -1784,9 +1795,11 @@ def _run_tests_with_coverage(
     coverage_db_path.unlink(missing_ok=True)
 
     coveragerc_path = rootdir / '.coveragerc.gremlins'
-    coveragerc_content = """[run]
-source = .
-"""
+    if coverage_include:
+        include_lines = '\n'.join(f'    {path}' for path in coverage_include)
+        coveragerc_content = f'[run]\ninclude =\n{include_lines}\n'
+    else:
+        coveragerc_content = '[run]\nsource = .\n'
     coveragerc_path.write_text(coveragerc_content)
 
     cmd = [
