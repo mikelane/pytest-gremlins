@@ -65,19 +65,33 @@ fi
 
 parse_session_cost() {
     # Extract total_cost_usd and num_turns from .last_session.json.
-    # Returns "cost turns" on stdout. Defaults to "0 0" on any parse failure.
+    # Returns "cost turns" on stdout.
+    # Logs a WARNING (to stderr) when the file is missing, empty, or unparseable
+    # so silent $0 reports for real sessions are caught immediately.
     python3 -c "
 import json, sys, os
 path = '$SCRIPT_DIR/.last_session.json'
 if not os.path.exists(path):
+    print('WARNING: .last_session.json missing — session cost unknown', file=sys.stderr)
+    print('0 0')
+    sys.exit(0)
+raw = open(path).read().strip()
+if not raw:
+    print('WARNING: .last_session.json is empty — session may have been killed by timeout before JSON was written', file=sys.stderr)
     print('0 0')
     sys.exit(0)
 try:
-    data = json.load(open(path))
+    data = json.loads(raw)
     cost = float(data.get('total_cost_usd', 0) or 0)
     turns = int(data.get('num_turns', 0) or 0)
+    if cost == 0 and turns == 0:
+        # Distinguish genuine zero-cost (unlikely) from a parse miss
+        result_type = data.get('type', '')
+        if result_type != 'result':
+            print(f'WARNING: .last_session.json type={result_type!r} — may not be a completed session result', file=sys.stderr)
     print(f'{cost} {turns}')
-except Exception:
+except Exception as exc:
+    print(f'WARNING: could not parse .last_session.json: {exc}', file=sys.stderr)
     print('0 0')
 "
 }
@@ -148,11 +162,20 @@ print(template.replace('{{EXPERIMENT_HISTORY}}', history))
 }
 
 revert_changes() {
+    # Revert src/pytest_gremlins/ to START_REF (the commit before this experiment).
+    # Using START_REF instead of HEAD handles the case where the agent committed —
+    # HEAD may be ahead of START_REF, but we always want to return to the pre-experiment state.
     cd "$PROJECT_ROOT"
-    # Use HEAD explicitly: `git checkout --` restores from INDEX, which fails
-    # if the agent ran `git add` (index has agent's changes, not HEAD's).
-    # `git checkout HEAD --` resets both index AND working tree to last commit.
-    git checkout HEAD -- src/pytest_gremlins/ 2>/dev/null || true
+    if git diff --quiet "$START_REF" HEAD -- 2>/dev/null; then
+        # HEAD == START_REF: no agent commits; restore index + working tree from START_REF
+        git checkout "$START_REF" -- src/pytest_gremlins/ 2>/dev/null || true
+    else
+        # Agent committed: soft-reset to START_REF first (preserves changes in working tree),
+        # then wipe them — net result is a clean state at START_REF with no uncommitted changes.
+        echo "WARNING: agent committed during session — soft-resetting to START_REF ($START_REF) before reverting"
+        git reset --soft "$START_REF" 2>/dev/null || true
+        git checkout "$START_REF" -- src/pytest_gremlins/ 2>/dev/null || true
+    fi
     git clean -fd src/pytest_gremlins/ 2>/dev/null || true
 }
 
@@ -224,10 +247,16 @@ main() {
         # Clean signal files from prior iteration
         rm -f "$SCRIPT_DIR/.hypothesis" "$SCRIPT_DIR/.test_failed"
 
+        # Capture the commit ref before the session so revert_changes and
+        # self-commit detection always have a stable target regardless of
+        # what the agent does inside the session.
+        local START_REF
+        START_REF=$(git rev-parse HEAD)
+
         # Run Claude session with timeout (prompt via stdin for long content).
         # --output-format json emits a final JSON object with cost/usage fields.
-        # Captured to .last_session.json; stdout/stderr still suppressed so signal
-        # files (.hypothesis, .test_failed) remain the agent's only output channel.
+        # Captured to .last_session.json; stderr goes to .last_session.err so
+        # timeout/permission errors are diagnosable rather than silently dropped.
         echo "Launching Claude Code session (${SESSION_TIMEOUT}s timeout, max ${MAX_TURNS} turns)..."
         echo "$prompt" | gtimeout "$SESSION_TIMEOUT" \
             claude -p \
@@ -237,7 +266,14 @@ main() {
             --max-turns "$MAX_TURNS" \
             --output-format json \
             --append-system-prompt "Working directory: $PROJECT_ROOT. Only edit files under src/pytest_gremlins/. Write your one-line hypothesis to autoresearch/.hypothesis before editing. If tests fail, write 'true' to autoresearch/.test_failed before reverting." \
-            > "$SCRIPT_DIR/.last_session.json" 2>/dev/null || true
+            > "$SCRIPT_DIR/.last_session.json" 2>"$SCRIPT_DIR/.last_session.err" || true
+
+        # Bug 1 guard: if the agent committed, soft-reset so the accept/reject
+        # benchmark loop always sees uncommitted changes (or none).
+        if ! git diff --quiet "$START_REF" HEAD -- 2>/dev/null; then
+            echo "WARNING: agent committed during session — soft-resetting to $START_REF to restore harness control"
+            git reset --soft "$START_REF"
+        fi
 
         # Parse session cost and update cumulative spend
         local session_cost session_turns cost_fields

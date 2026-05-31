@@ -38,6 +38,10 @@ still pass.
 - Do NOT remove mutation operators — you may optimize them
 - Do NOT add external dependencies without strong justification
 - Do NOT modify files in the autoresearch/ directory
+- **CRITICAL: Do NOT run `git add` followed by `git commit`, and do NOT run `git commit`
+  in any form.** Leave your changes UNCOMMITTED in the working tree. The outer harness
+  owns benchmarking and committing — if you commit, the accept/reject gate is bypassed
+  and your change is not validated.
 
 ## Your Workflow
 
