@@ -1781,12 +1781,14 @@ def _run_tests_with_coverage(
             ``dynamic_context=test_function``), the map is used to expand it
             to every matching full node ID so downstream lookups succeed.
         coverage_include: Optional list of file paths to scope coverage
-            tracing to.  When non-empty, the generated coveragerc uses an
-            ``include =`` list of these paths instead of ``source = .``, so
-            coverage.py only traces the gremlin source files rather than the
-            entire tree.  Downstream post-processing discards coverage for
-            non-gremlin files anyway, so narrowing scope here avoids wasted
-            tracing and SQLite I/O without changing the resulting coverage map.
+            tracing to.  When non-empty and contains no glob-special characters
+            (``*?[]``), the generated coveragerc uses an ``include =`` list of
+            these paths instead of ``source = .``, so coverage.py only traces
+            the gremlin source files rather than the entire tree. If any path
+            contains a glob-special character, falls back to ``source = .``
+            (since coverage.py interprets ``include`` entries as fnmatch globs).
+            Downstream post-processing discards non-gremlin coverage, so narrowing
+            scope avoids wasted tracing and SQLite I/O without changing the result.
 
     Returns:
         Dict mapping test names to their coverage data (file path -> lines).
@@ -1800,7 +1802,7 @@ def _run_tests_with_coverage(
     # escaped for coverage.py's tokenizer. When any glob-special char is
     # present, fall back to source = . and rely on post-processing filtering
     # (lines ~1698-1716) to discard non-gremlin coverage.
-    has_glob_special_chars = coverage_include and any(ch in p for p in coverage_include for ch in '*?[]')
+    has_glob_special_chars = any(ch in p for p in (coverage_include or []) for ch in '*?[]')
     if coverage_include and not has_glob_special_chars:
         include_lines = '\n'.join(f'    {path}' for path in coverage_include)
         coveragerc_content = f'[run]\ninclude =\n{include_lines}\n'
