@@ -1795,7 +1795,13 @@ def _run_tests_with_coverage(
     coverage_db_path.unlink(missing_ok=True)
 
     coveragerc_path = rootdir / '.coveragerc.gremlins'
-    if coverage_include:
+    # coverage.py's include directive interprets paths as glob patterns.
+    # Paths with literal glob-special characters (*?[]) cannot be safely
+    # escaped for coverage.py's tokenizer. When any glob-special char is
+    # present, fall back to source = . and rely on post-processing filtering
+    # (lines ~1698-1716) to discard non-gremlin coverage.
+    has_glob_special_chars = coverage_include and any(ch in p for p in coverage_include for ch in '*?[]')
+    if coverage_include and not has_glob_special_chars:
         include_lines = '\n'.join(f'    {path}' for path in coverage_include)
         coveragerc_content = f'[run]\ninclude =\n{include_lines}\n'
     else:
