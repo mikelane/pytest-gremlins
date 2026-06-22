@@ -25,6 +25,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -193,6 +194,10 @@ class GremlinSession:
         test_name_to_node_ids: Reverse index mapping bare function names to
             their full pytest node IDs.  Built at session setup for O(1)
             lookup when resolving coverage contexts.
+        preserved_addopts: The project's pytest ``addopts`` with pytest-cov flags
+            stripped (see :func:`_addopts_without_cov`), threaded into the subprocess
+            runs as ``-o addopts=<...>`` so collection-affecting options such as
+            ``--import-mode=importlib`` survive (issue #424).  ``''`` clears all addopts.
     """
 
     enabled: bool = False
@@ -233,6 +238,7 @@ class GremlinSession:
     no_coverage_filter: bool = False
     test_name_to_node_ids: dict[str, list[str]] = field(default_factory=dict)
     explain_gremlin_id: str | None = None
+    preserved_addopts: str = ''
 
 
 _gremlin_session: GremlinSession | None = None
@@ -745,6 +751,7 @@ def pytest_configure(config: pytest.Config) -> None:
             explain_gremlin_id=getattr(config.option, 'gremlin_explain', None),
             xdist_active=xdist_active,
             xdist_workers=xdist_worker_int if xdist_active else None,
+            preserved_addopts=_addopts_without_cov(config.getini('addopts')),
         )
     )
 
@@ -1687,6 +1694,7 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
         rootdir,
         name_to_node_ids=gremlin_session.test_name_to_node_ids,
         coverage_include=coverage_include or None,
+        preserved_addopts=gremlin_session.preserved_addopts,
     )
 
     if not coverage_data:
@@ -1760,12 +1768,86 @@ def _populate_coverage_from_line_bits(
             coverage_by_test[resolved_name][file_path].extend(lines)
 
 
+# pytest-cov options that take NO value, so a token following them is unrelated and
+# must be kept.  Every *other* cov option is treated as value-taking: when written
+# without an inline ``=`` its following token is dropped as the value.  Erring toward
+# "takes a value" keeps an unknown/new cov option (e.g. ``--cov-precision``) from
+# leaving an orphaned value token behind; the explicit set below stops the known
+# value-less switches from swallowing a following unrelated token.
+_COV_FLAG_ONLY_OPTS = frozenset(
+    {
+        '--cov-branch',
+        '--cov-append',
+        '--cov-reset',
+        '--no-cov',
+        '--no-cov-on-fail',
+    }
+)
+
+
+def _is_cov_addopt(token: str) -> bool:
+    """Return True if ``token`` is a pytest-cov option.
+
+    Matches the exact ``--cov`` / ``--no-cov`` switches and their ``--cov-*`` /
+    ``--no-cov-*`` families (each optionally with an inline ``=value``).  It does not
+    match an unrelated option that merely shares the prefix, e.g.
+    ``--covariance-threshold`` — pytest disables long-option abbreviation, so only the
+    exact names and hyphenated families are pytest-cov's.
+    """
+    name = token.split('=', 1)[0]
+    return name in ('--cov', '--no-cov') or name.startswith(('--cov-', '--no-cov-'))
+
+
+def _addopts_without_cov(raw_addopts: list[str]) -> str:
+    """Return the project's pytest ``addopts`` with pytest-cov options removed.
+
+    gremlins must neutralize pytest-cov in the subprocess runs it spawns: ``--cov``
+    hijacks the coverage pre-scan and corrupts mutation detection (issue #113). The
+    original remedy, ``-o addopts=``, cleared *every* addopt, so options the project
+    relies on for test collection — most notably ``--import-mode=importlib`` — were
+    silently dropped too, disabling coverage-guided selection (issue #424).
+
+    Only the ``--cov*`` / ``--no-cov*`` option family is stripped. A cov option written
+    with a space-separated value (``--cov-report term``, ``--cov-precision 2``) has its
+    value token dropped as well; the known value-less switches in
+    ``_COV_FLAG_ONLY_OPTS`` keep their following token, and inline forms
+    (``--cov-report=term``) are self-contained. The result is a single string suitable
+    for ``-o addopts=<...>``.
+
+    Two rare cases are left as-is (both were also dropped by the previous blanket
+    ``-o addopts=``, so this is strictly an improvement on the common case): a ``--cov``
+    smuggled inside a pytest ``@argfile`` response token is not introspected, and bare
+    positional addopts are preserved verbatim (they may broaden the inner collection).
+    """
+    kept: list[str] = []
+    index = 0
+    count = len(raw_addopts)
+    while index < count:
+        token = raw_addopts[index]
+        index += 1
+        if _is_cov_addopt(token):
+            # A value-taking cov option written without an inline ``=`` consumes the
+            # next token as its value; drop that too — unless this is a known value-less
+            # switch or the next token is itself an option.
+            if (
+                '=' not in token
+                and token not in _COV_FLAG_ONLY_OPTS
+                and index < count
+                and not raw_addopts[index].startswith('-')
+            ):
+                index += 1
+            continue
+        kept.append(token)
+    return ' '.join(shlex.quote(token) for token in kept)
+
+
 def _run_tests_with_coverage(
     test_node_ids: list[str],
     rootdir: Path,
     *,
     name_to_node_ids: dict[str, list[str]] | None = None,
     coverage_include: list[str] | None = None,
+    preserved_addopts: str = '',
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
 
@@ -1789,6 +1871,10 @@ def _run_tests_with_coverage(
             (since coverage.py interprets ``include`` entries as fnmatch globs).
             Downstream post-processing discards non-gremlin coverage, so narrowing
             scope avoids wasted tracing and SQLite I/O without changing the result.
+        preserved_addopts: The project's ``addopts`` with pytest-cov flags stripped
+            (see :func:`_addopts_without_cov`), passed through as ``-o addopts=<...>``
+            so collection-affecting options such as ``--import-mode=importlib`` survive
+            into the subprocess. Defaults to ``''`` (clear all addopts).
 
     Returns:
         Dict mapping test names to their coverage data (file path -> lines).
@@ -1823,7 +1909,7 @@ def _run_tests_with_coverage(
         '-p',
         'no:gremlins',
         '-o',
-        'addopts=',
+        f'addopts={preserved_addopts}',
         *test_node_ids,
         '--tb=no',
         '-q',
@@ -1918,7 +2004,7 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912
         List of results for each gremlin.
     """
     rootdir = _get_rootdir(session.config)
-    base_test_command = _build_test_command(gremlin_session.instrumented_dir)
+    base_test_command = _build_test_command(gremlin_session.instrumented_dir, gremlin_session.preserved_addopts)
     gremlins = gremlin_session.gremlins
 
     # Build gremlin -> test mapping for filtering (prioritized order)
@@ -2044,7 +2130,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
         List of results for each gremlin.
     """
     rootdir = _get_rootdir(session.config)
-    base_test_command = _build_test_command(gremlin_session.instrumented_dir)
+    base_test_command = _build_test_command(gremlin_session.instrumented_dir, gremlin_session.preserved_addopts)
     gremlins = gremlin_session.gremlins
 
     # Build gremlin -> test mapping for filtering (prioritized order)
@@ -2351,7 +2437,7 @@ def _run_mutation_testing(
     """
     results: list[GremlinResult] = []
     rootdir = _get_rootdir(session.config)
-    base_test_command = _build_test_command(gremlin_session.instrumented_dir)
+    base_test_command = _build_test_command(gremlin_session.instrumented_dir, gremlin_session.preserved_addopts)
 
     executor_choice = (
         session.config.option.gremlin_executor if hasattr(session.config.option, 'gremlin_executor') else 'subprocess'
@@ -2677,7 +2763,7 @@ def _pytest_cov_available() -> bool:
         return True
 
 
-def _build_test_command(instrumented_dir: Path | None) -> list[str]:
+def _build_test_command(instrumented_dir: Path | None, preserved_addopts: str = '') -> list[str]:
     """Build the command to run tests.
 
     If an instrumented directory is provided, uses the bootstrap script
@@ -2690,6 +2776,10 @@ def _build_test_command(instrumented_dir: Path | None) -> list[str]:
 
     Args:
         instrumented_dir: Directory containing bootstrap infrastructure, or None.
+        preserved_addopts: The project's ``addopts`` with pytest-cov flags stripped
+            (see :func:`_addopts_without_cov`), passed through as ``-o addopts=<...>``
+            so collection-affecting options such as ``--import-mode=importlib`` survive
+            into the subprocess. Defaults to ``''`` (clear all addopts).
 
     Returns:
         Command list to run tests.
@@ -2703,7 +2793,7 @@ def _build_test_command(instrumented_dir: Path | None) -> list[str]:
             '--tb=no',
             '-q',
             '-o',
-            'addopts=',
+            f'addopts={preserved_addopts}',
         ]
     else:
         command = [
@@ -2714,7 +2804,7 @@ def _build_test_command(instrumented_dir: Path | None) -> list[str]:
             '--tb=no',
             '-q',
             '-o',
-            'addopts=',
+            f'addopts={preserved_addopts}',
         ]
 
     if _pytest_cov_available():

@@ -73,7 +73,7 @@ class DescribePardonedGremlinNeverRunsSubprocess:
 
         monkeypatch.setattr(plugin_module, '_test_gremlin', fake_test_gremlin)
         monkeypatch.setattr(plugin_module, '_get_rootdir', lambda _: tmp_path)
-        monkeypatch.setattr(plugin_module, '_build_test_command', lambda _: ['pytest'])
+        monkeypatch.setattr(plugin_module, '_build_test_command', lambda *_: ['pytest'])
         monkeypatch.setattr(plugin_module, '_select_tests_for_gremlin_prioritized', lambda _g, _: [])
         monkeypatch.setattr(plugin_module, '_check_cache_for_gremlin', lambda *_a, **_kw: None)
 
@@ -96,7 +96,7 @@ class DescribePardonedGremlinNeverRunsSubprocess:
 
         monkeypatch.setattr(plugin_module, 'BatchExecutor', fail_if_batch_executor_instantiated)
         monkeypatch.setattr(plugin_module, '_get_rootdir', lambda _: tmp_path)
-        monkeypatch.setattr(plugin_module, '_build_test_command', lambda _: ['pytest'])
+        monkeypatch.setattr(plugin_module, '_build_test_command', lambda *_: ['pytest'])
         monkeypatch.setattr(plugin_module, '_select_tests_for_gremlin_prioritized', lambda _g, _: [])
         monkeypatch.setattr(plugin_module, '_check_cache_for_gremlin', lambda *_a, **_kw: None)
 
@@ -118,7 +118,7 @@ class DescribePardonedGremlinNeverRunsSubprocess:
 
         monkeypatch.setattr(plugin_module, 'WorkerPool', fail_if_worker_pool_instantiated)
         monkeypatch.setattr(plugin_module, '_get_rootdir', lambda _: tmp_path)
-        monkeypatch.setattr(plugin_module, '_build_test_command', lambda _: ['pytest'])
+        monkeypatch.setattr(plugin_module, '_build_test_command', lambda *_: ['pytest'])
         monkeypatch.setattr(plugin_module, '_select_tests_for_gremlin_prioritized', lambda _g, _: [])
         monkeypatch.setattr(plugin_module, '_check_cache_for_gremlin', lambda *_a, **_kw: None)
 
