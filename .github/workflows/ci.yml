@@ -22,7 +22,7 @@ jobs:
       src: ${{ steps.filter.outputs.src }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dorny/paths-filter@v4
         id: filter
@@ -45,7 +45,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -70,7 +70,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -97,7 +97,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.11', '3.12', '3.13', '3.14']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -135,7 +135,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -163,7 +163,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -185,7 +185,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -200,7 +200,7 @@ jobs:
 
       - name: Restore attrs checkout cache
         id: attrs-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: /tmp/attrs-checkout
           key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
@@ -214,7 +214,7 @@ jobs:
 
       - name: Save attrs checkout cache
         if: steps.attrs-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: /tmp/attrs-checkout
           key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
