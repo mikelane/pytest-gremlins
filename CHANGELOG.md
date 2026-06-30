@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.9.0 (2026-06-29)
+
+### Feat
+
+- **`--gremlin-explain <id>`**: new diagnostic flag that prints why a specific gremlin was
+  selected, instrumented, and which test was chosen to run against it — exposing how
+  coverage-guided selection reaches its decisions (#397, #398)
+
+### Fix
+
+- **Preserve non-cov `addopts` in subprocess runs**: gremlins' coverage pre-scan and
+  mutant-execution runs previously cleared *all* pytest `addopts` via `-o addopts=` to neutralize
+  pytest-cov, silently dropping collection-affecting options such as `--import-mode=importlib`.
+  This disabled coverage-guided test selection for projects relying on those options. Only the
+  `--cov*` / `--no-cov*` family is now stripped; everything else survives into the subprocess
+  (#424, #436)
+- **Parametrize values containing `|`**: coverage selection now splits on the last pipe so
+  parametrized test IDs whose values contain `|` are no longer dropped (#419)
+
+### Internal
+
+- **Cold-run coverage** scoped to gremlin source files, avoiding wasted tracing on unrelated
+  modules (#423)
+- **Security**: bumped transitive dependencies to clear latent CVEs that `pip-audit` flagged
+  against the live advisory DB — 13 CVEs in #418 (idna, pillow, pip, pymdown-extensions, urllib3,
+  uv, pytest) and msgpack→1.2.1 + pip→26.1.2 in #442/#443 (GHSA-6v7p-g79w-8964, PYSEC-2026-196)
+- **Dependencies**: routine bumps across the dev toolchain — pytest 9.1.1, ruff 0.15.20,
+  mypy 2.1.0, tox 4.56.1, coverage 7.14.3, commitizen 4.16.4, pip-audit 2.10.1, playwright 1.61.0,
+  codecov-action 7, plus several GitHub Actions group updates
+
 ## v1.8.1 (2026-04-02)
 
 ### Fix
