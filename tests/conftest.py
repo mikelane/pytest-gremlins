@@ -101,6 +101,7 @@ def make_pytest_config() -> Callable[..., Any]:
         gremlin_max_pardons_pct: float | None = None,
         max_pardons: int | None = None,
         pluginmanager: MagicMock | None = None,
+        addopts: list[str] | None = None,
     ) -> object:
         class _Option:
             pass
@@ -129,8 +130,15 @@ def make_pytest_config() -> Callable[..., Any]:
         else:
             pm = pluginmanager
 
+        ini_values = {'addopts': addopts if addopts is not None else []}
+
         class _Config:
-            pass
+            def getini(self, name: str) -> object:
+                # Mirror real pytest: an unregistered ini name raises rather than
+                # silently returning a falsy default that could mask a config read.
+                if name not in ini_values:
+                    raise ValueError(f'unknown ini option: {name!r}')
+                return ini_values[name]
 
         cfg = _Config()
         cfg.option = option  # type: ignore[attr-defined]
