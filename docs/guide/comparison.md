@@ -9,7 +9,7 @@ This guide provides a fair, factual comparison of pytest-gremlins with other Pyt
 
 | Feature | pytest-gremlins | mutmut | cosmic-ray | mutatest |
 | ------- | --------------- | ------ | ---------- | -------- |
-| **Speed Architecture** | Mutation switching | Environment variable switching (fork-based) | Import hooks (custom finder/loader) | `__pycache__` modification |
+| **Speed Architecture** | Mutation schemata (worker process based) | Mutation schemata (fork-based) | Import hooks (custom finder/loader) | `__pycache__` modification |
 | **pytest Integration** | Native plugin | Runs pytest externally | Standalone CLI | Standalone CLI |
 | **Parallelization** | Built-in worker pool + pytest-xdist | Built-in (v3+) | Celery distributors (multi-machine) | Built-in (Python 3.8+) |
 | **Coverage Guidance** | Yes (built-in) | Yes (`mutate_only_covered_lines`) | Yes | Yes |
@@ -30,12 +30,11 @@ This guide provides a fair, factual comparison of pytest-gremlins with other Pyt
 
 - **Large community**: 1.2k GitHub stars, used by 700+ projects
 - **Interactive browser**: Terminal UI for exploring surviving mutants
-- **Apply mutations**: Easy `mutmut apply` command to fix surviving mutants
+- **Apply mutations**: Easy `mutmut apply` command to try out surviving mutants
 - **Active development**: Regular updates and maintenance
 
 #### Considerations
 
-- **Unix/WSL required**: Requires `fork()` support, no native Windows
 - **Separate execution model**: Not a pytest plugin, but runs pytest internally (fixtures and config work)
 - **v3 scope limitation**: Version 3+ only mutates code inside functions
 - **Unix only**: Requires `fork()` for process isolation (no native Windows support)
@@ -44,29 +43,13 @@ This guide provides a fair, factual comparison of pytest-gremlins with other Pyt
 
 mutmut also uses environment variable switching for mutations and loads all mutated modules
 into memory on the main process. It then uses `fork()` to run each mutation in its own
-environment in parallel. It supports coverage-guided test selection
+environment in parallel and for state isolation. It supports coverage-guided test selection
 (`mutate_only_covered_lines = true` in config). Incremental caching is limited in the
 current release but a contributor is upstreaming improvements.
 
 The key architectural difference is in isolation: mutmut uses `fork()` to create isolated
 processes per mutation, while pytest-gremlins runs mutations in subprocesses with the
 active mutation selected by environment variable. Both avoid reloading modules per mutation.
-
-```text
-mutmut workflow:
-1. Load all mutated modules into memory
-2. fork() per mutation (parallel, isolated)
-3. Set env var to select mutation
-4. Run tests via pytest
-5. Record result
-
-pytest-gremlins workflow:
-1. Instrument code once (all mutations embedded)
-2. Set ACTIVE_GREMLIN=N
-3. Run tests in subprocess
-4. Change env var
-5. Repeat (no I/O, no reloads)
-```
 
 The practical speed difference depends on your project. mutmut requires `fork()` (Unix
 only), while pytest-gremlins uses subprocesses (cross-platform). For projects with slow
