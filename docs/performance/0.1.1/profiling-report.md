@@ -1,5 +1,11 @@
 # pytest-gremlins Performance Profiling Report
 
+> **ARCHIVED — out of date.** This report reflects v0.1.1, when subprocess execution was the
+> only mode. The "Priority 1" recommendation below (in-process execution) shipped in #349
+> (`InProcessExecutor`/`ForkExecutor`, see `--gremlin-executor`), and the persistent worker
+> pool shipped in #58. Kept for historical context only — do not treat its numbers or
+> recommendations as current.
+
 **Date:** January 2026
 **Version:** 0.1.1
 **Issue:** #48 - Profile sequential mode to identify bottlenecks
