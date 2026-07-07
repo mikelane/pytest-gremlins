@@ -1,0 +1,72 @@
+{
+  "phases": [
+    {
+      "phase": "source_discovery",
+      "duration_ms": 24.76262499112636,
+      "details": {
+        "file_count": 52,
+        "total_lines": 10769
+      }
+    },
+    {
+      "phase": "ast_transformation",
+      "duration_ms": 137.7840840141289,
+      "details": {
+        "gremlin_count": 1022,
+        "avg_parse_time_ms": 0.5022908836298694,
+        "avg_transform_time_ms": 2.1464607908945674
+      }
+    },
+    {
+      "phase": "code_generation",
+      "duration_ms": 43.34858400397934,
+      "details": {
+        "avg_unparse_time_ms": 0.8317587887107109,
+        "total_output_bytes": 445034
+      }
+    },
+    {
+      "phase": "test_discovery",
+      "duration_ms": 2552.1663750114385,
+      "details": {
+        "pytest_collect_time_ms": 2551.8195000186097,
+        "test_count": 1498
+      }
+    },
+    {
+      "phase": "coverage_collection",
+      "duration_ms": 60165.58929099119,
+      "details": {
+        "coverage_run_time_ms": 60164.61920799338,
+        "context_count": 1,
+        "covered_file_count": 8,
+        "line_bits_entries": 75,
+        "coverage_parse_time_ms": 0.4869579861406237
+      }
+    },
+    {
+      "phase": "test_selector_build",
+      "duration_ms": 0.04387498483993113,
+      "details": {
+        "selector_build_time_ms": 0.0011669762898236513
+      }
+    },
+    {
+      "phase": "mutation_execution_sample",
+      "duration_ms": 3005.6970000150613,
+      "details": {
+        "sample_size": 5,
+        "avg_subprocess_startup_ms": 600.7806417997926,
+        "min_subprocess_startup_ms": 596.5361669950653,
+        "max_subprocess_startup_ms": 609.7002909809817,
+        "total_subprocess_time_ms": 3003.9032089989632
+      }
+    }
+  ],
+  "total_time_ms": 65929.5117080037,
+  "metadata": {
+    "target_path": "src/pytest_gremlins",
+    "test_path": "tests",
+    "python_version": "3.14.0 (main, Nov 19 2025, 23:04:28) [Clang 21.1.4 ]"
+  }
+}
