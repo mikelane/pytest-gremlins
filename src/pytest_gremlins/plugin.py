@@ -1793,6 +1793,16 @@ _COV_FLAG_ONLY_OPTS = frozenset(
     }
 )
 
+# ``--cov`` alone takes an *optional* value (pytest-cov defines it with
+# ``nargs='?'``): a bare ``--cov`` immediately followed by another option has no
+# value to consume, so the dash-prefix heuristic below only applies to this one
+# option. Every other value-taking cov option (``--cov-report``,
+# ``--cov-fail-under``, ``--cov-precision``, etc.) *requires* its value and must
+# consume the next token unconditionally -- even one that happens to start with
+# ``-`` (e.g. ``--cov-fail-under -1``) -- or it silently leaks into the
+# re-injected addopts string as a stray, unrelated-looking token (issue #446).
+_COV_OPTIONAL_VALUE_OPTS = frozenset({'--cov'})
+
 
 def _is_cov_addopt(token: str) -> bool:
     """Return True if ``token`` is a pytest-cov option.
@@ -1818,8 +1828,11 @@ def _addopts_without_cov(raw_addopts: list[str]) -> str:
 
     Only the ``--cov*`` / ``--no-cov*`` option family is stripped. A cov option written
     with a space-separated value (``--cov-report term``, ``--cov-precision 2``) has its
-    value token dropped as well; the known value-less switches in
-    ``_COV_FLAG_ONLY_OPTS`` keep their following token, and inline forms
+    value token dropped as well: required-value options (everything except ``--cov``
+    itself and the known value-less switches in ``_COV_FLAG_ONLY_OPTS``) consume their
+    following token unconditionally, even one that starts with ``-``
+    (``--cov-fail-under -1``); ``--cov``'s optional value is only dropped when the
+    following token doesn't itself look like an option. Inline forms
     (``--cov-report=term``) are self-contained. The result is a single string suitable
     for ``-o addopts=<...>``.
 
@@ -1835,16 +1848,13 @@ def _addopts_without_cov(raw_addopts: list[str]) -> str:
         token = raw_addopts[index]
         index += 1
         if _is_cov_addopt(token):
-            # A value-taking cov option written without an inline ``=`` consumes the
-            # next token as its value; drop that too — unless this is a known value-less
-            # switch or the next token is itself an option.
-            if (
-                '=' not in token
-                and token not in _COV_FLAG_ONLY_OPTS
-                and index < count
-                and not raw_addopts[index].startswith('-')
-            ):
-                index += 1
+            has_no_inline_value = '=' not in token
+            is_value_taking = token not in _COV_FLAG_ONLY_OPTS
+            has_next_token = index < count
+            if has_no_inline_value and is_value_taking and has_next_token:
+                next_looks_like_option = raw_addopts[index].startswith('-')
+                if token not in _COV_OPTIONAL_VALUE_OPTS or not next_looks_like_option:
+                    index += 1
             continue
         kept.append(token)
     return ' '.join(shlex.quote(token) for token in kept)
