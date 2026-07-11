@@ -1577,6 +1577,12 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
         logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
 
     if not gremlin_session.gremlins:
+        if gremlin_session.explain_gremlin_id is not None:
+            print(
+                '--gremlin-explain: no gremlins were generated in this session (nothing to '
+                'explain). Check your `paths`/`--gremlin-targets` configuration.'
+            )
+            gremlin_session.enabled = False
         return
 
     _collect_coverage(gremlin_session, rootdir)

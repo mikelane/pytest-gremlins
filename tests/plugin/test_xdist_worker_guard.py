@@ -129,6 +129,53 @@ class DescribeSessionFinishBranches:
 
         mock_collect.assert_not_called()
 
+    def it_reports_no_gremlins_generated_when_explain_requested_and_gremlins_empty(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """--gremlin-explain on a zero-gremlin session prints a mode-specific notice."""
+        session = _make_controller_session(tmp_path)
+
+        gs = GremlinSession(enabled=True, explain_gremlin_id='g001')
+        # gremlins is empty by default
+        _set_session(gs)
+
+        with patch('pytest_gremlins.plugin._collect_coverage') as mock_collect:
+            pytest_sessionfinish(session, exitstatus=0)
+
+        mock_collect.assert_not_called()
+        output = capsys.readouterr().out
+        assert '--gremlin-explain: no gremlins were generated in this session' in output
+
+    def it_disables_session_when_explain_requested_and_gremlins_empty(self, tmp_path: Path) -> None:
+        """The zero-gremlin explain notice disables the session like every other explain branch."""
+        session = _make_controller_session(tmp_path)
+
+        gs = GremlinSession(enabled=True, explain_gremlin_id='g001')
+        _set_session(gs)
+
+        with patch('pytest_gremlins.plugin._collect_coverage'):
+            pytest_sessionfinish(session, exitstatus=0)
+
+        assert gs.enabled is False
+
+    def it_stays_silent_when_explain_not_requested_and_gremlins_empty(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A plain zero-gremlin session (no --gremlin-explain) prints nothing extra."""
+        session = _make_controller_session(tmp_path)
+
+        gs = GremlinSession(enabled=True)
+        _set_session(gs)
+
+        with patch('pytest_gremlins.plugin._collect_coverage'):
+            pytest_sessionfinish(session, exitstatus=0)
+
+        assert capsys.readouterr().out == ''
+
     def it_calls_batch_testing_when_batch_enabled(self, tmp_path: Path) -> None:
         """When batch_enabled is True, _run_batch_mutation_testing is called."""
         session = _make_controller_session(tmp_path)
