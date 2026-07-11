@@ -128,6 +128,7 @@ The HTML report includes:
 | Operator | Operator that created the gremlin |
 | Description | Human-readable mutation description |
 | Status | `zapped`, `survived`, `timeout`, or `error` |
+| Selected test | The test that killed the gremlin, or every test the coverage-based selector ran, or `—` if none |
 
 **Status Color Coding:**
 
@@ -180,6 +181,7 @@ The HTML report includes:
                     <th>Operator</th>
                     <th>Description</th>
                     <th>Status</th>
+                    <th>Selected test</th>
                 </tr>
             </thead>
             <tbody>
@@ -189,6 +191,7 @@ The HTML report includes:
                     <td>comparison</td>
                     <td>>= -> ></td>
                     <td class="status-survived">survived</td>
+                    <td>tests/test_auth.py::test_login_validates_age</td>
                 </tr>
                 <!-- More rows... -->
             </tbody>
@@ -740,7 +743,7 @@ After uploading to Stryker Dashboard, add this badge to your README:
 
 ### SonarQube Export
 
-SonarQube can import surviving mutants as [external issues](https://docs.sonarsource.com/sonarqube/latest/analyzing-source-code/importing-external-issues/generic-issue-import-format/).
+SonarQube can import surviving mutants and errored gremlins as [external issues](https://docs.sonarsource.com/sonarqube/latest/analyzing-source-code/importing-external-issues/generic-issue-import-format/).
 
 #### Using SonarQubeExporter
 
@@ -774,15 +777,18 @@ sonar-scanner \
 
 #### What Gets Imported
 
-Only **survived** mutants are imported as issues:
+**Survived** mutants are always imported as issues. **Errored** gremlins are also
+imported, but only when they captured diagnostic output (`error_output`), so you
+can see why a gremlin failed to run rather than whether it survived:
 
-| Field | Value |
-|-------|-------|
-| Engine ID | `pytest-gremlins` |
-| Rule ID | `mutant-survived-{operator}` |
-| Severity | `MAJOR` (configurable) |
-| Type | `CODE_SMELL` |
-| Effort | `10 minutes` (configurable) |
+| Field | Survived | Errored |
+|-------|----------|---------|
+| Engine ID | `pytest-gremlins` | `pytest-gremlins` |
+| Rule ID | `mutant-survived-{operator}` | `mutant-error-{operator}` |
+| Severity | `MAJOR` (configurable) | `MAJOR` (configurable) |
+| Type | `CODE_SMELL` | `CODE_SMELL` |
+| Effort | `10 minutes` (configurable) | `10 minutes` (configurable) |
+| Message | `Mutant survived: {description}` | `Mutant errored: {error_output}` (truncated to 500 chars) |
 
 #### GitHub Actions for SonarQube
 
