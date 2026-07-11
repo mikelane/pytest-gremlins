@@ -230,3 +230,42 @@ class DescribeSonarQubeExporterProjectRoot:
         issue = data['issues'][0]
 
         assert issue['primaryLocation']['filePath'] == 'src/auth.py'
+
+
+@pytest.mark.small
+class DescribeSonarQubeExporterErrorOutput:
+    """Tests for surfacing error_output as issues. References: #337."""
+
+    def it_exports_an_issue_for_an_errored_gremlin_with_error_output(self, make_result):
+        results = [
+            make_result(
+                GremlinResultStatus.ERROR,
+                error_output='ImportError: No module named foo',
+            ),
+        ]
+        score = MutationScore.from_results(results)
+        exporter = SonarQubeExporter()
+
+        data = json.loads(exporter.to_json(score))
+
+        assert len(data['issues']) == 1
+        assert 'ImportError: No module named foo' in data['issues'][0]['primaryLocation']['message']
+
+    def it_omits_an_issue_for_an_errored_gremlin_with_no_error_output(self, make_result):
+        results = [make_result(GremlinResultStatus.ERROR, error_output='')]
+        score = MutationScore.from_results(results)
+        exporter = SonarQubeExporter()
+
+        data = json.loads(exporter.to_json(score))
+
+        assert len(data['issues']) == 0
+
+    def it_truncates_error_output_to_500_characters(self, make_result):
+        results = [make_result(GremlinResultStatus.ERROR, error_output='x' * 1000)]
+        score = MutationScore.from_results(results)
+        exporter = SonarQubeExporter()
+
+        data = json.loads(exporter.to_json(score))
+        message = data['issues'][0]['primaryLocation']['message']
+
+        assert len(message) == len('Mutant errored: ') + 500
