@@ -87,6 +87,7 @@
     "lychee",
     "lycheeverse",
     "markdownlint",
+    "microbenchmark",
     "mikelane",
     "mkdocs",
     "mkdocstrings",
