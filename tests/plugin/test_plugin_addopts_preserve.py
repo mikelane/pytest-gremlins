@@ -85,6 +85,15 @@ class DescribeAddoptsWithoutCov:
         result = _addopts_without_cov(['-k', 'foo or bar'])
         assert result == "-k 'foo or bar'"
 
+    def it_drops_a_bare_cov_that_is_the_final_token(self) -> None:
+        """A value-taking cov option with nothing after it must not raise IndexError."""
+        assert _addopts_without_cov(['--cov']) == ''
+
+    def it_drops_a_value_taking_cov_option_that_is_the_final_token(self) -> None:
+        """``--cov-report`` as the last token has no value to consume; must not raise IndexError."""
+        result = _addopts_without_cov(['--strict-markers', '--cov-report'])
+        assert result == '--strict-markers'
+
 
 @pytest.mark.medium
 class DescribeCoverageSubprocessPreservesAddopts:
