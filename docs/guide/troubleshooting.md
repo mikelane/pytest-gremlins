@@ -727,6 +727,87 @@ Mutation testing works locally but fails in CI with:
 
 ---
 
+## Why did my mutant survive?
+
+Not every survivor points to a weak test. Sometimes pytest-gremlins reports a gremlin as a
+survivor even though a test *does* exercise the mutated code — because the code your test runs
+is not the code the gremlin mutated. This section covers the non-obvious ways a mutation can
+become invisible to the tests that appear to cover it.
+
+### Closure-captured callables
+
+**Symptom:**
+
+A gremlin on a small helper function is reported as a survivor, and no test you write against
+the object that uses the helper will zap it — even a test that clearly depends on the helper's
+return value.
+
+Consider a Pydantic model that stamps each record with a creation time:
+
+```python
+from datetime import UTC, datetime
+
+from pydantic import BaseModel, Field
+
+
+def _now() -> datetime:
+    return datetime.now(tz=UTC)
+
+
+class HistoryEntry(BaseModel):
+    timestamp: datetime = Field(default_factory=_now)
+```
+
+pytest-gremlins produces a gremlin that mutates `_now` to return `None`. You have a test that
+builds a `HistoryEntry` and asserts its `timestamp` is a `datetime`, so you expect the gremlin
+to die. It survives.
+
+**Cause:**
+
+The mutation is real, but the test never runs it. When gremlins mutates `_now`, it rebinds the
+*module-level name* `_now` to the mutated version. That works for callers that look the name up
+at call time, such as `_now()` inside another function body.
+
+`Field(default_factory=_now)` does not look the name up at call time. It captures the function
+*object* `_now` references — the original, un-mutated `_now` — at **class-definition time**,
+which is import time. Pydantic stashes that object on the field and calls it directly whenever a
+`HistoryEntry` is instantiated. Rebinding the module global afterward has no effect on the
+reference Pydantic already holds, so `HistoryEntry()` keeps calling the original function. The
+gremlin's mutated `_now` is never on the code path your test exercises, so the gremlin survives
+invisibly.
+
+This is a general Python behavior, not a Pydantic quirk. Any construct that captures a callable
+by reference at import or definition time hides mutations of that callable the same way:
+
+- `Field(default_factory=fn)` (Pydantic)
+- `dataclasses.field(default_factory=fn)`
+- Decorator registration that runs at import time, e.g. `@app.route(...)` storing the handler in
+  a routing table
+- `functools.partial(fn, ...)` assigned to a module-level constant
+
+In each case the captured reference is resolved once, when the module loads, and pytest-gremlins
+mutates the name afterward. The two never meet.
+
+**Solution:**
+
+Test the mutated function *directly*, not only through the object that captured it. A direct test
+gives the mutation a code path that actually resolves the `_now` name at call time:
+
+```python
+def test_now_returns_a_timestamp() -> None:
+    assert _now() is not None
+```
+
+With this test in place, the gremlin that makes `_now` return `None` finally has a test that runs
+the mutated name, and the survivor gets zapped.
+
+The broader rule: cover small factory and helper functions with their own tests, in addition to
+any integration test that reaches them through a model, dataclass, decorator, or `partial`. The
+integration test proves the wiring; the direct test gives every mutation of the helper somewhere
+to fail.
+
+---
+
 ## Getting Help
 
 ### Debugging Tips
