@@ -2,71 +2,71 @@
   "phases": [
     {
       "phase": "source_discovery",
-      "duration_ms": 27.97829220071435,
+      "duration_ms": 24.76262499112636,
       "details": {
-        "file_count": 35,
-        "total_lines": 4979
+        "file_count": 52,
+        "total_lines": 10769
       }
     },
     {
       "phase": "ast_transformation",
-      "duration_ms": 106.5805833786726,
+      "duration_ms": 137.7840840141289,
       "details": {
-        "gremlin_count": 435,
-        "avg_parse_time_ms": 0.6280309121523585,
-        "avg_transform_time_ms": 2.414339261927775
+        "gremlin_count": 1022,
+        "avg_parse_time_ms": 0.5022908836298694,
+        "avg_transform_time_ms": 2.1464607908945674
       }
     },
     {
       "phase": "code_generation",
-      "duration_ms": 34.86191714182496,
+      "duration_ms": 43.34858400397934,
       "details": {
-        "avg_unparse_time_ms": 0.9940810368529388,
-        "total_output_bytes": 182955
+        "avg_unparse_time_ms": 0.8317587887107109,
+        "total_output_bytes": 445034
       }
     },
     {
       "phase": "test_discovery",
-      "duration_ms": 1133.3907912485301,
+      "duration_ms": 2552.1663750114385,
       "details": {
-        "pytest_collect_time_ms": 1133.2760420627892,
-        "test_count": 417
+        "pytest_collect_time_ms": 2551.8195000186097,
+        "test_count": 1498
       }
     },
     {
       "phase": "coverage_collection",
-      "duration_ms": 98400.80058388412,
+      "duration_ms": 60165.58929099119,
       "details": {
-        "coverage_run_time_ms": 98397.86725025624,
-        "context_count": 390,
-        "covered_file_count": 82,
-        "line_bits_entries": 1256,
-        "coverage_parse_time_ms": 1.8136254511773586
+        "coverage_run_time_ms": 60164.61920799338,
+        "context_count": 1,
+        "covered_file_count": 8,
+        "line_bits_entries": 75,
+        "coverage_parse_time_ms": 0.4869579861406237
       }
     },
     {
       "phase": "test_selector_build",
-      "duration_ms": 0.02816738560795784,
+      "duration_ms": 0.04387498483993113,
       "details": {
-        "selector_build_time_ms": 0.002459157258272171
+        "selector_build_time_ms": 0.0011669762898236513
       }
     },
     {
       "phase": "mutation_execution_sample",
-      "duration_ms": 5355.050540994853,
+      "duration_ms": 3005.6970000150613,
       "details": {
         "sample_size": 5,
-        "avg_subprocess_startup_ms": 1070.3798668459058,
-        "min_subprocess_startup_ms": 938.8482919894159,
-        "max_subprocess_startup_ms": 1294.714834075421,
-        "total_subprocess_time_ms": 5351.899334229529
+        "avg_subprocess_startup_ms": 600.7806417997926,
+        "min_subprocess_startup_ms": 596.5361669950653,
+        "max_subprocess_startup_ms": 609.7002909809817,
+        "total_subprocess_time_ms": 3003.9032089989632
       }
     }
   ],
-  "total_time_ms": 105058.86958306655,
+  "total_time_ms": 65929.5117080037,
   "metadata": {
     "target_path": "src/pytest_gremlins",
     "test_path": "tests",
-    "python_version": "3.14.0 (main, Oct 21 2025, 22:51:59) [Clang 17.0.0 (clang-1700.3.14.6)]"
+    "python_version": "3.14.0 (main, Nov 19 2025, 23:04:28) [Clang 21.1.4 ]"
   }
 }
