@@ -123,6 +123,7 @@
     "pydocstyle",
     "pyenv",
     "pylint",
+    "pydantic",
     "pymdownx",
     "pypi",
     "pyproject",
