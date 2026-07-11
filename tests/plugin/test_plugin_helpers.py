@@ -6,6 +6,7 @@ These tests cover the utility functions in plugin.py that can be tested in isola
 from __future__ import annotations
 
 import argparse
+import ast
 import logging
 from pathlib import Path
 from unittest.mock import (
@@ -26,6 +27,8 @@ from pytest_gremlins.plugin import (
     _decode_numbits,
     _extract_test_name_from_context,
     _generate_gremlins,
+    _get_bootstrap_script,
+    _get_lightweight_runner_script,
     _is_excluded,
     _is_xdist_worker,
     _make_node_ids_relative,
@@ -37,6 +40,51 @@ from pytest_gremlins.plugin import (
     _should_include_file,
     _workers_type,
 )
+
+
+def _is_binary_mode_open(call: ast.Call) -> bool:
+    """Check whether an ``open(...)`` call uses a binary mode (e.g. ``'rb'``).
+
+    Binary-mode opens (used by ``tomllib.load``, for example) return bytes and
+    must not take an ``encoding`` argument, so they're exempt from the utf-8
+    encoding requirement.
+
+    Args:
+        call: An ``ast.Call`` node for an ``open(...)`` invocation.
+
+    Returns:
+        True if a positional mode argument contains ``'b'``.
+    """
+    positional_args = call.args[1:]
+    return any(
+        isinstance(arg, ast.Constant) and isinstance(arg.value, str) and 'b' in arg.value for arg in positional_args
+    )
+
+
+def _open_calls_missing_utf8_encoding(script_source: str) -> list[ast.Call]:
+    """Find text-mode ``open(...)`` calls in a script that lack an explicit utf-8 encoding.
+
+    Args:
+        script_source: Python source code to inspect.
+
+    Returns:
+        Call nodes for ``open(...)`` invocations without ``encoding='utf-8'``.
+    """
+    tree = ast.parse(script_source)
+    open_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'open'
+    ]
+    return [
+        call
+        for call in open_calls
+        if not _is_binary_mode_open(call)
+        and not any(
+            keyword.arg == 'encoding' and isinstance(keyword.value, ast.Constant) and keyword.value.value == 'utf-8'
+            for keyword in call.keywords
+        )
+    ]
 
 
 @pytest.mark.small
@@ -167,6 +215,24 @@ class DescribeAddSourceFile:
         _add_source_file(missing_file, source_files)
 
         assert str(missing_file) not in source_files
+
+    def it_reads_source_with_explicit_utf8_encoding(self, tmp_path: Path) -> None:
+        """Source is read with an explicit utf-8 encoding, not the platform default.
+
+        PEP 3120 mandates utf-8 for Python source. Reading without an explicit
+        encoding falls back to the platform's default codec, which raises
+        UnicodeDecodeError on non-utf-8 platforms (e.g. Windows cp1252) for
+        valid utf-8 source containing non-ASCII characters.
+        """
+        source_file = tmp_path / 'module.py'
+        source_file.write_text('# café ☕\nx = 1\n', encoding='utf-8')
+        source_files: dict[str, str] = {}
+
+        with patch.object(Path, 'read_text') as mock_read_text:
+            mock_read_text.return_value = '# café ☕\nx = 1\n'
+            _add_source_file(source_file, source_files)
+
+        mock_read_text.assert_called_once_with(encoding='utf-8')
 
 
 @pytest.mark.small
@@ -844,3 +910,26 @@ class DescribeParseCliReportFormats:
     def it_exits_on_unknown_format(self) -> None:
         with pytest.raises(Exit, match='Unknown --gremlin-report format'):
             _parse_cli_report_formats('xml')
+
+
+@pytest.mark.small
+class DescribeGeneratedScriptOpenCalls:
+    """Tests for utf-8 encoding discipline in the generated subprocess scripts.
+
+    ``_get_bootstrap_script`` and ``_get_lightweight_runner_script`` return
+    Python source (as strings) that gets written to disk and executed in a
+    subprocess. Those generated scripts read a JSON sources file with a bare
+    ``open(...)`` call, which falls back to the platform's default codec.
+    On non-utf-8 platforms this raises UnicodeDecodeError for the same reason
+    as the direct ``_add_source_file`` bug.
+    """
+
+    def it_opens_sources_file_with_utf8_in_bootstrap_script(self) -> None:
+        missing = _open_calls_missing_utf8_encoding(_get_bootstrap_script())
+
+        assert missing == []
+
+    def it_opens_sources_file_with_utf8_in_lightweight_runner_script(self) -> None:
+        missing = _open_calls_missing_utf8_encoding(_get_lightweight_runner_script())
+
+        assert missing == []

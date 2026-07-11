@@ -1124,7 +1124,7 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
         source_files: Dictionary to add the file to.
     """
     try:
-        source = path.read_text()
+        source = path.read_text(encoding='utf-8')
         ast.parse(source)
         source_files[str(path)] = source
     except SyntaxError:
@@ -1315,7 +1315,7 @@ def main():
         print('Error: PYTEST_GREMLINS_SOURCES_FILE not set', file=sys.stderr)
         sys.exit(1)
 
-    with open(sources_file) as f:
+    with open(sources_file, encoding='utf-8') as f:
         instrumented_sources = json.load(f)
 
     # Get exec function - use indirect access to satisfy linters
@@ -1386,7 +1386,7 @@ def setup_import_hooks():
     if not sources_file:
         return
 
-    with open(sources_file) as f:
+    with open(sources_file, encoding='utf-8') as f:
         instrumented_sources = json.load(f)
 
     run_code = getattr(__builtins__, 'exec', None) or __builtins__.get('exec')
