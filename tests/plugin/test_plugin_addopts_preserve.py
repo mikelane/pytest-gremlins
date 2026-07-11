@@ -95,6 +95,22 @@ class DescribeAddoptsWithoutCov:
         result = _addopts_without_cov(['--strict-markers', '--cov-report'])
         assert result == '--strict-markers'
 
+    def it_drops_a_negative_cov_fail_under_value(self) -> None:
+        """``--cov-fail-under`` always requires a value, even one that looks like a flag."""
+        result = _addopts_without_cov(['--cov-fail-under', '-1', '--import-mode=importlib'])
+        assert result == '--import-mode=importlib'
+
+    def it_drops_a_dash_prefixed_cov_report_value(self) -> None:
+        """``--cov-report`` always requires a value; a dash-prefixed one must not leak."""
+        result = _addopts_without_cov(['--cov-report', '-x', '--strict-markers'])
+        assert result == '--strict-markers'
+
+    def it_drops_values_for_consecutive_required_value_cov_options(self) -> None:
+        """Two required-value cov options in sequence each drop only their own value,
+        even when one of those values is dash-prefixed."""
+        result = _addopts_without_cov(['--cov-report', 'term', '--cov-fail-under', '-1', '--import-mode=importlib'])
+        assert result == '--import-mode=importlib'
+
 
 @pytest.mark.medium
 class DescribeCoverageSubprocessPreservesAddopts:
