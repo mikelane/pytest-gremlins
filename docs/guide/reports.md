@@ -128,6 +128,7 @@ The HTML report includes:
 | Operator | Operator that created the gremlin |
 | Description | Human-readable mutation description |
 | Status | `zapped`, `survived`, `timeout`, or `error` |
+| Selected test | The test that killed the gremlin, or every test the coverage-based selector ran, or `—` if none |
 
 **Status Color Coding:**
 
@@ -180,6 +181,7 @@ The HTML report includes:
                     <th>Operator</th>
                     <th>Description</th>
                     <th>Status</th>
+                    <th>Selected test</th>
                 </tr>
             </thead>
             <tbody>
@@ -189,6 +191,7 @@ The HTML report includes:
                     <td>comparison</td>
                     <td>>= -> ></td>
                     <td class="status-survived">survived</td>
+                    <td>tests/test_auth.py::test_login_validates_age</td>
                 </tr>
                 <!-- More rows... -->
             </tbody>
