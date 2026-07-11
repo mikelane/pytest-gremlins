@@ -94,8 +94,8 @@ class DescribeGremlinExplainPytester:
         # Per-set breakdown must be structured (name + count + colon), not just a
         # bare word — a regression that dropped the counts would pass a plain
         # substring check.
-        assert re.search(r'Covering set \(\d+ test\(s\)\):', output), output
-        assert re.search(r'Selected list \(\d+ test\(s\)\):', output), output
+        assert re.search(r'Covering set \(\d+ tests?\):', output), output
+        assert re.search(r'Selected list \(\d+ tests?\):', output), output
         # Mutation loop is short-circuited: no per-gremlin progress after the diagnostic.
         post_explain = output.split('--gremlin-explain: diagnostic for', 1)[-1]
         assert 'Gremlin 1/' not in post_explain, post_explain
@@ -125,4 +125,41 @@ class DescribeGremlinExplainPytester:
         assert 'Selected list' not in output, output
         # Pytest still exits cleanly: unknown id short-circuits mutation but
         # never fails the session on the user's behalf.
+        assert result.ret == 0, output
+
+    def it_reports_no_gremlins_generated_for_zero_gremlin_session(self, pytester: pytest.Pytester) -> None:
+        """--gremlin-explain on a session with zero gremlins prints a mode-specific notice.
+
+        Points ``paths`` at a nonexistent module so gremlin generation produces
+        an empty list, then requests ``--gremlin-explain`` for an arbitrary id.
+        """
+        pytester.makepyfile(
+            test_target=('import pytest\n\n@pytest.mark.small\ndef test_trivial():\n    assert True\n'),
+        )
+        pytester.makepyprojecttoml(
+            """
+[tool.pytest-gremlins]
+paths = ["nonexistent_module.py"]
+"""
+        )
+        pytester.makeconftest(
+            """
+import pytest
+
+def pytest_configure(config):
+    config.addinivalue_line('markers', 'small: fast unit tests')
+"""
+        )
+
+        result = pytester.runpytest(
+            '-p',
+            'pytest_gremlins',
+            '--gremlins',
+            '--gremlin-explain=g001',
+        )
+
+        output = result.stdout.str()
+        assert '--gremlin-explain: no gremlins were generated in this session' in output, output
+        assert 'Covering set' not in output, output
+        assert 'Selected list' not in output, output
         assert result.ret == 0, output

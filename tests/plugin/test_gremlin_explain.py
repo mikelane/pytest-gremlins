@@ -32,6 +32,7 @@ from pytest_gremlins.plugin import (
     _covering_tests_for_gremlin,
     _emit_selection_explainer,
     _print_dropped_tests,
+    _print_explainer_header,
     _print_unrunnable_selections,
     pytest_addoption,
 )
@@ -146,11 +147,11 @@ class DescribeEmitSelectionExplainerDrift:
         # diagnostic corresponds to the right source location.
         assert f'  file: {sample_gremlin.file_path}:{sample_gremlin.line_number}' in output
         # Covering set shows the drifted key and its exact count.
-        assert 'Covering set (1 test(s)):' in output
+        assert 'Covering set (1 test):' in output
         assert "'tests/test_target.py::test_zero_case [custom-tag]'" in output
         # Selected list contains the non-drifted test; the drifted key was
         # silently dropped by the (simulated) selector — the exact #387 shape.
-        assert 'Selected list (1 test(s)):' in output
+        assert 'Selected list (1 test):' in output
         assert "'tests/test_target.py::test_nonzero_case'" in output
 
     def it_names_the_dropped_test_in_the_diff(self, sample_gremlin):
@@ -223,13 +224,73 @@ class DescribeEmitSelectionExplainerNoDrift:
         assert f'--gremlin-explain: diagnostic for {sample_gremlin.gremlin_id}' in output
         assert '  Result: selection is consistent with covering set (no drift).' in output
         # Covering set header shows the exact count, not a hand-wave.
-        assert 'Covering set (1 test(s)):' in output
-        assert 'Selected list (1 test(s)):' in output
+        assert 'Covering set (1 test):' in output
+        assert 'Selected list (1 test):' in output
         # No drift means no dropped-test breakdown is emitted.
         assert 'Covering minus selected' not in output
         assert 'Selected but not in test_node_ids' not in output
         # Session must be disabled so the per-gremlin loop short-circuits.
         assert session.enabled is False
+
+
+@pytest.mark.small
+class DescribeEmitSelectionExplainerNoCoverageFilter:
+    """Tests the explainer surfaces a mode-aware note when coverage filtering is disabled."""
+
+    def it_notes_coverage_filter_is_disabled(self, sample_gremlin):
+        collector = CoverageCollector()
+        covered_key = 'tests/test_target.py::test_zero_case'
+        collector.record_test_coverage(
+            covered_key,
+            {sample_gremlin.file_path: [sample_gremlin.line_number]},
+        )
+
+        session = GremlinSession(
+            enabled=True,
+            gremlins=[sample_gremlin],
+            no_coverage_filter=True,
+            test_node_ids={
+                covered_key: covered_key,
+                'tests/test_target.py::test_nonzero_case': 'tests/test_target.py::test_nonzero_case',
+            },
+            coverage_collector=collector,
+            explain_gremlin_id=sample_gremlin.gremlin_id,
+        )
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _emit_selection_explainer(session)
+
+        output = buffer.getvalue()
+        assert 'coverage filter disabled -- all tests selected' in output
+
+    def it_omits_the_note_when_coverage_filter_is_enabled(self, sample_gremlin):
+        collector = CoverageCollector()
+        covered_key = 'tests/test_target.py::test_zero_case'
+        collector.record_test_coverage(
+            covered_key,
+            {sample_gremlin.file_path: [sample_gremlin.line_number]},
+        )
+
+        mock_selector = create_autospec(PrioritizedSelector, instance=True)
+        mock_selector.select_tests_prioritized.return_value = [covered_key]
+
+        session = GremlinSession(
+            enabled=True,
+            gremlins=[sample_gremlin],
+            no_coverage_filter=False,
+            test_node_ids={covered_key: covered_key},
+            coverage_collector=collector,
+            prioritized_selector=mock_selector,
+            explain_gremlin_id=sample_gremlin.gremlin_id,
+        )
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _emit_selection_explainer(session)
+
+        output = buffer.getvalue()
+        assert 'coverage filter disabled' not in output
 
 
 @pytest.mark.small
@@ -355,6 +416,36 @@ class DescribePrintDroppedTests:
             _print_dropped_tests([], runnable_candidates=[])
 
         assert buffer.getvalue() == ''
+
+
+@pytest.mark.small
+class DescribePrintExplainerHeaderPluralization:
+    """Tests that _print_explainer_header pluralizes the test count correctly."""
+
+    def it_uses_singular_test_for_a_single_covering_test(self, sample_gremlin):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _print_explainer_header(sample_gremlin, covering={'tests/test_target.py::test_zero_case'}, selected=[])
+
+        assert 'Covering set (1 test):' in buffer.getvalue()
+
+    def it_uses_plural_tests_for_zero_covering_tests(self, sample_gremlin):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _print_explainer_header(sample_gremlin, covering=set(), selected=[])
+
+        assert 'Covering set (0 tests):' in buffer.getvalue()
+
+    def it_uses_plural_tests_for_two_selected_tests(self, sample_gremlin):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _print_explainer_header(
+                sample_gremlin,
+                covering=set(),
+                selected=['tests/test_target.py::test_zero_case', 'tests/test_target.py::test_nonzero_case'],
+            )
+
+        assert 'Selected list (2 tests):' in buffer.getvalue()
 
 
 @pytest.mark.small

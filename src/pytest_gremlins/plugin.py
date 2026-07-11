@@ -1577,6 +1577,12 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
         logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
 
     if not gremlin_session.gremlins:
+        if gremlin_session.explain_gremlin_id is not None:
+            print(
+                '--gremlin-explain: no gremlins were generated in this session (nothing to '
+                'explain). Check your `paths`/`--gremlin-targets` configuration.'
+            )
+            gremlin_session.enabled = False
         return
 
     _collect_coverage(gremlin_session, rootdir)
@@ -2352,6 +2358,9 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
 
     _print_explainer_header(target_gremlin, covering, selected)
 
+    if gremlin_session.no_coverage_filter:
+        print('  Note: coverage filter disabled -- all tests selected (--gremlin-no-coverage-filter).')
+
     if not covering_minus_selected and not selected_minus_runnable:
         print(
             '  Result: selection is consistent with covering set (no drift). '
@@ -2376,14 +2385,28 @@ def _covering_tests_for_gremlin(gremlin: Gremlin, gremlin_session: GremlinSessio
     return collector.coverage_map.get_tests(gremlin.file_path, gremlin.line_number)
 
 
+def _pluralize_test_count(count: int) -> str:
+    """Render a test count with the correctly pluralized noun.
+
+    Examples:
+        >>> _pluralize_test_count(0)
+        '0 tests'
+        >>> _pluralize_test_count(1)
+        '1 test'
+        >>> _pluralize_test_count(2)
+        '2 tests'
+    """
+    return f'{count} test' if count == 1 else f'{count} tests'
+
+
 def _print_explainer_header(gremlin: Gremlin, covering: set[str], selected: list[str]) -> None:
     """Print the banner plus the covering and selected lists for the diagnostic."""
     print(f'--gremlin-explain: diagnostic for {gremlin.gremlin_id}')
     print(f'  file: {gremlin.file_path}:{gremlin.line_number}')
-    print(f'  Covering set ({len(covering)} test(s)):')
+    print(f'  Covering set ({_pluralize_test_count(len(covering))}):')
     for key in sorted(covering):
         print(f'    {key!r}')
-    print(f'  Selected list ({len(selected)} test(s)):')
+    print(f'  Selected list ({_pluralize_test_count(len(selected))}):')
     for key in selected:
         print(f'    {key!r}')
 
