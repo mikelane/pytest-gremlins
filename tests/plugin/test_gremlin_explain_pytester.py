@@ -94,8 +94,8 @@ class DescribeGremlinExplainPytester:
         # Per-set breakdown must be structured (name + count + colon), not just a
         # bare word — a regression that dropped the counts would pass a plain
         # substring check.
-        assert re.search(r'Covering set \(\d+ test\(s\)\):', output), output
-        assert re.search(r'Selected list \(\d+ test\(s\)\):', output), output
+        assert re.search(r'Covering set \(\d+ tests?\):', output), output
+        assert re.search(r'Selected list \(\d+ tests?\):', output), output
         # Mutation loop is short-circuited: no per-gremlin progress after the diagnostic.
         post_explain = output.split('--gremlin-explain: diagnostic for', 1)[-1]
         assert 'Gremlin 1/' not in post_explain, post_explain
