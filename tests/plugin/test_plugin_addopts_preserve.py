@@ -13,6 +13,7 @@ See: https://github.com/mikelane/pytest-gremlins/issues/113
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -84,6 +85,31 @@ class DescribeAddoptsWithoutCov:
     def it_quotes_tokens_containing_spaces(self) -> None:
         result = _addopts_without_cov(['-k', 'foo or bar'])
         assert result == "-k 'foo or bar'"
+
+    def it_drops_a_bare_cov_that_is_the_final_token(self) -> None:
+        """A value-taking cov option with nothing after it must not raise IndexError."""
+        assert _addopts_without_cov(['--cov']) == ''
+
+    def it_drops_a_value_taking_cov_option_that_is_the_final_token(self) -> None:
+        """``--cov-report`` as the last token has no value to consume; must not raise IndexError."""
+        result = _addopts_without_cov(['--strict-markers', '--cov-report'])
+        assert result == '--strict-markers'
+
+    def it_drops_a_negative_cov_fail_under_value(self) -> None:
+        """``--cov-fail-under`` always requires a value, even one that looks like a flag."""
+        result = _addopts_without_cov(['--cov-fail-under', '-1', '--import-mode=importlib'])
+        assert result == '--import-mode=importlib'
+
+    def it_drops_a_dash_prefixed_cov_report_value(self) -> None:
+        """``--cov-report`` always requires a value; a dash-prefixed one must not leak."""
+        result = _addopts_without_cov(['--cov-report', '-x', '--strict-markers'])
+        assert result == '--strict-markers'
+
+    def it_drops_values_for_consecutive_required_value_cov_options(self) -> None:
+        """Two required-value cov options in sequence each drop only their own value,
+        even when one of those values is dash-prefixed."""
+        result = _addopts_without_cov(['--cov-report', 'term', '--cov-fail-under', '-1', '--import-mode=importlib'])
+        assert result == '--import-mode=importlib'
 
 
 @pytest.mark.medium
@@ -171,3 +197,57 @@ class DescribePytestConfigureStoresPreservedAddopts:
         pytest_configure(config)  # type: ignore[arg-type]
 
         assert _get_session().preserved_addopts == '--import-mode=importlib'
+
+
+@pytest.mark.medium
+class DescribeReinjectedAddoptsHonoredByRealPytest:
+    """Regression lock for #424: a real pytest subprocess honors ``-o addopts=<...>``.
+
+    Every other test in this module stubs ``subprocess.run`` and asserts on the
+    constructed command string, so none of them prove that pytest's own
+    ``shlex.split`` of the injected ini value actually re-enables the option at
+    runtime. This spawns a real subprocess against a throwaway project with
+    duplicate test basenames across packages -- something the default (prepend)
+    import mode cannot collect, and ``--import-mode=importlib`` can -- so the
+    test result itself is proof the re-injected addopts took effect.
+    """
+
+    @staticmethod
+    def _write_duplicate_basename_project(rootdir: Path) -> None:
+        for package in ('package_a', 'package_b'):
+            package_dir = rootdir / package
+            package_dir.mkdir()
+            (package_dir / 'test_shared_name.py').write_text('def test_it_passes():\n    assert True\n')
+
+    def it_collects_duplicate_basenames_when_importlib_mode_is_preserved(self, tmp_path: Path) -> None:
+        self._write_duplicate_basename_project(tmp_path)
+        preserved_addopts = _addopts_without_cov(['--cov=mypkg', '--import-mode=importlib'])
+        cmd = _build_test_command(None, preserved_addopts)
+
+        result = subprocess.run(  # Intentional: exercises the real subprocess boundary
+            cmd,
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    def it_fails_the_same_collection_when_addopts_are_cleared(self, tmp_path: Path) -> None:
+        """Negative control: without re-injection, pytest's default import mode cannot collect."""
+        self._write_duplicate_basename_project(tmp_path)
+        cmd = _build_test_command(None, '')
+
+        result = subprocess.run(  # Intentional: exercises the real subprocess boundary
+            cmd,
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+        assert result.returncode != 0
+        assert 'error during collection' in result.stdout
