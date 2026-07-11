@@ -31,6 +31,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import tokenize
 from typing import (
     TYPE_CHECKING,
     Protocol,
@@ -1124,12 +1125,14 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
         source_files: Dictionary to add the file to.
     """
     try:
-        source = path.read_text()
+        # tokenize.open honors PEP 263 coding declarations and strips BOM
+        with tokenize.open(str(path)) as source_stream:
+            source = source_stream.read()
         ast.parse(source)
         source_files[str(path)] = source
     except SyntaxError:
         logger.debug('Skipping %s: syntax error', path)
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError, LookupError) as exc:
         logger.debug('Skipping %s: %s', path, exc)
 
 
@@ -1315,7 +1318,7 @@ def main():
         print('Error: PYTEST_GREMLINS_SOURCES_FILE not set', file=sys.stderr)
         sys.exit(1)
 
-    with open(sources_file) as f:
+    with open(sources_file, encoding='utf-8') as f:
         instrumented_sources = json.load(f)
 
     # Get exec function - use indirect access to satisfy linters
@@ -1386,7 +1389,7 @@ def setup_import_hooks():
     if not sources_file:
         return
 
-    with open(sources_file) as f:
+    with open(sources_file, encoding='utf-8') as f:
         instrumented_sources = json.load(f)
 
     run_code = getattr(__builtins__, 'exec', None) or __builtins__.get('exec')
