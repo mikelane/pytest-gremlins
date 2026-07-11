@@ -2348,6 +2348,9 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
 
     _print_explainer_header(target_gremlin, covering, selected)
 
+    if gremlin_session.no_coverage_filter:
+        print('  Note: coverage filter disabled -- all tests selected (--gremlin-no-coverage-filter).')
+
     if not covering_minus_selected and not selected_minus_runnable:
         print(
             '  Result: selection is consistent with covering set (no drift). '

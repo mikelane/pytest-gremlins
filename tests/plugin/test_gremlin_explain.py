@@ -234,6 +234,66 @@ class DescribeEmitSelectionExplainerNoDrift:
 
 
 @pytest.mark.small
+class DescribeEmitSelectionExplainerNoCoverageFilter:
+    """Tests the explainer surfaces a mode-aware note when coverage filtering is disabled."""
+
+    def it_notes_coverage_filter_is_disabled(self, sample_gremlin):
+        collector = CoverageCollector()
+        covered_key = 'tests/test_target.py::test_zero_case'
+        collector.record_test_coverage(
+            covered_key,
+            {sample_gremlin.file_path: [sample_gremlin.line_number]},
+        )
+
+        session = GremlinSession(
+            enabled=True,
+            gremlins=[sample_gremlin],
+            no_coverage_filter=True,
+            test_node_ids={
+                covered_key: covered_key,
+                'tests/test_target.py::test_nonzero_case': 'tests/test_target.py::test_nonzero_case',
+            },
+            coverage_collector=collector,
+            explain_gremlin_id=sample_gremlin.gremlin_id,
+        )
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _emit_selection_explainer(session)
+
+        output = buffer.getvalue()
+        assert 'coverage filter disabled -- all tests selected' in output
+
+    def it_omits_the_note_when_coverage_filter_is_enabled(self, sample_gremlin):
+        collector = CoverageCollector()
+        covered_key = 'tests/test_target.py::test_zero_case'
+        collector.record_test_coverage(
+            covered_key,
+            {sample_gremlin.file_path: [sample_gremlin.line_number]},
+        )
+
+        mock_selector = create_autospec(PrioritizedSelector, instance=True)
+        mock_selector.select_tests_prioritized.return_value = [covered_key]
+
+        session = GremlinSession(
+            enabled=True,
+            gremlins=[sample_gremlin],
+            no_coverage_filter=False,
+            test_node_ids={covered_key: covered_key},
+            coverage_collector=collector,
+            prioritized_selector=mock_selector,
+            explain_gremlin_id=sample_gremlin.gremlin_id,
+        )
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _emit_selection_explainer(session)
+
+        output = buffer.getvalue()
+        assert 'coverage filter disabled' not in output
+
+
+@pytest.mark.small
 class DescribeEmitSelectionExplainerMissingGremlin:
     """Tests behaviour when the requested gremlin_id is not in the session."""
 
