@@ -216,23 +216,57 @@ class DescribeAddSourceFile:
 
         assert str(missing_file) not in source_files
 
-    def it_reads_source_with_explicit_utf8_encoding(self, tmp_path: Path) -> None:
-        """Source is read with an explicit utf-8 encoding, not the platform default.
+    def it_reads_utf8_source_with_non_ascii_characters(self, tmp_path: Path) -> None:
+        """A utf-8 source file with non-ASCII characters is decoded and added.
 
-        PEP 3120 mandates utf-8 for Python source. Reading without an explicit
-        encoding falls back to the platform's default codec, which raises
-        UnicodeDecodeError on non-utf-8 platforms (e.g. Windows cp1252) for
-        valid utf-8 source containing non-ASCII characters.
+        PEP 3120 makes utf-8 the default source encoding. Reading without an
+        explicit encoding falls back to the platform's default codec, which
+        raises UnicodeDecodeError on non-utf-8 platforms (e.g. Windows cp1252)
+        for valid utf-8 source containing non-ASCII characters.
         """
         source_file = tmp_path / 'module.py'
         source_file.write_text('# café ☕\nx = 1\n', encoding='utf-8')
         source_files: dict[str, str] = {}
 
-        with patch.object(Path, 'read_text') as mock_read_text:
-            mock_read_text.return_value = '# café ☕\nx = 1\n'
-            _add_source_file(source_file, source_files)
+        _add_source_file(source_file, source_files)
 
-        mock_read_text.assert_called_once_with(encoding='utf-8')
+        assert str(source_file) in source_files
+        assert 'café ☕' in source_files[str(source_file)]
+
+    def it_reads_latin1_source_with_pep263_coding_declaration(self, tmp_path: Path) -> None:
+        """A latin-1 source file with a PEP 263 coding declaration is decoded and added.
+
+        PEP 263 permits non-utf-8 source encodings via a ``# -*- coding: latin-1 -*-``
+        declaration. Hardcoding ``encoding='utf-8'`` raises UnicodeDecodeError on such
+        a file — and UnicodeDecodeError is not caught by the ``except (SyntaxError,
+        OSError)`` clause, so the whole pytest session crashes with INTERNALERROR
+        instead of skipping the file. Source must be read per PEP 263 (as Python
+        itself does via ``tokenize.open``).
+        """
+        source_file = tmp_path / 'legacy.py'
+        source_file.write_bytes("# -*- coding: latin-1 -*-\nx = 'caf\xe9'\n".encode('latin-1'))
+        source_files: dict[str, str] = {}
+
+        _add_source_file(source_file, source_files)
+
+        assert str(source_file) in source_files
+        assert 'café' in source_files[str(source_file)]
+
+    def it_reads_utf8_source_with_bom(self, tmp_path: Path) -> None:
+        """A utf-8 source file carrying a BOM (utf-8-sig) is decoded and added.
+
+        A BOM is legal at the start of a Python source file — Python strips it.
+        Reading with plain ``encoding='utf-8'`` keeps the leading U+FEFF, so
+        ``ast.parse`` raises SyntaxError and the file is silently excluded from
+        mutation testing. Reading per PEP 263 (``tokenize.open``) strips the BOM.
+        """
+        source_file = tmp_path / 'bom.py'
+        source_file.write_bytes(b'\xef\xbb\xbf' + b'x = 1\n')
+        source_files: dict[str, str] = {}
+
+        _add_source_file(source_file, source_files)
+
+        assert str(source_file) in source_files
 
 
 @pytest.mark.small

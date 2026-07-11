@@ -31,6 +31,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import tokenize
 from typing import (
     TYPE_CHECKING,
     Protocol,
@@ -1124,12 +1125,14 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
         source_files: Dictionary to add the file to.
     """
     try:
-        source = path.read_text(encoding='utf-8')
+        # tokenize.open honors PEP 263 coding declarations and strips BOM
+        with tokenize.open(str(path)) as source_stream:
+            source = source_stream.read()
         ast.parse(source)
         source_files[str(path)] = source
     except SyntaxError:
         logger.debug('Skipping %s: syntax error', path)
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError, LookupError) as exc:
         logger.debug('Skipping %s: %s', path, exc)
 
 
