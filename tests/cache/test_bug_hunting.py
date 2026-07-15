@@ -4,6 +4,8 @@ These tests expose potential bugs found during code review.
 Following TDD: write failing test first, then fix the bug.
 """
 
+import hashlib
+
 import pytest
 
 from pytest_gremlins.cache.hasher import ContentHasher
@@ -35,19 +37,14 @@ class DescribeHasherBugs:
         # Currently they're the same, which is a bug
         assert combined_empty == string_empty  # This passes, showing the bug exists
 
-    def it_raises_clear_error_for_binary_file_content(self, tmp_path):
-        """hash_file raises UnicodeDecodeError for binary files.
-
-        BUG: hash_file uses read_text() which fails on binary files.
-        The error message is not helpful for users.
-        """
+    def it_hashes_binary_file_content(self, tmp_path):
+        """hash_file hashes binary files without decoding them."""
         hasher = ContentHasher()
         binary_file = tmp_path / 'test.pyc'
-        binary_file.write_bytes(b'\x00\x01\x02\x03\xff\xfe')
+        content = b'\x00\x01\x02\x03\xff\xfe'
+        binary_file.write_bytes(content)
 
-        # Currently raises UnicodeDecodeError - not very helpful
-        with pytest.raises(UnicodeDecodeError):
-            hasher.hash_file(binary_file)
+        assert hasher.hash_file(binary_file) == hashlib.sha256(content).hexdigest()
 
 
 @pytest.mark.medium

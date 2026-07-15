@@ -56,8 +56,7 @@ class ContentHasher:
         Raises:
             FileNotFoundError: If the file does not exist.
         """
-        content = path.read_text(encoding='utf-8')
-        return self.hash_string(content)
+        return hashlib.sha256(path.read_bytes()).hexdigest()
 
     def hash_files(self, paths: list[Path]) -> dict[str, str]:
         """Hash multiple files and return a mapping of path to hash.
