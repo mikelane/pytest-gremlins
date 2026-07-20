@@ -31,6 +31,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import tokenize
 from typing import (
     TYPE_CHECKING,
     Protocol,
@@ -1124,12 +1125,14 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
         source_files: Dictionary to add the file to.
     """
     try:
-        source = path.read_text()
+        # tokenize.open honors PEP 263 coding declarations and strips BOM
+        with tokenize.open(str(path)) as source_stream:
+            source = source_stream.read()
         ast.parse(source)
         source_files[str(path)] = source
     except SyntaxError:
         logger.debug('Skipping %s: syntax error', path)
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError, LookupError) as exc:
         logger.debug('Skipping %s: %s', path, exc)
 
 
@@ -1315,7 +1318,7 @@ def main():
         print('Error: PYTEST_GREMLINS_SOURCES_FILE not set', file=sys.stderr)
         sys.exit(1)
 
-    with open(sources_file) as f:
+    with open(sources_file, encoding='utf-8') as f:
         instrumented_sources = json.load(f)
 
     # Get exec function - use indirect access to satisfy linters
@@ -1386,7 +1389,7 @@ def setup_import_hooks():
     if not sources_file:
         return
 
-    with open(sources_file) as f:
+    with open(sources_file, encoding='utf-8') as f:
         instrumented_sources = json.load(f)
 
     run_code = getattr(__builtins__, 'exec', None) or __builtins__.get('exec')
@@ -1574,6 +1577,12 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
         logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
 
     if not gremlin_session.gremlins:
+        if gremlin_session.explain_gremlin_id is not None:
+            print(
+                '--gremlin-explain: no gremlins were generated in this session (nothing to '
+                'explain). Check your `paths`/`--gremlin-targets` configuration.'
+            )
+            gremlin_session.enabled = False
         return
 
     _collect_coverage(gremlin_session, rootdir)
@@ -1784,6 +1793,16 @@ _COV_FLAG_ONLY_OPTS = frozenset(
     }
 )
 
+# ``--cov`` alone takes an *optional* value (pytest-cov defines it with
+# ``nargs='?'``): a bare ``--cov`` immediately followed by another option has no
+# value to consume, so the dash-prefix heuristic below only applies to this one
+# option. Every other value-taking cov option (``--cov-report``,
+# ``--cov-fail-under``, ``--cov-precision``, etc.) *requires* its value and must
+# consume the next token unconditionally -- even one that happens to start with
+# ``-`` (e.g. ``--cov-fail-under -1``) -- or it silently leaks into the
+# re-injected addopts string as a stray, unrelated-looking token (issue #446).
+_COV_OPTIONAL_VALUE_OPTS = frozenset({'--cov'})
+
 
 def _is_cov_addopt(token: str) -> bool:
     """Return True if ``token`` is a pytest-cov option.
@@ -1809,8 +1828,11 @@ def _addopts_without_cov(raw_addopts: list[str]) -> str:
 
     Only the ``--cov*`` / ``--no-cov*`` option family is stripped. A cov option written
     with a space-separated value (``--cov-report term``, ``--cov-precision 2``) has its
-    value token dropped as well; the known value-less switches in
-    ``_COV_FLAG_ONLY_OPTS`` keep their following token, and inline forms
+    value token dropped as well: required-value options (everything except ``--cov``
+    itself and the known value-less switches in ``_COV_FLAG_ONLY_OPTS``) consume their
+    following token unconditionally, even one that starts with ``-``
+    (``--cov-fail-under -1``); ``--cov``'s optional value is only dropped when the
+    following token doesn't itself look like an option. Inline forms
     (``--cov-report=term``) are self-contained. The result is a single string suitable
     for ``-o addopts=<...>``.
 
@@ -1826,16 +1848,13 @@ def _addopts_without_cov(raw_addopts: list[str]) -> str:
         token = raw_addopts[index]
         index += 1
         if _is_cov_addopt(token):
-            # A value-taking cov option written without an inline ``=`` consumes the
-            # next token as its value; drop that too — unless this is a known value-less
-            # switch or the next token is itself an option.
-            if (
-                '=' not in token
-                and token not in _COV_FLAG_ONLY_OPTS
-                and index < count
-                and not raw_addopts[index].startswith('-')
-            ):
-                index += 1
+            has_no_inline_value = '=' not in token
+            is_value_taking = token not in _COV_FLAG_ONLY_OPTS
+            has_next_token = index < count
+            if has_no_inline_value and is_value_taking and has_next_token:
+                next_looks_like_option = raw_addopts[index].startswith('-')
+                if token not in _COV_OPTIONAL_VALUE_OPTS or not next_looks_like_option:
+                    index += 1
             continue
         kept.append(token)
     return ' '.join(shlex.quote(token) for token in kept)
@@ -2339,6 +2358,9 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
 
     _print_explainer_header(target_gremlin, covering, selected)
 
+    if gremlin_session.no_coverage_filter:
+        print('  Note: coverage filter disabled -- all tests selected (--gremlin-no-coverage-filter).')
+
     if not covering_minus_selected and not selected_minus_runnable:
         print(
             '  Result: selection is consistent with covering set (no drift). '
@@ -2363,14 +2385,28 @@ def _covering_tests_for_gremlin(gremlin: Gremlin, gremlin_session: GremlinSessio
     return collector.coverage_map.get_tests(gremlin.file_path, gremlin.line_number)
 
 
+def _pluralize_test_count(count: int) -> str:
+    """Render a test count with the correctly pluralized noun.
+
+    Examples:
+        >>> _pluralize_test_count(0)
+        '0 tests'
+        >>> _pluralize_test_count(1)
+        '1 test'
+        >>> _pluralize_test_count(2)
+        '2 tests'
+    """
+    return f'{count} test' if count == 1 else f'{count} tests'
+
+
 def _print_explainer_header(gremlin: Gremlin, covering: set[str], selected: list[str]) -> None:
     """Print the banner plus the covering and selected lists for the diagnostic."""
     print(f'--gremlin-explain: diagnostic for {gremlin.gremlin_id}')
     print(f'  file: {gremlin.file_path}:{gremlin.line_number}')
-    print(f'  Covering set ({len(covering)} test(s)):')
+    print(f'  Covering set ({_pluralize_test_count(len(covering))}):')
     for key in sorted(covering):
         print(f'    {key!r}')
-    print(f'  Selected list ({len(selected)} test(s)):')
+    print(f'  Selected list ({_pluralize_test_count(len(selected))}):')
     for key in selected:
         print(f'    {key!r}')
 

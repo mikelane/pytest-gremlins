@@ -132,6 +132,49 @@ class DescribeHtmlReporterContent:
         assert 'survived' in html.lower()
 
 
+@pytest.mark.small
+class DescribeHtmlReporterSelectedTests:
+    """Tests for showing the selected/killing test per mutant. References: #414."""
+
+    def it_shows_the_killing_test_for_a_zapped_gremlin(self, make_result):
+        results = [
+            make_result(
+                GremlinResultStatus.ZAPPED,
+                killing_test='tests/test_auth.py::test_login_validates_age',
+            ),
+        ]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        assert 'tests/test_auth.py::test_login_validates_age' in html
+
+    def it_shows_all_selected_tests_for_a_survivor_with_no_killing_test(self, make_result):
+        results = [
+            make_result(
+                GremlinResultStatus.SURVIVED,
+                selected_tests=['tests/test_a.py::test_one', 'tests/test_b.py::test_two'],
+            ),
+        ]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        assert 'tests/test_a.py::test_one' in html
+        assert 'tests/test_b.py::test_two' in html
+
+    def it_shows_a_placeholder_when_no_test_was_selected(self, make_result):
+        results = [make_result(GremlinResultStatus.SURVIVED)]
+        score = MutationScore.from_results(results)
+        reporter = HtmlReporter()
+
+        html = reporter.to_html(score)
+
+        assert '—' in html
+
+
 @pytest.mark.medium
 class DescribeHtmlReporterFileOutput:
     """Tests for writing HTML to file."""
@@ -1079,7 +1122,7 @@ class DescribeHtmlReporterA11y:
         th_count = table_html.count('<th>')
         scope_col_count = table_html.count('scope="col"')
         assert th_count == 0
-        assert scope_col_count == 5
+        assert scope_col_count == 6
 
 
 @pytest.mark.medium

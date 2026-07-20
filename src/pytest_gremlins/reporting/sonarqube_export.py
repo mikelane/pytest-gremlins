@@ -1,7 +1,8 @@
 """SonarQube generic issue exporter for mutation testing results.
 
-Exports surviving mutants as external issues that can be imported into
-SonarQube using the sonar.externalIssuesReportPaths parameter.
+Exports surviving mutants, and gremlins that errored with diagnostic
+output, as external issues that can be imported into SonarQube using
+the sonar.externalIssuesReportPaths parameter.
 
 See: https://docs.sonarsource.com/sonarqube/latest/analyzing-source-code/importing-external-issues/generic-issue-import-format/
 """
@@ -27,8 +28,10 @@ if TYPE_CHECKING:
 class SonarQubeExporter:
     """Exporter that produces SonarQube generic issue format JSON.
 
-    Only surviving mutants are exported as issues since they represent
-    gaps in test coverage that SonarQube should track.
+    Surviving mutants are exported as issues since they represent gaps
+    in test coverage that SonarQube should track. Errored gremlins are
+    also exported, but only when they captured diagnostic output, so
+    SonarQube surfaces why a gremlin failed to run rather than survived.
 
     Usage with SonarQube:
         sonar-scanner -Dsonar.externalIssuesReportPaths=mutation-sonar.json
@@ -86,13 +89,38 @@ class SonarQubeExporter:
         Returns:
             Dictionary in SonarQube generic issue format.
         """
-        issues = [
-            self._build_issue(result) for result in score.results if result.status == GremlinResultStatus.SURVIVED
-        ]
+        issues = [self._build_issue(result) for result in score.results if self._is_exportable(result)]
         return {'issues': issues}
 
+    def _is_exportable(self, result: GremlinResult) -> bool:
+        """Check whether a result should be exported as a SonarQube issue.
+
+        Args:
+            result: The GremlinResult to check.
+
+        Returns:
+            True for survived mutants, and for errored mutants that captured
+            diagnostic output; false otherwise.
+        """
+        if result.status == GremlinResultStatus.SURVIVED:
+            return True
+        return result.status == GremlinResultStatus.ERROR and bool(result.error_output)
+
     def _build_issue(self, result: GremlinResult) -> SonarIssue:
-        """Build a single issue entry for a surviving mutant.
+        """Build a single issue entry for a survived or errored mutant.
+
+        Args:
+            result: The GremlinResult to convert.
+
+        Returns:
+            Dictionary representing this issue.
+        """
+        if result.status == GremlinResultStatus.ERROR:
+            return self._build_error_issue(result)
+        return self._build_survived_issue(result)
+
+    def _build_survived_issue(self, result: GremlinResult) -> SonarIssue:
+        """Build an issue entry for a surviving mutant.
 
         Args:
             result: The GremlinResult to convert.
@@ -115,6 +143,38 @@ class SonarQubeExporter:
                     'startLine': gremlin.line_number,
                 },
                 'message': f'Mutant survived: {gremlin.description}',
+            },
+        }
+
+    def _build_error_issue(self, result: GremlinResult) -> SonarIssue:
+        """Build an issue entry for a gremlin that errored during execution.
+
+        Truncates error_output to 500 chars (matching StrykerExporter's
+        statusReason truncation) to keep the JSON report size reasonable
+        when many gremlins error.
+
+        Args:
+            result: The GremlinResult to convert.
+
+        Returns:
+            Dictionary representing this issue.
+        """
+        gremlin = result.gremlin
+        file_path = self._normalize_path(gremlin.file_path)
+        error_excerpt = result.error_output[:500]
+
+        return {
+            'engineId': 'pytest-gremlins',
+            'ruleId': f'mutant-error-{gremlin.operator_name}',
+            'severity': self._severity,
+            'type': 'CODE_SMELL',
+            'effortMinutes': self._effort_minutes,
+            'primaryLocation': {
+                'filePath': file_path,
+                'textRange': {
+                    'startLine': gremlin.line_number,
+                },
+                'message': f'Mutant errored: {error_excerpt}',
             },
         }
 

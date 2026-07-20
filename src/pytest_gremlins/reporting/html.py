@@ -890,6 +890,7 @@ class HtmlReporter:
                     <th scope="col">Operator</th>
                     <th scope="col">Description</th>
                     <th scope="col">Status</th>
+                    <th scope="col">Selected test</th>
                 </tr>
             </thead>
             <tbody>
@@ -903,6 +904,7 @@ class HtmlReporter:
         gremlin = result.gremlin
         status_class = f'status-{result.status.value}'
         diff_html = self._render_diff_panel(gremlin)
+        selected_test_html = self._render_selected_test(result)
         return f"""
                 <tr>
                     <td>
@@ -913,7 +915,25 @@ class HtmlReporter:
                     <td>{self._escape_html(gremlin.operator_name)}</td>
                     <td>{self._escape_html(gremlin.description)}</td>
                     <td class="{status_class}">{result.status.value}</td>
+                    <td>{selected_test_html}</td>
                 </tr>"""
+
+    def _render_selected_test(self, result: GremlinResult) -> str:
+        """Render the killing test, or the list of selected tests, for a result.
+
+        Args:
+            result: The GremlinResult to extract test information from.
+
+        Returns:
+            HTML-escaped killing test name when present; otherwise a
+            comma-separated, HTML-escaped list of selected test node IDs;
+            an em dash when neither is available.
+        """
+        if result.killing_test:
+            return self._escape_html(result.killing_test)
+        if result.selected_tests:
+            return self._escape_html(', '.join(result.selected_tests))
+        return '—'
 
     def _render_diff_panel(self, gremlin: Gremlin) -> str:
         """Render a collapsible side-by-side diff panel for a gremlin.
