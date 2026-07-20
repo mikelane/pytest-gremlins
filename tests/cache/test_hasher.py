@@ -163,11 +163,16 @@ class DescribeContentHasherFileIO:
 class DescribeContentHasherFileErrors:
     """File I/O edge cases for ContentHasher — require real filesystem access."""
 
-    def it_raises_is_a_directory_error_for_directories(self, tmp_path):
-        """hash_file raises IsADirectoryError when given a directory."""
+    def it_raises_os_error_for_directories(self, tmp_path):
+        """hash_file raises OSError when given a directory.
+
+        IsADirectoryError is raised on POSIX systems, PermissionError on
+        Windows. Both are subclasses of OSError, so we assert the portable
+        contract without specifying the platform-specific subclass.
+        """
         hasher = ContentHasher()
 
-        with pytest.raises(IsADirectoryError):
+        with pytest.raises(OSError):  # noqa: PT011
             hasher.hash_file(tmp_path)
 
     def it_hashes_empty_files(self, tmp_path):
