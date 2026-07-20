@@ -178,7 +178,7 @@ jobs:
         run: uv sync
 
       - name: Run pip-audit
-        run: uv run pip-audit --ignore-vuln CVE-2026-4539  # pygments: no fix available yet
+        run: uv run pip-audit
 
   attrs-smoke:
     name: Attrs Smoke Test
