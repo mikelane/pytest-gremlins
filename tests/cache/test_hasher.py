@@ -144,6 +144,15 @@ class DescribeContentHasherFileIO:
 
         assert hasher.hash_file(lf_path) != hasher.hash_file(crlf_path)
 
+    def it_hashes_non_utf8_source_bytes(self, tmp_path):
+        """hash_file hashes valid PEP 263 source without decoding it."""
+        hasher = ContentHasher()
+        content = b"# -*- coding: latin-1 -*-\nname = 'caf\xe9'\n"
+        file_path = tmp_path / 'latin1.py'
+        file_path.write_bytes(content)
+
+        assert hasher.hash_file(file_path) == hashlib.sha256(content).hexdigest()
+
     def it_raises_for_missing_file(self, tmp_path):
         """hash_file raises FileNotFoundError for missing files."""
         hasher = ContentHasher()
