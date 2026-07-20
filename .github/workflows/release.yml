@@ -34,6 +34,7 @@ jobs:
         run: uv sync
 
       - name: Run tests with coverage (small + medium, matching PR CI)
+        shell: bash
         env:
           COVERAGE_PROCESS_START: pyproject.toml
           PYTHONPATH: .

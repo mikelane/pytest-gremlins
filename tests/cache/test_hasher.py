@@ -4,6 +4,8 @@ Content hashing is the foundation of incremental analysis. Files with
 identical content produce identical hashes, enabling cache lookups.
 """
 
+import hashlib
+
 import pytest
 
 from pytest_gremlins.cache.hasher import ContentHasher
@@ -87,17 +89,60 @@ class DescribeContentHasherFileIO:
         assert isinstance(result, str)
         assert len(result) == 64  # SHA-256 produces 64 hex characters
 
-    def it_matches_hash_file_output_to_hash_string(self, tmp_path):
-        """hash_file produces same result as hash_string for same content."""
+    def it_matches_hash_file_output_to_hash_string_for_lf_source(self, tmp_path):
+        """hash_file matches hash_string for LF-encoded content.
+
+        This equivalence is scoped to LF-encoded UTF-8 source: it does not
+        claim anything about CRLF or non-UTF-8 files. See #469.
+        """
         hasher = ContentHasher()
         content = 'class MyClass:\n    pass\n'
         file_path = tmp_path / 'test.py'
-        file_path.write_text(content)
+        file_path.write_bytes(content.encode('utf-8'))
 
         file_hash = hasher.hash_file(file_path)
         string_hash = hasher.hash_string(content)
 
         assert file_hash == string_hash
+
+    @pytest.mark.xfail(
+        reason='passes once #465 lands: hash_file will hash raw bytes instead of read_text() output',
+        strict=False,
+    )
+    def it_hashes_file_content_as_raw_bytes(self, tmp_path):
+        """hash_file equals the SHA-256 digest of the file's raw bytes.
+
+        Fails on current main because hash_file still hashes read_text()
+        output, which applies universal-newline translation. Remove the
+        xfail marker once #465 merges.
+        """
+        hasher = ContentHasher()
+        file_path = tmp_path / 'test.py'
+        file_path.write_bytes(b'class MyClass:\r\n    pass\r\n')
+
+        result = hasher.hash_file(file_path)
+
+        assert result == hashlib.sha256(file_path.read_bytes()).hexdigest()
+
+    @pytest.mark.xfail(
+        reason='passes once #465 lands: hash_file will hash raw bytes instead of read_text() output',
+        strict=False,
+    )
+    def it_hashes_crlf_and_lf_files_differently_for_same_logical_content(self, tmp_path):
+        """A CRLF file and an LF file with the same logical content hash differently.
+
+        Fails on current main because read_text()'s universal-newline
+        translation makes CRLF and LF files hash identically. Remove the
+        xfail marker once #465 merges.
+        """
+        hasher = ContentHasher()
+        logical_content = 'class MyClass:\n    pass\n'
+        lf_path = tmp_path / 'lf.py'
+        crlf_path = tmp_path / 'crlf.py'
+        lf_path.write_bytes(logical_content.encode('utf-8'))
+        crlf_path.write_bytes(logical_content.replace('\n', '\r\n').encode('utf-8'))
+
+        assert hasher.hash_file(lf_path) != hasher.hash_file(crlf_path)
 
     def it_raises_for_missing_file(self, tmp_path):
         """hash_file raises FileNotFoundError for missing files."""
