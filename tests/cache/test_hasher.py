@@ -105,17 +105,8 @@ class DescribeContentHasherFileIO:
 
         assert file_hash == string_hash
 
-    @pytest.mark.xfail(
-        reason='passes once #465 lands: hash_file will hash raw bytes instead of read_text() output',
-        strict=False,
-    )
     def it_hashes_file_content_as_raw_bytes(self, tmp_path):
-        """hash_file equals the SHA-256 digest of the file's raw bytes.
-
-        Fails on current main because hash_file still hashes read_text()
-        output, which applies universal-newline translation. Remove the
-        xfail marker once #465 merges.
-        """
+        """hash_file equals the SHA-256 digest of the file's raw bytes."""
         hasher = ContentHasher()
         file_path = tmp_path / 'test.py'
         file_path.write_bytes(b'class MyClass:\r\n    pass\r\n')
@@ -124,17 +115,8 @@ class DescribeContentHasherFileIO:
 
         assert result == hashlib.sha256(file_path.read_bytes()).hexdigest()
 
-    @pytest.mark.xfail(
-        reason='passes once #465 lands: hash_file will hash raw bytes instead of read_text() output',
-        strict=False,
-    )
     def it_hashes_crlf_and_lf_files_differently_for_same_logical_content(self, tmp_path):
-        """A CRLF file and an LF file with the same logical content hash differently.
-
-        Fails on current main because read_text()'s universal-newline
-        translation makes CRLF and LF files hash identically. Remove the
-        xfail marker once #465 merges.
-        """
+        """A CRLF file and an LF file with the same logical content hash differently."""
         hasher = ContentHasher()
         logical_content = 'class MyClass:\n    pass\n'
         lf_path = tmp_path / 'lf.py'
@@ -175,6 +157,50 @@ class DescribeContentHasherFileIO:
         assert str(file1) in result
         assert str(file2) in result
         assert result[str(file1)] != result[str(file2)]
+
+
+@pytest.mark.medium
+class DescribeContentHasherFileErrors:
+    """File I/O edge cases for ContentHasher — require real filesystem access."""
+
+    def it_raises_os_error_for_directories(self, tmp_path):
+        """hash_file raises OSError when given a directory.
+
+        IsADirectoryError is raised on POSIX systems, PermissionError on
+        Windows. Both are subclasses of OSError, so we assert the portable
+        contract without specifying the platform-specific subclass.
+        """
+        hasher = ContentHasher()
+
+        with pytest.raises(OSError):  # noqa: PT011
+            hasher.hash_file(tmp_path)
+
+    def it_hashes_empty_files(self, tmp_path):
+        """hash_file returns the SHA-256 of empty bytes for an empty file."""
+        hasher = ContentHasher()
+        file_path = tmp_path / 'empty.py'
+        file_path.write_bytes(b'')
+
+        assert hasher.hash_file(file_path) == hashlib.sha256(b'').hexdigest()
+
+    def it_follows_symlinks_to_target_content(self, tmp_path):
+        """hash_file hashes the symlink target's content, not the link itself."""
+        hasher = ContentHasher()
+        target = tmp_path / 'target.py'
+        target.write_bytes(b'def foo(): pass\n')
+        link = tmp_path / 'link.py'
+        link.symlink_to(target)
+
+        assert hasher.hash_file(link) == hasher.hash_file(target)
+
+    def it_hashes_utf8_bom_files_by_raw_bytes(self, tmp_path):
+        """hash_file includes the UTF-8 BOM in the digest."""
+        hasher = ContentHasher()
+        content = b'\xef\xbb\xbfdef foo(): pass\n'
+        file_path = tmp_path / 'bom.py'
+        file_path.write_bytes(content)
+
+        assert hasher.hash_file(file_path) == hashlib.sha256(content).hexdigest()
 
 
 @pytest.mark.small
