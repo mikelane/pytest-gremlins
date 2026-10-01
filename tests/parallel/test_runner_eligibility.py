@@ -208,6 +208,47 @@ class DescribeIsLightweightSafe:
         assert is_lightweight_safe(item) is True
 
 
+@pytest.mark.medium
+class DescribeIsLightweightSafeWithWarningFilters:
+    """Warning filters that escalate to errors apply around the call, so a bare call would miss them."""
+
+    PLAIN = """
+        def test_plain():
+            assert True
+        """
+
+    @pytest.mark.parametrize(
+        'ini_entry',
+        ['error', 'error::DeprecationWarning', 'ignore::UserWarning\n    error'],
+    )
+    def it_rejects_every_test_when_the_ini_escalates_warnings(
+        self, pytester_with_markers: pytest.Pytester, ini_entry: str
+    ) -> None:
+        pytester_with_markers.makeini(f'[pytest]\nfilterwarnings =\n    {ini_entry}\n')
+
+        item = _collect_one(pytester_with_markers, self.PLAIN)
+
+        assert is_lightweight_safe(item) is False
+
+    @pytest.mark.parametrize('ini_entry', ['ignore', 'default::UserWarning', 'ignore::DeprecationWarning'])
+    def it_accepts_tests_when_the_ini_only_relaxes_warnings(
+        self, pytester_with_markers: pytest.Pytester, ini_entry: str
+    ) -> None:
+        pytester_with_markers.makeini(f'[pytest]\nfilterwarnings =\n    {ini_entry}\n')
+
+        item = _collect_one(pytester_with_markers, self.PLAIN)
+
+        assert is_lightweight_safe(item) is True
+
+    def it_rejects_every_test_when_the_command_line_escalates_warnings(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makepyfile(test_plain=textwrap.dedent(self.PLAIN))
+        items, _ = pytester_with_markers.inline_genitems('-W', 'error')
+
+        assert is_lightweight_safe(items[0]) is False
+
+
 @pytest.mark.small
 class DescribeIsTrustedPluginModule:
     """Runtest hooks from pytest itself and from plugins that leave test behavior alone do not matter."""

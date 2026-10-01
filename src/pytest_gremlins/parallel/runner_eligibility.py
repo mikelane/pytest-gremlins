@@ -43,8 +43,9 @@ def is_lightweight_safe(item: pytest.Item) -> bool:
 
     Returns:
         True only for a plain ``pytest.Function`` with no fixtures, no
-        parametrization, no coroutine body, and no skip/xfail/filterwarnings markers, and no
-        conftest or third-party ``pytest_runtest_*`` / ``pytest_pyfunc_call`` hook around it.
+        parametrization, no coroutine body, no skip/xfail/filterwarnings marker,
+        no ``error`` warning filter in the ini or ``-W`` options, and no conftest
+        or third-party ``pytest_runtest_*`` / ``pytest_pyfunc_call`` hook around it.
     """
     if type(item) is not pytest.Function:
         return False
@@ -54,9 +55,15 @@ def is_lightweight_safe(item: pytest.Item) -> bool:
         return False
     if inspect.iscoroutinefunction(item.obj) or inspect.isasyncgenfunction(item.obj):
         return False
-    if _has_marker_pytest_acts_on(item):
+    if _has_marker_pytest_acts_on(item) or _warnings_escalate_to_errors(item.config):
         return False
     return not _has_untrusted_runtest_hook(item)
+
+
+def _warnings_escalate_to_errors(config: pytest.Config) -> bool:
+    """Whether the ini or ``-W`` options turn a warning into an exception around every test."""
+    filters = [*config.getini('filterwarnings'), *(config.getoption('pythonwarnings', default=None) or [])]
+    return any(entry.split(':', maxsplit=1)[0].strip() == 'error' for entry in filters)
 
 
 def is_trusted_plugin_module(module_name: str) -> bool:

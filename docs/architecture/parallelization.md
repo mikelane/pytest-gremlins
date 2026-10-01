@@ -226,6 +226,8 @@ A test is safe only when all of these hold:
   `setup_*` fixtures, because those show up as fixtures;
 - it is not parametrized and not `async`;
 - it has no `skip`, `skipif`, `xfail` or `filterwarnings` marker;
+- no `error` warning filter is active (`filterwarnings = error` in the ini, or `-W error`), since a
+  bare call would not turn warnings into failures; such a suite runs through the bootstrap;
 - no `conftest.py` or third-party plugin implements `pytest_runtest_setup`, `pytest_runtest_call`,
   `pytest_runtest_teardown`, `pytest_pyfunc_call` or `pytest_runtest_protocol` for it. Hooks from
   pytest itself, pytest-gremlins, pytest-cov, pytest-xdist and pytest-test-categories are ignored.
