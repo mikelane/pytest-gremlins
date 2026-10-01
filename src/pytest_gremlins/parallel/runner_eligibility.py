@@ -16,7 +16,7 @@ import pytest
 MAX_NODE_ID_SEGMENTS = 3
 """``file::func`` and ``file::Class::method`` are the only shapes the runner resolves."""
 
-_SKIP_SEMANTIC_MARKERS = ('skip', 'skipif', 'xfail')
+_MARKERS_PYTEST_ACTS_ON_AROUND_THE_CALL = ('skip', 'skipif', 'xfail', 'filterwarnings')
 
 
 def is_lightweight_safe(item: pytest.Item) -> bool:
@@ -30,7 +30,7 @@ def is_lightweight_safe(item: pytest.Item) -> bool:
 
     Returns:
         True only for a plain ``pytest.Function`` with no fixtures, no
-        parametrization, no coroutine body, and no skip/xfail markers.
+        parametrization, no coroutine body, and no skip/xfail/filterwarnings markers.
     """
     if type(item) is not pytest.Function:
         return False
@@ -40,8 +40,8 @@ def is_lightweight_safe(item: pytest.Item) -> bool:
         return False
     if inspect.iscoroutinefunction(item.obj) or inspect.isasyncgenfunction(item.obj):
         return False
-    return not _has_skip_semantics(item)
+    return not _has_marker_pytest_acts_on(item)
 
 
-def _has_skip_semantics(item: pytest.Item) -> bool:
-    return any(item.get_closest_marker(name) is not None for name in _SKIP_SEMANTIC_MARKERS)
+def _has_marker_pytest_acts_on(item: pytest.Item) -> bool:
+    return any(item.get_closest_marker(name) is not None for name in _MARKERS_PYTEST_ACTS_ON_AROUND_THE_CALL)

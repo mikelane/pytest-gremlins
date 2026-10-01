@@ -133,8 +133,11 @@ class DescribeIsLightweightSafe:
 
         assert is_lightweight_safe(item) is False
 
-    @pytest.mark.parametrize('marker', ['skip', 'skipif(True, reason="x")', 'xfail'])
-    def it_rejects_a_test_with_a_skip_or_xfail_marker(
+    @pytest.mark.parametrize(
+        'marker',
+        ['skip', 'skipif(True, reason="x")', 'xfail', 'filterwarnings("error")'],
+    )
+    def it_rejects_a_test_with_a_marker_pytest_acts_on_around_the_call(
         self, pytester_with_markers: pytest.Pytester, marker: str
     ) -> None:
         item = _collect_one(

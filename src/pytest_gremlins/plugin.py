@@ -1567,6 +1567,7 @@ import json
 import os
 import sys
 import traceback
+import unittest
 
 
 def setup_import_hooks():
@@ -1636,6 +1637,8 @@ def cannot_verify(test_spec, reason):
 
 def is_unexecuted_outcome(exc):
     """Return True when a pytest skip/xfail was raised from inside the test body."""
+    if isinstance(exc, unittest.SkipTest):
+        return True
     return type(exc).__module__ in OUTCOME_MODULES and type(exc).__name__ in UNEXECUTED_OUTCOMES
 
 

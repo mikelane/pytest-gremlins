@@ -97,6 +97,11 @@ class DescribeLightweightRunnerExitCodes:
             pytest.param(
                 'import pytest\n\ndef test_a():\n    pytest.skip("nope")\n', 'test_sample.py::test_a', id='skipped'
             ),
+            pytest.param(
+                'import unittest\n\ndef test_a():\n    raise unittest.SkipTest("nope")\n',
+                'test_sample.py::test_a',
+                id='unittest-skip',
+            ),
         ],
     )
     def it_exits_with_the_distinct_code_when_it_cannot_verify(self, tmp_path: Path, source: str, node_id: str) -> None:
