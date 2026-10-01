@@ -118,3 +118,4 @@ class DescribePiggybackRunWithWarningsAsErrors:
         result = pytester_with_markers.runpytest_subprocess('--gremlins', '--gremlin-targets=calc.py', '--cov=.')
 
         assert result.ret == pytest.ExitCode.OK
+        result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*', 'Zapped: *'])
