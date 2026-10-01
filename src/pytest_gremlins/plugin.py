@@ -847,6 +847,13 @@ def _is_running_on_sysmon(cov: coverage.Coverage) -> bool:
     since coverage 7.15.3), so attaching ``GremlinContextPlugin`` would be useless
     and, under ``filterwarnings = error``, fatal. Uses the public ``sys_info()``,
     which reports the core of a started instance.
+
+    Args:
+        cov: The coverage instance pytest-cov is measuring with.
+
+    Returns:
+        True only when the core is positively identified as sysmon; a failed probe
+        returns False so the context plugin is still attached.
     """
     try:
         return dict(cov.sys_info()).get('core') == 'SysMonitor'
