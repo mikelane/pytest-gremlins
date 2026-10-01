@@ -74,6 +74,7 @@ from pytest_gremlins.parallel.inprocess_executor import InProcessExecutor
 from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
     build_lightweight_command,
+    describe_runner_error,
 )
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.html import (
@@ -3358,9 +3359,7 @@ def _test_gremlin(
                 status=GremlinResultStatus.ZAPPED,
                 killing_test='unknown',
             )
-        error_output = ''
-        if subprocess_outcome.stderr:
-            error_output = subprocess_outcome.stderr.decode(errors='replace')[:2000]
+        error_output = describe_runner_error(subprocess_outcome.returncode, subprocess_outcome.stderr)
         logger.debug(
             'Gremlin %s error (exit %d): %s',
             gremlin.gremlin_id,

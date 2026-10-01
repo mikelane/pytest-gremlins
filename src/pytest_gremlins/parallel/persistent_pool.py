@@ -41,7 +41,10 @@ from typing import (
 if TYPE_CHECKING:
     import multiprocessing
 
-from pytest_gremlins.parallel.lightweight import build_lightweight_command
+from pytest_gremlins.parallel.lightweight import (
+    build_lightweight_command,
+    describe_runner_error,
+)
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
@@ -133,9 +136,7 @@ def _run_gremlin_batch(  # pragma: no cover
                 )
             else:
                 # Other non-zero exit codes indicate errors
-                error_output = ''
-                if result.stderr:
-                    error_output = result.stderr.decode(errors='replace')[:2000]
+                error_output = describe_runner_error(result.returncode, result.stderr)
                 results.append(
                     WorkerResult(
                         gremlin_id=gremlin_id,

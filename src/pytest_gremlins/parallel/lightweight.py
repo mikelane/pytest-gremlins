@@ -21,6 +21,25 @@ SAFE_TESTS_FILENAME = 'lightweight_safe_tests.json'
 """Sibling of the runner script listing node IDs the runner can judge faithfully."""
 
 
+def describe_runner_error(returncode: int, stderr: bytes | None) -> str:
+    """Build the ``error_output`` for a subprocess that exited with an error code.
+
+    The runner's abstention code gets an explanatory prefix so the report says
+    the verdict was withheld rather than showing a bare traceback.
+
+    Args:
+        returncode: Exit code of the test subprocess.
+        stderr: Captured stderr, if any.
+
+    Returns:
+        Up to 2000 characters of stderr, prefixed for the runner's abstention code.
+    """
+    detail = stderr.decode(errors='replace')[:2000] if stderr else ''
+    if returncode == LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE:
+        return f'lightweight runner could not verify the selected tests: {detail}'.rstrip()
+    return detail
+
+
 def write_safe_tests(instrumented_dir: Path, safe_node_ids: Iterable[str]) -> None:
     """Record which node IDs the lightweight runner may execute.
 

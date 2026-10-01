@@ -23,7 +23,10 @@ import subprocess
 import time
 from typing import Self
 
-from pytest_gremlins.parallel.lightweight import build_lightweight_command
+from pytest_gremlins.parallel.lightweight import (
+    build_lightweight_command,
+    describe_runner_error,
+)
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 logger = logging.getLogger(__name__)
@@ -113,9 +116,7 @@ def _run_gremlin_test(  # pragma: no cover
                 killing_test='unknown',
                 execution_time_ms=execution_time_ms,
             )
-        error_output = ''
-        if result.stderr:
-            error_output = result.stderr.decode(errors='replace')[:2000]
+        error_output = describe_runner_error(result.returncode, result.stderr)
         return WorkerResult(
             gremlin_id=gremlin_id,
             status=GremlinResultStatus.ERROR,
