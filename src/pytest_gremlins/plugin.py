@@ -616,7 +616,27 @@ def _extract_toml_fields(
     )
 
 
-def pytest_configure(config: pytest.Config) -> None:
+def _disable_for_collect_only(config: pytest.Config) -> bool:
+    """Disable the mutation phase for ``--collect-only`` runs.
+
+    Collection-only runs execute no tests, so there is no coverage to pre-scan and
+    nothing to mutate against. The skip notice is printed once, by the controller.
+
+    Args:
+        config: The pytest config object.
+
+    Returns:
+        True if the session was disabled because ``--collect-only`` is active.
+    """
+    if not getattr(config.option, 'collectonly', False):
+        return False
+    _set_session(GremlinSession(enabled=False))
+    if not _is_xdist_worker(config):
+        print('pytest-gremlins: --collect-only detected, skipping mutation testing')
+    return True
+
+
+def pytest_configure(config: pytest.Config) -> None:  # noqa: C901, PLR0912
     """Configure pytest-gremlins based on command-line options.
 
     Configuration precedence (highest to lowest):
@@ -627,6 +647,9 @@ def pytest_configure(config: pytest.Config) -> None:
     """
     if not config.option.gremlins:
         _set_session(GremlinSession(enabled=False))
+        return
+
+    if _disable_for_collect_only(config):
         return
 
     # xdist with -n > 0 distributes test items across workers; gremlins runs
