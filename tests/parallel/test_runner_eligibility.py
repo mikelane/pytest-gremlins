@@ -11,7 +11,10 @@ import textwrap
 
 import pytest
 
-from pytest_gremlins.parallel.runner_eligibility import is_lightweight_safe
+from pytest_gremlins.parallel.runner_eligibility import (
+    is_lightweight_safe,
+    is_trusted_plugin_module,
+)
 
 
 def _collect_one(pytester: pytest.Pytester, source: str) -> pytest.Item:
@@ -165,3 +168,66 @@ class DescribeIsLightweightSafe:
         )
 
         assert is_lightweight_safe(item) is False
+
+    @pytest.mark.parametrize(
+        'hook',
+        [
+            'pytest_runtest_setup(item)',
+            'pytest_runtest_call(item)',
+            'pytest_runtest_teardown(item)',
+            'pytest_pyfunc_call(pyfuncitem)',
+            'pytest_runtest_protocol(item, nextitem)',
+        ],
+    )
+    def it_rejects_a_test_run_under_a_conftest_runtest_hook(
+        self, pytester_with_markers: pytest.Pytester, hook: str
+    ) -> None:
+        existing = pytester_with_markers.path.joinpath('conftest.py').read_text()
+        pytester_with_markers.makeconftest(existing + f'\n\ndef {hook}:\n    pass\n')
+        item = _collect_one(
+            pytester_with_markers,
+            """
+            def test_plain():
+                assert True
+            """,
+        )
+
+        assert is_lightweight_safe(item) is False
+
+    def it_accepts_a_test_when_the_conftest_only_hooks_collection(self, pytester_with_markers: pytest.Pytester) -> None:
+        existing = pytester_with_markers.path.joinpath('conftest.py').read_text()
+        pytester_with_markers.makeconftest(existing + '\n\ndef pytest_collection_finish(session):\n    pass\n')
+        item = _collect_one(
+            pytester_with_markers,
+            """
+            def test_plain():
+                assert True
+            """,
+        )
+
+        assert is_lightweight_safe(item) is True
+
+
+@pytest.mark.small
+class DescribeIsTrustedPluginModule:
+    """Runtest hooks from pytest itself and from plugins that leave test behavior alone do not matter."""
+
+    @pytest.mark.parametrize(
+        'module_name',
+        [
+            '_pytest.runner',
+            'pytest_gremlins.plugin',
+            'pytest_test_categories.plugin',
+            'pytest_cov.plugin',
+            'xdist.plugin',
+        ],
+    )
+    def it_trusts_pytest_and_the_plugins_that_do_not_alter_the_test_environment(self, module_name: str) -> None:
+        assert is_trusted_plugin_module(module_name) is True
+
+    @pytest.mark.parametrize(
+        'module_name',
+        ['conftest', 'tests.conftest', 'pytest_asyncio.plugin', 'pytest_randomly', 'pytest_xdist_like', 'my_plugin'],
+    )
+    def it_distrusts_conftest_files_and_other_plugins(self, module_name: str) -> None:
+        assert is_trusted_plugin_module(module_name) is False

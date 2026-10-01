@@ -242,3 +242,34 @@ class DescribeInProcessExecutorsRunTests:
 
         assert verdicts['Error'] > 0
         assert verdicts['Survived'] == 0
+
+
+_HOOK_CONFTEST = """
+import builtins
+
+
+def pytest_runtest_setup(item):
+    builtins.HOOK_PREPARED = True
+"""
+
+_NEEDS_THE_HOOK = """
+from sample import classify
+
+def test_needs_the_hook():
+    assert HOOK_PREPARED is True
+    classify(11)
+"""
+
+
+@pytest.mark.medium
+class DescribeTestsPreparedByConftestHooks:
+    """A conftest hook runs around a plain test but is invisible in its fixture names."""
+
+    def it_does_not_count_a_hook_dependent_test_as_a_kill(self, pytester_with_markers: pytest.Pytester) -> None:
+        existing = pytester_with_markers.path.joinpath('conftest.py').read_text()
+        pytester_with_markers.makeconftest(existing + _HOOK_CONFTEST)
+
+        verdicts = _run(pytester_with_markers, _SIMPLE_TARGET, _NEEDS_THE_HOOK, '--gremlin-no-coverage-filter')
+
+        assert verdicts['Zapped'] == 0
+        assert verdicts['Survived'] > 0
