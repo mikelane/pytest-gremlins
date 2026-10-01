@@ -73,10 +73,8 @@ from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
     build_lightweight_command,
     describe_runner_error,
-    write_safe_tests,
 )
 from pytest_gremlins.parallel.pool import WorkerPool
-from pytest_gremlins.parallel.runner_eligibility import is_lightweight_safe
 from pytest_gremlins.reporting.html import (
     HtmlReporter,
     resolve_html_output_path,
@@ -186,9 +184,6 @@ class GremlinSession:
         test_selector: Selects tests based on coverage data.
         prioritized_selector: Selects tests ordered by specificity (most specific first).
         test_node_ids: Maps test names to their pytest node IDs.
-        lightweight_safe_node_ids: Normalized node IDs of collected tests the lightweight
-            runner can run faithfully as bare callables.  Empty (everything uses the full
-            pytest bootstrap) when items were not collected in this process, e.g. xdist.
         total_tests: Total number of tests collected.
         cache_enabled: Whether incremental caching is enabled.
         cache: The incremental cache instance (if caching is enabled).
@@ -238,7 +233,6 @@ class GremlinSession:
     test_selector: TestSelector | None = None
     prioritized_selector: PrioritizedSelector | None = None
     test_node_ids: dict[str, str] = field(default_factory=dict)
-    lightweight_safe_node_ids: frozenset[str] = frozenset()
     total_tests: int = 0
     cache_enabled: bool = False
     cache: IncrementalCache | None = None
@@ -580,7 +574,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default='auto',
         choices=['auto', 'subprocess', 'fork', 'inprocess'],
         dest='gremlin_executor',
-        help='Execution strategy: auto (default: fork on Unix, subprocess on Windows), subprocess, fork, inprocess.',
+        help=(
+            'Execution strategy: auto (default, same as subprocess) or subprocess. '
+            'fork and inprocess are disabled pending https://github.com/mikelane/pytest-gremlins/issues/532.'
+        ),
     )
     group.addoption(
         '--gremlin-no-coverage-filter',
@@ -1101,7 +1098,6 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     node_ids = [item.nodeid for item in session.items]
     normalized_node_ids = _make_node_ids_relative(node_ids, rootdir)
     gremlin_session.test_node_ids = {node_id: node_id for node_id in normalized_node_ids}
-    gremlin_session.lightweight_safe_node_ids = _collect_lightweight_safe_node_ids(session.items, rootdir)
 
     name_to_nodes: dict[str, list[str]] = {}
     for node_id in normalized_node_ids:
@@ -1129,12 +1125,6 @@ def pytest_collection_finish(session: pytest.Session) -> None:
         return
 
     _generate_gremlins(gremlin_session, source_files, rootdir)
-
-
-def _collect_lightweight_safe_node_ids(items: Sequence[pytest.Item], rootdir: Path) -> frozenset[str]:
-    """Return normalized node IDs of the items the lightweight runner can run faithfully."""
-    safe_items = [item for item in items if is_lightweight_safe(item)]
-    return frozenset(_make_node_ids_relative([item.nodeid for item in safe_items], rootdir))
 
 
 def _generate_gremlins(
@@ -1170,7 +1160,6 @@ def _generate_gremlins(
     if all_gremlins:
         instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir)
         gremlin_session.instrumented_dir = instrumented_dir
-        write_safe_tests(instrumented_dir, gremlin_session.lightweight_safe_node_ids)
 
 
 def _discover_source_files(
@@ -1379,8 +1368,8 @@ del _gremlin_os
     bootstrap_script = temp_dir / 'gremlin_bootstrap.py'
     bootstrap_script.write_text(_get_bootstrap_script())
 
-    lightweight_runner = temp_dir / 'gremlin_lightweight_runner.py'
-    lightweight_runner.write_text(_get_lightweight_runner_script(), encoding='utf-8')
+    # The lightweight runner is deliberately not written: it cannot reproduce pytest's conftest,
+    # configure hooks or sys.path, so every gremlin runs through the bootstrap (#538).
 
     return temp_dir
 
@@ -1546,6 +1535,9 @@ def _get_lightweight_runner_script() -> str:
     first failure).  Exit 0 = survived, exit 1 = zapped, and
     ``LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE`` = the runner could not run a test
     faithfully and abstains rather than fabricate a verdict.
+
+    The runner is not written by ``_write_instrumented_sources`` while it is disabled
+    (https://github.com/mikelane/pytest-gremlins/issues/538); the generator is kept as groundwork.
 
     Returns:
         The lightweight runner script source code.

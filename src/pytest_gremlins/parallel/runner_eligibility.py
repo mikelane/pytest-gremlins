@@ -1,5 +1,8 @@
 """Decide which collected tests the lightweight runner can judge faithfully.
 
+The lightweight runner is disabled pending https://github.com/mikelane/pytest-gremlins/issues/538;
+this module is unused groundwork for its redesign.
+
 The lightweight runner imports a test module and calls the test callable with
 no arguments. That matches what pytest does only for a plain, synchronous,
 fixture-free, unparametrized test. Anything else must go through the full

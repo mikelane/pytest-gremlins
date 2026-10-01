@@ -4,16 +4,11 @@ from __future__ import annotations
 
 import ast
 import json
-import os
 from pathlib import Path
-import subprocess
-import sys
-import textwrap
 
 import pytest
 
 from pytest_gremlins.plugin import (
-    _get_lightweight_runner_script,
     _write_instrumented_sources,
 )
 
@@ -149,22 +144,19 @@ class DescribeWriteInstrumentedSources:
 
 
 @pytest.mark.medium
-class DescribeLightweightRunnerEncoding:
-    """The runner file is UTF-8 whatever the interpreter's locale encoding is."""
+class DescribeLightweightRunnerDisabled:
+    """The lightweight runner cannot reproduce pytest's environment, so it is not offered (issue #538)."""
 
-    def it_writes_the_runner_as_utf8_under_an_ascii_locale(self, tmp_path: Path) -> None:
-        script = textwrap.dedent(
-            f"""
-            import ast, sys
-            from pytest_gremlins.plugin import _write_instrumented_sources
-            asts = {{{str(tmp_path / 'mymod.py')!r}: ast.parse('x = 1')}}
-            sys.stdout.write(str(_write_instrumented_sources(asts, {str(tmp_path)!r})))
-            """
-        )
-        env = {**os.environ, 'PYTHONUTF8': '0', 'PYTHONCOERCECLOCALE': '0', 'LC_ALL': 'C', 'LANG': 'C'}
+    def it_writes_no_lightweight_runner_into_the_instrumented_directory(self, tmp_path: Path) -> None:
+        asts = {str(tmp_path / 'mymod.py'): ast.parse('x = 1')}
 
-        completed = subprocess.run([sys.executable, '-c', script], env=env, capture_output=True, text=True, check=False)
+        instrumented_dir = _write_instrumented_sources(asts, tmp_path)
 
-        assert completed.returncode == 0, completed.stderr
-        runner = Path(completed.stdout.strip()) / 'gremlin_lightweight_runner.py'
-        assert runner.read_text(encoding='utf-8') == _get_lightweight_runner_script()
+        assert not (instrumented_dir / 'gremlin_lightweight_runner.py').exists()
+
+    def it_still_writes_the_bootstrap_the_pytest_path_runs_through(self, tmp_path: Path) -> None:
+        asts = {str(tmp_path / 'mymod.py'): ast.parse('x = 1')}
+
+        instrumented_dir = _write_instrumented_sources(asts, tmp_path)
+
+        assert (instrumented_dir / 'gremlin_bootstrap.py').exists()

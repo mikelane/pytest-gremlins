@@ -182,6 +182,7 @@ class DescribeFourStyleFidelity:
         assert verdicts['Survived'] == 0
         assert verdicts['Error'] == 0
         assert verdicts['Zapped'] > 0
+        assert _styles_run_against_a_mutant(log) == {'plain', 'async', 'param', 'fixture'}
 
     def it_runs_every_style_of_test_body_against_a_mutant(self, pytester_running_coroutines: pytest.Pytester) -> None:
         log = pytester_running_coroutines.path / 'ran.log'

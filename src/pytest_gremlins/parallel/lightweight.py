@@ -3,6 +3,10 @@
 Shared utility for constructing lightweight runner commands that skip
 full pytest startup overhead. Used by pool.py, persistent_pool.py,
 and plugin.py.
+
+The runner script is no longer written, so ``build_lightweight_command`` always returns
+``None`` and every gremlin uses the pytest bootstrap. Disabled pending
+https://github.com/mikelane/pytest-gremlins/issues/538.
 """
 
 from __future__ import annotations

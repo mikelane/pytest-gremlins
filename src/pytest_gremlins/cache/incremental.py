@@ -17,11 +17,12 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf2'
+RUNNER_FIDELITY_VERSION = 'rf3'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
-``rf2`` retires results produced by the lightweight runner before it abstained on
-tests it could not run (async, parametrized, fixture-taking), which could be fabricated.
+``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
+lightweight runner. That runner could fabricate verdicts (async, parametrized, fixture-taking tests,
+conftest state, sys.path), so those results must never be reused.
 """
 
 

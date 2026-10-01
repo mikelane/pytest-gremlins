@@ -301,24 +301,18 @@ for result in results:
 
 ---
 
-## Lightweight Runner Eligibility
+## Lightweight Runner (Disabled)
 
-### is_lightweight_safe
+The lightweight runner is disabled in 1.9.1: the runner script is no longer written, so
+`build_lightweight_command` always returns `None` and every gremlin runs through the pytest
+bootstrap. The pieces below remain, unused, as groundwork for the redesign tracked in
+[#538](https://github.com/mikelane/pytest-gremlins/issues/538). See
+[Parallel Execution](../architecture/parallelization.md#the-lightweight-runner-is-disabled).
 
-```python
-from pytest_gremlins.parallel.runner_eligibility import is_lightweight_safe
-```
-
-`is_lightweight_safe(item)` returns `True` only when the lightweight runner can run a collected
-`pytest.Item` as pytest would: a plain function or method with no fixtures, parametrization,
-coroutine body, `skip`/`skipif`/`xfail`/`filterwarnings` marker, or conftest/third-party runtest
-hook around it. See [Parallel Execution](../architecture/parallelization.md#which-tests-the-lightweight-runner-may-judge)
-for the full rule.
-
-### LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE
-
-`pytest_gremlins.parallel.lightweight.LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE` (`70`) is the exit code
-the lightweight runner uses when it cannot judge a test. Result mapping treats it as `ERROR`.
+- `pytest_gremlins.parallel.runner_eligibility.is_lightweight_safe(item)` decides whether a
+  collected `pytest.Item` could be run as a bare call.
+- `pytest_gremlins.parallel.lightweight.LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE` (`70`) is the exit
+  code the runner uses to abstain; result mapping treats it as `ERROR`.
 
 ## ResultAggregator
 

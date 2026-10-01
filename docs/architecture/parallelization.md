@@ -209,39 +209,20 @@ def worker_main(mutations: list[str], result_queue: Queue):
         result_queue.put(result)
 ```
 
-## Which Tests the Lightweight Runner May Judge
+## The Lightweight Runner Is Disabled
 
-For speed, the subprocess executor runs a gremlin's tests with a lightweight runner that imports
-the test module and calls the test function directly, without starting pytest. That is only
-faithful for a plain test. At collection time pytest-gremlins decides, per test, whether the
-runner may judge it, and records the answer in `lightweight_safe_tests.json` next to the runner
-script. A gremlin uses the lightweight runner only when **every** test selected for it is safe;
-otherwise it runs through the full pytest bootstrap, which is slower but exact.
+Every gremlin runs its tests through the real pytest bootstrap. Earlier releases routed
+gremlins to a lightweight runner that imported the test module and called the test function
+directly, without starting pytest. That is only faithful for a test that needs nothing from
+pytest, and it fabricated verdicts for async, parametrized and fixture-taking tests, for tests
+that depend on `conftest.py` imports or `pytest_configure` hooks, and for tests that import
+helpers from pytest's `sys.path` (the test file's directory or an ini `pythonpath`). Gating
+which tests it may judge kept leaking cases, so it is off in 1.9.1 and the redesign is tracked in
+[#538](https://github.com/mikelane/pytest-gremlins/issues/538). Plain suites are slower as a
+result (roughly 5x in one measurement), in exchange for verdicts that come from pytest itself.
 
-A test is safe only when all of these hold:
-
-- it is a plain `pytest.Function` (not a `unittest.TestCase` method, doctest or plugin item) with a
-  node ID no deeper than `file::function` or `file::Class::method`;
-- it requests no fixtures. This also excludes tests covered by autouse, conftest or xunit
-  `setup_*` fixtures, because those show up as fixtures;
-- it is not parametrized and not `async`;
-- it has no `skip`, `skipif`, `xfail` or `filterwarnings` marker;
-- no `error` warning filter is active (`filterwarnings = error` in the ini, or `-W error`), since a
-  bare call would not turn warnings into failures; such a suite runs through the bootstrap;
-- no `conftest.py` or third-party plugin implements `pytest_runtest_setup`, `pytest_runtest_call`,
-  `pytest_runtest_teardown`, `pytest_pyfunc_call` or `pytest_runtest_protocol` for it. Hooks from
-  pytest itself, pytest-gremlins, pytest-cov, pytest-xdist and pytest-test-categories are ignored.
-  A suite that uses, for example, pytest-asyncio or pytest-django therefore runs through the
-  bootstrap.
-
-Under pytest-xdist the safe set is empty, so every gremlin uses the bootstrap.
-
-### The runner abstains instead of guessing
-
-If the runner meets a test it cannot run faithfully anyway (a coroutine, a skip raised inside the
-body, an import failure), it exits with code `70` rather than `0` or `1`. Exit `0` means the
-gremlin survived and exit `1` means a test failed (zapped); `70` is reported as an **error** with
-an explanatory message and never counts as zapped or survived.
+The eligibility predicate (`is_lightweight_safe`), the runner script generator and the
+`70` "cannot verify" exit code are kept, unused, as groundwork for that redesign.
 
 ### Fork and in-process executors are disabled
 
@@ -255,8 +236,8 @@ command line.
 
 ### Cached results
 
-The incremental cache key includes a runner fidelity version, so verdicts produced before the
-runner could abstain are recomputed once after upgrading.
+The incremental cache key includes a runner fidelity version (`rf3`), so verdicts cached by
+v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 
 ## Configuration
 
