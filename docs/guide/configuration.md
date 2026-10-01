@@ -659,3 +659,8 @@ Use the `--collect-only` flag to validate configuration without running tests:
 ```bash
 pytest --gremlins --collect-only
 ```
+
+`--collect-only` loads and validates `[tool.pytest-gremlins]` and the `--gremlin-*` options,
+so invalid values are rejected as usual. It then skips mutation testing entirely (no
+instrumentation, coverage pre-scan, cache setup, or gremlin execution) and prints a one-line
+notice to stderr, which keeps `--collect-only -q` node-id output on stdout clean.

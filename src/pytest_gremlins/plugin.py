@@ -616,13 +616,78 @@ def _extract_toml_fields(
     )
 
 
-def _disable_when_inactive(config: pytest.Config) -> bool:
-    """Disable the session when ``--gremlins`` is off or ``--collect-only`` is active.
+def _read_validated_pardon_limits(config: pytest.Config) -> tuple[float | None, int | None]:
+    """Read the CLI pardon limits, exiting with a usage error when out of range.
+
+    Args:
+        config: The pytest config object.
+
+    Returns:
+        Tuple of (max_pardons_pct, max_pardons), each None if unset.
+    """
+    max_pardons_pct: float | None = getattr(config.option, 'gremlin_max_pardons_pct', None)
+    if max_pardons_pct is not None and not (0 <= max_pardons_pct <= 100):  # noqa: PLR2004
+        pytest.exit(
+            f'--gremlin-max-pardons-pct must be between 0 and 100, got {max_pardons_pct!r}.',
+            returncode=4,
+        )
+
+    max_pardons: int | None = getattr(config.option, 'max_pardons', None)
+    if max_pardons is not None and max_pardons < 0:
+        pytest.exit(
+            f'--max-pardons must be >= 0, got {max_pardons!r}.',
+            returncode=4,
+        )
+    return max_pardons_pct, max_pardons
+
+
+def _resolve_target_paths(rootdir: Path, merged_config: object) -> list[Path]:
+    """Resolve the source paths to mutate: configured paths, discovery, then ``src/``.
+
+    Args:
+        rootdir: The project root directory.
+        merged_config: The result of merge_configs (GremlinConfig or a test mock).
+
+    Returns:
+        The existing paths to instrument.
+    """
+    configured_paths = getattr(merged_config, 'paths', None)
+    if configured_paths:
+        resolved = (
+            rootdir / path_str if not Path(path_str).is_absolute() else Path(path_str) for path_str in configured_paths
+        )
+        return [path for path in resolved if path.exists()]
+
+    discovered = (
+        discover_source_paths(rootdir)
+        or discover_by_project_name(rootdir)
+        or discover_by_setup_cfg(rootdir)
+        or discover_by_importlib_metadata(rootdir)
+    )
+    if discovered:
+        return [rootdir / p for p in discovered]
+    src_path = rootdir / 'src'
+    if src_path.exists():
+        return [src_path]
+    logger.warning(
+        'No source paths discovered; scanning the entire project root (%s). '
+        'This may be slower and include files you did not intend to mutate. '
+        'Add paths to pyproject.toml to target only your source code:\n'
+        '  [tool.pytest-gremlins]\n'
+        '  paths = ["src/your_package"]',
+        rootdir,
+    )
+    return [rootdir]
+
+
+def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
+    """Disable the session for ``--collect-only`` runs, after configuration is validated.
 
     Collection-only runs execute no tests, so there is no coverage to pre-scan and
-    nothing to mutate against. The skip notice goes to stderr so that
-    ``--collect-only -q`` node-id output on stdout stays machine-parseable; it is
-    printed once, by the controller.
+    nothing to mutate against. Config loading and validation still run first so that
+    ``pytest --gremlins --collect-only`` reports configuration errors. The skip notice
+    goes to stderr so ``--collect-only -q`` node-id output on stdout stays
+    machine-parseable; it is printed once, by the controller.
 
     Args:
         config: The pytest config object.
@@ -630,9 +695,6 @@ def _disable_when_inactive(config: pytest.Config) -> bool:
     Returns:
         True if the session was disabled and configuration should stop.
     """
-    if not config.option.gremlins:
-        _set_session(GremlinSession(enabled=False))
-        return True
     if not getattr(config.option, 'collectonly', False):
         return False
     _set_session(GremlinSession(enabled=False))
@@ -650,7 +712,8 @@ def pytest_configure(config: pytest.Config) -> None:
     2. pyproject.toml [tool.pytest-gremlins] section
     3. Built-in defaults (all operators, src/ directory, console report, batch-size 10)
     """
-    if _disable_when_inactive(config):
+    if not config.option.gremlins:
+        _set_session(GremlinSession(enabled=False))
         return
 
     # xdist with -n > 0 distributes test items across workers; gremlins runs
@@ -661,19 +724,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     rootdir = _get_rootdir(config)
 
-    cli_max_pardons_pct: float | None = getattr(config.option, 'gremlin_max_pardons_pct', None)
-    if cli_max_pardons_pct is not None and not (0 <= cli_max_pardons_pct <= 100):  # noqa: PLR2004
-        pytest.exit(
-            f'--gremlin-max-pardons-pct must be between 0 and 100, got {cli_max_pardons_pct!r}.',
-            returncode=4,
-        )
-
-    cli_max_pardons: int | None = getattr(config.option, 'max_pardons', None)
-    if cli_max_pardons is not None and cli_max_pardons < 0:
-        pytest.exit(
-            f'--max-pardons must be >= 0, got {cli_max_pardons!r}.',
-            returncode=4,
-        )
+    cli_max_pardons_pct, cli_max_pardons = _read_validated_pardon_limits(config)
 
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
@@ -697,36 +748,10 @@ def pytest_configure(config: pytest.Config) -> None:
     # Use merged operators or all if none specified
     operators = registry.get_all(enabled=merged_config.operators) if merged_config.operators else registry.get_all()
 
-    # Use merged paths, then try setuptools discovery, then fall back to src/
-    target_paths: list[Path] = []
-    if merged_config.paths:
-        for path_str in merged_config.paths:
-            path = rootdir / path_str if not Path(path_str).is_absolute() else Path(path_str)
-            if path.exists():
-                target_paths.append(path)
-    else:
-        discovered = (
-            discover_source_paths(rootdir)
-            or discover_by_project_name(rootdir)
-            or discover_by_setup_cfg(rootdir)
-            or discover_by_importlib_metadata(rootdir)
-        )
-        if discovered:
-            target_paths.extend(rootdir / p for p in discovered)
-        else:
-            src_path = rootdir / 'src'
-            if src_path.exists():
-                target_paths.append(src_path)
-            else:
-                logger.warning(
-                    'No source paths discovered; scanning the entire project root (%s). '
-                    'This may be slower and include files you did not intend to mutate. '
-                    'Add paths to pyproject.toml to target only your source code:\n'
-                    '  [tool.pytest-gremlins]\n'
-                    '  paths = ["src/your_package"]',
-                    rootdir,
-                )
-                target_paths.append(rootdir)
+    target_paths = _resolve_target_paths(rootdir, merged_config)
+
+    if _maybe_short_circuit_for_inactive_run(config):
+        return
 
     (
         toml_cache,
