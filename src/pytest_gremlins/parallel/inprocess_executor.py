@@ -101,6 +101,13 @@ class InProcessExecutor:
         ineligible_specs: Collection[str] = frozenset(),
     ) -> WorkerResult:
         """Toggle __gremlin_active__, run tests, reset, return result."""
+        if not test_specs:
+            return WorkerResult(
+                gremlin_id=gremlin_id,
+                status=GremlinResultStatus.ERROR,
+                error_output='No tests were run, so the gremlin cannot be judged.',
+            )
+
         blocked = [spec for spec in test_specs if spec in ineligible_specs]
         if blocked:
             return WorkerResult(

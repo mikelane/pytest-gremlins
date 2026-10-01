@@ -102,6 +102,21 @@ class DescribeInProcessExecutorIneligibleTests:
         assert results[0].status == GremlinResultStatus.ZAPPED
 
 
+@pytest.mark.small
+class DescribeInProcessExecutorWithoutTests:
+    """Running no tests proves nothing, so it must never read as a surviving gremlin."""
+
+    def it_reports_error_when_no_test_specs_are_supplied(self) -> None:
+        results = InProcessExecutor().execute(['g1'], {'g1': MODULE_NAME}, [])
+
+        assert results[0].status == GremlinResultStatus.ERROR
+
+    def it_says_that_no_tests_were_run(self) -> None:
+        results = InProcessExecutor().execute(['g1'], {'g1': MODULE_NAME}, [])
+
+        assert 'no tests' in results[0].error_output.lower()
+
+
 @pytest.mark.medium
 @pytest.mark.usefixtures('test_module')
 class DescribeForkExecutorIneligibleTests:
