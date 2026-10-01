@@ -27,7 +27,7 @@ repos:
 
   # Import sorting
   - repo: https://github.com/PyCQA/isort
-    rev: 8.0.1
+    rev: 9.0.2
     hooks:
       - id: isort
         files: ^(src|tests)/
@@ -42,7 +42,7 @@ repos:
 
   # Type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    rev: v2.3.1
     hooks:
       - id: mypy
         additional_dependencies:

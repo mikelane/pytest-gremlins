@@ -39,7 +39,7 @@ dependencies = [
 [project.optional-dependencies]
 docs = [
     "mkdocs>=1.5.0",
-    "mkdocs-material[imaging]>=9.0.0",
+    "mkdocs-material[imaging]>=9.7.7",
     "mkdocs-minify-plugin>=0.7.0",
     "mkdocstrings[python]>=0.24.0",
 ]
@@ -47,24 +47,24 @@ docs = [
 [dependency-groups]
 docs = [
     "mkdocs>=1.5.0",
-    "mkdocs-material[imaging]>=9.0.0",
+    "mkdocs-material[imaging]>=9.7.7",
     "mkdocs-minify-plugin>=0.7.0",
     "mkdocstrings[python]>=0.24.0",
 ]
 dev = [
     {include-group = "docs"},
-    "commitizen>=3.13.0",
-    "isort>=8.0.1",
-    "mypy>=1.7.0",
+    "commitizen>=4.18.1",
+    "isort>=9.0.1",
+    "mypy>=2.3.1",
     "pip-audit>=2.6.0",
-    "playwright>=1.58.0",
-    "pre-commit>=3.6.0",
+    "playwright>=1.63.0",
+    "pre-commit>=4.6.2",
     "pytest-cov>=4.1.0",
-    "pytest-test-categories>=1.2.1",
+    "pytest-test-categories>=1.2.2",
     "pytest-xdist>=3.5.0",
     "ruff>=0.1.6",
-    "tox>=4.11.0",
-    "tox-uv>=1.0.0",
+    "tox>=4.61.5",
+    "tox-uv>=1.36.0",
 ]
 
 [project.urls]
