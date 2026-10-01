@@ -238,34 +238,32 @@ tomllib.TOMLDecodeError: Expected '=' after a key in a key/value pair (at line X
 
 ## Runtime Errors
 
-### Mutation testing skipped because collection failed
+### Mutation testing skipped because the baseline run did not pass
 
-**Symptom:**
+**Symptom:** pytest-gremlins prints one line on stderr and no mutation report, and pytest exits with
+its own non-zero status. The line names the reason:
 
 ```text
+pytest-gremlins: skipping mutation testing because 2 baseline test(s) failed; mutation scores need a passing suite
 pytest-gremlins: skipping mutation testing because test collection failed (1 error(s)); fix the collection errors first
-```
-
-Or:
-
-```text
 pytest-gremlins: skipping mutation testing because the baseline test session was interrupted; rerun it to completion first
+pytest-gremlins: skipping mutation testing because pytest reported a usage error (exit 4)
+pytest-gremlins: skipping mutation testing because no tests were collected
+pytest-gremlins: skipping mutation testing because the baseline run ended with exit code 3
 ```
 
-No mutation report is printed, and pytest exits non-zero.
-
-**Cause:** The normal pytest run that precedes mutation testing did not finish cleanly. Either at least
-one test module could not be collected (usually an `ImportError` or `SyntaxError` in a test file or
-`conftest.py`), or the session was interrupted. A gremlin is only zapped when a test that covers it
-fails, so if those tests never ran, every score would be meaningless. pytest-gremlins skips the
-mutation phase and keeps pytest's own exit status instead of printing that score.
-
-This also applies with `--continue-on-collection-errors` and with pytest-xdist: a single module that
-fails to collect skips the whole mutation run.
+**Cause:** Mutation testing runs only when the normal pytest run that precedes it exits with status 0.
+A gremlin is zapped when a test that covers it fails, so a test that already fails without any
+mutation would be counted as a kill for every gremlin it covers, and tests that never ran back no
+verdict at all. Any other baseline outcome (failing tests, collection errors including
+`--continue-on-collection-errors`, an interrupt, a usage error such as an unknown node id, no
+collected tests, or `pytest.exit(returncode=N)`) therefore skips the whole mutation run, with or
+without pytest-xdist. pytest-gremlins keeps pytest's own exit status. With `--collect-only` it prints
+its own `--collect-only detected` notice instead.
 
 **Solution:**
 
-1. Run pytest without `--gremlins` and fix every error reported under `ERRORS`:
+1. Run pytest without `--gremlins` and fix every failure and error it reports until it exits 0:
 
    ```bash
    pytest
@@ -279,7 +277,7 @@ fails to collect skips the whole mutation run.
    pythonpath = ["src"]
    ```
 
-3. Rerun with `--gremlins` once the plain run collects cleanly.
+3. Rerun with `--gremlins` once the plain run passes.
 
 ---
 

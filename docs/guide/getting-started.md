@@ -114,7 +114,8 @@ def test_divide_by_zero_raises():
 
 ### Step 3: Run Normal Tests First
 
-Ensure your tests pass before running mutation testing:
+Ensure your tests pass before running mutation testing. pytest-gremlins only runs the mutation phase
+when this baseline run exits successfully:
 
 ```bash
 pytest test_calculator.py -v

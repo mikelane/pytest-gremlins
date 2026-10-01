@@ -1688,7 +1688,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if _is_xdist_worker(session.config):
         return
 
-    if _skip_mutation_when_baseline_is_broken(gremlin_session, exitstatus):
+    if _skip_mutation_unless_baseline_is_green(gremlin_session, session, exitstatus):
         return
 
     config = session.config
@@ -1755,26 +1755,39 @@ def _rebuild_state_from_xdist_workers(
     logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
 
 
-def _skip_mutation_when_baseline_is_broken(gremlin_session: GremlinSession, exitstatus: int) -> bool:
-    """Disable mutation testing when the baseline session cannot back any verdict.
-
-    Collection errors or an interrupted session mean no (or only some) tests
-    ran, so every gremlin verdict would be unfounded.  Prints the reason to
-    stderr and disables the session so no report is rendered; pytest's own
-    exit status is left untouched.  Returns ``True`` when the caller must stop.
-    """
+def _baseline_skip_reason(gremlin_session: GremlinSession, session: pytest.Session, exitstatus: int) -> str:
+    """Explain why a non-green baseline cannot back mutation verdicts."""
     if gremlin_session.collection_errors:
-        reason = (
-            f'test collection failed ({gremlin_session.collection_errors} error(s)); fix the collection errors first'
-        )
-    elif exitstatus == pytest.ExitCode.INTERRUPTED:
-        reason = 'the baseline test session was interrupted; rerun it to completion first'
-    else:
+        return f'test collection failed ({gremlin_session.collection_errors} error(s)); fix the collection errors first'
+    if exitstatus == pytest.ExitCode.TESTS_FAILED:
+        return f'{session.testsfailed} baseline test(s) failed; mutation scores need a passing suite'
+    if exitstatus == pytest.ExitCode.INTERRUPTED:
+        return 'the baseline test session was interrupted; rerun it to completion first'
+    if exitstatus == pytest.ExitCode.USAGE_ERROR:
+        return 'pytest reported a usage error (exit 4)'
+    if exitstatus == pytest.ExitCode.NO_TESTS_COLLECTED:
+        return 'no tests were collected'
+    return f'the baseline run ended with exit code {int(exitstatus)}'
+
+
+def _skip_mutation_unless_baseline_is_green(
+    gremlin_session: GremlinSession, session: pytest.Session, exitstatus: int
+) -> bool:
+    """Disable mutation testing unless the baseline session exited ``ExitCode.OK``.
+
+    A gremlin is zapped when a covering test fails, so a baseline that already
+    fails, never collected, or never finished would yield unfounded verdicts.
+    This is an allowlist: any status other than OK skips, so new exit codes are
+    safe by default.  Prints one reason to stderr and disables the session so no
+    report is rendered; pytest's own exit status is left untouched.
+
+    Returns:
+        True when the caller must stop without running mutation testing.
+    """
+    if exitstatus == pytest.ExitCode.OK:
         return False
-    print(
-        f'pytest-gremlins: skipping mutation testing because {reason}',
-        file=sys.stderr,
-    )
+    reason = _baseline_skip_reason(gremlin_session, session, exitstatus)
+    print(f'pytest-gremlins: skipping mutation testing because {reason}', file=sys.stderr)
     gremlin_session.enabled = False
     return True
 
