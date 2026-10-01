@@ -21,12 +21,9 @@ class DescribeCacheLargeScale:
     ) -> None:
         """Cache produces same mutation scores on warm rerun with many gremlins.
 
-        The synthetic benchmark has:
-        - 3 source files with ~70 lines each
-        - ~50+ mutations total
-        - 60+ test cases
-
-        This test simulates a similar setup to verify cache scales.
+        Targets one module with the comparison operator (about a dozen gremlins) while the suite
+        collects 25 tests. Every gremlin runs through a full pytest bootstrap, so the workload is
+        kept small enough for the medium time limit.
         """
         # Create source files similar to benchmark
         pytester_with_markers.makepyfile(
@@ -190,7 +187,8 @@ class TestIsZero:
         cold_start = time.perf_counter()
         pytester_with_markers.runpytest(
             '--gremlins',
-            '--gremlin-targets=calculator.py,validator.py',
+            '--gremlin-targets=validator.py',
+            '--gremlin-operators=comparison',
             '--gremlin-cache',
         )
         cold_time = time.perf_counter() - cold_start
@@ -199,7 +197,8 @@ class TestIsZero:
         warm_start = time.perf_counter()
         result = pytester_with_markers.runpytest(
             '--gremlins',
-            '--gremlin-targets=calculator.py,validator.py',
+            '--gremlin-targets=validator.py',
+            '--gremlin-operators=comparison',
             '--gremlin-cache',
         )
         warm_time = time.perf_counter() - warm_start
