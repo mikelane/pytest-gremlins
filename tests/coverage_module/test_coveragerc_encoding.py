@@ -23,12 +23,16 @@ class DescribeCoveragercEncoding:
     """The coveragerc is UTF-8 whatever the interpreter's locale encoding is."""
 
     def it_writes_a_non_ascii_include_path_as_utf8_under_an_ascii_locale(self, tmp_path: Path) -> None:
-        source_path = str(tmp_path / 'José' / 'mod.py')
         script = textwrap.dedent(
             f"""
             import sys
             from pathlib import Path
             from pytest_gremlins import plugin
+
+            # Construct the path with non-ASCII character inside the subprocess,
+            # using pure-ASCII escaped sequence \xe9 (é in Latin-1).
+            # This avoids surrogate escapes when argv is decoded under C locale.
+            source_path = str(Path({str(tmp_path)!r}) / 'Jos\\xe9' / 'mod.py')
 
             def fake_run(cmd, **kwargs):
                 rcfile = next(arg for arg in cmd if arg.startswith('--rcfile=')).split('=', 1)[1]
@@ -36,7 +40,7 @@ class DescribeCoveragercEncoding:
                 raise plugin.subprocess.TimeoutExpired(cmd, 0)
 
             plugin.subprocess.run = fake_run
-            plugin._run_tests_with_coverage(['t.py::t'], Path({str(tmp_path)!r}), coverage_include=[{source_path!r}])
+            plugin._run_tests_with_coverage(['t.py::t'], Path({str(tmp_path)!r}), coverage_include=[source_path])
             """
         )
         env = {**os.environ, 'PYTHONUTF8': '0', 'PYTHONCOERCECLOCALE': '0', 'LC_ALL': 'C', 'LANG': 'C'}
@@ -44,4 +48,5 @@ class DescribeCoveragercEncoding:
         completed = subprocess.run([sys.executable, '-c', script], env=env, capture_output=True, check=False)
 
         assert completed.returncode == 0, completed.stderr.decode('utf-8', 'replace')
-        assert source_path in completed.stdout.decode('utf-8')
+        # Verify the path appears in the coveragerc output as UTF-8-encoded é
+        assert 'Jos\xe9' in completed.stdout.decode('utf-8')
