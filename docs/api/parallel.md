@@ -301,6 +301,25 @@ for result in results:
 
 ---
 
+## Lightweight Runner Eligibility
+
+### is_lightweight_safe
+
+```python
+from pytest_gremlins.parallel.runner_eligibility import is_lightweight_safe
+```
+
+`is_lightweight_safe(item)` returns `True` only when the lightweight runner can run a collected
+`pytest.Item` as pytest would: a plain function or method with no fixtures, parametrization,
+coroutine body, `skip`/`skipif`/`xfail`/`filterwarnings` marker, or conftest/third-party runtest
+hook around it. See [Parallel Execution](../architecture/parallelization.md#which-tests-the-lightweight-runner-may-judge)
+for the full rule.
+
+### LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE
+
+`pytest_gremlins.parallel.lightweight.LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE` (`70`) is the exit code
+the lightweight runner uses when it cannot judge a test. Result mapping treats it as `ERROR`.
+
 ## ResultAggregator
 
 Thread-safe collection of results with progress tracking.
