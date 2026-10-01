@@ -616,8 +616,8 @@ def _extract_toml_fields(
     )
 
 
-def _disable_for_collect_only(config: pytest.Config) -> bool:
-    """Disable the mutation phase for ``--collect-only`` runs.
+def _disable_when_inactive(config: pytest.Config) -> bool:
+    """Disable the session when ``--gremlins`` is off or ``--collect-only`` is active.
 
     Collection-only runs execute no tests, so there is no coverage to pre-scan and
     nothing to mutate against. The skip notice is printed once, by the controller.
@@ -626,8 +626,11 @@ def _disable_for_collect_only(config: pytest.Config) -> bool:
         config: The pytest config object.
 
     Returns:
-        True if the session was disabled because ``--collect-only`` is active.
+        True if the session was disabled and configuration should stop.
     """
+    if not config.option.gremlins:
+        _set_session(GremlinSession(enabled=False))
+        return True
     if not getattr(config.option, 'collectonly', False):
         return False
     _set_session(GremlinSession(enabled=False))
@@ -636,7 +639,7 @@ def _disable_for_collect_only(config: pytest.Config) -> bool:
     return True
 
 
-def pytest_configure(config: pytest.Config) -> None:  # noqa: C901, PLR0912
+def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
     Configuration precedence (highest to lowest):
@@ -645,11 +648,7 @@ def pytest_configure(config: pytest.Config) -> None:  # noqa: C901, PLR0912
     2. pyproject.toml [tool.pytest-gremlins] section
     3. Built-in defaults (all operators, src/ directory, console report, batch-size 10)
     """
-    if not config.option.gremlins:
-        _set_session(GremlinSession(enabled=False))
-        return
-
-    if _disable_for_collect_only(config):
+    if _disable_when_inactive(config):
         return
 
     # xdist with -n > 0 distributes test items across workers; gremlins runs
