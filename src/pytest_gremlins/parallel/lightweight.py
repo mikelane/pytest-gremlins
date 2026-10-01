@@ -14,6 +14,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE = 70
+"""Exit code the runner uses to abstain; pytest uses 0-5 and 1 is reserved for a caught mutant."""
+
 SAFE_TESTS_FILENAME = 'lightweight_safe_tests.json'
 """Sibling of the runner script listing node IDs the runner can judge faithfully."""
 

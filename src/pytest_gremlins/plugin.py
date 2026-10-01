@@ -71,7 +71,10 @@ from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.fork_executor import ForkExecutor
 from pytest_gremlins.parallel.inprocess_executor import InProcessExecutor
-from pytest_gremlins.parallel.lightweight import build_lightweight_command
+from pytest_gremlins.parallel.lightweight import (
+    LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
+    build_lightweight_command,
+)
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.html import (
     HtmlReporter,
@@ -1533,18 +1536,22 @@ def _get_lightweight_runner_script() -> str:
 
     The runner handles class-based tests (``TestFoo::test_bar``) and
     function-based tests (``test_bar``), with ``-x`` semantics (stop on
-    first failure).  Exit 0 = survived, exit 1 = zapped.
+    first failure).  Exit 0 = survived, exit 1 = zapped, and
+    ``LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE`` = the runner could not run a test
+    faithfully and abstains rather than fabricate a verdict.
 
     Returns:
         The lightweight runner script source code.
     """
-    return '''#!/usr/bin/env python
-"""Lightweight test runner for pytest-gremlins — skips full pytest startup."""
+    script = '''#!/usr/bin/env python
+"""Lightweight test runner for pytest-gremlins -- skips full pytest startup."""
 
 import importlib.util
+import inspect
 import json
 import os
 import sys
+import traceback
 
 
 def setup_import_hooks():
@@ -1598,37 +1605,83 @@ def load_test_module(file_path):
     return module
 
 
+CANNOT_VERIFY_EXIT_CODE = __CANNOT_VERIFY_EXIT_CODE__
+PASSED = 'passed'
+CAUGHT = 'caught'
+CANNOT_VERIFY = 'cannot_verify'
+OUTCOME_MODULES = ('builtins', '_pytest.outcomes')
+UNEXECUTED_OUTCOMES = ('Skipped', 'XFailed')
+
+
+def cannot_verify(test_spec, reason):
+    """Report why a test could not be judged without pytest, and abstain."""
+    sys.stderr.write('pytest-gremlins lightweight runner cannot verify %s: %s\\n' % (test_spec, reason))
+    return CANNOT_VERIFY
+
+
+def is_unexecuted_outcome(exc):
+    """Return True when a pytest skip/xfail was raised from inside the test body."""
+    return type(exc).__module__ in OUTCOME_MODULES and type(exc).__name__ in UNEXECUTED_OUTCOMES
+
+
+def resolve_test_callable(module, parts):
+    """Return (callable, None) or (None, reason) for the node ID parts after the file."""
+    owner = module
+    if len(parts) == 2:
+        cls = getattr(module, parts[0], None)
+        if cls is None:
+            return None, 'class %s not found' % parts[0]
+        try:
+            owner = cls()
+        except Exception as exc:
+            return None, 'class %s could not be instantiated: %r' % (parts[0], exc)
+    func = getattr(owner, parts[-1], None)
+    if not callable(func):
+        return None, 'test %s not found' % parts[-1]
+    try:
+        inspect.signature(func).bind()
+    except TypeError:
+        return None, 'test requires arguments (fixtures or parametrization)'
+    except ValueError:
+        pass
+    return func, None
+
+
 def run_test(test_spec, rootdir):
-    """Run a single test from its node ID. Returns True if passed."""
+    """Run a single test from its node ID.
+
+    Returns PASSED, CAUGHT (the test body raised), or CANNOT_VERIFY when the
+    test cannot be run faithfully as a bare callable.
+    """
     parts = test_spec.split('::')
-    file_path = parts[0]
-    full_path = os.path.join(rootdir, file_path)
+    if len(parts) not in (2, 3):
+        return cannot_verify(test_spec, 'unexpected node ID format')
 
     try:
-        module = load_test_module(full_path)
-        if module is None:
-            return False  # Cannot verify = treat as caught
+        module = load_test_module(os.path.join(rootdir, parts[0]))
+    except Exception as exc:
+        return cannot_verify(test_spec, 'test module failed to load: %r' % (exc,))
+    if module is None:
+        return cannot_verify(test_spec, 'test module could not be imported')
 
-        if len(parts) == 3:
-            cls = getattr(module, parts[1], None)
-            if cls is None:
-                return False  # Cannot verify = treat as caught
-            instance = cls()
-            method = getattr(instance, parts[2], None)
-            if method is None:
-                return False  # Cannot verify = treat as caught
-            method()
-        elif len(parts) == 2:
-            func = getattr(module, parts[1], None)
-            if func is None:
-                return False  # Cannot verify = treat as caught
-            func()
-        else:
-            return False  # Unexpected node ID format = treat as caught
+    func, reason = resolve_test_callable(module, parts[1:])
+    if func is None:
+        return cannot_verify(test_spec, reason)
 
-        return True
-    except Exception:
-        return False
+    try:
+        returned = func()
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        if is_unexecuted_outcome(exc):
+            return cannot_verify(test_spec, 'test was skipped or xfailed at runtime')
+        return CAUGHT
+
+    if inspect.isawaitable(returned) or inspect.isgenerator(returned):
+        if hasattr(returned, 'close'):
+            returned.close()
+        return cannot_verify(test_spec, 'test returned an awaitable or generator that pytest would drive')
+    return PASSED
 
 
 def setup_pythonpath(rootdir):
@@ -1674,17 +1727,31 @@ def main():
     setup_pythonpath(rootdir)
     setup_import_hooks()
 
-    test_specs = sys.argv[1:]
-    for spec in test_specs:
-        if not run_test(spec, rootdir):
+    unverifiable = False
+    for spec in sys.argv[1:]:
+        outcome = run_test(spec, rootdir)
+        if outcome == CAUGHT:
             sys.exit(1)
+        if outcome == CANNOT_VERIFY:
+            unverifiable = True
 
-    sys.exit(0)
+    sys.exit(CANNOT_VERIFY_EXIT_CODE if unverifiable else 0)
+
+
+def guarded_main():
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        traceback.print_exc()
+        sys.exit(CANNOT_VERIFY_EXIT_CODE)
 
 
 if __name__ == '__main__':
-    main()
+    guarded_main()
 '''
+    return script.replace('__CANNOT_VERIFY_EXIT_CODE__', str(LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE))
 
 
 def _cleanup_instrumented_dir(instrumented_dir: Path | None) -> None:
