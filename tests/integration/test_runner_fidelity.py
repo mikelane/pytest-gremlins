@@ -128,15 +128,6 @@ def test_covers(tmp_path):
     assert classify(1) == 'small'
 """
 
-_CATCHES_PLAIN = """
-from sample import classify
-
-def test_covers():
-    assert classify(11) == 'big'
-    assert classify(10) == 'small'
-    assert classify(1) == 'small'
-"""
-
 _COMMON_ARGS = ('--gremlins', '--gremlin-targets=sample.py', '--gremlin-operators=comparison', '-p', 'no:cacheprovider')
 
 _EXECUTION_MODES = {
@@ -223,24 +214,6 @@ class DescribeTestsThatSayNothing:
         verdicts = _run(pytester_with_markers, _SIMPLE_TARGET, _CATCHES, '--gremlin-no-coverage-filter')
 
         assert verdicts['Zapped'] > 0
-        assert verdicts['Survived'] == 0
-
-
-@pytest.mark.medium
-class DescribeInProcessExecutorsRunTests:
-    """The fork and inprocess executors never turn "ran nothing" into a surviving gremlin.
-
-    They toggle a flag in the controller process, whose modules are not instrumented, so
-    they cannot judge a gremlin yet; the honest verdict is ERROR.
-    """
-
-    @pytest.mark.parametrize('executor', ['inprocess', 'fork'])
-    def it_reports_errors_rather_than_survivors_for_gremlins_it_cannot_judge(
-        self, pytester_with_markers: pytest.Pytester, executor: str
-    ) -> None:
-        verdicts = _run(pytester_with_markers, _SIMPLE_TARGET, _CATCHES_PLAIN, f'--gremlin-executor={executor}')
-
-        assert verdicts['Error'] > 0
         assert verdicts['Survived'] == 0
 
 

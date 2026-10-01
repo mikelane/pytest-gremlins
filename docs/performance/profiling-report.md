@@ -4,6 +4,11 @@
 **Version:** 1.9.0
 **Supersedes:** [`0.1.1/profiling-report.md`](0.1.1/profiling-report.md) (archived)
 
+!!! warning
+    `--gremlin-executor=fork` and `inprocess` are disabled pending
+    [#532](https://github.com/mikelane/pytest-gremlins/issues/532): they did not run the mutated code, so the
+    comparisons below that rely on them do not hold.
+
 ## Executive Summary
 
 Rerunning the phase-by-phase profiler against the current codebase (52 source files, 1,022

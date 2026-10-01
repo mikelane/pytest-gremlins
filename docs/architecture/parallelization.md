@@ -243,13 +243,15 @@ body, an import failure), it exits with code `70` rather than `0` or `1`. Exit `
 gremlin survived and exit `1` means a test failed (zapped); `70` is reported as an **error** with
 an explanatory message and never counts as zapped or survived.
 
-### Fork and in-process executors
+### Fork and in-process executors are disabled
 
-`--gremlin-executor=fork` and `--gremlin-executor=inprocess` call tests directly in the pytest
-process. They never judge a test outside the safe set: if any selected test is ineligible, a
-single warning gives the counts and every gremlin is reported as an error. They also report an
-error, rather than a survivor, when they have no tests to run or when the target module is not
-instrumented in the controller process. Use the default subprocess executor to judge such suites.
+`--gremlin-executor=fork` and `--gremlin-executor=inprocess` fail at startup with a usage error
+(exit code 4) that names the value you passed and points to `--gremlin-executor=subprocess`, the
+default. They toggled a flag in the pytest process, whose modules are never instrumented, so they
+did not run the mutated code and could report every gremlin as a survivor. The redesign is
+tracked in [#532](https://github.com/mikelane/pytest-gremlins/issues/532). The `ForkExecutor` and
+`InProcessExecutor` classes remain in the code base for that work but are not reachable from the
+command line.
 
 ### Cached results
 

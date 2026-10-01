@@ -69,8 +69,6 @@ from pytest_gremlins.instrumentation.transformer import (
 )
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
-from pytest_gremlins.parallel.fork_executor import ForkExecutor
-from pytest_gremlins.parallel.inprocess_executor import InProcessExecutor
 from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
     build_lightweight_command,
@@ -764,6 +762,25 @@ def _resolve_coverage_timeout(merged_config: GremlinConfig) -> int:
     return merged_config.coverage_timeout
 
 
+DISABLED_EXECUTORS = ('fork', 'inprocess')
+EXECUTOR_REDESIGN_ISSUE_URL = 'https://github.com/mikelane/pytest-gremlins/issues/532'
+
+
+def _reject_disabled_executor(executor: str) -> None:
+    """Fail at startup for executors that did not run the mutated code.
+
+    Raises:
+        pytest.UsageError: If ``executor`` is ``fork`` or ``inprocess``.
+    """
+    if executor in DISABLED_EXECUTORS:
+        raise pytest.UsageError(
+            f'pytest-gremlins: --gremlin-executor={executor} is temporarily disabled because it produced '
+            'incorrect results (it did not run the mutated code). '
+            'Use --gremlin-executor=subprocess (the default). '
+            f'Tracking: {EXECUTOR_REDESIGN_ISSUE_URL}'
+        )
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
@@ -776,6 +793,8 @@ def pytest_configure(config: pytest.Config) -> None:
     if not config.option.gremlins:
         _set_session(GremlinSession(enabled=False))
         return
+
+    _reject_disabled_executor(getattr(config.option, 'gremlin_executor', 'auto'))
 
     # xdist with -n > 0 distributes test items across workers; gremlins runs
     # its mutation phase sequentially after xdist tears down (two-phase mode).
@@ -1433,33 +1452,6 @@ def _path_to_module_name(file_path: Path, rootdir: Path) -> str:
         parts = parts[1:]
 
     return '.'.join(parts)
-
-
-def _build_gremlin_module_map(
-    gremlins: list[Gremlin],
-    rootdir: Path,
-) -> dict[str, str]:
-    """Map gremlin IDs to their module names for in-process execution.
-
-    Args:
-        gremlins: List of gremlins to map.
-        rootdir: Root directory of the project.
-
-    Returns:
-        Dictionary mapping gremlin IDs to dotted module names.
-    """
-    gremlin_module_map: dict[str, str] = {}
-    for gremlin in gremlins:
-        file_path = Path(gremlin.file_path)
-        try:
-            rel_path = file_path.relative_to(rootdir)
-        except ValueError:
-            rel_path = Path(file_path.name)
-        module_name = str(rel_path).replace(os.sep, '.').removesuffix('.py')
-        if module_name.endswith('.__init__'):
-            module_name = module_name.removesuffix('.__init__')
-        gremlin_module_map[gremlin.gremlin_id] = module_name
-    return gremlin_module_map
 
 
 def _get_bootstrap_script() -> str:
@@ -2711,62 +2703,6 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
     return results
 
 
-def _run_mutation_testing_inprocess(
-    executor_choice: str,
-    gremlin_session: GremlinSession,
-    rootdir: Path,
-    base_test_command: list[str],
-) -> list[GremlinResult]:
-    """Run mutation testing using fork or in-process executor."""
-    gremlin_module_map = _build_gremlin_module_map(gremlin_session.gremlins, rootdir)
-    test_specs = [arg for arg in base_test_command if '::' in arg] or list(gremlin_session.test_node_ids.values())
-    timeout = gremlin_session.timeout if hasattr(gremlin_session, 'timeout') else 30
-    batch_size = gremlin_session.batch_size if hasattr(gremlin_session, 'batch_size') else 50
-
-    gremlin_ids = [g.gremlin_id for g in gremlin_session.gremlins if not g.pardoned]
-
-    if executor_choice == 'fork':
-        executor: InProcessExecutor | ForkExecutor = ForkExecutor(batch_size=batch_size, timeout=timeout)
-    else:
-        executor = InProcessExecutor(timeout=timeout)
-
-    ineligible_specs = frozenset(spec for spec in test_specs if spec not in gremlin_session.lightweight_safe_node_ids)
-    if ineligible_specs:
-        warnings.warn(
-            f'pytest-gremlins: {len(ineligible_specs)} of {len(test_specs)} selected tests cannot run under '
-            f'--gremlin-executor={executor_choice} (fixtures, parametrization, async or skip/xfail); '
-            'every gremlin is reported as an error because the executor runs the whole selection. '
-            'Use --gremlin-executor=subprocess to judge them.',
-            stacklevel=1,
-        )
-
-    worker_results = executor.execute(gremlin_ids, gremlin_module_map, test_specs, ineligible_specs=ineligible_specs)
-
-    results: list[GremlinResult] = []
-    gremlin_by_id = {g.gremlin_id: g for g in gremlin_session.gremlins}
-    for worker_result in worker_results:
-        gremlin = gremlin_by_id.get(worker_result.gremlin_id)
-        if gremlin is None:
-            continue
-        results.append(
-            GremlinResult(
-                gremlin=gremlin,
-                status=worker_result.status,
-                killing_test=worker_result.killing_test,
-                execution_time_ms=worker_result.execution_time_ms,
-                error_output=worker_result.error_output,
-            )
-        )
-
-    # Add pardoned gremlins
-    for gremlin in gremlin_session.gremlins:
-        pardoned_result = _immediate_result_if_pardoned(gremlin)
-        if pardoned_result is not None:
-            results.append(pardoned_result)
-
-    return results
-
-
 def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
     """Print a selection-drift diagnostic for a single gremlin, then disable the session.
 
@@ -2936,24 +2872,6 @@ def _run_mutation_testing(
     results: list[GremlinResult] = []
     rootdir = _get_rootdir(session.config)
     base_test_command = _build_test_command(gremlin_session.instrumented_dir, gremlin_session.preserved_addopts)
-
-    executor_choice = (
-        session.config.option.gremlin_executor if hasattr(session.config.option, 'gremlin_executor') else 'subprocess'
-    )
-
-    if executor_choice == 'auto':
-        # TODO: resolve to 'fork' on Unix once the fork executor supports
-        # coverage-guided selection, progress reporting, and cache integration.
-        # For now, auto = subprocess (safe default, full pipeline).
-        executor_choice = 'subprocess'
-
-    if executor_choice in ('fork', 'inprocess'):
-        return _run_mutation_testing_inprocess(
-            executor_choice,
-            gremlin_session,
-            rootdir,
-            base_test_command,
-        )
 
     for i, gremlin in enumerate(gremlin_session.gremlins, 1):
         pardoned_result = _immediate_result_if_pardoned(gremlin)
