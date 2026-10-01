@@ -2735,7 +2735,7 @@ def _run_mutation_testing_inprocess(
         warnings.warn(
             f'pytest-gremlins: {len(ineligible_specs)} of {len(test_specs)} selected tests cannot run under '
             f'--gremlin-executor={executor_choice} (fixtures, parametrization, async or skip/xfail); '
-            'gremlins selecting them are reported as errors. '
+            'every gremlin is reported as an error because the executor runs the whole selection. '
             'Use --gremlin-executor=subprocess to judge them.',
             stacklevel=1,
         )
