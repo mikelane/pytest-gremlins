@@ -839,6 +839,20 @@ if _XDIST_AVAILABLE:
         logger.debug('pytest_configure_node: injected gremlins_tmpdir=%s', gremlin_session.gremlins_tmpdir)
 
 
+def _is_running_on_sysmon(cov: coverage.Coverage) -> bool:
+    """Report whether ``cov`` measures with coverage's sysmon core.
+
+    sysmon ignores contexts set through ``switch_context`` (and warns about it
+    since coverage 7.15.3), so attaching ``GremlinContextPlugin`` would be useless
+    and, under ``filterwarnings = error``, fatal. Uses the public ``sys_info()``,
+    which reports the core of a started instance.
+    """
+    try:
+        return dict(cov.sys_info()).get('core') == 'SysMonitor'
+    except (TypeError, ValueError):
+        return False
+
+
 def pytest_sessionstart(session: pytest.Session) -> None:
     """At session start, register GremlinContextPlugin for coverage context tracking.
 
@@ -863,6 +877,9 @@ def pytest_sessionstart(session: pytest.Session) -> None:
         if cov_plugin is None or cov_plugin.cov_controller is None:
             return
         cov_instance = cov_plugin.cov_controller.cov
+        if _is_running_on_sysmon(cov_instance):
+            logger.debug('pytest-cov coverage runs on sysmon; skipping per-test context switching')
+            return
         context_plugin = GremlinContextPlugin(cov_instance)
         session.config.pluginmanager.register(context_plugin)
     else:

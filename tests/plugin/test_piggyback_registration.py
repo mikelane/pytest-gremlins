@@ -75,6 +75,36 @@ class DescribePiggybackContextPluginRegistration:
         assert len(context_plugins) == 1
         assert context_plugins[0].cov is cov_instance
 
+    @pytest.mark.parametrize('core', ['CTracer', 'PyTracer', '-none-'])
+    def it_registers_context_plugin_when_the_cov_core_supports_contexts(self, core: str) -> None:
+        """Cores other than sysmon honor switch_context, so the plugin is registered (#531)."""
+        session = self._piggyback_session_with_core(core)
+
+        pytest_sessionstart(session)
+
+        registered = [call.args[0] for call in session.config.pluginmanager.register.call_args_list]
+        assert any(isinstance(p, GremlinContextPlugin) for p in registered)
+
+    def it_skips_context_plugin_when_the_cov_core_is_sysmon(self) -> None:
+        """sysmon drops API-driven contexts and warns; the subprocess map is used instead (#531)."""
+        session = self._piggyback_session_with_core('SysMonitor')
+
+        pytest_sessionstart(session)
+
+        session.config.pluginmanager.register.assert_not_called()
+
+    @staticmethod
+    def _piggyback_session_with_core(core: str) -> MagicMock:
+        cov_instance = MagicMock(spec=coverage.Coverage)
+        cov_instance.sys_info.return_value = [('core', core)]
+        cov_plugin = MagicMock()  # pytest-cov plugin: internal type, no public spec; bare-mock: ok
+        cov_plugin.cov_controller.cov = cov_instance
+        session = MagicMock(spec=pytest.Session)
+        session.config.pluginmanager.get_plugin.return_value = cov_plugin
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
+        _set_session(GremlinSession(enabled=True, coverage_mode=CoverageMode.PIGGYBACK))
+        return session
+
     def it_registers_context_plugin_on_private_coverage_not_cov_plugin(self) -> None:
         """In PRIVATE mode, GremlinContextPlugin is registered on private coverage, not _cov's."""
         session = MagicMock(spec=pytest.Session)
