@@ -16,6 +16,7 @@ import pytest
 from pytest_gremlins.plugin import _run_tests_with_coverage
 
 CALC_MODULE_SOURCE = 'def add(a, b):\n    return a + b\n'
+_RETURN_LINE = 2
 TWO_TESTS_SHARING_A_LINE = (
     'from calc import add\n\n\n'
     'def test_first():\n    assert add(1, 2) == 3\n\n\n'
@@ -30,6 +31,10 @@ def _write_project(root: Path) -> Path:
     (project / 'test_calc.py').write_text(TWO_TESTS_SHARING_A_LINE)
     (project / 'pytest.ini').write_text('[pytest]\npythonpath = .\n')
     return project
+
+
+def _contexts_covering_return_line(coverage_by_test: dict[str, dict[str, list[int]]]) -> set[str]:
+    return {test for test, files in coverage_by_test.items() if any(_RETURN_LINE in lines for lines in files.values())}
 
 
 @pytest.mark.medium
@@ -52,6 +57,7 @@ class DescribeCoverageEnvVarOverrides:
     def it_attributes_lines_when_the_user_sets_coverage_rcfile(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """The user rc asks for sysmon; the shared line still credits both tests."""
         project = _write_project(tmp_path)
         user_rcfile = tmp_path / 'user.coveragerc'
         user_rcfile.write_text(f'[run]\ndata_file = {tmp_path / "elsewhere.db"}\ncore = sysmon\n')
@@ -62,4 +68,7 @@ class DescribeCoverageEnvVarOverrides:
             project,
         )
 
-        assert set(coverage_by_test) == {'test_calc.py::test_first', 'test_calc.py::test_second'}
+        assert _contexts_covering_return_line(coverage_by_test) == {
+            'test_calc.py::test_first',
+            'test_calc.py::test_second',
+        }
