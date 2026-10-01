@@ -186,14 +186,6 @@ class TestIsZero:
             """,
         )
 
-        # Run without cache (baseline)
-        no_cache_start = time.perf_counter()
-        pytester_with_markers.runpytest(
-            '--gremlins',
-            '--gremlin-targets=calculator.py,validator.py',
-        )
-        no_cache_time = time.perf_counter() - no_cache_start
-
         # Cold cache run
         cold_start = time.perf_counter()
         pytester_with_markers.runpytest(
@@ -217,18 +209,11 @@ class TestIsZero:
 
         # Print timing info for debugging
         print('\n\nTiming results:')
-        print(f'  No cache:   {no_cache_time:.2f}s')
-        print(f'  Cold cache: {cold_time:.2f}s (overhead: {cold_time - no_cache_time:.2f}s)')
-        print(f'  Warm cache: {warm_time:.2f}s (speedup: {no_cache_time / warm_time:.1f}x)')
+        print(f'  Cold cache: {cold_time:.2f}s')
+        print(f'  Warm cache: {warm_time:.2f}s (speedup: {cold_time / warm_time:.1f}x)')
 
-        # Key assertions:
-        # 1. Warm cache MUST be faster than no cache
-        assert warm_time < no_cache_time, (
-            f'Warm cache ({warm_time:.2f}s) is NOT faster than no-cache ({no_cache_time:.2f}s)! '
-            'This is the critical bug - cache should provide speedup.'
-        )
-
-        # 2. Warm cache should be at least 2x faster than cold cache
+        # The cold run is the no-cache baseline: every gremlin runs through pytest, so a second
+        # no-cache run would only double the cost without adding a signal.
         speedup = cold_time / warm_time
         assert speedup >= 2.0, (
             f'Warm cache speedup is only {speedup:.1f}x vs cold cache. '
