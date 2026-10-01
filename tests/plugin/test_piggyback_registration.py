@@ -94,6 +94,22 @@ class DescribePiggybackContextPluginRegistration:
         assert len(context_plugins) == 1
         assert context_plugins[0].cov is mock_private_cov
 
+    def it_pins_the_private_coverage_to_the_ctrace_core(self) -> None:
+        """PRIVATE mode requests ctrace so sysmon cannot drop per-test contexts (#531)."""
+        session = MagicMock(spec=pytest.Session)
+        session.config.pluginmanager.get_plugin.return_value = None
+        session.config.pluginmanager.register = MagicMock()  # method mock on chained attr; bare-mock: ok
+
+        gs = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE)
+        _set_session(gs)
+
+        with patch('pytest_gremlins.plugin.coverage') as mock_coverage_module:
+            mock_private_cov = MagicMock(spec=coverage.Coverage)
+            mock_coverage_module.Coverage.return_value = mock_private_cov
+            pytest_sessionstart(session)
+
+        mock_private_cov.set_option.assert_called_once_with('run:core', 'ctrace')
+
     def it_skips_registration_when_session_disabled(self) -> None:
         """No registration occurs when GremlinSession is disabled."""
         session = MagicMock(spec=pytest.Session)
