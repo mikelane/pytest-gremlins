@@ -39,6 +39,7 @@ from typing import (
 import warnings
 
 import coverage
+from coverage.exceptions import CoverageException
 import pytest
 
 from pytest_gremlins.cache.hasher import ContentHasher
@@ -849,7 +850,7 @@ def _is_running_on_sysmon(cov: coverage.Coverage) -> bool:
     """
     try:
         return dict(cov.sys_info()).get('core') == 'SysMonitor'
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, CoverageException):
         return False
 
 
@@ -1931,6 +1932,7 @@ def _addopts_without_cov(raw_addopts: list[str]) -> str:
 # Coverage.switch_context, crediting each line only to the first test that ran it.
 # ctrace supports them; the rc route degrades to pytrace if CTracer is unavailable.
 _COVERAGE_CORE_RC_LINE = 'core = ctrace'
+_PRESCAN_OVERRIDING_ENV_VARS = frozenset({'COVERAGE_CORE', 'COVERAGE_FILE'})
 
 
 def _run_tests_with_coverage(
@@ -2007,8 +2009,9 @@ def _run_tests_with_coverage(
         '-q',
     ]
 
-    # COVERAGE_CORE overrides the rc file; a user-set value (e.g. sysmon) would drop contexts.
-    subprocess_env = {key: value for key, value in os.environ.items() if key != 'COVERAGE_CORE'}
+    # COVERAGE_CORE overrides the rc file (a user-set sysmon would drop contexts) and
+    # COVERAGE_FILE redirects the data file away from rootdir/.coverage, which is read below.
+    subprocess_env = {key: value for key, value in os.environ.items() if key not in _PRESCAN_OVERRIDING_ENV_VARS}
 
     try:
         subprocess.run(  # Intentional: runs pytest test commands

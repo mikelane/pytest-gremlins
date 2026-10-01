@@ -16,6 +16,7 @@ from unittest.mock import (
 )
 
 import coverage
+from coverage.exceptions import CoverageException
 import pytest
 
 from pytest_gremlins.coverage.context_plugin import GremlinContextPlugin
@@ -92,6 +93,17 @@ class DescribePiggybackContextPluginRegistration:
         pytest_sessionstart(session)
 
         session.config.pluginmanager.register.assert_not_called()
+
+    def it_registers_context_plugin_when_sys_info_raises_a_coverage_exception(self) -> None:
+        """A failing core probe is not evidence of sysmon, so the plugin is still registered (#531)."""
+        session = self._piggyback_session_with_core('CTracer')
+        cov_instance = session.config.pluginmanager.get_plugin.return_value.cov_controller.cov
+        cov_instance.sys_info.side_effect = CoverageException('cannot determine core')
+
+        pytest_sessionstart(session)
+
+        registered = [call.args[0] for call in session.config.pluginmanager.register.call_args_list]
+        assert any(isinstance(p, GremlinContextPlugin) for p in registered)
 
     @staticmethod
     def _piggyback_session_with_core(core: str) -> MagicMock:
