@@ -17,6 +17,14 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
+RUNNER_FIDELITY_VERSION = 'rf2'
+"""Bump when a change to how tests are executed can alter cached verdicts.
+
+``rf2`` retires results produced by the lightweight runner before it abstained on
+tests it could not run (async, parametrized, fixture-taking), which could be fabricated.
+"""
+
+
 class IncrementalCache:
     """Coordinator for incremental analysis caching.
 
@@ -33,6 +41,8 @@ class IncrementalCache:
     - gremlin_id: Unique identifier for the mutation
     - source_hash: SHA-256 hash of the source file content
     - test_hashes: Combined hash of all test files covering this gremlin
+    - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
+      runner are recomputed once
 
     Example:
         >>> from pathlib import Path
@@ -81,7 +91,7 @@ class IncrementalCache:
         sorted_test_items = [f'{name}:{test_hashes[name]}' for name in sorted(test_hashes.keys())]
         combined_test_hash = self._hasher.hash_string('|'.join(sorted_test_items)) if sorted_test_items else 'no_tests'
 
-        return f'{gremlin_id}:{source_hash}:{combined_test_hash}'
+        return f'{gremlin_id}:{source_hash}:{combined_test_hash}:{RUNNER_FIDELITY_VERSION}'
 
     def get_cached_result(
         self,
