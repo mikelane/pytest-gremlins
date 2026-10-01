@@ -2727,7 +2727,17 @@ def _run_mutation_testing_inprocess(
     else:
         executor = InProcessExecutor(timeout=timeout)
 
-    worker_results = executor.execute(gremlin_ids, gremlin_module_map, test_specs)
+    ineligible_specs = frozenset(spec for spec in test_specs if spec not in gremlin_session.lightweight_safe_node_ids)
+    if ineligible_specs:
+        warnings.warn(
+            f'pytest-gremlins: {len(ineligible_specs)} of {len(test_specs)} selected tests cannot run under '
+            f'--gremlin-executor={executor_choice} (fixtures, parametrization, async or skip/xfail); '
+            'gremlins selecting them are reported as errors. '
+            'Use --gremlin-executor=subprocess to judge them.',
+            stacklevel=1,
+        )
+
+    worker_results = executor.execute(gremlin_ids, gremlin_module_map, test_specs, ineligible_specs=ineligible_specs)
 
     results: list[GremlinResult] = []
     gremlin_by_id = {g.gremlin_id: g for g in gremlin_session.gremlins}

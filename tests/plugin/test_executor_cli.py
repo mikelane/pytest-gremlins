@@ -177,7 +177,7 @@ class DescribeRunMutationTestingInprocess:
 
     def it_uses_inprocess_executor_for_inprocess_choice(self) -> None:
         gremlin = _make_gremlin('g1', '/project/src/pkg/mod.py')
-        session = GremlinSession(gremlins=[gremlin])
+        session = GremlinSession(gremlins=[gremlin], lightweight_safe_node_ids=frozenset({'tests/test_a.py::test_a'}))
         mock_executor = MagicMock(spec=InProcessExecutor)
         mock_executor.execute.return_value = [
             WorkerResult(
@@ -198,7 +198,9 @@ class DescribeRunMutationTestingInprocess:
 
     def it_uses_fork_executor_for_fork_choice(self) -> None:
         gremlin = _make_gremlin('g1', '/project/src/pkg/mod.py')
-        session = GremlinSession(gremlins=[gremlin], batch_size=25)
+        session = GremlinSession(
+            gremlins=[gremlin], batch_size=25, lightweight_safe_node_ids=frozenset({'tests/test_a.py::test_a'})
+        )
         mock_executor = MagicMock(spec=ForkExecutor)
         mock_executor.execute.return_value = [
             WorkerResult(gremlin_id='g1', status=GremlinResultStatus.SURVIVED, execution_time_ms=10.0),
@@ -274,7 +276,10 @@ class DescribeRunMutationTestingInprocess:
 
     def it_extracts_test_specs_from_base_command(self) -> None:
         gremlin = _make_gremlin('g1', '/project/src/pkg/mod.py')
-        session = GremlinSession(gremlins=[gremlin])
+        session = GremlinSession(
+            gremlins=[gremlin],
+            lightweight_safe_node_ids=frozenset({'tests/test_a.py::test_one', 'tests/test_b.py::TestClass::test_two'}),
+        )
         mock_executor = MagicMock(spec=InProcessExecutor)
         mock_executor.execute.return_value = [
             WorkerResult(gremlin_id='g1', status=GremlinResultStatus.SURVIVED, execution_time_ms=1.0),
