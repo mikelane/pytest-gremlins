@@ -12,7 +12,7 @@ Configuration values are resolved in this order (highest priority first):
 
 When the same option is specified at both levels, the CLI value wins. This applies to all nine
 configurable fields (operators, paths, exclude, workers, cache, report, batch_size, max_pardons,
-max-pardons-pct).
+max-pardons-pct), as well as `coverage_timeout` / `--gremlin-coverage-timeout`.
 
 **Source path auto-discovery** is a separate mechanism that kicks in only when neither
 `--gremlin-targets` nor `[tool.pytest-gremlins] paths` is set. It tries seven strategies in
@@ -42,6 +42,7 @@ All command-line options are prefixed with `--gremlin` or `--gremlins`.
 | `--gremlin-workers` | integer | CPU count | Number of parallel workers (implies `--gremlin-parallel`) |
 | `--gremlin-batch` | flag | `false` | Enable batch execution mode |
 | `--gremlin-batch-size` | integer | `10` | Number of gremlins per batch |
+| `--gremlin-coverage-timeout` | integer | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled |
 
 ### Output Options
 
@@ -216,6 +217,11 @@ report = ["html", "json"]
 # Default: 10
 batch_size = 20
 
+# Seconds the coverage pre-scan may run before coverage-guided test selection
+# is disabled (raise it for slow suites)
+# Default: 120
+coverage_timeout = 300
+
 # Maximum number of pardoned gremlins (absolute ceiling)
 # Default: no limit
 max_pardons = 10
@@ -236,6 +242,7 @@ max-pardons-pct = 5.0
 | `cache` | boolean | `false` | Enable incremental analysis cache |
 | `report` | string or list | `"console"` | Report format(s): `"html"`, `"json"`, `"console"`, or a list like `["html", "json"]` |
 | `batch_size` | int | `10` | Number of gremlins per batch in batch execution mode |
+| `coverage_timeout` | int | `120` | Seconds (1-86400) the coverage pre-scan may run; on expiry gremlins warns and runs every test per gremlin |
 | `max_pardons` | int | no limit | Absolute ceiling on pardoned gremlins |
 | `max-pardons-pct` | float | no limit | Maximum percentage of pardoned gremlins (0-100) |
 
@@ -457,6 +464,36 @@ not want xdist involved in test distribution:
 pytest --gremlins --gremlin-parallel   # use all CPU cores (no xdist)
 pytest --gremlins --gremlin-workers=4  # specific worker count (no xdist)
 ```
+
+The coverage pre-scan that drives coverage-guided test selection always runs as a single,
+non-distributed pytest process, because coverage.py does not trace xdist workers. Gremlins strips
+every pytest-xdist option (`-n`, `--numprocesses`, `--maxprocesses`, `--dist`, `--tx`, and the rest)
+from your `addopts` and from the `PYTEST_ADDOPTS` environment variable for that run, so `-n auto`
+no longer produces an empty coverage map. The xdist plugin itself stays loaded and runs in-process,
+so its `worker_id` and `testrun_uid` fixtures and hooks keep working.
+
+### Coverage Pre-Scan Timeout
+
+The pre-scan is limited to 120 seconds by default. If it runs longer, gremlins emits this warning (wrapped here for width)
+
+```text
+pytest-gremlins: coverage pre-scan exceeded 120s; coverage-guided test selection disabled
+(set coverage_timeout / --gremlin-coverage-timeout to raise it)
+```
+
+and falls back to running every test for every gremlin. Raise the limit with the CLI or TOML:
+
+```bash
+pytest --gremlins --gremlin-coverage-timeout=600
+```
+
+```toml
+[tool.pytest-gremlins]
+coverage_timeout = 600
+```
+
+The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
+the TOML key.
 
 ### Batch Execution
 

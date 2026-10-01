@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 VALID_REPORT_FORMATS: frozenset[str] = frozenset({'console', 'html', 'json'})
 
 
+# subprocess.run overflows (OverflowError) above ~2.1M seconds; a day is far beyond any sane pre-scan.
+MAX_COVERAGE_TIMEOUT_SECONDS = 86_400
+
+
 @dataclass
 class GremlinConfig:
     """Configuration for pytest-gremlins.
@@ -37,6 +41,7 @@ class GremlinConfig:
         cache: Whether to enable incremental analysis cache.
         report: List of report formats (e.g. ["html", "json"]).
         batch_size: Number of gremlins per batch in batch mode.
+        coverage_timeout: Seconds the coverage pre-scan may run before it is abandoned.
     """
 
     operators: list[str] | None = None
@@ -48,6 +53,7 @@ class GremlinConfig:
     batch_size: int | None = None
     max_pardons_pct: float | None = None
     max_pardons: int | None = None
+    coverage_timeout: int | None = None
 
 
 def _resolve_workers(value: int | str | None) -> int | None:
@@ -135,6 +141,21 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
         raise ValueError(
             f'[tool.pytest-gremlins].batch_size must be a positive integer (e.g. batch_size = 50), '
             f'got {batch_size_raw!r}'
+        )
+
+    coverage_timeout_raw = tool_config.get('coverage_timeout')
+    if coverage_timeout_raw is not None and (
+        isinstance(coverage_timeout_raw, bool)
+        or not isinstance(coverage_timeout_raw, int)
+        or not 0 < coverage_timeout_raw <= MAX_COVERAGE_TIMEOUT_SECONDS
+    ):
+        logger.warning(
+            'Invalid coverage_timeout in %s: expected positive integer, got %r', pyproject_path, coverage_timeout_raw
+        )
+        raise ValueError(
+            f'[tool.pytest-gremlins].coverage_timeout must be a positive integer number of seconds '
+            f'no greater than {MAX_COVERAGE_TIMEOUT_SECONDS} (e.g. coverage_timeout = 300), '
+            f'got {coverage_timeout_raw!r}'
         )
 
     cache_raw = tool_config.get('cache')
@@ -234,6 +255,7 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
         batch_size=batch_size_raw,
         max_pardons_pct=max_pardons_pct_raw,
         max_pardons=max_pardons_raw,
+        coverage_timeout=coverage_timeout_raw,
     )
 
 
@@ -499,6 +521,7 @@ def merge_configs(
     cli_batch_size: int | None = None,
     cli_max_pardons_pct: float | None = None,
     cli_max_pardons: int | None = None,
+    cli_coverage_timeout: int | None = None,
 ) -> GremlinConfig:
     """Merge CLI arguments with file configuration.
 
@@ -516,6 +539,7 @@ def merge_configs(
         cli_batch_size: Batch size from CLI (--gremlin-batch-size).
         cli_max_pardons_pct: Max pardoned % from CLI (--gremlin-max-pardons-pct).
         cli_max_pardons: Max absolute pardon count from CLI (--max-pardons).
+        cli_coverage_timeout: Pre-scan timeout in seconds from CLI (--gremlin-coverage-timeout).
 
     Returns:
         GremlinConfig with CLI values overriding file config where provided.
@@ -542,6 +566,9 @@ def merge_configs(
         cli_max_pardons_pct if cli_max_pardons_pct is not None else file_config.max_pardons_pct
     )
     max_pardons: int | None = cli_max_pardons if cli_max_pardons is not None else file_config.max_pardons
+    coverage_timeout: int | None = (
+        cli_coverage_timeout if cli_coverage_timeout is not None else file_config.coverage_timeout
+    )
 
     return GremlinConfig(
         operators=operators,
@@ -553,4 +580,5 @@ def merge_configs(
         batch_size=batch_size,
         max_pardons_pct=max_pardons_pct,
         max_pardons=max_pardons,
+        coverage_timeout=coverage_timeout,
     )

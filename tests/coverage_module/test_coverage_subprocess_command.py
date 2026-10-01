@@ -11,12 +11,17 @@ from unittest.mock import (
     MagicMock,
     patch,
 )
+import warnings
 
+from _pytest.config.argparsing import Parser
 import pytest
+import xdist.plugin
 
 from pytest_gremlins.plugin import (
     GremlinSession,
+    _addopts_without_xdist,
     _collect_coverage,
+    _prescan_env,
     _run_tests_with_coverage,
 )
 
@@ -132,3 +137,146 @@ class DescribeCollectCoverageScoping:
             _collect_coverage(gs, tmp_path)
 
         assert captured['coverage_include'] == [str(source_file.resolve())]
+
+
+def _prescan_command(tmp_path: Path, preserved_addopts: str) -> list[str]:
+    """Run the pre-scan with subprocess.run patched and return the command it built."""
+    captured_cmd: list[str] = []
+
+    def capture_cmd(*args: object, **_kwargs: object) -> None:
+        captured_cmd.extend(args[0])  # type: ignore[index]
+
+    with patch('pytest_gremlins.plugin.subprocess.run', side_effect=capture_cmd):
+        _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path, preserved_addopts=preserved_addopts)
+    return captured_cmd
+
+
+def _addopts_value(cmd: list[str]) -> str:
+    option = next(arg for arg in cmd if arg.startswith('addopts='))
+    return option.removeprefix('addopts=')
+
+
+@pytest.mark.medium
+class DescribeRunTestsWithCoverageXdistStripping:
+    """The pre-scan must not inherit xdist options from the project's addopts (issue #502)."""
+
+    @pytest.mark.parametrize(
+        'addopts',
+        [
+            '-n 4',
+            '-n4',
+            '-nauto',
+            '-n auto',
+            '--numprocesses=4',
+            '--numprocesses 4',
+            '--numprocesses=auto',
+            '--maxprocesses=8',
+            '--maxprocesses 8',
+            '--dist worksteal',
+            '--dist=load',
+            '--max-worker-restart=2',
+            '--max-worker-restart 2',
+            '--tx popen//python=python3',
+            '--tx=popen//python=python3',
+            '--rsyncdir src',
+            '--rsyncdir=src',
+            '-d',
+            '--distributed',
+            '--loadscope-reorder',
+            '--no-loadscope-reorder',
+            '--px id=proxy',
+            '--px=id=proxy',
+            '--rsyncignore *.pyc',
+            '--rsyncignore=*.pyc',
+            '--testrunuid abc',
+            '--testrunuid=abc',
+            '--maxschedchunk 2',
+            '--maxschedchunk=2',
+            '-f',
+            '--looponfail',
+        ],
+    )
+    def it_strips_xdist_options_from_addopts(self, tmp_path: Path, addopts: str) -> None:
+        cmd = _prescan_command(tmp_path, addopts)
+
+        assert _addopts_value(cmd) == ''
+
+    def it_keeps_unrelated_options_around_stripped_xdist_options(self, tmp_path: Path) -> None:
+        cmd = _prescan_command(tmp_path, '--import-mode=importlib -n 4 --dist=load -ra')
+
+        assert _addopts_value(cmd) == '--import-mode=importlib -ra'
+
+    @pytest.mark.parametrize('addopts', ['--no-header', '-q', '--durations=5', '--nodeid-width=3'])
+    def it_does_not_strip_options_that_merely_start_with_n(self, tmp_path: Path, addopts: str) -> None:
+        cmd = _prescan_command(tmp_path, addopts)
+
+        assert _addopts_value(cmd) == addopts
+
+    def it_leaves_the_xdist_plugin_loaded_so_its_fixtures_and_hooks_exist(self, tmp_path: Path) -> None:
+        cmd = _prescan_command(tmp_path, '-n 4')
+
+        assert 'no:xdist' not in cmd
+
+    def it_passes_the_subprocess_an_explicit_environment(self, tmp_path: Path) -> None:
+        with patch('pytest_gremlins.plugin.subprocess.run') as run:
+            _run_tests_with_coverage([], tmp_path)
+
+        assert isinstance(run.call_args.kwargs['env'], dict)
+
+
+@pytest.mark.small
+class DescribePrescanEnv:
+    """PYTEST_ADDOPTS must not smuggle xdist options into the pre-scan (issue #502)."""
+
+    @pytest.mark.parametrize('value', ['-n 2', '-n2', '--numprocesses=auto', '-n 2 --dist=load'])
+    def it_drops_pytest_addopts_when_only_xdist_options_remain(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', value)
+
+        env = _prescan_env()
+
+        assert 'PYTEST_ADDOPTS' not in env
+
+    def it_keeps_the_non_xdist_options_in_pytest_addopts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '-n 4 --import-mode=importlib -ra')
+
+        env = _prescan_env()
+
+        kept = env['PYTEST_ADDOPTS']
+        assert kept == '--import-mode=importlib -ra'
+
+    def it_leaves_other_variables_untouched(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('GREMLIN_SENTINEL', 'kept')
+        monkeypatch.delenv('PYTEST_ADDOPTS', raising=False)
+
+        env = _prescan_env()
+
+        sentinel = env['GREMLIN_SENTINEL']
+        assert sentinel == 'kept'
+        assert 'PYTEST_ADDOPTS' not in env
+
+
+def _installed_xdist_options() -> list[tuple[str, bool]]:
+    """Return ``(option, takes_value)`` for every option the installed pytest-xdist registers."""
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', pytest.PytestDeprecationWarning)
+        parser = Parser()
+    xdist.plugin.pytest_addoption(parser)
+    return [
+        (name, option.attrs().get('nargs') != 0)
+        for group in parser._groups
+        for option in group.options
+        for name in option.names()
+    ]
+
+
+@pytest.mark.small
+class DescribeXdistOptionCoverage:
+    """Every option the installed pytest-xdist registers is stripped (guards against xdist adding new ones)."""
+
+    @pytest.mark.parametrize(('option', 'takes_value'), _installed_xdist_options())
+    def it_strips_the_option(self, option: str, takes_value: bool) -> None:
+        addopts = f'{option} 2' if takes_value else option
+
+        assert _addopts_without_xdist(addopts) == ''

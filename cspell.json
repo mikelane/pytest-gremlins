@@ -137,6 +137,7 @@
     "reimport",
     "reimporting",
     "rootdir",
+    "rsyncdir",
     "ruff",
     "sdist",
     "securepass",
@@ -148,6 +149,7 @@
     "collectionfinish",
     "coveragerc",
     "loadscope",
+    "maxprocesses",
     "numprocesses",
     "prepareconfig",
     "rcfile",
@@ -192,7 +194,8 @@
     "xdg",
     "xdist",
     "yaml",
-    "yourmodule"
+    "yourmodule",
+    "testrun"
   ],
   "flagWords": [],
   "dictionaries": [

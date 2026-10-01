@@ -39,7 +39,10 @@ class DescribeCoveragercEncoding:
                 raise plugin.subprocess.TimeoutExpired(cmd, 0)
 
             plugin.subprocess.run = fake_run
-            plugin._run_tests_with_coverage(['t.py::t'], Path({str(tmp_path)!r}), coverage_include=[source_path])
+            try:
+                plugin._run_tests_with_coverage(['t.py::t'], Path({str(tmp_path)!r}), coverage_include=[source_path])
+            except plugin.CoveragePrescanTimeoutError:
+                pass
             """
         )
         assert script.isascii(), 'child script must be ASCII so argv decodes the same on every platform'

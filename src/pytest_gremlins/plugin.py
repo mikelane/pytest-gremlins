@@ -46,6 +46,7 @@ from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.config import (
+    MAX_COVERAGE_TIMEOUT_SECONDS,
     VALID_REPORT_FORMATS,
     GremlinConfig,
     discover_by_importlib_metadata,
@@ -153,6 +154,17 @@ def _detect_coverage_mode(config: pytest.Config) -> CoverageMode:
     return CoverageMode.PRIVATE
 
 
+DEFAULT_COVERAGE_TIMEOUT_SECONDS = 120
+
+
+class CoveragePrescanTimeoutError(Exception):
+    """Raised when the coverage pre-scan subprocess exceeds its time limit (issue #503)."""
+
+    def __init__(self, seconds: int) -> None:
+        super().__init__(f'coverage pre-scan exceeded {seconds}s')
+        self.seconds = seconds
+
+
 @dataclass
 class GremlinSession:
     """Session state for mutation testing.
@@ -196,10 +208,14 @@ class GremlinSession:
         test_name_to_node_ids: Reverse index mapping bare function names to
             their full pytest node IDs.  Built at session setup for O(1)
             lookup when resolving coverage contexts.
+        coverage_timeout: Seconds the coverage pre-scan may run before it is
+            abandoned and coverage-guided test selection is disabled (issue #503).
         preserved_addopts: The project's pytest ``addopts`` with pytest-cov flags
             stripped (see :func:`_addopts_without_cov`), threaded into the subprocess
             runs as ``-o addopts=<...>`` so collection-affecting options such as
             ``--import-mode=importlib`` survive (issue #424).  ``''`` clears all addopts.
+            xdist options are left intact here; only the coverage pre-scan strips them
+            (see :func:`_addopts_without_xdist`).
     """
 
     enabled: bool = False
@@ -241,6 +257,7 @@ class GremlinSession:
     test_name_to_node_ids: dict[str, list[str]] = field(default_factory=dict)
     explain_gremlin_id: str | None = None
     preserved_addopts: str = ''
+    coverage_timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS
 
 
 _gremlin_session: GremlinSession | None = None
@@ -500,6 +517,17 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help='Number of gremlins per batch (default: 10)',
     )
     group.addoption(
+        '--gremlin-coverage-timeout',
+        action='store',
+        type=int,
+        default=None,
+        dest='gremlin_coverage_timeout',
+        help=(
+            'Seconds the coverage pre-scan may run before coverage-guided test selection is '
+            f'disabled (default: {DEFAULT_COVERAGE_TIMEOUT_SECONDS}, max: {MAX_COVERAGE_TIMEOUT_SECONDS})'
+        ),
+    )
+    group.addoption(
         '--gremlins-html-dir',
         action='store',
         default=None,
@@ -704,6 +732,25 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
     return True
 
 
+def _read_cli_coverage_timeout(config: pytest.Config) -> int | None:
+    """Return ``--gremlin-coverage-timeout``, exiting with a usage error if it is outside 1..MAX."""
+    cli_value: int | None = getattr(config.option, 'gremlin_coverage_timeout', None)
+    if cli_value is not None and not 0 < cli_value <= MAX_COVERAGE_TIMEOUT_SECONDS:
+        pytest.exit(
+            f'--gremlin-coverage-timeout must be a positive integer number of seconds '
+            f'no greater than {MAX_COVERAGE_TIMEOUT_SECONDS}, got {cli_value!r}.',
+            returncode=4,
+        )
+    return cli_value
+
+
+def _resolve_coverage_timeout(merged_config: object) -> int:
+    """Return the merged ``coverage_timeout``, or the default when unset (or a test mock)."""
+    if isinstance(merged_config, GremlinConfig) and merged_config.coverage_timeout is not None:
+        return merged_config.coverage_timeout
+    return DEFAULT_COVERAGE_TIMEOUT_SECONDS
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
@@ -727,6 +774,8 @@ def pytest_configure(config: pytest.Config) -> None:
 
     cli_max_pardons_pct, cli_max_pardons = _read_validated_pardon_limits(config)
 
+    cli_coverage_timeout = _read_cli_coverage_timeout(config)
+
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
     # Load config from pyproject.toml and merge with CLI args
@@ -742,6 +791,7 @@ def pytest_configure(config: pytest.Config) -> None:
         cli_batch_size=config.option.gremlin_batch_size,
         cli_max_pardons_pct=cli_max_pardons_pct,
         cli_max_pardons=cli_max_pardons,
+        cli_coverage_timeout=cli_coverage_timeout,
     )
 
     registry = get_default_registry()
@@ -778,6 +828,7 @@ def pytest_configure(config: pytest.Config) -> None:
     # Batch and report: merge_configs already resolved CLI-beats-TOML
     batch_enabled = config.option.gremlin_batch
     batch_size: int = toml_batch_size if toml_batch_size is not None else 10
+    coverage_timeout = _resolve_coverage_timeout(merged_config)
     report_formats: list[str] = toml_report if toml_report is not None else ['console']
 
     _set_session(
@@ -803,6 +854,7 @@ def pytest_configure(config: pytest.Config) -> None:
             xdist_active=xdist_active,
             xdist_workers=xdist_worker_int if xdist_active else None,
             preserved_addopts=_addopts_without_cov(config.getini('addopts')),
+            coverage_timeout=coverage_timeout,
         )
     )
 
@@ -1752,6 +1804,52 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     return relative_node_ids
 
 
+def _warn_prescan_timeout(seconds: int) -> None:
+    """Warn that the pre-scan timed out, which is a different cause from "no data" (issue #503)."""
+    warnings.warn(
+        f'pytest-gremlins: coverage pre-scan exceeded {seconds}s; '
+        'coverage-guided test selection disabled '
+        '(set coverage_timeout / --gremlin-coverage-timeout to raise it)',
+        stacklevel=1,
+    )
+
+
+def _warn_no_coverage_data() -> None:
+    """Warn that the pre-scan finished but recorded nothing (issue #113)."""
+    warnings.warn(
+        'Coverage collection returned no data. '
+        'If you have --cov in pytest addopts, this may interfere with '
+        "gremlins' coverage-guided test selection. "
+        'See https://github.com/mikelane/pytest-gremlins/issues/113',
+        stacklevel=1,
+    )
+
+
+def _run_prescan_reporting_problems(
+    node_ids: list[str],
+    rootdir: Path,
+    gremlin_session: GremlinSession,
+    *,
+    coverage_include: list[str] | None,
+) -> dict[str, dict[str, list[int]]]:
+    """Run the coverage pre-scan, warning (with the right cause) when it yields nothing."""
+    try:
+        coverage_data = _run_tests_with_coverage(
+            node_ids,
+            rootdir,
+            name_to_node_ids=gremlin_session.test_name_to_node_ids,
+            coverage_include=coverage_include,
+            preserved_addopts=gremlin_session.preserved_addopts,
+            timeout=gremlin_session.coverage_timeout,
+        )
+    except CoveragePrescanTimeoutError as timeout_error:
+        _warn_prescan_timeout(timeout_error.seconds)
+        return {}
+    if not coverage_data:
+        _warn_no_coverage_data()
+    return coverage_data
+
+
 def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
     """Collect coverage data by running tests with coverage.py.
 
@@ -1773,22 +1871,12 @@ def _collect_coverage(gremlin_session: GremlinSession, rootdir: Path) -> None:
 
     coverage_include = sorted({str(Path(gremlin.file_path).resolve()) for gremlin in gremlin_session.gremlins})
 
-    coverage_data = _run_tests_with_coverage(
+    coverage_data = _run_prescan_reporting_problems(
         relative_node_ids,
         rootdir,
-        name_to_node_ids=gremlin_session.test_name_to_node_ids,
+        gremlin_session,
         coverage_include=coverage_include or None,
-        preserved_addopts=gremlin_session.preserved_addopts,
     )
-
-    if not coverage_data:
-        warnings.warn(
-            'Coverage collection returned no data. '
-            'If you have --cov in pytest addopts, this may interfere with '
-            "gremlins' coverage-guided test selection. "
-            'See https://github.com/mikelane/pytest-gremlins/issues/113',
-            stacklevel=1,
-        )
 
     gremlin_paths_map: dict[str, str] = {}
     for gremlin in gremlin_session.gremlins:
@@ -1942,6 +2030,78 @@ _COVERAGE_CORE_RC_LINE = 'core = ctrace'
 _PRESCAN_OVERRIDING_ENV_VARS = frozenset({'COVERAGE_CORE', 'COVERAGE_FILE'})
 
 
+# pytest-xdist options that take a value.  Written either inline (``--dist=load``) or
+# with the value as the next token (``--dist load``).
+_XDIST_VALUE_OPTS = frozenset(
+    {
+        '--numprocesses',
+        '--maxprocesses',
+        '--dist',
+        '--max-worker-restart',
+        '--tx',
+        '--px',
+        '--rsyncdir',
+        '--rsyncignore',
+        '--testrunuid',
+        '--maxschedchunk',
+    }
+)
+
+# pytest-xdist switches that take no value.
+_XDIST_FLAG_ONLY_OPTS = frozenset(
+    {'-d', '--distributed', '--loadscope-reorder', '--no-loadscope-reorder', '-f', '--looponfail'}
+)
+
+
+def _is_attached_short_numprocesses(arg: str) -> bool:
+    """Return True for ``-n4`` / ``-nauto`` (the value glued to the short option)."""
+    return arg.startswith('-n') and not arg.startswith('--') and len(arg) > len('-n')
+
+
+def _addopts_without_xdist(addopts: str) -> str:
+    """Return ``addopts`` with pytest-xdist options removed.
+
+    The coverage pre-scan is one ``coverage run -m pytest`` process.  Under ``-n auto``
+    the tests execute in xdist workers that coverage.py does not trace, so the pre-scan
+    records nothing and coverage-guided selection silently degrades to running every
+    test per gremlin (issue #502).  ``-n``/``--numprocesses`` and the other xdist option
+    families are therefore dropped; value-taking options also drop their separate value
+    arg.
+    """
+    args = shlex.split(addopts)
+    kept: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        name = arg.split('=', 1)[0]
+        takes_separate_value = (name in _XDIST_VALUE_OPTS and '=' not in arg) or arg == '-n'
+        if takes_separate_value:
+            index += 1
+        elif name in _XDIST_VALUE_OPTS or arg in _XDIST_FLAG_ONLY_OPTS or _is_attached_short_numprocesses(arg):
+            continue
+        else:
+            kept.append(arg)
+    return ' '.join(shlex.quote(arg) for arg in kept)
+
+
+def _prescan_env() -> dict[str, str]:
+    """Return the environment for the pre-scan subprocess.
+
+    ``COVERAGE_CORE`` overrides the rc file (a user-set sysmon would drop contexts) and
+    ``COVERAGE_FILE`` redirects the data file away from ``rootdir/.coverage``, which is read
+    afterwards, so both are removed.  pytest appends ``PYTEST_ADDOPTS`` to every invocation,
+    so ``-n 2`` there would distribute the pre-scan just like ``-n 2`` in ``addopts``
+    (issue #502); xdist options are stripped from it and the variable is dropped if empty.
+    """
+    env = {key: value for key, value in os.environ.items() if key not in _PRESCAN_OVERRIDING_ENV_VARS}
+    pytest_addopts = env.pop('PYTEST_ADDOPTS', '')
+    remaining = _addopts_without_xdist(pytest_addopts)
+    if remaining:
+        env['PYTEST_ADDOPTS'] = remaining
+    return env
+
+
 def _run_tests_with_coverage(
     test_node_ids: list[str],
     rootdir: Path,
@@ -1949,6 +2109,7 @@ def _run_tests_with_coverage(
     name_to_node_ids: dict[str, list[str]] | None = None,
     coverage_include: list[str] | None = None,
     preserved_addopts: str = '',
+    timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS,
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
 
@@ -1975,10 +2136,20 @@ def _run_tests_with_coverage(
         preserved_addopts: The project's ``addopts`` with pytest-cov flags stripped
             (see :func:`_addopts_without_cov`), passed through as ``-o addopts=<...>``
             so collection-affecting options such as ``--import-mode=importlib`` survive
-            into the subprocess. Defaults to ``''`` (clear all addopts).
+            into the subprocess. Defaults to ``''`` (clear all addopts). pytest-xdist
+            options (``-n``, ``--dist``, ...) are additionally stripped by
+            :func:`_addopts_without_xdist` (as is ``PYTEST_ADDOPTS``, see
+            :func:`_prescan_env`), because coverage.py does not trace xdist workers
+            and the pre-scan would otherwise record nothing (issue #502).  The xdist
+            plugin itself stays loaded: without ``-n`` it runs in-process, so its
+            fixtures and hooks still work.
+        timeout: Seconds the pre-scan subprocess may run (default 120).
 
     Returns:
         Dict mapping test names to their coverage data (file path -> lines).
+
+    Raises:
+        CoveragePrescanTimeoutError: If the pre-scan exceeds ``timeout`` seconds.
     """
     coverage_db_path = rootdir / '.coverage'
     coverage_db_path.unlink(missing_ok=True)
@@ -2010,28 +2181,24 @@ def _run_tests_with_coverage(
         '-p',
         'no:gremlins',
         '-o',
-        f'addopts={preserved_addopts}',
+        f'addopts={_addopts_without_xdist(preserved_addopts)}',
         *test_node_ids,
         '--tb=no',
         '-q',
     ]
-
-    # COVERAGE_CORE overrides the rc file (a user-set sysmon would drop contexts) and
-    # COVERAGE_FILE redirects the data file away from rootdir/.coverage, which is read below.
-    subprocess_env = {key: value for key, value in os.environ.items() if key not in _PRESCAN_OVERRIDING_ENV_VARS}
 
     try:
         subprocess.run(  # Intentional: runs pytest test commands
             cmd,
             cwd=str(rootdir),
             capture_output=True,
-            timeout=120,
+            timeout=timeout,
             check=False,
-            env=subprocess_env,
+            env=_prescan_env(),
         )
-    except subprocess.TimeoutExpired:  # pragma: no cover
+    except subprocess.TimeoutExpired as expired:
         coveragerc_path.unlink(missing_ok=True)
-        return {}
+        raise CoveragePrescanTimeoutError(timeout) from expired
 
     coverage_by_test: dict[str, dict[str, list[int]]] = {}
 
