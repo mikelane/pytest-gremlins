@@ -58,3 +58,22 @@ class DescribeInProcessIneligibleTests:
         _run(frozenset({'t.py::test_a'}), 't.py::test_a')
 
         assert len(recwarn) == 0
+
+
+@pytest.mark.small
+class DescribeInProcessTestSelection:
+    """The base test command carries no node IDs, so the collected tests are what get run."""
+
+    def it_runs_the_collected_tests_when_the_command_names_none(self) -> None:
+        session = GremlinSession(
+            gremlins=[_gremlin()],
+            test_node_ids={'t.py::test_a': 't.py::test_a'},
+            lightweight_safe_node_ids=frozenset({'t.py::test_a'}),
+        )
+        executor = MagicMock(spec=InProcessExecutor)
+        executor.execute.return_value = []
+
+        with patch('pytest_gremlins.plugin.InProcessExecutor', return_value=executor):
+            _run_mutation_testing_inprocess('inprocess', session, Path('/project/src'), ['pytest', '-x'])
+
+        assert executor.execute.call_args.args[2] == ['t.py::test_a']

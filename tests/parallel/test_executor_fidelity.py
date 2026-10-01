@@ -96,10 +96,34 @@ class DescribeInProcessExecutorIneligibleTests:
 
         assert results[0].status == GremlinResultStatus.ERROR
 
-    def it_still_zaps_with_an_eligible_failing_test(self) -> None:
+    def it_still_zaps_with_an_eligible_failing_test(self, test_module: types.ModuleType) -> None:
+        test_module.__gremlin_active__ = None  # type: ignore[attr-defined]
+
         results = InProcessExecutor().execute(['g1'], {'g1': MODULE_NAME}, [_spec('test_fails')])
 
         assert results[0].status == GremlinResultStatus.ZAPPED
+
+
+@pytest.mark.small
+@pytest.mark.usefixtures('test_module')
+class DescribeInProcessExecutorWithUninstrumentedModule:
+    """Toggling a flag the module never reads changes nothing, so a pass would prove nothing."""
+
+    def it_reports_error_without_calling_tests(self, test_module: types.ModuleType) -> None:
+        results = InProcessExecutor().execute(['g1'], {'g1': MODULE_NAME}, [_spec('test_plain')])
+
+        assert results[0].status == GremlinResultStatus.ERROR
+        assert test_module.calls == []  # type: ignore[attr-defined]
+
+    def it_reports_error_when_the_target_module_is_not_imported(self) -> None:
+        results = InProcessExecutor().execute(['g1'], {'g1': '_never_imported_module'}, [_spec('test_plain')])
+
+        assert results[0].status == GremlinResultStatus.ERROR
+
+    def it_names_the_instrumentation_problem(self) -> None:
+        results = InProcessExecutor().execute(['g1'], {'g1': MODULE_NAME}, [_spec('test_plain')])
+
+        assert 'not instrumented' in results[0].error_output
 
 
 @pytest.mark.small

@@ -2719,7 +2719,7 @@ def _run_mutation_testing_inprocess(
 ) -> list[GremlinResult]:
     """Run mutation testing using fork or in-process executor."""
     gremlin_module_map = _build_gremlin_module_map(gremlin_session.gremlins, rootdir)
-    test_specs = [arg for arg in base_test_command if '::' in arg]
+    test_specs = [arg for arg in base_test_command if '::' in arg] or list(gremlin_session.test_node_ids.values())
     timeout = gremlin_session.timeout if hasattr(gremlin_session, 'timeout') else 30
     batch_size = gremlin_session.batch_size if hasattr(gremlin_session, 'batch_size') else 50
 

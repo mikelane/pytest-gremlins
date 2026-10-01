@@ -101,28 +101,19 @@ class InProcessExecutor:
         ineligible_specs: Collection[str] = frozenset(),
     ) -> WorkerResult:
         """Toggle __gremlin_active__, run tests, reset, return result."""
-        if not test_specs:
-            return WorkerResult(
-                gremlin_id=gremlin_id,
-                status=GremlinResultStatus.ERROR,
-                error_output='No tests were run, so the gremlin cannot be judged.',
-            )
-
-        blocked = [spec for spec in test_specs if spec in ineligible_specs]
-        if blocked:
-            return WorkerResult(
-                gremlin_id=gremlin_id,
-                status=GremlinResultStatus.ERROR,
-                error_output=_ineligible_message(blocked),
-            )
-
         module_name = gremlin_module_map.get(gremlin_id)
         module = sys.modules.get(module_name) if module_name else None
+        unjudgeable = _unjudgeable_reason(module, module_name, test_specs, ineligible_specs)
+        if unjudgeable is not None or module is None:
+            return WorkerResult(
+                gremlin_id=gremlin_id,
+                status=GremlinResultStatus.ERROR,
+                error_output=unjudgeable or '',
+            )
 
         start = time.monotonic()
         try:
-            if module is not None:
-                module.__gremlin_active__ = gremlin_id  # type: ignore[attr-defined]
+            module.__gremlin_active__ = gremlin_id  # type: ignore[attr-defined]
 
             for spec in test_specs:
                 outcome = _run_test_spec(spec)
@@ -159,8 +150,7 @@ class InProcessExecutor:
                 error_output=str(exc)[:2000],
             )
         finally:
-            if module is not None:
-                module.__gremlin_active__ = None  # type: ignore[attr-defined]
+            module.__gremlin_active__ = None  # type: ignore[attr-defined]
 
 
 def _run_test_spec(spec: str) -> _TestOutcome:
@@ -196,6 +186,23 @@ def _run_test_spec(spec: str) -> _TestOutcome:
 
 
 MAX_SPECS_SHOWN = 3
+
+
+def _unjudgeable_reason(
+    module: object,
+    module_name: str | None,
+    test_specs: list[str],
+    ineligible_specs: Collection[str],
+) -> str | None:
+    """Explain why no honest verdict is possible, or return None when the gremlin can be judged."""
+    if not test_specs:
+        return 'No tests were run, so the gremlin cannot be judged.'
+    blocked = [spec for spec in test_specs if spec in ineligible_specs]
+    if blocked:
+        return _ineligible_message(blocked)
+    if module is None or not hasattr(module, '__gremlin_active__'):
+        return f'Module {module_name!r} is not instrumented in this process, so toggling it changes nothing.'
+    return None
 
 
 def _ineligible_message(blocked: list[str]) -> str:
