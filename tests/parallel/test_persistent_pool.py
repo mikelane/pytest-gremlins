@@ -15,7 +15,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pytest_gremlins.parallel.lightweight import build_lightweight_command
+from pytest_gremlins.parallel.lightweight import (
+    build_lightweight_command,
+    write_safe_tests,
+)
 from pytest_gremlins.parallel.persistent_pool import PersistentWorkerPool
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
@@ -76,6 +79,7 @@ class DescribeBuildLightweightCommandFilesystem:
         sources_file = str(tmp_path / 'sources.json')
         runner_path = tmp_path / 'gremlin_lightweight_runner.py'
         runner_path.write_text('# runner')
+        write_safe_tests(tmp_path, ['tests/test_foo.py::test_bar'])
         result = build_lightweight_command(
             test_command=['python', 'bootstrap.py', '-x', 'tests/test_foo.py::test_bar'],
             env_vars={'PYTEST_GREMLINS_SOURCES_FILE': sources_file},
@@ -90,6 +94,7 @@ class DescribeBuildLightweightCommandFilesystem:
         sources_file = str(tmp_path / 'sources.json')
         runner_path = tmp_path / 'gremlin_lightweight_runner.py'
         runner_path.write_text('# runner')
+        write_safe_tests(tmp_path, ['tests/test_foo.py::test_bar', 'tests/test_baz.py::TestClass::test_method'])
         result = build_lightweight_command(
             test_command=[
                 'python',
@@ -110,6 +115,7 @@ class DescribeBuildLightweightCommandFilesystem:
         sources_file = str(tmp_path / 'sources.json')
         runner_path = tmp_path / 'gremlin_lightweight_runner.py'
         runner_path.write_text('# runner')
+        write_safe_tests(tmp_path, ['tests/test_a.py::test_x'])
         # The first two args (python, bootstrap.py) are never checked
         result = build_lightweight_command(
             test_command=['python', 'bootstrap.py', '--verbose', 'tests/test_a.py::test_x'],

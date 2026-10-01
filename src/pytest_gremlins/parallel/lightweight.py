@@ -7,7 +7,36 @@ and plugin.py.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+SAFE_TESTS_FILENAME = 'lightweight_safe_tests.json'
+"""Sibling of the runner script listing node IDs the runner can judge faithfully."""
+
+
+def write_safe_tests(instrumented_dir: Path, safe_node_ids: Iterable[str]) -> None:
+    """Record which node IDs the lightweight runner may execute.
+
+    Written next to the runner script so every process that builds a lightweight
+    command (including pool workers) reads the same answer without extra plumbing.
+
+    Args:
+        instrumented_dir: Directory holding the runner script and ``sources.json``.
+        safe_node_ids: Node IDs of tests that pass ``is_lightweight_safe``.
+    """
+    (instrumented_dir / SAFE_TESTS_FILENAME).write_text(json.dumps(sorted(safe_node_ids)), encoding='utf-8')
+
+
+def _load_safe_tests(instrumented_dir: Path) -> frozenset[str]:
+    """Load the recorded safe node IDs; missing or unreadable means none are safe."""
+    try:
+        return frozenset(json.loads((instrumented_dir / SAFE_TESTS_FILENAME).read_text(encoding='utf-8')))
+    except (OSError, ValueError, TypeError):
+        return frozenset()
 
 
 def build_lightweight_command(
@@ -17,14 +46,18 @@ def build_lightweight_command(
     """Build a lightweight runner command if the runner script exists.
 
     Extracts test node IDs from the full test command and builds a
-    command using the lightweight runner (no pytest overhead).
+    command using the lightweight runner (no pytest overhead). The runner
+    calls tests as bare callables, so it is only returned when every
+    selected test was recorded as safe (see ``write_safe_tests``); otherwise
+    the caller runs the full pytest bootstrap.
 
     Args:
         test_command: Original test command (e.g. [python, bootstrap.py, -x, ...]).
         env_vars: Environment variables that may contain sources file path.
 
     Returns:
-        Lightweight command list, or None if the runner is not available.
+        Lightweight command list, or None if the runner is unavailable or any
+        selected test is not safe to run without pytest.
     """
     sources_file = env_vars.get('PYTEST_GREMLINS_SOURCES_FILE', '')
     if not sources_file:
@@ -37,6 +70,9 @@ def build_lightweight_command(
     # Extract test node IDs from test_command (args containing '::')
     test_ids = [arg for arg in test_command[2:] if '::' in arg]
     if not test_ids:
+        return None
+
+    if not frozenset(test_ids) <= _load_safe_tests(runner_path.parent):
         return None
 
     return [test_command[0], str(runner_path), *test_ids]
