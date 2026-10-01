@@ -1526,9 +1526,9 @@ def _get_lightweight_runner_script() -> str:
     """Return a lightweight test runner that avoids full pytest startup.
 
     Instead of running ``pytest.main()``, this script directly imports test
-    modules and calls test functions.  This eliminates ~900ms of pytest
-    framework overhead per subprocess, reducing per-gremlin cost from ~950ms
-    to ~50ms.
+    modules and calls test functions.  When it was enabled it skipped ~900ms
+    of pytest startup per subprocess, at the cost of not reproducing what
+    pytest does around a test call.
 
     The runner handles class-based tests (``TestFoo::test_bar``) and
     function-based tests (``test_bar``), with ``-x`` semantics (stop on
@@ -3267,7 +3267,8 @@ def _test_gremlin(
         sources_file = instrumented_dir / 'sources.json'
         env[GREMLIN_SOURCES_ENV_VAR] = str(sources_file)
 
-    # Use lightweight runner if available (skips full pytest startup)
+    # Single routing point for the lightweight runner. It always returns None while the runner is
+    # disabled (#538), so every gremlin runs through the pytest bootstrap.
     lightweight_cmd = build_lightweight_command(test_command, env)
     effective_command = lightweight_cmd if lightweight_cmd is not None else test_command
 

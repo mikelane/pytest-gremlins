@@ -47,6 +47,9 @@ def describe_runner_error(returncode: int, stderr: bytes | None) -> str:
 def write_safe_tests(instrumented_dir: Path, safe_node_ids: Iterable[str]) -> None:
     """Record which node IDs the lightweight runner may execute.
 
+    Has no production caller while the runner is disabled; kept as groundwork for
+    https://github.com/mikelane/pytest-gremlins/issues/538.
+
     Written next to the runner script so every process that builds a lightweight
     command (including pool workers) reads the same answer without extra plumbing.
 

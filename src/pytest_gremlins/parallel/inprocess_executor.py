@@ -1,5 +1,9 @@
 """In-process executor for mutation testing via __gremlin_active__ toggling.
 
+Not reachable from the plugin: ``--gremlin-executor=inprocess`` is rejected at startup
+because toggling the flag in the pytest process never ran the mutated code. Kept as
+groundwork for https://github.com/mikelane/pytest-gremlins/issues/532.
+
 Eliminates subprocess overhead by toggling module-level ``__gremlin_active__``
 variables directly in the current process, then calling test functions.
 This is 263x faster than subprocess per mutation on microbenchmarks.

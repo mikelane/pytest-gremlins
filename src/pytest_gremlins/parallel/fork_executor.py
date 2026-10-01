@@ -1,5 +1,9 @@
 """Fork-per-batch executor for mutation testing with process isolation.
 
+Not reachable from the plugin: ``--gremlin-executor=fork`` is rejected at startup because
+it never ran the mutated code. Kept as groundwork for
+https://github.com/mikelane/pytest-gremlins/issues/532.
+
 Forks once per batch of gremlins, runs InProcessExecutor in the child,
 and pipes serialized results back to the parent via ``os.pipe()``.
 This provides process isolation (protecting the parent from side effects)

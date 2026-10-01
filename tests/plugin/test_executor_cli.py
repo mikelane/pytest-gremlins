@@ -1,8 +1,7 @@
-"""Tests for --gremlin-executor CLI option, _build_gremlin_module_map, and _run_mutation_testing_inprocess."""
+"""Tests for the --gremlin-executor CLI option registration."""
 
 from __future__ import annotations
 
-import ast
 from unittest.mock import (
     MagicMock,
 )
@@ -13,31 +12,9 @@ from _pytest.config.argparsing import (
 )
 import pytest
 
-from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
     pytest_addoption,
 )
-
-
-def _make_gremlin(
-    gremlin_id: str,
-    file_path: str,
-    *,
-    pardoned: bool = False,
-    pardon_reason: str | None = None,
-) -> Gremlin:
-    """Create a Gremlin with minimal valid fields for testing."""
-    return Gremlin(
-        gremlin_id=gremlin_id,
-        file_path=file_path,
-        line_number=1,
-        original_node=ast.Constant(value=True),
-        mutated_node=ast.Constant(value=False),
-        operator_name='BooleanNegate',
-        description='negate boolean',
-        pardoned=pardoned,
-        pardon_reason=pardon_reason,
-    )
 
 
 @pytest.mark.small
