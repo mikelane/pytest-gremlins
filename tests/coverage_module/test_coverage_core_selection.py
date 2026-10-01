@@ -21,7 +21,8 @@ import pytest
 
 from pytest_gremlins.plugin import _run_tests_with_coverage
 
-SHARED_SOURCE = 'def add(a, b):\n    return a + b\n'
+CALC_MODULE_SOURCE = 'def add(a, b):\n    return a + b\n'
+_RETURN_LINE = 2
 TWO_TESTS_SHARING_A_LINE = (
     'from calc import add\n\n\n'
     'def test_first():\n    assert add(1, 2) == 3\n\n\n'
@@ -30,13 +31,13 @@ TWO_TESTS_SHARING_A_LINE = (
 
 
 def _write_project(root: Path, *, extra_pytest_ini: str = '') -> None:
-    (root / 'calc.py').write_text(SHARED_SOURCE)
+    (root / 'calc.py').write_text(CALC_MODULE_SOURCE)
     (root / 'test_calc.py').write_text(TWO_TESTS_SHARING_A_LINE)
     (root / 'pytest.ini').write_text(f'[pytest]\npythonpath = .\n{extra_pytest_ini}')
 
 
 def _contexts_covering_return_line(coverage_by_test: dict[str, dict[str, list[int]]]) -> set[str]:
-    return {test for test, files in coverage_by_test.items() if any(2 in lines for lines in files.values())}
+    return {test for test, files in coverage_by_test.items() if any(_RETURN_LINE in lines for lines in files.values())}
 
 
 @pytest.mark.medium
@@ -70,7 +71,7 @@ class DescribePerTestAttribution:
             'test_calc.py::test_second',
         }
 
-    def it_does_not_crash_when_warnings_are_errors(self, tmp_path: Path) -> None:
+    def it_attributes_a_shared_line_to_both_tests_when_warnings_are_errors(self, tmp_path: Path) -> None:
         _write_project(tmp_path, extra_pytest_ini='filterwarnings =\n    error\n    ignore::pytest.PytestWarning\n')
 
         coverage_by_test = _run_tests_with_coverage(
@@ -103,7 +104,7 @@ class DescribeGeneratedCoverageRc:
 
 @pytest.mark.medium
 class DescribeSubprocessEnvironment:
-    """COVERAGE_CORE never reaches the pre-scan subprocess."""
+    """COVERAGE_CORE and COVERAGE_FILE never reach the pre-scan subprocess."""
 
     def it_strips_coverage_core_from_the_subprocess_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv('COVERAGE_CORE', 'sysmon')
@@ -113,6 +114,15 @@ class DescribeSubprocessEnvironment:
             _run_tests_with_coverage(['t.py::test_a'], tmp_path)
 
         assert 'COVERAGE_CORE' not in fake_run.call_args.kwargs['env']
+
+    def it_strips_coverage_file_from_the_subprocess_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('COVERAGE_FILE', str(tmp_path / 'ci-coverage.db'))
+        fake_run = create_autospec(subprocess.run)
+
+        with patch('pytest_gremlins.plugin.subprocess.run', fake_run):
+            _run_tests_with_coverage(['t.py::test_a'], tmp_path)
+
+        assert 'COVERAGE_FILE' not in fake_run.call_args.kwargs['env']
 
     def it_preserves_the_rest_of_the_environment(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv('GREMLINS_531_MARKER', 'kept')

@@ -15,7 +15,7 @@ import pytest
 
 from pytest_gremlins.plugin import _run_tests_with_coverage
 
-SHARED_SOURCE = 'def add(a, b):\n    return a + b\n'
+CALC_MODULE_SOURCE = 'def add(a, b):\n    return a + b\n'
 TWO_TESTS_SHARING_A_LINE = (
     'from calc import add\n\n\n'
     'def test_first():\n    assert add(1, 2) == 3\n\n\n'
@@ -26,14 +26,14 @@ TWO_TESTS_SHARING_A_LINE = (
 def _write_project(root: Path) -> Path:
     project = root / 'project'
     project.mkdir()
-    (project / 'calc.py').write_text(SHARED_SOURCE)
+    (project / 'calc.py').write_text(CALC_MODULE_SOURCE)
     (project / 'test_calc.py').write_text(TWO_TESTS_SHARING_A_LINE)
     (project / 'pytest.ini').write_text('[pytest]\npythonpath = .\n')
     return project
 
 
 @pytest.mark.medium
-class DescribeCoverageFileEnvOverride:
+class DescribeCoverageEnvVarOverrides:
     """User-level coverage env vars do not divert the pre-scan data file."""
 
     def it_attributes_lines_when_the_user_sets_coverage_file(

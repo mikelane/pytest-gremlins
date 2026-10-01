@@ -105,6 +105,25 @@ class DescribePiggybackContextPluginRegistration:
         registered = [call.args[0] for call in session.config.pluginmanager.register.call_args_list]
         assert any(isinstance(p, GremlinContextPlugin) for p in registered)
 
+    @pytest.mark.parametrize(
+        'malformed_sys_info',
+        [
+            pytest.param(42, id='non-iterable'),
+            pytest.param([('core',)], id='one-element-tuple'),
+            pytest.param([('core', 'SysMonitor', 'extra')], id='three-element-tuple'),
+        ],
+    )
+    def it_registers_context_plugin_when_sys_info_has_an_unexpected_shape(self, malformed_sys_info: object) -> None:
+        """sys_info is a debug API; a shape change is not evidence of sysmon (#531)."""
+        session = self._piggyback_session_with_core('CTracer')
+        cov_instance = session.config.pluginmanager.get_plugin.return_value.cov_controller.cov
+        cov_instance.sys_info.return_value = malformed_sys_info
+
+        pytest_sessionstart(session)
+
+        registered = [call.args[0] for call in session.config.pluginmanager.register.call_args_list]
+        assert any(isinstance(p, GremlinContextPlugin) for p in registered)
+
     @staticmethod
     def _piggyback_session_with_core(core: str) -> MagicMock:
         cov_instance = MagicMock(spec=coverage.Coverage)
