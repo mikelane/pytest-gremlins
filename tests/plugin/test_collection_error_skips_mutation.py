@@ -9,7 +9,6 @@ leave pytest's own non-zero exit status in place.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
@@ -36,7 +35,6 @@ TESTS_CONFTEST = (
 )
 SUBPROCESS_TIMEOUT_SECONDS = 300
 SKIP_MESSAGE = 'pytest-gremlins: skipping mutation testing because test collection failed'
-MUTATION_OUTPUT_MARKERS = ('Zapped', 'Survived', 'mutation report')
 
 
 def _write_project(pytester: pytest.Pytester, test_modules: dict[str, str]) -> None:
@@ -55,17 +53,18 @@ def _write_project(pytester: pytest.Pytester, test_modules: dict[str, str]) -> N
         pytester.path.joinpath('tests', name).write_text(source)
 
 
-def _run_pytest_script(pytester: pytest.Pytester, *args: str) -> pytest.RunResult:
-    """Run the ``pytest`` console script in the project directory with a clean ``PYTHONPATH``.
+def _run_pytest_isolated(pytester: pytest.Pytester, *args: str) -> pytest.RunResult:
+    """Run pytest in the project directory with neither the cwd nor ``PYTHONPATH`` on ``sys.path``.
 
-    ``python -m pytest`` puts the cwd on ``sys.path`` and ``Pytester.run`` exports the
+    Plain ``python -m pytest`` puts the cwd on ``sys.path`` and ``Pytester.run`` exports the
     cwd as ``PYTHONPATH``; either makes ``sample`` importable and hides the collection
-    error under test.
+    error under test. ``-P`` (Python 3.11+) drops the cwd entry, and invoking the current
+    interpreter avoids locating a platform-specific ``pytest`` console script.
     """
     environment = {name: value for name, value in os.environ.items() if name != 'PYTHONPATH'}
     started = time.perf_counter()
     completed = subprocess.run(
-        [str(Path(sys.executable).with_name('pytest')), '-p', 'no:cacheprovider', *args],
+        [sys.executable, '-P', '-m', 'pytest', '-p', 'no:cacheprovider', *args],
         cwd=pytester.path,
         env=environment,
         capture_output=True,
@@ -81,6 +80,12 @@ def _run_pytest_script(pytester: pytest.Pytester, *args: str) -> pytest.RunResul
     )
 
 
+def _assert_no_mutation_report(result: pytest.RunResult) -> None:
+    result.stdout.no_fnmatch_line('*mutation report*')
+    result.stdout.no_fnmatch_line('*Zapped*')
+    result.stdout.no_fnmatch_line('*Survived*')
+
+
 @pytest.mark.medium
 class DescribeCollectionErrorSkipsMutationTesting:
     """A baseline session with collection errors never reaches the mutation phase."""
@@ -88,46 +93,43 @@ class DescribeCollectionErrorSkipsMutationTesting:
     def it_prints_no_mutation_report_when_the_only_test_module_fails_to_import(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST})
 
-        result = _run_pytest_script(pytester, '--gremlins', 'tests')
+        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
 
-        output = result.stdout.str()
-        assert [marker for marker in MUTATION_OUTPUT_MARKERS if marker in output] == []
+        _assert_no_mutation_report(result)
 
     def it_explains_the_skip_on_stderr(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST})
 
-        result = _run_pytest_script(pytester, '--gremlins', 'tests')
+        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         result.stderr.fnmatch_lines([f'{SKIP_MESSAGE} (1 error(s)); fix the collection errors first'])
 
     def it_keeps_pytests_non_zero_exit_status(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST})
 
-        result = _run_pytest_script(pytester, '--gremlins', 'tests')
+        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         assert result.ret == pytest.ExitCode.INTERRUPTED
 
     def it_skips_mutation_testing_on_partial_collection(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST, 'test_other.py': WORKING_TEST})
 
-        result = _run_pytest_script(pytester, '--gremlins', '--continue-on-collection-errors', 'tests')
+        result = _run_pytest_isolated(pytester, '--gremlins', '--continue-on-collection-errors', 'tests')
 
-        output = result.stdout.str()
-        assert [marker for marker in MUTATION_OUTPUT_MARKERS if marker in output] == []
+        _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_MESSAGE} (1 error(s))*'])
-        assert result.ret != 0
+        assert result.ret == pytest.ExitCode.TESTS_FAILED
 
     def it_skips_mutation_testing_under_xdist(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST, 'test_other.py': WORKING_TEST})
 
-        result = _run_pytest_script(
+        result = _run_pytest_isolated(
             pytester, '--gremlins', '-p', 'xdist', '-n', '2', '--continue-on-collection-errors', 'tests'
         )
 
-        output = result.stdout.str()
-        assert [marker for marker in MUTATION_OUTPUT_MARKERS if marker in output] == []
+        _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_MESSAGE} (1 error(s))*'])
-        assert result.ret != 0
+        assert result.ret == pytest.ExitCode.TESTS_FAILED
 
 
 @pytest.mark.medium
@@ -140,7 +142,7 @@ class DescribeCleanCollectionStillRunsMutationTesting:
             {'test_sample.py': BROKEN_TEST.replace('from sample', 'import sys\nsys.path.insert(0, ".")\nfrom sample')},
         )
 
-        result = _run_pytest_script(pytester, '--gremlins', 'tests')
+        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         result.stdout.fnmatch_lines(['*mutation report*'])
         assert SKIP_MESSAGE not in result.stderr.str()

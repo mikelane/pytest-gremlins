@@ -19,10 +19,12 @@ class DescribeSkipMutationWhenBaselineIsBroken:
 
         assert (skipped, session.enabled, capsys.readouterr().err) == (False, True, '')
 
-    def it_proceeds_when_tests_merely_fail(self) -> None:
+    def it_proceeds_when_tests_merely_fail(self, capsys: pytest.CaptureFixture[str]) -> None:
         session = GremlinSession(enabled=True)
 
-        assert _skip_mutation_when_baseline_is_broken(session, pytest.ExitCode.TESTS_FAILED) is False
+        skipped = _skip_mutation_when_baseline_is_broken(session, pytest.ExitCode.TESTS_FAILED)
+
+        assert (skipped, session.enabled, capsys.readouterr().err) == (False, True, '')
 
     def it_skips_and_disables_the_session_on_collection_errors(self, capsys: pytest.CaptureFixture[str]) -> None:
         session = GremlinSession(enabled=True, collection_errors=3)

@@ -238,6 +238,51 @@ tomllib.TOMLDecodeError: Expected '=' after a key in a key/value pair (at line X
 
 ## Runtime Errors
 
+### Mutation testing skipped because collection failed
+
+**Symptom:**
+
+```text
+pytest-gremlins: skipping mutation testing because test collection failed (1 error(s)); fix the collection errors first
+```
+
+Or:
+
+```text
+pytest-gremlins: skipping mutation testing because the baseline test session was interrupted; rerun it to completion first
+```
+
+No mutation report is printed, and pytest exits non-zero.
+
+**Cause:** The normal pytest run that precedes mutation testing did not finish cleanly. Either at least
+one test module could not be collected (usually an `ImportError` or `SyntaxError` in a test file or
+`conftest.py`), or the session was interrupted. A gremlin is only zapped when a test that covers it
+fails, so if those tests never ran, every score would be meaningless. pytest-gremlins skips the
+mutation phase and keeps pytest's own exit status instead of printing that score.
+
+This also applies with `--continue-on-collection-errors` and with pytest-xdist: a single module that
+fails to collect skips the whole mutation run.
+
+**Solution:**
+
+1. Run pytest without `--gremlins` and fix every error reported under `ERRORS`:
+
+   ```bash
+   pytest
+   ```
+
+2. If test modules cannot import your package, make it importable from the tests, for example with
+   an editable install (`pip install -e .`) or pytest's `pythonpath` setting:
+
+   ```toml
+   [tool.pytest.ini_options]
+   pythonpath = ["src"]
+   ```
+
+3. Rerun with `--gremlins` once the plain run collects cleanly.
+
+---
+
 ### Error: SyntaxError during instrumentation
 
 **Symptom:**
