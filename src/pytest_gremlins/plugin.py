@@ -620,7 +620,9 @@ def _disable_when_inactive(config: pytest.Config) -> bool:
     """Disable the session when ``--gremlins`` is off or ``--collect-only`` is active.
 
     Collection-only runs execute no tests, so there is no coverage to pre-scan and
-    nothing to mutate against. The skip notice is printed once, by the controller.
+    nothing to mutate against. The skip notice goes to stderr so that
+    ``--collect-only -q`` node-id output on stdout stays machine-parseable; it is
+    printed once, by the controller.
 
     Args:
         config: The pytest config object.
@@ -635,7 +637,7 @@ def _disable_when_inactive(config: pytest.Config) -> bool:
         return False
     _set_session(GremlinSession(enabled=False))
     if not _is_xdist_worker(config):
-        print('pytest-gremlins: --collect-only detected, skipping mutation testing')
+        print('pytest-gremlins: --collect-only detected, skipping mutation testing', file=sys.stderr)
     return True
 
 

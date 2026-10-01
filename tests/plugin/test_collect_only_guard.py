@@ -43,24 +43,31 @@ def pytest_configure(config):
 
 @pytest.fixture
 def collect_only_run(collect_only_project: pytest.Pytester) -> pytest.RunResult:
-    return collect_only_project.runpytest('--gremlins', '--collect-only')
+    return collect_only_project.runpytest_subprocess('--gremlins', '--collect-only', '-p', 'no:test_categories')
 
 
 @pytest.fixture
 def xdist_collect_only_run(collect_only_project: pytest.Pytester) -> pytest.RunResult:
-    return collect_only_project.runpytest('--gremlins', '--collect-only', '-p', 'xdist', '-n', '2')
+    return collect_only_project.runpytest_subprocess(
+        '--gremlins', '--collect-only', '-p', 'xdist', '-n', '2', '-p', 'no:test_categories'
+    )
 
 
 @pytest.mark.medium
 class DescribeCollectOnlyGuard:
+    def it_emits_only_node_ids_under_quiet_collect_only(self, collect_only_project: pytest.Pytester) -> None:
+        collect_only_project.makeini('[pytest]\naddopts = --gremlins\n')
+        result = collect_only_project.runpytest_subprocess('--collect-only', '-q', '-p', 'no:test_categories')
+        assert SKIP_NOTICE not in result.stdout.str()
+
     def it_prints_the_skip_message(self, collect_only_run: pytest.RunResult) -> None:
-        collect_only_run.stdout.fnmatch_lines([SKIP_NOTICE])
+        collect_only_run.stderr.fnmatch_lines([SKIP_NOTICE])
 
     def it_skips_the_mutation_report(self, collect_only_run: pytest.RunResult) -> None:
         assert 'mutation report' not in collect_only_run.stdout.str()
 
     def it_skips_gremlin_execution(self, collect_only_run: pytest.RunResult) -> None:
-        assert 'Starting' not in collect_only_run.stdout.str()
+        assert 'Gremlin 1/' not in collect_only_run.stdout.str()
 
     def it_exits_with_the_normal_collect_only_status(self, collect_only_run: pytest.RunResult) -> None:
         assert collect_only_run.ret == pytest.ExitCode.OK
@@ -69,7 +76,7 @@ class DescribeCollectOnlyGuard:
 @pytest.mark.medium
 class DescribeCollectOnlyGuardUnderXdist:
     def it_prints_the_skip_message_exactly_once(self, xdist_collect_only_run: pytest.RunResult) -> None:
-        assert xdist_collect_only_run.stdout.str().count(SKIP_NOTICE) == 1
+        assert xdist_collect_only_run.stderr.str().count(SKIP_NOTICE) == 1
 
     def it_skips_the_mutation_report(self, xdist_collect_only_run: pytest.RunResult) -> None:
         assert 'mutation report' not in xdist_collect_only_run.stdout.str()
