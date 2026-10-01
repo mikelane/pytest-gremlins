@@ -1986,7 +1986,7 @@ def _run_tests_with_coverage(
         coveragerc_content = f'[run]\n{_COVERAGE_CORE_RC_LINE}\ninclude =\n{include_lines}\n'
     else:
         coveragerc_content = f'[run]\n{_COVERAGE_CORE_RC_LINE}\nsource = .\n'
-    coveragerc_path.write_text(coveragerc_content)
+    coveragerc_path.write_text(coveragerc_content, encoding='utf-8')
 
     cmd = [
         sys.executable,
