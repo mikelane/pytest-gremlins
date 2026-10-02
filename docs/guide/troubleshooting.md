@@ -250,6 +250,7 @@ pytest-gremlins: skipping mutation testing because the baseline test session was
 pytest-gremlins: skipping mutation testing because pytest reported a usage error (exit 4)
 pytest-gremlins: skipping mutation testing because no tests were collected
 pytest-gremlins: skipping mutation testing because the baseline run ended with exit code 3
+pytest-gremlins: skipping mutation testing because the baseline test session was stopped early (pytest.exit)
 ```
 
 **Cause:** Mutation testing runs only when the normal pytest run that precedes it exits with status 0.
@@ -257,7 +258,7 @@ A gremlin is zapped when a test that covers it fails, so a test that already fai
 mutation would be counted as a kill for every gremlin it covers, and tests that never ran back no
 verdict at all. Any other baseline outcome (failing tests, collection errors including
 `--continue-on-collection-errors`, an interrupt, a usage error such as an unknown node id, no
-collected tests, or `pytest.exit(returncode=N)`) therefore skips the whole mutation run, with or
+collected tests, or `pytest.exit(...)` with any return code, including 0) therefore skips the whole mutation run, with or
 without pytest-xdist. pytest-gremlins keeps pytest's own exit status. With `--collect-only` it prints
 its own `--collect-only detected` notice instead.
 

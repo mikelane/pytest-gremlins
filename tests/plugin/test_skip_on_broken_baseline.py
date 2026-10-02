@@ -65,3 +65,14 @@ class DescribeSkipMutationUnlessBaselineIsGreen:
 
         assert (skipped, gremlin_session.enabled) == (True, False)
         assert '(3 error(s))' in capsys.readouterr().err
+
+    def it_skips_a_stopped_baseline_even_when_the_exit_status_is_ok(self, capsys: pytest.CaptureFixture[str]) -> None:
+        session = GremlinSession(enabled=True, baseline_aborted=True)
+
+        skipped = _skip_mutation_unless_baseline_is_green(session, _baseline_with_failures(0), pytest.ExitCode.OK)
+
+        assert (skipped, session.enabled) == (True, False)
+        assert capsys.readouterr().err == (
+            'pytest-gremlins: skipping mutation testing because '
+            'the baseline test session was stopped early (pytest.exit)\n'
+        )

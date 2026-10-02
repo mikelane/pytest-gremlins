@@ -159,6 +159,18 @@ RED_BASELINE_TEST = (
     '    assert False, "unrelated broken test"\n'
 )
 GREEN_BASELINE_TEST = 'from calc import add\n\n\ndef test_add():\n    assert add(1, 1) == 2\n'
+EXIT_ZERO_TEST = (
+    'import pytest\n'
+    'from calc import add\n'
+    '\n'
+    '\n'
+    'def test_aborts():\n'
+    '    pytest.exit("stop early", returncode=0)\n'
+    '\n'
+    '\n'
+    'def test_add():\n'
+    '    assert add(1, 1) == 2\n'
+)
 EXITING_TEST = 'import pytest\n\n\ndef test_exits():\n    pytest.exit("stop", returncode=3)\n'
 IMPORTABLE_CALC_PYPROJECT = (
     '[tool.pytest-gremlins]\npaths = ["calc.py"]\n\n[tool.pytest.ini_options]\npythonpath = ["."]\n'
@@ -238,6 +250,28 @@ class DescribeOtherNonGreenBaselinesSkipMutationTesting:
 
         assert result.stderr.str().count('skipping mutation testing') == 1
         result.stderr.fnmatch_lines(['pytest-gremlins: --collect-only detected, skipping mutation testing'])
+
+
+@pytest.mark.medium
+class DescribeEarlyStoppedBaselineSkipsMutationTesting:
+    """``pytest.exit(returncode=0)`` aborts the run yet reports exit status 0 (QA run 2)."""
+
+    def it_skips_when_a_test_stops_the_session_with_exit_code_zero(self, pytester: pytest.Pytester) -> None:
+        _write_calc_project(pytester, EXIT_ZERO_TEST)
+
+        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+
+        _assert_no_mutation_report(result)
+        result.stderr.fnmatch_lines([f'{SKIP_PREFIX} the baseline test session was stopped early (pytest.exit)'])
+        assert result.ret == pytest.ExitCode.OK
+
+    def it_skips_when_a_test_stops_the_session_under_xdist(self, pytester: pytest.Pytester) -> None:
+        _write_calc_project(pytester, EXIT_ZERO_TEST)
+
+        result = _run_pytest_isolated(pytester, '--gremlins', '-p', 'xdist', '-n', '2', 'tests')
+
+        _assert_no_mutation_report(result)
+        result.stderr.fnmatch_lines([f'{SKIP_PREFIX}*'])
 
 
 @pytest.mark.medium
