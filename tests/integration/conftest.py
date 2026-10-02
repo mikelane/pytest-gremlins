@@ -54,3 +54,13 @@ def attrs_venv(attrs_checkout: Path, tmp_path_factory: pytest.TempPathFactory) -
         capture_output=True,
     )
     return venv_dir
+
+
+@pytest.fixture
+def utf8_child_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make child pytest processes write UTF-8 so the parent decodes their output on any platform.
+
+    pytest-test-categories prints bullet characters; on Windows the child would write them in the
+    locale code page (cp1252) and ``Pytester`` fails to decode that as UTF-8.
+    """
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')

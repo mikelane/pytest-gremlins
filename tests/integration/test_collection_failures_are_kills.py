@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures('utf8_child_output')
+
 _TARGET_BREAKING_IMPORT = """
 SLOTS = ('first', 'second')
 LAST = SLOTS[2 - 1]

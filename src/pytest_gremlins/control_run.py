@@ -30,6 +30,12 @@ MAX_NODE_ID_CHARS_PER_COMMAND = 50_000
 
 DIAGNOSTIC_TAIL_LINES = 20
 
+SELECTION_FAILS_TO_LOAD_PREFIX = (
+    "the gremlin's own selection of tests fails to load even without a mutant, so the load failure "
+    "can't be attributed to the mutant; output of the unmutated run:"
+)
+"""Start of the ``error_output`` of a collection kill that was downgraded to ERROR."""
+
 CONTROL_RUN_TIMEOUT_SECONDS = 300
 
 _DIAGNOSTIC_INTRO = (
