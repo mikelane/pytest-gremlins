@@ -350,7 +350,7 @@ A mapping of file paths to per-file statistics:
 | `status` | string | One of: `zapped`, `survived`, `timeout`, `error`, `pardoned` |
 | `operator` | string | Operator that created this gremlin |
 | `description` | string | Human-readable mutation description |
-| `killing_test` | string | Test that caught the mutation (only present if zapped) |
+| `killing_test` | string | Test that caught the mutation (only present if zapped). `<collection>` means the mutant stopped the suite from loading, so no test ran |
 
 ### Processing JSON Reports
 
