@@ -48,6 +48,7 @@ from pytest_gremlins.parallel.lightweight import (
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.xdist_options import env_without_xdist_addopts
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +96,7 @@ def _run_gremlin_batch(  # pragma: no cover
     for gremlin_id in gremlin_ids:
         start_time = time.monotonic()
 
-        env = os.environ.copy()
-        env.update(env_vars)
+        env = env_without_xdist_addopts({**os.environ, **env_vars})
         env['ACTIVE_GREMLIN'] = gremlin_id
         env['GREMLIN_ROOTDIR'] = rootdir
 

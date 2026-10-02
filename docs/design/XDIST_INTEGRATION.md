@@ -32,8 +32,8 @@ pytest (controller, --gremlins -n auto)
   ...
   └── pytest_sessionfinish fires on the controller
         ├── gremlins pre-scan subprocess  (coverage run -m pytest, no xdist)
-        ├── gremlins mutation subprocess  (ACTIVE_GREMLIN=g001, no xdist)
-        ├── gremlins mutation subprocess  (ACTIVE_GREMLIN=g002, no xdist)
+        ├── gremlins mutation subprocess  (ACTIVE_GREMLIN=g001, xdist options stripped)
+        ├── gremlins mutation subprocess  (ACTIVE_GREMLIN=g002, xdist options stripped)
         ...
 ```
 

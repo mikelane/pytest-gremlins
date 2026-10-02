@@ -85,6 +85,10 @@ from pytest_gremlins.reporting.results import (
     GremlinResultStatus,
 )
 from pytest_gremlins.reporting.score import MutationScore
+from pytest_gremlins.xdist_options import (
+    addopts_without_xdist,
+    env_without_xdist_addopts,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -217,7 +221,7 @@ class GremlinSession:
             runs as ``-o addopts=<...>`` so collection-affecting options such as
             ``--import-mode=importlib`` survive (issue #424).  ``''`` clears all addopts.
             xdist options are left intact here; only the coverage pre-scan strips them
-            (see :func:`_addopts_without_xdist`).
+            (see :func:`pytest_gremlins.xdist_options.addopts_without_xdist`).
     """
 
     enabled: bool = False
@@ -2212,61 +2216,6 @@ _COVERAGE_CORE_RC_LINE = 'core = ctrace'
 _PRESCAN_OVERRIDING_ENV_VARS = frozenset({'COVERAGE_CORE', 'COVERAGE_FILE'})
 
 
-# pytest-xdist options that take a value.  Written either inline (``--dist=load``) or
-# with the value as the next token (``--dist load``).
-_XDIST_VALUE_OPTS = frozenset(
-    {
-        '--numprocesses',
-        '--maxprocesses',
-        '--dist',
-        '--max-worker-restart',
-        '--tx',
-        '--px',
-        '--rsyncdir',
-        '--rsyncignore',
-        '--testrunuid',
-        '--maxschedchunk',
-    }
-)
-
-# pytest-xdist switches that take no value.
-_XDIST_FLAG_ONLY_OPTS = frozenset(
-    {'-d', '--distributed', '--loadscope-reorder', '--no-loadscope-reorder', '-f', '--looponfail'}
-)
-
-
-def _is_attached_short_numprocesses(arg: str) -> bool:
-    """Return True for ``-n4`` / ``-nauto`` (the value glued to the short option)."""
-    return arg.startswith('-n') and not arg.startswith('--') and len(arg) > len('-n')
-
-
-def _addopts_without_xdist(addopts: str) -> str:
-    """Return ``addopts`` with pytest-xdist options removed.
-
-    The coverage pre-scan is one ``coverage run -m pytest`` process.  Under ``-n auto``
-    the tests execute in xdist workers that coverage.py does not trace, so the pre-scan
-    records nothing and coverage-guided selection silently degrades to running every
-    test per gremlin (issue #502).  ``-n``/``--numprocesses`` and the other xdist option
-    families are therefore dropped; value-taking options also drop their separate value
-    arg.
-    """
-    args = shlex.split(addopts)
-    kept: list[str] = []
-    index = 0
-    while index < len(args):
-        arg = args[index]
-        index += 1
-        name = arg.split('=', 1)[0]
-        takes_separate_value = (name in _XDIST_VALUE_OPTS and '=' not in arg) or arg == '-n'
-        if takes_separate_value:
-            index += 1
-        elif name in _XDIST_VALUE_OPTS or arg in _XDIST_FLAG_ONLY_OPTS or _is_attached_short_numprocesses(arg):
-            continue
-        else:
-            kept.append(arg)
-    return ' '.join(shlex.quote(arg) for arg in kept)
-
-
 def _prescan_env() -> dict[str, str]:
     """Return the environment for the pre-scan subprocess.
 
@@ -2277,11 +2226,7 @@ def _prescan_env() -> dict[str, str]:
     (issue #502); xdist options are stripped from it and the variable is dropped if empty.
     """
     env = {key: value for key, value in os.environ.items() if key not in _PRESCAN_OVERRIDING_ENV_VARS}
-    pytest_addopts = env.pop('PYTEST_ADDOPTS', '')
-    remaining = _addopts_without_xdist(pytest_addopts)
-    if remaining:
-        env['PYTEST_ADDOPTS'] = remaining
-    return env
+    return env_without_xdist_addopts(env)
 
 
 def _run_tests_with_coverage(
@@ -2318,9 +2263,12 @@ def _run_tests_with_coverage(
         preserved_addopts: The project's ``addopts`` with pytest-cov flags stripped
             (see :func:`_addopts_without_cov`), passed through as ``-o addopts=<...>``
             so collection-affecting options such as ``--import-mode=importlib`` survive
-            into the subprocess. Defaults to ``''`` (clear all addopts). pytest-xdist
+            into the subprocess. xdist options are dropped (see
+            :func:`~pytest_gremlins.xdist_options.addopts_without_xdist`) so the tests run
+            in the bootstrap process, where the gremlin import hook lives. Defaults to
+            ``''`` (clear all addopts). pytest-xdist
             options (``-n``, ``--dist``, ...) are additionally stripped by
-            :func:`_addopts_without_xdist` (as is ``PYTEST_ADDOPTS``, see
+            :func:`addopts_without_xdist` (as is ``PYTEST_ADDOPTS``, see
             :func:`_prescan_env`), because coverage.py does not trace xdist workers
             and the pre-scan would otherwise record nothing (issue #502).  The xdist
             plugin itself stays loaded: without ``-n`` it runs in-process, so its
@@ -2363,7 +2311,7 @@ def _run_tests_with_coverage(
         '-p',
         'no:gremlins',
         '-o',
-        f'addopts={_addopts_without_xdist(preserved_addopts)}',
+        f'addopts={addopts_without_xdist(preserved_addopts)}',
         *test_node_ids,
         '--tb=no',
         '-q',
@@ -3192,6 +3140,7 @@ def _build_test_command(instrumented_dir: Path | None, preserved_addopts: str = 
     Returns:
         Command list to run tests.
     """
+    gremlin_addopts = addopts_without_xdist(preserved_addopts)
     if instrumented_dir is not None:
         bootstrap_script = instrumented_dir / 'gremlin_bootstrap.py'
         command = [
@@ -3201,7 +3150,7 @@ def _build_test_command(instrumented_dir: Path | None, preserved_addopts: str = 
             '--tb=no',
             '-q',
             '-o',
-            f'addopts={preserved_addopts}',
+            f'addopts={gremlin_addopts}',
         ]
     else:
         command = [
@@ -3212,7 +3161,7 @@ def _build_test_command(instrumented_dir: Path | None, preserved_addopts: str = 
             '--tb=no',
             '-q',
             '-o',
-            f'addopts={preserved_addopts}',
+            f'addopts={gremlin_addopts}',
         ]
 
     if _pytest_cov_available():
@@ -3259,7 +3208,7 @@ def _test_gremlin(
     Returns:
         Result of testing the gremlin.
     """
-    env = os.environ.copy()
+    env = env_without_xdist_addopts(os.environ)
     env[ACTIVE_GREMLIN_ENV_VAR] = gremlin.gremlin_id
     env['GREMLIN_ROOTDIR'] = str(rootdir)
 

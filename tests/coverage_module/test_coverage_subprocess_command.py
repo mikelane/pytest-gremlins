@@ -18,11 +18,11 @@ import xdist.plugin
 
 from pytest_gremlins.plugin import (
     GremlinSession,
-    _addopts_without_xdist,
     _collect_coverage,
     _prescan_env,
     _run_tests_with_coverage,
 )
+from pytest_gremlins.xdist_options import addopts_without_xdist
 
 
 @pytest.mark.medium
@@ -305,4 +305,4 @@ class DescribeXdistOptionCoverage:
     def it_strips_the_option(self, option: str, takes_value: bool) -> None:
         addopts = f'{option} 2' if takes_value else option
 
-        assert _addopts_without_xdist(addopts) == ''
+        assert addopts_without_xdist(addopts) == ''
