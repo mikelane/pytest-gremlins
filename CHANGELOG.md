@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.10.0 (2026-10-02)
+## v1.10.1 (2026-10-02)
+
+v1.10.0 was tagged but never published: its release gate caught the issue below.
 
 **Mutation verdicts are now trustworthy.** Earlier releases could report scores that no test
 actually backed. On v1.9.0, a fully parametrized suite reported a fabricated 321/321 zapped.
@@ -28,6 +30,10 @@ under **Performance** below.
 
 ### Fix
 
+- **Mutants that break import or collection are now kills.** A mutant that made the suite
+  fail to load (a conftest import error, a test-module collection error, or a changed
+  parametrize id) was reported as ERROR; it's now ZAPPED with killing test `<collection>`.
+  Errors from pytest-gremlins' own command still report as ERROR. (#550)
 - **Fabricated verdicts from the lightweight runner.** The per-mutant "lightweight runner"
   (added in 1.7.0) called test functions directly, without pytest. Parametrized tests
   (scored as kills), fixture-taking tests (kills), `async def` tests (survivors), conftest
