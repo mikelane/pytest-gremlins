@@ -21,11 +21,13 @@ def _baseline_with_failures(tests_failed: int) -> pytest.Session:
 @pytest.mark.small
 class DescribeSkipMutationUnlessBaselineIsGreen:
     def it_proceeds_when_the_baseline_is_green(self, capsys: pytest.CaptureFixture[str]) -> None:
-        session = GremlinSession(enabled=True)
+        gremlin_session = GremlinSession(enabled=True)
 
-        skipped = _skip_mutation_unless_baseline_is_green(session, _baseline_with_failures(0), pytest.ExitCode.OK)
+        skipped = _skip_mutation_unless_baseline_is_green(
+            gremlin_session, _baseline_with_failures(0), pytest.ExitCode.OK
+        )
 
-        assert (skipped, session.enabled, capsys.readouterr().err) == (False, True, '')
+        assert (skipped, gremlin_session.enabled, capsys.readouterr().err) == (False, True, '')
 
     @pytest.mark.parametrize(
         ('exitstatus', 'tests_failed', 'expected_reason'),
@@ -45,19 +47,21 @@ class DescribeSkipMutationUnlessBaselineIsGreen:
         tests_failed: int,
         expected_reason: str,
     ) -> None:
-        session = GremlinSession(enabled=True)
+        gremlin_session = GremlinSession(enabled=True)
 
-        skipped = _skip_mutation_unless_baseline_is_green(session, _baseline_with_failures(tests_failed), exitstatus)
+        skipped = _skip_mutation_unless_baseline_is_green(
+            gremlin_session, _baseline_with_failures(tests_failed), exitstatus
+        )
 
-        assert (skipped, session.enabled) == (True, False)
+        assert (skipped, gremlin_session.enabled) == (True, False)
         assert capsys.readouterr().err == f'pytest-gremlins: skipping mutation testing because {expected_reason}\n'
 
     def it_names_collection_errors_ahead_of_the_exit_status(self, capsys: pytest.CaptureFixture[str]) -> None:
-        session = GremlinSession(enabled=True, collection_errors=3)
+        gremlin_session = GremlinSession(enabled=True, collection_errors=3)
 
         skipped = _skip_mutation_unless_baseline_is_green(
-            session, _baseline_with_failures(0), pytest.ExitCode.INTERRUPTED
+            gremlin_session, _baseline_with_failures(0), pytest.ExitCode.INTERRUPTED
         )
 
-        assert (skipped, session.enabled) == (True, False)
+        assert (skipped, gremlin_session.enabled) == (True, False)
         assert '(3 error(s))' in capsys.readouterr().err

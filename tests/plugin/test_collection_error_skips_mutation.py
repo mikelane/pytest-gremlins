@@ -34,7 +34,8 @@ TESTS_CONFTEST = (
     '        item.add_marker(pytest.mark.small)\n'
 )
 SUBPROCESS_TIMEOUT_SECONDS = 300
-SKIP_MESSAGE = 'pytest-gremlins: skipping mutation testing because test collection failed'
+SKIP_PREFIX = 'pytest-gremlins: skipping mutation testing because'
+SKIP_MESSAGE = f'{SKIP_PREFIX} test collection failed'
 
 
 def _write_project(pytester: pytest.Pytester, test_modules: dict[str, str]) -> None:
@@ -162,7 +163,6 @@ EXITING_TEST = 'import pytest\n\n\ndef test_exits():\n    pytest.exit("stop", re
 IMPORTABLE_CALC_PYPROJECT = (
     '[tool.pytest-gremlins]\npaths = ["calc.py"]\n\n[tool.pytest.ini_options]\npythonpath = ["."]\n'
 )
-SKIP_PREFIX = 'pytest-gremlins: skipping mutation testing because'
 
 
 def _write_calc_project(pytester: pytest.Pytester, test_source: str) -> None:
