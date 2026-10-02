@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from typing import Literal
+from unittest.mock import patch
+
 import pytest
 
 from pytest_gremlins.plugin import (
     GremlinSession,
     _skip_mutation_unless_baseline_is_green,
+    pytest_runtest_logreport,
 )
 
 SKIP_PREFIX = 'pytest-gremlins: skipping mutation testing because '
+FAILING_NODE_ID = 'tests/test_calc.py::test_add'
+FAILED_TESTS_REASON = 'baseline test(s) failed; mutation scores need a passing suite'
 NON_TEST_CHECK_NOTE = (
     'pytest-gremlins: baseline tests all passed; the non-zero exit came from a non-test check '
     '(e.g. --cov-fail-under), so mutation testing continues\n'
@@ -26,24 +32,32 @@ class DescribeSkipMutationUnlessBaselineIsGreen:
         assert (skipped, gremlin_session.enabled, capsys.readouterr().err) == (False, True, '')
 
     @pytest.mark.parametrize(
-        ('exitstatus', 'failed_reports', 'expected_reason'),
+        ('exitstatus', 'failed_test_ids', 'expected_reason'),
         [
-            (pytest.ExitCode.TESTS_FAILED, 2, '2 baseline test(s) failed; mutation scores need a passing suite'),
-            (pytest.ExitCode.INTERRUPTED, 0, 'the baseline test session was interrupted; rerun it to completion first'),
-            (pytest.ExitCode.USAGE_ERROR, 0, 'pytest reported a usage error (exit 4)'),
-            (pytest.ExitCode.NO_TESTS_COLLECTED, 0, 'no tests were collected'),
-            (pytest.ExitCode.INTERNAL_ERROR, 0, 'the baseline run ended with exit code 3'),
-            (7, 0, 'the baseline run ended with exit code 7'),
+            (
+                pytest.ExitCode.TESTS_FAILED,
+                {'t::a', 't::b'},
+                '2 baseline test(s) failed; mutation scores need a passing suite',
+            ),
+            (
+                pytest.ExitCode.INTERRUPTED,
+                set(),
+                'the baseline test session was interrupted; rerun it to completion first',
+            ),
+            (pytest.ExitCode.USAGE_ERROR, set(), 'pytest reported a usage error (exit 4)'),
+            (pytest.ExitCode.NO_TESTS_COLLECTED, set(), 'no tests were collected'),
+            (pytest.ExitCode.INTERNAL_ERROR, set(), 'the baseline run ended with exit code 3'),
+            (7, set(), 'the baseline run ended with exit code 7'),
         ],
     )
     def it_skips_and_names_the_reason_for_every_non_green_status(
         self,
         capsys: pytest.CaptureFixture[str],
         exitstatus: int,
-        failed_reports: int,
+        failed_test_ids: set[str],
         expected_reason: str,
     ) -> None:
-        gremlin_session = GremlinSession(enabled=True, baseline_failed_reports=failed_reports)
+        gremlin_session = GremlinSession(enabled=True, baseline_failed_test_ids=failed_test_ids)
 
         skipped = _skip_mutation_unless_baseline_is_green(gremlin_session, exitstatus)
 
@@ -79,9 +93,36 @@ class DescribeSkipMutationUnlessBaselineIsGreen:
     def it_proceeds_with_a_note_when_only_a_non_test_check_failed_the_run(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        gremlin_session = GremlinSession(enabled=True, baseline_failed_reports=0)
+        gremlin_session = GremlinSession(enabled=True)
 
         skipped = _skip_mutation_unless_baseline_is_green(gremlin_session, pytest.ExitCode.TESTS_FAILED)
 
         assert (skipped, gremlin_session.enabled) == (False, True)
         assert capsys.readouterr().err == NON_TEST_CHECK_NOTE
+
+
+def _failed_report(node_id: str, when: Literal['setup', 'call', 'teardown']) -> pytest.TestReport:
+    return pytest.TestReport(node_id, (node_id, 0, node_id), {}, 'failed', None, when)
+
+
+@pytest.mark.small
+class DescribeBaselineFailureCounting:
+    def it_counts_a_test_failing_in_both_call_and_teardown_once(self, capsys: pytest.CaptureFixture[str]) -> None:
+        gremlin_session = GremlinSession(enabled=True)
+        with patch('pytest_gremlins.plugin._get_session', return_value=gremlin_session):
+            pytest_runtest_logreport(_failed_report(FAILING_NODE_ID, 'call'))
+            pytest_runtest_logreport(_failed_report(FAILING_NODE_ID, 'teardown'))
+
+        _skip_mutation_unless_baseline_is_green(gremlin_session, pytest.ExitCode.TESTS_FAILED)
+
+        assert capsys.readouterr().err == f'{SKIP_PREFIX}1 {FAILED_TESTS_REASON}\n'
+
+    def it_counts_each_distinct_failing_test(self, capsys: pytest.CaptureFixture[str]) -> None:
+        gremlin_session = GremlinSession(enabled=True)
+        with patch('pytest_gremlins.plugin._get_session', return_value=gremlin_session):
+            pytest_runtest_logreport(_failed_report(FAILING_NODE_ID, 'call'))
+            pytest_runtest_logreport(_failed_report('tests/test_calc.py::test_sub', 'setup'))
+
+        _skip_mutation_unless_baseline_is_green(gremlin_session, pytest.ExitCode.TESTS_FAILED)
+
+        assert capsys.readouterr().err == f'{SKIP_PREFIX}2 {FAILED_TESTS_REASON}\n'

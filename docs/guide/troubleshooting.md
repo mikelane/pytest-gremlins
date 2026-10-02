@@ -271,7 +271,8 @@ pytest-gremlins: baseline tests all passed; the non-zero exit came from a non-te
 
 **Solution:**
 
-1. Run pytest without `--gremlins` and fix every failure and error it reports until it exits 0:
+1. Run pytest without `--gremlins` and fix every failure and error it reports until all tests collect
+   and pass:
 
    ```bash
    pytest

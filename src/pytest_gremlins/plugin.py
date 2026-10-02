@@ -260,7 +260,7 @@ class GremlinSession:
     coverage_timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS
     collection_errors: int = 0
     baseline_aborted: bool = False
-    baseline_failed_reports: int = 0
+    baseline_failed_test_ids: set[str] = field(default_factory=set)
 
 
 _gremlin_session: GremlinSession | None = None
@@ -1021,12 +1021,16 @@ def pytest_collectreport(report: pytest.CollectReport) -> None:
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
-    """Count failed test reports in any phase so the baseline gate sees real test outcomes."""
+    """Record each test that failed in any phase so the baseline gate sees real test outcomes.
+
+    Node IDs are collected in a set because one test can fail in more than one
+    phase (for example call and teardown) and must still count once.
+    """
     gremlin_session = _get_session()
     if gremlin_session is None or not gremlin_session.enabled:
         return
     if report.failed:
-        gremlin_session.baseline_failed_reports += 1
+        gremlin_session.baseline_failed_test_ids.add(report.nodeid)
 
 
 def pytest_keyboard_interrupt(excinfo: pytest.ExceptionInfo[BaseException]) -> None:  # noqa: ARG001
@@ -1785,7 +1789,7 @@ _FIXED_BASELINE_SKIP_REASONS: dict[int, str] = {
 }
 
 
-_NO_FAILED_TEST_STATUSES = (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED)
+_POSSIBLY_GREEN_STATUSES = (pytest.ExitCode.OK, pytest.ExitCode.TESTS_FAILED)
 
 _NON_TEST_CHECK_NOTE = (
     'pytest-gremlins: baseline tests all passed; the non-zero exit came from a non-test check '
@@ -1797,11 +1801,10 @@ def _baseline_skip_reason(gremlin_session: GremlinSession, exitstatus: int) -> s
     """Explain why a non-green baseline cannot back mutation verdicts."""
     if gremlin_session.collection_errors:
         return f'test collection failed ({gremlin_session.collection_errors} error(s)); fix the collection errors first'
-    if exitstatus == pytest.ExitCode.TESTS_FAILED and gremlin_session.baseline_failed_reports:
-        return (
-            f'{gremlin_session.baseline_failed_reports} baseline test(s) failed; mutation scores need a passing suite'
-        )
-    if gremlin_session.baseline_aborted and exitstatus in _NO_FAILED_TEST_STATUSES:
+    failed_tests = len(gremlin_session.baseline_failed_test_ids)
+    if exitstatus == pytest.ExitCode.TESTS_FAILED and failed_tests:
+        return f'{failed_tests} baseline test(s) failed; mutation scores need a passing suite'
+    if gremlin_session.baseline_aborted and exitstatus in _POSSIBLY_GREEN_STATUSES:
         return 'the baseline test session was stopped early (pytest.exit)'
     return _FIXED_BASELINE_SKIP_REASONS.get(exitstatus, f'the baseline run ended with exit code {int(exitstatus)}')
 
@@ -1813,10 +1816,10 @@ def _is_green_baseline(gremlin_session: GremlinSession, exitstatus: int) -> bool
     ``--cov-fail-under``) failed the run, which does not undermine the tests.
     """
     return (
-        exitstatus in _NO_FAILED_TEST_STATUSES
+        exitstatus in _POSSIBLY_GREEN_STATUSES
         and not gremlin_session.baseline_aborted
         and not gremlin_session.collection_errors
-        and not gremlin_session.baseline_failed_reports
+        and not gremlin_session.baseline_failed_test_ids
     )
 
 
