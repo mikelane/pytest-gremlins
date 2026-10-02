@@ -220,8 +220,8 @@ class GremlinSession:
             stripped (see :func:`_addopts_without_cov`), threaded into the subprocess
             runs as ``-o addopts=<...>`` so collection-affecting options such as
             ``--import-mode=importlib`` survive (issue #424).  ``''`` clears all addopts.
-            xdist options are left intact here; only the coverage pre-scan strips them
-            (see :func:`pytest_gremlins.xdist_options.addopts_without_xdist`).
+            xdist options are left intact here; the coverage pre-scan and every per-gremlin
+            run strip them (see :func:`pytest_gremlins.xdist_options.addopts_without_xdist`).
     """
 
     enabled: bool = False
@@ -2263,12 +2263,9 @@ def _run_tests_with_coverage(
         preserved_addopts: The project's ``addopts`` with pytest-cov flags stripped
             (see :func:`_addopts_without_cov`), passed through as ``-o addopts=<...>``
             so collection-affecting options such as ``--import-mode=importlib`` survive
-            into the subprocess. xdist options are dropped (see
-            :func:`~pytest_gremlins.xdist_options.addopts_without_xdist`) so the tests run
-            in the bootstrap process, where the gremlin import hook lives. Defaults to
-            ``''`` (clear all addopts). pytest-xdist
-            options (``-n``, ``--dist``, ...) are additionally stripped by
-            :func:`addopts_without_xdist` (as is ``PYTEST_ADDOPTS``, see
+            into the subprocess. Defaults to ``''`` (clear all addopts). pytest-xdist
+            options (``-n``, ``--dist``, ...) are stripped by
+            :func:`~pytest_gremlins.xdist_options.addopts_without_xdist` (as is ``PYTEST_ADDOPTS``, see
             :func:`_prescan_env`), because coverage.py does not trace xdist workers
             and the pre-scan would otherwise record nothing (issue #502).  The xdist
             plugin itself stays loaded: without ``-n`` it runs in-process, so its
@@ -3135,7 +3132,9 @@ def _build_test_command(instrumented_dir: Path | None, preserved_addopts: str = 
         preserved_addopts: The project's ``addopts`` with pytest-cov flags stripped
             (see :func:`_addopts_without_cov`), passed through as ``-o addopts=<...>``
             so collection-affecting options such as ``--import-mode=importlib`` survive
-            into the subprocess. Defaults to ``''`` (clear all addopts).
+            into the subprocess. Defaults to ``''`` (clear all addopts). xdist options
+            are dropped (see :func:`~pytest_gremlins.xdist_options.addopts_without_xdist`)
+            so the tests run in the bootstrap process, where the gremlin import hook lives.
 
     Returns:
         Command list to run tests.
