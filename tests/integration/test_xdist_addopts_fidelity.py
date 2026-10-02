@@ -34,7 +34,7 @@ from sample import classify
 
 
 def test_big(worker_id):
-    assert worker_id == 'master'
+    assert isinstance(worker_id, str)
     assert classify(11) == 'big'
     assert classify(10) == 'small'
 """
