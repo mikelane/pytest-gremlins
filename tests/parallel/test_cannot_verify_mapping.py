@@ -86,14 +86,24 @@ class DescribeCannotVerifyMapping:
         assert 'lightweight runner could not verify' in result.error_output
         assert REASON in result.error_output
 
-    def it_maps_to_error_in_the_parallel_pool(self, tmp_path: Path) -> None:
+    def it_maps_to_error_in_the_parallel_pool(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
         result = pool._run_gremlin_test('g001', EXIT_WITH_REASON, str(tmp_path), {}, timeout=30)
 
         assert result.status == GremlinResultStatus.ERROR
         assert 'lightweight runner could not verify' in result.error_output
         assert REASON in result.error_output
 
-    def it_maps_to_error_in_the_persistent_pool(self, tmp_path: Path) -> None:
+    def it_maps_to_error_in_the_persistent_pool(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
         result = persistent_pool._run_gremlin_test('g001', EXIT_WITH_REASON, str(tmp_path), {}, timeout=30)
 
         assert result.status == GremlinResultStatus.ERROR
