@@ -24,8 +24,10 @@ import time
 from typing import Self
 
 from pytest_gremlins.parallel.lightweight import (
+    COLLECTION_KILLING_TEST,
     build_lightweight_command,
     describe_runner_error,
+    is_collection_failure,
 )
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.xdist_options import env_without_xdist_addopts
@@ -114,6 +116,13 @@ def _run_gremlin_test(  # pragma: no cover
                 gremlin_id=gremlin_id,
                 status=GremlinResultStatus.ZAPPED,
                 killing_test='unknown',
+                execution_time_ms=execution_time_ms,
+            )
+        if is_collection_failure(result.returncode, result.stdout, result.stderr):
+            return WorkerResult(
+                gremlin_id=gremlin_id,
+                status=GremlinResultStatus.ZAPPED,
+                killing_test=COLLECTION_KILLING_TEST,
                 execution_time_ms=execution_time_ms,
             )
         error_output = describe_runner_error(result.returncode, result.stderr)

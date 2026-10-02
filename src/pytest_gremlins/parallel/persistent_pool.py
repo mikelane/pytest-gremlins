@@ -42,8 +42,10 @@ if TYPE_CHECKING:
     import multiprocessing
 
 from pytest_gremlins.parallel.lightweight import (
+    COLLECTION_KILLING_TEST,
     build_lightweight_command,
     describe_runner_error,
+    is_collection_failure,
 )
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.parallel.pool_config import PoolConfig
@@ -131,6 +133,15 @@ def _run_gremlin_batch(  # pragma: no cover
                         gremlin_id=gremlin_id,
                         status=GremlinResultStatus.ZAPPED,
                         killing_test='unknown',
+                        execution_time_ms=execution_time_ms,
+                    )
+                )
+            elif is_collection_failure(result.returncode, result.stdout, result.stderr):
+                results.append(
+                    WorkerResult(
+                        gremlin_id=gremlin_id,
+                        status=GremlinResultStatus.ZAPPED,
+                        killing_test=COLLECTION_KILLING_TEST,
                         execution_time_ms=execution_time_ms,
                     )
                 )

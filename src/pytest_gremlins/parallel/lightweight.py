@@ -21,8 +21,65 @@ if TYPE_CHECKING:
 LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE = 70
 """Exit code the runner uses to abstain; pytest uses 0-5 and 1 is reserved for a caught mutant."""
 
+BOOTSTRAP_COLLECTION_FAILED_EXIT_CODE = 71
+"""Exit code the bootstrap script uses when a mutant breaks conftest import or test collection."""
+
+COLLECTION_KILLING_TEST = '<collection>'
+"""Sentinel killing test name reported when a mutant breaks test import or collection."""
+
 SAFE_TESTS_FILENAME = 'lightweight_safe_tests.json'
 """Sibling of the runner script listing node IDs the runner can judge faithfully."""
+
+
+def is_collection_failure(
+    returncode: int,
+    stdout: bytes | str | None = None,
+    stderr: bytes | str | None = None,
+) -> bool:
+    """Determine whether a test subprocess failed because a mutant broke collection.
+
+    Returns True if:
+    1. The returncode is the deterministic bootstrap collection failure exit code (71).
+    2. The returncode is a collection-related exit code (2 or 4) AND the captured output
+       indicates a collection or conftest import failure, rather than a pytest CLI usage error.
+
+    Args:
+        returncode: Exit code of the test subprocess.
+        stdout: Captured stdout, if any.
+        stderr: Captured stderr, if any.
+
+    Returns:
+        True if the failure is attributable to mutant-induced collection or import breakdown.
+    """
+    if returncode == BOOTSTRAP_COLLECTION_FAILED_EXIT_CODE:
+        return True
+    if returncode not in (2, 4):
+        return False
+
+    combined = ''
+    if stdout:
+        combined += stdout.decode(errors='replace') if isinstance(stdout, bytes) else str(stdout)
+    if stderr:
+        combined += '\n' + (stderr.decode(errors='replace') if isinstance(stderr, bytes) else str(stderr))
+    if not combined:
+        return False
+
+    # CLI / invocation usage errors must stay ERROR
+    if (
+        'unrecognized arguments' in combined
+        or 'pytest: error:' in combined
+        or 'file or directory not found' in combined
+    ):
+        return False
+
+    return (
+        'ImportError while loading conftest' in combined
+        or 'ConftestImportFailure' in combined
+        or 'found no collectors for' in combined
+        or 'ERROR collecting ' in combined
+        or 'error during collection' in combined
+        or 'ERROR: not found:' in combined
+    )
 
 
 def describe_runner_error(returncode: int, stderr: bytes | None) -> str:

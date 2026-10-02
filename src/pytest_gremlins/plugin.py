@@ -70,9 +70,12 @@ from pytest_gremlins.instrumentation.transformer import (
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.lightweight import (
+    BOOTSTRAP_COLLECTION_FAILED_EXIT_CODE,
+    COLLECTION_KILLING_TEST,
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
     build_lightweight_command,
     describe_runner_error,
+    is_collection_failure,
 )
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.html import (
@@ -1467,7 +1470,7 @@ def _get_bootstrap_script() -> str:
     # The bootstrap script uses exec() to run compiled code in module namespace.
     # This is the standard Python pattern for import loaders (see importlib docs).
     # The code being executed is our own instrumented AST, not untrusted input.
-    return """#!/usr/bin/env python
+    script = """#!/usr/bin/env python
 '''Bootstrap script for pytest-gremlins mutation testing.
 
 This script registers import hooks to intercept module imports and provide
@@ -1479,6 +1482,8 @@ import os
 import sys
 from importlib.abc import Loader, MetaPathFinder
 from importlib.machinery import ModuleSpec
+
+COLLECTION_FAILED_EXIT_CODE = __BOOTSTRAP_COLLECTION_FAILED_EXIT_CODE__
 
 
 def main():
@@ -1520,12 +1525,50 @@ def main():
 
     # Now run pytest with remaining arguments
     import pytest
-    sys.exit(pytest.main(sys.argv[1:]))
+
+    class _CollectionFailureDetector:
+        def __init__(self):
+            self.conftest_failed = False
+            self.collection_failed = False
+            self.not_found = False
+
+        @pytest.hookimpl(hookwrapper=True)
+        def pytest_cmdline_parse(self, pluginmanager, args):
+            outcome = yield
+            try:
+                outcome.get_result()
+            except Exception as exc:
+                if 'ConftestImportFailure' in exc.__class__.__name__:
+                    self.conftest_failed = True
+
+        def pytest_collectreport(self, report):
+            if getattr(report, 'failed', False):
+                self.collection_failed = True
+
+        @pytest.hookimpl(hookwrapper=True)
+        def pytest_collection(self, session):
+            outcome = yield
+            try:
+                outcome.get_result()
+            except Exception as exc:
+                msg = str(exc)
+                if 'not found:' in msg or 'found no collectors for' in msg:
+                    self.not_found = True
+
+    detector = _CollectionFailureDetector()
+    exit_code = pytest.main(sys.argv[1:], plugins=[detector])
+    if int(exit_code) != 0 and (detector.conftest_failed or detector.collection_failed or detector.not_found):
+        sys.exit(COLLECTION_FAILED_EXIT_CODE)
+    sys.exit(exit_code)
 
 
 if __name__ == '__main__':
     main()
 """
+    return script.replace(
+        '__BOOTSTRAP_COLLECTION_FAILED_EXIT_CODE__',
+        str(BOOTSTRAP_COLLECTION_FAILED_EXIT_CODE),
+    )
 
 
 def _get_lightweight_runner_script() -> str:
@@ -3272,6 +3315,16 @@ def _test_gremlin(
                 gremlin=gremlin,
                 status=GremlinResultStatus.ZAPPED,
                 killing_test='unknown',
+            )
+        if is_collection_failure(
+            subprocess_outcome.returncode,
+            subprocess_outcome.stdout,
+            subprocess_outcome.stderr,
+        ):
+            return GremlinResult(
+                gremlin=gremlin,
+                status=GremlinResultStatus.ZAPPED,
+                killing_test=COLLECTION_KILLING_TEST,
             )
         error_output = describe_runner_error(subprocess_outcome.returncode, subprocess_outcome.stderr)
         logger.debug(
