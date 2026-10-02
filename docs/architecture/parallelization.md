@@ -236,7 +236,7 @@ command line.
 
 ### Cached results
 
-The incremental cache key includes a runner fidelity version (`rf4`), so verdicts cached by
+The incremental cache key includes a runner fidelity version (`rf5`), so verdicts cached by
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that
 failed to collect, or a changed parametrize id) are recorded as ZAPPED with the killing test

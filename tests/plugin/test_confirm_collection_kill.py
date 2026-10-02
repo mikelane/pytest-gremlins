@@ -97,13 +97,13 @@ class DescribeConfirmCollectionKill:
 
         assert fake_control.call_count == 2
 
-    def it_treats_the_same_node_ids_in_another_order_as_one_selection(
+    def it_confirms_the_same_node_ids_in_another_order_separately(
         self, session: GremlinSession, fake_control: MagicMock, tmp_path: Path
     ) -> None:
         _confirm_collection_kill(_collection_kill('g001'), ['a', 'b'], session, tmp_path)
         _confirm_collection_kill(_collection_kill('g002'), ['b', 'a'], session, tmp_path)
 
-        assert fake_control.call_count == 1
+        assert fake_control.call_count == 2
 
     @pytest.mark.parametrize(
         'result',

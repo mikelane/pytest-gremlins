@@ -212,8 +212,9 @@ class GremlinSession:
         batch_size: Number of gremlins per batch in batch mode.
         load_failures_attributable: ``False`` once the unmutated control run failed to load the suite
             in the gremlin subprocess; load failures then say nothing about a mutant (issue #550).
-        unmutated_load_checks: Memo of unmutated ``--collect-only`` results keyed by the set of node ids,
-            so a selection shared by many gremlins is checked once.
+        unmutated_load_checks: Memo of unmutated ``--collect-only`` results keyed by the ordered node ids
+            (pytest collects them in command order, and loading can depend on it), so a selection
+            shared by many gremlins is checked once.
         xdist_item_ids: Test node IDs captured from the first xdist worker after
             collection finishes.  ``None`` until the hook fires; ``[]`` if the
             worker collected nothing.
@@ -265,7 +266,7 @@ class GremlinSession:
     batch_size: int = 10
     xdist_item_ids: list[str] | None = None
     load_failures_attributable: bool = True
-    unmutated_load_checks: dict[frozenset[str], ControlRunOutcome] = field(default_factory=dict)
+    unmutated_load_checks: dict[tuple[str, ...], ControlRunOutcome] = field(default_factory=dict)
     xdist_active: bool = False
     xdist_loaded: bool = False
     xdist_workers: int | None = None
@@ -1964,7 +1965,7 @@ def _confirm_collection_kill(
     """
     if result.status != GremlinResultStatus.ZAPPED or result.killing_test != COLLECTION_KILLING_TEST:
         return result
-    selection = frozenset(node_ids)
+    selection = tuple(node_ids)
     if selection not in gremlin_session.unmutated_load_checks:
         gremlin_session.unmutated_load_checks[selection] = _collect_unmutated(gremlin_session, rootdir, node_ids)
     outcome = gremlin_session.unmutated_load_checks[selection]

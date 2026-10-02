@@ -41,10 +41,10 @@ class DescribeRunnerFidelityCacheKey:
 
         assert key.endswith(f':{RUNNER_FIDELITY_VERSION}')
 
-    def it_retires_results_cached_before_load_failures_became_kills(self, tmp_path: Path) -> None:
+    def it_retires_results_cached_under_the_previous_fidelity_version(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
-            rf3_key = current_key.rsplit(':', 1)[0] + ':rf3'
-            cache._store.put(rf3_key, {'status': 'error'})  # type: ignore[arg-type]
+            previous_key = current_key.rsplit(':', 1)[0] + ':rf4'
+            cache._store.put(previous_key, {'status': 'error'})  # type: ignore[arg-type]
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
