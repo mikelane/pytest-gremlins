@@ -159,6 +159,12 @@ RED_BASELINE_TEST = (
     '    assert False, "unrelated broken test"\n'
 )
 GREEN_BASELINE_TEST = 'from calc import add\n\n\ndef test_add():\n    assert add(1, 1) == 2\n'
+PARTLY_COVERED_CALC_SOURCE = CALC_SOURCE + '\n\ndef never_called():\n    return 0\n'
+COVERAGE_THRESHOLD_FLAGS = ('--cov=calc', '--cov-fail-under=100')
+NON_TEST_CHECK_NOTE = (
+    'pytest-gremlins: baseline tests all passed; the non-zero exit came from a non-test check '
+    '(e.g. --cov-fail-under), so mutation testing continues'
+)
 EXIT_ZERO_TEST = (
     'import pytest\n'
     'from calc import add\n'
@@ -177,9 +183,9 @@ IMPORTABLE_CALC_PYPROJECT = (
 )
 
 
-def _write_calc_project(pytester: pytest.Pytester, test_source: str) -> None:
+def _write_calc_project(pytester: pytest.Pytester, test_source: str, calc_source: str = CALC_SOURCE) -> None:
     """Write an importable ``calc.py`` target and one test module (collection succeeds)."""
-    pytester.makepyfile(calc=CALC_SOURCE)
+    pytester.makepyfile(calc=calc_source)
     pytester.makepyprojecttoml(IMPORTABLE_CALC_PYPROJECT)
     pytester.mkdir('tests')
     pytester.path.joinpath('tests', 'conftest.py').write_text(TESTS_CONFTEST)
@@ -272,6 +278,48 @@ class DescribeEarlyStoppedBaselineSkipsMutationTesting:
 
         _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_PREFIX}*'])
+
+
+@pytest.mark.medium
+class DescribeNonTestCheckFailureStillRunsMutationTesting:
+    """A baseline whose tests all passed counts as green even if a non-test check failed the run."""
+
+    def it_runs_mutation_testing_when_only_the_coverage_threshold_failed(self, pytester: pytest.Pytester) -> None:
+        _write_calc_project(pytester, GREEN_BASELINE_TEST, PARTLY_COVERED_CALC_SOURCE)
+
+        result = _run_pytest_isolated(pytester, '--gremlins', *COVERAGE_THRESHOLD_FLAGS, 'tests')
+
+        result.stdout.fnmatch_lines(['*mutation report*'])
+
+    def it_prints_the_non_test_check_note_once_and_keeps_the_exit_status(self, pytester: pytest.Pytester) -> None:
+        _write_calc_project(pytester, GREEN_BASELINE_TEST, PARTLY_COVERED_CALC_SOURCE)
+
+        result = _run_pytest_isolated(pytester, '--gremlins', *COVERAGE_THRESHOLD_FLAGS, 'tests')
+
+        assert result.stderr.str().count(NON_TEST_CHECK_NOTE) == 1
+        assert result.ret == pytest.ExitCode.TESTS_FAILED
+
+    def it_runs_mutation_testing_after_a_coverage_threshold_failure_under_xdist(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        _write_calc_project(pytester, GREEN_BASELINE_TEST, PARTLY_COVERED_CALC_SOURCE)
+
+        result = _run_pytest_isolated(
+            pytester, '--gremlins', '-p', 'xdist', '-n', '2', *COVERAGE_THRESHOLD_FLAGS, 'tests'
+        )
+
+        result.stdout.fnmatch_lines(['*mutation report*'])
+        assert result.stderr.str().count(NON_TEST_CHECK_NOTE) == 1
+
+    def it_still_skips_when_a_test_failed_and_the_coverage_threshold_also_failed(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        _write_calc_project(pytester, RED_BASELINE_TEST, PARTLY_COVERED_CALC_SOURCE)
+
+        result = _run_pytest_isolated(pytester, '--gremlins', *COVERAGE_THRESHOLD_FLAGS, 'tests')
+
+        _assert_no_mutation_report(result)
+        result.stderr.fnmatch_lines([f'{SKIP_PREFIX} 1 baseline test(s) failed; mutation scores need a passing suite'])
 
 
 @pytest.mark.medium

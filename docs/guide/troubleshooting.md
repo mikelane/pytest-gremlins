@@ -253,14 +253,21 @@ pytest-gremlins: skipping mutation testing because the baseline run ended with e
 pytest-gremlins: skipping mutation testing because the baseline test session was stopped early (pytest.exit)
 ```
 
-**Cause:** Mutation testing runs only when the normal pytest run that precedes it exits with status 0.
-A gremlin is zapped when a test that covers it fails, so a test that already fails without any
-mutation would be counted as a kill for every gremlin it covers, and tests that never ran back no
-verdict at all. Any other baseline outcome (failing tests, collection errors including
-`--continue-on-collection-errors`, an interrupt, a usage error such as an unknown node id, no
-collected tests, or `pytest.exit(...)` with any return code, including 0) therefore skips the whole mutation run, with or
-without pytest-xdist. pytest-gremlins keeps pytest's own exit status. With `--collect-only` it prints
-its own `--collect-only detected` notice instead.
+**Cause:** Mutation testing needs every baseline test to pass. A gremlin is zapped when a test that
+covers it fails, so a test that already fails without any mutation would be counted as a kill for every
+gremlin it covers, and tests that never ran back no verdict at all. Any baseline in which a test failed
+(in setup, call or teardown), a module could not be collected (including with
+`--continue-on-collection-errors`), the session was interrupted, pytest reported a usage error such as an
+unknown node id, no tests were collected, or `pytest.exit(...)` stopped the run (with any return code,
+including 0) therefore skips the whole mutation run, with or without pytest-xdist. pytest-gremlins keeps
+pytest's own exit status. With `--collect-only` it prints its own `--collect-only detected` notice instead.
+
+Failing non-test checks do not block mutation testing. If every test passed but pytest still exited 1
+(for example `--cov-fail-under` was not met), pytest-gremlins prints one note and continues:
+
+```text
+pytest-gremlins: baseline tests all passed; the non-zero exit came from a non-test check (e.g. --cov-fail-under), so mutation testing continues
+```
 
 **Solution:**
 
