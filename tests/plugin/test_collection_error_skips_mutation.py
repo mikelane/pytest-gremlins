@@ -8,14 +8,13 @@ leave pytest's own non-zero exit status in place.
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
-import time
+from collections.abc import Callable
 
 import pytest
 
 pytest.importorskip('xdist')
+
+RunPytestIsolated = Callable[..., pytest.RunResult]
 
 SAMPLE_SOURCE = "def classify(value: int) -> str:\n    if value == 0:\n        return 'zero'\n    return 'nonzero'\n"
 BROKEN_TEST = 'from sample import classify\n\n\ndef test_zero():\n    assert classify(0) == "zero"\n'
@@ -33,7 +32,6 @@ TESTS_CONFTEST = (
     '    for item in items:\n'
     '        item.add_marker(pytest.mark.small)\n'
 )
-SUBPROCESS_TIMEOUT_SECONDS = 300
 SKIP_PREFIX = 'pytest-gremlins: skipping mutation testing because'
 SKIP_MESSAGE = f'{SKIP_PREFIX} test collection failed'
 
@@ -54,33 +52,6 @@ def _write_project(pytester: pytest.Pytester, test_modules: dict[str, str]) -> N
         pytester.path.joinpath('tests', name).write_text(source)
 
 
-def _run_pytest_isolated(pytester: pytest.Pytester, *args: str) -> pytest.RunResult:
-    """Run pytest in the project directory with neither the cwd nor ``PYTHONPATH`` on ``sys.path``.
-
-    Plain ``python -m pytest`` puts the cwd on ``sys.path`` and ``Pytester.run`` exports the
-    cwd as ``PYTHONPATH``; either makes ``sample`` importable and hides the collection
-    error under test. ``-P`` (Python 3.11+) drops the cwd entry, and invoking the current
-    interpreter avoids locating a platform-specific ``pytest`` console script.
-    """
-    environment = {name: value for name, value in os.environ.items() if name != 'PYTHONPATH'}
-    started = time.perf_counter()
-    completed = subprocess.run(
-        [sys.executable, '-P', '-m', 'pytest', '-p', 'no:cacheprovider', *args],
-        cwd=pytester.path,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=SUBPROCESS_TIMEOUT_SECONDS,
-    )
-    return pytest.RunResult(
-        completed.returncode,
-        completed.stdout.splitlines(),
-        completed.stderr.splitlines(),
-        time.perf_counter() - started,
-    )
-
-
 def _assert_no_mutation_report(result: pytest.RunResult) -> None:
     result.stdout.no_fnmatch_line('*mutation report*')
     result.stdout.no_fnmatch_line('*Zapped*')
@@ -91,40 +62,48 @@ def _assert_no_mutation_report(result: pytest.RunResult) -> None:
 class DescribeCollectionErrorSkipsMutationTesting:
     """A baseline session with collection errors never reaches the mutation phase."""
 
-    def it_prints_no_mutation_report_when_the_only_test_module_fails_to_import(self, pytester: pytest.Pytester) -> None:
+    def it_prints_no_mutation_report_when_the_only_test_module_fails_to_import(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST})
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         _assert_no_mutation_report(result)
 
-    def it_explains_the_skip_on_stderr(self, pytester: pytest.Pytester) -> None:
+    def it_explains_the_skip_on_stderr(self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST})
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         result.stderr.fnmatch_lines([f'{SKIP_MESSAGE} (1 error(s)); fix the collection errors first'])
 
-    def it_keeps_pytests_non_zero_exit_status(self, pytester: pytest.Pytester) -> None:
+    def it_keeps_pytests_non_zero_exit_status(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST})
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         assert result.ret == pytest.ExitCode.INTERRUPTED
 
-    def it_skips_mutation_testing_on_partial_collection(self, pytester: pytest.Pytester) -> None:
+    def it_skips_mutation_testing_on_partial_collection(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST, 'test_other.py': WORKING_TEST})
 
-        result = _run_pytest_isolated(pytester, '--gremlins', '--continue-on-collection-errors', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', '--continue-on-collection-errors', 'tests')
 
         _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_MESSAGE} (1 error(s))*'])
         assert result.ret == pytest.ExitCode.TESTS_FAILED
 
-    def it_skips_mutation_testing_under_xdist(self, pytester: pytest.Pytester) -> None:
+    def it_skips_mutation_testing_under_xdist(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_project(pytester, {'test_sample.py': BROKEN_TEST, 'test_other.py': WORKING_TEST})
 
-        result = _run_pytest_isolated(
+        result = run_pytest_isolated(
             pytester, '--gremlins', '-p', 'xdist', '-n', '2', '--continue-on-collection-errors', 'tests'
         )
 
@@ -137,13 +116,13 @@ class DescribeCollectionErrorSkipsMutationTesting:
 class DescribeCleanCollectionStillRunsMutationTesting:
     """Control: a suite that collects cleanly keeps its mutation report."""
 
-    def it_prints_the_mutation_report(self, pytester: pytest.Pytester) -> None:
+    def it_prints_the_mutation_report(self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated) -> None:
         _write_project(
             pytester,
             {'test_sample.py': BROKEN_TEST.replace('from sample', 'import sys\nsys.path.insert(0, ".")\nfrom sample')},
         )
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         result.stdout.fnmatch_lines(['*mutation report*'])
         assert SKIP_MESSAGE not in result.stderr.str()
@@ -196,31 +175,39 @@ def _write_calc_project(pytester: pytest.Pytester, test_source: str, calc_source
 class DescribeRedBaselineSkipsMutationTesting:
     """Failing baseline tests would count as kills for every gremlin they cover (issue #540)."""
 
-    def it_prints_no_score_for_a_failing_baseline_test(self, pytester: pytest.Pytester) -> None:
+    def it_prints_no_score_for_a_failing_baseline_test(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, RED_BASELINE_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         _assert_no_mutation_report(result)
 
-    def it_names_the_failed_test_count_on_stderr(self, pytester: pytest.Pytester) -> None:
+    def it_names_the_failed_test_count_on_stderr(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, RED_BASELINE_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         result.stderr.fnmatch_lines([f'{SKIP_PREFIX} 1 baseline test(s) failed; mutation scores need a passing suite'])
 
-    def it_keeps_pytests_failure_exit_status(self, pytester: pytest.Pytester) -> None:
+    def it_keeps_pytests_failure_exit_status(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, RED_BASELINE_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         assert result.ret == pytest.ExitCode.TESTS_FAILED
 
-    def it_skips_mutation_testing_for_a_failing_baseline_under_xdist(self, pytester: pytest.Pytester) -> None:
+    def it_skips_mutation_testing_for_a_failing_baseline_under_xdist(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, RED_BASELINE_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', '-p', 'xdist', '-n', '2', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', '-p', 'xdist', '-n', '2', 'tests')
 
         _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_PREFIX} 1 baseline test(s) failed*'])
@@ -231,28 +218,34 @@ class DescribeRedBaselineSkipsMutationTesting:
 class DescribeOtherNonGreenBaselinesSkipMutationTesting:
     """Every exit status other than OK skips mutation testing with an accurate reason."""
 
-    def it_skips_when_no_tests_were_collected(self, pytester: pytest.Pytester) -> None:
+    def it_skips_when_no_tests_were_collected(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, GREEN_BASELINE_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', '-k', 'no_such_test', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', '-k', 'no_such_test', 'tests')
 
         _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_PREFIX} no tests were collected'])
         assert result.ret == pytest.ExitCode.NO_TESTS_COLLECTED
 
-    def it_skips_with_the_exit_code_when_a_test_calls_pytest_exit(self, pytester: pytest.Pytester) -> None:
+    def it_skips_with_the_exit_code_when_a_test_calls_pytest_exit(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, EXITING_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_PREFIX} the baseline run ended with exit code 3'])
         assert result.ret == pytest.ExitCode.INTERNAL_ERROR
 
-    def it_prints_only_the_collect_only_notice_under_collect_only(self, pytester: pytest.Pytester) -> None:
+    def it_prints_only_the_collect_only_notice_under_collect_only(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, GREEN_BASELINE_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', '--collect-only', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', '--collect-only', 'tests')
 
         assert result.stderr.str().count('skipping mutation testing') == 1
         result.stderr.fnmatch_lines(['pytest-gremlins: --collect-only detected, skipping mutation testing'])
@@ -262,19 +255,23 @@ class DescribeOtherNonGreenBaselinesSkipMutationTesting:
 class DescribeEarlyStoppedBaselineSkipsMutationTesting:
     """``pytest.exit(returncode=0)`` aborts the run yet reports exit status 0 (QA run 2)."""
 
-    def it_skips_when_a_test_stops_the_session_with_exit_code_zero(self, pytester: pytest.Pytester) -> None:
+    def it_skips_when_a_test_stops_the_session_with_exit_code_zero(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, EXIT_ZERO_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_PREFIX} the baseline test session was stopped early (pytest.exit)'])
         assert result.ret == pytest.ExitCode.OK
 
-    def it_skips_when_a_test_stops_the_session_under_xdist(self, pytester: pytest.Pytester) -> None:
+    def it_skips_when_a_test_stops_the_session_under_xdist(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, EXIT_ZERO_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', '-p', 'xdist', '-n', '2', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', '-p', 'xdist', '-n', '2', 'tests')
 
         _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_PREFIX}*'])
@@ -284,27 +281,31 @@ class DescribeEarlyStoppedBaselineSkipsMutationTesting:
 class DescribeNonTestCheckFailureStillRunsMutationTesting:
     """A baseline whose tests all passed counts as green even if a non-test check failed the run."""
 
-    def it_runs_mutation_testing_when_only_the_coverage_threshold_failed(self, pytester: pytest.Pytester) -> None:
+    def it_runs_mutation_testing_when_only_the_coverage_threshold_failed(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, GREEN_BASELINE_TEST, PARTLY_COVERED_CALC_SOURCE)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', *COVERAGE_THRESHOLD_FLAGS, 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', *COVERAGE_THRESHOLD_FLAGS, 'tests')
 
         result.stdout.fnmatch_lines(['*mutation report*'])
 
-    def it_prints_the_non_test_check_note_once_and_keeps_the_exit_status(self, pytester: pytest.Pytester) -> None:
+    def it_prints_the_non_test_check_note_once_and_keeps_the_exit_status(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         _write_calc_project(pytester, GREEN_BASELINE_TEST, PARTLY_COVERED_CALC_SOURCE)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', *COVERAGE_THRESHOLD_FLAGS, 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', *COVERAGE_THRESHOLD_FLAGS, 'tests')
 
         assert result.stderr.str().count(NON_TEST_CHECK_NOTE) == 1
         assert result.ret == pytest.ExitCode.TESTS_FAILED
 
     def it_runs_mutation_testing_after_a_coverage_threshold_failure_under_xdist(
-        self, pytester: pytest.Pytester
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
     ) -> None:
         _write_calc_project(pytester, GREEN_BASELINE_TEST, PARTLY_COVERED_CALC_SOURCE)
 
-        result = _run_pytest_isolated(
+        result = run_pytest_isolated(
             pytester, '--gremlins', '-p', 'xdist', '-n', '2', *COVERAGE_THRESHOLD_FLAGS, 'tests'
         )
 
@@ -312,11 +313,11 @@ class DescribeNonTestCheckFailureStillRunsMutationTesting:
         assert result.stderr.str().count(NON_TEST_CHECK_NOTE) == 1
 
     def it_still_skips_when_a_test_failed_and_the_coverage_threshold_also_failed(
-        self, pytester: pytest.Pytester
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
     ) -> None:
         _write_calc_project(pytester, RED_BASELINE_TEST, PARTLY_COVERED_CALC_SOURCE)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', *COVERAGE_THRESHOLD_FLAGS, 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', *COVERAGE_THRESHOLD_FLAGS, 'tests')
 
         _assert_no_mutation_report(result)
         result.stderr.fnmatch_lines([f'{SKIP_PREFIX} 1 baseline test(s) failed; mutation scores need a passing suite'])
@@ -326,10 +327,10 @@ class DescribeNonTestCheckFailureStillRunsMutationTesting:
 class DescribeGreenBaselineStillRunsMutationTesting:
     """Control: a passing suite keeps its mutation report."""
 
-    def it_prints_the_mutation_report(self, pytester: pytest.Pytester) -> None:
+    def it_prints_the_mutation_report(self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated) -> None:
         _write_calc_project(pytester, GREEN_BASELINE_TEST)
 
-        result = _run_pytest_isolated(pytester, '--gremlins', 'tests')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests')
 
         result.stdout.fnmatch_lines(['*mutation report*'])
         assert SKIP_PREFIX not in result.stderr.str()

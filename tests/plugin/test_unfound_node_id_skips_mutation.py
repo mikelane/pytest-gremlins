@@ -7,7 +7,11 @@ prints ``Zapped: N gremlins (100%)``: the same unfounded-verdict class as #534 a
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
+
+RunPytestIsolated = Callable[..., pytest.RunResult]
 
 SAMPLE_SOURCE = "def classify(value: int) -> str:\n    if value == 0:\n        return 'zero'\n    return 'nonzero'\n"
 PASSING_TEST = 'from sample import classify\n\n\ndef test_zero():\n    assert classify(0) == "zero"\n'
@@ -28,14 +32,16 @@ TESTS_CONFTEST = (
 
 @pytest.mark.medium
 class DescribeUnfoundNodeIdSkipsMutationTesting:
-    def it_prints_no_mutation_score_when_the_requested_test_does_not_exist(self, pytester: pytest.Pytester) -> None:
+    def it_prints_no_mutation_score_when_the_requested_test_does_not_exist(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
         pytester.makepyfile(sample=SAMPLE_SOURCE)
         pytester.makepyprojecttoml(PYPROJECT)
         pytester.mkdir('tests')
         pytester.path.joinpath('tests', 'conftest.py').write_text(TESTS_CONFTEST)
         pytester.path.joinpath('tests', 'test_sample.py').write_text(PASSING_TEST)
 
-        result = pytester.runpytest_subprocess('--gremlins', '-p', 'no:cacheprovider', 'tests/test_sample.py::renamed')
+        result = run_pytest_isolated(pytester, '--gremlins', 'tests/test_sample.py::renamed')
 
         assert result.ret == pytest.ExitCode.USAGE_ERROR
         result.stdout.no_fnmatch_line('*Zapped*')
