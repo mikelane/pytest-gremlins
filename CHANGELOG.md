@@ -5,6 +5,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.10.0 (2026-10-02)
+
+**Mutation verdicts are now trustworthy.** Earlier releases could report scores that no test
+actually backed. On v1.9.0, a fully parametrized suite reported a fabricated 321/321 zapped.
+This release fixes every known source of fabricated verdicts. The cost is speed, explained
+under **Performance** below.
+
+### Upgrade notes
+
+- **Mutation testing now requires a passing test suite.** If any baseline test fails or
+  errors, collection fails, or the run stops early, the mutation phase is skipped with a
+  one-line explanation on stderr, and pytest's exit code is unchanged. A failing non-test
+  check, such as `--cov-fail-under`, doesn't block it. (#534, #540)
+- **Per-mutant runs are slower.** Every gremlin now runs through real pytest (see
+  **Performance**). Use `--gremlin-targets` to scope large runs while the fast path is
+  rebuilt (#538).
+- **`--gremlin-executor=fork` and `inprocess` are disabled.** They exit with a usage error
+  and a link to #532. Use `subprocess` (the default, and what `auto` resolves to).
+- **Cached results are recomputed once.** The incremental cache key changed, so verdicts
+  cached by v1.9.x (which may have been fabricated) are not reused.
+
+### Fix
+
+- **Fabricated verdicts from the lightweight runner.** The per-mutant "lightweight runner"
+  (added in 1.7.0) called test functions directly, without pytest. Parametrized tests
+  (scored as kills), fixture-taking tests (kills), `async def` tests (survivors), conftest
+  state, runtest hooks, and pytest's `sys.path` setup all produced verdicts no test backed.
+  The runner is now disabled, and every gremlin runs through the pytest bootstrap. Thanks to
+  @scaratozzolo, @ulrichbaur, @nedbat and @ramon-kaixo for the reports, and to
+  @fwilkerson-cn for the fidelity-test design and field data (56/88 and 225/873 kills
+  fabricated) in PR #522. (#486, #492, #501, #544)
+- **fork/inprocess executors never ran the mutated code or the tests.** They toggled the
+  active gremlin in a process that never loaded instrumented code, and ran zero tests, so
+  every result was SURVIVED. They now exit with a usage error (#532, #544)
+- **xdist in `addopts` produced fake survivors.** With `-n` in `addopts` or
+  `PYTEST_ADDOPTS`, per-mutant runs started xdist workers that imported unmutated code.
+  xdist options are now stripped, and `-n 0` is forced, in per-mutant runs, so every
+  spelling (including clustered `-xn 2`) runs in-process (#544)
+- **Python 3.14 false survivors.** coverage.py's default `sysmon` core on Python 3.14
+  dropped per-test contexts, so selection ran too few tests per gremlin. The pre-scan now
+  pins the `ctrace` core and ignores a user-set `COVERAGE_CORE` or `COVERAGE_FILE`. This
+  also fixes `filterwarnings = error` crashes with coverage ≥ 7.15.3 (#529, #531, #539)
+- **xdist made the coverage pre-scan empty.** `-n auto` in `addopts` ran the pre-scan under
+  xdist, the coverage map came back empty, and every gremlin silently ran the whole suite.
+  xdist options are now stripped from the pre-scan's `addopts` and `PYTEST_ADDOPTS`, and
+  xdist stays loaded so `worker_id` fixtures and conftest xdist hooks work. Thanks @sm373373
+  (#502, #542)
+- **Collection errors and failing baselines produced scores.** A suite that failed to
+  collect, or had a failing test, printed results such as "Zapped: 100%" (#534, #540, #545)
+- **`--collect-only` launched the full mutation run.** It now validates configuration and
+  skips mutation testing, with a notice on stderr. Thanks @sm373373 (#504, #536)
+- **Windows: every mutant reported zapped.** The runner script was written in the locale
+  encoding (cp1252), crashed with `SyntaxError`, and every crash was scored as a kill. The
+  generated `.coveragerc` is now also written as UTF-8. Thanks @scaratozzolo for the report
+  and @fwilkerson-cn for the fix (#484, #523, #539)
+- **Non-UTF-8 source files.** `ContentHasher.hash_file` hashes raw bytes instead of
+  decoding, fixing `UnicodeDecodeError` on valid PEP 263 (e.g. latin-1) sources. Thanks
+  @Sanjays2402 (#455, #465). Source files are now decoded with `tokenize.open` (#382, #456)
+- **`--gremlin-explain` output edge cases** polished (#420, #460)
+- **`pygments` security bump (PYSEC-2026-2987).** pygments is a runtime dependency of pytest,
+  so it ships in every wheel's dependency closure (#471, #473)
+
+### Feat
+
+- **Configurable coverage pre-scan timeout:** `coverage_timeout` in `[tool.pytest-gremlins]`
+  or `--gremlin-coverage-timeout=SECONDS` (1–86400, default 120). A timed-out pre-scan now
+  gets its own warning instead of the generic "no data" one (#503, #542)
+- **Reports:** a selected-test column, plus SonarQube error diagnostics (#458)
+
+### Performance
+
+Every gremlin now pays full pytest startup instead of the lightweight runner's direct call.
+On an all-plain 64-gremlin suite, adversarial QA measured **58s → 317s (~5.5×)**, with
+identical verdicts. On suites that use fixtures, parametrization, or async tests, v1.9.0
+was fast largely because it never actually ran those tests, so the comparison there is
+between fast-but-wrong and correct. #538 tracks a fast path that runs tests *through*
+pytest rather than imitating it.
+
+### Internal
+
+- Windows CI jobs can now actually fail (a `pwsh` exit-code bug had discarded pytest
+  failures) (#468, #473)
+- Coverage `addopts` follow-ups from #436 review (#444, #445, #446, #459); "why did my
+  mutant survive?" troubleshooting docs (#457); `comparison.md` accuracy pass, thanks to
+  Anders Hovmöller (#448)
+- Dependencies: pip-audit CVE fixes (mkdocs-material, pip, pymdown-extensions, urllib3,
+  virtualenv) and batched dependabot bumps (#470, #472, #476, #477, #524, #530); coverage
+  lock 7.16.2
+
 ## v1.9.0 (2026-06-29)
 
 ### Feat
