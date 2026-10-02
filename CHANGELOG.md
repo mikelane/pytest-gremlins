@@ -33,7 +33,9 @@ under **Performance** below.
 - **Mutants that break import or collection are now kills.** A mutant that made the suite
   fail to load (a conftest import error, a test-module collection error, or a changed
   parametrize id) was reported as ERROR; it's now ZAPPED with killing test `<collection>`.
-  Errors from pytest-gremlins' own command still report as ERROR. (#550)
+  Errors from pytest-gremlins' own command still report as ERROR. If the unmutated suite
+  can't load in the gremlin subprocess, these are reported as errors instead, with a
+  diagnostic. (#550)
 - **Fabricated verdicts from the lightweight runner.** The per-mutant "lightweight runner"
   (added in 1.7.0) called test functions directly, without pytest. Parametrized tests
   (scored as kills), fixture-taking tests (kills), `async def` tests (survivors), conftest

@@ -56,6 +56,11 @@ from pytest_gremlins.config import (
     load_config,
     merge_configs,
 )
+from pytest_gremlins.control_run import (
+    UNATTRIBUTABLE_MARKER,
+    build_diagnostic,
+    run_control,
+)
 from pytest_gremlins.coverage import (
     CoverageCollector,
     PrioritizedSelector,
@@ -1553,9 +1558,15 @@ def main():
             if all(os.path.exists(argument.split('::')[0]) for argument in session.config.args):
                 self.suite_failed_to_load = True
 
+    # The parent writes this marker when its unmutated control run could not load the suite here,
+    # in which case a load failure says nothing about the mutant and must stay a plain pytest error.
+    marker = os.path.join(os.path.dirname(sources_file), '__UNATTRIBUTABLE_MARKER__')
+    can_attribute_load_failures = not os.path.exists(marker)
+
     recorder = SuiteLoadRecorder()
     exit_code = pytest.main(sys.argv[1:], plugins=[recorder])
-    if recorder.suite_failed_to_load and exit_code in (pytest.ExitCode.USAGE_ERROR, pytest.ExitCode.INTERRUPTED):
+    load_failure_exit = exit_code in (pytest.ExitCode.USAGE_ERROR, pytest.ExitCode.INTERRUPTED)
+    if can_attribute_load_failures and recorder.suite_failed_to_load and load_failure_exit:
         exit_code = __COLLECTION_FAILED_EXIT_CODE__
     sys.exit(exit_code)
 
@@ -1563,7 +1574,9 @@ def main():
 if __name__ == '__main__':
     main()
 """
-    return script.replace('__COLLECTION_FAILED_EXIT_CODE__', str(GREMLIN_COLLECTION_FAILED_EXIT_CODE))
+    return script.replace('__COLLECTION_FAILED_EXIT_CODE__', str(GREMLIN_COLLECTION_FAILED_EXIT_CODE)).replace(
+        '__UNATTRIBUTABLE_MARKER__', UNATTRIBUTABLE_MARKER
+    )
 
 
 def _get_lightweight_runner_script() -> str:
@@ -1864,7 +1877,45 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if _maybe_short_circuit_for_explain(gremlin_session):
         return
 
+    _verify_suite_loads_unmutated(session, gremlin_session)
     gremlin_session.results = _dispatch_mutation_run(session, gremlin_session)
+
+
+def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: GremlinSession) -> None:
+    """Check that the gremlin subprocess can load the unmutated suite, before any gremlin runs.
+
+    A load failure under a mutant is only attributable to the mutant if the same subprocess
+    harness loads the suite cleanly without one. The baseline run is a different process, so it
+    cannot vouch for that. When the control run fails, a marker next to ``sources.json`` makes the
+    bootstrap stop reporting load failures as kills, so every mapping site scores them as errors.
+    """
+    instrumented_dir = gremlin_session.instrumented_dir
+    if instrumented_dir is None:
+        return
+    rootdir = _get_rootdir(session.config)
+    command = _build_test_command(
+        instrumented_dir,
+        gremlin_session.preserved_addopts,
+        xdist_loaded=gremlin_session.xdist_loaded,
+    )
+    env = env_without_xdist_addopts(os.environ)
+    env.pop(ACTIVE_GREMLIN_ENV_VAR, None)
+    env['GREMLIN_ROOTDIR'] = str(rootdir)
+    env[GREMLIN_SOURCES_ENV_VAR] = str(instrumented_dir / 'sources.json')
+
+    selected_node_ids = {
+        gremlin_session.test_node_ids[test_name]
+        for gremlin in gremlin_session.gremlins
+        if _immediate_result_if_pardoned(gremlin) is None
+        for test_name in _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
+        if test_name in gremlin_session.test_node_ids
+    }
+    outcome = run_control(command, sorted(selected_node_ids), rootdir, env)
+    logger.debug('Unmutated control run took %.1fs (loads cleanly: %s)', outcome.seconds, outcome.loads_cleanly)
+    if outcome.loads_cleanly:
+        return
+    (instrumented_dir / UNATTRIBUTABLE_MARKER).write_text('', encoding='utf-8')
+    print(build_diagnostic(outcome.output), file=sys.stderr)
 
 
 def _rebuild_state_from_xdist_workers(

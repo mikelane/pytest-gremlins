@@ -16,6 +16,7 @@ import sys
 
 import pytest
 
+from pytest_gremlins.control_run import UNATTRIBUTABLE_MARKER
 from pytest_gremlins.parallel.exit_codes import GREMLIN_COLLECTION_FAILED_EXIT_CODE
 from pytest_gremlins.plugin import _get_bootstrap_script
 
@@ -127,3 +128,29 @@ class DescribeBootstrapKeepsOurOwnFailuresDistinct:
         failing = 'def test_ok():\n    assert False\n'
 
         assert run_bootstrap({'test_sample.py': failing}, 'test_sample.py::test_ok') == 1
+
+
+@pytest.mark.medium
+class DescribeBootstrapWhenLoadFailuresCannotBeAttributed:
+    """A failed unmutated control run withdraws the collection-failed signal."""
+
+    def it_keeps_pytests_exit_code_for_a_conftest_that_fails_to_import(
+        self, run_bootstrap: RunBootstrap, tmp_path: Path
+    ) -> None:
+        (tmp_path / UNATTRIBUTABLE_MARKER).write_text('')
+
+        exit_code = run_bootstrap(
+            {'conftest.py': RAISES_ON_IMPORT, 'test_sample.py': PASSING_TEST},
+            'test_sample.py::test_ok',
+        )
+
+        assert exit_code == pytest.ExitCode.USAGE_ERROR
+
+    def it_keeps_pytests_exit_code_for_a_node_id_that_no_longer_exists(
+        self, run_bootstrap: RunBootstrap, tmp_path: Path
+    ) -> None:
+        (tmp_path / UNATTRIBUTABLE_MARKER).write_text('')
+
+        exit_code = run_bootstrap({'test_sample.py': PARAMETRIZED_TEST}, 'test_sample.py::test_level[3]')
+
+        assert exit_code == pytest.ExitCode.USAGE_ERROR
