@@ -240,7 +240,10 @@ The incremental cache key includes a runner fidelity version (`rf5`), so verdict
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that
 failed to collect, or a changed parametrize id) are recorded as ZAPPED with the killing test
-`<collection>`; ones cached as ERROR before that change are recomputed too.
+`<collection>`; ones cached as ERROR before that change are recomputed too. Verdicts are not
+cached while load failures are unattributable (the unmutated suite cannot load in the gremlin
+subprocess) or after a kill is downgraded to ERROR because the gremlin's own unmutated selection
+fails to load, so fixing the cause never replays stale errors from a warm cache.
 
 ## Configuration
 

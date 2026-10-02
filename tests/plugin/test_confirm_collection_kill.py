@@ -91,8 +91,9 @@ class DescribeConfirmCollectionKill:
     def it_checks_each_distinct_selection_once(
         self, session: GremlinSession, fake_control: MagicMock, tmp_path: Path
     ) -> None:
-        for gremlin_id in ('g001', 'g002', 'g003'):
-            _confirm_collection_kill(_collection_kill(gremlin_id), ['t.py::test_a'], session, tmp_path)
+        _confirm_collection_kill(_collection_kill('g001'), ['t.py::test_a'], session, tmp_path)
+        _confirm_collection_kill(_collection_kill('g002'), ['t.py::test_a'], session, tmp_path)
+        _confirm_collection_kill(_collection_kill('g003'), ['t.py::test_a'], session, tmp_path)
         _confirm_collection_kill(_collection_kill('g004'), ['t.py::test_b'], session, tmp_path)
 
         assert fake_control.call_count == 2

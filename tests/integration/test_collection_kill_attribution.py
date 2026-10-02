@@ -126,4 +126,4 @@ class DescribeLoadFailuresTheMutantDidNotCause:
 
         result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, *_MODES[mode])
 
-        assert '__file__' in result.stderr.str()
+        assert 'issues/525' in result.stderr.str()

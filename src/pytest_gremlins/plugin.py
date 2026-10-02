@@ -57,6 +57,7 @@ from pytest_gremlins.config import (
     merge_configs,
 )
 from pytest_gremlins.control_run import (
+    MAX_SELECTION_FAILURE_OUTPUT_CHARS,
     SELECTION_FAILS_TO_LOAD_PREFIX,
     UNATTRIBUTABLE_MARKER,
     ControlRunOutcome,
@@ -1897,19 +1898,26 @@ def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: Grem
     harness loads the suite cleanly without one. The baseline run is a different process, so it
     cannot vouch for that. When the control run fails, a marker next to ``sources.json`` makes the
     bootstrap stop reporting load failures as kills, so every mapping site scores them as errors.
-    The union of the selected node ids is an early-out only; each collection kill is confirmed
-    against its own selection by :func:`_confirm_collection_kill`.
+    Only gremlins that will actually run count: pardoned and cached ones are skipped, and when none
+    is left no subprocess is spawned and nothing is printed. The union of the remaining selections is
+    an early-out only; each collection kill is confirmed against its own selection by
+    :func:`_confirm_collection_kill`.
     """
     instrumented_dir = gremlin_session.instrumented_dir
     if instrumented_dir is None:
         return
-    selected_node_ids = {
-        gremlin_session.test_node_ids[test_name]
-        for gremlin in gremlin_session.gremlins
-        if _immediate_result_if_pardoned(gremlin) is None
-        for test_name in _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
-        if test_name in gremlin_session.test_node_ids
-    }
+    gremlins_to_run = 0
+    selected_node_ids: set[str] = set()
+    for gremlin in gremlin_session.gremlins:
+        if _immediate_result_if_pardoned(gremlin) is not None:
+            continue
+        selected_tests = _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
+        if _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session) is not None:
+            continue
+        selected_node_ids.update(_node_ids_for_tests(selected_tests, gremlin_session))
+        gremlins_to_run += 1
+    if not gremlins_to_run:
+        return
     outcome = _collect_unmutated(gremlin_session, _get_rootdir(session.config), sorted(selected_node_ids))
     logger.debug('Unmutated control run took %.1fs (loads cleanly: %s)', outcome.seconds, outcome.loads_cleanly)
     if outcome.loads_cleanly:
@@ -1975,7 +1983,7 @@ def _confirm_collection_kill(
         result,
         status=GremlinResultStatus.ERROR,
         killing_test=None,
-        error_output=f'{SELECTION_FAILS_TO_LOAD_PREFIX}\n{outcome.output[-2000:]}',
+        error_output=f'{SELECTION_FAILS_TO_LOAD_PREFIX}\n{outcome.output[-MAX_SELECTION_FAILURE_OUTPUT_CHARS:]}',
     )
 
 

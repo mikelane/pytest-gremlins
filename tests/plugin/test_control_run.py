@@ -118,6 +118,6 @@ class DescribeRunControl:
         assert 'timed out' in outcome.output
 
     def it_reports_how_long_the_control_run_took(self, tmp_path: Path) -> None:
-        outcome = run_control(self._command('import sys; sys.exit(0)'), [], tmp_path, {}, timeout=30)
+        outcome = run_control(self._command('import time; time.sleep(0.2)'), [], tmp_path, {}, timeout=30)
 
-        assert outcome.seconds > 0
+        assert outcome.seconds >= 0.2

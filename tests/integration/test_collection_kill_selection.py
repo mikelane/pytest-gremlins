@@ -62,9 +62,13 @@ _MODES = {
 }
 
 
-def _killing_tests(pytester: pytest.Pytester) -> list[str | None]:
+# Batch runs every gremlin with one unified command whose order loads, so the weak test honestly survives.
+_EXPECTED_STATUS_OF_SECOND_GREMLIN = {'sequential': 'error', 'parallel': 'error', 'batch': 'survived'}
+
+
+def _status_by_description(pytester: pytest.Pytester) -> dict[str, str]:
     report = json.loads(Path(pytester.path, 'coverage', 'gremlins', 'gremlins.json').read_text())
-    return [entry.get('killing_test') for entry in report['results']]
+    return {entry['description']: entry['status'] for entry in report['results']}
 
 
 @pytest.mark.medium
@@ -72,7 +76,7 @@ def _killing_tests(pytester: pytest.Pytester) -> list[str | None]:
 class DescribeSubsetLoadFailuresTheControlRunCannotSee:
     """A subset that cannot load unmutated is not a kill, even when the union loads."""
 
-    def it_does_not_zap_a_gremlin_whose_test_only_imports_after_a_sibling_module(
+    def it_never_scores_a_collection_kill_for_a_test_that_only_imports_after_a_sibling_module(
         self, pytester_with_markers: pytest.Pytester, mode: str
     ) -> None:
         pytester_with_markers.makepyfile(sample=_TARGET)
@@ -83,4 +87,5 @@ class DescribeSubsetLoadFailuresTheControlRunCannotSee:
 
         pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, *_MODES[mode])
 
-        assert '<collection>' not in _killing_tests(pytester_with_markers)
+        statuses = _status_by_description(pytester_with_markers)
+        assert statuses['- to +'] == _EXPECTED_STATUS_OF_SECOND_GREMLIN[mode]

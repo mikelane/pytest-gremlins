@@ -53,12 +53,9 @@ def test_b():
 """
 
 
-def _verdicts(pytester: pytest.Pytester) -> dict[str, tuple[str, str | None]]:
+def _status_by_description(pytester: pytest.Pytester) -> dict[str, str]:
     report = json.loads(Path(pytester.path, 'coverage', 'gremlins', 'gremlins.json').read_text())
-    return {
-        f'{entry["line_number"]}:{entry["description"]}': (entry['status'], entry.get('killing_test'))
-        for entry in report['results']
-    }
+    return {entry['description']: entry['status'] for entry in report['results']}
 
 
 @pytest.mark.medium
@@ -66,7 +63,7 @@ def _verdicts(pytester: pytest.Pytester) -> dict[str, tuple[str, str | None]]:
 class DescribeConfirmationMemoKeyedByOrder:
     """A selection is only confirmed for the order it actually runs in."""
 
-    def it_does_not_zap_a_gremlin_whose_selection_order_fails_to_load(
+    def it_reports_an_error_for_a_gremlin_whose_selection_order_fails_to_load(
         self, pytester_with_markers: pytest.Pytester
     ) -> None:
         pytester_with_markers.makepyfile(sample=_TARGET)
@@ -84,8 +81,4 @@ class DescribeConfirmationMemoKeyedByOrder:
             'no:cacheprovider',
         )
 
-        second_line_verdicts = [
-            verdict for key, verdict in _verdicts(pytester_with_markers).items() if key.endswith(':- to +')
-        ]
-        assert second_line_verdicts
-        assert ('zapped', '<collection>') not in second_line_verdicts
+        assert _status_by_description(pytester_with_markers)['- to +'] == 'error'

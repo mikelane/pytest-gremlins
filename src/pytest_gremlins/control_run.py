@@ -29,6 +29,10 @@ MAX_NODE_ID_CHARS_PER_COMMAND = 50_000
 """Cap on node-id characters per control command, far below the OS argument-size limits."""
 
 DIAGNOSTIC_TAIL_LINES = 20
+"""Lines of the control run's output kept in the stderr diagnostic (counted in lines, unlike the cap below)."""
+
+MAX_SELECTION_FAILURE_OUTPUT_CHARS = 2000
+"""Characters of an unmutated selection's output kept in a downgraded result's ``error_output``."""
 
 SELECTION_FAILS_TO_LOAD_PREFIX = (
     "the gremlin's own selection of tests fails to load even without a mutant, so the load failure "
@@ -37,6 +41,7 @@ SELECTION_FAILS_TO_LOAD_PREFIX = (
 """Start of the ``error_output`` of a collection kill that was downgraded to ERROR."""
 
 CONTROL_RUN_TIMEOUT_SECONDS = 300
+"""Seconds one control command may run before the suite counts as unable to load."""
 
 _DIAGNOSTIC_INTRO = (
     'pytest-gremlins: the unmutated test suite fails to load in the gremlin subprocess, so load failures '
