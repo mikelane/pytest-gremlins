@@ -1527,9 +1527,9 @@ def main():
     from _pytest.config import ConftestImportFailure
 
     class SuiteLoadRecorder:
-        # Records, in-process, that the suite could not be loaded. pytest reports an unloadable
-        # suite and our own bad arguments with the same exit code (4), so the exit code alone
-        # cannot tell a mutant-caused failure from our bug.
+        # Records, in-process, that the suite could not be loaded. pytest reports an
+        # unloadable suite with exit code 2 or 4, and our own bad arguments with 4 too,
+        # so the exit code alone cannot tell a mutant-caused failure from our bug.
         def __init__(self):
             self.suite_failed_to_load = False
 
