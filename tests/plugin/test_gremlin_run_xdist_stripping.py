@@ -62,3 +62,26 @@ class DescribeBuildTestCommandWithXdistAddopts:
         command = _build_test_command(tmp_path, '-n auto')
 
         assert 'no:xdist' not in command
+
+
+@pytest.mark.small
+class DescribeBuildTestCommandForcingSingleProcess:
+    """``-n 0`` is last on the command line, so it beats any spelling of ``-n`` in addopts or PYTEST_ADDOPTS."""
+
+    def it_ends_the_bootstrap_command_with_n_zero_when_xdist_is_loaded(self, tmp_path: Path) -> None:
+        command = _build_test_command(tmp_path, '-xn 2', xdist_loaded=True)
+
+        assert command[-2:] == ['-n', '0']
+
+    def it_ends_the_direct_pytest_command_with_n_zero_when_xdist_is_loaded(self) -> None:
+        command = _build_test_command(None, '', xdist_loaded=True)
+
+        assert command[-2:] == ['-n', '0']
+
+    def it_omits_n_zero_when_xdist_is_not_loaded(self, tmp_path: Path) -> None:
+        command = _build_test_command(tmp_path, '', xdist_loaded=False)
+
+        assert '-n' not in command
+
+    def it_omits_n_zero_by_default(self) -> None:
+        assert '-n' not in _build_test_command(None)

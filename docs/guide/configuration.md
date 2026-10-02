@@ -478,6 +478,11 @@ gremlin would be reported as a survivor. With `addopts = "-n 2"` (or `PYTEST_ADD
 for each gremlin therefore run in-process, not in workers; your `-n` setting still sizes the mutation
 worker pool.
 
+As a second layer, per-gremlin runs force `-n 0` whenever pytest-xdist is loaded. pytest keeps the last
+value of `-n`, so this also covers spellings the option stripper cannot see, such as a clustered
+`addopts = "-xn 2"` or `PYTEST_ADDOPTS="-xn 2"`. xdist stays loaded, so `worker_id` still works. Without
+xdist installed, nothing is added.
+
 ### Coverage Pre-Scan Timeout
 
 The pre-scan is limited to 120 seconds by default. If it runs longer, gremlins emits this warning (wrapped here for width)

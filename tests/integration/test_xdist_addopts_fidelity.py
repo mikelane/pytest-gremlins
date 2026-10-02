@@ -69,7 +69,7 @@ class DescribeProjectsWithXdistInAddopts:
 
     @pytest.mark.parametrize(
         'addopts',
-        ['-n 2', '-n auto', '--numprocesses=2 --dist=loadscope'],
+        ['-n 2', '-n auto', '--numprocesses=2 --dist=loadscope', '-xn 2', '-vn auto', '-xn2'],
     )
     def it_zaps_with_an_adequate_test(self, pytester_with_markers: pytest.Pytester, addopts: str) -> None:
         pytester_with_markers.makeini(f'[pytest]\naddopts = {addopts}\n')
@@ -101,10 +101,11 @@ class DescribeProjectsWithXdistInAddopts:
 class DescribeProjectsWithXdistInPytestAddoptsEnv:
     """``PYTEST_ADDOPTS`` is appended to every pytest invocation, so it must not distribute gremlin runs either."""
 
+    @pytest.mark.parametrize('pytest_addopts', ['-n 2', '-xn 2'])
     def it_zaps_with_an_adequate_test(
-        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, pytest_addopts: str
     ) -> None:
-        monkeypatch.setenv('PYTEST_ADDOPTS', '-n 2')
+        monkeypatch.setenv('PYTEST_ADDOPTS', pytest_addopts)
 
         verdicts = _run_gremlins(pytester_with_markers, _CATCHES)
 

@@ -250,6 +250,7 @@ class GremlinSession:
     batch_size: int = 10
     xdist_item_ids: list[str] | None = None
     xdist_active: bool = False
+    xdist_loaded: bool = False
     xdist_workers: int | None = None
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
     private_coverage: coverage.Coverage | None = None
@@ -885,6 +886,7 @@ def pytest_configure(config: pytest.Config) -> None:
             no_coverage_filter=bool(getattr(config.option, 'gremlin_no_coverage_filter', False)),
             explain_gremlin_id=getattr(config.option, 'gremlin_explain', None),
             xdist_active=xdist_active,
+            xdist_loaded=config.pluginmanager.hasplugin('xdist'),
             xdist_workers=xdist_worker_int if xdist_active else None,
             preserved_addopts=_addopts_without_cov(config.getini('addopts')),
             coverage_timeout=coverage_timeout,
@@ -2404,7 +2406,11 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912
         List of results for each gremlin.
     """
     rootdir = _get_rootdir(session.config)
-    base_test_command = _build_test_command(gremlin_session.instrumented_dir, gremlin_session.preserved_addopts)
+    base_test_command = _build_test_command(
+        gremlin_session.instrumented_dir,
+        gremlin_session.preserved_addopts,
+        xdist_loaded=gremlin_session.xdist_loaded,
+    )
     gremlins = gremlin_session.gremlins
 
     # Build gremlin -> test mapping for filtering (prioritized order)
@@ -2530,7 +2536,11 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
         List of results for each gremlin.
     """
     rootdir = _get_rootdir(session.config)
-    base_test_command = _build_test_command(gremlin_session.instrumented_dir, gremlin_session.preserved_addopts)
+    base_test_command = _build_test_command(
+        gremlin_session.instrumented_dir,
+        gremlin_session.preserved_addopts,
+        xdist_loaded=gremlin_session.xdist_loaded,
+    )
     gremlins = gremlin_session.gremlins
 
     # Build gremlin -> test mapping for filtering (prioritized order)
@@ -2808,7 +2818,11 @@ def _run_mutation_testing(
     """
     results: list[GremlinResult] = []
     rootdir = _get_rootdir(session.config)
-    base_test_command = _build_test_command(gremlin_session.instrumented_dir, gremlin_session.preserved_addopts)
+    base_test_command = _build_test_command(
+        gremlin_session.instrumented_dir,
+        gremlin_session.preserved_addopts,
+        xdist_loaded=gremlin_session.xdist_loaded,
+    )
 
     for i, gremlin in enumerate(gremlin_session.gremlins, 1):
         pardoned_result = _immediate_result_if_pardoned(gremlin)
@@ -3116,7 +3130,12 @@ def _pytest_cov_available() -> bool:
         return True
 
 
-def _build_test_command(instrumented_dir: Path | None, preserved_addopts: str = '') -> list[str]:
+def _build_test_command(
+    instrumented_dir: Path | None,
+    preserved_addopts: str = '',
+    *,
+    xdist_loaded: bool = False,
+) -> list[str]:
     """Build the command to run tests.
 
     If an instrumented directory is provided, uses the bootstrap script
@@ -3135,6 +3154,12 @@ def _build_test_command(instrumented_dir: Path | None, preserved_addopts: str = 
             into the subprocess. Defaults to ``''`` (clear all addopts). xdist options
             are dropped (see :func:`~pytest_gremlins.xdist_options.addopts_without_xdist`)
             so the tests run in the bootstrap process, where the gremlin import hook lives.
+        xdist_loaded: Whether pytest-xdist is loaded in the main session.  If so, ``-n 0`` is
+            appended as a second layer: argparse keeps the last value, so no spelling of ``-n``
+            in ``addopts`` or ``PYTEST_ADDOPTS`` (for example a clustered ``-xn 2``, which the
+            token stripper does not recognise) can distribute the run.  xdist itself stays
+            loaded, so ``worker_id`` still works.  Without xdist the flag would be rejected as
+            unrecognized, so it is omitted.
 
     Returns:
         Command list to run tests.
@@ -3165,6 +3190,9 @@ def _build_test_command(instrumented_dir: Path | None, preserved_addopts: str = 
 
     if _pytest_cov_available():
         command.append('--no-cov')
+
+    if xdist_loaded:
+        command.extend(['-n', '0'])
 
     return command
 
