@@ -69,6 +69,10 @@ from pytest_gremlins.instrumentation.transformer import (
 )
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
+from pytest_gremlins.parallel.exit_codes import (
+    COLLECTION_KILLING_TEST,
+    GREMLIN_COLLECTION_FAILED_EXIT_CODE,
+)
 from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
     build_lightweight_command,
@@ -3272,6 +3276,12 @@ def _test_gremlin(
                 gremlin=gremlin,
                 status=GremlinResultStatus.ZAPPED,
                 killing_test='unknown',
+            )
+        if subprocess_outcome.returncode == GREMLIN_COLLECTION_FAILED_EXIT_CODE:
+            return GremlinResult(
+                gremlin=gremlin,
+                status=GremlinResultStatus.ZAPPED,
+                killing_test=COLLECTION_KILLING_TEST,
             )
         error_output = describe_runner_error(subprocess_outcome.returncode, subprocess_outcome.stderr)
         logger.debug(

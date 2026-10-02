@@ -23,6 +23,10 @@ import subprocess
 import time
 from typing import Self
 
+from pytest_gremlins.parallel.exit_codes import (
+    COLLECTION_KILLING_TEST,
+    GREMLIN_COLLECTION_FAILED_EXIT_CODE,
+)
 from pytest_gremlins.parallel.lightweight import (
     build_lightweight_command,
     describe_runner_error,
@@ -114,6 +118,13 @@ def _run_gremlin_test(  # pragma: no cover
                 gremlin_id=gremlin_id,
                 status=GremlinResultStatus.ZAPPED,
                 killing_test='unknown',
+                execution_time_ms=execution_time_ms,
+            )
+        if result.returncode == GREMLIN_COLLECTION_FAILED_EXIT_CODE:
+            return WorkerResult(
+                gremlin_id=gremlin_id,
+                status=GremlinResultStatus.ZAPPED,
+                killing_test=COLLECTION_KILLING_TEST,
                 execution_time_ms=execution_time_ms,
             )
         error_output = describe_runner_error(result.returncode, result.stderr)

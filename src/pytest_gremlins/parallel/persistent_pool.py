@@ -41,6 +41,10 @@ from typing import (
 if TYPE_CHECKING:
     import multiprocessing
 
+from pytest_gremlins.parallel.exit_codes import (
+    COLLECTION_KILLING_TEST,
+    GREMLIN_COLLECTION_FAILED_EXIT_CODE,
+)
 from pytest_gremlins.parallel.lightweight import (
     build_lightweight_command,
     describe_runner_error,
@@ -131,6 +135,16 @@ def _run_gremlin_batch(  # pragma: no cover
                         gremlin_id=gremlin_id,
                         status=GremlinResultStatus.ZAPPED,
                         killing_test='unknown',
+                        execution_time_ms=execution_time_ms,
+                    )
+                )
+            elif result.returncode == GREMLIN_COLLECTION_FAILED_EXIT_CODE:
+                # The mutant stopped the suite from loading - the suite caught it
+                results.append(
+                    WorkerResult(
+                        gremlin_id=gremlin_id,
+                        status=GremlinResultStatus.ZAPPED,
+                        killing_test=COLLECTION_KILLING_TEST,
                         execution_time_ms=execution_time_ms,
                     )
                 )
