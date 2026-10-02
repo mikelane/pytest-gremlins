@@ -12,7 +12,8 @@ Configuration values are resolved in this order (highest priority first):
 
 When the same option is specified at both levels, the CLI value wins. This applies to all nine
 configurable fields (operators, paths, exclude, workers, cache, report, batch_size, max_pardons,
-max-pardons-pct), as well as `coverage_timeout` / `--gremlin-coverage-timeout`.
+max-pardons-pct), as well as `coverage_timeout` / `--gremlin-coverage-timeout` and
+`mutant_timeout` / `--gremlin-mutant-timeout`.
 
 **Source path auto-discovery** is a separate mechanism that kicks in only when neither
 `--gremlin-targets` nor `[tool.pytest-gremlins] paths` is set. It tries seven strategies in
@@ -43,6 +44,7 @@ All command-line options are prefixed with `--gremlin` or `--gremlins`.
 | `--gremlin-batch` | flag | `false` | Enable batch execution mode |
 | `--gremlin-batch-size` | integer | `10` | Number of gremlins per batch |
 | `--gremlin-coverage-timeout` | integer | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled |
+| `--gremlin-mutant-timeout` | integer | `30` | Seconds (1-86400) one gremlin's test run may take before the gremlin is reported as a timeout |
 
 ### Output Options
 
@@ -222,6 +224,11 @@ batch_size = 20
 # Default: 120
 coverage_timeout = 300
 
+# Seconds one gremlin's test run may take before the gremlin is reported
+# as a timeout (raise it when a survivor's covering tests take longer)
+# Default: 30
+mutant_timeout = 120
+
 # Maximum number of pardoned gremlins (absolute ceiling)
 # Default: no limit
 max_pardons = 10
@@ -243,6 +250,7 @@ max-pardons-pct = 5.0
 | `report` | string or list | `"console"` | Report format(s): `"html"`, `"json"`, `"console"`, or a list like `["html", "json"]` |
 | `batch_size` | int | `10` | Number of gremlins per batch in batch execution mode |
 | `coverage_timeout` | int | `120` | Seconds (1-86400) the coverage pre-scan may run; on expiry gremlins warns and runs every test per gremlin |
+| `mutant_timeout` | int | `30` | Seconds (1-86400) one gremlin's test run may take before the gremlin is reported as a timeout |
 | `max_pardons` | int | no limit | Absolute ceiling on pardoned gremlins |
 | `max-pardons-pct` | float | no limit | Maximum percentage of pardoned gremlins (0-100) |
 
@@ -505,6 +513,26 @@ coverage_timeout = 600
 
 The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
 the TOML key.
+
+### Per-Mutant Timeout
+
+Each gremlin's test run is limited to 30 seconds by default, in sequential, `--gremlin-parallel` and
+`--gremlin-batch` runs alike. A run that takes longer is reported as a timeout. A surviving gremlin runs
+every test selected for it, so on a slow suite survivors are the first to hit the limit. Raise it with the
+CLI or TOML:
+
+```bash
+pytest --gremlins --gremlin-mutant-timeout=120
+```
+
+```toml
+[tool.pytest-gremlins]
+mutant_timeout = 120
+```
+
+The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
+the TOML key. The incremental cache keys each verdict on the timeout it was reached under, so a changed
+timeout judges every gremlin again.
 
 ### Batch Execution
 

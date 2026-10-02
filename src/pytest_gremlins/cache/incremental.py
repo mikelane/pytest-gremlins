@@ -42,6 +42,7 @@ class IncrementalCache:
     - gremlin_id: Unique identifier for the mutation
     - source_hash: SHA-256 hash of the source file content
     - test_hashes: Combined hash of all test files covering this gremlin
+    - mutant_timeout: the per-gremlin test timeout the verdict was reached under
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
 
@@ -71,6 +72,7 @@ class IncrementalCache:
         gremlin_id: str,
         source_hash: str,
         test_hashes: dict[str, str],
+        mutant_timeout: int | None = None,
     ) -> str:
         """Build a cache key from gremlin and content hashes.
 
@@ -78,11 +80,13 @@ class IncrementalCache:
         - gremlin_id: unique mutation identifier
         - source_hash: content hash of the source file
         - test_hashes: combined hash of all relevant test files (names AND hashes)
+        - mutant_timeout: the per-gremlin test timeout in seconds
 
         Args:
             gremlin_id: Unique identifier for the gremlin.
             source_hash: SHA-256 hash of the source file.
             test_hashes: Mapping of test name to content hash.
+            mutant_timeout: Per-gremlin test timeout in seconds; a different value is a miss.
 
         Returns:
             A cache key string.
@@ -92,13 +96,14 @@ class IncrementalCache:
         sorted_test_items = [f'{name}:{test_hashes[name]}' for name in sorted(test_hashes.keys())]
         combined_test_hash = self._hasher.hash_string('|'.join(sorted_test_items)) if sorted_test_items else 'no_tests'
 
-        return f'{gremlin_id}:{source_hash}:{combined_test_hash}:{RUNNER_FIDELITY_VERSION}'
+        return f'{gremlin_id}:{source_hash}:{combined_test_hash}:timeout={mutant_timeout}:{RUNNER_FIDELITY_VERSION}'
 
     def get_cached_result(
         self,
         gremlin_id: str,
         source_hash: str,
         test_hashes: dict[str, str],
+        mutant_timeout: int | None = None,
     ) -> CachedGremlinResult | None:
         """Retrieve a cached result if available.
 
@@ -112,11 +117,12 @@ class IncrementalCache:
             gremlin_id: Unique identifier for the gremlin.
             source_hash: Current SHA-256 hash of the source file.
             test_hashes: Current mapping of test name to content hash.
+            mutant_timeout: Per-gremlin test timeout in seconds; a different value is a miss.
 
         Returns:
             Cached result dictionary, or None if cache miss.
         """
-        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes)
+        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes, mutant_timeout)
         result = self._store.get(cache_key)
 
         if result is None:
@@ -132,6 +138,7 @@ class IncrementalCache:
         source_hash: str,
         test_hashes: dict[str, str],
         result: CachedGremlinResult,
+        mutant_timeout: int | None = None,
     ) -> None:
         """Cache a gremlin test result.
 
@@ -144,8 +151,9 @@ class IncrementalCache:
             source_hash: SHA-256 hash of the source file.
             test_hashes: Mapping of test name to content hash.
             result: The result dictionary to cache.
+            mutant_timeout: Per-gremlin test timeout in seconds the result was reached under.
         """
-        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes)
+        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes, mutant_timeout)
         self._store.put(cache_key, result)
 
     def cache_result_deferred(
@@ -154,6 +162,7 @@ class IncrementalCache:
         source_hash: str,
         test_hashes: dict[str, str],
         result: CachedGremlinResult,
+        mutant_timeout: int | None = None,
     ) -> None:
         """Cache a gremlin test result without committing immediately.
 
@@ -165,8 +174,9 @@ class IncrementalCache:
             source_hash: SHA-256 hash of the source file.
             test_hashes: Mapping of test name to content hash.
             result: The result dictionary to cache.
+            mutant_timeout: Per-gremlin test timeout in seconds the result was reached under.
         """
-        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes)
+        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes, mutant_timeout)
         self._store.put_deferred(cache_key, result)
 
     def flush(self) -> None:

@@ -174,7 +174,7 @@ class DescribeGremlinSubprocessEnvVars:
             return result
 
         with patch('pytest_gremlins.plugin.subprocess.run', side_effect=capture_env):
-            _test_gremlin(gremlin, ['pytest'], tmp_path, instrumented_dir=tmp_path)
+            _test_gremlin(gremlin, ['pytest'], tmp_path, instrumented_dir=tmp_path, timeout=30)
 
         assert GREMLIN_SOURCES_ENV_VAR in captured_env
         assert captured_env[GREMLIN_SOURCES_ENV_VAR] == str(tmp_path / 'sources.json')
@@ -194,6 +194,6 @@ class DescribeGremlinSubprocessEnvVars:
             return result
 
         with patch('pytest_gremlins.plugin.subprocess.run', side_effect=capture_env):
-            _test_gremlin(gremlin, ['pytest'], tmp_path, instrumented_dir=None)
+            _test_gremlin(gremlin, ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
 
         assert GREMLIN_SOURCES_ENV_VAR not in captured_env
