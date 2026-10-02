@@ -1471,7 +1471,7 @@ def _get_bootstrap_script() -> str:
     # The bootstrap script uses exec() to run compiled code in module namespace.
     # This is the standard Python pattern for import loaders (see importlib docs).
     # The code being executed is our own instrumented AST, not untrusted input.
-    return """#!/usr/bin/env python
+    script = """#!/usr/bin/env python
 '''Bootstrap script for pytest-gremlins mutation testing.
 
 This script registers import hooks to intercept module imports and provide
@@ -1524,12 +1524,46 @@ def main():
 
     # Now run pytest with remaining arguments
     import pytest
-    sys.exit(pytest.main(sys.argv[1:]))
+    from _pytest.config import ConftestImportFailure
+
+    class SuiteLoadRecorder:
+        # Records, in-process, that the suite could not be loaded. pytest reports an unloadable
+        # suite and our own bad arguments with the same exit code (4), so the exit code alone
+        # cannot tell a mutant-caused failure from our bug.
+        def __init__(self):
+            self.suite_failed_to_load = False
+
+        @pytest.hookimpl(hookwrapper=True)
+        def pytest_load_initial_conftests(self, early_config, parser, args):
+            outcome = yield
+            if outcome.excinfo is not None and issubclass(outcome.excinfo[0], ConftestImportFailure):
+                self.suite_failed_to_load = True
+
+        def pytest_collectreport(self, report):
+            if report.failed:
+                self.suite_failed_to_load = True
+
+        @pytest.hookimpl(hookwrapper=True)
+        def pytest_collection(self, session):
+            outcome = yield
+            if outcome.excinfo is None or not issubclass(outcome.excinfo[0], pytest.UsageError):
+                return
+            # A requested node id that is not found (for example a changed parametrize id) is the
+            # mutant's doing, but only if the file it names still exists. A missing file is ours.
+            if all(os.path.exists(argument.split('::')[0]) for argument in session.config.args):
+                self.suite_failed_to_load = True
+
+    recorder = SuiteLoadRecorder()
+    exit_code = pytest.main(sys.argv[1:], plugins=[recorder])
+    if recorder.suite_failed_to_load and exit_code in (pytest.ExitCode.USAGE_ERROR, pytest.ExitCode.INTERRUPTED):
+        exit_code = __COLLECTION_FAILED_EXIT_CODE__
+    sys.exit(exit_code)
 
 
 if __name__ == '__main__':
     main()
 """
+    return script.replace('__COLLECTION_FAILED_EXIT_CODE__', str(GREMLIN_COLLECTION_FAILED_EXIT_CODE))
 
 
 def _get_lightweight_runner_script() -> str:
