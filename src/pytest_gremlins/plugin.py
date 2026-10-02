@@ -744,11 +744,11 @@ def _read_cli_coverage_timeout(config: pytest.Config) -> int | None:
     return cli_value
 
 
-def _resolve_coverage_timeout(merged_config: object) -> int:
-    """Return the merged ``coverage_timeout``, or the default when unset (or a test mock)."""
-    if isinstance(merged_config, GremlinConfig) and merged_config.coverage_timeout is not None:
-        return merged_config.coverage_timeout
-    return DEFAULT_COVERAGE_TIMEOUT_SECONDS
+def _resolve_coverage_timeout(merged_config: GremlinConfig) -> int:
+    """Return the merged ``coverage_timeout``, or the default when unset."""
+    if merged_config.coverage_timeout is None:
+        return DEFAULT_COVERAGE_TIMEOUT_SECONDS
+    return merged_config.coverage_timeout
 
 
 def pytest_configure(config: pytest.Config) -> None:

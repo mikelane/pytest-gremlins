@@ -24,6 +24,7 @@ import warnings
 import coverage
 import pytest
 
+from pytest_gremlins.config import GremlinConfig
 from pytest_gremlins.plugin import (
     GremlinSession,
     _collect_coverage,
@@ -306,7 +307,7 @@ class DescribeOuterSessionCovNotSuppressed:
             patch('pytest_gremlins.plugin._read_parallel_config', return_value=(False, None)),
             patch('pytest_gremlins.plugin._set_session'),
         ):
-            mock_merge.return_value = SimpleNamespace(operators=None, paths=None)
+            mock_merge.return_value = GremlinConfig()
             config.rootdir = '.'
             pytest_configure(config)
 
@@ -327,7 +328,7 @@ class DescribeOuterSessionCovNotSuppressed:
             warnings.catch_warnings(record=True) as caught,
         ):
             warnings.simplefilter('always')
-            mock_merge.return_value = SimpleNamespace(operators=None, paths=None)
+            mock_merge.return_value = GremlinConfig()
             config.rootdir = '.'
             pytest_configure(config)
 
