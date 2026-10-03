@@ -42,7 +42,10 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import ast
-    from collections.abc import Sequence
+    from collections.abc import (
+        Mapping,
+        Sequence,
+    )
     import types
 
 
@@ -109,15 +112,22 @@ class GremlinFinder(MetaPathFinder):
 
     This finder is registered on sys.meta_path and returns a ModuleSpec
     with GremlinLoader for modules that have instrumented code available.
+    A module with a known origin gets it as its ``__file__``.
     """
 
-    def __init__(self, instrumented_modules: dict[str, ast.Module]) -> None:
+    def __init__(
+        self,
+        instrumented_modules: dict[str, ast.Module],
+        origins: Mapping[str, str] | None = None,
+    ) -> None:
         """Initialize the finder with instrumented module ASTs.
 
         Args:
             instrumented_modules: Mapping of module names to their instrumented ASTs.
+            origins: Mapping of module names to the path of the source file each AST came from.
         """
         self._instrumented_modules = instrumented_modules
+        self._origins = origins or {}
 
     def find_spec(
         self,
@@ -140,14 +150,20 @@ class GremlinFinder(MetaPathFinder):
 
         tree = self._instrumented_modules[fullname]
         loader = GremlinLoader(tree, fullname)
-        return ModuleSpec(fullname, loader)
+        origin = self._origins.get(fullname)
+        spec = ModuleSpec(fullname, loader, origin=origin)
+        spec.has_location = origin is not None
+        return spec
 
 
 # Global reference to the registered finder (for cleanup)
 _registered_finder: GremlinFinder | None = None
 
 
-def register_import_hooks(instrumented_modules: dict[str, ast.Module]) -> None:
+def register_import_hooks(
+    instrumented_modules: dict[str, ast.Module],
+    origins: Mapping[str, str] | None = None,
+) -> None:
     """Register import hooks for instrumented modules.
 
     This function adds a GremlinFinder to sys.meta_path that will intercept
@@ -155,11 +171,13 @@ def register_import_hooks(instrumented_modules: dict[str, ast.Module]) -> None:
 
     Args:
         instrumented_modules: Mapping of module names to their instrumented ASTs.
+        origins: Mapping of module names to the path of the source file each AST came from,
+            which becomes the module's ``__file__``.
     """
     global _registered_finder  # noqa: PLW0603
     unregister_import_hooks()  # Clean up any existing registration
 
-    _registered_finder = GremlinFinder(instrumented_modules)
+    _registered_finder = GremlinFinder(instrumented_modules, origins)
     sys.meta_path.insert(0, _registered_finder)
 
 

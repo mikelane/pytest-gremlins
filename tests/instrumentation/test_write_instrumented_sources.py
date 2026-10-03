@@ -19,7 +19,7 @@ def _parse_final_source(tmp_path: Path, source: str) -> list[ast.stmt]:
     original_path = str(tmp_path / 'mymod.py')
     result_dir = _write_instrumented_sources({original_path: tree}, tmp_path)
     sources = json.loads((result_dir / 'sources.json').read_text())
-    parsed: list[ast.stmt] = ast.parse(sources['mymod']).body
+    parsed: list[ast.stmt] = ast.parse(sources['mymod']['source']).body
     return parsed
 
 
@@ -103,7 +103,16 @@ class DescribeWriteInstrumentedSources:
         original_path = str(tmp_path / 'mymod.py')
         result_dir = _write_instrumented_sources({original_path: tree}, tmp_path)
         sources = json.loads((result_dir / 'sources.json').read_text())
-        assert '__gremlin_active__' in sources['mymod']
+        assert '__gremlin_active__' in sources['mymod']['source']
+
+    def it_records_the_source_path_without_following_symlinks_as_the_origin(self, tmp_path: Path) -> None:
+        real = tmp_path / 'real.py'
+        real.write_text('x = 1\n')
+        original_path = tmp_path / 'mymod.py'
+        original_path.symlink_to(real)
+        result_dir = _write_instrumented_sources({str(original_path): ast.parse('x = 1\n')}, tmp_path)
+        sources = json.loads((result_dir / 'sources.json').read_text())
+        assert sources['mymod']['origin'] == str(original_path)
 
     def it_handles_empty_module_body(self, tmp_path: Path) -> None:
         body = _parse_final_source(tmp_path, '')

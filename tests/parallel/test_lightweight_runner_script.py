@@ -7,6 +7,7 @@ or 0 (survived).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -145,3 +146,29 @@ class DescribeLightweightRunnerExitCodes:
         )
 
         assert result.returncode == CANNOT_VERIFY
+
+
+@pytest.mark.medium
+class DescribeLightweightRunnerInstrumentedModules:
+    """A module the runner's import hook loads keeps the path of the source it was built from."""
+
+    def it_gives_the_instrumented_module_its_origin_as_file(self, tmp_path: Path) -> None:
+        origin = tmp_path / 'target.py'
+        sources = tmp_path / 'sources.json'
+        sources.write_text(json.dumps({'target': {'source': 'VALUE = 1\n', 'origin': str(origin)}}), encoding='utf-8')
+        test_source = f"""
+            import target
+
+            def test_a():
+                assert target.__file__ == {str(origin)!r}
+                assert target.__spec__.origin == {str(origin)!r}
+            """
+
+        result = _run_runner(
+            tmp_path,
+            test_source,
+            'test_sample.py::test_a',
+            env_extra={'PYTEST_GREMLINS_SOURCES_FILE': str(sources)},
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
