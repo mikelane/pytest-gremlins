@@ -13,13 +13,17 @@ import pytest
 
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.control_run import (
+    ControlRunOutcome,
     UnmutatedRunOutcome,
     run_unmutated,
 )
 from pytest_gremlins.instrumentation.gremlin import Gremlin
+from pytest_gremlins.parallel.exit_codes import COLLECTION_KILLING_TEST
 from pytest_gremlins.plugin import (
     GremlinSession,
     _cache_gremlin_result,
+    _collect_unmutated,
+    _confirm_kill,
     _confirm_timeout_kill,
 )
 from pytest_gremlins.reporting.results import (
@@ -134,6 +138,55 @@ class DescribeConfirmTimeoutKill:
     ) -> None:
         assert _confirm_timeout_kill(result, ['t.py::test_a'], session, tmp_path) is result
         fake_unmutated_run.assert_not_called()
+
+
+@pytest.mark.medium
+class DescribeConfirmKill:
+    """``_confirm_kill`` is the one entry every execution mode calls."""
+
+    def it_confirms_a_timeout_against_the_unmutated_selection(
+        self, session: GremlinSession, fake_unmutated_run: MagicMock, tmp_path: Path
+    ) -> None:
+        fake_unmutated_run.return_value = HANGS
+
+        result = _confirm_kill(_timeout(), ['t.py::test_a'], session, tmp_path)
+
+        assert result.status == GremlinResultStatus.ERROR
+
+    def it_runs_no_timed_confirmation_for_a_collection_kill(
+        self, session: GremlinSession, fake_unmutated_run: MagicMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            'pytest_gremlins.plugin._collect_unmutated',
+            create_autospec(_collect_unmutated, return_value=ControlRunOutcome(False, 'boom', 0.1)),
+        )
+        collection_kill = GremlinResult(
+            gremlin=_gremlin(), status=GremlinResultStatus.ZAPPED, killing_test=COLLECTION_KILLING_TEST
+        )
+
+        result = _confirm_kill(collection_kill, ['t.py::test_a'], session, tmp_path)
+
+        assert result.status == GremlinResultStatus.ERROR
+        fake_unmutated_run.assert_not_called()
+
+    def it_confirms_an_empty_selection_once_as_the_whole_suite(
+        self, session: GremlinSession, fake_unmutated_run: MagicMock, tmp_path: Path
+    ) -> None:
+        _confirm_kill(_timeout('g001'), [], session, tmp_path)
+        _confirm_kill(_timeout('g002'), [], session, tmp_path)
+
+        assert fake_unmutated_run.call_count == 1
+        assert fake_unmutated_run.call_args.args[1] == []
+
+    def it_names_the_whole_suite_when_the_selection_is_empty(
+        self, session: GremlinSession, fake_unmutated_run: MagicMock, tmp_path: Path
+    ) -> None:
+        fake_unmutated_run.return_value = HANGS
+
+        message = _confirm_kill(_timeout(), [], session, tmp_path).error_output
+
+        assert message is not None
+        assert 'the whole suite' in message
 
 
 @pytest.mark.medium

@@ -34,10 +34,13 @@ class MutationScore:
         total: Total number of gremlins tested.
         zapped: Number of gremlins caught by tests.
         survived: Number of gremlins that escaped tests.
-        timeout: Number of gremlins that caused test timeouts.
+        timeout: Number of gremlins that caused test timeouts (confirmed ones; a timeout the unmutated
+            tests also hit is counted under ``error``).
         error: Number of gremlins that caused errors.
         pardoned: Number of gremlins explicitly pardoned (excluded from scoring).
         results: The underlying list of results.
+        mutant_timeout: Per-gremlin timeout in seconds the run used, named in the timeout warning;
+            ``None`` when unknown.
     """
 
     total: int
