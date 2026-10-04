@@ -98,7 +98,16 @@ class DescribeRunControl:
 
         outcome = run_control([sys.executable, str(script)], ['a.py::t1', 'b.py::t2'], tmp_path, {}, timeout=30)
 
-        assert outcome.output.strip() == '--collect-only a.py::t1 b.py::t2'
+        assert outcome.output.strip() == '--collect-only --tb=short a.py::t1 b.py::t2'
+
+    def it_overrides_an_earlier_tb_no_so_collection_errors_keep_their_cause(self, tmp_path: Path) -> None:
+        code = 'import sys; print(*sys.argv[1:]); sys.exit(4)'
+        script = tmp_path / 'echo_args.py'
+        script.write_text(code)
+
+        outcome = run_control([sys.executable, str(script), '--tb=no', '-q'], [], tmp_path, {}, timeout=30)
+
+        assert outcome.output.split()[-1] == '--tb=short'
 
     def it_stops_at_the_first_failing_chunk(self, tmp_path: Path) -> None:
         marker = tmp_path / 'runs.txt'

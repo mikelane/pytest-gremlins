@@ -132,7 +132,7 @@ def run_control(
     for chunk in chunk_node_ids(node_ids, max_chars_per_command):
         try:
             completed = subprocess.run(  # Intentional: runs the pytest bootstrap
-                [*command, '--collect-only', *chunk],
+                [*command, '--collect-only', '--tb=short', *chunk],
                 cwd=str(cwd),
                 env=dict(env),
                 capture_output=True,
