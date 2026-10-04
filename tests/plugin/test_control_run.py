@@ -190,6 +190,11 @@ class DescribeRunUnmutated:
 
         assert not outcome.timed_out
 
+    def it_does_not_report_a_timeout_when_the_run_cannot_be_launched(self, tmp_path: Path) -> None:
+        outcome = run_unmutated([str(tmp_path / 'no-such-python')], [], tmp_path, {}, timeout=30)
+
+        assert not outcome.timed_out
+
     def it_passes_the_node_ids_after_the_command(self, tmp_path: Path) -> None:
         recorded = tmp_path / 'argv.txt'
         code = f'import sys, pathlib; pathlib.Path({str(recorded)!r}).write_text(" ".join(sys.argv[1:]))'

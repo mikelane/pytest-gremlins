@@ -10,6 +10,7 @@ once, with no active gremlin, in ``--collect-only`` mode, and explains the resul
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import re
 import subprocess
 import time
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
         Sequence,
     )
     from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 UNATTRIBUTABLE_MARKER = 'load_failures_unattributable'
 """File written next to ``sources.json`` when the control run failed; the bootstrap then stops
@@ -103,7 +106,8 @@ def run_unmutated(
         timeout: Seconds the run may take, the same limit the gremlin ran under.
 
     Returns:
-        Whether the run outlasted ``timeout``, and how long it took.
+        Whether the run outlasted ``timeout``, and how long it took. A run that cannot be launched
+        did not outlast it, so the gremlin's timeout stands rather than aborting the whole session.
     """
     started = time.monotonic()
     try:
@@ -117,6 +121,8 @@ def run_unmutated(
         )
     except subprocess.TimeoutExpired:
         return UnmutatedRunOutcome(timed_out=True, seconds=time.monotonic() - started)
+    except OSError as launch_error:
+        logger.warning('Could not run the unmutated selection to confirm a timeout: %s', launch_error)
     return UnmutatedRunOutcome(timed_out=False, seconds=time.monotonic() - started)
 
 
