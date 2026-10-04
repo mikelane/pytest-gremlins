@@ -10,6 +10,7 @@ once, with no active gremlin, in ``--collect-only`` mode, and explains the resul
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 import subprocess
 import time
 from typing import TYPE_CHECKING
@@ -50,17 +51,12 @@ _DIAGNOSTIC_INTRO = (
 
 _HINTS = (
     (
-        '__file__',
-        'Hint: a module reads __file__ at import time, but instrumented modules have no __file__ '
-        '(see https://github.com/mikelane/pytest-gremlins/issues/525).',
-    ),
-    (
-        'import file mismatch',
+        r'import file mismatch',
         'Hint: an option such as --import-mode was given only on the command line; put it in addopts '
         'so the gremlin subprocess receives it.',
     ),
     (
-        'not found:',
+        r'^ERROR: not found:',
         'Hint: a test id differs between processes (for example a parametrize id built from uuid, '
         'random or faker); make the ids deterministic.',
     ),
@@ -102,7 +98,7 @@ def chunk_node_ids(node_ids: Sequence[str], max_chars: int) -> list[list[str]]:
 def build_diagnostic(output: str) -> str:
     """Build the stderr message for a failed control run, with hints for the common causes."""
     tail = '\n'.join(output.strip().splitlines()[-DIAGNOSTIC_TAIL_LINES:])
-    hints = [hint for needle, hint in _HINTS if needle in output]
+    hints = [hint for pattern, hint in _HINTS if re.search(pattern, output, re.MULTILINE)]
     return '\n'.join([_DIAGNOSTIC_INTRO, tail, *hints])
 
 

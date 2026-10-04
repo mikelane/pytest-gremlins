@@ -54,13 +54,35 @@ class DescribeBuildDiagnostic:
     @pytest.mark.parametrize(
         ('output', 'hint'),
         [
-            pytest.param("AttributeError: module 'sample' has no attribute '__file__'", 'issues/525', id='dunder-file'),
             pytest.param('import file mismatch:\nimported module', '--import-mode', id='import-mode'),
             pytest.param('ERROR: not found: x.py::test_a[abc]', 'parametrize', id='parametrize-ids'),
+            pytest.param(
+                'collected 1 item\nERROR: not found: test_x.py::test_y[3f9a]\n(no match in any of [<Module>])',
+                'make the ids deterministic',
+                id='parametrize-ids-real-shape',
+            ),
         ],
     )
     def it_adds_a_hint_for_the_common_causes(self, output: str, hint: str) -> None:
         assert hint in build_diagnostic(output)
+
+    def it_does_not_blame_the_dunder_file_issue_for_an_import_file_mismatch(self) -> None:
+        output = (
+            "import file mismatch:\nimported module 'test_same_name' has this __file__ attribute:\n"
+            '  /p/first/test_same_name.py\nwhich is not the same as the test file we want to collect:'
+        )
+
+        assert 'issues/525' not in build_diagnostic(output)
+
+    @pytest.mark.parametrize(
+        'output',
+        [
+            pytest.param("    raise ImportError('required module not found: helperlib')", id='source-line'),
+            pytest.param('E   ImportError: required module not found: helperlib', id='exception-message'),
+        ],
+    )
+    def it_ignores_not_found_text_that_is_not_pytests_own_error_line(self, output: str) -> None:
+        assert 'make the ids deterministic' not in build_diagnostic(output)
 
     def it_adds_no_hint_for_an_unrecognized_cause(self) -> None:
         assert 'Hint' not in build_diagnostic('something else entirely')

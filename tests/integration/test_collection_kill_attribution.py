@@ -58,6 +58,7 @@ _MODES = {
 
 _DIAGNOSTIC = 'the unmutated test suite fails to load in the gremlin subprocess'
 _IMPORT_MODE_HINT = 'put it in addopts'
+_PARAMETRIZE_ID_HINT = 'make the ids deterministic'
 
 
 def _statuses_and_killers(pytester: pytest.Pytester) -> list[tuple[str, str | None]]:
@@ -108,4 +109,7 @@ class DescribeLoadFailuresTheMutantDidNotCause:
     def it_names_the_cause_in_the_diagnostic(self, pytester_with_markers: pytest.Pytester, mode: str) -> None:
         result = _run_with_cli_only_import_mode(pytester_with_markers, mode)
 
-        assert _IMPORT_MODE_HINT in result.stderr.str()
+        diagnostic = result.stderr.str()
+        assert _IMPORT_MODE_HINT in diagnostic
+        assert 'issues/525' not in diagnostic
+        assert _PARAMETRIZE_ID_HINT not in diagnostic
