@@ -190,10 +190,12 @@ class DescribeRunUnmutated:
 
         assert not outcome.timed_out
 
-    def it_does_not_report_a_timeout_when_the_run_cannot_be_launched(self, tmp_path: Path) -> None:
+    def it_reports_a_launch_error_instead_of_a_timeout_when_the_run_cannot_be_launched(self, tmp_path: Path) -> None:
         outcome = run_unmutated([str(tmp_path / 'no-such-python')], [], tmp_path, {}, timeout=30)
 
         assert not outcome.timed_out
+        assert outcome.launch_error is not None
+        assert 'no-such-python' in outcome.launch_error
 
     def it_passes_the_node_ids_after_the_command(self, tmp_path: Path) -> None:
         recorded = tmp_path / 'argv.txt'

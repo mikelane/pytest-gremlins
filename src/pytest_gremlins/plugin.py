@@ -59,6 +59,7 @@ from pytest_gremlins.config import (
 from pytest_gremlins.control_run import (
     MAX_SELECTION_FAILURE_OUTPUT_CHARS,
     SELECTION_FAILS_TO_LOAD_PREFIX,
+    TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX,
     UNATTRIBUTABLE_MARKER,
     ControlRunOutcome,
     UnmutatedRunOutcome,
@@ -2100,7 +2101,14 @@ def _confirm_timeout_kill(
         gremlin_session.unmutated_timeout_checks[selection] = run_unmutated(
             command, node_ids, rootdir, env, timeout=gremlin_session.mutant_timeout
         )
-    if not gremlin_session.unmutated_timeout_checks[selection].timed_out:
+    unmutated_outcome = gremlin_session.unmutated_timeout_checks[selection]
+    if unmutated_outcome.launch_error is not None:
+        return dataclass_replace(
+            result,
+            status=GremlinResultStatus.ERROR,
+            error_output=f'{TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX} {unmutated_outcome.launch_error}',
+        )
+    if not unmutated_outcome.timed_out:
         return result
     return dataclass_replace(
         result,
@@ -3296,7 +3304,13 @@ def _cache_gremlin_result(
     # the user is told to fix; replaying it from a warm cache after the fix would keep reporting stale errors.
     if not gremlin_session.load_failures_attributable:
         return
-    if (result.error_output or '').startswith((SELECTION_FAILS_TO_LOAD_PREFIX, TIMEOUT_NOT_CONFIRMED_PREFIX)):
+    # Skip caching errors from load failures and timeout issues
+    skip_prefixes = (
+        SELECTION_FAILS_TO_LOAD_PREFIX,
+        TIMEOUT_NOT_CONFIRMED_PREFIX,
+        TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX,
+    )
+    if (result.error_output or '').startswith(skip_prefixes):
         return
 
     source_hash = gremlin_session.source_hashes.get(gremlin.file_path, '')

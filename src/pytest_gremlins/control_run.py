@@ -44,6 +44,11 @@ SELECTION_FAILS_TO_LOAD_PREFIX = (
 )
 """Start of the ``error_output`` of a collection kill that was downgraded to ERROR."""
 
+TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX = (
+    'timeout could not be confirmed because the unmutated selection could not be launched; error:'
+)
+"""Start of the ``error_output`` of a timeout that cannot be confirmed due to a launch failure."""
+
 CONTROL_RUN_TIMEOUT_SECONDS = 300
 """Seconds one control command may run before the suite counts as unable to load."""
 
@@ -83,6 +88,7 @@ class UnmutatedRunOutcome:
 
     timed_out: bool
     seconds: float
+    launch_error: str | None = None
 
 
 def run_unmutated(
@@ -106,8 +112,9 @@ def run_unmutated(
         timeout: Seconds the run may take, the same limit the gremlin ran under.
 
     Returns:
-        Whether the run outlasted ``timeout``, and how long it took. A run that cannot be launched
-        did not outlast it, so the gremlin's timeout stands rather than aborting the whole session.
+        Whether the run outlasted ``timeout``, and how long it took. If the run cannot be launched,
+        a launch_error is set; this does not count as timing out, and the timeout confirmation
+        becomes an ERROR result instead.
     """
     started = time.monotonic()
     try:
@@ -123,6 +130,7 @@ def run_unmutated(
         return UnmutatedRunOutcome(timed_out=True, seconds=time.monotonic() - started)
     except OSError as launch_error:
         logger.warning('Could not run the unmutated selection to confirm a timeout: %s', launch_error)
+        return UnmutatedRunOutcome(timed_out=False, seconds=time.monotonic() - started, launch_error=str(launch_error))
     return UnmutatedRunOutcome(timed_out=False, seconds=time.monotonic() - started)
 
 

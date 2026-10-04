@@ -120,6 +120,20 @@ class DescribeConfirmTimeoutKill:
 
         assert fake_unmutated_run.call_count == 2
 
+    def it_downgrades_a_timeout_to_error_when_the_unmutated_selection_cannot_be_launched(
+        self, session: GremlinSession, fake_unmutated_run: MagicMock, tmp_path: Path
+    ) -> None:
+        fake_unmutated_run.return_value = UnmutatedRunOutcome(
+            timed_out=False, seconds=0.0, launch_error='[Errno 2] No such file or directory'
+        )
+
+        result = _confirm_timeout_kill(_timeout(), ['t.py::test_a'], session, tmp_path)
+
+        assert result.status == GremlinResultStatus.ERROR
+        assert result.error_output is not None
+        assert 'could not be launched' in result.error_output
+        assert '[Errno 2]' in result.error_output
+
     @pytest.mark.parametrize(
         'result',
         [
@@ -222,5 +236,21 @@ class DescribeCachingOfDowngradedTimeouts:
         downgraded = _confirm_timeout_kill(_timeout(), ['t.py::test_a'], session, tmp_path)
 
         _cache_gremlin_result(_gremlin(), [], downgraded, session)
+
+        cache.cache_result_deferred.assert_not_called()
+
+    def it_does_not_cache_a_timeout_with_a_launch_error(
+        self,
+        cached_session: tuple[GremlinSession, MagicMock],
+        fake_unmutated_run: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        session, cache = cached_session
+        fake_unmutated_run.return_value = UnmutatedRunOutcome(
+            timed_out=False, seconds=0.0, launch_error='[Errno 2] No such file or directory'
+        )
+        error_result = _confirm_timeout_kill(_timeout(), ['t.py::test_a'], session, tmp_path)
+
+        _cache_gremlin_result(_gremlin(), [], error_result, session)
 
         cache.cache_result_deferred.assert_not_called()
