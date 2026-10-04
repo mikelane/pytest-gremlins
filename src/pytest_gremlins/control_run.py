@@ -49,6 +49,8 @@ _DIAGNOSTIC_INTRO = (
     "can't be attributed to mutants; they're reported as errors. Cause:"
 )
 
+_ANSI_SGR_SEQUENCE = re.compile(r'\x1b\[[0-9;]*m')
+
 _HINTS = (
     (
         r'import file mismatch',
@@ -98,7 +100,8 @@ def chunk_node_ids(node_ids: Sequence[str], max_chars: int) -> list[list[str]]:
 def build_diagnostic(output: str) -> str:
     """Build the stderr message for a failed control run, with hints for the common causes."""
     tail = '\n'.join(output.strip().splitlines()[-DIAGNOSTIC_TAIL_LINES:])
-    hints = [hint for pattern, hint in _HINTS if re.search(pattern, output, re.MULTILINE)]
+    uncolored = _ANSI_SGR_SEQUENCE.sub('', output)
+    hints = [hint for pattern, hint in _HINTS if re.search(pattern, uncolored, re.MULTILINE)]
     return '\n'.join([_DIAGNOSTIC_INTRO, tail, *hints])
 
 

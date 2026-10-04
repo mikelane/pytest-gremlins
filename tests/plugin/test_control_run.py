@@ -84,6 +84,24 @@ class DescribeBuildDiagnostic:
     def it_ignores_not_found_text_that_is_not_pytests_own_error_line(self, output: str) -> None:
         assert 'make the ids deterministic' not in build_diagnostic(output)
 
+    @pytest.mark.parametrize(
+        ('output', 'hint'),
+        [
+            pytest.param(
+                '\x1b[0m\n\x1b[31mERROR: not found: t.py::test_a[3f9a]\n(no match in any of [<Module>])\n\x1b[0m\n',
+                'make the ids deterministic',
+                id='parametrize-ids',
+            ),
+            pytest.param(
+                '\x1b[31mimport file mismatch:\x1b[0m\nimported module',
+                'put it in addopts',
+                id='import-mode',
+            ),
+        ],
+    )
+    def it_adds_a_hint_even_when_pytest_colors_its_output(self, output: str, hint: str) -> None:
+        assert hint in build_diagnostic(output)
+
     def it_adds_no_hint_for_an_unrecognized_cause(self) -> None:
         assert 'Hint' not in build_diagnostic('something else entirely')
 
