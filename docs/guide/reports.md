@@ -58,8 +58,9 @@ Timeout, Error, and Pardoned lines only appear when their count is greater than 
 |-------|-------------|
 | Zapped | Number and percentage of gremlins caught by tests |
 | Survived | Number and percentage of gremlins that escaped tests |
-| Timeout | Number and percentage of gremlins that caused test timeouts (shown when > 0) |
-| Error | Number and percentage of gremlins that caused errors (shown when > 0) |
+| Timeout | Number and percentage of gremlins that caused test timeouts and whose tests finish in time without the mutant (shown when > 0); these count as kills |
+| Error | Number and percentage of gremlins that caused errors, including timeouts the unmutated tests also hit (shown when > 0) |
+| Warning | One line giving how many timeouts were counted as errors because the unmutated tests also exceeded the timeout, and how to raise it (shown when > 0) |
 | Pardoned | Number of gremlins pardoned via inline pragma, excluded from score (shown when > 0) |
 
 **Top Surviving Gremlins:**
@@ -328,6 +329,17 @@ The directory is created automatically if it does not exist.
 | `error` | integer | Number of gremlins that caused errors |
 | `pardoned` | integer | Number of gremlins pardoned via inline pragma |
 | `percentage` | float | Mutation score percentage (0-100) |
+
+**Timeout Warning Object (`timeout_warning`):**
+
+Present at the top level only when one or more timeouts were downgraded to `error` because the
+unmutated tests also exceeded the timeout.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `downgraded` | integer | Number of timeouts counted as errors instead of kills |
+| `mutant_timeout` | integer | The per-gremlin timeout in seconds |
+| `message` | string | The explanation, including the option to raise the timeout |
 
 **Files Object:**
 

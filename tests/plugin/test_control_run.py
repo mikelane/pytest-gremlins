@@ -12,6 +12,7 @@ from pytest_gremlins.control_run import (
     build_diagnostic,
     chunk_node_ids,
     run_control,
+    run_unmutated,
 )
 
 
@@ -170,3 +171,29 @@ class DescribeRunControl:
         outcome = run_control(self._command('import time; time.sleep(0.2)'), [], tmp_path, {}, timeout=30)
 
         assert outcome.seconds >= 0.2
+
+
+@pytest.mark.medium
+class DescribeRunUnmutated:
+    def it_reports_a_run_that_outlasts_the_timeout(self, tmp_path: Path) -> None:
+        command = [sys.executable, '-c', 'import time; time.sleep(30)']
+
+        outcome = run_unmutated(command, [], tmp_path, {}, timeout=1)
+
+        assert outcome.timed_out
+
+    @pytest.mark.parametrize('exit_code', [0, 1])
+    def it_reports_a_run_that_finishes_in_time_whatever_its_exit_code(self, tmp_path: Path, exit_code: int) -> None:
+        command = [sys.executable, '-c', f'raise SystemExit({exit_code})']
+
+        outcome = run_unmutated(command, [], tmp_path, {}, timeout=30)
+
+        assert not outcome.timed_out
+
+    def it_passes_the_node_ids_after_the_command(self, tmp_path: Path) -> None:
+        recorded = tmp_path / 'argv.txt'
+        code = f'import sys, pathlib; pathlib.Path({str(recorded)!r}).write_text(" ".join(sys.argv[1:]))'
+
+        run_unmutated([sys.executable, '-c', code], ['a.py::t', 'b.py::t'], tmp_path, {}, timeout=30)
+
+        assert recorded.read_text() == 'a.py::t b.py::t'

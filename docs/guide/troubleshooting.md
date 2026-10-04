@@ -410,10 +410,21 @@ Common causes:
 - Test is inherently slow
 - System under heavy load
 
+A `TIMEOUT` is only scored as a kill when the same tests finish inside the timeout without the mutant.
+If they time out without it too, the gremlin is reported as `ERROR` instead (never as a kill), the
+terminal summary shows a line such as:
+
+```text
+Warning: 3 timeouts counted as errors, not kills: the unmutated tests also exceeded 1s. Raise it with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout.
+```
+
+and the JSON report gains a `timeout_warning` object with the count, the timeout, and the message.
+
 **Solution:**
 
-1. The default timeout is 30 seconds (currently not configurable). Identify slow tests and optimize
-   them:
+1. Raise the timeout with `--gremlin-mutant-timeout` or `[tool.pytest-gremlins].mutant_timeout`
+   (see [Per-Mutant Timeout](configuration.md#per-mutant-timeout)), or identify slow tests and
+   optimize them:
 
    ```bash
    pytest --durations=10
@@ -758,8 +769,8 @@ Mutation testing works locally but fails in CI with:
        pytest --gremlins
    ```
 
-2. **Timeout errors:** The timeout is currently fixed at 30 seconds. If tests are timing out,
-   optimize them or exclude slow tests from mutation testing.
+2. **Timeout errors:** The timeout defaults to 30 seconds. If tests are timing out, raise it with
+   `--gremlin-mutant-timeout`, optimize the tests, or exclude slow tests from mutation testing.
 
 3. **Memory limits:** Reduce parallelism:
 

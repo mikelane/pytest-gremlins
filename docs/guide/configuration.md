@@ -534,6 +534,13 @@ The value must be a positive integer number of seconds, at most 86400 (one day);
 the TOML key. The incremental cache keys each verdict on the timeout it was reached under, so a changed
 timeout judges every gremlin again.
 
+A timeout is only scored as a kill when the gremlin's tests finish inside the limit without the mutant.
+When a gremlin times out, pytest-gremlins reruns its exact selection of tests unmutated under the same
+limit (once per distinct selection). If that run times out too, the limit is shorter than the tests
+themselves, so the gremlin is reported as an error, not a kill, and the summary and JSON report say how
+many were downgraded. A limit that is too short can only lower the score. Downgraded results are not
+written to the incremental cache.
+
 ### Batch Execution
 
 Batch mode reduces subprocess overhead by testing multiple gremlins per subprocess:

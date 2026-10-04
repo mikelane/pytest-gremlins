@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.reporting.json_reporter import JsonReporter
-from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    TIMEOUT_NOT_CONFIRMED_PREFIX,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
 
 if TYPE_CHECKING:
@@ -249,3 +252,23 @@ class DescribeJsonReporterSelectedTests:
         data = json.loads(reporter.to_json(score))
 
         assert 'execution_time_ms' not in data['results'][0]
+
+
+@pytest.mark.small
+class DescribeJsonReporterTimeoutWarning:
+    """The report says when timeouts were downgraded because the unmutated tests also timed out."""
+
+    def it_omits_the_field_when_nothing_was_downgraded(self, make_result):
+        score = MutationScore.from_results([make_result(GremlinResultStatus.TIMEOUT)], mutant_timeout=3)
+
+        assert 'timeout_warning' not in json.loads(JsonReporter().to_json(score))
+
+    def it_reports_count_timeout_and_message_when_timeouts_were_downgraded(self, make_result):
+        downgraded = make_result(GremlinResultStatus.ERROR, error_output=f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (3s) ...')
+        score = MutationScore.from_results([downgraded], mutant_timeout=3)
+
+        warning = json.loads(JsonReporter().to_json(score))['timeout_warning']
+
+        assert warning['downgraded'] == 1
+        assert warning['mutant_timeout'] == 3
+        assert '--gremlin-mutant-timeout' in warning['message']

@@ -20,7 +20,10 @@ if TYPE_CHECKING:
 
     from pytest_gremlins.reporting.results import GremlinResult
 
-from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    TIMEOUT_NOT_CONFIRMED_PREFIX,
+    GremlinResultStatus,
+)
 
 
 @dataclass(frozen=True)
@@ -44,13 +47,15 @@ class MutationScore:
     error: int
     pardoned: int
     results: tuple[GremlinResult, ...]
+    mutant_timeout: int | None = None
 
     @classmethod
-    def from_results(cls, results: Sequence[GremlinResult]) -> MutationScore:
+    def from_results(cls, results: Sequence[GremlinResult], mutant_timeout: int | None = None) -> MutationScore:
         """Create a MutationScore from a sequence of GremlinResults.
 
         Args:
             results: Sequence of GremlinResult objects to aggregate.
+            mutant_timeout: Per-gremlin timeout in seconds the run used, named in the timeout warning.
 
         Returns:
             MutationScore with counts for each status.
@@ -69,6 +74,33 @@ class MutationScore:
             error=error,
             pardoned=pardoned,
             results=tuple(results),
+            mutant_timeout=mutant_timeout,
+        )
+
+    @property
+    def downgraded_timeouts(self) -> int:
+        """Number of timeouts downgraded to errors because the unmutated tests also timed out."""
+        return sum(
+            1
+            for r in self.results
+            if r.status == GremlinResultStatus.ERROR and (r.error_output or '').startswith(TIMEOUT_NOT_CONFIRMED_PREFIX)
+        )
+
+    @property
+    def timeout_warning(self) -> str | None:
+        """Explain downgraded timeouts, or ``None`` when there were none.
+
+        Returns:
+            One line giving the count, the timeout, and the options that raise it.
+        """
+        count = self.downgraded_timeouts
+        if not count:
+            return None
+        noun = 'timeout' if count == 1 else 'timeouts'
+        timeout = f'{self.mutant_timeout}s' if self.mutant_timeout is not None else 'the mutant timeout'
+        return (
+            f'{count} {noun} counted as errors, not kills: the unmutated tests also exceeded {timeout}. '
+            'Raise it with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout.'
         )
 
     @property
@@ -76,7 +108,8 @@ class MutationScore:
         """Calculate mutation score as a percentage.
 
         The score is (zapped + timeout) / (total - pardoned) * 100.
-        Timeouts count as zapped because the test detected something wrong.
+        A timeout counts as zapped because the test detected something wrong, but only
+        a confirmed one: a timeout whose unmutated selection also times out is an error.
         Pardoned gremlins are excluded from the denominator — they are
         intentionally suppressed and should not affect the score.
 
@@ -99,7 +132,8 @@ class MutationScore:
             results_by_file[result.gremlin.file_path].append(result)
 
         return {
-            file_path: MutationScore.from_results(file_results) for file_path, file_results in results_by_file.items()
+            file_path: MutationScore.from_results(file_results, mutant_timeout=self.mutant_timeout)
+            for file_path, file_results in results_by_file.items()
         }
 
     def top_survivors(self, limit: int = 10) -> list[GremlinResult]:

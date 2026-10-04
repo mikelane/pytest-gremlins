@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    TIMEOUT_NOT_CONFIRMED_PREFIX,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
 
 
@@ -171,3 +174,46 @@ class DescribeMutationScoreTopSurvivors:
         score = MutationScore.from_results(results)
         survivors = score.top_survivors()
         assert len(survivors) == 0
+
+
+@pytest.mark.small
+class DescribeMutationScoreWithDowngradedTimeouts:
+    """A timeout downgraded to an error stays in the denominator and is reported."""
+
+    @staticmethod
+    def _downgraded(make_result):
+        return make_result(GremlinResultStatus.ERROR, error_output=f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (3s) ...')
+
+    def it_scores_nine_downgraded_timeouts_and_one_kill_as_ten_percent(self, make_result):
+        results = [make_result(GremlinResultStatus.ZAPPED)] + [self._downgraded(make_result) for _ in range(9)]
+
+        assert MutationScore.from_results(results, mutant_timeout=3).percentage == 10.0
+
+    def it_counts_downgraded_timeouts(self, make_result):
+        results = [
+            self._downgraded(make_result),
+            self._downgraded(make_result),
+            make_result(GremlinResultStatus.TIMEOUT),
+        ]
+
+        assert MutationScore.from_results(results, mutant_timeout=3).downgraded_timeouts == 2
+
+    def it_does_not_count_other_errors_as_downgraded_timeouts(self, make_result):
+        results = [make_result(GremlinResultStatus.ERROR, error_output='boom')]
+
+        assert MutationScore.from_results(results, mutant_timeout=3).downgraded_timeouts == 0
+
+    def it_has_no_warning_without_downgraded_timeouts(self, make_result):
+        score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)], mutant_timeout=3)
+
+        assert score.timeout_warning is None
+
+    def it_warns_with_the_count_the_timeout_and_the_option_to_raise_it(self, make_result):
+        results = [self._downgraded(make_result), self._downgraded(make_result)]
+
+        warning = MutationScore.from_results(results, mutant_timeout=3).timeout_warning
+
+        assert warning is not None
+        assert '2 timeouts' in warning
+        assert '3s' in warning
+        assert '--gremlin-mutant-timeout' in warning

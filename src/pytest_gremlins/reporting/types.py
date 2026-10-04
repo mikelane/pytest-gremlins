@@ -111,12 +111,21 @@ class JsonResultEntry(TypedDict):
     selected_tests: NotRequired[list[str]]
 
 
+class JsonTimeoutWarning(TypedDict):
+    """Present when timeouts were downgraded to errors because the unmutated tests also timed out."""
+
+    downgraded: int
+    mutant_timeout: int | None
+    message: str
+
+
 class JsonReport(TypedDict):
     """Top-level internal JSON report structure."""
 
     summary: JsonSummary
     files: dict[str, JsonFileStats]
     results: list[JsonResultEntry]
+    timeout_warning: NotRequired[JsonTimeoutWarning]
 
 
 # ── SonarQube generic issue format ────────────────────────────────────

@@ -90,8 +90,8 @@ Enum of possible mutation test outcomes.
 |-------|---------|----------|
 | `ZAPPED` | Test caught the mutation | Good - tests working |
 | `SURVIVED` | Mutation not caught | Bad - test gap found |
-| `TIMEOUT` | Test execution timed out | Neutral - may indicate infinite loop |
-| `ERROR` | Error during execution | Neutral - investigate |
+| `TIMEOUT` | Test execution timed out, and the same tests finish in time without the mutant | Good - the mutant hung the tests (for example an infinite loop) |
+| `ERROR` | Error during execution, or a timeout the unmutated tests also hit | Neutral - investigate |
 | `PARDONED` | Explicitly suppressed via pragma | Neutral - excluded from scoring |
 
 ### Usage Example
@@ -147,7 +147,14 @@ The mutation score represents test effectiveness:
 score = (zapped + timeout) / (total - pardoned) * 100
 ```
 
-Timeouts count as "caught" because the test detected abnormal behavior.
+A timeout counts as "caught" only when it is confirmed: pytest-gremlins reruns the gremlin's tests
+without the mutant under the same timeout, once per distinct selection of tests. If those tests finish
+in time, the mutant is what hung them, and the timeout is a kill. If they time out too, the timeout
+says nothing about the mutant, so the gremlin is reported as `ERROR`, which stays in the denominator.
+A timeout that is too short can therefore only lower the score, never raise it.
+
+`MutationScore.downgraded_timeouts` counts those gremlins, and `MutationScore.timeout_warning` holds the
+one-line explanation (or `None`).
 
 ### Usage Example
 

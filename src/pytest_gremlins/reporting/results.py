@@ -18,6 +18,13 @@ if TYPE_CHECKING:
     from pytest_gremlins.instrumentation.gremlin import Gremlin
 
 
+TIMEOUT_NOT_CONFIRMED_PREFIX = (
+    'the gremlin timed out, but its own selection of tests also exceeds the mutant timeout without a mutant, '
+    'so the timeout is no evidence that the mutant was caught'
+)
+"""Start of the ``error_output`` of a timeout that was downgraded to ERROR."""
+
+
 class GremlinResultStatus(Enum):
     """Status of a gremlin after mutation testing.
 
