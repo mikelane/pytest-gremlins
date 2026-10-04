@@ -11,7 +11,10 @@ from pytest_gremlins.gremlins_options import (
     GREMLINS_VALUE_OPTS,
     addopts_without_gremlins,
 )
-from pytest_gremlins.plugin import _prescan_env, pytest_addoption
+from pytest_gremlins.plugin import (
+    _prescan_env,
+    pytest_addoption,
+)
 
 
 class _OptionRecorder:
