@@ -96,7 +96,7 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Bump version (updates pyproject.toml, __init__.py, CHANGELOG.md, creates commit + tag)
+# Bump version (updates pyproject.toml, uv.lock, __init__.py, creates commit + tag)
 # ---------------------------------------------------------------------------
 release_step="bump"
 echo "Bumping version..."
