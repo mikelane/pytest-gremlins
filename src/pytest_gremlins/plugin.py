@@ -2353,7 +2353,7 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     for node_id in node_ids:
         # Strip any plugin-added suffixes like "[SMALL]", "[MEDIUM]", etc.
         # These are display decorations, not part of the actual node ID
-        cleaned_node_id = re.sub(r'\s*\[[A-Z]+\]\s*$', '', node_id)
+        cleaned_node_id = re.sub(r'\s+\[[A-Z]+\]\s*$', '', node_id)
 
         # Node IDs have format: path/to/file.py::test_name
         # or just: file.py::test_name

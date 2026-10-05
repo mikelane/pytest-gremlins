@@ -300,6 +300,17 @@ class DescribeMakeNodeIdsRelative:
 
         assert result == ['tests/test_module.py::test_func']
 
+    @pytest.mark.parametrize('node_id', ['t.py::test_x[A]', 't.py::test_x[GET]', 't.py::TestC::test_x[OK-B]'])
+    def it_keeps_parametrized_ids_that_look_like_a_category_marker(self, tmp_path: Path, node_id: str) -> None:
+        """An all-caps parametrize id such as ``[A]`` is part of the node id, not a plugin suffix (issue #571)."""
+        assert _make_node_ids_relative([node_id], tmp_path) == [node_id]
+
+    def it_strips_only_the_spaced_marker_after_a_parametrized_id(self, tmp_path: Path) -> None:
+        """Only the trailing `` [SMALL]`` is dropped; the ``[A]`` parametrize id stays."""
+        result = _make_node_ids_relative(['t.py::test_x[A] [SMALL]'], tmp_path)
+
+        assert result == ['t.py::test_x[A]']
+
     def it_strips_rootdir_from_absolute_path_without_double_colon(self, tmp_path: Path) -> None:
         """Strips rootdir prefix from node IDs that are just file paths (no ::)."""
         rootdir = tmp_path
