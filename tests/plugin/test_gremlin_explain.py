@@ -96,11 +96,10 @@ def sample_gremlin():
 def _build_session_with_drift(sample_gremlin: Gremlin) -> GremlinSession:
     """Build a GremlinSession whose coverage-map key drifts from test_node_ids.
 
-    The coverage map records a key with a ``[SMALL]`` marker suffix
-    (lowercase-hyphen — the current ``[A-Z]+`` regex in
-    ``_make_node_ids_relative`` leaves it alone). The ``test_node_ids`` dict
-    stores the same test *without* the suffix, producing a one-token drift
-    between the two key spaces. This is the exact shape of the #387 bug.
+    The coverage map records a key with a `` [SMALL]`` marker suffix that was
+    never stripped. The ``test_node_ids`` dict stores the same test *without*
+    the suffix, producing a one-token drift between the two key spaces. This
+    is the exact shape of the #387 bug.
     """
     collector = CoverageCollector()
     drifted_key = 'tests/test_target.py::test_zero_case [SMALL]'

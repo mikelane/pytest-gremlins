@@ -18,6 +18,8 @@ _CASES = [
     ('test_x[x [y]]', 'test_x[x [y]]'),
     ('test_x[x [y]] [MEDIUM]', 'test_x[x [y]]'),
     ('test_x[GET]', 'test_x[GET]'),
+    ('test_x [SMALL] ', 'test_x'),
+    ('test_x [custom-tag]', 'test_x [custom-tag]'),
     ('test_x', 'test_x'),
 ]
 

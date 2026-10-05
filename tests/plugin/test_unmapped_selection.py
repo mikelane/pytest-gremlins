@@ -22,6 +22,8 @@ from pytest_gremlins.control_run import (
 from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
+    MAX_SELECTION_IDS_IN_MESSAGE,
+    UNMAPPED_SELECTION_PREFIX,
     GremlinSession,
     _build_filtered_test_command,
     _build_test_hashes_for_gremlin,
@@ -122,10 +124,48 @@ class DescribeUnrunnableSelection:
 
         result = _immediate_result_if_selection_unrunnable(gremlin, session)
 
+        assert result == GremlinResult(
+            gremlin=gremlin,
+            status=GremlinResultStatus.ERROR,
+            error_output=(
+                f'{UNMAPPED_SELECTION_PREFIX}: 2 selected test(s) have no pytest node id, '
+                f'so none could run: {UNMAPPED}, {OTHER_UNMAPPED}'
+            ),
+        )
+
+    def it_names_every_dropped_test_when_they_fit_in_the_message(self) -> None:
+        gremlin = _gremlin()
+        dropped = [f'tests/test_m.py::test_unmapped[{n}]' for n in range(MAX_SELECTION_IDS_IN_MESSAGE)]
+        session = _session(dropped)
+        _select_tests_for_gremlin_prioritized(gremlin, session)
+
+        result = _immediate_result_if_selection_unrunnable(gremlin, session)
+
         assert result is not None
-        assert result.status == GremlinResultStatus.ERROR
-        assert UNMAPPED in (result.error_output or '')
-        assert OTHER_UNMAPPED in (result.error_output or '')
+        assert (result.error_output or '').endswith(f'none could run: {", ".join(dropped)}')
+
+    def it_summarises_the_dropped_tests_beyond_the_message_limit(self) -> None:
+        gremlin = _gremlin()
+        dropped = [f'tests/test_m.py::test_unmapped[{n}]' for n in range(MAX_SELECTION_IDS_IN_MESSAGE + 2)]
+        session = _session(dropped)
+        _select_tests_for_gremlin_prioritized(gremlin, session)
+
+        result = _immediate_result_if_selection_unrunnable(gremlin, session)
+
+        assert result is not None
+        assert (result.error_output or '').endswith(
+            f'none could run: {", ".join(dropped[:MAX_SELECTION_IDS_IN_MESSAGE])} (and 2 more)'
+        )
+
+    def it_clears_a_stale_abstention_when_the_gremlin_is_selected_again_with_a_runnable_test(self) -> None:
+        gremlin = _gremlin()
+        session = _session([MAPPED])
+        session.unmapped_selections[gremlin.gremlin_id] = [UNMAPPED]
+        session.unrunnable_gremlin_ids.add(gremlin.gremlin_id)
+
+        _select_tests_for_gremlin_prioritized(gremlin, session)
+
+        assert _immediate_result_if_selection_unrunnable(gremlin, session) is None
 
     def it_scores_nothing_when_part_of_the_selection_still_runs(self) -> None:
         gremlin = _gremlin()
@@ -148,10 +188,10 @@ class DescribeUnmappedSelectionReport:
 
         _report_unmapped_selections(session)
 
-        lines = capsys.readouterr().err.splitlines()
-        assert len(lines) == 1
-        assert '2 selected test(s) for 2 gremlin(s)' in lines[0]
-        assert UNMAPPED in lines[0]
+        assert capsys.readouterr().err.splitlines() == [
+            f'pytest-gremlins: 2 selected test(s) for 2 gremlin(s) have no pytest node id and were not run, '
+            f'e.g. {UNMAPPED}. Gremlins left with no runnable test are scored ERROR.'
+        ]
 
     def it_is_not_escalated_by_a_filterwarnings_error_config(self, capsys: pytest.CaptureFixture[str]) -> None:
         """A project with ``filterwarnings = error`` must not crash on a green run because of this report (#543)."""
@@ -189,7 +229,9 @@ class DescribeExecutionLoopsAbstainOnUnrunnableSelection:
 
         results = _run_mutation_testing(MagicMock(spec=pytest.Session), _session([UNMAPPED]))
 
-        assert [r.status for r in results] == [GremlinResultStatus.ERROR]
+        assert [(r.status, (r.error_output or '').startswith(UNMAPPED_SELECTION_PREFIX)) for r in results] == [
+            (GremlinResultStatus.ERROR, True)
+        ]
 
     def it_never_submits_a_parallel_gremlin_whose_whole_selection_was_dropped(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -204,7 +246,9 @@ class DescribeExecutionLoopsAbstainOnUnrunnableSelection:
 
         results = _run_parallel_mutation_testing(MagicMock(spec=pytest.Session), _session([UNMAPPED]))
 
-        assert [r.status for r in results] == [GremlinResultStatus.ERROR]
+        assert [(r.status, (r.error_output or '').startswith(UNMAPPED_SELECTION_PREFIX)) for r in results] == [
+            (GremlinResultStatus.ERROR, True)
+        ]
 
     def it_never_batches_a_gremlin_whose_whole_selection_was_dropped(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -219,7 +263,9 @@ class DescribeExecutionLoopsAbstainOnUnrunnableSelection:
 
         results = _run_batch_mutation_testing(MagicMock(spec=pytest.Session), _session([UNMAPPED]))
 
-        assert [r.status for r in results] == [GremlinResultStatus.ERROR]
+        assert [(r.status, (r.error_output or '').startswith(UNMAPPED_SELECTION_PREFIX)) for r in results] == [
+            (GremlinResultStatus.ERROR, True)
+        ]
 
 
 @pytest.mark.small
