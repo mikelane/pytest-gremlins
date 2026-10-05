@@ -2787,7 +2787,7 @@ def _decode_numbits(numbits: bytes) -> list[int]:
     ]
 
 
-def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, PLR0915
+def _run_batch_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -2818,41 +2818,7 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, PLR
         selected_tests = _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
         gremlin_tests[gremlin.gremlin_id] = selected_tests
 
-    # Check cache and separate cached from uncached
-    cached_results: list[GremlinResult] = []
-    uncached_gremlins: list[Gremlin] = []
-    settled_without_running = 0
-
-    for gremlin in gremlins:
-        pardoned_result = _immediate_result_if_pardoned(gremlin)
-        if pardoned_result is not None:
-            cached_results.append(pardoned_result)
-            settled_without_running += 1
-            continue
-        unrunnable_result = _immediate_result_if_selection_unrunnable(gremlin, gremlin_session)
-        if unrunnable_result is not None:
-            cached_results.append(unrunnable_result)
-            settled_without_running += 1
-            continue
-        selected_tests = gremlin_tests[gremlin.gremlin_id]
-        cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
-        if cached_result is not None:
-            gremlin_session.cache_hits += 1
-            cached_results.append(cached_result)
-        else:
-            if gremlin_session.cache_enabled:
-                gremlin_session.cache_misses += 1
-            uncached_gremlins.append(gremlin)
-
-    # Report cache stats
-    if cached_results:
-        print(
-            _format_cache_report(
-                cache_hits=len(cached_results) - settled_without_running,
-                settled_without_running=settled_without_running,
-                to_test=len(uncached_gremlins),
-            )
-        )
+    cached_results, uncached_gremlins = _split_gremlins_needing_a_run(gremlins, gremlin_tests, gremlin_session)
 
     if not uncached_gremlins:
         return cached_results
@@ -2939,7 +2905,7 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, PLR
     return results
 
 
-def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, PLR0915
+def _run_parallel_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -2969,41 +2935,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
         selected_tests = _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
         gremlin_tests[gremlin.gremlin_id] = selected_tests
 
-    # Check cache and separate cached from uncached
-    cached_results: list[GremlinResult] = []
-    uncached_gremlins: list[Gremlin] = []
-    settled_without_running = 0
-
-    for gremlin in gremlins:
-        pardoned_result = _immediate_result_if_pardoned(gremlin)
-        if pardoned_result is not None:
-            cached_results.append(pardoned_result)
-            settled_without_running += 1
-            continue
-        unrunnable_result = _immediate_result_if_selection_unrunnable(gremlin, gremlin_session)
-        if unrunnable_result is not None:
-            cached_results.append(unrunnable_result)
-            settled_without_running += 1
-            continue
-        selected_tests = gremlin_tests[gremlin.gremlin_id]
-        cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
-        if cached_result is not None:
-            gremlin_session.cache_hits += 1
-            cached_results.append(cached_result)
-        else:
-            if gremlin_session.cache_enabled:
-                gremlin_session.cache_misses += 1
-            uncached_gremlins.append(gremlin)
-
-    # Report cache stats
-    if cached_results:
-        print(
-            _format_cache_report(
-                cache_hits=len(cached_results) - settled_without_running,
-                settled_without_running=settled_without_running,
-                to_test=len(uncached_gremlins),
-            )
-        )
+    cached_results, uncached_gremlins = _split_gremlins_needing_a_run(gremlins, gremlin_tests, gremlin_session)
 
     if not uncached_gremlins:
         return cached_results
@@ -3221,6 +3153,57 @@ def _print_unrunnable_selections(orphans: list[str], runnable_candidates: list[s
     for key in orphans:
         print(f'    selected   : {key!r}')
         print(f'    close match: {_close_matches_display(key, runnable_candidates)}')
+
+
+def _split_gremlins_needing_a_run(
+    gremlins: list[Gremlin],
+    gremlin_tests: dict[str, list[str]],
+    gremlin_session: GremlinSession,
+) -> tuple[list[GremlinResult], list[Gremlin]]:
+    """Separate gremlins whose verdict is already known from those that must run.
+
+    Pardoned and unrunnable gremlins are settled without running; the rest are looked
+    up in the cache. The cache hit and miss counters are updated and the split is
+    reported once.
+
+    Args:
+        gremlins: The gremlins to split, in run order.
+        gremlin_tests: The runnable selection for each gremlin, keyed by gremlin id.
+        gremlin_session: The current gremlin session.
+
+    Returns:
+        The results known without running, and the gremlins still to test.
+    """
+    known_results: list[GremlinResult] = []
+    gremlins_to_test: list[Gremlin] = []
+    settled_without_running = 0
+
+    for gremlin in gremlins:
+        settled_result = _immediate_result_if_pardoned(gremlin)
+        if settled_result is None:
+            settled_result = _immediate_result_if_selection_unrunnable(gremlin, gremlin_session)
+        if settled_result is not None:
+            known_results.append(settled_result)
+            settled_without_running += 1
+            continue
+        cached_result = _check_cache_for_gremlin(gremlin, gremlin_tests[gremlin.gremlin_id], gremlin_session)
+        if cached_result is not None:
+            gremlin_session.cache_hits += 1
+            known_results.append(cached_result)
+            continue
+        if gremlin_session.cache_enabled:
+            gremlin_session.cache_misses += 1
+        gremlins_to_test.append(gremlin)
+
+    if known_results:
+        print(
+            _format_cache_report(
+                cache_hits=len(known_results) - settled_without_running,
+                settled_without_running=settled_without_running,
+                to_test=len(gremlins_to_test),
+            )
+        )
+    return known_results, gremlins_to_test
 
 
 def _format_cache_report(*, cache_hits: int, settled_without_running: int, to_test: int) -> str:
@@ -3595,15 +3578,15 @@ def _immediate_result_if_selection_unrunnable(
     if gremlin.gremlin_id not in gremlin_session.unrunnable_gremlin_ids:
         return None
     dropped = gremlin_session.unmapped_selections[gremlin.gremlin_id]
-    shown = ', '.join(dropped[:MAX_SELECTION_IDS_IN_MESSAGE])
-    hidden = len(dropped) - MAX_SELECTION_IDS_IN_MESSAGE
-    suffix = f' (and {hidden} more)' if hidden > 0 else ''
+    shown_ids = ', '.join(dropped[:MAX_SELECTION_IDS_IN_MESSAGE])
+    hidden_count = len(dropped) - MAX_SELECTION_IDS_IN_MESSAGE
+    overflow_note = f' (and {hidden_count} more)' if hidden_count > 0 else ''
     return GremlinResult(
         gremlin=gremlin,
         status=GremlinResultStatus.ERROR,
         error_output=(
             f'{UNMAPPED_SELECTION_PREFIX}: {len(dropped)} selected test(s) have no pytest node id, '
-            f'so none could run: {shown}{suffix}'
+            f'so none could run: {shown_ids}{overflow_note}'
         ),
     )
 
