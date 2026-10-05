@@ -521,6 +521,7 @@ def discover_by_importlib_metadata(rootdir: Path) -> list[Path]:
 
 def merge_configs(
     file_config: GremlinConfig,
+    *,
     cli_operators: str | None = None,
     cli_targets: str | None = None,
     cli_exclude: list[str] | None = None,
@@ -536,7 +537,7 @@ def merge_configs(
     """Merge CLI arguments with file configuration.
 
     CLI arguments take precedence over pyproject.toml configuration.
-    Empty strings are treated as not provided.
+    Empty strings are treated as not provided. Every ``cli_*`` argument is keyword-only.
 
     Args:
         file_config: Configuration loaded from pyproject.toml.
