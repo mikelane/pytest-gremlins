@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.11.0 (2026-10-05)
+
+**Timeouts no longer inflate the score.** A per-mutant timeout shorter than the tests' own
+runtime made every gremlin time out, and each timeout counted as a kill, so a suite that
+asserts nothing could score 100%. Timeout kills are now confirmed before they count, and the
+timeout is configurable.
+
+### Upgrade notes
+
+- **A too-short timeout now produces ERRORs and a warning instead of an inflated score.** A
+  TIMEOUT stays a kill only if the gremlin's tests, run without the mutant, finish within
+  half of the timeout. Otherwise it becomes ERROR, which stays in the denominator, and the
+  terminal summary prints a warning (the JSON report carries a `timeout_warning` object).
+  To raise the limit (default 30 seconds, maximum 86400), set `mutant_timeout` in
+  `[tool.pytest-gremlins]` or pass `--gremlin-mutant-timeout=SECONDS`; the CLI flag wins.
+  (#565, #575)
+- **`--gremlin-parallel` and `--gremlin-batch` may run slower for each genuine hang.** A
+  gremlin that times out in the pool is re-run alone before its timeout is confirmed. (#575)
+- **Cached results are recomputed once.** The cache version changed so that unconfirmed
+  TIMEOUT kills cached by v1.10.1 are not replayed (#575). Cached verdicts are also now keyed
+  on the timeout they were reached under (#555).
+- **`pytest_gremlins.config.merge_configs` parameters after `file_config` are now
+  keyword-only.** Callers that passed the `cli_*` arguments positionally must pass them by
+  keyword. (#570)
+
+### Feat
+
+- **Configurable per-mutant timeout:** `mutant_timeout` in `[tool.pytest-gremlins]` or
+  `--gremlin-mutant-timeout=SECONDS` (1–86400, default 30). It applies in sequential,
+  `--gremlin-parallel` and `--gremlin-batch` runs. Thanks @fwilkerson-cn (#526, #555)
+
+### Fix
+
+- **Timeout kills are confirmed before they count toward the score.** In parallel and batch
+  modes, a pooled timeout is re-run alone; if it finishes, the solo result is scored instead.
+  In every mode, the gremlin's tests are then run without the mutant, and the timeout stays a
+  kill only if that run finishes within half the limit. A confirmation that can't be launched
+  is reported as ERROR, never as a kill. (#565, #575)
+- **Invalid `[tool.pytest-gremlins]` values crashed pytest with an INTERNALERROR (exit 3).**
+  They now exit with a usage error (exit 4) naming the key and value. Thanks @fwilkerson-cn
+  (#555)
+- **No mutation report when a test ran pytest in-process.** A test using pytester's
+  `runpytest_inprocess` or `parseconfigure` replaced the gremlin session, so no report was
+  printed. Inner runs could also count against the outer baseline, or hide an outer failure
+  from it. Each pytest `Config` now keeps its own session. Thanks @fwilkerson-cn (#556, #559)
+- **Gremlins options broke the coverage pre-scan.** A gremlins option in `PYTEST_ADDOPTS` or
+  in `addopts` made the pre-scan exit with `unrecognized arguments`, so every gremlin ran the
+  full test set. Those options are now stripped from the pre-scan. Thanks @haalfi (#568)
+- **Control-run diagnostics showed no collection error.** The control run now uses
+  `--tb=short`, so a collection error prints its cause. The `__file__` hint is removed, and
+  the parametrize-id hint fires only on pytest's `ERROR: not found:` line, including when
+  output is colored. Verdicts are unchanged. (#561, #564)
+
+### Internal
+
+- Release bumps update `uv.lock` in the same commit as the version (commitizen
+  `version_provider = "uv"`), and CI runs `uv lock --check` so a stale lockfile fails the
+  build. (#562, #578)
+- Fixed the ruff 0.16 findings that blocked the ruff bump. (#570)
+
 ## v1.10.1 (2026-10-02)
 
 v1.10.0 was tagged but never published: its release gate caught the issue below.
