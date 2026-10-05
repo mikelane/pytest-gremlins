@@ -14,6 +14,7 @@ import warnings
 import pytest
 
 from pytest_gremlins import plugin as plugin_module
+from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.control_run import (
     ControlRunOutcome,
     run_control,
@@ -23,6 +24,7 @@ from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
     GremlinSession,
     _build_filtered_test_command,
+    _build_test_hashes_for_gremlin,
     _immediate_result_if_selection_unrunnable,
     _node_ids_for_tests,
     _run_batch_mutation_testing,
@@ -36,6 +38,7 @@ from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
 )
+from pytest_gremlins.reporting.score import MutationScore
 
 MAPPED = 'tests/test_m.py::test_mapped'
 UNMAPPED = 'tests/test_m.py::test_unmapped[A]'
@@ -236,3 +239,37 @@ class DescribeControlRunIgnoresUnrunnableGremlins:
         _verify_suite_loads_unmutated(SimpleNamespace(config=None), session)  # type: ignore[arg-type]
 
         control.assert_not_called()
+
+
+@pytest.mark.medium
+class DescribeCacheKeyAfterTheMarkerFix:
+    """A verdict cached from the shorter selection must not be replayed for the now-complete one (issue #571)."""
+
+    def it_misses_a_verdict_cached_before_the_parametrized_test_gained_a_node_id(self, tmp_path: Path) -> None:
+        parametrized = 't.py::test_x[A]'
+        before = GremlinSession(test_node_ids={'t.py::test_x': 't.py::test_x'}, test_hashes={'t.py': 'file-hash'})
+        after = GremlinSession(test_node_ids={parametrized: parametrized}, test_hashes={'t.py': 'file-hash'})
+        cache = IncrementalCache(tmp_path)
+        cache.cache_result(
+            'g001', 'src', _build_test_hashes_for_gremlin([parametrized], before), {'status': 'survived'}
+        )
+
+        replayed = cache.get_cached_result('g001', 'src', _build_test_hashes_for_gremlin([parametrized], after))
+        cache.close()
+
+        assert replayed is None
+
+
+@pytest.mark.small
+class DescribeScoringOfUnrunnableGremlins:
+    def it_counts_the_abstention_as_an_error_that_stays_in_the_denominator(self) -> None:
+        gremlin = _gremlin()
+        session = _session([UNMAPPED])
+        _select_tests_for_gremlin_prioritized(gremlin, session)
+        abstained = _immediate_result_if_selection_unrunnable(gremlin, session)
+        assert abstained is not None
+        zapped = GremlinResult(gremlin=_gremlin('g002'), status=GremlinResultStatus.ZAPPED)
+
+        score = MutationScore.from_results([zapped, abstained])
+
+        assert (score.zapped, score.error, score.percentage) == (1, 1, 50.0)
