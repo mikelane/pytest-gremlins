@@ -28,7 +28,7 @@ timeout is configurable.
   on the timeout they were reached under (#555).
 - **`pytest_gremlins.config.merge_configs` parameters after `file_config` are now
   keyword-only.** Callers that passed the `cli_*` arguments positionally must pass them by
-  keyword. (#570)
+  keyword. (#570, #580)
 
 ### Feat
 
@@ -63,7 +63,7 @@ timeout is configurable.
 - Release bumps update `uv.lock` in the same commit as the version (commitizen
   `version_provider = "uv"`), and CI runs `uv lock --check` so a stale lockfile fails the
   build. (#562, #578)
-- Fixed the ruff 0.16 findings that blocked the ruff bump. (#570)
+- Fixed the ruff 0.16 findings that blocked the ruff bump. (#570, #580)
 
 ## v1.10.1 (2026-10-02)
 
