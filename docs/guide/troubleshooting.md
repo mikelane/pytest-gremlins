@@ -410,12 +410,15 @@ Common causes:
 - Test is inherently slow
 - System under heavy load
 
-A `TIMEOUT` is only scored as a kill when the same tests finish inside the timeout without the mutant.
-If they time out without it too, the gremlin is reported as `ERROR` instead (never as a kill), the
-terminal summary shows a line such as:
+In parallel and batch mode, a `TIMEOUT` is first re-run alone with the mutant active, because the
+timeout may have come from contention with the other workers. If it finishes alone, it is scored
+normally (a kill or a survivor). A `TIMEOUT` that repeats alone is only scored as a kill when the
+same tests finish within half the timeout without the mutant. If they take longer than that, or time
+out too, the gremlin is reported as `ERROR` instead (never as a kill), with the measured unmutated
+time and the limit in its error text, and the terminal summary shows a line such as:
 
 ```text
-Warning: 3 timeouts counted as errors, not kills: the unmutated tests also exceeded 1s. Raise it with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout.
+Warning: 3 timeouts counted as errors, not kills: the unmutated tests did not finish well inside 1s. Raise it with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout.
 ```
 
 and the JSON report gains a `timeout_warning` object with the count, the timeout, and the message.

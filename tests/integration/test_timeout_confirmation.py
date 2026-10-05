@@ -97,7 +97,7 @@ class DescribeTimeoutCausedByTheMutant:
         pytester_with_markers.makepyfile(test_sample=_FAST_TEST_THAT_ASSERTS)
 
         pytester_with_markers.runpytest_subprocess(
-            *_COMMON_ARGS, '--gremlin-operators=arithmetic', '--gremlin-mutant-timeout=8'
+            *_COMMON_ARGS, '--gremlin-operators=arithmetic', '--gremlin-mutant-timeout=30'
         )
 
         report = _json_report(pytester_with_markers)

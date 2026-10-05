@@ -244,7 +244,8 @@ failed to collect, or a changed parametrize id) are recorded as ZAPPED with the 
 `<collection>`; ones cached as ERROR before that change are recomputed too. Verdicts are not
 cached while load failures are unattributable (the unmutated suite cannot load in the gremlin
 subprocess) or after a kill is downgraded to ERROR because the gremlin's own unmutated selection
-fails to load or a timeout is downgraded to ERROR because the unmutated selection also times out, so
+fails to load or a timeout is downgraded to ERROR because the unmutated selection takes more than
+half the limit or times out, so
 fixing the cause never replays stale errors from a warm cache.
 
 ## Configuration

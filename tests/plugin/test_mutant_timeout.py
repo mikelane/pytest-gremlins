@@ -160,12 +160,13 @@ def test_classify():
     assert classify(10) == 'small'
 """
 
-# A timeout is only a kill when the unmutated run, which pays the pytest start-up, fits in it (issue #565),
-# so these limits sit well above start-up and the mutant sleeps either far past them or just under the roomy one.
-_LIMIT_THE_MUTANT_EXCEEDS = 6
+# A timeout is only a kill when the unmutated run, which pays the pytest start-up, fits in half the limit
+# (issue #565). Start-up alone took 4-7s on a loaded CI runner, so these limits leave that run comfortably inside
+# half of them (the old 6s limit flaked), and the mutant sleeps either far past them or well under the roomy one.
+_LIMIT_THE_MUTANT_EXCEEDS = 20
 _MUTANT_SLEEP_PAST_ANY_LIMIT = 60
 _MUTANT_SLEEP_WITHIN_A_ROOMY_LIMIT = 3
-_ROOMY_LIMIT = 20
+_ROOMY_LIMIT = 40
 
 _COMMON_ARGS = ('--gremlins', '--gremlin-targets=sample.py', '--gremlin-operators=comparison', '-p', 'no:cacheprovider')
 

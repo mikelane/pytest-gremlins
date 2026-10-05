@@ -19,8 +19,8 @@ if TYPE_CHECKING:
 
 
 TIMEOUT_NOT_CONFIRMED_PREFIX = (
-    'the gremlin timed out, but its own selection of tests also exceeds the mutant timeout without a mutant, '
-    'so the timeout is no evidence that the mutant was caught'
+    'the gremlin timed out, but its own selection of tests is also too slow without a mutant '
+    '(it did not finish well inside the mutant timeout), so the timeout is no evidence that the mutant was caught'
 )
 """Start of the ``error_output`` of a timeout that was downgraded to ERROR."""
 

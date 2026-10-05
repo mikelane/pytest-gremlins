@@ -102,7 +102,7 @@ class MutationScore:
         noun = 'timeout' if count == 1 else 'timeouts'
         timeout = f'{self.mutant_timeout}s' if self.mutant_timeout is not None else 'the mutant timeout'
         return (
-            f'{count} {noun} counted as errors, not kills: the unmutated tests also exceeded {timeout}. '
+            f'{count} {noun} counted as errors, not kills: the unmutated tests did not finish well inside {timeout}. '
             'Raise it with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout.'
         )
 

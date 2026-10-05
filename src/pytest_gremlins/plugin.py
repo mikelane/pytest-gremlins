@@ -180,6 +180,13 @@ def _detect_coverage_mode(config: pytest.Config) -> CoverageMode:
 DEFAULT_COVERAGE_TIMEOUT_SECONDS = 120
 DEFAULT_MUTANT_TIMEOUT_SECONDS = 30
 MAX_SELECTION_IDS_IN_MESSAGE = 5
+TIMEOUT_CONFIRMATION_HEADROOM = 0.5
+"""Share of ``mutant_timeout`` the unmutated confirmation run may use for a timeout to stay a kill.
+
+One yes/no sample against the limit has no margin: an unmutated run that finishes at 99% of the limit
+would keep a survivor as a kill on a lucky run. Requiring the unmutated run to fit in half the limit
+means a real hang clears a 2x margin, while ordinary run-to-run noise does not.
+"""
 
 
 class CoveragePrescanTimeoutError(Exception):
@@ -2108,25 +2115,81 @@ def _confirm_timeout_kill(
             status=GremlinResultStatus.ERROR,
             error_output=f'{TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX} {unmutated_outcome.launch_error}',
         )
-    if not unmutated_outcome.timed_out:
+    mutant_timeout = gremlin_session.mutant_timeout
+    fits_in_headroom = unmutated_outcome.seconds <= mutant_timeout * TIMEOUT_CONFIRMATION_HEADROOM
+    if not unmutated_outcome.timed_out and fits_in_headroom:
         return result
     return dataclass_replace(
         result,
         status=GremlinResultStatus.ERROR,
-        error_output=_timeout_not_confirmed_message(selection, gremlin_session.mutant_timeout),
+        error_output=_timeout_not_confirmed_message(selection, mutant_timeout, unmutated_outcome),
     )
 
 
-def _timeout_not_confirmed_message(selection: Sequence[str], mutant_timeout: int) -> str:
-    """Explain a downgraded timeout: which selection, which limit, and how to raise it."""
+def _timeout_not_confirmed_message(
+    selection: Sequence[str], mutant_timeout: int, unmutated_outcome: UnmutatedRunOutcome
+) -> str:
+    """Explain a downgraded timeout: the selection, how the unmutated run went, the limit, and how to raise it."""
     shown = ', '.join(selection[:MAX_SELECTION_IDS_IN_MESSAGE]) or 'the whole suite'
     hidden = len(selection) - MAX_SELECTION_IDS_IN_MESSAGE
     if hidden > 0:
         shown += f' (and {hidden} more)'
+    share = f'{TIMEOUT_CONFIRMATION_HEADROOM:.0%}'
+    unmutated = (
+        f'did not finish in {mutant_timeout}s'
+        if unmutated_outcome.timed_out
+        else f'took {unmutated_outcome.seconds:.1f}s, over {share} of the {mutant_timeout}s limit'
+    )
     return (
-        f'{TIMEOUT_NOT_CONFIRMED_PREFIX} ({mutant_timeout}s; selection: {shown}). '
+        f'{TIMEOUT_NOT_CONFIRMED_PREFIX} ({mutant_timeout}s; selection: {shown}; unmutated run {unmutated}). '
         'Raise the limit with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout.'
     )
+
+
+def _rerun_timeout_alone(
+    result: GremlinResult,
+    test_command: list[str],
+    rootdir: Path,
+    gremlin_session: GremlinSession,
+) -> GremlinResult:
+    """Re-run a pooled TIMEOUT by itself, so it competes with nothing the unmutated run does not.
+
+    A gremlin that timed out among parallel workers or in a batch may only have been slowed by them
+    (a shared lock, a saturated CPU), while the unmutated confirmation runs alone. Running the mutated
+    gremlin alone under the same selection and timeout compares like with like; if it finishes, its
+    verdict is scored as usual.
+
+    Args:
+        result: The pooled result.
+        test_command: The command the pooled run used.
+        rootdir: Root directory of the project.
+        gremlin_session: The current gremlin session.
+
+    Returns:
+        ``result`` unchanged unless it is a TIMEOUT, otherwise the solo run's result.
+    """
+    if result.status != GremlinResultStatus.TIMEOUT:
+        return result
+    solo_result = _test_gremlin(
+        result.gremlin,
+        test_command,
+        rootdir,
+        gremlin_session.instrumented_dir,
+        timeout=gremlin_session.mutant_timeout,
+    )
+    return dataclass_replace(solo_result, selected_tests=result.selected_tests)
+
+
+def _confirm_pooled_result(
+    result: GremlinResult,
+    test_command: list[str],
+    node_ids: Sequence[str],
+    gremlin_session: GremlinSession,
+    rootdir: Path,
+) -> GremlinResult:
+    """Judge a parallel or batch result: re-run a timeout alone, then apply the usual confirmations."""
+    result = _rerun_timeout_alone(result, test_command, rootdir, gremlin_session)
+    return _confirm_kill(result, node_ids, gremlin_session, rootdir)
 
 
 def _node_ids_for_tests(selected_tests: Sequence[str], gremlin_session: GremlinSession) -> list[str]:
@@ -2827,8 +2890,12 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912
             selected_tests=selected_tests,
         )
         # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
-        gremlin_result = _confirm_kill(
-            gremlin_result, _node_ids_for_tests(all_covering_tests, gremlin_session), gremlin_session, rootdir
+        gremlin_result = _confirm_pooled_result(
+            gremlin_result,
+            test_command,
+            _node_ids_for_tests(all_covering_tests, gremlin_session),
+            gremlin_session,
+            rootdir,
         )
         results.append(gremlin_result)
 
@@ -2961,8 +3028,12 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
             error_output=worker_result.error_output,
             selected_tests=selected_tests,
         )
-        gremlin_result = _confirm_kill(
-            gremlin_result, _node_ids_for_tests(selected_tests, gremlin_session), gremlin_session, rootdir
+        gremlin_result = _confirm_pooled_result(
+            gremlin_result,
+            _build_filtered_test_command(base_test_command, selected_tests, gremlin_session),
+            _node_ids_for_tests(selected_tests, gremlin_session),
+            gremlin_session,
+            rootdir,
         )
         results.append(gremlin_result)
 

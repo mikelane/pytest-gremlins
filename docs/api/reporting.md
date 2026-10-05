@@ -147,10 +147,13 @@ The mutation score represents test effectiveness:
 score = (zapped + timeout) / (total - pardoned) * 100
 ```
 
-A timeout counts as "caught" only when it is confirmed: pytest-gremlins reruns the gremlin's tests
-without the mutant under the same timeout, once per distinct selection of tests. If those tests finish
-in time, the mutant is what hung them, and the timeout is a kill. If they time out too, the timeout
-says nothing about the mutant, so the gremlin is reported as `ERROR`, which stays in the denominator.
+A timeout counts as "caught" only when it is confirmed. In parallel and batch mode pytest-gremlins first
+re-runs the timed-out gremlin alone with the mutant active, since the timeout may be contention with
+other workers; if that run finishes, it is scored normally. If the gremlin times out alone, pytest-gremlins
+reruns its tests without the mutant under the same timeout, once per distinct selection of tests. If those
+tests finish within half the timeout, the mutant is what hung them, and the timeout is a kill. If they
+take longer, or time out, the timeout says nothing reliable about the mutant, so the gremlin is reported
+as `ERROR`, which stays in the denominator.
 A timeout that is too short can therefore only lower the score, never raise it.
 
 `MutationScore.downgraded_timeouts` counts those gremlins, and `MutationScore.timeout_warning` holds the
