@@ -67,8 +67,16 @@ def _json_report(pytester: pytest.Pytester) -> dict:
     return json.loads(Path(pytester.path, 'coverage', 'gremlins', 'gremlins.json').read_text())
 
 
-@pytest.mark.large
-@pytest.mark.parametrize('mode', list(_MODES))
+@pytest.mark.parametrize(
+    'mode',
+    [
+        # The sequential run is the CI medium-tier regression of the fake score. Its 1s mutants die fast and the
+        # confirmation fails on pytest start-up alone, so it stays cheap and gets steadier, not flakier, under load.
+        pytest.param('sequential', marks=pytest.mark.medium),
+        pytest.param('parallel', marks=pytest.mark.large),
+        pytest.param('batch', marks=pytest.mark.large),
+    ],
+)
 class DescribeTimeoutShorterThanTheUnmutatedTests:
     """A timeout that the unmutated selection hits too says nothing about the mutant."""
 

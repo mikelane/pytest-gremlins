@@ -109,8 +109,9 @@ class DescribeConfirmTimeoutKill:
     def it_runs_a_selection_shared_by_many_gremlins_once(
         self, session: GremlinSession, fake_unmutated_run: MagicMock, tmp_path: Path
     ) -> None:
-        for gremlin_id in ('g001', 'g002', 'g003'):
-            _confirm_timeout_kill(_timeout(gremlin_id), ['t.py::test_a'], session, tmp_path)
+        _confirm_timeout_kill(_timeout('g001'), ['t.py::test_a'], session, tmp_path)
+        _confirm_timeout_kill(_timeout('g002'), ['t.py::test_a'], session, tmp_path)
+        _confirm_timeout_kill(_timeout('g003'), ['t.py::test_a'], session, tmp_path)
 
         assert fake_unmutated_run.call_count == 1
 

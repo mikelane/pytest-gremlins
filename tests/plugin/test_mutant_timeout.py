@@ -192,20 +192,23 @@ def _run(pytester: pytest.Pytester, *args: str, mutant_sleep: int = _MUTANT_SLEE
 
 @pytest.mark.medium
 class DescribeMutantTimeoutEndToEnd:
-    """The TOML key and CLI flag bound each mutant's test run through the real entry point."""
+    """The TOML key and CLI flag bound each mutant's test run through the real entry point.
 
-    @pytest.mark.parametrize('mode', list(_EXECUTION_MODES))
-    def it_times_out_a_mutant_run_longer_than_the_toml_value(
-        self, pytester_with_markers: pytest.Pytester, mode: str
-    ) -> None:
+    Every mutant that times out costs the full limit, and twice that in a pooled mode, so the medium tier times
+    out mutants in the default mode only. DescribeMutantTimeoutEndToEndAcrossModes keeps the full matrix as large.
+    """
+
+    def it_times_out_a_mutant_run_longer_than_the_toml_value(self, pytester_with_markers: pytest.Pytester) -> None:
         pytester_with_markers.makepyprojecttoml(
             f'[tool.pytest-gremlins]\nmutant_timeout = {_LIMIT_THE_MUTANT_EXCEEDS}\n'
         )
 
-        verdicts = _verdicts(_run(pytester_with_markers, *_EXECUTION_MODES[mode]).stdout.str())
+        output = _run(pytester_with_markers).stdout.str()
 
+        verdicts = _verdicts(output)
         assert verdicts['Timeout'] > 0
         assert verdicts['Zapped'] == 0
+        assert 'counted as errors, not kills' not in output
 
     @pytest.mark.parametrize('mode', list(_EXECUTION_MODES))
     def it_lets_the_cli_flag_win_over_the_toml_key(self, pytester_with_markers: pytest.Pytester, mode: str) -> None:
@@ -222,6 +225,69 @@ class DescribeMutantTimeoutEndToEnd:
 
         assert verdicts['Timeout'] == 0
         assert verdicts['Zapped'] > 0
+
+    def it_does_not_reuse_a_verdict_cached_under_a_different_timeout(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        first = _run(
+            pytester_with_markers,
+            '--gremlin-cache',
+            f'--gremlin-mutant-timeout={_LIMIT_THE_MUTANT_EXCEEDS}',
+            mutant_sleep=_MUTANT_SLEEP_WITHIN_A_ROOMY_LIMIT,
+        )
+        second = _run(
+            pytester_with_markers,
+            '--gremlin-cache',
+            f'--gremlin-mutant-timeout={_ROOMY_LIMIT}',
+            mutant_sleep=_MUTANT_SLEEP_WITHIN_A_ROOMY_LIMIT,
+        )
+        third = _run(
+            pytester_with_markers,
+            '--gremlin-cache',
+            f'--gremlin-mutant-timeout={_ROOMY_LIMIT}',
+            mutant_sleep=_MUTANT_SLEEP_WITHIN_A_ROOMY_LIMIT,
+        )
+
+        assert _verdicts(first.stdout.str())['Zapped'] == 2
+        assert 'cache hit' not in second.stdout.str()
+        assert third.stdout.str().count('cache hit (skipping)') == 2
+
+    @pytest.mark.parametrize('value', ['0', '-3', '86401', '99999999999'])
+    def it_rejects_an_out_of_range_cli_value_naming_the_flag_and_value(
+        self, pytester_with_markers: pytest.Pytester, value: str
+    ) -> None:
+        pytester_with_markers.makepyfile(sample=_TARGET, test_sample=_SLOW_UNDER_A_MUTANT.format(seconds=1))
+
+        result = pytester_with_markers.runpytest('--gremlins', f'--gremlin-mutant-timeout={value}')
+
+        result.stderr.fnmatch_lines([f'*--gremlin-mutant-timeout must be a positive integer*{value}*'])
+
+    def it_rejects_a_non_integer_cli_value_naming_the_flag_and_value(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makepyfile(sample=_TARGET, test_sample=_SLOW_UNDER_A_MUTANT.format(seconds=1))
+
+        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-mutant-timeout=soon')
+
+        result.stderr.fnmatch_lines(["*--gremlin-mutant-timeout*invalid int value: 'soon'*"])
+
+
+@pytest.mark.large
+class DescribeMutantTimeoutEndToEndAcrossModes:
+    """The runs that pay the full limit per mutant: the pooled modes, the CLI value, and a flipped cached verdict."""
+
+    @pytest.mark.parametrize('mode', ['parallel', 'batch'])
+    def it_times_out_a_mutant_run_longer_than_the_toml_value(
+        self, pytester_with_markers: pytest.Pytester, mode: str
+    ) -> None:
+        pytester_with_markers.makepyprojecttoml(
+            f'[tool.pytest-gremlins]\nmutant_timeout = {_LIMIT_THE_MUTANT_EXCEEDS}\n'
+        )
+
+        verdicts = _verdicts(_run(pytester_with_markers, *_EXECUTION_MODES[mode]).stdout.str())
+
+        assert verdicts['Timeout'] > 0
+        assert verdicts['Zapped'] == 0
 
     def it_times_out_a_mutant_run_longer_than_the_cli_value(self, pytester_with_markers: pytest.Pytester) -> None:
         verdicts = _verdicts(
@@ -251,22 +317,3 @@ class DescribeMutantTimeoutEndToEnd:
         assert _verdicts(second.stdout.str())['Zapped'] > 0
         assert 'cache hit' not in second.stdout.str()
         assert third.stdout.str().count('cache hit (skipping)') == 2
-
-    @pytest.mark.parametrize('value', ['0', '-3', '86401', '99999999999'])
-    def it_rejects_an_out_of_range_cli_value_naming_the_flag_and_value(
-        self, pytester_with_markers: pytest.Pytester, value: str
-    ) -> None:
-        pytester_with_markers.makepyfile(sample=_TARGET, test_sample=_SLOW_UNDER_A_MUTANT.format(seconds=1))
-
-        result = pytester_with_markers.runpytest('--gremlins', f'--gremlin-mutant-timeout={value}')
-
-        result.stderr.fnmatch_lines([f'*--gremlin-mutant-timeout must be a positive integer*{value}*'])
-
-    def it_rejects_a_non_integer_cli_value_naming_the_flag_and_value(
-        self, pytester_with_markers: pytest.Pytester
-    ) -> None:
-        pytester_with_markers.makepyfile(sample=_TARGET, test_sample=_SLOW_UNDER_A_MUTANT.format(seconds=1))
-
-        result = pytester_with_markers.runpytest('--gremlins', '--gremlin-mutant-timeout=soon')
-
-        result.stderr.fnmatch_lines(["*--gremlin-mutant-timeout*invalid int value: 'soon'*"])
