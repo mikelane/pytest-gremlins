@@ -3573,16 +3573,20 @@ def _immediate_result_if_selection_unrunnable(
 
 
 def _warn_unmapped_selections(gremlin_session: GremlinSession) -> None:
-    """Warn once per run that coverage-selected tests were not run because they have no node id."""
+    """Report once per run that coverage-selected tests were not run because they have no node id.
+
+    Written to stderr rather than raised through ``warnings.warn``: this runs in ``pytest_sessionfinish``,
+    where a project's ``filterwarnings = error`` would turn the report into a crash after a green run (#543).
+    """
     unmapped = gremlin_session.unmapped_selections
     if not unmapped:
         return
     dropped_names = {name for names in unmapped.values() for name in names}
     example = next(iter(unmapped.values()))[0]
-    warnings.warn(
+    print(
         f'pytest-gremlins: {len(dropped_names)} selected test(s) for {len(unmapped)} gremlin(s) have no pytest '
         f'node id and were not run, e.g. {example}. Gremlins left with no runnable test are scored ERROR.',
-        stacklevel=1,
+        file=sys.stderr,
     )
 
 

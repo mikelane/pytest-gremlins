@@ -133,24 +133,34 @@ class DescribeUnrunnableSelection:
 
 @pytest.mark.small
 class DescribeUnmappedSelectionWarning:
-    def it_warns_once_with_the_count_and_an_example_name(self) -> None:
+    def it_reports_once_with_the_count_and_an_example_name(self, capsys: pytest.CaptureFixture[str]) -> None:
         session = _session([])
         session.unmapped_selections = {'g001': [UNMAPPED, OTHER_UNMAPPED], 'g002': [UNMAPPED]}
 
-        with pytest.warns(UserWarning, match='no pytest node id') as recorded:
-            _warn_unmapped_selections(session)
+        _warn_unmapped_selections(session)
 
-        assert len(recorded) == 1
-        message = str(recorded[0].message)
-        assert '2 selected test(s) for 2 gremlin(s)' in message
-        assert UNMAPPED in message
+        lines = capsys.readouterr().err.splitlines()
+        assert len(lines) == 1
+        assert '2 selected test(s) for 2 gremlin(s)' in lines[0]
+        assert UNMAPPED in lines[0]
 
-    def it_stays_silent_when_nothing_was_dropped(self) -> None:
-        session = _session([MAPPED])
+    def it_is_not_escalated_by_a_filterwarnings_error_config(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A project with ``filterwarnings = error`` must not crash on a green run because of this report (#543)."""
+        session = _session([])
+        session.unmapped_selections = {'g001': [UNMAPPED]}
 
         with warnings.catch_warnings():
             warnings.simplefilter('error')
             _warn_unmapped_selections(session)
+
+        assert UNMAPPED in capsys.readouterr().err
+
+    def it_stays_silent_when_nothing_was_dropped(self, capsys: pytest.CaptureFixture[str]) -> None:
+        session = _session([MAPPED])
+
+        _warn_unmapped_selections(session)
+
+        assert capsys.readouterr().err == ''
 
 
 @pytest.mark.small
