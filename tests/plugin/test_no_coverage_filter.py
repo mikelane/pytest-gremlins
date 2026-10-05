@@ -86,7 +86,11 @@ class DescribeSelectTestsWithNoCoverageFilter:
         mock_selector = create_autospec(PrioritizedSelector, instance=True)
         mock_selector.select_tests_prioritized.return_value = ['test_specific']
         session = GremlinSession(
-            test_node_ids={'test_a': 'tests/test_a.py::test_a', 'test_b': 'tests/test_b.py::test_b'},
+            test_node_ids={
+                'test_a': 'tests/test_a.py::test_a',
+                'test_b': 'tests/test_b.py::test_b',
+                'test_specific': 'tests/test_a.py::test_specific',
+            },
             prioritized_selector=mock_selector,
             no_coverage_filter=False,
         )

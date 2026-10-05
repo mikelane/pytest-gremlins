@@ -181,6 +181,8 @@ DEFAULT_COVERAGE_TIMEOUT_SECONDS = 120
 DEFAULT_MUTANT_TIMEOUT_SECONDS = 30
 MAX_SELECTION_IDS_IN_MESSAGE = 5
 """Node ids named in a downgraded-timeout message before the rest are summarised as ``(and N more)``."""
+UNMAPPED_SELECTION_PREFIX = 'no verdict: the gremlin has no test to run'
+"""Start of the error for a gremlin whose whole selection has no pytest node id (issue #571)."""
 TIMEOUT_CONFIRMATION_HEADROOM = 0.5
 """Share of ``mutant_timeout`` the unmutated confirmation run may use for a timeout to stay a kill.
 
@@ -301,6 +303,8 @@ class GremlinSession:
     max_pardons: int | None = None
     no_coverage_filter: bool = False
     test_name_to_node_ids: dict[str, list[str]] = field(default_factory=dict)
+    unmapped_selections: dict[str, list[str]] = field(default_factory=dict)
+    unrunnable_gremlin_ids: set[str] = field(default_factory=set)
     explain_gremlin_id: str | None = None
     preserved_addopts: str = ''
     coverage_timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS
@@ -1964,6 +1968,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
     _verify_suite_loads_unmutated(session, gremlin_session)
     gremlin_session.results = _dispatch_mutation_run(session, gremlin_session)
+    _warn_unmapped_selections(gremlin_session)
 
 
 def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: GremlinSession) -> None:
@@ -2779,7 +2784,7 @@ def _decode_numbits(numbits: bytes) -> list[int]:
     ]
 
 
-def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912
+def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, PLR0915
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
@@ -2818,6 +2823,10 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912
         pardoned_result = _immediate_result_if_pardoned(gremlin)
         if pardoned_result is not None:
             cached_results.append(pardoned_result)
+            continue
+        unrunnable_result = _immediate_result_if_selection_unrunnable(gremlin, gremlin_session)
+        if unrunnable_result is not None:
+            cached_results.append(unrunnable_result)
             continue
         selected_tests = gremlin_tests[gremlin.gremlin_id]
         cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
@@ -2956,6 +2965,10 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
         pardoned_result = _immediate_result_if_pardoned(gremlin)
         if pardoned_result is not None:
             cached_results.append(pardoned_result)
+            continue
+        unrunnable_result = _immediate_result_if_selection_unrunnable(gremlin, gremlin_session)
+        if unrunnable_result is not None:
+            cached_results.append(unrunnable_result)
             continue
         selected_tests = gremlin_tests[gremlin.gremlin_id]
         cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
@@ -3102,7 +3115,7 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
         return
 
     covering = _covering_tests_for_gremlin(target_gremlin, gremlin_session)
-    selected = _select_tests_for_gremlin_prioritized(target_gremlin, gremlin_session)
+    selected = _selected_test_names_for_gremlin(target_gremlin, gremlin_session)
     runnable = set(gremlin_session.test_node_ids)
     covering_minus_selected = sorted(covering - set(selected))
     selected_minus_runnable = sorted(set(selected) - runnable)
@@ -3236,6 +3249,10 @@ def _run_mutation_testing(
             results.append(pardoned_result)
             continue
         selected_tests = _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
+        unrunnable_result = _immediate_result_if_selection_unrunnable(gremlin, gremlin_session)
+        if unrunnable_result is not None:
+            results.append(unrunnable_result)
+            continue
         test_count = len(selected_tests)
         total = gremlin_session.total_tests
 
@@ -3450,11 +3467,11 @@ def _report_gremlin_cache_miss(
     print(f'{prefix} - cache miss')
 
 
-def _select_tests_for_gremlin_prioritized(
+def _selected_test_names_for_gremlin(
     gremlin: Gremlin,
     gremlin_session: GremlinSession,
 ) -> list[str]:
-    """Select tests for a gremlin, ordered by specificity (most specific first).
+    """Select the test names for a gremlin, ordered by specificity (most specific first).
 
     Uses the PrioritizedSelector to return tests in an order that maximizes
     the chance of catching the mutation quickly. Tests covering fewer lines
@@ -3465,6 +3482,9 @@ def _select_tests_for_gremlin_prioritized(
     module constants) that executes at import time before any test function
     runs. Coverage.py records these lines under the empty context, which isn't
     associated with any specific test.
+
+    The names are not yet checked against ``test_node_ids``; see
+    :func:`_select_tests_for_gremlin_prioritized` for the runnable subset.
 
     Args:
         gremlin: The gremlin to select tests for.
@@ -3484,6 +3504,86 @@ def _select_tests_for_gremlin_prioritized(
         return list(gremlin_session.test_node_ids.keys())
 
     return selected
+
+
+def _select_tests_for_gremlin_prioritized(
+    gremlin: Gremlin,
+    gremlin_session: GremlinSession,
+) -> list[str]:
+    """Select the runnable tests for a gremlin, ordered by specificity (most specific first).
+
+    A selected name with no entry in ``test_node_ids`` cannot be passed to pytest, so it is left
+    out and recorded in ``gremlin_session.unmapped_selections`` instead of vanishing silently. The
+    command, the cache key, the confirmations and the result all use this same list, so none of
+    them can disagree about what the gremlin ran. When every selected name is dropped the result
+    is empty, and :func:`_immediate_result_if_selection_unrunnable` abstains: an empty list must
+    never reach pytest, where it would run the whole suite and score a verdict the selection did
+    not back.
+
+    Args:
+        gremlin: The gremlin to select tests for.
+        gremlin_session: The current gremlin session.
+
+    Returns:
+        The selected test names that have a node id, in selection order.
+    """
+    selected = _selected_test_names_for_gremlin(gremlin, gremlin_session)
+    runnable = [name for name in selected if name in gremlin_session.test_node_ids]
+    dropped = [name for name in selected if name not in gremlin_session.test_node_ids]
+    gremlin_session.unmapped_selections.pop(gremlin.gremlin_id, None)
+    gremlin_session.unrunnable_gremlin_ids.discard(gremlin.gremlin_id)
+    if dropped:
+        gremlin_session.unmapped_selections[gremlin.gremlin_id] = dropped
+        if not runnable:
+            gremlin_session.unrunnable_gremlin_ids.add(gremlin.gremlin_id)
+    return runnable
+
+
+def _immediate_result_if_selection_unrunnable(
+    gremlin: Gremlin,
+    gremlin_session: GremlinSession,
+) -> GremlinResult | None:
+    """Return an ERROR result when every test selected for the gremlin lacks a node id, else None.
+
+    Called at the top of every execution loop, right after the pardon check and once the gremlin's
+    selection has been made. Such a gremlin has no command to run, so no verdict can be backed by a
+    test: it abstains with an error naming the dropped tests.
+
+    Args:
+        gremlin: The gremlin to check.
+        gremlin_session: The current gremlin session, holding the dropped selections.
+
+    Returns:
+        A GremlinResult with ERROR status when the whole selection was dropped, otherwise None.
+    """
+    if gremlin.gremlin_id not in gremlin_session.unrunnable_gremlin_ids:
+        return None
+    dropped = gremlin_session.unmapped_selections[gremlin.gremlin_id]
+    shown = ', '.join(dropped[:MAX_SELECTION_IDS_IN_MESSAGE])
+    hidden = len(dropped) - MAX_SELECTION_IDS_IN_MESSAGE
+    suffix = f' (and {hidden} more)' if hidden > 0 else ''
+    return GremlinResult(
+        gremlin=gremlin,
+        status=GremlinResultStatus.ERROR,
+        error_output=(
+            f'{UNMAPPED_SELECTION_PREFIX}: {len(dropped)} selected test(s) have no pytest node id, '
+            f'so none could run: {shown}{suffix}'
+        ),
+    )
+
+
+def _warn_unmapped_selections(gremlin_session: GremlinSession) -> None:
+    """Warn once per run that coverage-selected tests were not run because they have no node id."""
+    unmapped = gremlin_session.unmapped_selections
+    if not unmapped:
+        return
+    dropped_names = {name for names in unmapped.values() for name in names}
+    example = next(iter(unmapped.values()))[0]
+    warnings.warn(
+        f'pytest-gremlins: {len(dropped_names)} selected test(s) for {len(unmapped)} gremlin(s) have no pytest '
+        f'node id and were not run, e.g. {example}. Gremlins left with no runnable test are scored ERROR.',
+        stacklevel=1,
+    )
 
 
 def _report_gremlin_progress(
