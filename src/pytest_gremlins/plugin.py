@@ -73,6 +73,7 @@ from pytest_gremlins.coverage import (
     TestSelector,
 )
 from pytest_gremlins.coverage.context_plugin import GremlinContextPlugin
+from pytest_gremlins.coverage.nodeid_markers import strip_marker_suffix
 from pytest_gremlins.gremlins_options import addopts_without_gremlins
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import (
@@ -2360,7 +2361,7 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     for node_id in node_ids:
         # Strip any plugin-added suffixes like "[SMALL]", "[MEDIUM]", etc.
         # These are display decorations, not part of the actual node ID
-        cleaned_node_id = re.sub(r'\s+\[[A-Z]+\]\s*$', '', node_id)
+        cleaned_node_id = strip_marker_suffix(node_id)
 
         # Node IDs have format: path/to/file.py::test_name
         # or just: file.py::test_name
@@ -3207,19 +3208,18 @@ def _print_unrunnable_selections(orphans: list[str], runnable_candidates: list[s
 def _drop_bracketed_suffix(nodeid: str) -> str:
     """Return ``nodeid`` with a trailing ``' [...]'`` marker suffix removed.
 
-    Mirrors the stripping behavior used by the coverage subprocess bootstrap
-    (`_strip_nodeid_markers`): finds the first ``' ['`` and truncates there.
-    Used only by :func:`_emit_selection_explainer` to show the reader the
-    shape the subprocess would record for a drifted key.
+    Shares its rule (:func:`strip_marker_suffix`) with the coverage subprocess
+    bootstrap (`_strip_nodeid_markers`).  Used only by
+    :func:`_emit_selection_explainer` to show the reader the shape the
+    subprocess would record for a drifted key.
 
     Examples:
-        >>> _drop_bracketed_suffix('tests/test_foo.py::test_bar [custom-tag]')
+        >>> _drop_bracketed_suffix('tests/test_foo.py::test_bar [SMALL]')
         'tests/test_foo.py::test_bar'
         >>> _drop_bracketed_suffix('tests/test_foo.py::test_bar')
         'tests/test_foo.py::test_bar'
     """
-    idx = nodeid.find(' [')
-    return nodeid[:idx] if idx != -1 else nodeid
+    return strip_marker_suffix(nodeid)
 
 
 def _run_mutation_testing(

@@ -38,6 +38,12 @@ class DescribeStripNodeidMarkers:
     def it_leaves_parametrized_nodeid_unchanged(self) -> None:
         assert _strip_nodeid_markers('test_module.py::test_add[param1]') == 'test_module.py::test_add[param1]'
 
+    def it_keeps_a_parametrize_id_containing_a_space_and_bracket(self) -> None:
+        assert _strip_nodeid_markers('test_module.py::test_add[x [y]]') == 'test_module.py::test_add[x [y]]'
+
+    def it_strips_only_the_marker_after_a_parametrize_id_containing_a_space_and_bracket(self) -> None:
+        assert _strip_nodeid_markers('test_module.py::test_add[x [y]] [SMALL]') == 'test_module.py::test_add[x [y]]'
+
 
 @pytest.mark.small
 class DescribeSubprocessContextPluginInit:

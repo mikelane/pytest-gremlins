@@ -111,6 +111,30 @@ class DescribeAllCapsParametrizeIds:
         assert verdicts['Error'] == 0
 
 
+@pytest.mark.medium
+class DescribeParametrizeIdsContainingASpaceAndBracket:
+    """A ``' ['`` inside a parametrize id is part of the node id, so the coverage context keeps it too."""
+
+    def it_runs_the_selected_tests_under_their_gremlins(self, pytester: pytest.Pytester) -> None:
+        log = _make_project(pytester, ['x [y]', 'z [w]'])
+
+        pytester.runpytest_subprocess(*_COMMON_ARGS, *_WITHOUT_SIZE_MARKER_SUFFIX)
+
+        assert _tests_run_under_gremlins(log) == {
+            'test_sample.py::test_is_positive[x [y]]',
+            'test_sample.py::test_is_positive[z [w]]',
+        }
+
+    def it_scores_the_gremlins_instead_of_abstaining(self, pytester: pytest.Pytester) -> None:
+        _make_project(pytester, ['x [y]', 'z [w]'])
+
+        output = pytester.runpytest_subprocess(*_COMMON_ARGS, *_WITHOUT_SIZE_MARKER_SUFFIX).stdout.str()
+
+        verdicts = _verdicts(output)
+        assert verdicts['Survived'] > 0
+        assert verdicts['Error'] == 0
+
+
 @pytest.mark.large
 class DescribeAllCapsParametrizeIdsUnderXdist:
     """xdist Phase 2 rebuilds the node ids from worker reports and must keep the all-caps id too."""

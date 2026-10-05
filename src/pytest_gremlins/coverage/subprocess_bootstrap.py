@@ -28,6 +28,8 @@ from collections.abc import Generator
 import coverage
 import pytest
 
+from pytest_gremlins.coverage.nodeid_markers import strip_marker_suffix
+
 
 def _strip_nodeid_markers(nodeid: str) -> str:
     """Strip pytest plugin markers (e.g. `` [SMALL]``) from a node ID.
@@ -43,8 +45,7 @@ def _strip_nodeid_markers(nodeid: str) -> str:
         >>> _strip_nodeid_markers('test_module.py::test_add')
         'test_module.py::test_add'
     """
-    idx = nodeid.find(' [')
-    return nodeid[:idx] if idx != -1 else nodeid
+    return strip_marker_suffix(nodeid)
 
 
 class _SubprocessContextPlugin:

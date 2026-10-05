@@ -96,14 +96,14 @@ def sample_gremlin():
 def _build_session_with_drift(sample_gremlin: Gremlin) -> GremlinSession:
     """Build a GremlinSession whose coverage-map key drifts from test_node_ids.
 
-    The coverage map records a key with a ``[custom-tag]`` marker suffix
+    The coverage map records a key with a ``[SMALL]`` marker suffix
     (lowercase-hyphen — the current ``[A-Z]+`` regex in
     ``_make_node_ids_relative`` leaves it alone). The ``test_node_ids`` dict
     stores the same test *without* the suffix, producing a one-token drift
     between the two key spaces. This is the exact shape of the #387 bug.
     """
     collector = CoverageCollector()
-    drifted_key = 'tests/test_target.py::test_zero_case [custom-tag]'
+    drifted_key = 'tests/test_target.py::test_zero_case [SMALL]'
     collector.record_test_coverage(
         drifted_key,
         {sample_gremlin.file_path: [sample_gremlin.line_number]},
@@ -148,7 +148,7 @@ class DescribeEmitSelectionExplainerDrift:
         assert f'  file: {sample_gremlin.file_path}:{sample_gremlin.line_number}' in output
         # Covering set shows the drifted key and its exact count.
         assert 'Covering set (1 test):' in output
-        assert "'tests/test_target.py::test_zero_case [custom-tag]'" in output
+        assert "'tests/test_target.py::test_zero_case [SMALL]'" in output
         # Selected list contains the non-drifted test; the drifted key was
         # silently dropped by the (simulated) selector — the exact #387 shape.
         assert 'Selected list (1 test):' in output
@@ -165,7 +165,7 @@ class DescribeEmitSelectionExplainerDrift:
         # The drifted key must appear specifically in the "Covering minus selected" section,
         # not merely in the header echo of the covering set.
         _, dropped_section = output.split('Covering minus selected', 1)
-        assert "dropped    : 'tests/test_target.py::test_zero_case [custom-tag]'" in dropped_section
+        assert "dropped    : 'tests/test_target.py::test_zero_case [SMALL]'" in dropped_section
         assert "stripped   : 'tests/test_target.py::test_zero_case'" in dropped_section
 
     def it_suggests_close_match_for_drifted_key(self, sample_gremlin):
@@ -458,7 +458,7 @@ class DescribeCloseMatchesDisplay:
         assert result == '<no close match>'
 
     def it_returns_repr_quoted_matches_when_close_entries_exist(self):
-        needle = 'tests/test_target.py::test_zero_case [custom-tag]'
+        needle = 'tests/test_target.py::test_zero_case [SMALL]'
         haystack = ['tests/test_target.py::test_zero_case', 'tests/test_other.py::test_something']
 
         result = _close_matches_display(needle, haystack)
