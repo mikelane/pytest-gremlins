@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import (
     MagicMock,
     create_autospec,
@@ -13,6 +14,10 @@ import warnings
 import pytest
 
 from pytest_gremlins import plugin as plugin_module
+from pytest_gremlins.control_run import (
+    ControlRunOutcome,
+    run_control,
+)
 from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
@@ -24,6 +29,7 @@ from pytest_gremlins.plugin import (
     _run_mutation_testing,
     _run_parallel_mutation_testing,
     _select_tests_for_gremlin_prioritized,
+    _verify_suite_loads_unmutated,
     _warn_unmapped_selections,
 )
 from pytest_gremlins.reporting.results import (
@@ -211,3 +217,22 @@ class DescribeExecutionLoopsAbstainOnUnrunnableSelection:
         results = _run_batch_mutation_testing(MagicMock(spec=pytest.Session), _session([UNMAPPED]))
 
         assert [r.status for r in results] == [GremlinResultStatus.ERROR]
+
+
+@pytest.mark.small
+class DescribeControlRunIgnoresUnrunnableGremlins:
+    def it_spawns_no_control_run_when_every_gremlin_was_left_with_no_test(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """An empty node-id list would make the control run load the whole suite for gremlins that never run."""
+        control = create_autospec(
+            run_control, return_value=ControlRunOutcome(loads_cleanly=True, output='', seconds=0.1)
+        )
+        monkeypatch.setattr(plugin_module, 'run_control', control)
+        monkeypatch.setattr(plugin_module, '_get_rootdir', lambda _: tmp_path)
+        session = _session([UNMAPPED])
+        session.instrumented_dir = tmp_path
+
+        _verify_suite_loads_unmutated(SimpleNamespace(config=None), session)  # type: ignore[arg-type]
+
+        control.assert_not_called()

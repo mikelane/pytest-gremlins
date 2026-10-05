@@ -1978,7 +1978,7 @@ def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: Grem
     harness loads the suite cleanly without one. The baseline run is a different process, so it
     cannot vouch for that. When the control run fails, a marker next to ``sources.json`` makes the
     bootstrap stop reporting load failures as kills, so every mapping site scores them as errors.
-    Only gremlins that will actually run count: pardoned and cached ones are skipped, and when none
+    Only gremlins that will actually run count: pardoned, unrunnable and cached ones are skipped, and when none
     is left no subprocess is spawned and nothing is printed. The union of the remaining selections is
     an early-out only; each collection kill is confirmed against its own selection by
     :func:`_confirm_collection_kill`.
@@ -1992,6 +1992,8 @@ def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: Grem
         if _immediate_result_if_pardoned(gremlin) is not None:
             continue
         selected_tests = _select_tests_for_gremlin_prioritized(gremlin, gremlin_session)
+        if _immediate_result_if_selection_unrunnable(gremlin, gremlin_session) is not None:
+            continue
         if _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session) is not None:
             continue
         selected_node_ids.update(_node_ids_for_tests(selected_tests, gremlin_session))
