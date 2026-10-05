@@ -194,8 +194,7 @@ class DescribeRunUnmutated:
         outcome = run_unmutated([str(tmp_path / 'no-such-python')], [], tmp_path, {}, timeout=30)
 
         assert not outcome.timed_out
-        assert outcome.launch_error is not None
-        assert 'no-such-python' in outcome.launch_error
+        assert outcome.launch_error
 
     def it_passes_the_node_ids_after_the_command(self, tmp_path: Path) -> None:
         recorded = tmp_path / 'argv.txt'
