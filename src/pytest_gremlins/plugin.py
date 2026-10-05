@@ -1968,7 +1968,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
     _verify_suite_loads_unmutated(session, gremlin_session)
     gremlin_session.results = _dispatch_mutation_run(session, gremlin_session)
-    _warn_unmapped_selections(gremlin_session)
+    _report_unmapped_selections(gremlin_session)
 
 
 def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: GremlinSession) -> None:
@@ -3574,7 +3574,7 @@ def _immediate_result_if_selection_unrunnable(
     )
 
 
-def _warn_unmapped_selections(gremlin_session: GremlinSession) -> None:
+def _report_unmapped_selections(gremlin_session: GremlinSession) -> None:
     """Report once per run that coverage-selected tests were not run because they have no node id.
 
     Written to stderr rather than raised through ``warnings.warn``: this runs in ``pytest_sessionfinish``,

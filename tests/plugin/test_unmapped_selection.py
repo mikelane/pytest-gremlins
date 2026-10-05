@@ -27,12 +27,12 @@ from pytest_gremlins.plugin import (
     _build_test_hashes_for_gremlin,
     _immediate_result_if_selection_unrunnable,
     _node_ids_for_tests,
+    _report_unmapped_selections,
     _run_batch_mutation_testing,
     _run_mutation_testing,
     _run_parallel_mutation_testing,
     _select_tests_for_gremlin_prioritized,
     _verify_suite_loads_unmutated,
-    _warn_unmapped_selections,
 )
 from pytest_gremlins.reporting.results import (
     GremlinResult,
@@ -141,12 +141,12 @@ class DescribeUnrunnableSelection:
 
 
 @pytest.mark.small
-class DescribeUnmappedSelectionWarning:
+class DescribeUnmappedSelectionReport:
     def it_reports_once_with_the_count_and_an_example_name(self, capsys: pytest.CaptureFixture[str]) -> None:
         session = _session([])
         session.unmapped_selections = {'g001': [UNMAPPED, OTHER_UNMAPPED], 'g002': [UNMAPPED]}
 
-        _warn_unmapped_selections(session)
+        _report_unmapped_selections(session)
 
         lines = capsys.readouterr().err.splitlines()
         assert len(lines) == 1
@@ -160,14 +160,14 @@ class DescribeUnmappedSelectionWarning:
 
         with warnings.catch_warnings():
             warnings.simplefilter('error')
-            _warn_unmapped_selections(session)
+            _report_unmapped_selections(session)
 
         assert UNMAPPED in capsys.readouterr().err
 
     def it_stays_silent_when_nothing_was_dropped(self, capsys: pytest.CaptureFixture[str]) -> None:
         session = _session([MAPPED])
 
-        _warn_unmapped_selections(session)
+        _report_unmapped_selections(session)
 
         assert capsys.readouterr().err == ''
 
