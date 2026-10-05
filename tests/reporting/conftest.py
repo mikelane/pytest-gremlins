@@ -36,6 +36,7 @@ def make_gremlin() -> MakeGremlinFactory:
     def _make_gremlin(
         file_path: str = 'test.py',
         line_number: int = 1,
+        *,
         column_offset: int = 0,
         end_line_number: int | None = None,
         end_column_offset: int | None = None,
@@ -73,6 +74,7 @@ def make_result(make_gremlin: MakeGremlinFactory) -> MakeResultFactory:
 
     def _make_result(
         status: GremlinResultStatus = GremlinResultStatus.ZAPPED,
+        *,
         file_path: str = 'test.py',
         line_number: int = 1,
         operator_name: str = 'comparison',

@@ -177,6 +177,7 @@ class DescribeCachingOfSoloRerunResults:
     )
     def it_caches_the_solo_verdict_like_any_other(
         self,
+        *,
         session: GremlinSession,
         fake_solo_run: MagicMock,
         cache: MagicMock,
