@@ -113,9 +113,9 @@ class DescribeMergeConfigs:
 
         assert result.exclude is None
 
-    def it_rejects_cli_values_passed_positionally(self):
+    def it_rejects_cli_values_passed_positionally(self) -> None:
         """CLI values must be passed by keyword so positional order cannot be confused."""
         file_config = GremlinConfig()
 
-        with pytest.raises(TypeError):
-            merge_configs(file_config, 'boolean,return')  # type: ignore[misc]
+        with pytest.raises(TypeError, match='takes 1 positional argument but 2 were given'):
+            merge_configs(file_config, 'boolean,return')  # type: ignore[call-arg]
