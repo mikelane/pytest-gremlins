@@ -241,12 +241,14 @@ v1.9.0 or by interim builds, which used the lightweight runner, are recomputed o
 So are timeouts cached before they were confirmed against the unmutated tests (#565).
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that
 failed to collect, or a changed parametrize id) are recorded as ZAPPED with the killing test
-`<collection>`; ones cached as ERROR before that change are recomputed too. Verdicts are not
-cached while load failures are unattributable (the unmutated suite cannot load in the gremlin
-subprocess) or after a kill is downgraded to ERROR because the gremlin's own unmutated selection
-fails to load or a timeout is downgraded to ERROR because the unmutated selection takes more than
-half the limit or times out, so
-fixing the cause never replays stale errors from a warm cache.
+`<collection>`; ones cached as ERROR before that change are recomputed too.
+
+Verdicts are not cached in three cases, so fixing the cause never replays stale errors from a warm cache:
+
+- while load failures are unattributable (the unmutated suite cannot load in the gremlin subprocess)
+- after a kill is downgraded to ERROR because the gremlin's own unmutated selection fails to load
+- after a timeout is downgraded to ERROR because the unmutated selection takes more than half the
+  limit, or times out
 
 ## Configuration
 

@@ -112,7 +112,7 @@ class JsonResultEntry(TypedDict):
 
 
 class JsonTimeoutWarning(TypedDict):
-    """Present when timeouts were downgraded to errors because the unmutated tests also timed out."""
+    """Present when timeouts were downgraded to errors: the unmutated tests did not finish well inside the limit."""
 
     downgraded: int
     mutant_timeout: int | None

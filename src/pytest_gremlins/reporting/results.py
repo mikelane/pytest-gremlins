@@ -18,10 +18,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.instrumentation.gremlin import Gremlin
 
 
-TIMEOUT_NOT_CONFIRMED_PREFIX = (
-    'the gremlin timed out, but its own selection of tests is also too slow without a mutant '
-    '(it did not finish well inside the mutant timeout), so the timeout is no evidence that the mutant was caught'
-)
+TIMEOUT_NOT_CONFIRMED_PREFIX = "timeout not counted as a kill: the gremlin's tests are too slow even without the mutant"
 """Start of the ``error_output`` of a timeout that was downgraded to ERROR."""
 
 

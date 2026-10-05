@@ -180,6 +180,7 @@ def _detect_coverage_mode(config: pytest.Config) -> CoverageMode:
 DEFAULT_COVERAGE_TIMEOUT_SECONDS = 120
 DEFAULT_MUTANT_TIMEOUT_SECONDS = 30
 MAX_SELECTION_IDS_IN_MESSAGE = 5
+"""Node ids named in a downgraded-timeout message before the rest are summarised as ``(and N more)``."""
 TIMEOUT_CONFIRMATION_HEADROOM = 0.5
 """Share of ``mutant_timeout`` the unmutated confirmation run may use for a timeout to stay a kill.
 
@@ -2098,7 +2099,8 @@ def _confirm_timeout_kill(
         rootdir: Root directory of the project.
 
     Returns:
-        ``result`` unchanged, or an ERROR result when the unmutated selection also times out.
+        ``result`` unchanged, or an ERROR result when the unmutated selection times out, takes more than
+        ``TIMEOUT_CONFIRMATION_HEADROOM`` of the limit, or cannot be launched.
     """
     if result.status != GremlinResultStatus.TIMEOUT:
         return result
@@ -2107,6 +2109,13 @@ def _confirm_timeout_kill(
         command, env = _unmutated_command_and_env(gremlin_session, rootdir)
         gremlin_session.unmutated_timeout_checks[selection] = run_unmutated(
             command, node_ids, rootdir, env, timeout=gremlin_session.mutant_timeout
+        )
+        outcome = gremlin_session.unmutated_timeout_checks[selection]
+        logger.debug(
+            'Timeout confirmation: unmutated run of %d node ids took %.1fs (timed out: %s)',
+            len(selection),
+            outcome.seconds,
+            outcome.timed_out,
         )
     unmutated_outcome = gremlin_session.unmutated_timeout_checks[selection]
     if unmutated_outcome.launch_error is not None:
@@ -2130,19 +2139,20 @@ def _timeout_not_confirmed_message(
     selection: Sequence[str], mutant_timeout: int, unmutated_outcome: UnmutatedRunOutcome
 ) -> str:
     """Explain a downgraded timeout: the selection, how the unmutated run went, the limit, and how to raise it."""
-    shown = ', '.join(selection[:MAX_SELECTION_IDS_IN_MESSAGE]) or 'the whole suite'
-    hidden = len(selection) - MAX_SELECTION_IDS_IN_MESSAGE
-    if hidden > 0:
-        shown += f' (and {hidden} more)'
-    share = f'{TIMEOUT_CONFIRMATION_HEADROOM:.0%}'
-    unmutated = (
+    shown_ids = ', '.join(selection[:MAX_SELECTION_IDS_IN_MESSAGE]) or 'the whole suite'
+    hidden_count = len(selection) - MAX_SELECTION_IDS_IN_MESSAGE
+    if hidden_count > 0:
+        shown_ids += f' (and {hidden_count} more)'
+    headroom_percent = f'{TIMEOUT_CONFIRMATION_HEADROOM:.0%}'
+    unmutated_run_summary = (
         f'did not finish in {mutant_timeout}s'
         if unmutated_outcome.timed_out
-        else f'took {unmutated_outcome.seconds:.1f}s, over {share} of the {mutant_timeout}s limit'
+        else f'took {unmutated_outcome.seconds:.1f}s, over {headroom_percent} of the {mutant_timeout}s limit'
     )
     return (
-        f'{TIMEOUT_NOT_CONFIRMED_PREFIX} ({mutant_timeout}s; selection: {shown}; unmutated run {unmutated}). '
-        'Raise the limit with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout.'
+        f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (selection: {shown_ids}; unmutated run {unmutated_run_summary}). '
+        'Raise the limit with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout, '
+        'or speed up these tests.'
     )
 
 
@@ -2177,6 +2187,7 @@ def _rerun_timeout_alone(
         gremlin_session.instrumented_dir,
         timeout=gremlin_session.mutant_timeout,
     )
+    logger.debug('Pooled timeout of %s re-run alone: %s', result.gremlin.gremlin_id, solo_result.status.value)
     return dataclass_replace(solo_result, selected_tests=result.selected_tests)
 
 
@@ -3371,17 +3382,17 @@ def _cache_gremlin_result(
         return
 
     # A verdict scored while load failures were unattributable, or downgraded because the unmutated
-    # selection does not load or still times out without a mutant, depends on a harness or config problem
+    # selection does not load, is too slow without a mutant, or cannot be launched to confirm a timeout,
+    # depends on a harness or config problem
     # the user is told to fix; replaying it from a warm cache after the fix would keep reporting stale errors.
     if not gremlin_session.load_failures_attributable:
         return
-    # Skip caching errors from load failures and timeout issues
-    skip_prefixes = (
+    uncacheable_error_prefixes = (
         SELECTION_FAILS_TO_LOAD_PREFIX,
         TIMEOUT_NOT_CONFIRMED_PREFIX,
         TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX,
     )
-    if (result.error_output or '').startswith(skip_prefixes):
+    if (result.error_output or '').startswith(uncacheable_error_prefixes):
         return
 
     source_hash = gremlin_session.source_hashes.get(gremlin.file_path, '')

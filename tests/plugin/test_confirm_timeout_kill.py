@@ -97,6 +97,8 @@ class DescribeConfirmTimeoutKill:
         assert f'{TIMEOUT_SECONDS}s' in message
         assert '--gremlin-mutant-timeout' in message
         assert '[tool.pytest-gremlins].mutant_timeout' in message
+        assert 'speed up these tests' in message
+        assert message.startswith('timeout not counted as a kill: ')
 
     def it_runs_the_exact_node_ids_under_the_session_timeout(
         self, session: GremlinSession, fake_unmutated_run: MagicMock, tmp_path: Path
@@ -135,6 +137,7 @@ class DescribeConfirmTimeoutKill:
         assert result.status == GremlinResultStatus.ERROR
         assert result.error_output is not None
         assert 'could not be launched' in result.error_output
+        assert result.error_output.startswith('timeout not counted as a kill: ')
         assert '[Errno 2]' in result.error_output
 
     @pytest.mark.parametrize(

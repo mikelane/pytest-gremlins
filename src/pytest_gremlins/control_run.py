@@ -45,7 +45,7 @@ SELECTION_FAILS_TO_LOAD_PREFIX = (
 """Start of the ``error_output`` of a collection kill that was downgraded to ERROR."""
 
 TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX = (
-    'timeout could not be confirmed because the unmutated selection could not be launched; error:'
+    "timeout not counted as a kill: the gremlin's tests could not be launched without the mutant to confirm it; error:"
 )
 """Start of the ``error_output`` of a timeout that cannot be confirmed due to a launch failure."""
 

@@ -534,7 +534,7 @@ The value must be a positive integer number of seconds, at most 86400 (one day);
 the TOML key. The incremental cache keys each verdict on the timeout it was reached under, so a changed
 timeout judges every gremlin again.
 
-A timeout is only scored as a kill when the gremlin's tests finish comfortably inside the limit without
+A timeout is only scored as a kill when the gremlin's tests finish within half the limit without
 the mutant. In parallel and batch mode a gremlin first runs among other workers, so a timeout there may
 only be contention (a shared lock, a saturated CPU). pytest-gremlins therefore re-runs a timed-out
 gremlin alone, with the mutant active, under the same selection and limit. If that run finishes, it is
@@ -546,8 +546,10 @@ under the same limit (once per distinct selection). The timeout stays a kill onl
 within half the limit. If it takes longer, or times out, the timing is too close to call, so the
 gremlin is reported as an error, not a kill, with the measured unmutated time and the limit, and the
 summary and JSON report say how many were downgraded. A limit that is too short can only lower the
-score. Downgraded results are not written to the incremental cache. Because a real hang clears the
-half-limit margin easily, raise the limit if you see downgrades; in parallel and batch mode each
+score. Downgraded results are not written to the incremental cache.
+
+If you see downgrades, raise the limit (or speed up the slow tests): a real hang outlasts any limit,
+so a longer one costs you no kills. The trade-off is time, since in parallel and batch mode each
 genuine hang costs one extra solo run, up to the limit.
 
 ### Batch Execution

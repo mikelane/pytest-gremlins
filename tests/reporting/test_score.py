@@ -215,5 +215,18 @@ class DescribeMutationScoreWithDowngradedTimeouts:
 
         assert warning is not None
         assert '2 timeouts' in warning
-        assert '3s' in warning
+        assert 'half the 3s timeout' in warning
         assert '--gremlin-mutant-timeout' in warning
+        assert '[tool.pytest-gremlins].mutant_timeout' in warning
+
+    def it_uses_the_singular_for_one_downgraded_timeout(self, make_result):
+        warning = MutationScore.from_results([self._downgraded(make_result)], mutant_timeout=3).timeout_warning
+
+        assert warning is not None
+        assert warning.startswith('1 timeout counted as an error, not a kill: without the mutant, its tests ')
+
+    def it_names_the_mutant_timeout_generically_when_the_limit_is_unknown(self, make_result):
+        warning = MutationScore.from_results([self._downgraded(make_result)]).timeout_warning
+
+        assert warning is not None
+        assert 'half the mutant timeout' in warning

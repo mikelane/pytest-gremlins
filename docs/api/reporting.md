@@ -90,8 +90,8 @@ Enum of possible mutation test outcomes.
 |-------|---------|----------|
 | `ZAPPED` | Test caught the mutation | Good - tests working |
 | `SURVIVED` | Mutation not caught | Bad - test gap found |
-| `TIMEOUT` | Test execution timed out, and the same tests finish in time without the mutant | Good - the mutant hung the tests (for example an infinite loop) |
-| `ERROR` | Error during execution, or a timeout the unmutated tests also hit | Neutral - investigate |
+| `TIMEOUT` | Test execution timed out, and the same tests finish within half the timeout without the mutant | Good - the mutant hung the tests (for example an infinite loop) |
+| `ERROR` | Error during execution, or a timeout whose unmutated tests do not finish within half the timeout | Neutral - investigate |
 | `PARDONED` | Explicitly suppressed via pragma | Neutral - excluded from scoring |
 
 ### Usage Example
@@ -147,13 +147,17 @@ The mutation score represents test effectiveness:
 score = (zapped + timeout) / (total - pardoned) * 100
 ```
 
-A timeout counts as "caught" only when it is confirmed. In parallel and batch mode pytest-gremlins first
-re-runs the timed-out gremlin alone with the mutant active, since the timeout may be contention with
-other workers; if that run finishes, it is scored normally. If the gremlin times out alone, pytest-gremlins
-reruns its tests without the mutant under the same timeout, once per distinct selection of tests. If those
-tests finish within half the timeout, the mutant is what hung them, and the timeout is a kill. If they
-take longer, or time out, the timeout says nothing reliable about the mutant, so the gremlin is reported
-as `ERROR`, which stays in the denominator.
+A timeout counts as "caught" only when it is confirmed:
+
+1. In parallel and batch mode, pytest-gremlins first re-runs the timed-out gremlin alone with the mutant
+   active, since the timeout may be contention with other workers. If that run finishes, it is scored
+   normally.
+2. If the gremlin times out alone, pytest-gremlins reruns its tests without the mutant under the same
+   timeout, once per distinct selection of tests.
+3. If those tests finish within half the timeout, the mutant is what hung them, and the timeout is a kill.
+   If they take longer, or time out, the timeout says nothing reliable about the mutant, so the gremlin is
+   reported as `ERROR`, which stays in the denominator.
+
 A timeout that is too short can therefore only lower the score, never raise it.
 
 `MutationScore.downgraded_timeouts` counts those gremlins, and `MutationScore.timeout_warning` holds the

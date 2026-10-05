@@ -89,12 +89,12 @@ class JsonReporter:
             'files': self._build_file_breakdown(score),
             'results': [self._build_result(r) for r in score.results],
         }
-        warning = score.timeout_warning
-        if warning is not None:
+        timeout_warning = score.timeout_warning
+        if timeout_warning is not None:
             report['timeout_warning'] = {
                 'downgraded': score.downgraded_timeouts,
                 'mutant_timeout': score.mutant_timeout,
-                'message': warning,
+                'message': timeout_warning,
             }
         return report
 

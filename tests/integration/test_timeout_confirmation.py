@@ -93,7 +93,7 @@ class DescribeTimeoutShorterThanTheUnmutatedTests:
         assert report['summary']['timeout'] == 0
         assert report['timeout_warning']['downgraded'] == report['summary']['error'] >= 1
         assert report['timeout_warning']['mutant_timeout'] == 1
-        assert result.stdout.str().count('counted as errors, not kills') == 1
+        assert result.stdout.str().count('Raise the timeout with --gremlin-mutant-timeout') == 1
 
 
 @pytest.mark.large

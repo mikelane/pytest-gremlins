@@ -59,7 +59,7 @@ Timeout, Error, and Pardoned lines only appear when their count is greater than 
 | Zapped | Number and percentage of gremlins caught by tests |
 | Survived | Number and percentage of gremlins that escaped tests |
 | Timeout | Number and percentage of gremlins that caused test timeouts and whose tests finish in time without the mutant (shown when > 0); these count as kills |
-| Error | Number and percentage of gremlins that caused errors, including timeouts the unmutated tests also hit (shown when > 0) |
+| Error | Number and percentage of gremlins that caused errors, including timeouts whose unmutated tests do not finish within half the timeout (shown when > 0) |
 | Warning | One line giving how many timeouts were counted as errors because the unmutated tests did not finish within half the timeout, and how to raise it (shown when > 0) |
 | Pardoned | Number of gremlins pardoned via inline pragma, excluded from score (shown when > 0) |
 

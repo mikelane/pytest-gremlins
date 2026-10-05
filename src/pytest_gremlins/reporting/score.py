@@ -34,8 +34,8 @@ class MutationScore:
         total: Total number of gremlins tested.
         zapped: Number of gremlins caught by tests.
         survived: Number of gremlins that escaped tests.
-        timeout: Number of gremlins that caused test timeouts (confirmed ones; a timeout the unmutated
-            tests also hit is counted under ``error``).
+        timeout: Number of gremlins that caused test timeouts (confirmed ones; a timeout whose unmutated
+            tests do not finish well inside the limit is counted under ``error``).
         error: Number of gremlins that caused errors.
         pardoned: Number of gremlins explicitly pardoned (excluded from scoring).
         results: The underlying list of results.
@@ -82,7 +82,7 @@ class MutationScore:
 
     @property
     def downgraded_timeouts(self) -> int:
-        """Number of timeouts downgraded to errors because the unmutated tests also timed out."""
+        """Number of timeouts downgraded to errors: the unmutated tests did not finish well inside the limit."""
         return sum(
             1
             for r in self.results
@@ -96,14 +96,18 @@ class MutationScore:
         Returns:
             One line giving the count, the timeout, and the options that raise it.
         """
-        count = self.downgraded_timeouts
-        if not count:
+        downgraded_count = self.downgraded_timeouts
+        if not downgraded_count:
             return None
-        noun = 'timeout' if count == 1 else 'timeouts'
-        timeout = f'{self.mutant_timeout}s' if self.mutant_timeout is not None else 'the mutant timeout'
+        timeout_label = f'{self.mutant_timeout}s timeout' if self.mutant_timeout is not None else 'mutant timeout'
+        if downgraded_count == 1:
+            subject = '1 timeout counted as an error, not a kill: without the mutant, its tests'
+        else:
+            subject = f'{downgraded_count} timeouts counted as errors, not kills: without the mutant, their tests'
         return (
-            f'{count} {noun} counted as errors, not kills: the unmutated tests did not finish well inside {timeout}. '
-            'Raise it with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout.'
+            f'{subject} do not finish within half the {timeout_label}. '
+            'Raise the timeout with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout, '
+            'or speed up those tests.'
         )
 
     @property
@@ -112,7 +116,7 @@ class MutationScore:
 
         The score is (zapped + timeout) / (total - pardoned) * 100.
         A timeout counts as zapped because the test detected something wrong, but only
-        a confirmed one: a timeout whose unmutated selection also times out is an error.
+        a confirmed one: a timeout whose unmutated selection does not finish well inside the limit is an error.
         Pardoned gremlins are excluded from the denominator — they are
         intentionally suppressed and should not affect the score.
 

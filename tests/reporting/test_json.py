@@ -256,7 +256,7 @@ class DescribeJsonReporterSelectedTests:
 
 @pytest.mark.small
 class DescribeJsonReporterTimeoutWarning:
-    """The report says when timeouts were downgraded because the unmutated tests also timed out."""
+    """The report says when timeouts were downgraded because the unmutated tests were too slow."""
 
     def it_omits_the_field_when_nothing_was_downgraded(self, make_result):
         score = MutationScore.from_results([make_result(GremlinResultStatus.TIMEOUT)], mutant_timeout=3)

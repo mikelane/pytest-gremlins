@@ -417,9 +417,11 @@ same tests finish within half the timeout without the mutant. If they take longe
 out too, the gremlin is reported as `ERROR` instead (never as a kill), with the measured unmutated
 time and the limit in its error text, and the terminal summary shows a line such as:
 
+<!-- markdownlint-disable MD013 -->
 ```text
-Warning: 3 timeouts counted as errors, not kills: the unmutated tests did not finish well inside 1s. Raise it with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout.
+Warning: 3 timeouts counted as errors, not kills: without the mutant, their tests do not finish within half the 1s timeout. Raise the timeout with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout, or speed up those tests.
 ```
+<!-- markdownlint-enable MD013 -->
 
 and the JSON report gains a `timeout_warning` object with the count, the timeout, and the message.
 
