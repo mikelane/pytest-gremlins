@@ -2821,15 +2821,18 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, PLR
     # Check cache and separate cached from uncached
     cached_results: list[GremlinResult] = []
     uncached_gremlins: list[Gremlin] = []
+    settled_without_running = 0
 
     for gremlin in gremlins:
         pardoned_result = _immediate_result_if_pardoned(gremlin)
         if pardoned_result is not None:
             cached_results.append(pardoned_result)
+            settled_without_running += 1
             continue
         unrunnable_result = _immediate_result_if_selection_unrunnable(gremlin, gremlin_session)
         if unrunnable_result is not None:
             cached_results.append(unrunnable_result)
+            settled_without_running += 1
             continue
         selected_tests = gremlin_tests[gremlin.gremlin_id]
         cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
@@ -2843,7 +2846,13 @@ def _run_batch_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, PLR
 
     # Report cache stats
     if cached_results:
-        print(f'pytest-gremlins: {len(cached_results)} gremlins from cache, {len(uncached_gremlins)} to test')
+        print(
+            _format_cache_report(
+                cache_hits=len(cached_results) - settled_without_running,
+                settled_without_running=settled_without_running,
+                to_test=len(uncached_gremlins),
+            )
+        )
 
     if not uncached_gremlins:
         return cached_results
@@ -2963,15 +2972,18 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
     # Check cache and separate cached from uncached
     cached_results: list[GremlinResult] = []
     uncached_gremlins: list[Gremlin] = []
+    settled_without_running = 0
 
     for gremlin in gremlins:
         pardoned_result = _immediate_result_if_pardoned(gremlin)
         if pardoned_result is not None:
             cached_results.append(pardoned_result)
+            settled_without_running += 1
             continue
         unrunnable_result = _immediate_result_if_selection_unrunnable(gremlin, gremlin_session)
         if unrunnable_result is not None:
             cached_results.append(unrunnable_result)
+            settled_without_running += 1
             continue
         selected_tests = gremlin_tests[gremlin.gremlin_id]
         cached_result = _check_cache_for_gremlin(gremlin, selected_tests, gremlin_session)
@@ -2985,7 +2997,13 @@ def _run_parallel_mutation_testing(  # pragma: no cover  # noqa: C901, PLR0912, 
 
     # Report cache stats
     if cached_results:
-        print(f'pytest-gremlins: {len(cached_results)} gremlins from cache, {len(uncached_gremlins)} to test')
+        print(
+            _format_cache_report(
+                cache_hits=len(cached_results) - settled_without_running,
+                settled_without_running=settled_without_running,
+                to_test=len(uncached_gremlins),
+            )
+        )
 
     if not uncached_gremlins:
         return cached_results
@@ -3203,6 +3221,22 @@ def _print_unrunnable_selections(orphans: list[str], runnable_candidates: list[s
     for key in orphans:
         print(f'    selected   : {key!r}')
         print(f'    close match: {_close_matches_display(key, runnable_candidates)}')
+
+
+def _format_cache_report(*, cache_hits: int, settled_without_running: int, to_test: int) -> str:
+    """Describe how the gremlins were split before execution starts.
+
+    Pardoned and unrunnable gremlins get their verdict without running, so they
+    are reported apart from genuine cache hits.
+
+    Examples:
+        >>> _format_cache_report(cache_hits=3, settled_without_running=0, to_test=2)
+        'pytest-gremlins: 3 gremlins from cache, 2 to test'
+        >>> _format_cache_report(cache_hits=0, settled_without_running=4, to_test=0)
+        'pytest-gremlins: 0 gremlins from cache, 4 settled without running, 0 to test'
+    """
+    settled = f', {settled_without_running} settled without running' if settled_without_running else ''
+    return f'pytest-gremlins: {cache_hits} gremlins from cache{settled}, {to_test} to test'
 
 
 def _drop_bracketed_suffix(nodeid: str) -> str:
