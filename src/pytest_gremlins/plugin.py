@@ -1573,13 +1573,11 @@ def _sys_path_shared_with_subprocess() -> list[str]:
     bootstrap script, does not have it unless ``PYTHONPATH`` names it. Treating that directory as an import
     root would name the files below it differently from how the subprocess imports them.
     """
-    from_pythonpath = {Path(entry).resolve() for entry in os.environ.get('PYTHONPATH', '').split(os.pathsep) if entry}
     working_directory = Path.cwd().resolve()
-    return [
-        entry
-        for entry in sys.path
-        if not entry or (Path(entry).resolve() != working_directory or working_directory in from_pythonpath)
-    ]
+    pythonpath_entries = (entry for entry in os.environ.get('PYTHONPATH', '').split(os.pathsep) if entry)
+    if working_directory in {Path(entry).resolve() for entry in pythonpath_entries}:
+        return list(sys.path)
+    return [entry for entry in sys.path if not entry or Path(entry).resolve() != working_directory]
 
 
 def _collect_import_roots(
