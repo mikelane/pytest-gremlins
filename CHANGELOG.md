@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.11.2 (2026-10-06)
+
+**Gremlins are no longer reported as survivors because of how your project is laid out.**
+pytest-gremlins guessed each target file's module name from its path. When the guess didn't
+match the name your tests import, the mutated code never loaded, and every gremlin in that file
+was reported SURVIVED, even the ones your tests catch. The mutation run now asks Python's own
+import system which file an import loads, so no name is guessed.
+
+### Upgrade notes
+
+- **Your score may rise.** Gremlins your tests catch are now zapped in these cases, where they
+  used to survive (#597, #607):
+  - targets on a `pythonpath` entry other than the project root or `src/`
+  - modules that sit next to their tests in a directory without `__init__.py` and are imported
+    by their bare name
+  - packages installed in editable mode
+  - targets imported through the inner of two nested `pythonpath` entries
+  - targets imported through a symlink or hard link with a different file name
+- **The cache is rebuilt once.** The cache version changed so that survivors cached under a
+  wrong module name are not replayed. The first run after upgrading re-runs every gremlin.
+  (#607)
+- **Two targets that are the same file on disk now produce one set of gremlins.** For example,
+  a symlink and the file it points to. A warning names the skipped path. Previously each
+  spelling got its own gremlins, so the same code was counted twice. (#607)
+
+### Fix
+
+- **Gremlins in a file whose import name differed from its path-derived name were always
+  reported SURVIVED.** See the upgrade notes above. (#597, #607)
+- **Package data was unreadable inside instrumented packages.** `importlib.resources.files()`
+  and `pkgutil.get_data()` failed or returned `None` for an instrumented package, so tests that
+  read package data failed under every gremlin. (#607)
+
 ## v1.11.1 (2026-10-06)
 
 **Scores are more accurate, in both directions.** Some gremlins were killed by tests that
