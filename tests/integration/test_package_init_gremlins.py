@@ -24,6 +24,11 @@ def over(n):
     return n > 10
 """
 
+_SHADOWED_MODULE = """
+def shadow(n):
+    return n == 3
+"""
+
 _PACKAGE_INIT_TESTS = """
 import pkg
 
@@ -202,7 +207,21 @@ class DescribePackageInitGremlins:
         mutant_rows = [row for row in rows if row[0] != 'NONE']
         init_file = str(pytester_with_markers.path / 'pkg' / '__init__.py')
         package_dir = str(pytester_with_markers.path / 'pkg')
+        output = result.stdout.str()
 
-        assert _count(result.stdout.str(), 'Error') == 0
-        assert mutant_rows
+        assert (_count(output, 'Zapped'), _count(output, 'Survived'), _count(output, 'Error')) == (2, 0, 0)
         assert {tuple(row[1:]) for row in mutant_rows} == {(init_file, init_file, package_dir, package_dir, 'pkg')}
+
+    @pytest.mark.parametrize('targets', ['pkg,pkg.py', 'pkg.py,pkg'])
+    def it_leaves_a_module_shadowed_by_the_package_surviving(
+        self, pytester_with_markers: pytest.Pytester, targets: str
+    ) -> None:
+        pytester_with_markers.makeini('[pytest]\npythonpath = .\n')
+        pytester_with_markers.mkpydir('pkg').joinpath('__init__.py').write_text(_PACKAGE_INIT)
+        pytester_with_markers.path.joinpath('pkg.py').write_text(_SHADOWED_MODULE)
+        pytester_with_markers.mkdir('tests').joinpath('test_pkg.py').write_text(_PACKAGE_INIT_TESTS)
+
+        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, f'--gremlin-targets={targets}')
+        output = result.stdout.str()
+
+        assert (_count(output, 'Zapped'), _count(output, 'Survived'), _count(output, 'Error')) == (2, 1, 0)

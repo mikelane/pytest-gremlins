@@ -1464,8 +1464,17 @@ del _gremlin_os
     injection_nodes = ast.parse(gremlin_active_injection).body
 
     instrumented_sources: dict[str, dict[str, str]] = {}
-    for original_path, tree in instrumented_asts.items():
+    for original_path, tree in _package_inits_first(instrumented_asts, rootdir):
         module_name = _path_to_module_name(Path(original_path), rootdir)
+        if module_name in instrumented_sources:
+            logger.warning(
+                'Module name %r is taken by the package %s; %s is shadowed by it and can never be imported, '
+                'so its gremlins cannot be killed.',
+                module_name,
+                instrumented_sources[module_name]['origin'],
+                original_path,
+            )
+            continue
         injected_body = _prepend_injection(tree.body, injection_nodes)
         origin = Path(original_path).absolute()
         entry = {
@@ -1530,6 +1539,9 @@ def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) ->
     return body[:insert_position] + injection_nodes + body[insert_position:]
 
 
+_PACKAGE_INIT_STEM = '__init__'
+
+
 def _path_to_module_name(file_path: Path, rootdir: Path) -> str:
     """Convert a file path to a Python module name.
 
@@ -1558,15 +1570,30 @@ def _path_to_module_name(file_path: Path, rootdir: Path) -> str:
     if parts and parts[0] == 'src':
         parts = parts[1:]
 
-    if len(parts) > 1 and parts[-1] == '__init__':
+    if len(parts) > 1 and parts[-1] == _PACKAGE_INIT_STEM:
         parts = parts[:-1]
 
     return '.'.join(parts)
 
 
+def _package_inits_first(
+    instrumented_asts: dict[str, ast.Module],
+    rootdir: Path,
+) -> list[tuple[str, ast.Module]]:
+    """Order modules so a package ``__init__.py`` precedes any plain module that shares its name.
+
+    Python imports the package when both ``pkg/__init__.py`` and ``pkg.py`` exist, so the package must own
+    the name in ``sources.json`` whatever order the targets were given in.
+    """
+    return sorted(
+        instrumented_asts.items(),
+        key=lambda item: not _is_package_init(Path(item[0]), _path_to_module_name(Path(item[0]), rootdir)),
+    )
+
+
 def _is_package_init(file_path: Path, module_name: str) -> bool:
     """Return whether ``file_path`` is the ``__init__.py`` that ``module_name`` names as a package."""
-    return file_path.name == '__init__.py' and module_name != '__init__'
+    return file_path.stem == _PACKAGE_INIT_STEM and file_path.suffix == '.py' and module_name != _PACKAGE_INIT_STEM
 
 
 def _get_bootstrap_script() -> str:

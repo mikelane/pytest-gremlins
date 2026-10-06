@@ -172,6 +172,7 @@ class DescribeLightweightRunnerDisabled:
 
 
 def _written_entries(tmp_path: Path, relative_paths: list[str]) -> dict[str, dict[str, str]]:
+    """Instrument a trivial module at each relative path and return the sources.json entries by module name."""
     asts = {str(tmp_path / relative): ast.parse('x = 1\n') for relative in relative_paths}
     result_dir = _write_instrumented_sources(asts, tmp_path)
     entries: dict[str, dict[str, str]] = json.loads((result_dir / 'sources.json').read_text())
@@ -198,18 +199,41 @@ class DescribeWriteInstrumentedPackageSources:
         assert entries[module_name]['package_dir'] == str(tmp_path / package_dir)
         assert entries[module_name]['origin'] == str(tmp_path / relative_path)
 
-    @pytest.mark.parametrize('relative_path', ['pkg/core.py', 'mymod.py'])
-    def it_records_no_package_directory_for_a_plain_module(self, tmp_path: Path, relative_path: str) -> None:
+    @pytest.mark.parametrize(
+        ('relative_path', 'module_name'),
+        [('pkg/core.py', 'pkg.core'), ('mymod.py', 'mymod')],
+    )
+    def it_records_no_package_directory_for_a_plain_module(
+        self, tmp_path: Path, relative_path: str, module_name: str
+    ) -> None:
         entries = _written_entries(tmp_path, [relative_path])
 
-        assert all('package_dir' not in entry for entry in entries.values())
+        assert sorted(entries[module_name]) == ['origin', 'source']
 
     def it_records_no_package_directory_for_an_init_in_the_root(self, tmp_path: Path) -> None:
         entries = _written_entries(tmp_path, ['__init__.py'])
 
-        assert 'package_dir' not in entries['__init__']
+        assert sorted(entries['__init__']) == ['origin', 'source']
 
     def it_keeps_a_package_and_its_submodule_as_separate_entries(self, tmp_path: Path) -> None:
         entries = _written_entries(tmp_path, ['pkg/__init__.py', 'pkg/core.py'])
 
         assert sorted(entries) == ['pkg', 'pkg.core']
+
+    @pytest.mark.parametrize('relative_paths', [['pkg/__init__.py', 'pkg.py'], ['pkg.py', 'pkg/__init__.py']])
+    def it_gives_the_package_the_name_it_shares_with_a_sibling_module(
+        self, tmp_path: Path, relative_paths: list[str]
+    ) -> None:
+        entries = _written_entries(tmp_path, relative_paths)
+
+        assert entries['pkg']['origin'] == str(tmp_path / 'pkg' / '__init__.py')
+        assert entries['pkg']['package_dir'] == str(tmp_path / 'pkg')
+
+    @pytest.mark.parametrize('relative_paths', [['pkg/__init__.py', 'pkg.py'], ['pkg.py', 'pkg/__init__.py']])
+    def it_warns_naming_the_module_a_package_shadows(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, relative_paths: list[str]
+    ) -> None:
+        with caplog.at_level('WARNING'):
+            _written_entries(tmp_path, relative_paths)
+
+        assert [record.getMessage() for record in caplog.records if str(tmp_path / 'pkg.py') in record.getMessage()]
