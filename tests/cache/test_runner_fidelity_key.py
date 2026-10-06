@@ -72,3 +72,13 @@ class DescribeRunnerFidelityCacheKey:
             cache._store.put(unactivated_key, {'status': 'survived'})  # type: ignore[arg-type]
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
+
+    def it_retires_verdicts_cached_while_pythonpath_modules_were_registered_under_the_wrong_name(
+        self, tmp_path: Path
+    ) -> None:
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
+            misnamed_key = current_key.rsplit(':', 1)[0] + ':rf8'
+            cache._store.put(misnamed_key, {'status': 'survived'})  # type: ignore[arg-type]
+
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None

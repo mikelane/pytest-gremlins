@@ -1229,13 +1229,14 @@ def pytest_collection_finish(session: pytest.Session) -> None:
         )
         return
 
-    _generate_gremlins(gremlin_session, source_files, rootdir)
+    _generate_gremlins(gremlin_session, source_files, rootdir, _get_import_roots(session.config, rootdir))
 
 
 def _generate_gremlins(
     gremlin_session: GremlinSession,
     source_files: dict[str, str],
     rootdir: Path,
+    import_roots: collections.abc.Sequence[Path] = (),
 ) -> None:
     """Generate gremlins from source files and write instrumented sources.
 
@@ -1247,6 +1248,7 @@ def _generate_gremlins(
         gremlin_session: The current gremlin session.
         source_files: Mapping of file paths to their source code.
         rootdir: Root directory of the project.
+        import_roots: Directories modules are imported from, in import precedence order.
     """
     all_gremlins: list[Gremlin] = []
     instrumented_asts: dict[str, ast.Module] = {}
@@ -1263,7 +1265,7 @@ def _generate_gremlins(
     gremlin_session.gremlins = all_gremlins
 
     if all_gremlins:
-        instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir)
+        instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir, import_roots)
         gremlin_session.instrumented_dir = instrumented_dir
 
 
@@ -1434,6 +1436,7 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
 def _write_instrumented_sources(
     instrumented_asts: dict[str, ast.Module],
     rootdir: Path,
+    import_roots: collections.abc.Sequence[Path] = (),
 ) -> Path:
     """Write instrumented sources to a JSON file for import hook injection.
 
@@ -1450,6 +1453,8 @@ def _write_instrumented_sources(
     Args:
         instrumented_asts: Mapping of original file paths to their instrumented ASTs.
         rootdir: Root directory of the project.
+        import_roots: Directories modules are imported from, in import precedence order. A name taken
+            by two files goes to the one on the earlier root, as Python's import system would pick it.
 
     Returns:
         Path to the temporary directory containing the bootstrap infrastructure.
@@ -1464,14 +1469,16 @@ del _gremlin_os
     injection_nodes = ast.parse(gremlin_active_injection).body
 
     instrumented_sources: dict[str, dict[str, str]] = {}
-    for original_path, tree in _package_inits_first(instrumented_asts, rootdir):
-        module_name = _path_to_module_name(Path(original_path), rootdir)
+    for original_path, tree in _in_import_precedence(instrumented_asts, rootdir, import_roots):
+        module_name = _path_to_module_name(Path(original_path), rootdir, import_roots)
         if module_name in instrumented_sources:
+            winner = instrumented_sources[module_name]
             logger.warning(
-                'Module name %r is taken by the package %s; %s is shadowed by it and can never be imported, '
+                'Module name %r is taken by the %s %s; %s is shadowed by it and can never be imported, '
                 'so its gremlins cannot be killed.',
                 module_name,
-                instrumented_sources[module_name]['origin'],
+                'package' if 'package_dir' in winner else 'module',
+                winner['origin'],
                 original_path,
             )
             continue
@@ -1542,33 +1549,92 @@ def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) ->
 _PACKAGE_INIT_STEM = '__init__'
 
 
-def _path_to_module_name(file_path: Path, rootdir: Path) -> str:
+def _get_import_roots(config: pytest.Config, rootdir: Path) -> list[Path]:
+    """Return the directories modules are imported from, in import precedence order.
+
+    Args:
+        config: The pytest config, whose ``pythonpath`` ini option lists extra import roots.
+        rootdir: Root directory of the project.
+
+    Returns:
+        The roots from :func:`_collect_import_roots`, using the current ``sys.path``.
+    """
+    try:
+        pythonpath = [Path(entry) for entry in config.getini('pythonpath')]
+    except ValueError:
+        pythonpath = []
+    return _collect_import_roots(pythonpath, sys.path, rootdir)
+
+
+def _collect_import_roots(
+    pythonpath: collections.abc.Iterable[Path], sys_path: collections.abc.Iterable[str], rootdir: Path
+) -> list[Path]:
+    """Combine ``pythonpath`` entries, ``sys.path`` and the rootdir fallbacks into ordered import roots.
+
+    pytest puts ``pythonpath`` entries at the front of ``sys.path``, so they come first. ``rootdir/src`` and
+    the rootdir come last: they are where the plugin has always looked for modules, whether or not they
+    are on ``sys.path``. Entries are resolved, so symlinked roots compare equal to the files under them,
+    and a repeated entry keeps its first (highest-precedence) position.
+
+    Args:
+        pythonpath: Entries of the ``pythonpath`` ini option; a relative one is taken from the rootdir.
+        sys_path: Entries of ``sys.path``; the empty entry is skipped.
+        rootdir: Root directory of the project.
+
+    Returns:
+        Resolved, de-duplicated import roots, earliest import precedence first.
+    """
+    candidates = [rootdir / entry for entry in pythonpath]
+    candidates.extend(Path(entry) for entry in sys_path if entry)
+    candidates.extend([rootdir / 'src', rootdir])
+    roots: list[Path] = []
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved not in roots:
+            roots.append(resolved)
+    return roots
+
+
+def _import_root_index(file_path: Path, import_roots: collections.abc.Sequence[Path]) -> int | None:
+    """Return the index of the longest import root containing ``file_path``, or ``None`` if none does.
+
+    The file's directory is resolved but its own name is not, so a symlinked file keeps the name it is
+    imported under.
+    """
+    located = file_path.parent.resolve() / file_path.name
+    containing = [index for index, root in enumerate(import_roots) if located.is_relative_to(root.resolve())]
+    return min(containing, key=lambda index: (-len(import_roots[index].resolve().parts), index), default=None)
+
+
+def _path_to_module_name(file_path: Path, rootdir: Path, import_roots: collections.abc.Sequence[Path] = ()) -> str:
     """Convert a file path to a Python module name.
 
     Args:
         file_path: Path to the Python file.
         rootdir: Root directory of the project.
+        import_roots: Directories modules are imported from. The name is the path relative to the
+            longest of them that contains the file, as the import system would resolve it.
 
     Returns:
         The module name (e.g., 'package.module' for 'package/module.py').
-        For src/ layout projects, the 'src' prefix is stripped since it's
-        a layout convention, not part of the import path.
+        With no containing import root, the name comes from the path relative to ``rootdir``; for src/
+        layout projects the 'src' prefix is stripped since it's a layout convention, not part of the
+        import path.
         A package ``__init__.py`` is named after its package ('package' for
         'package/__init__.py'), because that is the name Python imports it under.
         An ``__init__.py`` sitting directly in the root (or in ``src/``) belongs
         to no importable package, so it keeps the literal name ``__init__``.
     """
-    try:
-        relative = file_path.relative_to(rootdir)
-    except ValueError:
-        relative = Path(file_path.name)
-
-    parts = list(relative.with_suffix('').parts)
-
-    # Strip 'src' prefix for src/ layout projects.
-    # Python imports use 'mypackage.module', not 'src.mypackage.module'.
-    if parts and parts[0] == 'src':
-        parts = parts[1:]
+    root_index = _import_root_index(file_path, import_roots)
+    if root_index is None:
+        relative = _relative_to_rootdir(file_path, rootdir)
+        parts = list(relative.with_suffix('').parts)
+        # Python imports use 'mypackage.module', not 'src.mypackage.module'.
+        if parts and parts[0] == 'src':
+            parts = parts[1:]
+    else:
+        located = file_path.parent.resolve() / file_path.name
+        parts = list(located.relative_to(import_roots[root_index].resolve()).with_suffix('').parts)
 
     if len(parts) > 1 and parts[-1] == _PACKAGE_INIT_STEM:
         parts = parts[:-1]
@@ -1576,19 +1642,32 @@ def _path_to_module_name(file_path: Path, rootdir: Path) -> str:
     return '.'.join(parts)
 
 
-def _package_inits_first(
+def _relative_to_rootdir(file_path: Path, rootdir: Path) -> Path:
+    try:
+        return file_path.relative_to(rootdir)
+    except ValueError:
+        return Path(file_path.name)
+
+
+def _in_import_precedence(
     instrumented_asts: dict[str, ast.Module],
     rootdir: Path,
+    import_roots: collections.abc.Sequence[Path],
 ) -> list[tuple[str, ast.Module]]:
-    """Order modules so a package ``__init__.py`` precedes any plain module that shares its name.
+    """Order modules so the one Python would import comes first when several share a name.
 
-    Python imports the package when both ``pkg/__init__.py`` and ``pkg.py`` exist, so the package must own
-    the name in ``sources.json`` whatever order the targets were given in.
+    Python searches ``sys.path`` in order, so a file on an earlier import root owns its name. On one root,
+    a package ``__init__.py`` precedes a plain module of the same name. Files that no root contains
+    come last.
     """
-    return sorted(
-        instrumented_asts.items(),
-        key=lambda item: not _is_package_init(Path(item[0]), _path_to_module_name(Path(item[0]), rootdir)),
-    )
+
+    def precedence(item: tuple[str, ast.Module]) -> tuple[int, bool]:
+        path = Path(item[0])
+        root_index = _import_root_index(path, import_roots)
+        is_package = _is_package_init(path, _path_to_module_name(path, rootdir, import_roots))
+        return (len(import_roots) if root_index is None else root_index, not is_package)
+
+    return sorted(instrumented_asts.items(), key=precedence)
 
 
 def _is_package_init(file_path: Path, module_name: str) -> bool:
@@ -2306,7 +2385,7 @@ def _rebuild_state_from_xdist_workers(
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
     logger.debug('pytest_sessionfinish: xdist Phase 2 discovered %d source files', len(source_files))
-    _generate_gremlins(gremlin_session, source_files, rootdir)
+    _generate_gremlins(gremlin_session, source_files, rootdir, _get_import_roots(session.config, rootdir))
     logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
 
 
