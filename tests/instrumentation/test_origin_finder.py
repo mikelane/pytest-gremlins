@@ -504,6 +504,43 @@ class DescribeGremlinFinderBasenamePrefilter:
 
         assert _import('listed_alias_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
 
+    def it_reaches_a_differently_named_hard_link_to_a_target_through_file_identity(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'real' / 'core_impl.py'
+        target.parent.mkdir()
+        target.write_text(ORIGINAL)
+        alias = tmp_path / 'vendor' / 'thing.py'
+        alias.parent.mkdir()
+        try:
+            alias.hardlink_to(target)
+        except OSError:
+            pytest.skip('this platform cannot create hard links')
+        monkeypatch.syspath_prepend(str(alias.parent))
+        install_finder(_entry_with_identity(target))
+
+        assert _import('thing').VALUE == 'instrumented'  # type: ignore[attr-defined]
+
+    def it_calls_file_identity_when_basename_misses_to_reach_differently_named_symlinks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'core_impl.py'
+        target.write_text(ORIGINAL)
+        alias = tmp_path / 'differently_named.py'
+        try:
+            alias.symlink_to(target)
+        except OSError:
+            pytest.skip('this platform cannot create symlinks')
+        monkeypatch.syspath_prepend(str(tmp_path))
+        install_finder(_entry_with_identity(target))
+        called: list[str] = []
+        real = origin_finder.file_identity
+        monkeypatch.setattr(origin_finder, 'file_identity', lambda path: called.append(path) or real(path))
+
+        _import('differently_named')
+
+        assert called == [str(alias)]
+
 
 @pytest.mark.small
 class DescribeNormalizeOrigin:

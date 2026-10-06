@@ -282,6 +282,8 @@ The import hooks module intercepts Python imports to inject instrumented code.
     only resolves paths whose file name is the (lowercased) name of an instrumented file, so
     ordinary imports cost a string comparison. Targets that are the same file on disk, such as a
     symlink to another target, generate gremlins once: the duplicate is skipped with a warning.
+    Resolution uses both path-based (normalize_origin) and identity-based (inode) lookups to
+    reach targets through differently-named symlinks and hard links.
 
 ### GremlinFinder
 

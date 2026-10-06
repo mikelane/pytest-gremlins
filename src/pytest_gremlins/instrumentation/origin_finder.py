@@ -68,17 +68,23 @@ class GremlinLoader(importlib.abc.Loader):
 
 
 class GremlinFinder(importlib.abc.MetaPathFinder):
-    """Swap the loader of any spec whose origin is an instrumented file."""
+    """Swap the loader of any spec whose origin is an instrumented file.
+
+    Resolution proceeds in two paths: (1) path-based (normalize_origin) for direct matches,
+    and (2) identity-based (inode) for differently-named aliases (symlinks, hard links).
+    """
 
     def __init__(self, instrumented_sources: InstrumentedSources) -> None:
         self._instrumented_sources = instrumented_sources
-        # Only a file named like an instrumented one is worth a realpath and a stat: most imports are not.
+        # Only a file named like an instrumented one is worth a realpath: most imports are not.
+        # This is an optimization to avoid normalize_origin on unrelated imports.
         self._file_names = frozenset(
             name.lower()
             for entry in instrumented_sources.values()
             for name in entry.get('names') or [os.path.basename(entry['origin'])]  # noqa: PTH119
         )
         # A path spelling the string key does not know still names a file on disk, and the disk is the authority.
+        # Used as a fallback when the path-based lookup misses (e.g., differently-named symlinks).
         self._keys_by_identity = {
             entry['identity']: key for key, entry in instrumented_sources.items() if entry.get('identity')
         }
