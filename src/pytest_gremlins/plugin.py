@@ -1563,7 +1563,23 @@ def _get_import_roots(config: pytest.Config, rootdir: Path) -> list[Path]:
         pythonpath = [Path(entry) for entry in config.getini('pythonpath')]
     except ValueError:
         pythonpath = []
-    return _collect_import_roots(pythonpath, sys.path, rootdir)
+    return _collect_import_roots(pythonpath, _sys_path_shared_with_subprocess(), rootdir)
+
+
+def _sys_path_shared_with_subprocess() -> list[str]:
+    """Return the ``sys.path`` entries the bootstrap subprocess is also given.
+
+    ``python -m pytest`` puts the current directory on ``sys.path``; the subprocess, which starts from the
+    bootstrap script, does not have it unless ``PYTHONPATH`` names it. Treating that directory as an import
+    root would name the files below it differently from how the subprocess imports them.
+    """
+    from_pythonpath = {Path(entry).resolve() for entry in os.environ.get('PYTHONPATH', '').split(os.pathsep) if entry}
+    working_directory = Path.cwd().resolve()
+    return [
+        entry
+        for entry in sys.path
+        if not entry or (Path(entry).resolve() != working_directory or working_directory in from_pythonpath)
+    ]
 
 
 def _collect_import_roots(

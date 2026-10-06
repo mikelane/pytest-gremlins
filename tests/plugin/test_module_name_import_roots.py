@@ -7,11 +7,13 @@ import json
 import logging
 import os
 from pathlib import Path
+from unittest.mock import create_autospec
 
 import pytest
 
 from pytest_gremlins.plugin import (
     _collect_import_roots,
+    _get_import_roots,
     _path_to_module_name,
     _write_instrumented_sources,
 )
@@ -119,6 +121,43 @@ class DescribeCollectImportRoots:
 
     def it_skips_the_empty_sys_path_entry(self, tmp_path: Path) -> None:
         assert _collect_import_roots([], [''], tmp_path) == [tmp_path / 'src', tmp_path]
+
+
+@pytest.mark.medium
+class DescribeGetImportRootsIgnoresTheParentsWorkingDirectoryEntry:
+    """``python -m pytest`` puts the cwd on sys.path; the bootstrap subprocess does not have it."""
+
+    @staticmethod
+    def _config() -> pytest.Config:
+        config = create_autospec(pytest.Config, instance=True)
+        config.getini.return_value = []
+        return config
+
+    def it_does_not_name_a_package_relative_to_a_cwd_inside_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        package_dir = tmp_path / 'src' / 'pkg'
+        package_dir.mkdir(parents=True)
+        monkeypatch.chdir(package_dir)
+        monkeypatch.setattr('sys.path', [str(package_dir)])
+        monkeypatch.delenv('PYTHONPATH', raising=False)
+
+        roots = _get_import_roots(self._config(), tmp_path)
+
+        assert _path_to_module_name(package_dir / 'core.py', tmp_path, roots) == 'pkg.core'
+
+    def it_keeps_a_cwd_entry_the_subprocess_also_gets_from_pythonpath(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        package_dir = tmp_path / 'src' / 'pkg'
+        package_dir.mkdir(parents=True)
+        monkeypatch.chdir(package_dir)
+        monkeypatch.setattr('sys.path', [str(package_dir)])
+        monkeypatch.setenv('PYTHONPATH', str(package_dir))
+
+        roots = _get_import_roots(self._config(), tmp_path)
+
+        assert _path_to_module_name(package_dir / 'core.py', tmp_path, roots) == 'core'
 
 
 @pytest.mark.medium
