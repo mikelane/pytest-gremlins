@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.11.1 (2026-10-06)
+
+**Scores are more accurate, in both directions.** Some gremlins were killed by tests that
+coverage never selected for them, which inflated scores. Gremlins in package `__init__.py` files
+were never activated, so they were reported as survivors even when a test killed them, which
+deflated scores. Both are fixed. Your score may move either way after upgrading.
+
+### Upgrade notes
+
+- **Your score may drop if your suite uses all-caps or bracketed parametrize ids.** Tests with
+  ids like `test_x[GET]` or `ids=['x [y]']` were dropped from a gremlin's selected tests. When
+  every selected test was dropped, the gremlin ran the whole suite, and a test that never covered
+  it could kill it. Those kills no longer count. A gremlin with no runnable selected test is now
+  reported as ERROR, with one line on stderr, instead of borrowing a verdict. (#571, #584, #590)
+- **Your score may rise if your packages have code in `__init__.py`.** Those gremlins are now
+  zapped when a test catches them. (#591, #599)
+- **The cache is rebuilt once.** The cache version changed, so the first run after upgrading
+  re-runs every gremlin and is slower. Later runs use the cache as before. (#554, #599)
+- **The Stryker export now carries pytest-gremlins' own score.** It sits at
+  `config.pytestGremlins` (`mutationScore` plus the counts). A Stryker dashboard drops
+  `RuntimeError` from its denominator but pytest-gremlins doesn't, so the dashboard's number can
+  be higher when ERRORs exist. Treat `mutationScore` as authoritative. See the reports guide.
+  (#572, #593)
+
+### Fix
+
+- **Gremlins in a package `__init__.py` were always reported SURVIVED.** The instrumented
+  package was registered as `pkg.__init__`, a name nothing imports, so its gremlins never ran.
+  It is now registered as `pkg` and stays a real package (`__path__`, relative imports and
+  submodule imports all work). When a module such as `pkg.py` shares its name with a package
+  `pkg/`, the package wins, as it does in Python's own import system, and a warning names the
+  shadowed file. Previously the shadowed file could be served in the package's place and its
+  unreachable gremlins reported as killed. (#591, #599)
+- **Instrumented modules had no `__file__`.** Code that reads `__file__` at import, for example
+  `Path(__file__).parent / 'data.txt'`, failed under every gremlin. Instrumented modules now
+  get their real `__file__` and `__spec__.origin`. Thanks @fwilkerson-cn (#525, #554)
+- **Selected tests were silently dropped for all-caps or bracketed parametrize ids.** See
+  the upgrade notes above. (#571, #584, #590)
+- **`StrykerExporter` raised `KeyError` when results contained pardoned gremlins.** Pardoned
+  gremlins are now exported as `Ignored`, which Stryker also leaves out of its score. This
+  affected only the Python API; the pytest CLI has no Stryker format. (#593)
+- **`pytest -p no:xdist` crashed when pytest-xdist was installed.** The xdist hooks are now
+  optional. Thanks @kocaemre (#547, #582)
+
 ## v1.11.0 (2026-10-05)
 
 **Timeouts no longer inflate the score.** A per-mutant timeout shorter than the tests' own
