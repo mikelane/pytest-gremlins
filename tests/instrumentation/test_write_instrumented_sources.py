@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from pytest_gremlins.instrumentation.origin_finder import normalize_origin
 from pytest_gremlins.plugin import (
     _write_instrumented_sources,
 )
@@ -19,7 +20,7 @@ def _parse_final_source(tmp_path: Path, source: str) -> list[ast.stmt]:
     original_path = str(tmp_path / 'mymod.py')
     result_dir = _write_instrumented_sources({original_path: tree}, tmp_path)
     sources = json.loads((result_dir / 'sources.json').read_text())
-    parsed: list[ast.stmt] = ast.parse(sources['mymod']['source']).body
+    parsed: list[ast.stmt] = ast.parse(sources[normalize_origin(original_path)]['source']).body
     return parsed
 
 
@@ -103,7 +104,7 @@ class DescribeWriteInstrumentedSources:
         original_path = str(tmp_path / 'mymod.py')
         result_dir = _write_instrumented_sources({original_path: tree}, tmp_path)
         sources = json.loads((result_dir / 'sources.json').read_text())
-        assert '__gremlin_active__' in sources['mymod']['source']
+        assert '__gremlin_active__' in sources[normalize_origin(original_path)]['source']
 
     def it_records_the_source_path_without_following_symlinks_as_the_origin(self, tmp_path: Path) -> None:
         real = tmp_path / 'real.py'
@@ -112,7 +113,7 @@ class DescribeWriteInstrumentedSources:
         original_path.symlink_to(real)
         result_dir = _write_instrumented_sources({str(original_path): ast.parse('x = 1\n')}, tmp_path)
         sources = json.loads((result_dir / 'sources.json').read_text())
-        assert sources['mymod']['origin'] == str(original_path)
+        assert sources[normalize_origin(str(real))]['origin'] == str(original_path)
 
     def it_handles_empty_module_body(self, tmp_path: Path) -> None:
         body = _parse_final_source(tmp_path, '')
@@ -172,7 +173,7 @@ class DescribeLightweightRunnerDisabled:
 
 
 def _written_entries(tmp_path: Path, relative_paths: list[str]) -> dict[str, dict[str, str]]:
-    """Instrument a trivial module at each relative path and return the sources.json entries by module name."""
+    """Instrument a trivial module at each relative path and return the sources.json entries by key."""
     asts = {str(tmp_path / relative): ast.parse('x = 1\n') for relative in relative_paths}
     result_dir = _write_instrumented_sources(asts, tmp_path)
     entries: dict[str, dict[str, str]] = json.loads((result_dir / 'sources.json').read_text())
@@ -180,60 +181,39 @@ def _written_entries(tmp_path: Path, relative_paths: list[str]) -> dict[str, dic
 
 
 @pytest.mark.medium
-class DescribeWriteInstrumentedPackageSources:
-    """A package ``__init__.py`` is registered as a package under its package name."""
+class DescribeWriteInstrumentedSourceKeys:
+    """Entries are keyed by the file they came from; what the module is called is the import system's business."""
 
     @pytest.mark.parametrize(
-        ('relative_path', 'module_name', 'package_dir'),
-        [
-            ('pkg/__init__.py', 'pkg', 'pkg'),
-            ('pkg/sub/__init__.py', 'pkg.sub', 'pkg/sub'),
-            ('src/pkg/__init__.py', 'pkg', 'src/pkg'),
-        ],
+        'relative_path',
+        ['mymod.py', 'pkg/core.py', 'pkg/__init__.py', 'src/pkg/sub/__init__.py', '__init__.py'],
     )
-    def it_records_the_package_directory_for_a_package_init(
-        self, tmp_path: Path, relative_path: str, module_name: str, package_dir: str
-    ) -> None:
+    def it_keys_a_source_by_the_normalized_real_path_of_its_file(self, tmp_path: Path, relative_path: str) -> None:
         entries = _written_entries(tmp_path, [relative_path])
 
-        assert entries[module_name]['package_dir'] == str(tmp_path / package_dir)
-        assert entries[module_name]['origin'] == str(tmp_path / relative_path)
+        assert list(entries) == [normalize_origin(str(tmp_path / relative_path))]
 
-    @pytest.mark.parametrize(
-        ('relative_path', 'module_name'),
-        [('pkg/core.py', 'pkg.core'), ('mymod.py', 'mymod')],
-    )
-    def it_records_no_package_directory_for_a_plain_module(
-        self, tmp_path: Path, relative_path: str, module_name: str
+    def it_records_only_the_source_and_the_origin(self, tmp_path: Path) -> None:
+        entries = _written_entries(tmp_path, ['pkg/__init__.py'])
+
+        assert sorted(next(iter(entries.values()))) == ['origin', 'source']
+
+    def it_keeps_every_file_even_when_the_import_system_would_serve_only_one_of_a_shared_name(
+        self, tmp_path: Path
     ) -> None:
-        entries = _written_entries(tmp_path, [relative_path])
+        entries = _written_entries(tmp_path, ['pkg/__init__.py', 'pkg.py'])
 
-        assert sorted(entries[module_name]) == ['origin', 'source']
+        assert sorted(entry['origin'] for entry in entries.values()) == sorted(
+            [str(tmp_path / 'pkg' / '__init__.py'), str(tmp_path / 'pkg.py')]
+        )
 
-    def it_records_no_package_directory_for_an_init_in_the_root(self, tmp_path: Path) -> None:
-        entries = _written_entries(tmp_path, ['__init__.py'])
+    def it_resolves_a_relative_path_against_the_rootdir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        elsewhere = tmp_path / 'elsewhere'
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
 
-        assert sorted(entries['__init__']) == ['origin', 'source']
+        result_dir = _write_instrumented_sources({'mymod.py': ast.parse('x = 1\n')}, tmp_path)
 
-    def it_keeps_a_package_and_its_submodule_as_separate_entries(self, tmp_path: Path) -> None:
-        entries = _written_entries(tmp_path, ['pkg/__init__.py', 'pkg/core.py'])
-
-        assert sorted(entries) == ['pkg', 'pkg.core']
-
-    @pytest.mark.parametrize('relative_paths', [['pkg/__init__.py', 'pkg.py'], ['pkg.py', 'pkg/__init__.py']])
-    def it_gives_the_package_the_name_it_shares_with_a_sibling_module(
-        self, tmp_path: Path, relative_paths: list[str]
-    ) -> None:
-        entries = _written_entries(tmp_path, relative_paths)
-
-        assert entries['pkg']['origin'] == str(tmp_path / 'pkg' / '__init__.py')
-        assert entries['pkg']['package_dir'] == str(tmp_path / 'pkg')
-
-    @pytest.mark.parametrize('relative_paths', [['pkg/__init__.py', 'pkg.py'], ['pkg.py', 'pkg/__init__.py']])
-    def it_warns_naming_the_module_a_package_shadows(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture, relative_paths: list[str]
-    ) -> None:
-        with caplog.at_level('WARNING'):
-            _written_entries(tmp_path, relative_paths)
-
-        assert [record.getMessage() for record in caplog.records if str(tmp_path / 'pkg.py') in record.getMessage()]
+        assert list(json.loads((result_dir / 'sources.json').read_text())) == [
+            normalize_origin(str(tmp_path / 'mymod.py'))
+        ]

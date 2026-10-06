@@ -33,7 +33,6 @@ from pytest_gremlins.plugin import (
     _is_xdist_worker,
     _make_node_ids_relative,
     _parse_cli_report_formats,
-    _path_to_module_name,
     _pytest_cov_available,
     _read_parallel_config,
     _select_tests_for_gremlin_prioritized,
@@ -338,42 +337,6 @@ class DescribeMakeNodeIdsRelative:
         result = _make_node_ids_relative(node_ids, rootdir)
 
         assert result == ['/some/other/path/test.py::test_func']
-
-
-@pytest.mark.small
-class DescribePathToModuleName:
-    """Tests for _path_to_module_name function."""
-
-    def it_converts_relative_path_to_module(self, tmp_path: Path) -> None:
-        """Converts relative path to module name."""
-        file_path = tmp_path / 'package' / 'module.py'
-        result = _path_to_module_name(file_path, tmp_path)
-        assert result == 'package.module'
-
-    def it_strips_src_prefix(self, tmp_path: Path) -> None:
-        """Strips src/ prefix from path since it's a layout convention."""
-        file_path = tmp_path / 'src' / 'mypackage' / 'module.py'
-        result = _path_to_module_name(file_path, tmp_path)
-        assert result == 'mypackage.module'
-
-
-@pytest.mark.medium
-class DescribePathToModuleNameFileIO:
-    """Filesystem tests for _path_to_module_name — require real directory creation."""
-
-    def it_handles_file_not_relative_to_rootdir(self, tmp_path: Path) -> None:
-        """When file is not under rootdir, uses just the filename.
-
-        Covers lines 426-427: ValueError catch for relative_to.
-        """
-        rootdir = tmp_path / 'project'
-        rootdir.mkdir()
-        file_path = Path('/some/other/path/module.py')
-
-        result = _path_to_module_name(file_path, rootdir)
-
-        # Just returns the filename without .py extension
-        assert result == 'module'
 
 
 @pytest.mark.small

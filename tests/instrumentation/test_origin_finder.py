@@ -12,16 +12,22 @@ from collections.abc import (
 )
 import importlib
 import importlib.util
+import inspect
 from pathlib import Path
 import sys
 from types import ModuleType
 
 import pytest
 
+from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.origin_finder import (
     GremlinFinder,
     install,
     normalize_origin,
+)
+from pytest_gremlins.plugin import (
+    _get_bootstrap_script,
+    _get_lightweight_runner_script,
 )
 
 Sources = dict[str, dict[str, str]]
@@ -241,3 +247,12 @@ class DescribeNormalizeOrigin:
         monkeypatch.chdir(tmp_path)
 
         assert normalize_origin('a/../mod.py') == normalize_origin(str(tmp_path / 'mod.py'))
+
+
+@pytest.mark.small
+class DescribeSharedFinderSource:
+    """Both generated scripts carry the same finder, so they cannot drift apart."""
+
+    @pytest.mark.parametrize('script', [_get_bootstrap_script, _get_lightweight_runner_script])
+    def it_embeds_the_finder_module_verbatim(self, script: Callable[[], str]) -> None:
+        assert inspect.getsource(origin_finder) in script()

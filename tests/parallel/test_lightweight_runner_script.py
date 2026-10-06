@@ -15,6 +15,7 @@ import textwrap
 
 import pytest
 
+from pytest_gremlins.instrumentation.origin_finder import normalize_origin
 from pytest_gremlins.parallel.lightweight import LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE
 from pytest_gremlins.plugin import _get_lightweight_runner_script
 
@@ -154,14 +155,17 @@ class DescribeLightweightRunnerInstrumentedModules:
 
     def it_gives_the_instrumented_module_its_origin_as_file(self, tmp_path: Path) -> None:
         origin = tmp_path / 'target.py'
+        origin.write_text('VALUE = 0\n', encoding='utf-8')
         sources = tmp_path / 'sources.json'
-        sources.write_text(json.dumps({'target': {'source': 'VALUE = 1\n', 'origin': str(origin)}}), encoding='utf-8')
+        entry = {'source': 'VALUE = 1\n', 'origin': str(origin)}
+        sources.write_text(json.dumps({normalize_origin(str(origin)): entry}), encoding='utf-8')
         test_source = f"""
+            import os
             import target
 
             def test_a():
-                assert target.__file__ == {str(origin)!r}
-                assert target.__spec__.origin == {str(origin)!r}
+                assert os.path.realpath(target.__file__) == {str(origin)!r}
+                assert target.__spec__.origin == target.__file__
             """
 
         result = _run_runner(

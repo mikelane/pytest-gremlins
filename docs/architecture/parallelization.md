@@ -243,8 +243,9 @@ So are verdicts cached while instrumented modules had no `__file__` (#525), when
 failed under every gremlin.
 So are verdicts cached for gremlins in a package `__init__.py` (#591), which were never activated and so
 were all cached as SURVIVED.
-So are verdicts cached for gremlins in files under a non-`src` `pythonpath` entry (#597), which were
-registered under a name nothing imports and so were all cached as SURVIVED.
+So are verdicts cached while instrumented files were registered under a module name guessed from
+`sys.path` and `pythonpath` (#597), which could differ from the name the tests import them under, so
+the instrumented code never loaded and every gremlin was cached as SURVIVED.
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that
 failed to collect, or a changed parametrize id) are recorded as ZAPPED with the killing test
 `<collection>`; ones cached as ERROR before that change are recomputed too.

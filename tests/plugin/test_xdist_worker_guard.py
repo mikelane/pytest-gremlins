@@ -59,9 +59,8 @@ class DescribeCollectionFinishWorkerGuard:
     def it_collection_finish_processes_normally_on_controller(self, tmp_path: Path) -> None:
         """Non-worker config causes pytest_collection_finish to proceed normally."""
         session = MagicMock(spec=pytest.Session)
-        session.config = MagicMock(spec=['getini'])
+        session.config = MagicMock(spec=[])
         session.config.rootdir = str(tmp_path)
-        session.config.getini.return_value = []
         session.items = []
 
         gs = GremlinSession(enabled=True)
