@@ -175,6 +175,7 @@ class DescribeStrykerExporterStatus:
             (GremlinResultStatus.SURVIVED, 'Survived'),
             (GremlinResultStatus.TIMEOUT, 'Timeout'),
             (GremlinResultStatus.ERROR, 'RuntimeError'),
+            (GremlinResultStatus.PARDONED, 'Ignored'),
         ],
     )
     def it_maps_gremlin_status_to_stryker_status(self, make_result, gremlin_status, stryker_status):
@@ -332,20 +333,7 @@ class DescribeStrykerExporterOwnScore:
         assert 'RuntimeError' in note
         assert 'denominator' in note
 
-    def it_keeps_mapping_errors_to_runtime_error(self, score_with_errors):
-        data = json.loads(StrykerExporter().to_json(score_with_errors))
-
-        statuses = [m['status'] for f in data['files'].values() for m in f['mutants']]
-        assert 'RuntimeError' in statuses
-
     def it_embeds_zero_score_for_an_empty_run(self):
         data = json.loads(StrykerExporter().to_json(MutationScore.from_results([])))
 
         assert data['config']['pytestGremlins']['mutationScore'] == 0.0
-
-    def it_exports_pardoned_gremlins_as_ignored(self, make_result):
-        score = MutationScore.from_results([make_result(GremlinResultStatus.PARDONED)])
-
-        data = json.loads(StrykerExporter().to_json(score))
-
-        assert data['files']['test.py']['mutants'][0]['status'] == 'Ignored'
