@@ -112,6 +112,16 @@ def test_aliased_positive():
 """
 
 
+_CORE_TESTS = """
+from mypkg.core import positive
+
+
+def test_positive():
+    assert positive(1)
+    assert not positive(0)
+"""
+
+
 def _count(output: str, label: str) -> int:
     match = re.search(rf'{label}: (\d+) gremlins', output)
     return int(match.group(1)) if match else 0
@@ -175,6 +185,22 @@ class DescribeOriginResolvedModuleNames:
         except OSError:
             pytest.skip('this platform cannot create symlinks')
         pytester_with_markers.mkdir('tests').joinpath('test_core.py').write_text(_SYMLINK_ALIAS_TESTS)
+
+        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
+
+        assert _verdicts(result.stdout.str()) == (2, 0, 0)
+
+    def it_zaps_a_target_the_import_system_spells_with_different_case_than_the_disk(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makeini('[pytest]\npythonpath = Src\n')
+        package = pytester_with_markers.path / 'src' / 'mypkg'
+        package.mkdir(parents=True)
+        if not pytester_with_markers.path.joinpath('Src').exists():
+            pytest.skip('this filesystem is case-sensitive, so "Src" is not the directory "src"')
+        package.joinpath('__init__.py').write_text('')
+        package.joinpath('core.py').write_text(_POSITIVE)
+        pytester_with_markers.mkdir('tests').joinpath('test_core.py').write_text(_CORE_TESTS)
 
         result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
 

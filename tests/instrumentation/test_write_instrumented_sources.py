@@ -8,7 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from pytest_gremlins.instrumentation.origin_finder import normalize_origin
+from pytest_gremlins.instrumentation.origin_finder import (
+    file_identity,
+    normalize_origin,
+)
 from pytest_gremlins.plugin import (
     _write_instrumented_sources,
 )
@@ -193,10 +196,35 @@ class DescribeWriteInstrumentedSourceKeys:
 
         assert list(entries) == [normalize_origin(str(tmp_path / relative_path))]
 
-    def it_records_only_the_source_and_the_origin(self, tmp_path: Path) -> None:
+    def it_records_no_module_name(self, tmp_path: Path) -> None:
         entries = _written_entries(tmp_path, ['pkg/__init__.py'])
 
-        assert sorted(next(iter(entries.values()))) == ['origin', 'source']
+        assert sorted(next(iter(entries.values()))) == ['identity', 'names', 'origin', 'source']
+
+    def it_records_the_device_and_inode_of_the_file(self, tmp_path: Path) -> None:
+        tmp_path.joinpath('real_mod.py').write_text('x = 1\n')
+        entries = _written_entries(tmp_path, ['real_mod.py'])
+
+        assert next(iter(entries.values()))['identity'] == file_identity(str(tmp_path / 'real_mod.py'))
+
+    def it_records_no_identity_for_a_file_that_is_not_on_disk(self, tmp_path: Path) -> None:
+        entries = _written_entries(tmp_path, ['ghost_mod.py'])
+
+        assert next(iter(entries.values()))['identity'] is None
+
+    def it_lists_the_lowercased_file_name_the_file_may_be_imported_as(self, tmp_path: Path) -> None:
+        entries = _written_entries(tmp_path, ['MixedCase.py'])
+
+        assert next(iter(entries.values()))['names'] == ['mixedcase.py']
+
+    def it_lists_the_file_names_of_the_dropped_spellings_of_a_file(self, tmp_path: Path) -> None:
+        tree = ast.parse('x = 1\n')
+        target = str(tmp_path / 'core.py')
+
+        result_dir = _write_instrumented_sources({target: tree}, tmp_path, {target: [str(tmp_path / 'alias.py')]})
+        entry = next(iter(json.loads((result_dir / 'sources.json').read_text()).values()))
+
+        assert entry['names'] == ['alias.py', 'core.py']
 
     def it_keeps_every_file_even_when_the_import_system_would_serve_only_one_of_a_shared_name(
         self, tmp_path: Path

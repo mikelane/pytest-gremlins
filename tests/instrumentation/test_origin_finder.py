@@ -18,7 +18,10 @@ from pathlib import Path
 import pkgutil
 import sys
 import threading
-from types import ModuleType
+from types import (
+    ModuleType,
+    SimpleNamespace,
+)
 
 import pytest
 
@@ -26,6 +29,7 @@ from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.origin_finder import (
     GremlinFinder,
     GremlinLoader,
+    file_identity,
     install,
     normalize_origin,
 )
@@ -43,6 +47,11 @@ ORIGINAL = 'VALUE = "original"\n'
 
 def _entry(origin: Path, source: str = INSTRUMENTED) -> Sources:
     return {normalize_origin(str(origin)): {'source': source, 'origin': str(origin)}}
+
+
+def _entry_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
+    entry = {'source': source, 'origin': str(origin), 'identity': file_identity(str(origin))}
+    return {normalize_origin(str(origin)): entry}  # type: ignore[dict-item]
 
 
 @pytest.fixture
@@ -345,6 +354,155 @@ class DescribeGremlinFinderDelegation:
 
         assert spec is not None
         assert isinstance(spec.loader, GremlinLoader)
+
+
+@pytest.mark.medium
+class DescribeGremlinFinderServesByFileIdentity:
+    """A path spelling that misses the string key still reaches the instrumented file by what it is on disk."""
+
+    def it_serves_a_file_whose_spelling_differs_but_whose_inode_is_an_instrumented_target(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'real' / 'twin_mod.py'
+        target.parent.mkdir()
+        target.write_text(ORIGINAL)
+        spelling = tmp_path / 'elsewhere' / 'twin_mod.py'
+        spelling.parent.mkdir()
+        try:
+            spelling.hardlink_to(target)
+        except OSError:
+            pytest.skip('this platform cannot create hard links')
+        monkeypatch.syspath_prepend(str(spelling.parent))
+        install_finder(_entry_with_identity(target))
+
+        assert _import('twin_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+
+    def it_leaves_a_different_file_with_the_same_name_alone(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'real' / 'namesake_mod.py'
+        target.parent.mkdir()
+        target.write_text(ORIGINAL)
+        namesake = tmp_path / 'elsewhere' / 'namesake_mod.py'
+        namesake.parent.mkdir()
+        namesake.write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(namesake.parent))
+        install_finder(_entry_with_identity(target))
+
+        assert _import('namesake_mod').VALUE == 'original'  # type: ignore[attr-defined]
+
+    def it_never_matches_on_an_entry_without_an_identity(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'real' / 'anon_mod.py'
+        target.parent.mkdir()
+        target.write_text(ORIGINAL)
+        spelling = tmp_path / 'elsewhere' / 'anon_mod.py'
+        spelling.parent.mkdir()
+        try:
+            spelling.hardlink_to(target)
+        except OSError:
+            pytest.skip('this platform cannot create hard links')
+        monkeypatch.syspath_prepend(str(spelling.parent))
+        install_finder(_entry(target))
+
+        assert _import('anon_mod').VALUE == 'original'  # type: ignore[attr-defined]
+
+
+@pytest.mark.medium
+class DescribeFileIdentity:
+    """A file's identity is its device and inode."""
+
+    def it_is_the_same_for_two_names_of_one_file(self, tmp_path: Path) -> None:
+        target = tmp_path / 'a.py'
+        target.write_text('')
+        alias = tmp_path / 'b.py'
+        try:
+            alias.hardlink_to(target)
+        except OSError:
+            pytest.skip('this platform cannot create hard links')
+
+        assert file_identity(str(alias)) == file_identity(str(target))
+
+    def it_differs_between_two_files(self, tmp_path: Path) -> None:
+        tmp_path.joinpath('a.py').write_text('')
+        tmp_path.joinpath('b.py').write_text('')
+
+        assert file_identity(str(tmp_path / 'a.py')) != file_identity(str(tmp_path / 'b.py'))
+
+    def it_is_none_for_a_file_that_does_not_exist(self, tmp_path: Path) -> None:
+        assert file_identity(str(tmp_path / 'missing.py')) is None
+
+
+@pytest.mark.small
+class DescribeFileIdentityOfZeroInode:
+    """ReFS and network drives report an inode of 0 or reuse inodes, so a zero inode is no identity."""
+
+    def it_is_none_when_the_filesystem_reports_an_inode_of_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(origin_finder.os, 'stat', lambda _path: SimpleNamespace(st_dev=7, st_ino=0))
+
+        assert file_identity('anything.py') is None
+
+
+@pytest.mark.medium
+class DescribeGremlinFinderBasenamePrefilter:
+    """Only a file named like an instrumented one is worth resolving to its real path."""
+
+    def it_does_not_resolve_the_real_path_of_a_module_no_target_is_named_like(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        tmp_path.joinpath('target_mod.py').write_text(ORIGINAL)
+        tmp_path.joinpath('bystander_mod.py').write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        install_finder(_entry(tmp_path / 'target_mod.py'))
+        resolved: list[str] = []
+        real = origin_finder.normalize_origin
+        monkeypatch.setattr(origin_finder, 'normalize_origin', lambda path: resolved.append(path) or real(path))
+
+        _import('bystander_mod')
+
+        assert resolved == []
+
+    def it_still_leaves_a_module_alone_when_it_only_shares_a_target_s_file_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'real' / 'shared_name_mod.py'
+        target.parent.mkdir()
+        target.write_text(ORIGINAL)
+        namesake = tmp_path / 'elsewhere' / 'shared_name_mod.py'
+        namesake.parent.mkdir()
+        namesake.write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(namesake.parent))
+        install_finder(_entry(target))
+
+        assert _import('shared_name_mod').VALUE == 'original'  # type: ignore[attr-defined]
+
+    def it_matches_file_names_without_regard_to_case(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        origin = tmp_path / 'MixedCaseMod.py'
+        origin.write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        install_finder(_entry(origin))
+
+        assert _import('MixedCaseMod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+
+    def it_serves_a_file_under_the_name_listed_for_it_even_when_its_origin_is_named_differently(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'core_impl.py'
+        target.write_text(ORIGINAL)
+        alias = tmp_path / 'listed_alias_mod.py'
+        try:
+            alias.symlink_to(target)
+        except OSError:
+            pytest.skip('this platform cannot create symlinks')
+        monkeypatch.syspath_prepend(str(tmp_path))
+        sources = _entry(target)
+        sources[normalize_origin(str(target))]['names'] = ['core_impl.py', 'listed_alias_mod.py']  # type: ignore[assignment]
+        install_finder(sources)
+
+        assert _import('listed_alias_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
 
 
 @pytest.mark.small

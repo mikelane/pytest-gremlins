@@ -35,6 +35,7 @@ import tempfile
 import tokenize
 from typing import (
     TYPE_CHECKING,
+    Any,
     Protocol,
 )
 import warnings
@@ -1257,7 +1258,8 @@ def _generate_gremlins(
     all_gremlins: list[Gremlin] = []
     instrumented_asts: dict[str, ast.Module] = {}
 
-    for file_path in _without_duplicate_origins(source_files, rootdir):
+    targets, duplicates = _without_duplicate_origins(source_files, rootdir)
+    for file_path in targets:
         source = source_files[file_path]
         try:
             gremlins, instrumented_tree = transform_source(source, file_path, gremlin_session.operators)
@@ -1270,7 +1272,7 @@ def _generate_gremlins(
     gremlin_session.gremlins = all_gremlins
 
     if all_gremlins:
-        instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir)
+        instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir, duplicates)
         gremlin_session.instrumented_dir = instrumented_dir
 
 
@@ -1280,7 +1282,7 @@ def _spelling_rank(file_path: str, rootdir: Path) -> tuple[bool, str]:
     return (str(origin) != os.path.realpath(origin), file_path)
 
 
-def _without_duplicate_origins(source_files: dict[str, str], rootdir: Path) -> list[str]:
+def _without_duplicate_origins(source_files: dict[str, str], rootdir: Path) -> tuple[list[str], dict[str, list[str]]]:
     """Return the targets in a stable order with each file on disk listed once.
 
     The finder in the test subprocess matches a file by where it really is, so two targets that are one
@@ -1293,9 +1295,11 @@ def _without_duplicate_origins(source_files: dict[str, str], rootdir: Path) -> l
         rootdir: Root directory of the project; a relative path is taken from it.
 
     Returns:
-        The target paths to instrument, real files first, then in path order.
+        The target paths to instrument, real files first, then in path order, and for each of them the
+        other spellings of the same file that were dropped.
     """
     kept: list[str] = []
+    duplicates: dict[str, list[str]] = {}
     first_seen: dict[str, str] = {}
     for file_path in sorted(source_files, key=lambda path: _spelling_rank(path, rootdir)):
         origin = str((rootdir / file_path).absolute())
@@ -1306,10 +1310,12 @@ def _without_duplicate_origins(source_files: dict[str, str], rootdir: Path) -> l
                 file_path,
                 first_seen[identity],
             )
+            duplicates[first_seen[identity]].append(file_path)
             continue
         first_seen[identity] = file_path
+        duplicates[file_path] = []
         kept.append(file_path)
-    return kept
+    return kept, duplicates
 
 
 def _discover_source_files(
@@ -1479,14 +1485,17 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
 def _write_instrumented_sources(
     instrumented_asts: dict[str, ast.Module],
     rootdir: Path,
+    duplicates: dict[str, list[str]] | None = None,
 ) -> Path:
     """Write instrumented sources to a JSON file for import hook injection.
 
     Creates a temporary directory containing:
     1. A JSON file mapping the normalized real path of each instrumented file to its
-       instrumented source code and the path that source came from. No module name is
-       recorded: the finder in the subprocess serves a file under whatever name the
-       import system resolves to it.
+       instrumented source code, the path that source came from, the file's device and
+       inode (``identity``, for spellings the path key misses) and the lowercased file
+       names it may be imported as (``names``, so the finder skips every other import
+       without touching the disk). No module name is recorded: the finder in the
+       subprocess serves a file under whatever name the import system resolves to it.
     2. A bootstrap script that registers import hooks and runs pytest
 
     This approach ensures that import hooks are registered BEFORE any modules
@@ -1496,6 +1505,8 @@ def _write_instrumented_sources(
     Args:
         instrumented_asts: Mapping of original file paths to their instrumented ASTs.
         rootdir: Root directory of the project; a relative path is taken from it.
+        duplicates: For a path in ``instrumented_asts``, the other spellings of the same file that
+            were dropped as targets; imported through one of them, the file is still served.
 
     Returns:
         Path to the temporary directory containing the bootstrap infrastructure.
@@ -1509,13 +1520,16 @@ del _gremlin_os
 
     injection_nodes = ast.parse(gremlin_active_injection).body
 
-    instrumented_sources: dict[str, dict[str, str]] = {}
+    instrumented_sources: dict[str, dict[str, Any]] = {}
     for original_path, tree in instrumented_asts.items():
         origin = (rootdir / original_path).absolute()
         injected_body = _prepend_injection(tree.body, injection_nodes)
+        spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
         instrumented_sources[normalize_origin(str(origin))] = {
             'source': ast.unparse(ast.Module(body=injected_body, type_ignores=tree.type_ignores)),
             'origin': str(origin),
+            'identity': file_identity(str(origin)),
+            'names': sorted({Path(spelling).name.lower() for spelling in spellings}),
         }
 
     sources_file = temp_dir / 'sources.json'

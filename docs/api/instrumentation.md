@@ -275,7 +275,13 @@ The import hooks module intercepts Python imports to inject instrumented code.
     rest of `sys.meta_path` which file a name resolves to and, when that file was instrumented,
     swaps in a loader that runs the instrumented source. Instrumented files are matched by their
     resolved real path, so `sys.path` order, `pythonpath` settings, editable installs and the
-    same file imported under two names behave exactly as they do without gremlins.
+    same file imported under two names behave exactly as they do without gremlins. A path the
+    import system spells differently from the disk (for example `Src` for `src` on a
+    case-insensitive filesystem, or a hard link) is matched by the file's device and inode
+    instead; an inode of 0, which some Windows filesystems report, is never matched. The finder
+    only resolves paths whose file name is the (lowercased) name of an instrumented file, so
+    ordinary imports cost a string comparison. Targets that are the same file on disk, such as a
+    symlink to another target, generate gremlins once: the duplicate is skipped with a warning.
 
 ### GremlinFinder
 

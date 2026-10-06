@@ -16,8 +16,10 @@ import os
 import sys
 import threading
 from types import ModuleType
+from typing import Any
 
-InstrumentedSources = dict[str, dict[str, str]]
+InstrumentedEntry = dict[str, Any]
+InstrumentedSources = dict[str, InstrumentedEntry]
 
 
 def normalize_origin(path: str) -> str:
@@ -70,6 +72,16 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
 
     def __init__(self, instrumented_sources: InstrumentedSources) -> None:
         self._instrumented_sources = instrumented_sources
+        # Only a file named like an instrumented one is worth a realpath and a stat: most imports are not.
+        self._file_names = frozenset(
+            name.lower()
+            for entry in instrumented_sources.values()
+            for name in entry.get('names') or [os.path.basename(entry['origin'])]  # noqa: PTH119
+        )
+        # A path spelling the string key does not know still names a file on disk, and the disk is the authority.
+        self._keys_by_identity = {
+            entry['identity']: key for key, entry in instrumented_sources.items() if entry.get('identity')
+        }
         self._resolving: set[tuple[int, str]] = set()
 
     def find_spec(  # noqa: D102
@@ -112,10 +124,16 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
                 return spec
         return None
 
-    def _instrumented_entry(self, spec: importlib.machinery.ModuleSpec | None) -> dict[str, str] | None:
+    def _instrumented_entry(self, spec: importlib.machinery.ModuleSpec | None) -> InstrumentedEntry | None:
         if spec is None or not spec.origin or not spec.has_location:
             return None
-        return self._instrumented_sources.get(normalize_origin(spec.origin))
+        if os.path.basename(spec.origin).lower() not in self._file_names:  # noqa: PTH119
+            return None
+        entry = self._instrumented_sources.get(normalize_origin(spec.origin))
+        if entry is not None:
+            return entry
+        identity = file_identity(spec.origin)
+        return self._instrumented_sources.get(self._keys_by_identity.get(identity, '')) if identity else None
 
 
 def install(instrumented_sources: InstrumentedSources) -> GremlinFinder:
