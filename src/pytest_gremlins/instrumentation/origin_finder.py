@@ -127,13 +127,18 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
     def _instrumented_entry(self, spec: importlib.machinery.ModuleSpec | None) -> InstrumentedEntry | None:
         if spec is None or not spec.origin or not spec.has_location:
             return None
-        if os.path.basename(spec.origin).lower() not in self._file_names:  # noqa: PTH119
-            return None
-        entry = self._instrumented_sources.get(normalize_origin(spec.origin))
-        if entry is not None:
-            return entry
+        basename_hit = os.path.basename(spec.origin).lower() in self._file_names  # noqa: PTH119
+        if basename_hit:
+            # Try normalized origin (expensive path-based lookup) when basename matches
+            entry = self._instrumented_sources.get(normalize_origin(spec.origin))
+            if entry is not None:
+                return entry
+        # Try identity-based lookup (one stat call) for differently-named symlinks/hard links.
+        # Also reaches basename hits that normalize_origin missed (e.g., case-insensitive mismatches).
         identity = file_identity(spec.origin)
-        return self._instrumented_sources.get(self._keys_by_identity.get(identity, '')) if identity else None
+        if identity:
+            return self._instrumented_sources.get(self._keys_by_identity.get(identity, ''))
+        return None
 
 
 def install(instrumented_sources: InstrumentedSources) -> GremlinFinder:
