@@ -45,9 +45,12 @@ def file_identity(path: str) -> str | None:
 class GremlinLoader(importlib.abc.Loader):
     """Execute instrumented source in the namespace of the module being imported."""
 
-    def __init__(self, source: str, module_name: str, original_loader: object = None) -> None:
+    def __init__(
+        self, source: str, module_name: str, original_loader: object = None, origin: str | None = None
+    ) -> None:
         self._source = source
-        self._module_name = module_name
+        # Compiled under the real file so inspect.getsource and linecache read the original source from disk.
+        self._filename = origin or module_name
         self._original_loader = original_loader
 
     def get_resource_reader(self, fullname: str) -> object:  # noqa: D102
@@ -64,7 +67,7 @@ class GremlinLoader(importlib.abc.Loader):
 
     def exec_module(self, module: ModuleType) -> None:  # noqa: D102
         # The source is our own AST transformation of the user's file, not untrusted input.
-        code = compile(self._source, self._module_name, 'exec')
+        code = compile(self._source, self._filename, 'exec')
         exec(code, module.__dict__)  # noqa: S102
 
 
@@ -111,7 +114,7 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
             # Hand back what the later finders answered: the import system would reach the same answer
             # by walking on, and walking on would ask each of them a second time.
             return spec
-        spec.loader = GremlinLoader(entry['source'], fullname, spec.loader)
+        spec.loader = GremlinLoader(entry['source'], fullname, spec.loader, spec.origin)
         spec.cached = None
         return spec
 

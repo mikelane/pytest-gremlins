@@ -448,6 +448,37 @@ class DescribeGremlinLoaderResourceReader:
         assert loader.get_resource_reader('data_mod') == 'reader-for:data_mod'
 
 
+@pytest.mark.small
+class DescribeGremlinLoaderCompileFilename:
+    """Instrumented code is compiled under its source file so ``inspect`` and tracebacks find it (#563)."""
+
+    def it_compiles_under_the_origin_path(self) -> None:
+        origin = 'C:\\project\\src\\origin_mod.py'
+        module = ModuleType('origin_mod')
+        loader = GremlinLoader('def f():\n    return 1\n', 'origin_mod', origin=origin)
+
+        loader.exec_module(module)
+
+        assert module.f.__code__.co_filename == origin  # type: ignore[attr-defined]
+
+
+@pytest.mark.medium
+class DescribeGremlinFinderCompileFilename:
+    """The finder hands the loader the origin of the spec it resolved (#563)."""
+
+    def it_hands_the_origin_of_the_resolved_spec_to_the_loader(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'filename_mod.py'
+        target.write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        install_finder(_entry(target, 'def f():\n    return 1\n'))
+
+        module = _import('filename_mod')
+
+        assert module.f.__code__.co_filename == str(target)
+
+
 @pytest.mark.medium
 class DescribeGremlinFinderServesByFileIdentity:
     """A path spelling that misses the string key still reaches the instrumented file by what it is on disk."""

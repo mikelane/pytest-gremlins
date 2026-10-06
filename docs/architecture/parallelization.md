@@ -236,7 +236,7 @@ command line.
 
 ### Cached results
 
-The incremental cache key includes a runner fidelity version (`rf9`), so verdicts cached by
+The incremental cache key includes a runner fidelity version (`rf10`), so verdicts cached by
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 So are timeouts cached before they were confirmed against the unmutated tests (#565).
 So are verdicts cached while instrumented modules had no `__file__` (#525), when target code that read it
