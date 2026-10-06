@@ -907,7 +907,7 @@ jobs:
 
 **`config.pytestGremlins`** holds pytest-gremlins' own score (`mutationScore`, identical to
 `MutationScore.percentage`) and the counts behind it. The schema defines `config` as a free-form
-object, so the export stays valid.
+object, so this addition is schema-valid.
 
 **Why the dashboard score can be higher than ours.** pytest-gremlins reports `ERROR` gremlins as
 Stryker `RuntimeError`. Stryker treats `RuntimeError` and `CompileError` as invalid and removes them
@@ -919,11 +919,14 @@ pytest-gremlins: (zapped + timeout) / (total - pardoned)
 Stryker:         (killed + timeout) / (total - pardoned - errors)
 ```
 
-When a run has no `ERROR` gremlins the two numbers agree. When it does, for example timeouts that
-could not be confirmed as kills or gremlins with no runnable test, a score recomputed by a Stryker
-dashboard from the mutant statuses is higher than `mutationScore`. Treat `config.pytestGremlins.mutationScore`
-as the authoritative number, and look into the `ERROR` count when the two differ. Pardoned gremlins
-are exported as `Ignored`, which Stryker also leaves out of its score.
+The two numbers agree when the run has no `ERROR` gremlins and at least one gremlin counts
+toward the score. When nothing counts (no gremlins at all, every gremlin pardoned, or every
+remaining gremlin an `ERROR`), Stryker's formula has no score; pytest-gremlins reports 0.0 in
+those cases. When `ERROR` gremlins exist alongside countable ones, a score recomputed by a Stryker
+dashboard from the mutant statuses is higher than `mutationScore`. Treat
+`config.pytestGremlins.mutationScore` as the authoritative number, and look into the `ERROR`
+count when the two differ. Pardoned gremlins are exported as `Ignored`, which Stryker also leaves
+out of its score.
 
 **Status values:**
 
@@ -931,6 +934,7 @@ are exported as `Ignored`, which Stryker also leaves out of its score.
 - `Survived` - Mutation not detected (gremlin survived)
 - `Timeout` - Test timed out
 - `RuntimeError` - Mutation caused an error
+- `Ignored` - Gremlin was pardoned (excluded from both scores)
 
 #### SonarQube Generic Issue Format
 
