@@ -268,6 +268,15 @@ print(get_active_gremlin())  # 'g001'
 
 The import hooks module intercepts Python imports to inject instrumented code.
 
+!!! note "What the mutation subprocess runs"
+    The subprocess that tests each gremlin does not use the `import_hooks` classes below. It runs
+    the finder in `pytest_gremlins.instrumentation.origin_finder`, which is copied into the
+    generated bootstrap script. That finder never decides what a module is called: it asks the
+    rest of `sys.meta_path` which file a name resolves to and, when that file was instrumented,
+    swaps in a loader that runs the instrumented source. Instrumented files are matched by their
+    resolved real path, so `sys.path` order, `pythonpath` settings, editable installs and the
+    same file imported under two names behave exactly as they do without gremlins.
+
 ### GremlinFinder
 
 MetaPathFinder that intercepts imports for instrumented modules.
