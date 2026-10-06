@@ -132,6 +132,7 @@ def _verdicts(output: str) -> tuple[int, int, int]:
 
 
 @pytest.mark.medium
+@pytest.mark.usefixtures('utf8_child_output')
 class DescribeOriginResolvedModuleNames:
     """Whatever name the tests import a target under, the gremlins in its file are scored there."""
 
