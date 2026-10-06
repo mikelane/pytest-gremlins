@@ -96,6 +96,22 @@ def test_positive():
 """
 
 
+_SYMLINK_ALIAS_TESTS = """
+from mypkg.alias import positive as aliased_positive
+from mypkg.core import positive
+
+
+def test_positive():
+    assert positive(1)
+    assert not positive(0)
+
+
+def test_aliased_positive():
+    assert aliased_positive(1)
+    assert not aliased_positive(0)
+"""
+
+
 def _count(output: str, label: str) -> int:
     match = re.search(rf'{label}: (\d+) gremlins', output)
     return int(match.group(1)) if match else 0
@@ -145,6 +161,24 @@ class DescribeOriginResolvedModuleNames:
         )
 
         assert _verdicts(result.stdout.str()) == (4, 0, 0)
+
+    def it_zaps_every_gremlin_when_a_target_module_is_a_symlink_to_another_target(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makeini('[pytest]\npythonpath = src\n')
+        package = pytester_with_markers.path / 'src' / 'mypkg'
+        package.mkdir(parents=True)
+        package.joinpath('__init__.py').write_text('')
+        package.joinpath('core.py').write_text(_POSITIVE)
+        try:
+            package.joinpath('alias.py').symlink_to('core.py')
+        except OSError:
+            pytest.skip('this platform cannot create symlinks')
+        pytester_with_markers.mkdir('tests').joinpath('test_core.py').write_text(_SYMLINK_ALIAS_TESTS)
+
+        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
+
+        assert _verdicts(result.stdout.str()) == (2, 0, 0)
 
     def it_names_modules_the_same_when_a_virtualenv_lives_inside_the_project(
         self, pytester_with_markers: pytest.Pytester
