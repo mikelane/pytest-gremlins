@@ -2,12 +2,13 @@
 
 With ``--import-mode=prepend`` (the default) or ``append``, a test file in a directory without an
 ``__init__.py`` has that directory inserted into ``sys.path`` during collection. When source files sit in
-the same directory, that inserted entry is the longest import root containing them, so they are named
-by their short name (``core``) even when the tests import them by their full name (``mypkg.sub.core``).
-The instrumented code never loads and every gremlin the tests catch is reported SURVIVED.
+the same directory, any naming scheme that derives module names from ``sys.path`` names them by their
+short name (``core``) even when the tests import them by their full name (``mypkg.sub.core``). The
+instrumented code never loads and every gremlin the tests catch is reported SURVIVED.
 
-The xdist controller does not collect, so it never sees those inserted entries and names the same files
-differently from the other execution modes: one project, two different scores.
+The xdist controller does not collect, so it never sees those inserted entries and would name the same
+files differently from the other execution modes: one project, two different scores. Resolving
+instrumented files by the origin the import system loads keeps every mode on the same name.
 """
 
 from __future__ import annotations
@@ -131,4 +132,5 @@ class DescribeColocatedModuleNames:
         serial = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, targets)
         distributed = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, targets, '-n', '2')
 
-        assert _verdicts(distributed.stdout.str()) == _verdicts(serial.stdout.str())
+        # Pinning the score keeps two runs that both crash before reporting from agreeing on (0, 0, 0).
+        assert (_verdicts(serial.stdout.str()), _verdicts(distributed.stdout.str())) == ((2, 0, 0), (2, 0, 0))

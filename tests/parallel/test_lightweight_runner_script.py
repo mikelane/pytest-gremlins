@@ -164,6 +164,8 @@ class DescribeLightweightRunnerInstrumentedModules:
             import target
 
             def test_a():
+                # The import system may spell the path through a '.' sys.path entry; it must still be the file.
+                assert target.VALUE == 1
                 assert os.path.realpath(target.__file__) == {str(origin)!r}
                 assert target.__spec__.origin == target.__file__
             """

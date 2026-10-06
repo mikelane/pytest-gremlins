@@ -35,7 +35,6 @@ import tempfile
 import tokenize
 from typing import (
     TYPE_CHECKING,
-    Any,
     Protocol,
 )
 import warnings
@@ -1306,7 +1305,9 @@ def _without_duplicate_origins(source_files: dict[str, str], rootdir: Path) -> t
         identity = file_identity(origin) or normalize_origin(origin)
         if identity in first_seen:
             logger.warning(
-                'Skipping %s: it is the same file as %s, which is already a mutation target',
+                'Skipping %s as a mutation target: it is the same file on disk as %s, '
+                'so its gremlins are generated once under that path and stay active when imported through either. '
+                'List only one of them in the gremlin targets to silence this warning',
                 file_path,
                 first_seen[identity],
             )
@@ -1520,7 +1521,7 @@ del _gremlin_os
 
     injection_nodes = ast.parse(gremlin_active_injection).body
 
-    instrumented_sources: dict[str, dict[str, Any]] = {}
+    instrumented_sources: origin_finder.InstrumentedSources = {}
     for original_path, tree in instrumented_asts.items():
         origin = (rootdir / original_path).absolute()
         injected_body = _prepend_injection(tree.body, injection_nodes)
@@ -1529,7 +1530,7 @@ del _gremlin_os
             'source': ast.unparse(ast.Module(body=injected_body, type_ignores=tree.type_ignores)),
             'origin': str(origin),
             'identity': file_identity(str(origin)),
-            'names': sorted({Path(spelling).name.lower() for spelling in spellings}),
+            'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
         }
 
     sources_file = temp_dir / 'sources.json'

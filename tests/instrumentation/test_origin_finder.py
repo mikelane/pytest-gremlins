@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import (
     Callable,
-    Iterator,
 )
 import importlib
 import importlib.resources
@@ -29,6 +28,7 @@ from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.origin_finder import (
     GremlinFinder,
     GremlinLoader,
+    InstrumentedSources,
     file_identity,
     install,
     normalize_origin,
@@ -38,7 +38,7 @@ from pytest_gremlins.plugin import (
     _get_lightweight_runner_script,
 )
 
-Sources = dict[str, dict[str, str]]
+Sources = InstrumentedSources
 Install = Callable[[Sources], GremlinFinder]
 
 INSTRUMENTED = 'VALUE = "instrumented"\n'
@@ -51,11 +51,11 @@ def _entry(origin: Path, source: str = INSTRUMENTED) -> Sources:
 
 def _entry_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
     entry = {'source': source, 'origin': str(origin), 'identity': file_identity(str(origin))}
-    return {normalize_origin(str(origin)): entry}  # type: ignore[dict-item]
+    return {normalize_origin(str(origin)): entry}
 
 
 @pytest.fixture
-def install_finder(monkeypatch: pytest.MonkeyPatch) -> Iterator[Install]:
+def install_finder(monkeypatch: pytest.MonkeyPatch) -> Install:
     """Install the finder at the front of ``sys.meta_path``; restore the import state afterwards."""
     monkeypatch.setattr(sys, 'meta_path', list(sys.meta_path))
     monkeypatch.setattr(sys, 'modules', dict(sys.modules))
@@ -65,6 +65,20 @@ def install_finder(monkeypatch: pytest.MonkeyPatch) -> Iterator[Install]:
 def _import(name: str) -> ModuleType:
     importlib.invalidate_caches()
     return importlib.import_module(name)
+
+
+def _hardlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.hardlink_to(target)
+    except OSError:
+        pytest.skip('this platform cannot create hard links')
+
+
+def _symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip('this platform cannot create symlinks')
 
 
 @pytest.mark.medium
@@ -357,6 +371,84 @@ class DescribeGremlinFinderDelegation:
 
 
 @pytest.mark.medium
+class DescribeGremlinFinderMetaPathEdges:
+    """The finder walks whatever ``sys.meta_path`` holds without tripping over unusual entries."""
+
+    def it_puts_the_finder_it_installs_ahead_of_every_other_finder(self, install_finder: Install) -> None:
+        finder = install_finder({})
+
+        assert sys.meta_path[0] is finder
+
+    def it_answers_none_for_a_name_no_later_finder_can_resolve(self, install_finder: Install) -> None:
+        finder = install_finder({})
+
+        assert finder.find_spec('no_module_is_named_this_597') is None
+
+    def it_skips_a_meta_path_entry_that_has_no_find_spec(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        tmp_path.joinpath('legacy_mod.py').write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        monkeypatch.setattr(sys, 'meta_path', [object(), *sys.meta_path])
+        install_finder(_entry(tmp_path / 'legacy_mod.py'))
+
+        assert _import('legacy_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+
+    def it_does_not_ask_itself_when_it_sits_on_sys_meta_path_twice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        tmp_path.joinpath('twice_mod.py').write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        finder = install_finder(_entry(tmp_path / 'twice_mod.py'))
+        sys.meta_path.insert(1, finder)
+
+        assert _import('twice_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+
+    def it_resolves_through_every_finder_when_it_was_never_installed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        origin = tmp_path / 'detached_mod.py'
+        origin.write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        importlib.invalidate_caches()
+
+        spec = GremlinFinder(_entry(origin)).find_spec('detached_mod')
+
+        assert spec is not None
+        assert isinstance(spec.loader, GremlinLoader)
+
+    def it_leaves_a_spec_alone_when_its_file_is_not_on_disk(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        ghost = tmp_path / 'ghost_mod.py'
+        monkeypatch.setattr(sys, 'meta_path', [*sys.meta_path, _ServesFromElsewhere('ghost_mod', ghost)])
+        tmp_path.joinpath('real_mod.py').write_text(ORIGINAL)
+        finder = install_finder(_entry_with_identity(tmp_path / 'real_mod.py'))
+
+        spec = finder.find_spec('ghost_mod')
+
+        assert spec is not None
+        assert spec.origin == str(ghost)
+        assert not isinstance(spec.loader, GremlinLoader)
+
+
+@pytest.mark.small
+class DescribeGremlinLoaderResourceReader:
+    """Package data is read through the loader that found the file, when there is one."""
+
+    def it_has_no_resource_reader_when_the_original_loader_offers_none(self) -> None:
+        loader = GremlinLoader(INSTRUMENTED, 'bare_mod', original_loader=None)
+
+        assert loader.get_resource_reader('bare_mod') is None
+
+    def it_asks_the_original_loader_for_the_resource_reader(self) -> None:
+        original = SimpleNamespace(get_resource_reader=lambda fullname: f'reader-for:{fullname}')
+        loader = GremlinLoader(INSTRUMENTED, 'data_mod', original_loader=original)
+
+        assert loader.get_resource_reader('data_mod') == 'reader-for:data_mod'
+
+
+@pytest.mark.medium
 class DescribeGremlinFinderServesByFileIdentity:
     """A path spelling that misses the string key still reaches the instrumented file by what it is on disk."""
 
@@ -368,10 +460,7 @@ class DescribeGremlinFinderServesByFileIdentity:
         target.write_text(ORIGINAL)
         spelling = tmp_path / 'elsewhere' / 'twin_mod.py'
         spelling.parent.mkdir()
-        try:
-            spelling.hardlink_to(target)
-        except OSError:
-            pytest.skip('this platform cannot create hard links')
+        _hardlink_or_skip(spelling, target)
         monkeypatch.syspath_prepend(str(spelling.parent))
         install_finder(_entry_with_identity(target))
 
@@ -399,10 +488,7 @@ class DescribeGremlinFinderServesByFileIdentity:
         target.write_text(ORIGINAL)
         spelling = tmp_path / 'elsewhere' / 'anon_mod.py'
         spelling.parent.mkdir()
-        try:
-            spelling.hardlink_to(target)
-        except OSError:
-            pytest.skip('this platform cannot create hard links')
+        _hardlink_or_skip(spelling, target)
         monkeypatch.syspath_prepend(str(spelling.parent))
         install_finder(_entry(target))
 
@@ -417,10 +503,7 @@ class DescribeFileIdentity:
         target = tmp_path / 'a.py'
         target.write_text('')
         alias = tmp_path / 'b.py'
-        try:
-            alias.hardlink_to(target)
-        except OSError:
-            pytest.skip('this platform cannot create hard links')
+        _hardlink_or_skip(alias, target)
 
         assert file_identity(str(alias)) == file_identity(str(target))
 
@@ -456,8 +539,10 @@ class DescribeGremlinFinderBasenamePrefilter:
         monkeypatch.syspath_prepend(str(tmp_path))
         install_finder(_entry(tmp_path / 'target_mod.py'))
         resolved: list[str] = []
-        real = origin_finder.normalize_origin
-        monkeypatch.setattr(origin_finder, 'normalize_origin', lambda path: resolved.append(path) or real(path))
+        original_normalize_origin = origin_finder.normalize_origin
+        monkeypatch.setattr(
+            origin_finder, 'normalize_origin', lambda path: resolved.append(path) or original_normalize_origin(path)
+        )
 
         _import('bystander_mod')
 
@@ -493,13 +578,10 @@ class DescribeGremlinFinderBasenamePrefilter:
         target = tmp_path / 'core_impl.py'
         target.write_text(ORIGINAL)
         alias = tmp_path / 'listed_alias_mod.py'
-        try:
-            alias.symlink_to(target)
-        except OSError:
-            pytest.skip('this platform cannot create symlinks')
+        _symlink_or_skip(alias, target)
         monkeypatch.syspath_prepend(str(tmp_path))
         sources = _entry(target)
-        sources[normalize_origin(str(target))]['names'] = ['core_impl.py', 'listed_alias_mod.py']  # type: ignore[assignment]
+        sources[normalize_origin(str(target))]['file_names'] = ['core_impl.py', 'listed_alias_mod.py']
         install_finder(sources)
 
         assert _import('listed_alias_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
@@ -512,10 +594,7 @@ class DescribeGremlinFinderBasenamePrefilter:
         target.write_text(ORIGINAL)
         alias = tmp_path / 'vendor' / 'thing.py'
         alias.parent.mkdir()
-        try:
-            alias.hardlink_to(target)
-        except OSError:
-            pytest.skip('this platform cannot create hard links')
+        _hardlink_or_skip(alias, target)
         monkeypatch.syspath_prepend(str(alias.parent))
         install_finder(_entry_with_identity(target))
 
@@ -527,15 +606,14 @@ class DescribeGremlinFinderBasenamePrefilter:
         target = tmp_path / 'core_impl.py'
         target.write_text(ORIGINAL)
         alias = tmp_path / 'differently_named.py'
-        try:
-            alias.symlink_to(target)
-        except OSError:
-            pytest.skip('this platform cannot create symlinks')
+        _symlink_or_skip(alias, target)
         monkeypatch.syspath_prepend(str(tmp_path))
         install_finder(_entry_with_identity(target))
         called: list[str] = []
-        real = origin_finder.file_identity
-        monkeypatch.setattr(origin_finder, 'file_identity', lambda path: called.append(path) or real(path))
+        original_file_identity = origin_finder.file_identity
+        monkeypatch.setattr(
+            origin_finder, 'file_identity', lambda path: called.append(path) or original_file_identity(path)
+        )
 
         _import('differently_named')
 

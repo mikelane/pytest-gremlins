@@ -882,15 +882,20 @@ class DescribeGenerateGremlinsDuplicateOrigins:
         core = tmp_path / 'core.py'
         core.write_text(self._SOURCE)
         alias = tmp_path / 'alias.py'
-        alias.symlink_to(core)
+        try:
+            alias.symlink_to(core)
+        except OSError:
+            pytest.skip('this platform cannot create symlinks')
         return {str(alias): self._SOURCE, str(core): self._SOURCE}
 
-    def it_generates_gremlins_for_only_one_of_two_spellings_of_a_file(self, tmp_path: Path) -> None:
-        gs = _session()
+    def it_generates_as_many_gremlins_for_two_spellings_of_a_file_as_for_the_file_alone(self, tmp_path: Path) -> None:
+        both_spellings, file_alone = _session(), _session()
+        targets = self._targets(tmp_path)
 
-        _generate_gremlins(gs, self._targets(tmp_path), tmp_path)
+        _generate_gremlins(both_spellings, targets, tmp_path)
+        _generate_gremlins(file_alone, {str(tmp_path / 'core.py'): self._SOURCE}, tmp_path)
 
-        assert len({gremlin.file_path for gremlin in gs.gremlins}) == 1
+        assert len(both_spellings.gremlins) == len(file_alone.gremlins) > 0
 
     def it_keeps_the_real_file_rather_than_the_symlink_spelling(self, tmp_path: Path) -> None:
         gs = _session()
@@ -907,10 +912,11 @@ class DescribeGenerateGremlinsDuplicateOrigins:
         with caplog.at_level(logging.WARNING, logger='pytest_gremlins.plugin'):
             _generate_gremlins(gs, self._targets(tmp_path), tmp_path)
 
-        assert any(
-            str(tmp_path / 'alias.py') in record.message and str(tmp_path / 'core.py') in record.message
-            for record in caplog.records
-        )
+        assert (
+            f'Skipping {tmp_path / "alias.py"} as a mutation target: it is the same file on disk as '
+            f'{tmp_path / "core.py"}, so its gremlins are generated once under that path and stay active '
+            'when imported through either. List only one of them in the gremlin targets to silence this warning'
+        ) in caplog.messages
 
     def it_picks_the_same_file_whatever_order_the_targets_arrive_in(self, tmp_path: Path) -> None:
         targets = self._targets(tmp_path)
@@ -919,7 +925,11 @@ class DescribeGenerateGremlinsDuplicateOrigins:
         _generate_gremlins(forward, dict(targets), tmp_path)
         _generate_gremlins(backward, dict(reversed(targets.items())), tmp_path)
 
-        assert {g.file_path for g in forward.gremlins} == {g.file_path for g in backward.gremlins}
+        assert (
+            {g.file_path for g in forward.gremlins}
+            == {g.file_path for g in backward.gremlins}
+            == {str(tmp_path / 'core.py')}
+        )
 
     def it_skips_a_hardlink_to_another_target(self, tmp_path: Path) -> None:
         core = tmp_path / 'core.py'
@@ -928,9 +938,10 @@ class DescribeGenerateGremlinsDuplicateOrigins:
         twin.hardlink_to(core)
         gs = _session()
 
-        _generate_gremlins(gs, {str(core): self._SOURCE, str(twin): self._SOURCE}, tmp_path)
+        _generate_gremlins(gs, {str(twin): self._SOURCE, str(core): self._SOURCE}, tmp_path)
 
-        assert len({gremlin.file_path for gremlin in gs.gremlins}) == 1
+        # Both names are real files, so the first in path order is kept whatever order they arrive in.
+        assert {gremlin.file_path for gremlin in gs.gremlins} == {str(core)}
 
     def it_keeps_distinct_files_that_do_not_exist_on_disk(self, tmp_path: Path) -> None:
         gs = _session()

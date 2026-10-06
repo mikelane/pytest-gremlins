@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from pytest_gremlins.instrumentation.origin_finder import (
+    InstrumentedSources,
     file_identity,
     normalize_origin,
 )
@@ -94,13 +95,11 @@ class DescribeWriteInstrumentedSources:
         assert 'assign:__gremlin_active__' in labels
         assert labels.index('docstring') < labels.index('assign:__gremlin_active__')
 
-    def it_handles_source_with_no_special_headers(self, tmp_path: Path) -> None:
+    def it_puts_the_injection_first_when_the_source_has_no_docstring_or_future_import(self, tmp_path: Path) -> None:
         body = _parse_final_source(tmp_path, 'x = 42\n')
         labels = _node_names(body)
 
-        # injection must be present and precede user code
-        assert 'assign:__gremlin_active__' in labels
-        assert labels.index('assign:__gremlin_active__') < labels.index('assign:x')
+        assert labels == ['import', 'assign:__gremlin_active__', 'del', 'assign:x']
 
     def it_includes_gremlin_active_variable_in_output(self, tmp_path: Path) -> None:
         tree = ast.parse('from __future__ import annotations\nx = 1\n')
@@ -118,42 +117,33 @@ class DescribeWriteInstrumentedSources:
         sources = json.loads((result_dir / 'sources.json').read_text())
         assert sources[normalize_origin(str(real))]['origin'] == str(original_path)
 
-    def it_handles_empty_module_body(self, tmp_path: Path) -> None:
+    def it_emits_only_the_injection_for_an_empty_module(self, tmp_path: Path) -> None:
         body = _parse_final_source(tmp_path, '')
         labels = _node_names(body)
 
-        # Empty source gets only the injection nodes -- no user code at all
-        assert 'assign:__gremlin_active__' in labels
-        assert labels[0] == 'import', f'Expected import (_gremlin_os) first, got: {labels}'
+        assert labels == ['import', 'assign:__gremlin_active__', 'del']
 
     def it_places_injection_after_multiple_future_imports(self, tmp_path: Path) -> None:
         source = 'from __future__ import annotations\nfrom __future__ import division\nimport os\n'
         body = _parse_final_source(tmp_path, source)
         labels = _node_names(body)
 
-        future_indices = [i for i, label in enumerate(labels) if label == 'future_import']
-        injection_index = labels.index('assign:__gremlin_active__')
-
-        assert len(future_indices) == 2, f'Expected 2 future imports, got {len(future_indices)}: {labels}'
-        assert all(fi < injection_index for fi in future_indices), (
-            f'All future imports must precede injection: {labels}'
-        )
+        assert labels == ['future_import', 'future_import', 'import', 'assign:__gremlin_active__', 'del', 'import']
 
     def it_places_injection_after_docstring_and_multiple_future_imports(self, tmp_path: Path) -> None:
         source = '"""Module docstring."""\nfrom __future__ import annotations\nfrom __future__ import division\nx = 1\n'
         body = _parse_final_source(tmp_path, source)
         labels = _node_names(body)
 
-        assert labels[0] == 'docstring', f'Expected docstring first, got: {labels}'
-        future_indices = [i for i, label in enumerate(labels) if label == 'future_import']
-        injection_index = labels.index('assign:__gremlin_active__')
-        user_code_index = labels.index('assign:x')
-
-        assert len(future_indices) == 2, f'Expected 2 future imports, got {len(future_indices)}: {labels}'
-        assert all(fi < injection_index for fi in future_indices), (
-            f'All future imports must precede injection: {labels}'
-        )
-        assert injection_index < user_code_index, f'Injection must precede user code: {labels}'
+        assert labels == [
+            'docstring',
+            'future_import',
+            'future_import',
+            'import',
+            'assign:__gremlin_active__',
+            'del',
+            'assign:x',
+        ]
 
 
 @pytest.mark.medium
@@ -175,11 +165,11 @@ class DescribeLightweightRunnerDisabled:
         assert (instrumented_dir / 'gremlin_bootstrap.py').exists()
 
 
-def _written_entries(tmp_path: Path, relative_paths: list[str]) -> dict[str, dict[str, str]]:
+def _written_entries(tmp_path: Path, relative_paths: list[str]) -> InstrumentedSources:
     """Instrument a trivial module at each relative path and return the sources.json entries by key."""
     asts = {str(tmp_path / relative): ast.parse('x = 1\n') for relative in relative_paths}
     result_dir = _write_instrumented_sources(asts, tmp_path)
-    entries: dict[str, dict[str, str]] = json.loads((result_dir / 'sources.json').read_text())
+    entries: InstrumentedSources = json.loads((result_dir / 'sources.json').read_text())
     return entries
 
 
@@ -199,7 +189,7 @@ class DescribeWriteInstrumentedSourceKeys:
     def it_records_no_module_name(self, tmp_path: Path) -> None:
         entries = _written_entries(tmp_path, ['pkg/__init__.py'])
 
-        assert sorted(next(iter(entries.values()))) == ['identity', 'names', 'origin', 'source']
+        assert sorted(next(iter(entries.values()))) == ['file_names', 'identity', 'origin', 'source']
 
     def it_records_the_device_and_inode_of_the_file(self, tmp_path: Path) -> None:
         tmp_path.joinpath('real_mod.py').write_text('x = 1\n')
@@ -215,7 +205,7 @@ class DescribeWriteInstrumentedSourceKeys:
     def it_lists_the_lowercased_file_name_the_file_may_be_imported_as(self, tmp_path: Path) -> None:
         entries = _written_entries(tmp_path, ['MixedCase.py'])
 
-        assert next(iter(entries.values()))['names'] == ['mixedcase.py']
+        assert next(iter(entries.values()))['file_names'] == ['mixedcase.py']
 
     def it_lists_the_file_names_of_the_dropped_spellings_of_a_file(self, tmp_path: Path) -> None:
         tree = ast.parse('x = 1\n')
@@ -224,7 +214,7 @@ class DescribeWriteInstrumentedSourceKeys:
         result_dir = _write_instrumented_sources({target: tree}, tmp_path, {target: [str(tmp_path / 'alias.py')]})
         entry = next(iter(json.loads((result_dir / 'sources.json').read_text()).values()))
 
-        assert entry['names'] == ['alias.py', 'core.py']
+        assert entry['file_names'] == ['alias.py', 'core.py']
 
     def it_keeps_every_file_even_when_the_import_system_would_serve_only_one_of_a_shared_name(
         self, tmp_path: Path

@@ -18,6 +18,7 @@ import threading
 from types import ModuleType
 from typing import Any
 
+# Entries are decoded from sources.json and mix str, str | None and list[str] values.
 InstrumentedEntry = dict[str, Any]
 InstrumentedSources = dict[str, InstrumentedEntry]
 
@@ -81,7 +82,7 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
         self._file_names = frozenset(
             name.lower()
             for entry in instrumented_sources.values()
-            for name in entry.get('names') or [os.path.basename(entry['origin'])]  # noqa: PTH119
+            for name in entry.get('file_names') or [os.path.basename(entry['origin'])]  # noqa: PTH119
         )
         # A path spelling the string key does not know still names a file on disk, and the disk is the authority.
         # Used as a fallback when the path-based lookup misses (e.g., differently-named symlinks).
@@ -94,17 +95,17 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
         self, fullname: str, path: Sequence[str] | None = None, target: ModuleType | None = None
     ) -> importlib.machinery.ModuleSpec | None:
         # Re-entry is per thread: another thread resolving the same name is not a loop.
-        resolving = (threading.get_ident(), fullname)
-        if resolving in self._resolving:
+        in_flight_lookup = (threading.get_ident(), fullname)
+        if in_flight_lookup in self._resolving:
             return None
-        self._resolving.add(resolving)
+        self._resolving.add(in_flight_lookup)
         try:
             spec = self._spec_from_other_finders(fullname, path, target)
         except Exception:
             # Let the import system reach the failing finder itself and raise what it would have raised.
             return None
         finally:
-            self._resolving.discard(resolving)
+            self._resolving.discard(in_flight_lookup)
         entry = self._instrumented_entry(spec)
         if spec is None or entry is None:
             # Hand back what the later finders answered: the import system would reach the same answer
