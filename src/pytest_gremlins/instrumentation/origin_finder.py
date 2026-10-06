@@ -38,6 +38,10 @@ class GremlinLoader(importlib.abc.Loader):
         get_reader = getattr(self._original_loader, 'get_resource_reader', None)
         return None if get_reader is None else get_reader(fullname)
 
+    def get_data(self, path: str) -> bytes:  # noqa: D102
+        # pkgutil.get_data reads package data through the loader and gives up when it has no get_data.
+        return self._original_loader.get_data(path)  # type: ignore[attr-defined, no-any-return]
+
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> None:  # noqa: ARG002, D102
         return None
 

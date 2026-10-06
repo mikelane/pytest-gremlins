@@ -15,6 +15,7 @@ import importlib.resources
 import importlib.util
 import inspect
 from pathlib import Path
+import pkgutil
 import sys
 import threading
 from types import ModuleType
@@ -165,6 +166,20 @@ class DescribeGremlinFinderServesByOrigin:
         _import('data_pkg')
 
         assert importlib.resources.files('data_pkg').joinpath('payload.txt').read_text() == 'payload'
+
+    def it_keeps_package_data_readable_through_pkgutil(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        package = tmp_path / 'blob_pkg'
+        package.mkdir()
+        package.joinpath('__init__.py').write_text(ORIGINAL)
+        package.joinpath('blob.bin').write_bytes(b'blob')
+        monkeypatch.syspath_prepend(str(tmp_path))
+        install_finder(_entry(package / '__init__.py'))
+
+        _import('blob_pkg')
+
+        assert pkgutil.get_data('blob_pkg', 'blob.bin') == b'blob'
 
 
 class _ServesFromElsewhere:
