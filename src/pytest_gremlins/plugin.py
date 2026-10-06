@@ -1567,10 +1567,10 @@ def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) ->
     """Insert injection nodes after any module docstring and future imports.
 
     Python requires that ``from __future__`` imports appear before all other
-    statements (except the module docstring).  Inserting the gremlin activation
-    code via text concatenation before ``ast.unparse`` output violates this rule
-    when the source already contains a ``from __future__`` import, causing a
-    ``SyntaxError``.  This function inserts the injection at the AST level so
+    statements (except the module docstring).  Placing the gremlin activation
+    code first would violate this rule when the source already contains a
+    ``from __future__`` import, causing a ``SyntaxError`` at compile time.
+    This function inserts the injection at the AST level so
     the final ordering is always:
 
     1. Module docstring (if present)
