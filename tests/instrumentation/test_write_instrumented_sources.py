@@ -17,6 +17,7 @@ from pytest_gremlins.instrumentation.origin_finder import (
     normalize_origin,
 )
 from pytest_gremlins.plugin import (
+    _add_source_file,
     _inject_gremlin_active,
     _write_instrumented_sources,
 )
@@ -258,3 +259,27 @@ class DescribeWriteInstrumentedSourceKeys:
         assert list(json.loads((result_dir / 'sources.json').read_text())) == [
             normalize_origin(str(tmp_path / 'mymod.py'))
         ]
+
+
+@pytest.mark.medium
+class DescribeAddSourceFileSkipsUncompilableFiles:
+    """A file that parses but cannot compile is skipped, as it never was an importable module."""
+
+    @pytest.mark.parametrize('source', ['return 1 > 0\n', 'break\n', 'nonlocal x\n', 'await x\n'])
+    def it_skips_a_file_that_parses_but_does_not_compile(self, tmp_path: Path, source: str) -> None:
+        path = tmp_path / 'template.py'
+        path.write_text(source)
+        source_files: dict[str, str] = {}
+
+        _add_source_file(path, source_files)
+
+        assert source_files == {}
+
+    def it_keeps_a_file_that_compiles(self, tmp_path: Path) -> None:
+        path = tmp_path / 'real.py'
+        path.write_text('x = 1 > 0\n')
+        source_files: dict[str, str] = {}
+
+        _add_source_file(path, source_files)
+
+        assert list(source_files) == [str(path)]

@@ -1477,7 +1477,9 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
         # tokenize.open honors PEP 263 coding declarations and strips BOM
         with tokenize.open(str(path)) as source_stream:
             source = source_stream.read()
-        ast.parse(source)
+        # Compiling, not just parsing: a file that parses but cannot compile (a top-level ``return``) could never
+        # be imported, and shipping its instrumented tree would fail the parent's compile of it.
+        compile(source, str(path), 'exec', dont_inherit=True)
         source_files[str(path)] = source
     except SyntaxError:
         logger.debug('Skipping %s: syntax error', path)
