@@ -14,6 +14,7 @@ import importlib.abc
 import importlib.machinery
 import os
 import sys
+import threading
 from types import ModuleType
 
 InstrumentedSources = dict[str, dict[str, str]]
@@ -27,9 +28,15 @@ def normalize_origin(path: str) -> str:
 class GremlinLoader(importlib.abc.Loader):
     """Execute instrumented source in the namespace of the module being imported."""
 
-    def __init__(self, source: str, module_name: str) -> None:
+    def __init__(self, source: str, module_name: str, original_loader: object = None) -> None:
         self._source = source
         self._module_name = module_name
+        self._original_loader = original_loader
+
+    def get_resource_reader(self, fullname: str) -> object:  # noqa: D102
+        # Package data (importlib.resources) is found through the loader that located the file.
+        get_reader = getattr(self._original_loader, 'get_resource_reader', None)
+        return None if get_reader is None else get_reader(fullname)
 
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> None:  # noqa: ARG002, D102
         return None
@@ -43,29 +50,31 @@ class GremlinLoader(importlib.abc.Loader):
 class GremlinFinder(importlib.abc.MetaPathFinder):
     """Swap the loader of any spec whose origin is an instrumented file."""
 
-    is_gremlin_finder = True
-
     def __init__(self, instrumented_sources: InstrumentedSources) -> None:
         self._instrumented_sources = instrumented_sources
-        self._resolving: set[str] = set()
+        self._resolving: set[tuple[int, str]] = set()
 
     def find_spec(  # noqa: D102
         self, fullname: str, path: Sequence[str] | None = None, target: ModuleType | None = None
     ) -> importlib.machinery.ModuleSpec | None:
-        if fullname in self._resolving:
+        # Re-entry is per thread: another thread resolving the same name is not a loop.
+        resolving = (threading.get_ident(), fullname)
+        if resolving in self._resolving:
             return None
-        self._resolving.add(fullname)
+        self._resolving.add(resolving)
         try:
             spec = self._spec_from_other_finders(fullname, path, target)
         except Exception:
             # Let the import system reach the failing finder itself and raise what it would have raised.
             return None
         finally:
-            self._resolving.discard(fullname)
+            self._resolving.discard(resolving)
         entry = self._instrumented_entry(spec)
         if spec is None or entry is None:
-            return None
-        spec.loader = GremlinLoader(entry['source'], fullname)
+            # Hand back what the later finders answered: the import system would reach the same answer
+            # by walking on, and walking on would ask each of them a second time.
+            return spec
+        spec.loader = GremlinLoader(entry['source'], fullname, spec.loader)
         spec.cached = None
         return spec
 
@@ -75,7 +84,7 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
         finders = list(sys.meta_path)
         start = finders.index(self) + 1 if self in finders else 0
         for finder in finders[start:]:
-            if getattr(finder, 'is_gremlin_finder', False):
+            if finder is self:
                 continue
             find_spec = getattr(finder, 'find_spec', None)
             if find_spec is None:

@@ -11,10 +11,12 @@ from collections.abc import (
     Iterator,
 )
 import importlib
+import importlib.resources
 import importlib.util
 import inspect
 from pathlib import Path
 import sys
+import threading
 from types import ModuleType
 
 import pytest
@@ -22,6 +24,7 @@ import pytest
 from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.origin_finder import (
     GremlinFinder,
+    GremlinLoader,
     install,
     normalize_origin,
 )
@@ -149,6 +152,20 @@ class DescribeGremlinFinderServesByOrigin:
 
         assert _import('ns_pkg.leaf').VALUE == 'instrumented'  # type: ignore[attr-defined]
 
+    def it_keeps_package_data_readable_through_importlib_resources(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        package = tmp_path / 'data_pkg'
+        package.mkdir()
+        package.joinpath('__init__.py').write_text(ORIGINAL)
+        package.joinpath('payload.txt').write_text('payload')
+        monkeypatch.syspath_prepend(str(tmp_path))
+        install_finder(_entry(package / '__init__.py'))
+
+        _import('data_pkg')
+
+        assert importlib.resources.files('data_pkg').joinpath('payload.txt').read_text() == 'payload'
+
 
 class _ServesFromElsewhere:
     """A meta path finder, like an editable install's, that serves a module from a directory off ``sys.path``."""
@@ -190,6 +207,40 @@ class _AsksTheImportSystemAgain:
             self._inside = False
 
 
+class _CountsLookups:
+    """A meta path finder that records how often the import system asks it about a name."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self.lookups = 0
+
+    def find_spec(self, fullname: str, _path: object = None, _target: object = None) -> object:
+        if fullname == self._name:
+            self.lookups += 1
+        return None
+
+
+class _BlocksFirstLookup:
+    """Holds the first lookup of a name inside ``find_spec`` until released, answering later ones at once."""
+
+    def __init__(self, name: str, origin: Path) -> None:
+        self._name = name
+        self._origin = origin
+        self._first = True
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def find_spec(self, fullname: str, _path: object = None, _target: object = None) -> object:
+        if fullname != self._name:
+            return None
+        spec = importlib.util.spec_from_file_location(fullname, self._origin)
+        if self._first:
+            self._first = False
+            self.entered.set()
+            self.release.wait(timeout=10)
+        return spec
+
+
 @pytest.mark.medium
 class DescribeGremlinFinderDelegation:
     """Other meta path finders decide what is loaded; the gremlin finder only swaps the loader."""
@@ -226,15 +277,59 @@ class DescribeGremlinFinderDelegation:
 
         assert _import('again_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
 
-    def it_does_not_ask_a_second_gremlin_finder(
+    def it_asks_the_later_finders_once_for_a_module_it_does_not_instrument(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
     ) -> None:
-        tmp_path.joinpath('twice_mod.py').write_text(ORIGINAL)
+        tmp_path.joinpath('counted_mod.py').write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        counter = _CountsLookups('counted_mod')
+        monkeypatch.setattr(sys, 'meta_path', [counter, *sys.meta_path])
+        install_finder({})
+
+        _import('counted_mod')
+
+        assert counter.lookups == 1
+
+    def it_serves_the_module_when_the_first_gremlin_finder_is_the_one_that_instruments_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        tmp_path.joinpath('outer_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
         install_finder({})
-        install_finder(_entry(tmp_path / 'twice_mod.py'))
+        install_finder(_entry(tmp_path / 'outer_mod.py'))
 
-        assert _import('twice_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('outer_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+
+    def it_serves_the_module_when_the_second_gremlin_finder_is_the_one_that_instruments_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        tmp_path.joinpath('inner_mod.py').write_text(ORIGINAL)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        install_finder(_entry(tmp_path / 'inner_mod.py'))
+        install_finder({})
+
+        assert _import('inner_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+
+    def it_serves_a_module_to_one_thread_while_another_thread_is_resolving_the_same_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        origin = tmp_path / 'raced_mod.py'
+        origin.write_text(ORIGINAL)
+        blocker = _BlocksFirstLookup('raced_mod', origin)
+        monkeypatch.setattr(sys, 'meta_path', [*sys.meta_path, blocker])
+        finder = install_finder(_entry(origin))
+        first_thread = threading.Thread(target=finder.find_spec, args=('raced_mod',))
+        first_thread.start()
+        assert blocker.entered.wait(timeout=10)
+
+        try:
+            spec = finder.find_spec('raced_mod')
+        finally:
+            blocker.release.set()
+            first_thread.join(timeout=10)
+
+        assert spec is not None
+        assert isinstance(spec.loader, GremlinLoader)
 
 
 @pytest.mark.small
