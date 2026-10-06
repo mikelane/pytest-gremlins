@@ -290,3 +290,62 @@ class DescribeStrykerExporterMutationScoreOnly:
 
         assert 'mutationScore' in data
         assert data['mutationScore'] == 50.0
+
+
+@pytest.mark.small
+class DescribeStrykerExporterOwnScore:
+    """Tests for the pytest-gremlins score embedded under the schema's free-form ``config`` object."""
+
+    @pytest.fixture
+    def score_with_errors(self, make_result):
+        results = [
+            make_result(GremlinResultStatus.ZAPPED),
+            make_result(GremlinResultStatus.TIMEOUT),
+            make_result(GremlinResultStatus.SURVIVED),
+            make_result(GremlinResultStatus.ERROR),
+            make_result(GremlinResultStatus.PARDONED),
+        ]
+        return MutationScore.from_results(results)
+
+    def it_embeds_a_score_equal_to_mutation_score_percentage(self, score_with_errors):
+        data = json.loads(StrykerExporter().to_json(score_with_errors))
+
+        assert data['config']['pytestGremlins']['mutationScore'] == score_with_errors.percentage
+        assert score_with_errors.percentage == 50.0
+
+    def it_embeds_the_counts_behind_the_score(self, score_with_errors):
+        data = json.loads(StrykerExporter().to_json(score_with_errors))
+
+        assert data['config']['pytestGremlins']['counts'] == {
+            'total': 5,
+            'zapped': 1,
+            'survived': 1,
+            'timeout': 1,
+            'error': 1,
+            'pardoned': 1,
+        }
+
+    def it_explains_that_errors_stay_in_the_denominator(self, score_with_errors):
+        data = json.loads(StrykerExporter().to_json(score_with_errors))
+
+        note = data['config']['pytestGremlins']['note']
+        assert 'RuntimeError' in note
+        assert 'denominator' in note
+
+    def it_keeps_mapping_errors_to_runtime_error(self, score_with_errors):
+        data = json.loads(StrykerExporter().to_json(score_with_errors))
+
+        statuses = [m['status'] for f in data['files'].values() for m in f['mutants']]
+        assert 'RuntimeError' in statuses
+
+    def it_embeds_zero_score_for_an_empty_run(self):
+        data = json.loads(StrykerExporter().to_json(MutationScore.from_results([])))
+
+        assert data['config']['pytestGremlins']['mutationScore'] == 0.0
+
+    def it_exports_pardoned_gremlins_as_ignored(self, make_result):
+        score = MutationScore.from_results([make_result(GremlinResultStatus.PARDONED)])
+
+        data = json.loads(StrykerExporter().to_json(score))
+
+        assert data['files']['test.py']['mutants'][0]['status'] == 'Ignored'

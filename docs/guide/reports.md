@@ -892,9 +892,38 @@ jobs:
   "framework": {
     "name": "pytest-gremlins",
     "version": "1.0.0"
+  },
+  "config": {
+    "pytestGremlins": {
+      "mutationScore": 75.0,
+      "counts": {
+        "total": 5, "zapped": 3, "survived": 1, "timeout": 0, "error": 0, "pardoned": 1
+      },
+      "note": "pytest-gremlins mutation score: ..."
+    }
   }
 }
 ```
+
+**`config.pytestGremlins`** holds pytest-gremlins' own score (`mutationScore`, identical to
+`MutationScore.percentage`) and the counts behind it. The schema defines `config` as a free-form
+object, so the export stays valid.
+
+**Why the dashboard score can be higher than ours.** pytest-gremlins reports `ERROR` gremlins as
+Stryker `RuntimeError`. Stryker treats `RuntimeError` and `CompileError` as invalid and removes them
+from the score denominator. pytest-gremlins keeps `ERROR` in its denominator, so an error is not
+silently excused:
+
+```text
+pytest-gremlins: (zapped + timeout) / (total - pardoned)
+Stryker:         (killed + timeout) / (total - pardoned - errors)
+```
+
+When a run has no `ERROR` gremlins the two numbers agree. When it does, for example timeouts that
+could not be confirmed as kills or gremlins with no runnable test, a score recomputed by a Stryker
+dashboard from the mutant statuses is higher than `mutationScore`. Treat `config.pytestGremlins.mutationScore`
+as the authoritative number, and look into the `ERROR` count when the two differ. Pardoned gremlins
+are exported as `Ignored`, which Stryker also leaves out of its score.
 
 **Status values:**
 
