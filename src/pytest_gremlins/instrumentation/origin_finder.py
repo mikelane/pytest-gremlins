@@ -25,6 +25,20 @@ def normalize_origin(path: str) -> str:
     return os.path.normcase(os.path.realpath(path))
 
 
+def file_identity(path: str) -> str | None:
+    """Return a spelling-independent identity of the file at ``path``, or ``None`` when it has none.
+
+    Two paths that name one file on disk (a symlink, a hard link, a differently cased spelling on a
+    case-insensitive filesystem) share an identity. Some Windows filesystems (ReFS, network drives)
+    report an inode of 0 or reuse inodes, so a zero inode is no identity at all and is never matched.
+    """
+    try:
+        status = os.stat(path)  # noqa: PTH116 - this file ships without pathlib to stay cheap to import
+    except OSError:
+        return None
+    return None if status.st_ino == 0 else f'{status.st_dev}:{status.st_ino}'
+
+
 class GremlinLoader(importlib.abc.Loader):
     """Execute instrumented source in the namespace of the module being imported."""
 

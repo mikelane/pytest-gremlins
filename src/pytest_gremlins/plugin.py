@@ -77,7 +77,10 @@ from pytest_gremlins.coverage.context_plugin import GremlinContextPlugin
 from pytest_gremlins.coverage.nodeid_markers import strip_marker_suffix
 from pytest_gremlins.gremlins_options import addopts_without_gremlins
 from pytest_gremlins.instrumentation import origin_finder
-from pytest_gremlins.instrumentation.origin_finder import normalize_origin
+from pytest_gremlins.instrumentation.origin_finder import (
+    file_identity,
+    normalize_origin,
+)
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import (
     get_default_registry,
@@ -1254,7 +1257,8 @@ def _generate_gremlins(
     all_gremlins: list[Gremlin] = []
     instrumented_asts: dict[str, ast.Module] = {}
 
-    for file_path, source in source_files.items():
+    for file_path in _without_duplicate_origins(source_files, rootdir):
+        source = source_files[file_path]
         try:
             gremlins, instrumented_tree = transform_source(source, file_path, gremlin_session.operators)
         except Exception:
@@ -1268,6 +1272,44 @@ def _generate_gremlins(
     if all_gremlins:
         instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir)
         gremlin_session.instrumented_dir = instrumented_dir
+
+
+def _spelling_rank(file_path: str, rootdir: Path) -> tuple[bool, str]:
+    """Rank a target so that a real file outranks a symlink to it, then by path."""
+    origin = (rootdir / file_path).absolute()
+    return (str(origin) != os.path.realpath(origin), file_path)
+
+
+def _without_duplicate_origins(source_files: dict[str, str], rootdir: Path) -> list[str]:
+    """Return the targets in a stable order with each file on disk listed once.
+
+    The finder in the test subprocess matches a file by where it really is, so two targets that are one
+    file (a symlink, a hard link) can only be served one instrumented source: the loser's gremlins would
+    never activate and be reported as survivors. A loser is dropped before it generates gremlins, and the
+    drop is logged with the file it duplicates.
+
+    Args:
+        source_files: Mapping of target paths to their source code.
+        rootdir: Root directory of the project; a relative path is taken from it.
+
+    Returns:
+        The target paths to instrument, real files first, then in path order.
+    """
+    kept: list[str] = []
+    first_seen: dict[str, str] = {}
+    for file_path in sorted(source_files, key=lambda path: _spelling_rank(path, rootdir)):
+        origin = str((rootdir / file_path).absolute())
+        identity = file_identity(origin) or normalize_origin(origin)
+        if identity in first_seen:
+            logger.warning(
+                'Skipping %s: it is the same file as %s, which is already a mutation target',
+                file_path,
+                first_seen[identity],
+            )
+            continue
+        first_seen[identity] = file_path
+        kept.append(file_path)
+    return kept
 
 
 def _discover_source_files(
