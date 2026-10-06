@@ -14,17 +14,18 @@ deflated scores. Both are fixed. Your score may move either way after upgrading.
 
 ### Upgrade notes
 
-- **Your score may drop if your suite uses all-caps or bracketed parametrize ids.** Tests with
-  ids like `test_x[GET]` or `ids=['x [y]']` were dropped from a gremlin's selected tests. When
-  every selected test was dropped, the gremlin ran the whole suite, and a test that never covered
-  it could kill it. Those kills no longer count. A gremlin with no runnable selected test is now
-  reported as ERROR, with one line on stderr, instead of borrowing a verdict. (#571, #584, #590)
+- **Your score may drop if your suite uses all-caps parametrize ids or ids that contain a space
+  followed by "[".** Tests with ids like `test_x[GET]` or `ids=['x [y]']` were dropped from a
+  gremlin's selected tests. When every selected test was dropped, the gremlin ran the whole
+  suite, and a test that never covered it could kill it. Those kills no longer count. A gremlin
+  with no runnable selected test is now reported as ERROR instead of borrowing a verdict, and
+  one line per run on stderr names the dropped tests. (#571, #584, #590)
 - **Your score may rise if your packages have code in `__init__.py`.** Those gremlins are now
   zapped when a test catches them. (#591, #599)
 - **The cache is rebuilt once.** The cache version changed, so the first run after upgrading
   re-runs every gremlin and is slower. Later runs use the cache as before. (#554, #599)
-- **The Stryker export now carries pytest-gremlins' own score.** It sits at
-  `config.pytestGremlins` (`mutationScore` plus the counts). A Stryker dashboard drops
+- **The Stryker export (Python API, `StrykerExporter`) now carries pytest-gremlins' own score.**
+  It sits at `config.pytestGremlins` (`mutationScore` plus the counts). A Stryker dashboard drops
   `RuntimeError` from its denominator but pytest-gremlins doesn't, so the dashboard's number can
   be higher when ERRORs exist. Treat `mutationScore` as authoritative. See the reports guide.
   (#572, #593)
@@ -35,14 +36,15 @@ deflated scores. Both are fixed. Your score may move either way after upgrading.
   package was registered as `pkg.__init__`, a name nothing imports, so its gremlins never ran.
   It is now registered as `pkg` and stays a real package (`__path__`, relative imports and
   submodule imports all work). When a module such as `pkg.py` shares its name with a package
-  `pkg/`, the package wins, as it does in Python's own import system, and a warning names the
-  shadowed file. Previously the shadowed file could be served in the package's place and its
-  unreachable gremlins reported as killed. (#591, #599)
+  `pkg/`, the package wins, as it does in Python's own import system. The shadowed file's
+  gremlins are reported SURVIVED, and a log warning names it (shown with
+  `--log-cli-level=WARNING`). Previously the shadowed file could be served in the package's
+  place and its unreachable gremlins reported as killed. (#591, #599)
 - **Instrumented modules had no `__file__`.** Code that reads `__file__` at import, for example
   `Path(__file__).parent / 'data.txt'`, failed under every gremlin. Instrumented modules now
   get their real `__file__` and `__spec__.origin`. Thanks @fwilkerson-cn (#525, #554)
-- **Selected tests were silently dropped for all-caps or bracketed parametrize ids.** See
-  the upgrade notes above. (#571, #584, #590)
+- **Selected tests were silently dropped for all-caps parametrize ids or ids that contain a
+  space followed by "[".** See the upgrade notes above. (#571, #584, #590)
 - **`StrykerExporter` raised `KeyError` when results contained pardoned gremlins.** Pardoned
   gremlins are now exported as `Ignored`, which Stryker also leaves out of its score. This
   affected only the Python API; the pytest CLI has no Stryker format. (#593)
