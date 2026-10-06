@@ -19,7 +19,8 @@ deflated scores. Both are fixed. Your score may move either way after upgrading.
   gremlin's selected tests. When every selected test was dropped, the gremlin ran the whole
   suite, and a test that never covered it could kill it. Those kills no longer count. A gremlin
   with no runnable selected test is now reported as ERROR instead of borrowing a verdict, and
-  one line per run on stderr names the dropped tests. (#571, #584, #590)
+  one line per run on stderr reports how many selected tests were dropped, with an example.
+  (#571, #584, #590)
 - **Your score may rise if your packages have code in `__init__.py`.** Those gremlins are now
   zapped when a test catches them. (#591, #599)
 - **The cache is rebuilt once.** The cache version changed, so the first run after upgrading
