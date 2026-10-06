@@ -7,7 +7,9 @@ or 0 (survived).
 
 from __future__ import annotations
 
+import base64
 import json
+import marshal
 from pathlib import Path
 import subprocess
 import sys
@@ -157,7 +159,8 @@ class DescribeLightweightRunnerInstrumentedModules:
         origin = tmp_path / 'target.py'
         origin.write_text('VALUE = 0\n', encoding='utf-8')
         sources = tmp_path / 'sources.json'
-        entry = {'source': 'VALUE = 1\n', 'origin': str(origin)}
+        code = compile('VALUE = 1\n', str(origin), 'exec', dont_inherit=True)
+        entry = {'code': base64.b64encode(marshal.dumps(code)).decode('ascii'), 'origin': str(origin)}
         sources.write_text(json.dumps({normalize_origin(str(origin)): entry}), encoding='utf-8')
         test_source = f"""
             import os

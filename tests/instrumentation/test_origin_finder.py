@@ -6,6 +6,8 @@ swaps the loader only when that answer is an instrumented file.
 
 from __future__ import annotations
 
+import ast
+import base64
 from collections.abc import (
     Callable,
 )
@@ -13,10 +15,13 @@ import importlib
 import importlib.resources
 import importlib.util
 import inspect
+import json
+import marshal
 from pathlib import Path
 import pkgutil
 import sys
 import threading
+import traceback
 from types import (
     ModuleType,
     SimpleNamespace,
@@ -36,6 +41,7 @@ from pytest_gremlins.instrumentation.origin_finder import (
 from pytest_gremlins.plugin import (
     _get_bootstrap_script,
     _get_lightweight_runner_script,
+    _write_instrumented_sources,
 )
 
 Sources = InstrumentedSources
@@ -45,12 +51,18 @@ INSTRUMENTED = 'VALUE = "instrumented"\n'
 ORIGINAL = 'VALUE = "original"\n'
 
 
+def _encode(source: str, filename: str) -> str:
+    """Ship ``source`` the way sources.json does: compiled under ``filename``, marshalled, base64 encoded."""
+    code = compile(source, filename, 'exec', dont_inherit=True)
+    return base64.b64encode(marshal.dumps(code)).decode('ascii')
+
+
 def _entry(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    return {normalize_origin(str(origin)): {'source': source, 'origin': str(origin)}}
+    return {normalize_origin(str(origin)): {'code': _encode(source, str(origin)), 'origin': str(origin)}}
 
 
 def _entry_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    entry = {'source': source, 'origin': str(origin), 'identity': file_identity(str(origin))}
+    entry = {'code': _encode(source, str(origin)), 'origin': str(origin), 'identity': file_identity(str(origin))}
     return {normalize_origin(str(origin)): entry}
 
 
@@ -437,37 +449,59 @@ class DescribeGremlinLoaderResourceReader:
     """Package data is read through the loader that found the file, when there is one."""
 
     def it_has_no_resource_reader_when_the_original_loader_offers_none(self) -> None:
-        loader = GremlinLoader(INSTRUMENTED, 'bare_mod', original_loader=None)
+        loader = GremlinLoader(_encode(INSTRUMENTED, 'bare_mod.py'), original_loader=None)
 
         assert loader.get_resource_reader('bare_mod') is None
 
     def it_asks_the_original_loader_for_the_resource_reader(self) -> None:
         original = SimpleNamespace(get_resource_reader=lambda fullname: f'reader-for:{fullname}')
-        loader = GremlinLoader(INSTRUMENTED, 'data_mod', original_loader=original)
+        loader = GremlinLoader(_encode(INSTRUMENTED, 'data_mod.py'), original_loader=original)
 
         assert loader.get_resource_reader('data_mod') == 'reader-for:data_mod'
 
 
 @pytest.mark.small
-class DescribeGremlinLoaderCompileFilename:
-    """Instrumented code is compiled under its source file so ``inspect`` and tracebacks find it (#563)."""
+class DescribeGremlinLoaderRunsShippedCode:
+    """The loader runs the code object it was shipped; it never recompiles, so the filename and lines survive (#563)."""
 
-    def it_compiles_under_the_origin_path(self) -> None:
+    def it_keeps_the_filename_the_code_was_compiled_under(self) -> None:
         origin = 'C:\\project\\src\\origin_mod.py'
         module = ModuleType('origin_mod')
-        loader = GremlinLoader('def f():\n    return 1\n', 'origin_mod', origin=origin)
+        loader = GremlinLoader(_encode('def f():\n    return 1\n', origin))
 
         loader.exec_module(module)
 
         assert module.f.__code__.co_filename == origin  # type: ignore[attr-defined]
 
-    def it_falls_back_to_the_module_name_without_an_origin(self) -> None:
-        module = ModuleType('nameless_mod')
-        loader = GremlinLoader('def f():\n    return 1\n', 'nameless_mod')
+    def it_keeps_the_line_numbers_the_code_was_compiled_with(self) -> None:
+        module = ModuleType('lines_mod')
+        loader = GremlinLoader(_encode('\n' * 9 + 'def f():\n    return 1\n', 'lines_mod.py'))
 
         loader.exec_module(module)
 
-        assert module.f.__code__.co_filename == 'nameless_mod'  # type: ignore[attr-defined]
+        assert module.f.__code__.co_firstlineno == 10  # type: ignore[attr-defined]
+
+
+@pytest.mark.medium
+class DescribeInstrumentedTracebacks:
+    """A traceback from instrumented code names the real file and the line the failing statement is on (#563)."""
+
+    def it_reports_the_original_line_number_of_a_failing_statement(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        original = '# padding\n' * 20 + 'def boom():\n    value = 1\n    raise ValueError(value)\n'
+        target = tmp_path / 'traceback_mod.py'
+        target.write_text(original)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        sources_dir = _write_instrumented_sources({str(target): ast.parse(original)}, tmp_path)
+        install_finder(json.loads((sources_dir / 'sources.json').read_text()))
+        module = _import('traceback_mod')
+
+        with pytest.raises(ValueError, match='1') as raised:
+            module.boom()  # type: ignore[attr-defined]
+
+        frame = traceback.extract_tb(raised.value.__traceback__)[-1]
+        assert (frame.filename, frame.lineno, frame.line) == (str(target), 23, 'raise ValueError(value)')
 
 
 @pytest.mark.medium

@@ -9,9 +9,11 @@ This file is copied verbatim into the generated bootstrap script, which cannot i
 must start fast. Keep it standard-library only and free of ``from __future__`` imports.
 """
 
+import base64
 from collections.abc import Sequence
 import importlib.abc
 import importlib.machinery
+import marshal
 import os
 import sys
 import threading
@@ -45,12 +47,10 @@ def file_identity(path: str) -> str | None:
 class GremlinLoader(importlib.abc.Loader):
     """Execute instrumented source in the namespace of the module being imported."""
 
-    def __init__(
-        self, source: str, module_name: str, original_loader: object = None, origin: str | None = None
-    ) -> None:
-        self._source = source
-        # Compiled under the real file so inspect.getsource and linecache read the original source from disk.
-        self._filename = origin or module_name
+    def __init__(self, encoded_code: str, original_loader: object = None) -> None:
+        # Compiled by the parent under the real file, so inspect.getsource, linecache and tracebacks all
+        # read the original source from disk and agree with its line numbers.
+        self._encoded_code = encoded_code
         self._original_loader = original_loader
 
     def get_resource_reader(self, fullname: str) -> object:  # noqa: D102
@@ -66,8 +66,9 @@ class GremlinLoader(importlib.abc.Loader):
         return None
 
     def exec_module(self, module: ModuleType) -> None:  # noqa: D102
-        # The source is our own AST transformation of the user's file, not untrusted input.
-        code = compile(self._source, self._filename, 'exec')
+        # Parent and child run the same interpreter, so the marshal format always matches; the code is our own
+        # transformation of the user's file, not untrusted input.
+        code = marshal.loads(base64.b64decode(self._encoded_code))  # noqa: S302  # nosec B302
         exec(code, module.__dict__)  # noqa: S102
 
 
@@ -114,7 +115,7 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
             # Hand back what the later finders answered: the import system would reach the same answer
             # by walking on, and walking on would ask each of them a second time.
             return spec
-        spec.loader = GremlinLoader(entry['source'], fullname, spec.loader, spec.origin)
+        spec.loader = GremlinLoader(entry['code'], spec.loader)
         spec.cached = None
         return spec
 

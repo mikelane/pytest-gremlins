@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
 import collections.abc
 from concurrent.futures import as_completed
 import contextlib
@@ -23,6 +24,7 @@ import importlib.util
 import inspect
 import json
 import logging
+import marshal
 import os
 from pathlib import Path
 import re
@@ -1492,7 +1494,8 @@ def _write_instrumented_sources(
 
     Creates a temporary directory containing:
     1. A JSON file mapping the normalized real path of each instrumented file to its
-       instrumented source code, the path that source came from, the file's device and
+       instrumented code (``code``: a marshalled code object compiled under the real file path, base64
+       encoded), the path it came from, the file's device and
        inode (``identity``, for spellings the path key misses) and the lowercased file
        names it may be imported as (``names``, so the finder skips every other import
        without touching the disk). No module name is recorded: the finder in the
@@ -1514,20 +1517,13 @@ def _write_instrumented_sources(
     """
     temp_dir = Path(tempfile.mkdtemp(prefix='pytest_gremlins_'))
 
-    gremlin_active_injection = f"""import os as _gremlin_os
-__gremlin_active__ = _gremlin_os.environ.get('{ACTIVE_GREMLIN_ENV_VAR}')
-del _gremlin_os
-"""
-
-    injection_nodes = ast.parse(gremlin_active_injection).body
-
     instrumented_sources: origin_finder.InstrumentedSources = {}
     for original_path, tree in instrumented_asts.items():
         origin = (rootdir / original_path).absolute()
-        injected_body = _prepend_injection(tree.body, injection_nodes)
+        module = _inject_gremlin_active(tree)
         spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
         instrumented_sources[normalize_origin(str(origin))] = {
-            'source': ast.unparse(ast.Module(body=injected_body, type_ignores=tree.type_ignores)),
+            'code': _encode_compiled(module, str(origin)),
             'origin': str(origin),
             'identity': file_identity(str(origin)),
             'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
@@ -1543,6 +1539,26 @@ del _gremlin_os
     # configure hooks or sys.path, so every gremlin runs through the bootstrap (#538).
 
     return temp_dir
+
+
+def _inject_gremlin_active(tree: ast.Module) -> ast.Module:
+    """Return ``tree`` with the ``__gremlin_active__`` assignment placed where the module may legally hold it."""
+    activation = f"""import os as _gremlin_os
+__gremlin_active__ = _gremlin_os.environ.get('{ACTIVE_GREMLIN_ENV_VAR}')
+del _gremlin_os
+"""
+    body = _prepend_injection(tree.body, ast.parse(activation).body)
+    return ast.Module(body=body, type_ignores=tree.type_ignores)
+
+
+def _encode_compiled(module: ast.Module, filename: str) -> str:
+    """Compile ``module`` under ``filename`` and return the code object as base64 text for sources.json.
+
+    Shipping code instead of unparsed text keeps the original line numbers, so ``inspect.getsource``
+    and tracebacks line up with the real file.
+    """
+    code = compile(ast.fix_missing_locations(module), filename, 'exec', dont_inherit=True)
+    return base64.b64encode(marshal.dumps(code)).decode('ascii')
 
 
 def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) -> list[ast.stmt]:

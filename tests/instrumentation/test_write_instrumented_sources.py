@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import ast
+import base64
 import json
+import marshal
 from pathlib import Path
+import types
 
 import pytest
 
@@ -14,18 +17,23 @@ from pytest_gremlins.instrumentation.origin_finder import (
     normalize_origin,
 )
 from pytest_gremlins.plugin import (
+    _inject_gremlin_active,
     _write_instrumented_sources,
 )
 
 
-def _parse_final_source(tmp_path: Path, source: str) -> list[ast.stmt]:
-    """Parse source, instrument it, and return the AST body of the result."""
-    tree = ast.parse(source)
-    original_path = str(tmp_path / 'mymod.py')
-    result_dir = _write_instrumented_sources({original_path: tree}, tmp_path)
-    sources = json.loads((result_dir / 'sources.json').read_text())
-    parsed: list[ast.stmt] = ast.parse(sources[normalize_origin(original_path)]['source']).body
-    return parsed
+def _parse_final_source(tmp_path: Path, source: str) -> list[ast.stmt]:  # noqa: ARG001
+    """Parse source, inject the activation variable, and return the AST body of the result."""
+    return _inject_gremlin_active(ast.parse(source)).body
+
+
+def _written_code(tmp_path: Path, source: str, name: str = 'mymod.py') -> tuple[str, types.CodeType]:
+    """Instrument ``source`` as ``name`` and return its origin and the code object shipped in sources.json."""
+    original_path = str(tmp_path / name)
+    result_dir = _write_instrumented_sources({original_path: ast.parse(source)}, tmp_path)
+    entry = json.loads((result_dir / 'sources.json').read_text())[normalize_origin(original_path)]
+    code: types.CodeType = marshal.loads(base64.b64decode(entry['code']))  # noqa: S302
+    return entry['origin'], code
 
 
 def _node_names(nodes: list[ast.stmt]) -> list[str]:
@@ -102,11 +110,12 @@ class DescribeWriteInstrumentedSources:
         assert labels == ['import', 'assign:__gremlin_active__', 'del', 'assign:x']
 
     def it_includes_gremlin_active_variable_in_output(self, tmp_path: Path) -> None:
-        tree = ast.parse('from __future__ import annotations\nx = 1\n')
-        original_path = str(tmp_path / 'mymod.py')
-        result_dir = _write_instrumented_sources({original_path: tree}, tmp_path)
-        sources = json.loads((result_dir / 'sources.json').read_text())
-        assert '__gremlin_active__' in sources[normalize_origin(original_path)]['source']
+        _, code = _written_code(tmp_path, 'from __future__ import annotations\nx = 1\n')
+        namespace: dict[str, object] = {}
+
+        exec(code, namespace)  # noqa: S102
+
+        assert '__gremlin_active__' in namespace
 
     def it_records_the_source_path_without_following_symlinks_as_the_origin(self, tmp_path: Path) -> None:
         real = tmp_path / 'real.py'
@@ -189,7 +198,21 @@ class DescribeWriteInstrumentedSourceKeys:
     def it_records_no_module_name(self, tmp_path: Path) -> None:
         entries = _written_entries(tmp_path, ['pkg/__init__.py'])
 
-        assert sorted(next(iter(entries.values()))) == ['file_names', 'identity', 'origin', 'source']
+        assert sorted(next(iter(entries.values()))) == ['code', 'file_names', 'identity', 'origin']
+
+    def it_ships_the_source_as_code_compiled_under_the_origin_path(self, tmp_path: Path) -> None:
+        origin, code = _written_code(tmp_path, 'x = 1\n')
+
+        assert code.co_filename == origin == str(tmp_path / 'mymod.py')
+
+    def it_keeps_the_line_numbers_of_the_original_file(self, tmp_path: Path) -> None:
+        padded = '# padding\n' * 30 + 'def f(x):\n    return x > 0\n'
+        _, code = _written_code(tmp_path, padded)
+        namespace: dict[str, object] = {}
+
+        exec(code, namespace)  # noqa: S102
+
+        assert namespace['f'].__code__.co_firstlineno == 31  # type: ignore[attr-defined]
 
     def it_records_the_device_and_inode_of_the_file(self, tmp_path: Path) -> None:
         tmp_path.joinpath('real_mod.py').write_text('x = 1\n')

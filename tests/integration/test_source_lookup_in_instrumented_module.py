@@ -10,17 +10,25 @@ import re
 
 import pytest
 
-_TARGET = """
+_PADDING = '# padding\n' * 30
+
+_TARGET = (
+    """
 import inspect
 
+"""
+    + _PADDING
+    + """
 
 def is_positive(x):
     return x > 0
 
 
 def source_is_readable():
-    return len(inspect.getsource(is_positive)) > 0
+    source = inspect.getsource(is_positive)
+    return source.startswith('def is_positive(') and 'x > 0' in source
 """
+)
 
 _TESTS = """
 import sample
@@ -37,7 +45,7 @@ _EXECUTION_MODES = {
 }
 
 
-_UNOBSERVED_GREMLIN = re.compile(r'sample\.py:5 > to >=')
+_UNOBSERVED_GREMLIN = re.compile(r'sample\.py:\d+ > to >=')
 
 
 @pytest.mark.medium
