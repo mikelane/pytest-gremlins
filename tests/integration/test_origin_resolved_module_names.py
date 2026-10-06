@@ -190,6 +190,27 @@ class DescribeOriginResolvedModuleNames:
 
         assert _verdicts(result.stdout.str()) == (2, 0, 0)
 
+    def it_zaps_a_target_the_tests_import_through_a_differently_named_symlink_outside_the_targets(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makeini('[pytest]\npythonpath = src vendor\n')
+        package = pytester_with_markers.path / 'src' / 'mypkg'
+        package.mkdir(parents=True)
+        package.joinpath('__init__.py').write_text('')
+        package.joinpath('core.py').write_text(_POSITIVE)
+        vendor = pytester_with_markers.mkdir('vendor')
+        try:
+            vendor.joinpath('thing.py').symlink_to(package / 'core.py')
+        except OSError:
+            pytest.skip('this platform cannot create symlinks')
+        pytester_with_markers.mkdir('tests').joinpath('test_thing.py').write_text(
+            _CORE_TESTS.replace('from mypkg.core import', 'from thing import')
+        )
+
+        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
+
+        assert _verdicts(result.stdout.str()) == (2, 0, 0)
+
     def it_zaps_a_target_the_import_system_spells_with_different_case_than_the_disk(
         self, pytester_with_markers: pytest.Pytester
     ) -> None:
