@@ -57,6 +57,16 @@ class DescribeGremlinFinder:
         assert isinstance(result, ModuleSpec)
         assert result.name == 'my_module'
 
+    def it_find_spec_gives_the_spec_the_module_origin(self, tmp_path):
+        origin = str(tmp_path / 'my_module.py')
+        finder = GremlinFinder(instrumented_modules={'my_module': ast.parse('x = 1')}, origins={'my_module': origin})
+
+        result = finder.find_spec('my_module', None)
+
+        assert result is not None
+        assert result.origin == origin
+        assert result.has_location is True
+
     def it_find_spec_returns_none_for_submodule_when_only_parent_instrumented(self):
         tree = ast.parse('x = 1')
         instrumented_modules = {'my_package': tree}
@@ -213,5 +223,24 @@ class DescribeImportHookIntegration:
             import _gremlin_test_module  # Intentional: testing import hooks
 
             assert _gremlin_test_module.test_value == 'instrumented'
+        finally:
+            unregister_import_hooks()
+
+    def it_gives_an_imported_instrumented_module_its_origin_as_file(
+        self,
+        tmp_path,
+        clean_meta_path,  # noqa: ARG002
+        clean_modules,  # noqa: ARG002
+    ):
+        origin = str(tmp_path / '_gremlin_test_module.py')
+        tree = ast.parse('seen_file = __file__')
+        ast.fix_missing_locations(tree)
+        register_import_hooks({'_gremlin_test_module': tree}, origins={'_gremlin_test_module': origin})
+
+        try:
+            import _gremlin_test_module  # Intentional: testing import hooks
+
+            assert _gremlin_test_module.seen_file == origin
+            assert _gremlin_test_module.__file__ == origin
         finally:
             unregister_import_hooks()

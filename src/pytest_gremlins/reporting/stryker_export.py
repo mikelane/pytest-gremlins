@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         StrykerMutant,
         StrykerPosition,
         StrykerReport,
+        StrykerScoreSummary,
     )
 
 
@@ -36,7 +37,15 @@ STATUS_MAP: dict[GremlinResultStatus, str] = {
     GremlinResultStatus.SURVIVED: 'Survived',
     GremlinResultStatus.TIMEOUT: 'Timeout',
     GremlinResultStatus.ERROR: 'RuntimeError',
+    GremlinResultStatus.PARDONED: 'Ignored',
 }
+
+SCORE_NOTE = (
+    'pytest-gremlins mutation score: (zapped + timeout) / (total - pardoned). ERROR gremlins are exported as '
+    'RuntimeError, which Stryker excludes from its score denominator, but pytest-gremlins keeps them in the '
+    'denominator, so a score recomputed from the mutant statuses can be higher than this one. This value is '
+    'authoritative.'
+)
 
 
 class StrykerExporter:
@@ -120,6 +129,29 @@ class StrykerExporter:
             'thresholds': self._thresholds,
             'files': self._build_files(score),
             'framework': framework,
+            'config': {'pytestGremlins': self._build_score_summary(score)},
+        }
+
+    def _build_score_summary(self, score: MutationScore) -> StrykerScoreSummary:
+        """Build pytest-gremlins' own score for the schema's free-form ``config`` object.
+
+        Args:
+            score: The MutationScore to summarize.
+
+        Returns:
+            The authoritative score, the counts behind it, and a note on how ERRORs are counted.
+        """
+        return {
+            'mutationScore': score.percentage,
+            'counts': {
+                'total': score.total,
+                'zapped': score.zapped,
+                'survived': score.survived,
+                'timeout': score.timeout,
+                'error': score.error,
+                'pardoned': score.pardoned,
+            },
+            'note': SCORE_NOTE,
         }
 
     def _build_files(self, score: MutationScore) -> dict[str, StrykerFileResult]:

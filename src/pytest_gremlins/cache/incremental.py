@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf6'
+RUNNER_FIDELITY_VERSION = 'rf7'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
@@ -32,6 +32,9 @@ selection.
 
 ``rf6`` retires verdicts cached before a timeout was confirmed against the unmutated selection (#565); a
 cached TIMEOUT from an older build may be a gremlin that timed out only because the limit was too short.
+
+``rf7`` retires verdicts cached while instrumented modules had no ``__file__`` (#525); target code that read
+``Path(__file__)`` raised ``NameError`` under every gremlin, so a survivor could be cached as ZAPPED.
 """
 
 

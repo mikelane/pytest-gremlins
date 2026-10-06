@@ -56,3 +56,11 @@ class DescribeRunnerFidelityCacheKey:
             cache._store.put(unconfirmed_key, {'status': 'timeout'})  # type: ignore[arg-type]
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
+
+    def it_retires_verdicts_cached_while_instrumented_modules_had_no_file(self, tmp_path: Path) -> None:
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
+            fileless_key = current_key.rsplit(':', 1)[0] + ':rf6'
+            cache._store.put(fileless_key, {'status': 'zapped'})  # type: ignore[arg-type]
+
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None

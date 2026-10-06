@@ -63,6 +63,31 @@ class StrykerFramework(TypedDict):
     version: str
 
 
+class StrykerScoreCounts(TypedDict):
+    """Per-status gremlin counts behind the embedded pytest-gremlins score."""
+
+    total: int
+    zapped: int
+    survived: int
+    timeout: int
+    error: int
+    pardoned: int
+
+
+class StrykerScoreSummary(TypedDict):
+    """pytest-gremlins' own score, stored under the schema's free-form ``config`` object."""
+
+    mutationScore: float
+    counts: StrykerScoreCounts
+    note: str
+
+
+class StrykerConfig(TypedDict):
+    """Free-form ``config`` section of the Stryker report."""
+
+    pytestGremlins: StrykerScoreSummary
+
+
 class StrykerReport(TypedDict):
     """Top-level Stryker mutation-testing-report-schema structure."""
 
@@ -70,6 +95,7 @@ class StrykerReport(TypedDict):
     thresholds: dict[str, int]
     files: dict[str, StrykerFileResult]
     framework: StrykerFramework
+    config: StrykerConfig
 
 
 # ── Internal JSON report format ───────────────────────────────────────
