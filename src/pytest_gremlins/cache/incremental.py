@@ -44,6 +44,9 @@ nothing imports (#591); every gremlin in such a file was cached as SURVIVED howe
 in such a file was cached as SURVIVED however well the tests caught it. Instrumented files are now matched by the
 file the import system resolves a name to, by its real path or, when a path is spelled differently from the
 disk, by its device and inode. Two targets that are one file on disk generate gremlins once.
+
+``rf10`` retires verdicts cached while instrumented modules were compiled under their dotted module name (#563);
+``inspect.getsource`` raised under every gremlin, so a test that only looked up source could be cached as ZAPPED.
 """
 
 

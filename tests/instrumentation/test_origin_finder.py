@@ -461,6 +461,14 @@ class DescribeGremlinLoaderCompileFilename:
 
         assert module.f.__code__.co_filename == origin  # type: ignore[attr-defined]
 
+    def it_falls_back_to_the_module_name_without_an_origin(self) -> None:
+        module = ModuleType('nameless_mod')
+        loader = GremlinLoader('def f():\n    return 1\n', 'nameless_mod')
+
+        loader.exec_module(module)
+
+        assert module.f.__code__.co_filename == 'nameless_mod'  # type: ignore[attr-defined]
+
 
 @pytest.mark.medium
 class DescribeGremlinFinderCompileFilename:
