@@ -61,3 +61,27 @@ class DescribePathToModuleName:
         result = _path_to_module_name(file_path, rootdir)
 
         assert result == 'mypackage.subpackage.module'
+
+    @pytest.mark.parametrize(
+        ('relative_path', 'expected'),
+        [
+            ('pkg/__init__.py', 'pkg'),
+            ('pkg/sub/__init__.py', 'pkg.sub'),
+            ('src/pkg/__init__.py', 'pkg'),
+            ('src/pkg/sub/__init__.py', 'pkg.sub'),
+        ],
+    )
+    def it_names_a_package_init_after_its_package(self, relative_path: str, expected: str) -> None:
+        rootdir = Path('/project')
+
+        result = _path_to_module_name(rootdir / relative_path, rootdir)
+
+        assert result == expected
+
+    @pytest.mark.parametrize('relative_path', ['__init__.py', 'src/__init__.py'])
+    def it_keeps_the_literal_name_for_an_init_that_belongs_to_no_package(self, relative_path: str) -> None:
+        rootdir = Path('/project')
+
+        result = _path_to_module_name(rootdir / relative_path, rootdir)
+
+        assert result == '__init__'

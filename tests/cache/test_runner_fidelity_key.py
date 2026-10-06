@@ -64,3 +64,11 @@ class DescribeRunnerFidelityCacheKey:
             cache._store.put(fileless_key, {'status': 'zapped'})  # type: ignore[arg-type]
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
+
+    def it_retires_verdicts_cached_while_package_init_gremlins_were_never_activated(self, tmp_path: Path) -> None:
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
+            unactivated_key = current_key.rsplit(':', 1)[0] + ':rf7'
+            cache._store.put(unactivated_key, {'status': 'survived'})  # type: ignore[arg-type]
+
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None

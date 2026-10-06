@@ -169,3 +169,47 @@ class DescribeLightweightRunnerDisabled:
         instrumented_dir = _write_instrumented_sources(asts, tmp_path)
 
         assert (instrumented_dir / 'gremlin_bootstrap.py').exists()
+
+
+def _written_entries(tmp_path: Path, relative_paths: list[str]) -> dict[str, dict[str, str]]:
+    asts = {str(tmp_path / relative): ast.parse('x = 1\n') for relative in relative_paths}
+    result_dir = _write_instrumented_sources(asts, tmp_path)
+    entries: dict[str, dict[str, str]] = json.loads((result_dir / 'sources.json').read_text())
+    return entries
+
+
+@pytest.mark.medium
+class DescribeWriteInstrumentedPackageSources:
+    """A package ``__init__.py`` is registered as a package under its package name."""
+
+    @pytest.mark.parametrize(
+        ('relative_path', 'module_name', 'package_dir'),
+        [
+            ('pkg/__init__.py', 'pkg', 'pkg'),
+            ('pkg/sub/__init__.py', 'pkg.sub', 'pkg/sub'),
+            ('src/pkg/__init__.py', 'pkg', 'src/pkg'),
+        ],
+    )
+    def it_records_the_package_directory_for_a_package_init(
+        self, tmp_path: Path, relative_path: str, module_name: str, package_dir: str
+    ) -> None:
+        entries = _written_entries(tmp_path, [relative_path])
+
+        assert entries[module_name]['package_dir'] == str(tmp_path / package_dir)
+        assert entries[module_name]['origin'] == str(tmp_path / relative_path)
+
+    @pytest.mark.parametrize('relative_path', ['pkg/core.py', 'mymod.py'])
+    def it_records_no_package_directory_for_a_plain_module(self, tmp_path: Path, relative_path: str) -> None:
+        entries = _written_entries(tmp_path, [relative_path])
+
+        assert all('package_dir' not in entry for entry in entries.values())
+
+    def it_records_no_package_directory_for_an_init_in_the_root(self, tmp_path: Path) -> None:
+        entries = _written_entries(tmp_path, ['__init__.py'])
+
+        assert 'package_dir' not in entries['__init__']
+
+    def it_keeps_a_package_and_its_submodule_as_separate_entries(self, tmp_path: Path) -> None:
+        entries = _written_entries(tmp_path, ['pkg/__init__.py', 'pkg/core.py'])
+
+        assert sorted(entries) == ['pkg', 'pkg.core']
