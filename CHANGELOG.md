@@ -18,9 +18,10 @@ import system which file an import loads, so no name is guessed.
 - **Your score may rise.** Gremlins your tests catch are now zapped in these cases, where they
   used to survive (#597, #607):
   - targets on a `pythonpath` entry other than the project root or `src/`
-  - modules that sit next to their tests in a directory without `__init__.py` and are imported
-    by their bare name
-  - packages installed in editable mode
+  - modules that sit next to their tests in a subdirectory without `__init__.py` and are
+    imported by their bare name
+  - packages that an editable install serves from a directory whose path does not match their
+    import name
   - targets imported through the inner of two nested `pythonpath` entries
   - targets imported through a symlink or hard link with a different file name
 - **The cache is rebuilt once.** The cache version changed so that survivors cached under a
