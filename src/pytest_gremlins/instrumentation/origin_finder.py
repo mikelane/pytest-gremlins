@@ -13,8 +13,8 @@ import base64
 from collections.abc import Sequence
 import importlib.abc
 import importlib.machinery
-import marshal
 import os
+import pickle  # nosec B403 - only the parent's own temp-dir data is unpickled
 import sys
 import threading
 from types import ModuleType
@@ -47,10 +47,11 @@ def file_identity(path: str) -> str | None:
 class GremlinLoader(importlib.abc.Loader):
     """Execute instrumented source in the namespace of the module being imported."""
 
-    def __init__(self, encoded_code: str, original_loader: object = None) -> None:
-        # Compiled by the parent under the real file, so inspect.getsource, linecache and tracebacks all
-        # read the original source from disk and agree with its line numbers.
-        self._encoded_code = encoded_code
+    def __init__(self, encoded_tree: str, original_loader: object = None) -> None:
+        # The parent ships the instrumented tree, never code: compiling it here under the real file keeps
+        # inspect.getsource, linecache and tracebacks aligned with the file on disk, and this interpreter's own
+        # -O / PYTHONOPTIMIZE and warning filters apply, exactly as when it imports an unmodified file.
+        self._encoded_tree = encoded_tree
         self._original_loader = original_loader
 
     def get_resource_reader(self, fullname: str) -> object:  # noqa: D102
@@ -66,9 +67,10 @@ class GremlinLoader(importlib.abc.Loader):
         return None
 
     def exec_module(self, module: ModuleType) -> None:  # noqa: D102
-        # Parent and child run the same interpreter, so the marshal format always matches; the code is our own
-        # transformation of the user's file, not untrusted input.
-        code = marshal.loads(base64.b64decode(self._encoded_code))  # noqa: S302  # nosec B302
+        # The parent wrote this tree into its own temp directory from our own transformation of the user's file;
+        # it is not untrusted input.
+        tree = pickle.loads(base64.b64decode(self._encoded_tree))  # noqa: S301  # nosec B301
+        code = compile(tree, module.__spec__.origin, 'exec', dont_inherit=True)  # type: ignore[union-attr, arg-type]
         exec(code, module.__dict__)  # noqa: S102
 
 
@@ -115,7 +117,7 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
             # Hand back what the later finders answered: the import system would reach the same answer
             # by walking on, and walking on would ask each of them a second time.
             return spec
-        spec.loader = GremlinLoader(entry['code'], spec.loader)
+        spec.loader = GremlinLoader(entry['tree'], spec.loader)
         spec.cached = None
         return spec
 

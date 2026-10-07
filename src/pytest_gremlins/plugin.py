@@ -24,9 +24,9 @@ import importlib.util
 import inspect
 import json
 import logging
-import marshal
 import os
 from pathlib import Path
+import pickle  # nosec B403 - only the parent's own temp-dir data is unpickled
 import re
 import shlex
 import shutil
@@ -1477,11 +1477,7 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
         # tokenize.open honors PEP 263 coding declarations and strips BOM
         with tokenize.open(str(path)) as source_stream:
             source = source_stream.read()
-        # Compiling, not just parsing: a file that parses but cannot compile (a top-level ``return``) could never
-        # be imported, and shipping its instrumented tree would fail the parent's compile of it.
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            compile(source, str(path), 'exec', dont_inherit=True)
+        ast.parse(source)
         source_files[str(path)] = source
     except SyntaxError:
         logger.debug('Skipping %s: syntax error', path)
@@ -1493,14 +1489,13 @@ def _write_instrumented_sources(
     instrumented_asts: dict[str, ast.Module],
     rootdir: Path,
     duplicates: dict[str, list[str]] | None = None,
-    optimize: int | None = None,
 ) -> Path:
     """Write instrumented sources to a JSON file for import hook injection.
 
     Creates a temporary directory containing:
     1. A JSON file mapping the normalized real path of each instrumented file to its
-       instrumented code (``code``: a marshalled code object compiled under the real file path, base64
-       encoded), the path it came from, the file's device and
+       instrumented tree (``tree``: the instrumented AST, pickled and base64 encoded for the subprocess to
+       compile under the real file path), the path it came from, the file's device and
        inode (``identity``, for spellings the path key misses) and the lowercased file
        names it may be imported as (``names``, so the finder skips every other import
        without touching the disk). No module name is recorded: the finder in the
@@ -1516,14 +1511,11 @@ def _write_instrumented_sources(
         rootdir: Root directory of the project; a relative path is taken from it.
         duplicates: For a path in ``instrumented_asts``, the other spellings of the same file that
             were dropped as targets; imported through one of them, the file is still served.
-        optimize: Optimize level to compile the shipped code at. Defaults to probing the interpreter once, so
-            every file is compiled at the level the gremlin subprocesses really run with.
 
     Returns:
         Path to the temporary directory containing the bootstrap infrastructure.
     """
     temp_dir = Path(tempfile.mkdtemp(prefix='pytest_gremlins_'))
-    compile_optimize = _probe_child_optimize_level() if optimize is None else optimize
 
     instrumented_sources: origin_finder.InstrumentedSources = {}
     for original_path, tree in instrumented_asts.items():
@@ -1531,7 +1523,7 @@ def _write_instrumented_sources(
         module = _inject_gremlin_active(tree)
         spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
         instrumented_sources[normalize_origin(str(origin))] = {
-            'code': _encode_compiled(module, str(origin), compile_optimize),
+            'tree': _encode_tree(module),
             'origin': str(origin),
             'identity': file_identity(str(origin)),
             'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
@@ -1559,57 +1551,13 @@ del _gremlin_os
     return ast.Module(body=body, type_ignores=tree.type_ignores)
 
 
-_OPTIMIZE_PROBE_TIMEOUT_SECONDS = 30
+def _encode_tree(module: ast.Module) -> str:
+    """Return ``module`` pickled and base64 encoded for sources.json.
 
-
-def _probe_child_optimize_level(
-    run: collections.abc.Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-) -> int:
-    """Return the optimize level a gremlin subprocess runs with, as reported by the interpreter itself.
-
-    The subprocess is launched without ``-O`` and inherits this process's environment, so only ``PYTHONOPTIMIZE``
-    reaches it. CPython's own parser of that variable is the authority (it rejects values ``int()`` accepts, such
-    as ``'0 '`` or ``'0_0'``), so a probe interpreter started with the same environment reports ``sys.flags.optimize``.
-    If the probe fails, falls back to this process's own level and warns.
+    The subprocess compiles the tree itself, under the real file path, so the original line numbers survive and
+    the subprocess's own optimize level and warning filters apply.
     """
-    try:
-        completed = run(
-            [sys.executable, '-c', 'import sys; print(sys.flags.optimize)'],
-            capture_output=True,
-            text=True,
-            timeout=_OPTIMIZE_PROBE_TIMEOUT_SECONDS,
-            env=os.environ.copy(),
-            check=False,
-        )
-        if completed.returncode != 0:
-            msg = f'probe exited with status {completed.returncode}'
-            raise ValueError(msg)  # noqa: TRY301
-        return int(completed.stdout.strip())
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
-        logger.warning(
-            'Could not probe the gremlin subprocess optimize level (%s); assuming %d from this interpreter',
-            exc,
-            sys.flags.optimize,
-        )
-        return sys.flags.optimize
-
-
-def _encode_compiled(module: ast.Module, filename: str, optimize: int) -> str:
-    """Compile ``module`` under ``filename`` and return the code object as base64 text for sources.json.
-
-    Shipping code instead of unparsed text keeps the original line numbers, so ``inspect.getsource``
-    and tracebacks line up with the real file.
-    """
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        code = compile(
-            ast.fix_missing_locations(module),
-            filename,
-            'exec',
-            dont_inherit=True,
-            optimize=optimize,
-        )
-    return base64.b64encode(marshal.dumps(code)).decode('ascii')
+    return base64.b64encode(pickle.dumps(ast.fix_missing_locations(module))).decode('ascii')
 
 
 def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) -> list[ast.stmt]:

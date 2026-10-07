@@ -16,8 +16,8 @@ import importlib.resources
 import importlib.util
 import inspect
 import json
-import marshal
 from pathlib import Path
+import pickle
 import pkgutil
 import sys
 import threading
@@ -51,18 +51,17 @@ INSTRUMENTED = 'VALUE = "instrumented"\n'
 ORIGINAL = 'VALUE = "original"\n'
 
 
-def _encode(source: str, filename: str) -> str:
-    """Ship ``source`` the way sources.json does: compiled under ``filename``, marshalled, base64 encoded."""
-    code = compile(source, filename, 'exec', dont_inherit=True)
-    return base64.b64encode(marshal.dumps(code)).decode('ascii')
+def _encode(source: str, filename: str | None = None) -> str:  # noqa: ARG001
+    """Ship ``source`` the way sources.json does: as a parsed tree, pickled and base64 encoded."""
+    return base64.b64encode(pickle.dumps(ast.parse(source))).decode('ascii')
 
 
 def _entry(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    return {normalize_origin(str(origin)): {'code': _encode(source, str(origin)), 'origin': str(origin)}}
+    return {normalize_origin(str(origin)): {'tree': _encode(source, str(origin)), 'origin': str(origin)}}
 
 
 def _entry_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    entry = {'code': _encode(source, str(origin)), 'origin': str(origin), 'identity': file_identity(str(origin))}
+    entry = {'tree': _encode(source, str(origin)), 'origin': str(origin), 'identity': file_identity(str(origin))}
     return {normalize_origin(str(origin)): entry}
 
 
@@ -460,26 +459,37 @@ class DescribeGremlinLoaderResourceReader:
         assert loader.get_resource_reader('data_mod') == 'reader-for:data_mod'
 
 
+def _module_from(name: str, origin: str) -> ModuleType:
+    module = ModuleType(name)
+    module.__spec__ = importlib.machinery.ModuleSpec(name, None, origin=origin)
+    return module
+
+
 @pytest.mark.small
-class DescribeGremlinLoaderRunsShippedCode:
-    """The loader runs the code object it was shipped; it never recompiles, so the filename and lines survive (#563)."""
+class DescribeGremlinLoaderCompilesShippedTree:
+    """The loader compiles the tree it was shipped under the spec's origin, so filename and lines survive (#563)."""
 
-    def it_keeps_the_filename_the_code_was_compiled_under(self) -> None:
+    def it_compiles_under_the_origin_of_the_module_spec(self) -> None:
         origin = 'C:\\project\\src\\origin_mod.py'
-        module = ModuleType('origin_mod')
-        loader = GremlinLoader(_encode('def f():\n    return 1\n', origin))
+        module = _module_from('origin_mod', origin)
 
-        loader.exec_module(module)
+        GremlinLoader(_encode('def f():\n    return 1\n')).exec_module(module)
 
         assert module.f.__code__.co_filename == origin  # type: ignore[attr-defined]
 
-    def it_keeps_the_line_numbers_the_code_was_compiled_with(self) -> None:
-        module = ModuleType('lines_mod')
-        loader = GremlinLoader(_encode('\n' * 9 + 'def f():\n    return 1\n', 'lines_mod.py'))
+    def it_keeps_the_line_numbers_of_the_shipped_tree(self) -> None:
+        module = _module_from('lines_mod', 'lines_mod.py')
 
-        loader.exec_module(module)
+        GremlinLoader(_encode('\n' * 9 + 'def f():\n    return 1\n')).exec_module(module)
 
         assert module.f.__code__.co_firstlineno == 10  # type: ignore[attr-defined]
+
+    def it_does_not_inherit_future_flags_from_the_loader_module(self) -> None:
+        module = _module_from('flags_mod', 'flags_mod.py')
+
+        GremlinLoader(_encode('def f():\n    return 1\n')).exec_module(module)
+
+        assert module.f.__code__.co_flags & importlib.import_module('__future__').annotations.compiler_flag == 0  # type: ignore[attr-defined]
 
 
 @pytest.mark.medium

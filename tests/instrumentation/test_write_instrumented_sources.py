@@ -5,14 +5,9 @@ from __future__ import annotations
 import ast
 import base64
 import json
-import logging
-import marshal
-import os
 from pathlib import Path
-import subprocess
-import sys
+import pickle
 import types
-import warnings
 
 import pytest
 
@@ -23,9 +18,7 @@ from pytest_gremlins.instrumentation.origin_finder import (
 )
 from pytest_gremlins.plugin import (
     _add_source_file,
-    _encode_compiled,
     _inject_gremlin_active,
-    _probe_child_optimize_level,
     _write_instrumented_sources,
 )
 
@@ -36,12 +29,12 @@ def _parse_final_source(tmp_path: Path, source: str) -> list[ast.stmt]:  # noqa:
 
 
 def _written_code(tmp_path: Path, source: str, name: str = 'mymod.py') -> tuple[str, types.CodeType]:
-    """Instrument ``source`` as ``name`` and return its origin and the code object shipped in sources.json."""
+    """Instrument ``source`` as ``name`` and return its origin and the shipped tree compiled as the child does."""
     original_path = str(tmp_path / name)
     result_dir = _write_instrumented_sources({original_path: ast.parse(source)}, tmp_path)
     entry = json.loads((result_dir / 'sources.json').read_text())[normalize_origin(original_path)]
-    code: types.CodeType = marshal.loads(base64.b64decode(entry['code']))  # noqa: S302
-    return entry['origin'], code
+    tree = pickle.loads(base64.b64decode(entry['tree']))  # noqa: S301
+    return entry['origin'], compile(tree, entry['origin'], 'exec', dont_inherit=True)
 
 
 def _node_names(nodes: list[ast.stmt]) -> list[str]:
@@ -206,9 +199,9 @@ class DescribeWriteInstrumentedSourceKeys:
     def it_records_no_module_name(self, tmp_path: Path) -> None:
         entries = _written_entries(tmp_path, ['pkg/__init__.py'])
 
-        assert sorted(next(iter(entries.values()))) == ['code', 'file_names', 'identity', 'origin']
+        assert sorted(next(iter(entries.values()))) == ['file_names', 'identity', 'origin', 'tree']
 
-    def it_ships_the_source_as_code_compiled_under_the_origin_path(self, tmp_path: Path) -> None:
+    def it_ships_a_tree_that_compiles_under_the_origin_path(self, tmp_path: Path) -> None:
         origin, code = _written_code(tmp_path, 'x = 1\n')
 
         assert code.co_filename == origin == str(tmp_path / 'mymod.py')
@@ -269,180 +262,15 @@ class DescribeWriteInstrumentedSourceKeys:
 
 
 @pytest.mark.medium
-class DescribeAddSourceFileSkipsUncompilableFiles:
-    """A file that parses but cannot compile is skipped, as it never was an importable module."""
+class DescribeAddSourceFileKeepsParsableFiles:
+    """A file that parses is a target, as on main; whether it compiles is the importing subprocess's business."""
 
     @pytest.mark.parametrize('source', ['return 1 > 0\n', 'break\n', 'nonlocal x\n', 'await x\n'])
-    def it_skips_a_file_that_parses_but_does_not_compile(self, tmp_path: Path, source: str) -> None:
+    def it_keeps_a_file_that_parses_but_does_not_compile(self, tmp_path: Path, source: str) -> None:
         path = tmp_path / 'template.py'
         path.write_text(source)
         source_files: dict[str, str] = {}
 
         _add_source_file(path, source_files)
 
-        assert source_files == {}
-
-    def it_keeps_a_file_that_compiles(self, tmp_path: Path) -> None:
-        path = tmp_path / 'real.py'
-        path.write_text('x = 1 > 0\n')
-        source_files: dict[str, str] = {}
-
-        _add_source_file(path, source_files)
-
         assert list(source_files) == [str(path)]
-
-
-_ASSERTING_SOURCE = 'def f(x):\n    assert x\n    return x\n'
-_SYNTAX_WARNING_SOURCE = 'def f(x):\n    return x is 1\n'
-
-
-def _has_assert(code: types.CodeType) -> bool:
-    """Run the shipped code and report whether its ``assert`` still fires."""
-    namespace: dict[str, object] = {}
-    exec(code, namespace)  # noqa: S102
-    try:
-        namespace['f'](0)  # type: ignore[operator]
-    except AssertionError:
-        return True
-    return False
-
-
-class _FakeRunner:
-    """Stands in for ``subprocess.run`` and records how it was called."""
-
-    def __init__(self, result: subprocess.CompletedProcess[str] | BaseException) -> None:
-        self.result = result
-        self.calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def __call__(self, args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        self.calls.append((args, kwargs))
-        if isinstance(self.result, BaseException):
-            raise self.result
-        return self.result
-
-
-def _completed(stdout: str, returncode: int = 0) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr='')
-
-
-@pytest.mark.small
-class DescribeProbeChildOptimizeLevel:
-    """The optimize level the gremlin subprocess will run with is whatever an interpreter itself reports."""
-
-    @pytest.mark.parametrize('printed', ['0\n', '1\n', '2\n'])
-    def it_returns_the_level_the_probe_interpreter_prints(self, printed: str) -> None:
-        runner = _FakeRunner(_completed(printed))
-
-        assert _probe_child_optimize_level(runner) == int(printed)
-
-    def it_asks_the_interpreter_with_list_args_a_timeout_and_the_inherited_environment(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv('PYTHONOPTIMIZE', '0 ')
-        runner = _FakeRunner(_completed('1\n'))
-
-        _probe_child_optimize_level(runner)
-
-        args, kwargs = runner.calls[0]
-        assert args == [sys.executable, '-c', 'import sys; print(sys.flags.optimize)']
-        assert kwargs['env'] == os.environ
-        assert isinstance(kwargs['timeout'], int)
-        assert not kwargs.get('shell')
-
-    @pytest.mark.parametrize(
-        'result',
-        [
-            _completed('1\n', returncode=1),
-            _completed('not a number'),
-            _completed(''),
-            OSError('no interpreter'),
-            subprocess.TimeoutExpired(cmd='probe', timeout=1),
-        ],
-    )
-    def it_falls_back_to_this_interpreters_level_and_warns_once_when_the_probe_fails(
-        self, result: subprocess.CompletedProcess[str] | BaseException, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        with caplog.at_level(logging.WARNING):
-            level = _probe_child_optimize_level(_FakeRunner(result))
-
-        assert level == sys.flags.optimize
-        assert len([record for record in caplog.records if record.levelno == logging.WARNING]) == 1
-
-
-@pytest.mark.medium
-class DescribeProbeChildOptimizeLevelSpawnsAnInterpreter:
-    """The real probe agrees with CPython's own reading of PYTHONOPTIMIZE."""
-
-    @pytest.mark.parametrize(('value', 'expected'), [('0 ', 1), ('0_0', 1), ('2', 2), ('', 0)])
-    def it_reports_the_level_cpython_derives_from_the_environment(
-        self, monkeypatch: pytest.MonkeyPatch, value: str, expected: int
-    ) -> None:
-        monkeypatch.setenv('PYTHONOPTIMIZE', value)
-
-        assert _probe_child_optimize_level() == expected
-
-
-@pytest.mark.small
-class DescribeEncodedOptimizeLevel:
-    """Shipped code is compiled at the level it is given, whatever this interpreter runs at."""
-
-    def _encode(self, source: str, optimize: int) -> types.CodeType:
-        encoded = _encode_compiled(ast.parse(source), 'mod.py', optimize)
-        return marshal.loads(base64.b64decode(encoded))  # noqa: S302
-
-    def it_keeps_asserts_at_level_zero(self) -> None:
-        assert _has_assert(self._encode(_ASSERTING_SOURCE, 0))
-
-    @pytest.mark.parametrize('optimize', [1, 2])
-    def it_strips_asserts_at_an_optimized_level(self, optimize: int) -> None:
-        assert not _has_assert(self._encode(_ASSERTING_SOURCE, optimize))
-
-
-@pytest.mark.medium
-class DescribeWriteInstrumentedSourcesOptimizeLevel:
-    """The level is resolved once per session and applied to every shipped file."""
-
-    def it_compiles_every_file_at_the_given_level(self, tmp_path: Path) -> None:
-        asts = {str(tmp_path / name): ast.parse(_ASSERTING_SOURCE) for name in ('a.py', 'b.py')}
-
-        result_dir = _write_instrumented_sources(asts, tmp_path, optimize=1)
-
-        entries = json.loads((result_dir / 'sources.json').read_text()).values()
-        assert [_has_assert(marshal.loads(base64.b64decode(e['code']))) for e in entries] == [False, False]  # noqa: S302
-
-    def it_probes_the_interpreter_once_for_all_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        probes: list[int] = []
-
-        def fake_probe() -> int:
-            probes.append(1)
-            return 2
-
-        monkeypatch.setattr('pytest_gremlins.plugin._probe_child_optimize_level', fake_probe)
-        asts = {str(tmp_path / name): ast.parse(_ASSERTING_SOURCE) for name in ('a.py', 'b.py', 'c.py')}
-
-        _write_instrumented_sources(asts, tmp_path)
-
-        assert len(probes) == 1
-
-
-@pytest.mark.medium
-class DescribeCompileWarningsAreIgnored:
-    """A compile-time warning promoted to an error by the session must not drop or break the target."""
-
-    def it_keeps_a_source_whose_compile_warning_is_an_error(self, tmp_path: Path) -> None:
-        path = tmp_path / 'warn.py'
-        path.write_text(_SYNTAX_WARNING_SOURCE)
-        source_files: dict[str, str] = {}
-
-        with warnings.catch_warnings():
-            warnings.simplefilter('error')
-            _add_source_file(path, source_files)
-
-        assert list(source_files) == [str(path)]
-
-    def it_encodes_a_module_whose_compile_warning_is_an_error(self) -> None:
-        with warnings.catch_warnings():
-            warnings.simplefilter('error')
-            encoded = _encode_compiled(ast.parse(_SYNTAX_WARNING_SOURCE), 'warn.py', 0)
-
-        assert encoded
