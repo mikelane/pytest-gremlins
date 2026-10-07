@@ -9,6 +9,7 @@ This file is copied verbatim into the generated bootstrap script, which cannot i
 must start fast. Keep it standard-library only and free of ``from __future__`` imports.
 """
 
+import ast
 import base64
 from collections.abc import Sequence
 import importlib.abc
@@ -51,14 +52,14 @@ class GremlinLoader(importlib.abc.Loader):
     """Compile the shipped instrumented tree, or its source when the tree is too deep, and execute it.
 
     The tree is compiled under the real file, so ``inspect.getsource``, linecache and tracebacks stay aligned
-    with the file on disk. Compiling a tree nested deeper than this process's stack can handle (a long ``elif``
-    chain) raises ``RecursionError``, and the interpreter's C recursion limit cannot be raised. The loader then
-    compiles ``source``, the unparsed instrumented text, exactly as the
-    releases before #563 did: the import never fails because of AST depth, but that file's line numbers are the
-    reflowed ones of the unparsed text. A parent that could not pickle the tree ships no tree at all.
+    with the file on disk. Unpickling or compiling a tree nested deeper than this process's stack can handle
+    (a long ``elif`` chain) raises ``RecursionError``, and the interpreter's C recursion limit cannot be raised.
+    The loader then compiles ``source``, the unparsed instrumented text, exactly as the releases before #563
+    did: the import never fails because of AST depth, but that file's line numbers are the reflowed ones of
+    the unparsed text. A parent that could not pickle the tree ships no tree at all.
     """
 
-    def __init__(self, encoded_tree: str | None, original_loader: object = None, source: str | None = None) -> None:
+    def __init__(self, encoded_tree: str | None, original_loader: object = None, *, source: str) -> None:
         # The parent ships the instrumented tree, never code: this interpreter's own -O / PYTHONOPTIMIZE and
         # warning filters apply, exactly as when it imports an unmodified file.
         self._encoded_tree = encoded_tree
@@ -81,7 +82,7 @@ class GremlinLoader(importlib.abc.Loader):
         code = self._compile_tree(module)
         if code is None:
             # The source is our own AST transformation of the user's file, not untrusted input.
-            code = compile(self._source, module.__name__, 'exec')  # type: ignore[arg-type]
+            code = compile(self._source, module.__name__, 'exec')
         exec(code, module.__dict__)  # noqa: S102
 
     def _compile_tree(self, module: ModuleType) -> CodeType | None:
@@ -91,9 +92,10 @@ class GremlinLoader(importlib.abc.Loader):
         try:
             # The parent wrote this tree into its own temp directory from our own transformation of the user's
             # file; it is not untrusted input.
-            tree = pickle.loads(base64.b64decode(self._encoded_tree))  # noqa: S301  # nosec B301
+            tree: ast.Module = pickle.loads(base64.b64decode(self._encoded_tree))  # noqa: S301  # nosec B301
             return compile(tree, module.__spec__.origin, 'exec', dont_inherit=True)  # type: ignore[union-attr, arg-type]
         except RecursionError:
+            # Silent on purpose: the loader falls back to the shipped source, as the class docstring explains.
             return None
 
 
@@ -140,7 +142,7 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
             # Hand back what the later finders answered: the import system would reach the same answer
             # by walking on, and walking on would ask each of them a second time.
             return spec
-        spec.loader = GremlinLoader(entry.get('tree'), spec.loader, entry.get('source'))
+        spec.loader = GremlinLoader(entry.get('tree'), spec.loader, source=entry['source'])
         spec.cached = None
         return spec
 

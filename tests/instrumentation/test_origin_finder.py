@@ -6,6 +6,7 @@ swaps the loader only when that answer is an instrumented file.
 
 from __future__ import annotations
 
+import __future__  # isort: skip
 import ast
 import base64
 import builtins
@@ -13,6 +14,7 @@ from collections.abc import (
     Callable,
 )
 import importlib
+import importlib.machinery
 import importlib.resources
 import importlib.util
 import inspect
@@ -58,11 +60,16 @@ def _encode(source: str) -> str:
 
 
 def _entry(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    return {normalize_origin(str(origin)): {'tree': _encode(source), 'origin': str(origin)}}
+    return {normalize_origin(str(origin)): {'tree': _encode(source), 'source': source, 'origin': str(origin)}}
 
 
 def _entry_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    entry = {'tree': _encode(source), 'origin': str(origin), 'identity': file_identity(str(origin))}
+    entry = {
+        'tree': _encode(source),
+        'source': source,
+        'origin': str(origin),
+        'identity': file_identity(str(origin)),
+    }
     return {normalize_origin(str(origin)): entry}
 
 
@@ -449,13 +456,13 @@ class DescribeGremlinLoaderResourceReader:
     """Package data is read through the loader that found the file, when there is one."""
 
     def it_has_no_resource_reader_when_the_original_loader_offers_none(self) -> None:
-        loader = GremlinLoader(_encode(INSTRUMENTED), original_loader=None)
+        loader = GremlinLoader(_encode(INSTRUMENTED), original_loader=None, source=INSTRUMENTED)
 
         assert loader.get_resource_reader('bare_mod') is None
 
     def it_asks_the_original_loader_for_the_resource_reader(self) -> None:
         original = SimpleNamespace(get_resource_reader=lambda fullname: f'reader-for:{fullname}')
-        loader = GremlinLoader(_encode(INSTRUMENTED), original_loader=original)
+        loader = GremlinLoader(_encode(INSTRUMENTED), original_loader=original, source=INSTRUMENTED)
 
         assert loader.get_resource_reader('data_mod') == 'reader-for:data_mod'
 
@@ -474,27 +481,39 @@ class DescribeGremlinLoaderCompilesShippedTree:
         origin = 'C:\\project\\src\\origin_mod.py'
         module = _module_from('origin_mod', origin)
 
-        GremlinLoader(_encode('def f():\n    return 1\n')).exec_module(module)
+        GremlinLoader(_encode('def f():\n    return 1\n'), source='def f():\n    return 1\n').exec_module(module)
 
         assert module.f.__code__.co_filename == origin  # type: ignore[attr-defined]
 
     def it_keeps_the_line_numbers_of_the_shipped_tree(self) -> None:
         module = _module_from('lines_mod', 'lines_mod.py')
 
-        GremlinLoader(_encode('\n' * 9 + 'def f():\n    return 1\n')).exec_module(module)
+        GremlinLoader(_encode('\n' * 9 + 'def f():\n    return 1\n'), source='def f():\n    return 1\n').exec_module(
+            module
+        )
 
         assert module.f.__code__.co_firstlineno == 10  # type: ignore[attr-defined]
 
     def it_does_not_inherit_future_flags_from_the_loader_module(self) -> None:
         module = _module_from('flags_mod', 'flags_mod.py')
 
-        GremlinLoader(_encode('def f():\n    return 1\n')).exec_module(module)
+        GremlinLoader(_encode('def f():\n    return 1\n'), source='def f():\n    return 1\n').exec_module(module)
 
-        assert module.f.__code__.co_flags & importlib.import_module('__future__').annotations.compiler_flag == 0  # type: ignore[attr-defined]
+        assert module.f.__code__.co_flags & __future__.annotations.compiler_flag == 0  # type: ignore[attr-defined]
 
 
 def _raise_recursion_error(*_args: object, **_kwargs: object) -> None:
     raise RecursionError
+
+
+_real_compile = compile
+
+
+def compile_tree_too_deep(source: object, *args: object, **kwargs: object) -> object:
+    """Stand in for ``compile``: a tree is too deep for the stack, text compiles as usual."""
+    if isinstance(source, ast.AST):
+        raise RecursionError
+    return _real_compile(source, *args, **kwargs)  # type: ignore[call-overload]
 
 
 @pytest.mark.small
@@ -507,7 +526,7 @@ class DescribeGremlinLoaderDeepTreeFallback:
     def it_compiles_the_source_when_unpickling_the_tree_exceeds_the_recursion_limit(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(origin_finder.pickle, 'loads', _raise_recursion_error)
+        monkeypatch.setattr(pickle, 'loads', _raise_recursion_error)
         module = _module_from('deep_unpickle_mod', 'deep_unpickle_mod.py')
 
         GremlinLoader(_encode(self.TREE_VALUE), source=self.SOURCE_VALUE).exec_module(module)
@@ -517,19 +536,16 @@ class DescribeGremlinLoaderDeepTreeFallback:
     def it_compiles_the_source_when_compiling_the_tree_exceeds_the_recursion_limit(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        real_compile = compile
-
-        def compile_tree_too_deep(source: object, *args: object, **kwargs: object) -> object:
-            if isinstance(source, ast.AST):
-                raise RecursionError
-            return real_compile(source, *args, **kwargs)  # type: ignore[call-overload]
-
         monkeypatch.setattr(builtins, 'compile', compile_tree_too_deep)
         module = _module_from('deep_compile_mod', 'deep_compile_mod.py')
 
         GremlinLoader(_encode(self.TREE_VALUE), source=self.SOURCE_VALUE).exec_module(module)
 
         assert module.VALUE == 'from the source'  # type: ignore[attr-defined]
+
+    def it_requires_the_source_to_fall_back_to(self) -> None:
+        with pytest.raises(TypeError, match='source'):
+            GremlinLoader(None)  # type: ignore[call-arg]
 
     def it_compiles_the_source_when_no_tree_was_shipped(self) -> None:
         module = _module_from('no_tree_mod', 'no_tree_mod.py')
