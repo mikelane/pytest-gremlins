@@ -1493,6 +1493,7 @@ def _write_instrumented_sources(
     instrumented_asts: dict[str, ast.Module],
     rootdir: Path,
     duplicates: dict[str, list[str]] | None = None,
+    optimize: int | None = None,
 ) -> Path:
     """Write instrumented sources to a JSON file for import hook injection.
 
@@ -1515,11 +1516,14 @@ def _write_instrumented_sources(
         rootdir: Root directory of the project; a relative path is taken from it.
         duplicates: For a path in ``instrumented_asts``, the other spellings of the same file that
             were dropped as targets; imported through one of them, the file is still served.
+        optimize: Optimize level to compile the shipped code at. Defaults to probing the interpreter once, so
+            every file is compiled at the level the gremlin subprocesses really run with.
 
     Returns:
         Path to the temporary directory containing the bootstrap infrastructure.
     """
     temp_dir = Path(tempfile.mkdtemp(prefix='pytest_gremlins_'))
+    compile_optimize = _probe_child_optimize_level() if optimize is None else optimize
 
     instrumented_sources: origin_finder.InstrumentedSources = {}
     for original_path, tree in instrumented_asts.items():
@@ -1527,7 +1531,7 @@ def _write_instrumented_sources(
         module = _inject_gremlin_active(tree)
         spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
         instrumented_sources[normalize_origin(str(origin))] = {
-            'code': _encode_compiled(module, str(origin)),
+            'code': _encode_compiled(module, str(origin), compile_optimize),
             'origin': str(origin),
             'identity': file_identity(str(origin)),
             'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
@@ -1555,24 +1559,42 @@ del _gremlin_os
     return ast.Module(body=body, type_ignores=tree.type_ignores)
 
 
-def _child_optimize_level() -> int:
-    """Return the optimize level a gremlin subprocess runs with.
+_OPTIMIZE_PROBE_TIMEOUT_SECONDS = 30
+
+
+def _probe_child_optimize_level(
+    run: collections.abc.Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> int:
+    """Return the optimize level a gremlin subprocess runs with, as reported by the interpreter itself.
 
     The subprocess is launched without ``-O`` and inherits this process's environment, so only ``PYTHONOPTIMIZE``
-    reaches it; the parent's own ``-O`` flag does not. Mirrors CPython: empty means 0, a non-numeric or negative
-    value means 1, and anything above 2 behaves as 2.
+    reaches it. CPython's own parser of that variable is the authority (it rejects values ``int()`` accepts, such
+    as ``'0 '`` or ``'0_0'``), so a probe interpreter started with the same environment reports ``sys.flags.optimize``.
+    If the probe fails, falls back to this process's own level and warns.
     """
-    raw = os.environ.get('PYTHONOPTIMIZE', '')
-    if not raw:
-        return 0
     try:
-        level = int(raw)
-    except ValueError:
-        return 1
-    return min(level, 2) if level >= 0 else 1
+        completed = run(
+            [sys.executable, '-c', 'import sys; print(sys.flags.optimize)'],
+            capture_output=True,
+            text=True,
+            timeout=_OPTIMIZE_PROBE_TIMEOUT_SECONDS,
+            env=os.environ.copy(),
+            check=False,
+        )
+        if completed.returncode != 0:
+            msg = f'probe exited with status {completed.returncode}'
+            raise ValueError(msg)  # noqa: TRY301
+        return int(completed.stdout.strip())
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        logger.warning(
+            'Could not probe the gremlin subprocess optimize level (%s); assuming %d from this interpreter',
+            exc,
+            sys.flags.optimize,
+        )
+        return sys.flags.optimize
 
 
-def _encode_compiled(module: ast.Module, filename: str) -> str:
+def _encode_compiled(module: ast.Module, filename: str, optimize: int) -> str:
     """Compile ``module`` under ``filename`` and return the code object as base64 text for sources.json.
 
     Shipping code instead of unparsed text keeps the original line numbers, so ``inspect.getsource``
@@ -1585,7 +1607,7 @@ def _encode_compiled(module: ast.Module, filename: str) -> str:
             filename,
             'exec',
             dont_inherit=True,
-            optimize=_child_optimize_level(),
+            optimize=optimize,
         )
     return base64.b64encode(marshal.dumps(code)).decode('ascii')
 
