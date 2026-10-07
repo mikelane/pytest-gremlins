@@ -23,7 +23,7 @@ from pytest_gremlins.plugin import (
 )
 
 
-def _parse_final_source(tmp_path: Path, source: str) -> list[ast.stmt]:  # noqa: ARG001
+def _parse_final_source(source: str) -> list[ast.stmt]:
     """Parse source, inject the activation variable, and return the AST body of the result."""
     return _inject_gremlin_active(ast.parse(source)).body
 
@@ -60,16 +60,16 @@ def _node_names(nodes: list[ast.stmt]) -> list[str]:
 class DescribeWriteInstrumentedSources:
     """_write_instrumented_sources places injection after future imports and docstrings."""
 
-    def it_injects_gremlin_active_assignment_before_regular_code(self, tmp_path: Path) -> None:
-        body = _parse_final_source(tmp_path, 'import os\nx = 1\n')
+    def it_injects_gremlin_active_assignment_before_regular_code(self) -> None:
+        body = _parse_final_source('import os\nx = 1\n')
         labels = _node_names(body)
 
         # injection (assign:__gremlin_active__) must appear before user code (assign:x)
         assert 'assign:__gremlin_active__' in labels
         assert labels.index('assign:__gremlin_active__') < labels.index('assign:x')
 
-    def it_places_injection_after_future_import(self, tmp_path: Path) -> None:
-        body = _parse_final_source(tmp_path, 'from __future__ import annotations\nimport os\nx = 1\n')
+    def it_places_injection_after_future_import(self) -> None:
+        body = _parse_final_source('from __future__ import annotations\nimport os\nx = 1\n')
         labels = _node_names(body)
 
         assert 'future_import' in labels
@@ -77,16 +77,15 @@ class DescribeWriteInstrumentedSources:
         # future import must come before the injection
         assert labels.index('future_import') < labels.index('assign:__gremlin_active__')
 
-    def it_produces_valid_syntax_when_source_has_future_import(self, tmp_path: Path) -> None:
+    def it_produces_valid_syntax_when_source_has_future_import(self) -> None:
         # The core regression: prepending before future import causes SyntaxError.
         # Asserting ast.parse succeeds (via _parse_final_source) AND that __future__ is still first.
         source = 'from __future__ import annotations\n\ndef foo(x: int) -> str:\n    return str(x)\n'
-        labels = _node_names(_parse_final_source(tmp_path, source))
+        labels = _node_names(_parse_final_source(source))
         assert labels[0] == 'future_import', f'Expected future_import first, got: {labels}'
 
-    def it_places_module_docstring_before_future_import_and_injection(self, tmp_path: Path) -> None:
+    def it_places_module_docstring_before_future_import_and_injection(self) -> None:
         body = _parse_final_source(
-            tmp_path,
             '"""Module docstring."""\nfrom __future__ import annotations\nimport os\n',
         )
         labels = _node_names(body)
@@ -96,16 +95,16 @@ class DescribeWriteInstrumentedSources:
         assert 'assign:__gremlin_active__' in labels
         assert labels.index('future_import') < labels.index('assign:__gremlin_active__')
 
-    def it_places_docstring_first_when_there_is_no_future_import(self, tmp_path: Path) -> None:
-        body = _parse_final_source(tmp_path, '"""Just a docstring."""\nx = 1\n')
+    def it_places_docstring_first_when_there_is_no_future_import(self) -> None:
+        body = _parse_final_source('"""Just a docstring."""\nx = 1\n')
         labels = _node_names(body)
 
         assert labels[0] == 'docstring', f'Expected docstring first, got: {labels}'
         assert 'assign:__gremlin_active__' in labels
         assert labels.index('docstring') < labels.index('assign:__gremlin_active__')
 
-    def it_puts_the_injection_first_when_the_source_has_no_docstring_or_future_import(self, tmp_path: Path) -> None:
-        body = _parse_final_source(tmp_path, 'x = 42\n')
+    def it_puts_the_injection_first_when_the_source_has_no_docstring_or_future_import(self) -> None:
+        body = _parse_final_source('x = 42\n')
         labels = _node_names(body)
 
         assert labels == ['import', 'assign:__gremlin_active__', 'del', 'assign:x']
@@ -127,22 +126,22 @@ class DescribeWriteInstrumentedSources:
         sources = json.loads((result_dir / 'sources.json').read_text())
         assert sources[normalize_origin(str(real))]['origin'] == str(original_path)
 
-    def it_emits_only_the_injection_for_an_empty_module(self, tmp_path: Path) -> None:
-        body = _parse_final_source(tmp_path, '')
+    def it_emits_only_the_injection_for_an_empty_module(self) -> None:
+        body = _parse_final_source('')
         labels = _node_names(body)
 
         assert labels == ['import', 'assign:__gremlin_active__', 'del']
 
-    def it_places_injection_after_multiple_future_imports(self, tmp_path: Path) -> None:
+    def it_places_injection_after_multiple_future_imports(self) -> None:
         source = 'from __future__ import annotations\nfrom __future__ import division\nimport os\n'
-        body = _parse_final_source(tmp_path, source)
+        body = _parse_final_source(source)
         labels = _node_names(body)
 
         assert labels == ['future_import', 'future_import', 'import', 'assign:__gremlin_active__', 'del', 'import']
 
-    def it_places_injection_after_docstring_and_multiple_future_imports(self, tmp_path: Path) -> None:
+    def it_places_injection_after_docstring_and_multiple_future_imports(self) -> None:
         source = '"""Module docstring."""\nfrom __future__ import annotations\nfrom __future__ import division\nx = 1\n'
-        body = _parse_final_source(tmp_path, source)
+        body = _parse_final_source(source)
         labels = _node_names(body)
 
         assert labels == [

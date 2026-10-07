@@ -51,17 +51,17 @@ INSTRUMENTED = 'VALUE = "instrumented"\n'
 ORIGINAL = 'VALUE = "original"\n'
 
 
-def _encode(source: str, filename: str | None = None) -> str:  # noqa: ARG001
+def _encode(source: str) -> str:
     """Ship ``source`` the way sources.json does: as a parsed tree, pickled and base64 encoded."""
     return base64.b64encode(pickle.dumps(ast.parse(source))).decode('ascii')
 
 
 def _entry(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    return {normalize_origin(str(origin)): {'tree': _encode(source, str(origin)), 'origin': str(origin)}}
+    return {normalize_origin(str(origin)): {'tree': _encode(source), 'origin': str(origin)}}
 
 
 def _entry_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    entry = {'tree': _encode(source, str(origin)), 'origin': str(origin), 'identity': file_identity(str(origin))}
+    entry = {'tree': _encode(source), 'origin': str(origin), 'identity': file_identity(str(origin))}
     return {normalize_origin(str(origin)): entry}
 
 
@@ -448,13 +448,13 @@ class DescribeGremlinLoaderResourceReader:
     """Package data is read through the loader that found the file, when there is one."""
 
     def it_has_no_resource_reader_when_the_original_loader_offers_none(self) -> None:
-        loader = GremlinLoader(_encode(INSTRUMENTED, 'bare_mod.py'), original_loader=None)
+        loader = GremlinLoader(_encode(INSTRUMENTED), original_loader=None)
 
         assert loader.get_resource_reader('bare_mod') is None
 
     def it_asks_the_original_loader_for_the_resource_reader(self) -> None:
         original = SimpleNamespace(get_resource_reader=lambda fullname: f'reader-for:{fullname}')
-        loader = GremlinLoader(_encode(INSTRUMENTED, 'data_mod.py'), original_loader=original)
+        loader = GremlinLoader(_encode(INSTRUMENTED), original_loader=original)
 
         assert loader.get_resource_reader('data_mod') == 'reader-for:data_mod'
 

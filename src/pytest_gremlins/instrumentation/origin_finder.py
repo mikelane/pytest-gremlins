@@ -45,7 +45,7 @@ def file_identity(path: str) -> str | None:
 
 
 class GremlinLoader(importlib.abc.Loader):
-    """Execute instrumented source in the namespace of the module being imported."""
+    """Compile the shipped instrumented tree and execute it in the namespace of the module being imported."""
 
     def __init__(self, encoded_tree: str, original_loader: object = None) -> None:
         # The parent ships the instrumented tree, never code: compiling it here under the real file keeps

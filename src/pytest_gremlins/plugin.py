@@ -26,7 +26,7 @@ import json
 import logging
 import os
 from pathlib import Path
-import pickle  # nosec B403 - only the parent's own temp-dir data is unpickled
+import pickle  # nosec B403 - only pickles the instrumented tree for its own subprocess; nothing is unpickled here
 import re
 import shlex
 import shutil
