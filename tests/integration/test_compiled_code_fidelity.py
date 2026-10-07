@@ -74,6 +74,24 @@ def test_big():
 """
 
 
+_ELIF_BRANCHES = 400
+
+_LONG_ELIF_TARGET = (
+    'def lookup(x):\n    if x == 0:\n        return 0\n'
+    + ''.join(f'    elif x == {i}:\n        return {i}\n' for i in range(1, _ELIF_BRANCHES))
+    + '    return x + 1\n'
+)
+
+_LONG_ELIF_TESTS = """
+from sample import lookup
+
+
+def test_lookup():
+    assert lookup(3) == 3
+    assert lookup(1000) == 1001
+"""
+
+
 @pytest.mark.medium
 @pytest.mark.usefixtures('utf8_child_output')
 class DescribeCompiledCodeFidelity:
@@ -181,3 +199,20 @@ class DescribeCompiledCodeFidelity:
         )
 
         assert _UNOBSERVED_BOUNDARY_GREMLIN.search(result.stdout.str())
+
+    def it_tests_a_target_with_a_long_elif_chain(self, pytester_with_markers: pytest.Pytester) -> None:
+        # Each elif nests one level deeper in the tree. Main tests this target; shipping the tree to the gremlin
+        # subprocess must not need deeper recursion than the interpreter allows (pickle recurses per level on 3.11 and
+        # 3.12, where this crashed the session with INTERNALERROR).
+        pytester_with_markers.makepyfile(sample=_LONG_ELIF_TARGET)
+        pytester_with_markers.makepyfile(test_sample=_LONG_ELIF_TESTS)
+
+        result = pytester_with_markers.runpytest_subprocess(
+            '--gremlins',
+            '--gremlin-targets=sample.py',
+            '--gremlin-operators=arithmetic',
+            '-p',
+            'no:cacheprovider',
+        )
+
+        assert 'Zapped: 1 gremlins' in result.stdout.str()
