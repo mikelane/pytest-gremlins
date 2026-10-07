@@ -1521,12 +1521,17 @@ def _write_instrumented_sources(
     instrumented_sources: origin_finder.InstrumentedSources = {}
     for original_path, tree in instrumented_asts.items():
         origin = (rootdir / original_path).absolute()
-        module = _inject_gremlin_active(tree)
-        shipped_tree = _encode_tree(module)
+        instrumented_tree = _inject_gremlin_active(tree)
+        encoded_tree = _encode_tree(instrumented_tree)
+        if encoded_tree is None:
+            logger.debug(
+                'Instrumented tree for %s too deep to pickle; shipping unparsed source (reflowed line numbers)',
+                origin,
+            )
         spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
         instrumented_sources[normalize_origin(str(origin))] = {
-            'source': ast.unparse(module),
-            **({} if shipped_tree is None else {'tree': shipped_tree}),
+            'source': ast.unparse(instrumented_tree),
+            **({} if encoded_tree is None else {'tree': encoded_tree}),
             'origin': str(origin),
             'identity': file_identity(str(origin)),
             'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
@@ -1546,25 +1551,26 @@ def _write_instrumented_sources(
 
 def _inject_gremlin_active(tree: ast.Module) -> ast.Module:
     """Return ``tree`` with the ``__gremlin_active__`` assignment placed where the module may legally hold it."""
-    activation = f"""import os as _gremlin_os
+    activation_source = f"""import os as _gremlin_os
 __gremlin_active__ = _gremlin_os.environ.get('{ACTIVE_GREMLIN_ENV_VAR}')
 del _gremlin_os
 """
-    body = _prepend_injection(tree.body, ast.parse(activation).body)
+    body = _prepend_injection(tree.body, ast.parse(activation_source).body)
     return ast.Module(body=body, type_ignores=tree.type_ignores)
 
 
-def _encode_tree(module: ast.Module) -> str | None:
-    """Return ``module`` pickled and base64 encoded for sources.json, or ``None`` when it is nested too deeply.
+def _encode_tree(instrumented_tree: ast.Module) -> str | None:
+    """Return ``instrumented_tree`` pickled and base64 encoded for sources.json, or ``None`` if nested too deeply.
 
     The subprocess compiles the tree itself, under the real file path, so the original line numbers survive and
     the subprocess's own optimize level and warning filters apply. Pickling recurses once per level of nesting,
-    bounded by the recursion limit (a few hundred ``elif`` branches reach it on Python 3.11/3.12, about a thousand
-    on later versions), so a ``RecursionError`` here means the file is shipped as its unparsed ``source`` alone,
-    with the reflowed line numbers of the releases before #563.
+    bounded by the recursion limit (about 250 ``elif`` branches reach it on Python 3.11; on 3.12 and later
+    pickling goes much less deep per level and only fails at roughly 2,500 branches), so a ``RecursionError``
+    here means the file is shipped as its unparsed ``source`` alone, with the reflowed line numbers of the
+    releases before #563.
     """
     try:
-        return base64.b64encode(pickle.dumps(ast.fix_missing_locations(module))).decode('ascii')
+        return base64.b64encode(pickle.dumps(ast.fix_missing_locations(instrumented_tree))).decode('ascii')
     except RecursionError:
         return None
 
