@@ -51,9 +51,9 @@ class GremlinLoader(importlib.abc.Loader):
     """Compile the shipped instrumented tree, or its source when the tree is too deep, and execute it.
 
     The tree is compiled under the real file, so ``inspect.getsource``, linecache and tracebacks stay aligned
-    with the file on disk. A tree nested deeper than this process's stack can handle (a long ``elif`` chain on
-    Python 3.11/3.12) raises ``RecursionError`` when unpickled or compiled, and the interpreter's C recursion
-    limit cannot be raised. The loader then compiles ``source``, the unparsed instrumented text, exactly as the
+    with the file on disk. Compiling a tree nested deeper than this process's stack can handle (a long ``elif``
+    chain) raises ``RecursionError``, and the interpreter's C recursion limit cannot be raised. The loader then
+    compiles ``source``, the unparsed instrumented text, exactly as the
     releases before #563 did: the import never fails because of AST depth, but that file's line numbers are the
     reflowed ones of the unparsed text. A parent that could not pickle the tree ships no tree at all.
     """

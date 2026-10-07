@@ -1558,9 +1558,10 @@ def _encode_tree(module: ast.Module) -> str | None:
     """Return ``module`` pickled and base64 encoded for sources.json, or ``None`` when it is nested too deeply.
 
     The subprocess compiles the tree itself, under the real file path, so the original line numbers survive and
-    the subprocess's own optimize level and warning filters apply. Pickling recurses once per level of nesting
-    and Python 3.11/3.12 cap that depth (a long ``elif`` chain is enough), so a ``RecursionError`` here means the
-    file is shipped as its unparsed ``source`` alone, with the reflowed line numbers of the releases before #563.
+    the subprocess's own optimize level and warning filters apply. Pickling recurses once per level of nesting,
+    bounded by the recursion limit (a few hundred ``elif`` branches reach it on Python 3.11/3.12, about a thousand
+    on later versions), so a ``RecursionError`` here means the file is shipped as its unparsed ``source`` alone,
+    with the reflowed line numbers of the releases before #563.
     """
     try:
         return base64.b64encode(pickle.dumps(ast.fix_missing_locations(module))).decode('ascii')
