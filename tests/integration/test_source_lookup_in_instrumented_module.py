@@ -45,7 +45,7 @@ _EXECUTION_MODES = {
 }
 
 
-_UNOBSERVED_GREMLIN = re.compile(r'sample\.py:37 > to >=')
+_UNOBSERVED_GREMLIN = re.compile(r'sample\.py:36 > to >=')
 
 
 @pytest.mark.medium
