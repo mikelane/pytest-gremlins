@@ -76,3 +76,83 @@ class DescribeRewriteHookTargets:
         result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=conftest.py')
 
         assert _verdicts(result.stdout.str()) == (2, 0, 0)
+
+
+_CONFTEST_ASSERTING_HELPER = """
+def check_positive(n):
+    assert n > 0
+"""
+
+_ASSERT_MESSAGE_TESTS = """
+import pytest
+import conftest
+
+
+def test_message_names_the_value():
+    with pytest.raises(AssertionError, match='-1'):
+        conftest.check_positive(-1)
+
+
+def test_accepts_a_positive_value():
+    conftest.check_positive(1)
+"""
+
+_REGISTERING_CONFTEST = """
+import pytest
+
+pytest.register_assert_rewrite('helpers')
+"""
+
+_HELPER_PACKAGE = """
+def check_positive(n):
+    assert n > 0
+"""
+
+_HELPER_MESSAGE_TESTS = """
+import pytest
+from helpers import check_positive
+
+
+def test_message_names_the_value():
+    with pytest.raises(AssertionError, match='-1'):
+        check_positive(-1)
+
+
+def test_accepts_a_positive_value():
+    check_positive(1)
+"""
+
+
+@pytest.mark.medium
+@pytest.mark.usefixtures('utf8_child_output')
+class DescribeRewriteHookTargetAssertions:
+    """A target pytest would rewrite keeps its rewritten assert messages under every gremlin.
+
+    The ``n > 0`` to ``n >= 0`` gremlin still raises for ``-1`` with ``-1`` in pytest's rewritten message, so no
+    test catches it and it must survive. Serving the target without assertion rewriting empties the message,
+    the message test fails under every gremlin, and the survivor is reported ZAPPED.
+    """
+
+    def it_keeps_a_conftest_helpers_survivor_when_a_test_reads_its_assert_message(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makeconftest(_CONFTEST_ASSERTING_HELPER)
+        pytester_with_markers.mkdir('tests').joinpath('test_messages.py').write_text(_ASSERT_MESSAGE_TESTS)
+
+        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=conftest.py')
+
+        assert _verdicts(result.stdout.str()) == (1, 1, 0)
+
+    def it_keeps_a_registered_helpers_survivor_when_a_test_reads_its_assert_message(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makeconftest(_REGISTERING_CONFTEST)
+        pytester_with_markers.makeini('[pytest]\npythonpath = src\n')
+        package = pytester_with_markers.path / 'src' / 'helpers'
+        package.mkdir(parents=True)
+        package.joinpath('__init__.py').write_text(_HELPER_PACKAGE)
+        pytester_with_markers.mkdir('tests').joinpath('test_messages.py').write_text(_HELPER_MESSAGE_TESTS)
+
+        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/helpers')
+
+        assert _verdicts(result.stdout.str()) == (1, 1, 0)
