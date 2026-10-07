@@ -11,7 +11,6 @@ import types
 
 import pytest
 
-from pytest_gremlins import plugin
 from pytest_gremlins.instrumentation.origin_finder import (
     InstrumentedSources,
     file_identity,
@@ -24,8 +23,8 @@ from pytest_gremlins.plugin import (
 )
 
 
-def _parse_final_source(source: str) -> list[ast.stmt]:
-    """Parse source, inject the activation variable, and return the AST body of the result."""
+def _injected_body(source: str) -> list[ast.stmt]:
+    """Parse ``source``, inject the activation variable, and return the body of the resulting module."""
     return _inject_gremlin_active(ast.parse(source)).body
 
 
@@ -58,11 +57,11 @@ def _node_names(nodes: list[ast.stmt]) -> list[str]:
 
 
 @pytest.mark.medium
-class DescribeWriteInstrumentedSources:
-    """_write_instrumented_sources places injection after future imports and docstrings."""
+class DescribeInjectGremlinActive:
+    """The activation assignment goes after the module docstring and every future import, before user code."""
 
     def it_injects_gremlin_active_assignment_before_regular_code(self) -> None:
-        body = _parse_final_source('import os\nx = 1\n')
+        body = _injected_body('import os\nx = 1\n')
         labels = _node_names(body)
 
         # injection (assign:__gremlin_active__) must appear before user code (assign:x)
@@ -70,7 +69,7 @@ class DescribeWriteInstrumentedSources:
         assert labels.index('assign:__gremlin_active__') < labels.index('assign:x')
 
     def it_places_injection_after_future_import(self) -> None:
-        body = _parse_final_source('from __future__ import annotations\nimport os\nx = 1\n')
+        body = _injected_body('from __future__ import annotations\nimport os\nx = 1\n')
         labels = _node_names(body)
 
         assert 'future_import' in labels
@@ -78,15 +77,8 @@ class DescribeWriteInstrumentedSources:
         # future import must come before the injection
         assert labels.index('future_import') < labels.index('assign:__gremlin_active__')
 
-    def it_produces_valid_syntax_when_source_has_future_import(self) -> None:
-        # The core regression: prepending before future import causes SyntaxError.
-        # Asserting ast.parse succeeds (via _parse_final_source) AND that __future__ is still first.
-        source = 'from __future__ import annotations\n\ndef foo(x: int) -> str:\n    return str(x)\n'
-        labels = _node_names(_parse_final_source(source))
-        assert labels[0] == 'future_import', f'Expected future_import first, got: {labels}'
-
     def it_places_module_docstring_before_future_import_and_injection(self) -> None:
-        body = _parse_final_source(
+        body = _injected_body(
             '"""Module docstring."""\nfrom __future__ import annotations\nimport os\n',
         )
         labels = _node_names(body)
@@ -97,7 +89,7 @@ class DescribeWriteInstrumentedSources:
         assert labels.index('future_import') < labels.index('assign:__gremlin_active__')
 
     def it_places_docstring_first_when_there_is_no_future_import(self) -> None:
-        body = _parse_final_source('"""Just a docstring."""\nx = 1\n')
+        body = _injected_body('"""Just a docstring."""\nx = 1\n')
         labels = _node_names(body)
 
         assert labels[0] == 'docstring', f'Expected docstring first, got: {labels}'
@@ -105,10 +97,51 @@ class DescribeWriteInstrumentedSources:
         assert labels.index('docstring') < labels.index('assign:__gremlin_active__')
 
     def it_puts_the_injection_first_when_the_source_has_no_docstring_or_future_import(self) -> None:
-        body = _parse_final_source('x = 42\n')
+        body = _injected_body('x = 42\n')
         labels = _node_names(body)
 
         assert labels == ['import', 'assign:__gremlin_active__', 'del', 'assign:x']
+
+    def it_emits_only_the_injection_for_an_empty_module(self) -> None:
+        body = _injected_body('')
+        labels = _node_names(body)
+
+        assert labels == ['import', 'assign:__gremlin_active__', 'del']
+
+    def it_places_injection_after_multiple_future_imports(self) -> None:
+        source = 'from __future__ import annotations\nfrom __future__ import division\nimport os\n'
+        body = _injected_body(source)
+        labels = _node_names(body)
+
+        assert labels == ['future_import', 'future_import', 'import', 'assign:__gremlin_active__', 'del', 'import']
+
+    def it_places_injection_after_docstring_and_multiple_future_imports(self) -> None:
+        source = '"""Module docstring."""\nfrom __future__ import annotations\nfrom __future__ import division\nx = 1\n'
+        body = _injected_body(source)
+        labels = _node_names(body)
+
+        assert labels == [
+            'docstring',
+            'future_import',
+            'future_import',
+            'import',
+            'assign:__gremlin_active__',
+            'del',
+            'assign:x',
+        ]
+
+
+@pytest.mark.medium
+class DescribeWriteInstrumentedSources:
+    """_write_instrumented_sources ships a tree that compiles and runs with the activation variable."""
+
+    def it_produces_valid_syntax_when_source_has_future_import(self, tmp_path: Path) -> None:
+        # The core regression: prepending before a future import is a SyntaxError, raised when the tree compiles.
+        source = 'from __future__ import annotations\n\ndef foo(x: int) -> str:\n    return str(x)\n'
+
+        _written_code(tmp_path, source)
+
+        assert _node_names(_injected_body(source))[0] == 'future_import'
 
     def it_includes_gremlin_active_variable_in_output(self, tmp_path: Path) -> None:
         _, code = _written_code(tmp_path, 'from __future__ import annotations\nx = 1\n')
@@ -126,34 +159,6 @@ class DescribeWriteInstrumentedSources:
         result_dir = _write_instrumented_sources({str(original_path): ast.parse('x = 1\n')}, tmp_path)
         sources = json.loads((result_dir / 'sources.json').read_text())
         assert sources[normalize_origin(str(real))]['origin'] == str(original_path)
-
-    def it_emits_only_the_injection_for_an_empty_module(self) -> None:
-        body = _parse_final_source('')
-        labels = _node_names(body)
-
-        assert labels == ['import', 'assign:__gremlin_active__', 'del']
-
-    def it_places_injection_after_multiple_future_imports(self) -> None:
-        source = 'from __future__ import annotations\nfrom __future__ import division\nimport os\n'
-        body = _parse_final_source(source)
-        labels = _node_names(body)
-
-        assert labels == ['future_import', 'future_import', 'import', 'assign:__gremlin_active__', 'del', 'import']
-
-    def it_places_injection_after_docstring_and_multiple_future_imports(self) -> None:
-        source = '"""Module docstring."""\nfrom __future__ import annotations\nfrom __future__ import division\nx = 1\n'
-        body = _parse_final_source(source)
-        labels = _node_names(body)
-
-        assert labels == [
-            'docstring',
-            'future_import',
-            'future_import',
-            'import',
-            'assign:__gremlin_active__',
-            'del',
-            'assign:x',
-        ]
 
 
 @pytest.mark.medium
@@ -191,26 +196,26 @@ def _raise_recursion_error(*_args: object, **_kwargs: object) -> None:
 class DescribeWriteInstrumentedSourceDeepTreeFallback:
     """A tree too deep to pickle is shipped as source alone, never dropped and never fatal (#563)."""
 
-    def it_always_ships_the_unparsed_instrumented_source(self, tmp_path: Path) -> None:
-        entries = _written_entries(tmp_path, ['mymod.py'])
-
-        source = next(iter(entries.values()))['source']
-
-        assert 'x = 1' in source
-        assert '__gremlin_active__' in source
-
-    def it_ships_only_the_source_when_pickling_the_tree_exceeds_the_recursion_limit(
+    def it_omits_the_tree_when_pickling_hits_the_recursion_limit(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(plugin.pickle, 'dumps', _raise_recursion_error)
+        monkeypatch.setattr(pickle, 'dumps', _raise_recursion_error)
 
         entry = next(iter(_written_entries(tmp_path, ['mymod.py']).values()))
 
         assert 'tree' not in entry
+
+    def it_keeps_the_source_when_pickling_hits_the_recursion_limit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(pickle, 'dumps', _raise_recursion_error)
+
+        entry = next(iter(_written_entries(tmp_path, ['mymod.py']).values()))
+
         assert 'x = 1' in entry['source']
 
     def it_still_writes_the_deep_file_after_the_fallback(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(plugin.pickle, 'dumps', _raise_recursion_error)
+        monkeypatch.setattr(pickle, 'dumps', _raise_recursion_error)
 
         entries = _written_entries(tmp_path, ['deep.py', 'other.py'])
 
@@ -232,6 +237,11 @@ class DescribeWriteInstrumentedSourceKeys:
         entries = _written_entries(tmp_path, [relative_path])
 
         assert list(entries) == [normalize_origin(str(tmp_path / relative_path))]
+
+    def it_always_ships_the_unparsed_instrumented_source(self, tmp_path: Path) -> None:
+        entries = _written_entries(tmp_path, ['mymod.py'])
+
+        assert next(iter(entries.values()))['source'] == ast.unparse(_inject_gremlin_active(ast.parse('x = 1\n')))
 
     def it_records_no_module_name(self, tmp_path: Path) -> None:
         entries = _written_entries(tmp_path, ['pkg/__init__.py'])
@@ -302,7 +312,11 @@ class DescribeWriteInstrumentedSourceKeys:
 class DescribeAddSourceFileKeepsParsableFiles:
     """A file that parses is a target, as on main; whether it compiles is the importing subprocess's business."""
 
-    @pytest.mark.parametrize('source', ['return 1 > 0\n', 'break\n', 'nonlocal x\n', 'await x\n'])
+    @pytest.mark.parametrize(
+        'source',
+        ['return 1 > 0\n', 'break\n', 'nonlocal x\n', 'await x\n'],
+        ids=['return-outside-function', 'break-outside-loop', 'nonlocal-at-module-level', 'await-outside-async'],
+    )
     def it_keeps_a_file_that_parses_but_does_not_compile(self, tmp_path: Path, source: str) -> None:
         path = tmp_path / 'template.py'
         path.write_text(source)

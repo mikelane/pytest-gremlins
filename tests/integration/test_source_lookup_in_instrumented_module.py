@@ -45,7 +45,7 @@ _EXECUTION_MODES = {
 }
 
 
-_UNOBSERVED_GREMLIN = re.compile(r'sample\.py:\d+ > to >=')
+_UNOBSERVED_GREMLIN = re.compile(r'sample\.py:37 > to >=')
 
 
 @pytest.mark.medium
@@ -67,4 +67,4 @@ class DescribeSourceLookupInInstrumentedModule:
             *_EXECUTION_MODES[mode],
         )
 
-        assert _UNOBSERVED_GREMLIN.search(result.stdout.str())
+        assert _UNOBSERVED_GREMLIN.search(result.stdout.str()) is not None, result.stdout.str()
