@@ -1479,7 +1479,9 @@ def _add_source_file(path: Path, source_files: dict[str, str]) -> None:
             source = source_stream.read()
         # Compiling, not just parsing: a file that parses but cannot compile (a top-level ``return``) could never
         # be imported, and shipping its instrumented tree would fail the parent's compile of it.
-        compile(source, str(path), 'exec', dont_inherit=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            compile(source, str(path), 'exec', dont_inherit=True)
         source_files[str(path)] = source
     except SyntaxError:
         logger.debug('Skipping %s: syntax error', path)
@@ -1553,13 +1555,38 @@ del _gremlin_os
     return ast.Module(body=body, type_ignores=tree.type_ignores)
 
 
+def _child_optimize_level() -> int:
+    """Return the optimize level a gremlin subprocess runs with.
+
+    The subprocess is launched without ``-O`` and inherits this process's environment, so only ``PYTHONOPTIMIZE``
+    reaches it; the parent's own ``-O`` flag does not. Mirrors CPython: empty means 0, a non-numeric or negative
+    value means 1, and anything above 2 behaves as 2.
+    """
+    raw = os.environ.get('PYTHONOPTIMIZE', '')
+    if not raw:
+        return 0
+    try:
+        level = int(raw)
+    except ValueError:
+        return 1
+    return min(level, 2) if level >= 0 else 1
+
+
 def _encode_compiled(module: ast.Module, filename: str) -> str:
     """Compile ``module`` under ``filename`` and return the code object as base64 text for sources.json.
 
     Shipping code instead of unparsed text keeps the original line numbers, so ``inspect.getsource``
     and tracebacks line up with the real file.
     """
-    code = compile(ast.fix_missing_locations(module), filename, 'exec', dont_inherit=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        code = compile(
+            ast.fix_missing_locations(module),
+            filename,
+            'exec',
+            dont_inherit=True,
+            optimize=_child_optimize_level(),
+        )
     return base64.b64encode(marshal.dumps(code)).decode('ascii')
 
 

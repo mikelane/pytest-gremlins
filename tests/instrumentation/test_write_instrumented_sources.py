@@ -8,6 +8,7 @@ import json
 import marshal
 from pathlib import Path
 import types
+import warnings
 
 import pytest
 
@@ -18,6 +19,8 @@ from pytest_gremlins.instrumentation.origin_finder import (
 )
 from pytest_gremlins.plugin import (
     _add_source_file,
+    _child_optimize_level,
+    _encode_compiled,
     _inject_gremlin_active,
     _write_instrumented_sources,
 )
@@ -283,3 +286,83 @@ class DescribeAddSourceFileSkipsUncompilableFiles:
         _add_source_file(path, source_files)
 
         assert list(source_files) == [str(path)]
+
+
+_ASSERTING_SOURCE = 'def f(x):\n    assert x\n    return x\n'
+_SYNTAX_WARNING_SOURCE = 'def f(x):\n    return x is 1\n'
+
+
+def _has_assert(code: types.CodeType) -> bool:
+    """Run the shipped code and report whether its ``assert`` still fires."""
+    namespace: dict[str, object] = {}
+    exec(code, namespace)  # noqa: S102
+    try:
+        namespace['f'](0)  # type: ignore[operator]
+    except AssertionError:
+        return True
+    return False
+
+
+@pytest.mark.small
+class DescribeChildOptimizeLevel:
+    """The optimize level the gremlin subprocess will run with comes from its inherited PYTHONOPTIMIZE."""
+
+    @pytest.mark.parametrize(
+        ('value', 'expected'),
+        [(None, 0), ('', 0), ('0', 0), ('1', 1), ('2', 2), ('7', 2), ('yes', 1), ('-3', 1)],
+    )
+    def it_reads_the_level_from_the_environment_the_child_inherits(
+        self, monkeypatch: pytest.MonkeyPatch, value: str | None, expected: int
+    ) -> None:
+        if value is None:
+            monkeypatch.delenv('PYTHONOPTIMIZE', raising=False)
+        else:
+            monkeypatch.setenv('PYTHONOPTIMIZE', value)
+
+        assert _child_optimize_level() == expected
+
+
+@pytest.mark.small
+class DescribeEncodedOptimizeLevel:
+    """Shipped code is compiled at the child's optimize level, not the parent's."""
+
+    def _encode(self, source: str) -> types.CodeType:
+        encoded = _encode_compiled(ast.parse(source), 'mod.py')
+        return marshal.loads(base64.b64decode(encoded))  # noqa: S302
+
+    def it_keeps_asserts_when_the_child_has_no_pythonoptimize(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv('PYTHONOPTIMIZE', raising=False)
+
+        code = self._encode(_ASSERTING_SOURCE)
+
+        assert _has_assert(code)
+
+    def it_strips_asserts_when_the_child_inherits_pythonoptimize(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTHONOPTIMIZE', '1')
+
+        code = self._encode(_ASSERTING_SOURCE)
+
+        assert not _has_assert(code)
+
+
+@pytest.mark.medium
+class DescribeCompileWarningsAreIgnored:
+    """A compile-time warning promoted to an error by the session must not drop or break the target."""
+
+    def it_keeps_a_source_whose_compile_warning_is_an_error(self, tmp_path: Path) -> None:
+        path = tmp_path / 'warn.py'
+        path.write_text(_SYNTAX_WARNING_SOURCE)
+        source_files: dict[str, str] = {}
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            _add_source_file(path, source_files)
+
+        assert list(source_files) == [str(path)]
+
+    def it_encodes_a_module_whose_compile_warning_is_an_error(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')
+            encoded = _encode_compiled(ast.parse(_SYNTAX_WARNING_SOURCE), 'warn.py')
+
+        assert encoded
