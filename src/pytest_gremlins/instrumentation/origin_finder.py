@@ -17,7 +17,10 @@ import os
 import pickle  # nosec B403 - only the parent's own temp-dir data is unpickled
 import sys
 import threading
-from types import ModuleType
+from types import (
+    CodeType,
+    ModuleType,
+)
 from typing import Any
 
 # Entries are decoded from sources.json and mix str, str | None and list[str] values.
@@ -45,14 +48,22 @@ def file_identity(path: str) -> str | None:
 
 
 class GremlinLoader(importlib.abc.Loader):
-    """Compile the shipped instrumented tree and execute it in the namespace of the module being imported."""
+    """Compile the shipped instrumented tree, or its source when the tree is too deep, and execute it.
 
-    def __init__(self, encoded_tree: str, original_loader: object = None) -> None:
-        # The parent ships the instrumented tree, never code: compiling it here under the real file keeps
-        # inspect.getsource, linecache and tracebacks aligned with the file on disk, and this interpreter's own
-        # -O / PYTHONOPTIMIZE and warning filters apply, exactly as when it imports an unmodified file.
+    The tree is compiled under the real file, so ``inspect.getsource``, linecache and tracebacks stay aligned
+    with the file on disk. A tree nested deeper than this process's stack can handle (a long ``elif`` chain on
+    Python 3.11/3.12) raises ``RecursionError`` when unpickled or compiled, and the interpreter's C recursion
+    limit cannot be raised. The loader then compiles ``source``, the unparsed instrumented text, exactly as the
+    releases before #563 did: the import never fails because of AST depth, but that file's line numbers are the
+    reflowed ones of the unparsed text. A parent that could not pickle the tree ships no tree at all.
+    """
+
+    def __init__(self, encoded_tree: str | None, original_loader: object = None, source: str | None = None) -> None:
+        # The parent ships the instrumented tree, never code: this interpreter's own -O / PYTHONOPTIMIZE and
+        # warning filters apply, exactly as when it imports an unmodified file.
         self._encoded_tree = encoded_tree
         self._original_loader = original_loader
+        self._source = source
 
     def get_resource_reader(self, fullname: str) -> object:  # noqa: D102
         # Package data (importlib.resources) is found through the loader that located the file.
@@ -67,11 +78,23 @@ class GremlinLoader(importlib.abc.Loader):
         return None
 
     def exec_module(self, module: ModuleType) -> None:  # noqa: D102
-        # The parent wrote this tree into its own temp directory from our own transformation of the user's file;
-        # it is not untrusted input.
-        tree = pickle.loads(base64.b64decode(self._encoded_tree))  # noqa: S301  # nosec B301
-        code = compile(tree, module.__spec__.origin, 'exec', dont_inherit=True)  # type: ignore[union-attr, arg-type]
+        code = self._compile_tree(module)
+        if code is None:
+            # The source is our own AST transformation of the user's file, not untrusted input.
+            code = compile(self._source, module.__name__, 'exec')  # type: ignore[arg-type]
         exec(code, module.__dict__)  # noqa: S102
+
+    def _compile_tree(self, module: ModuleType) -> CodeType | None:
+        """Return the shipped tree compiled under the real file, or ``None`` when it is absent or too deep."""
+        if self._encoded_tree is None:
+            return None
+        try:
+            # The parent wrote this tree into its own temp directory from our own transformation of the user's
+            # file; it is not untrusted input.
+            tree = pickle.loads(base64.b64decode(self._encoded_tree))  # noqa: S301  # nosec B301
+            return compile(tree, module.__spec__.origin, 'exec', dont_inherit=True)  # type: ignore[union-attr, arg-type]
+        except RecursionError:
+            return None
 
 
 class GremlinFinder(importlib.abc.MetaPathFinder):
@@ -117,7 +140,7 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
             # Hand back what the later finders answered: the import system would reach the same answer
             # by walking on, and walking on would ask each of them a second time.
             return spec
-        spec.loader = GremlinLoader(entry['tree'], spec.loader)
+        spec.loader = GremlinLoader(entry.get('tree'), spec.loader, entry.get('source'))
         spec.cached = None
         return spec
 

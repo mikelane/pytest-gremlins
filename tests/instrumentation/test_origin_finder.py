@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import builtins
 from collections.abc import (
     Callable,
 )
@@ -490,6 +491,66 @@ class DescribeGremlinLoaderCompilesShippedTree:
         GremlinLoader(_encode('def f():\n    return 1\n')).exec_module(module)
 
         assert module.f.__code__.co_flags & importlib.import_module('__future__').annotations.compiler_flag == 0  # type: ignore[attr-defined]
+
+
+def _raise_recursion_error(*_args: object, **_kwargs: object) -> None:
+    raise RecursionError
+
+
+@pytest.mark.small
+class DescribeGremlinLoaderDeepTreeFallback:
+    """A tree too deep for this stack never fails the import: the loader compiles the shipped source instead (#563)."""
+
+    TREE_VALUE = 'VALUE = "from the tree"\n'
+    SOURCE_VALUE = 'VALUE = "from the source"\n'
+
+    def it_compiles_the_source_when_unpickling_the_tree_exceeds_the_recursion_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(origin_finder.pickle, 'loads', _raise_recursion_error)
+        module = _module_from('deep_unpickle_mod', 'deep_unpickle_mod.py')
+
+        GremlinLoader(_encode(self.TREE_VALUE), source=self.SOURCE_VALUE).exec_module(module)
+
+        assert module.VALUE == 'from the source'  # type: ignore[attr-defined]
+
+    def it_compiles_the_source_when_compiling_the_tree_exceeds_the_recursion_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real_compile = compile
+
+        def compile_tree_too_deep(source: object, *args: object, **kwargs: object) -> object:
+            if isinstance(source, ast.AST):
+                raise RecursionError
+            return real_compile(source, *args, **kwargs)  # type: ignore[call-overload]
+
+        monkeypatch.setattr(builtins, 'compile', compile_tree_too_deep)
+        module = _module_from('deep_compile_mod', 'deep_compile_mod.py')
+
+        GremlinLoader(_encode(self.TREE_VALUE), source=self.SOURCE_VALUE).exec_module(module)
+
+        assert module.VALUE == 'from the source'  # type: ignore[attr-defined]
+
+    def it_compiles_the_source_when_no_tree_was_shipped(self) -> None:
+        module = _module_from('no_tree_mod', 'no_tree_mod.py')
+
+        GremlinLoader(None, source=self.SOURCE_VALUE).exec_module(module)
+
+        assert module.VALUE == 'from the source'  # type: ignore[attr-defined]
+
+    def it_prefers_the_tree_when_it_compiles(self) -> None:
+        module = _module_from('shallow_mod', 'shallow_mod.py')
+
+        GremlinLoader(_encode(self.TREE_VALUE), source=self.SOURCE_VALUE).exec_module(module)
+
+        assert module.VALUE == 'from the tree'  # type: ignore[attr-defined]
+
+    def it_names_the_module_in_the_code_it_compiles_from_source_as_main_did(self) -> None:
+        module = _module_from('fallback_name_mod', '/project/fallback_name_mod.py')
+
+        GremlinLoader(None, source='def f():\n    return 1\n').exec_module(module)
+
+        assert module.f.__code__.co_filename == 'fallback_name_mod'  # type: ignore[attr-defined]
 
 
 @pytest.mark.medium

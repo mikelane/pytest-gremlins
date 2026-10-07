@@ -11,6 +11,7 @@ import types
 
 import pytest
 
+from pytest_gremlins import plugin
 from pytest_gremlins.instrumentation.origin_finder import (
     InstrumentedSources,
     file_identity,
@@ -182,6 +183,43 @@ def _written_entries(tmp_path: Path, relative_paths: list[str]) -> InstrumentedS
     return entries
 
 
+def _raise_recursion_error(*_args: object, **_kwargs: object) -> None:
+    raise RecursionError
+
+
+@pytest.mark.medium
+class DescribeWriteInstrumentedSourceDeepTreeFallback:
+    """A tree too deep to pickle is shipped as source alone, never dropped and never fatal (#563)."""
+
+    def it_always_ships_the_unparsed_instrumented_source(self, tmp_path: Path) -> None:
+        entries = _written_entries(tmp_path, ['mymod.py'])
+
+        source = next(iter(entries.values()))['source']
+
+        assert 'x = 1' in source
+        assert '__gremlin_active__' in source
+
+    def it_ships_only_the_source_when_pickling_the_tree_exceeds_the_recursion_limit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(plugin.pickle, 'dumps', _raise_recursion_error)
+
+        entry = next(iter(_written_entries(tmp_path, ['mymod.py']).values()))
+
+        assert 'tree' not in entry
+        assert 'x = 1' in entry['source']
+
+    def it_still_writes_the_deep_file_after_the_fallback(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(plugin.pickle, 'dumps', _raise_recursion_error)
+
+        entries = _written_entries(tmp_path, ['deep.py', 'other.py'])
+
+        assert sorted(entry['origin'] for entry in entries.values()) == [
+            str(tmp_path / 'deep.py'),
+            str(tmp_path / 'other.py'),
+        ]
+
+
 @pytest.mark.medium
 class DescribeWriteInstrumentedSourceKeys:
     """Entries are keyed by the file they came from; what the module is called is the import system's business."""
@@ -198,7 +236,7 @@ class DescribeWriteInstrumentedSourceKeys:
     def it_records_no_module_name(self, tmp_path: Path) -> None:
         entries = _written_entries(tmp_path, ['pkg/__init__.py'])
 
-        assert sorted(next(iter(entries.values()))) == ['file_names', 'identity', 'origin', 'tree']
+        assert sorted(next(iter(entries.values()))) == ['file_names', 'identity', 'origin', 'source', 'tree']
 
     def it_ships_a_tree_that_compiles_under_the_origin_path(self, tmp_path: Path) -> None:
         origin, code = _written_code(tmp_path, 'x = 1\n')
