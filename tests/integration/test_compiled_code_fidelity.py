@@ -138,3 +138,46 @@ class DescribeCompiledCodeFidelity:
         )
 
         assert 'Survived: 2 gremlins' in result.stdout.str()
+
+    def it_strips_target_asserts_when_pythonoptimize_is_above_the_highest_compile_level(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # CPython runs any PYTHONOPTIMIZE above 2 as -OO (sys.flags.optimize reports the raw value), while compile()
+        # accepts only -1..2. Main tests the target with its asserts stripped; the session must not crash.
+        pytester_with_markers.makepyfile(sample=_ASSERT_ONLY_TARGET)
+        pytester_with_markers.makepyfile(test_sample=_ASSERT_ONLY_TESTS)
+        monkeypatch.setenv('PYTHONOPTIMIZE', '3')
+
+        result = pytester_with_markers.runpytest_subprocess(
+            '--gremlins',
+            '--gremlin-targets=sample.py',
+            '--gremlin-operators=comparison',
+            '-p',
+            'no:cacheprovider',
+        )
+
+        assert 'Survived: 2 gremlins' in result.stdout.str()
+
+    def it_keeps_target_asserts_under_dash_o_when_interpreter_startup_writes_to_stdout(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A sitecustomize that prints at startup makes every interpreter's stdout start with that text. The gremlin
+        # subprocess still runs without -O, so the target keeps its asserts there, as on main.
+        monkeypatch.delenv('PYTHONOPTIMIZE', raising=False)
+        pytester_with_markers.makepyfile(sitecustomize="print('startup banner')\n")
+        pytester_with_markers.makepyfile(sample=_ASSERTING_TARGET)
+        pytester_with_markers.makepyfile(test_sample=_ASSERTING_TESTS)
+
+        result = pytester_with_markers.run(
+            sys.executable,
+            '-O',
+            '-m',
+            'pytest',
+            '--gremlins',
+            '--gremlin-targets=sample.py',
+            '--gremlin-operators=comparison',
+            '-p',
+            'no:cacheprovider',
+        )
+
+        assert _UNOBSERVED_BOUNDARY_GREMLIN.search(result.stdout.str())
