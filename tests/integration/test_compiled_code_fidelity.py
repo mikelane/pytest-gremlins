@@ -43,6 +43,20 @@ def test_rejects_zero():
 
 _UNOBSERVED_BOUNDARY_GREMLIN = re.compile(r'sample\.py:2 >= to >\s')
 
+_ASSERT_ONLY_TARGET = """
+def halve(x):
+    assert x > 0, 'x must be positive'
+    return x // 2
+"""
+
+_ASSERT_ONLY_TESTS = """
+from sample import halve
+
+
+def test_halve():
+    assert halve(4) == 2
+"""
+
 _WARNING_TARGET = """
 def is_big(x):
     if x is 1:
@@ -104,3 +118,23 @@ class DescribeCompiledCodeFidelity:
         )
 
         assert 'No gremlins found' not in result.stdout.str()
+
+    @pytest.mark.parametrize('pythonoptimize', ['0 ', '0_0'])
+    def it_strips_target_asserts_when_the_subprocess_reads_pythonoptimize_as_enabled(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, pythonoptimize: str
+    ) -> None:
+        # CPython treats a PYTHONOPTIMIZE value it cannot parse as an integer as level 1, so the subprocess drops
+        # asserts and neither assert gremlin is observable, as on main.
+        pytester_with_markers.makepyfile(sample=_ASSERT_ONLY_TARGET)
+        pytester_with_markers.makepyfile(test_sample=_ASSERT_ONLY_TESTS)
+        monkeypatch.setenv('PYTHONOPTIMIZE', pythonoptimize)
+
+        result = pytester_with_markers.runpytest_subprocess(
+            '--gremlins',
+            '--gremlin-targets=sample.py',
+            '--gremlin-operators=comparison',
+            '-p',
+            'no:cacheprovider',
+        )
+
+        assert 'Survived: 2 gremlins' in result.stdout.str()
