@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf10'
+RUNNER_FIDELITY_VERSION = 'rf11'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
@@ -47,6 +47,9 @@ disk, by its device and inode. Two targets that are one file on disk generate gr
 
 ``rf10`` retires verdicts cached while instrumented modules were compiled under their dotted module name (#563);
 ``inspect.getsource`` raised under every gremlin, so a test that only looked up source could be cached as ZAPPED.
+
+``rf11`` retires verdicts cached while a target pytest's assertion-rewrite hook serves (``conftest.py``, files
+matching ``python_files``) was never instrumented (#603); every gremlin in such a file was cached as SURVIVED.
 """
 
 

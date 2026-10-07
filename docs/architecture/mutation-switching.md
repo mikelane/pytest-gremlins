@@ -325,6 +325,14 @@ may affect bytecode cache sizes.
 Initial instrumentation takes longer than loading uninstrumented code. This is a one-time
 cost that pays for itself after a few mutations.
 
+### Modules Imported Before the Gremlin Finder Is Re-Fronted
+
+The gremlin finder is moved back to the front of `sys.meta_path` after pytest installs its assertion-rewrite
+hook but before any `conftest.py` or test module is imported. Plugins that pytest imports earlier, through
+`-p`, entry points or `PYTEST_PLUGINS`, are already loaded by then and cannot be instrumented. Modules the
+finder does serve (a `conftest.py` or a file matching `python_files`) run their `assert` statements without
+pytest's assertion rewriting.
+
 ## Inspiration and Prior Art
 
 Mutation switching was pioneered by [Stryker](https://stryker-mutator.io/) for JavaScript. Stryker 4.0 reported:

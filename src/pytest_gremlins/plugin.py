@@ -1659,11 +1659,24 @@ def main():
         instrumented_sources = json.load(f)
 
     # Serve each instrumented file under whatever name the import system resolves it to.
-    install(instrumented_sources)
+    finder = install(instrumented_sources)
 
     # Now run pytest with remaining arguments
     import pytest
     from _pytest.config import ConftestImportFailure
+
+    class FinderFronter:
+        # pytest parses its command line, which puts its assertion-rewrite hook at the front of
+        # sys.meta_path, ahead of our finder, so the hook would serve (and we would never instrument)
+        # every conftest.py and python_files match. Re-front the finder after the hook exists but before
+        # any conftest or test module is imported. Plugins loaded earlier (-p, entry points) are already
+        # imported and stay uninstrumented.
+        @pytest.hookimpl(hookwrapper=True)
+        def pytest_load_initial_conftests(self, early_config, parser, args):
+            if finder in sys.meta_path:
+                sys.meta_path.remove(finder)
+                sys.meta_path.insert(0, finder)
+            yield
 
     class SuiteLoadRecorder:
         # Records, in-process, that the suite could not be loaded. pytest reports an
@@ -1698,7 +1711,7 @@ def main():
     can_attribute_load_failures = not os.path.exists(marker)
 
     recorder = SuiteLoadRecorder()
-    exit_code = pytest.main(sys.argv[1:], plugins=[recorder])
+    exit_code = pytest.main(sys.argv[1:], plugins=[FinderFronter(), recorder])
     load_failure_exit = exit_code in (pytest.ExitCode.USAGE_ERROR, pytest.ExitCode.INTERRUPTED)
     if can_attribute_load_failures and recorder.suite_failed_to_load and load_failure_exit:
         exit_code = __COLLECTION_FAILED_EXIT_CODE__
