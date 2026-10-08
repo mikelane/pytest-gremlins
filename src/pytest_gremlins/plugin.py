@@ -1669,8 +1669,9 @@ def main():
         # pytest parses its command line, which puts its assertion-rewrite hook at the front of
         # sys.meta_path, ahead of our finder, so the hook would serve (and we would never instrument)
         # every conftest.py and python_files match. Re-front the finder after the hook exists but before
-        # any conftest or test module is imported. Plugins loaded earlier (-p, entry points) are already
-        # imported and stay uninstrumented.
+        # any conftest or test module is imported. The loader still applies pytest's assertion rewriting to
+        # what the hook would have served. Plugins loaded earlier (-p, entry points) are already imported
+        # and stay uninstrumented.
         @pytest.hookimpl(hookwrapper=True)
         def pytest_load_initial_conftests(self, early_config, parser, args):
             if finder in sys.meta_path:

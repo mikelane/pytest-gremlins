@@ -328,10 +328,10 @@ cost that pays for itself after a few mutations.
 ### Modules Imported Before the Gremlin Finder Is Re-Fronted
 
 The gremlin finder is moved back to the front of `sys.meta_path` after pytest installs its assertion-rewrite
-hook but before any `conftest.py` or test module is imported. Plugins that pytest imports earlier, through
-`-p`, entry points or `PYTEST_PLUGINS`, are already loaded by then and cannot be instrumented. Modules the
-finder does serve (a `conftest.py` or a file matching `python_files`) run their `assert` statements without
-pytest's assertion rewriting.
+hook but before any `conftest.py` or test module is imported. Modules that hook would rewrite (a `conftest.py`,
+a file matching `python_files`, a package passed to `pytest.register_assert_rewrite`) are instrumented and
+keep pytest's assertion rewriting, so their assert messages are unchanged. Plugins that pytest imports earlier,
+through `-p`, entry points or `PYTEST_PLUGINS`, are already loaded by then and cannot be instrumented.
 
 ## Inspiration and Prior Art
 
