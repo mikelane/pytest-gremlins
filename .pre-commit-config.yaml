@@ -33,26 +33,27 @@ repos:
         files: ^(src|tests)/
 
   # Ruff and mypy run from the uv environment so uv.lock is the single source of
-  # truth for tool versions (commit hook, pre-push hook, and CI all agree).
-  # Contributors need `uv sync --dev` before committing.
+  # truth for tool versions: the commit hook, the pre-push hook and GitHub Actions
+  # CI all run the versions locked in uv.lock. Prerequisite: `uv` installed
+  # (see CONTRIBUTING.md).
   - repo: local
     hooks:
-      - id: ruff-check-fix
-        name: ruff check (uv)
+      - id: ruff-check-commit
+        name: ruff check (staged files)
         entry: uv run --frozen ruff check --force-exclude --fix --exit-non-zero-on-fix
         language: system
         types_or: [python, pyi, jupyter]
         require_serial: true
         stages: [pre-commit]
-      - id: ruff-format-fix
-        name: ruff format (uv)
+      - id: ruff-format-commit
+        name: ruff format (staged files)
         entry: uv run --frozen ruff format --force-exclude
         language: system
         types_or: [python, pyi, jupyter]
         require_serial: true
         stages: [pre-commit]
       - id: mypy-commit
-        name: mypy (uv, strict via pyproject)
+        name: mypy (strict, commit)
         entry: uv run --frozen mypy src/pytest_gremlins
         language: system
         files: ^src/
@@ -120,28 +121,28 @@ repos:
     hooks:
       - id: ruff-check-all
         name: ruff check (full codebase)
-        entry: uv run ruff check src tests
+        entry: uv run --frozen ruff check src tests
         language: system
         stages: [pre-push]
         pass_filenames: false
         always_run: true
       - id: ruff-format-check
         name: ruff format --check
-        entry: uv run ruff format --check src tests
+        entry: uv run --frozen ruff format --check src tests
         language: system
         stages: [pre-push]
         pass_filenames: false
         always_run: true
       - id: mypy-strict
         name: mypy (strict)
-        entry: uv run mypy src/pytest_gremlins
+        entry: uv run --frozen mypy src/pytest_gremlins
         language: system
         stages: [pre-push]
         pass_filenames: false
         always_run: true
       - id: pytest-fast
         name: pytest (small tests)
-        entry: uv run pytest tests -m small -q
+        entry: uv run --frozen pytest tests -m small -q
         language: system
         stages: [pre-push]
         pass_filenames: false
@@ -156,6 +157,6 @@ ci:
   autoupdate_branch: ''
   autoupdate_commit_msg: 'chore: update pre-commit hook versions'
   autoupdate_schedule: weekly
-  # uv-based local hooks need uv and the project env, which pre-commit.ci lacks
-  skip: [ruff-check-fix, ruff-format-fix, mypy-commit, cspell]
+  # uv-based hooks need uv + the project env (absent on pre-commit.ci); cspell may have dict issues there
+  skip: [ruff-check-commit, ruff-format-commit, mypy-commit, cspell]
   submodules: false
