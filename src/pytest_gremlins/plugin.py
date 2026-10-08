@@ -94,6 +94,7 @@ from pytest_gremlins.instrumentation.transformer import (
     get_default_registry,
     transform_source,
 )
+from pytest_gremlins.node_id_file import command_with_node_ids_file
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.exit_codes import (
@@ -213,6 +214,14 @@ class CoveragePrescanTimeoutError(Exception):
     def __init__(self, seconds: int) -> None:
         super().__init__(f'coverage pre-scan exceeded {seconds}s')
         self.seconds = seconds
+
+
+class CoveragePrescanLaunchError(Exception):
+    """Raised when the operating system cannot start the coverage pre-scan subprocess (issue #485)."""
+
+    def __init__(self, cause: OSError) -> None:
+        super().__init__(f'coverage pre-scan could not be started ({cause})')
+        self.cause = cause
 
 
 @dataclass
@@ -2457,6 +2466,15 @@ def _warn_prescan_timeout(seconds: int) -> None:
     )
 
 
+def _warn_prescan_launch_failure(launch_error: CoveragePrescanLaunchError) -> None:
+    """Warn that the pre-scan could not be started, naming the cause (issue #485)."""
+    warnings.warn(
+        f'pytest-gremlins: the coverage pre-scan could not be started ({launch_error.cause}); '
+        'coverage-guided test selection disabled',
+        stacklevel=1,
+    )
+
+
 def _warn_no_coverage_data() -> None:
     """Warn that the pre-scan finished but recorded nothing (issue #113)."""
     warnings.warn(
@@ -2487,6 +2505,9 @@ def _run_prescan_reporting_problems(
         )
     except CoveragePrescanTimeoutError as timeout_error:
         _warn_prescan_timeout(timeout_error.seconds)
+        return {}
+    except CoveragePrescanLaunchError as launch_error:
+        _warn_prescan_launch_failure(launch_error)
         return {}
     if not coverage_data:
         _warn_no_coverage_data()
@@ -2692,6 +2713,32 @@ def _prescan_env() -> dict[str, str]:
     return env
 
 
+def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, timeout: int) -> None:
+    """Run the pre-scan ``command`` on ``node_ids``, handed over in a file so the command line stays short (#485).
+
+    Windows refuses a command line over 32,767 characters, which a large suite's node ids alone can exceed.
+    The file lives in a temporary directory that is removed when the pre-scan ends, however it ends.
+
+    Raises:
+        CoveragePrescanTimeoutError: If the pre-scan exceeds ``timeout`` seconds.
+        CoveragePrescanLaunchError: If the operating system cannot start the pre-scan.
+    """
+    try:
+        with tempfile.TemporaryDirectory(prefix='pytest_gremlins_prescan_', ignore_cleanup_errors=True) as node_ids_dir:
+            subprocess.run(  # Intentional: runs pytest test commands
+                command_with_node_ids_file(command, node_ids, Path(node_ids_dir)),
+                cwd=str(rootdir),
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+                env=_prescan_env(),
+            )
+    except subprocess.TimeoutExpired as expired:
+        raise CoveragePrescanTimeoutError(timeout) from expired
+    except OSError as launch_error:
+        raise CoveragePrescanLaunchError(launch_error) from launch_error
+
+
 def _run_tests_with_coverage(
     test_node_ids: list[str],
     rootdir: Path,
@@ -2740,6 +2787,7 @@ def _run_tests_with_coverage(
 
     Raises:
         CoveragePrescanTimeoutError: If the pre-scan exceeds ``timeout`` seconds.
+        CoveragePrescanLaunchError: If the operating system cannot start the pre-scan.
     """
     coverage_db_path = rootdir / '.coverage'
     coverage_db_path.unlink(missing_ok=True)
@@ -2765,30 +2813,22 @@ def _run_tests_with_coverage(
         'run',
         f'--rcfile={coveragerc_path}',
         '-m',
-        'pytest',
+        'pytest_gremlins.coverage.prescan_main',
         '-p',
         'pytest_gremlins.coverage.subprocess_bootstrap',
         '-p',
         'no:gremlins',
         '-o',
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
-        *test_node_ids,
         '--tb=no',
         '-q',
     ]
 
     try:
-        subprocess.run(  # Intentional: runs pytest test commands
-            cmd,
-            cwd=str(rootdir),
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-            env=_prescan_env(),
-        )
-    except subprocess.TimeoutExpired as expired:
+        _launch_prescan(cmd, test_node_ids, rootdir, timeout)
+    except (CoveragePrescanTimeoutError, CoveragePrescanLaunchError):
         coveragerc_path.unlink(missing_ok=True)
-        raise CoveragePrescanTimeoutError(timeout) from expired
+        raise
 
     coverage_by_test: dict[str, dict[str, list[int]]] = {}
 
