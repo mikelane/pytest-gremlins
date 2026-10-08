@@ -156,3 +156,57 @@ class DescribeRewriteHookTargetAssertions:
         result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/helpers')
 
         assert _verdicts(result.stdout.str()) == (1, 1, 0)
+
+
+_DEEP_BRANCHES = 470
+_IMPORT_CHAIN_LENGTH = 40
+
+_DEEP_TARGET_TESTS = """
+import pytest
+
+import mypkg.link_0
+from mypkg.deep_impl import check_positive
+
+
+def test_message_names_the_value():
+    with pytest.raises(AssertionError, match='-1'):
+        check_positive(-1)
+
+
+def test_accepts_a_positive_value():
+    check_positive(1)
+"""
+
+
+def _deep_target_source() -> str:
+    branches = ''.join(f'    elif flags[{index}]:\n        return {index}\n' for index in range(1, _DEEP_BRANCHES))
+    chain = f'def pick(flags):\n    if flags[0]:\n        return 0\n{branches}'
+    return f'{chain}\n\ndef check_positive(n):\n    assert n > 0\n'
+
+
+@pytest.mark.medium
+@pytest.mark.usefixtures('utf8_child_output')
+class DescribeDeepRewriteHookTargetAssertions:
+    """A deep target the rewrite hook serves keeps rewritten assert messages when specialization runs out of stack.
+
+    The parent instruments a few hundred ``elif`` branches, and pytest's own rewriter walks them iteratively, but
+    the recursive assert specialization raises ``RecursionError`` once the module is imported through a chain of
+    imports. The loader then compiles the source with plain asserts, and the survivor is reported ZAPPED again.
+    """
+
+    def it_keeps_a_deep_targets_survivor_when_a_test_reads_its_assert_message(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makeini('[pytest]\npythonpath = src\npython_files = test_*.py *_impl.py\n')
+        package = pytester_with_markers.path / 'src' / 'mypkg'
+        package.mkdir(parents=True)
+        package.joinpath('__init__.py').write_text('')
+        package.joinpath('deep_impl.py').write_text(_deep_target_source())
+        for link in range(_IMPORT_CHAIN_LENGTH):
+            package.joinpath(f'link_{link}.py').write_text(f'import mypkg.link_{link + 1}\n')
+        package.joinpath(f'link_{_IMPORT_CHAIN_LENGTH}.py').write_text('import mypkg.deep_impl\n')
+        pytester_with_markers.mkdir('tests').joinpath('test_messages.py').write_text(_DEEP_TARGET_TESTS)
+
+        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg/deep_impl.py')
+
+        assert _verdicts(result.stdout.str()) == (1, 1, 0)
