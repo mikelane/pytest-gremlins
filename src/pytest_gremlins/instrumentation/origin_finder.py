@@ -233,7 +233,8 @@ class GremlinLoader(importlib.abc.Loader):
         hook._rewritten_names[module.__name__] = Path(origin)
         rewrite_asserts(_specialize_asserts(tree), source_bytes, origin, hook.config)
 
-    def _unpickle_tree(self) -> ast.Module | None:
+    @staticmethod
+    def _unpickle_tree(encoded_tree: str) -> ast.Module | None:
         """Return the shipped tree, or ``None`` when this interpreter cannot rebuild it.
 
         A tree pickled by another Python version raises ``TypeError`` (its node constructors differ), and the
@@ -243,15 +244,16 @@ class GremlinLoader(importlib.abc.Loader):
         try:
             # The parent wrote this tree into its own temp directory from our own transformation of the user's
             # file; it is not untrusted input.
-            return pickle.loads(base64.b64decode(self._encoded_tree or ''))  # type: ignore[no-any-return]  # noqa: S301  # nosec B301
+            tree: ast.Module = pickle.loads(base64.b64decode(encoded_tree))  # noqa: S301  # nosec B301
         except Exception:
             return None
+        return tree
 
     def _compile_tree(self, module: ModuleType) -> CodeType | None:
         """Return the shipped tree compiled under the real file, or ``None`` when it is absent or unusable."""
         if self._encoded_tree is None:
             return None
-        tree = self._unpickle_tree()
+        tree = self._unpickle_tree(self._encoded_tree)
         if tree is None:
             return None
         try:
