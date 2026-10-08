@@ -256,6 +256,10 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
     and (2) identity-based (inode) for differently-named aliases (symlinks, hard links).
     """
 
+    # The bootstrap and the spawn hook (#604) each embed their own copy of this class, so ``isinstance`` cannot
+    # tell whether a finder on ``sys.meta_path`` is ours. This marker can.
+    is_gremlin_finder = True
+
     def __init__(self, instrumented_sources: InstrumentedSources) -> None:
         self._instrumented_sources = instrumented_sources
         # Only a file named like an instrumented one is worth a realpath: most imports are not.
@@ -330,7 +334,18 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
 
 
 def install(instrumented_sources: InstrumentedSources) -> GremlinFinder:
-    """Register a finder for ``instrumented_sources`` ahead of every other finder and return it."""
+    """Register a finder for ``instrumented_sources`` ahead of every other finder and return it.
+
+    Idempotent: the spawn hook (#604) and the bootstrap both call this in the same process, and one finder
+    must serve it. A finder already installed for equal sources is moved to the front and returned; one for
+    other sources is replaced.
+    """
+    installed_finders: list[Any] = [finder for finder in sys.meta_path if getattr(finder, 'is_gremlin_finder', False)]
+    for installed in installed_finders:
+        sys.meta_path.remove(installed)
+        if installed._instrumented_sources == instrumented_sources:
+            sys.meta_path.insert(0, installed)
+            return installed  # type: ignore[no-any-return]
     finder = GremlinFinder(instrumented_sources)
     sys.meta_path.insert(0, finder)
     return finder

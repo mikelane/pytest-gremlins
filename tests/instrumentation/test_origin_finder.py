@@ -363,7 +363,7 @@ class DescribeGremlinFinderDelegation:
         tmp_path.joinpath('inner_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
         install_finder(_entry(tmp_path / 'inner_mod.py'))
-        install_finder({})
+        sys.meta_path.insert(0, GremlinFinder({}))  # install() is idempotent, so a second finder is added by hand
 
         assert _import('inner_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
 
