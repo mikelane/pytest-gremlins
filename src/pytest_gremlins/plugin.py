@@ -2189,7 +2189,12 @@ def _confirm_timeout_kill(
     if selection not in gremlin_session.unmutated_timeout_checks:
         command, env = _unmutated_command_and_env(gremlin_session, rootdir)
         gremlin_session.unmutated_timeout_checks[selection] = run_unmutated(
-            command, node_ids, rootdir, env, timeout=gremlin_session.mutant_timeout
+            command,
+            node_ids,
+            rootdir,
+            env,
+            timeout=gremlin_session.mutant_timeout,
+            node_ids_dir=gremlin_session.instrumented_dir,
         )
         outcome = gremlin_session.unmutated_timeout_checks[selection]
         logger.debug(
@@ -3747,13 +3752,15 @@ def _build_filtered_test_command(
         gremlin_session: The current gremlin session.
 
     Returns:
-        Command list with test node IDs appended in the same order.
+        Command list that runs the selected node IDs in the same order. They travel in a file named on the
+        command line, so a full-suite selection cannot exceed Windows' 32,767 character limit (#485); without an
+        instrumented directory to hold the file they are appended to the command.
     """
-    command = list(base_command)
-
-    command.extend(_node_ids_for_tests(selected_tests, gremlin_session))
-
-    return command
+    return command_with_node_ids_file(
+        base_command,
+        _node_ids_for_tests(selected_tests, gremlin_session),
+        gremlin_session.instrumented_dir,
+    )
 
 
 def _pytest_cov_available() -> bool:

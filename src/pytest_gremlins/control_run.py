@@ -16,6 +16,8 @@ import subprocess
 import time
 from typing import TYPE_CHECKING
 
+from pytest_gremlins.node_id_file import command_with_node_ids_file
+
 if TYPE_CHECKING:
     from collections.abc import (
         Mapping,
@@ -98,6 +100,7 @@ def run_unmutated(
     env: Mapping[str, str],
     *,
     timeout: int,
+    node_ids_dir: Path | None = None,
 ) -> UnmutatedRunOutcome:
     """Run the given node ids with the gremlin bootstrap and no active gremlin, under a timeout.
 
@@ -110,6 +113,8 @@ def run_unmutated(
         cwd: Directory to run in (the project root).
         env: Environment for the subprocess, without an active gremlin.
         timeout: Seconds the run may take, the same limit the gremlin ran under.
+        node_ids_dir: Directory to hold a file of the node ids, so they stay off the command line (Windows
+            caps it at 32,767 characters, #485). Without one the ids are appended to the command.
 
     Returns:
         Whether the run outlasted ``timeout``, and how long it took. If the run cannot be launched,
@@ -119,7 +124,7 @@ def run_unmutated(
     started = time.monotonic()
     try:
         subprocess.run(  # Intentional: runs the pytest bootstrap
-            [*command, *node_ids],
+            command_with_node_ids_file(command, node_ids, node_ids_dir),
             cwd=str(cwd),
             env=dict(env),
             capture_output=True,
