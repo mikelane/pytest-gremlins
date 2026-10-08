@@ -123,7 +123,7 @@ class DescribePrescanNodeIdsFile:
 
 @pytest.mark.medium
 class DescribePrescanLaunchFailure:
-    """A pre-scan that cannot be started degrades to 'no coverage' with a warning naming the cause."""
+    """A pre-scan that cannot be run degrades to 'no coverage' with a warning naming the cause."""
 
     LAUNCH_ERROR = OSError(206, 'The filename or extension is too long')
 
@@ -162,8 +162,27 @@ class DescribePrescanLaunchFailure:
 
         assert session.test_selector is not None
         assert [str(warning.message) for warning in caught if issubclass(warning.category, UserWarning)] == [
-            'pytest-gremlins: the coverage pre-scan could not be started '
+            'pytest-gremlins: the coverage pre-scan could not be run '
             '([Errno 206] The filename or extension is too long); coverage-guided test selection disabled',
+        ]
+
+    def it_warns_that_the_pre_scan_could_not_be_run_when_the_node_ids_file_cannot_be_written(
+        self, tmp_path: Path
+    ) -> None:
+        session = GremlinSession(enabled=True)
+        session.test_node_ids = {node_id: node_id for node_id in REPORTED_NODE_IDS}
+        disk_full = OSError(28, 'No space left on device')
+
+        with (
+            patch('pytest_gremlins.plugin.command_with_node_ids_file', autospec=True, side_effect=disk_full),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter('always')
+            _collect_coverage(session, tmp_path)
+
+        assert [str(warning.message) for warning in caught if issubclass(warning.category, UserWarning)] == [
+            'pytest-gremlins: the coverage pre-scan could not be run '
+            '([Errno 28] No space left on device); coverage-guided test selection disabled',
         ]
 
     def it_does_not_also_claim_that_no_data_was_recorded(self, tmp_path: Path) -> None:

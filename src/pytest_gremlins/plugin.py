@@ -220,7 +220,7 @@ class CoveragePrescanLaunchError(Exception):
     """Raised when the operating system cannot start the coverage pre-scan subprocess (issue #485)."""
 
     def __init__(self, cause: OSError) -> None:
-        super().__init__(f'coverage pre-scan could not be started ({cause})')
+        super().__init__(f'coverage pre-scan could not be run ({cause})')
         self.cause = cause
 
 
@@ -2472,9 +2472,9 @@ def _warn_prescan_timeout(seconds: int) -> None:
 
 
 def _warn_prescan_launch_failure(launch_error: CoveragePrescanLaunchError) -> None:
-    """Warn that the pre-scan could not be started, naming the cause (issue #485)."""
+    """Warn that the pre-scan could not be run, naming the cause (issue #485)."""
     warnings.warn(
-        f'pytest-gremlins: the coverage pre-scan could not be started ({launch_error.cause}); '
+        f'pytest-gremlins: the coverage pre-scan could not be run ({launch_error.cause}); '
         'coverage-guided test selection disabled',
         stacklevel=1,
     )
