@@ -159,14 +159,15 @@ def _specialize_asserts(tree: ast.Module) -> ast.Module:
 
 
 class GremlinLoader(importlib.abc.Loader):
-    """Compile the shipped instrumented tree, or its source when the tree is too deep, and execute it.
+    """Compile the shipped instrumented tree, or its source when the tree is unusable, and execute it.
 
     The tree is compiled under the real file, so ``inspect.getsource``, linecache and tracebacks stay aligned
     with the file on disk. Unpickling or compiling a tree nested deeper than this process's stack can handle
     (a long ``elif`` chain) raises ``RecursionError``, and the interpreter's C recursion limit cannot be raised.
     The loader then compiles ``source``, the unparsed instrumented text, exactly as the releases before #563
     did: the import never fails because of AST depth, but that file's line numbers are the reflowed ones of
-    the unparsed text. A parent that could not pickle the tree ships no tree at all.
+    the unparsed text. A tree this interpreter cannot unpickle at all (one pickled by another Python version)
+    gets the same fallback. A parent that could not pickle the tree ships no tree at all.
     """
 
     def __init__(self, encoded_tree: str | None, original_loader: object = None, *, source: str) -> None:
@@ -232,14 +233,28 @@ class GremlinLoader(importlib.abc.Loader):
         hook._rewritten_names[module.__name__] = Path(origin)
         rewrite_asserts(_specialize_asserts(tree), source_bytes, origin, hook.config)
 
-    def _compile_tree(self, module: ModuleType) -> CodeType | None:
-        """Return the shipped tree compiled under the real file, or ``None`` when it is absent or too deep."""
-        if self._encoded_tree is None:
-            return None
+    def _unpickle_tree(self) -> ast.Module | None:
+        """Return the shipped tree, or ``None`` when this interpreter cannot rebuild it.
+
+        A tree pickled by another Python version raises ``TypeError`` (its node constructors differ), and the
+        spawn hook's version gate keeps that from happening in practice. Whatever the reason, the import must
+        not fail because of it: the caller falls back to the shipped source.
+        """
         try:
             # The parent wrote this tree into its own temp directory from our own transformation of the user's
             # file; it is not untrusted input.
-            tree: ast.Module = pickle.loads(base64.b64decode(self._encoded_tree))  # noqa: S301  # nosec B301
+            return pickle.loads(base64.b64decode(self._encoded_tree or ''))  # type: ignore[no-any-return]  # noqa: S301  # nosec B301
+        except Exception:
+            return None
+
+    def _compile_tree(self, module: ModuleType) -> CodeType | None:
+        """Return the shipped tree compiled under the real file, or ``None`` when it is absent or unusable."""
+        if self._encoded_tree is None:
+            return None
+        tree = self._unpickle_tree()
+        if tree is None:
+            return None
+        try:
             if self._original_loader_is_rewrite_hook():
                 with open(module.__spec__.origin, 'rb') as source_file:  # type: ignore[union-attr, arg-type]  # noqa: PTH123
                     self._rewrite_asserts(tree, source_file.read(), module)

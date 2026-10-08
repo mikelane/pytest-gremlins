@@ -250,6 +250,13 @@ Each gremlin run now exports three things that a spawned child inherits through 
   subprocess support relies on one). It lives in a directory of its own so that nothing else from the
   gremlin temp directory becomes importable.
 
+The hook serves only an interpreter of the same implementation and `(major, minor)` version as the one that
+wrote the sources, which the generated `sitecustomize.py` embeds. The shipped trees are pickled ASTs, and
+another version cannot read them. So a test that starts, say, `python3.11` from a 3.14 suite gets the
+original code in that child, silently, exactly as in the control run: at worst a false SURVIVED, never a
+false ZAPPED. As a second line of defense the loader falls back to the shipped source text whenever it cannot
+unpickle a tree.
+
 If the hook cannot read the sources file, the child still starts, so your tests are not hidden behind a
 start-up failure, and it prints a `pytest-gremlins:` warning on stderr: that child runs the original code.
 
