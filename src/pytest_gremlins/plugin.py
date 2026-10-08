@@ -83,6 +83,11 @@ from pytest_gremlins.instrumentation.origin_finder import (
     file_identity,
     normalize_origin,
 )
+from pytest_gremlins.instrumentation.spawn_hook import (
+    SOURCES_FILE_ENV_VAR,
+    export_spawn_hook,
+    write_spawn_hook,
+)
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import (
     get_default_registry,
@@ -134,7 +139,7 @@ class _XdistWorkerNode(Protocol):
 
 logger = logging.getLogger(__name__)
 
-GREMLIN_SOURCES_ENV_VAR = 'PYTEST_GREMLINS_SOURCES_FILE'
+GREMLIN_SOURCES_ENV_VAR = SOURCES_FILE_ENV_VAR
 
 
 def _get_rootdir(config: pytest.Config) -> Path:
@@ -1502,6 +1507,8 @@ def _write_instrumented_sources(
        without touching the disk). No module name is recorded: the finder in the
        subprocess serves a file under whatever name the import system resolves to it.
     2. A bootstrap script that registers import hooks and runs pytest
+    3. A ``spawn_hook`` directory holding a ``sitecustomize.py`` that installs the same finder in fresh
+       interpreters, such as ``multiprocessing`` spawn children (#604)
 
     This approach ensures that import hooks are registered BEFORE any modules
     are imported, which is necessary because pytest adds the test directory
@@ -1542,6 +1549,7 @@ def _write_instrumented_sources(
 
     bootstrap_script = temp_dir / 'gremlin_bootstrap.py'
     bootstrap_script.write_text(_get_bootstrap_script())
+    write_spawn_hook(temp_dir)
 
     # The lightweight runner is deliberately not written: it cannot reproduce pytest's conftest,
     # configure hooks or sys.path, so every gremlin runs through the bootstrap (#538).
@@ -2063,6 +2071,7 @@ def _unmutated_command_and_env(gremlin_session: GremlinSession, rootdir: Path) -
     env['GREMLIN_ROOTDIR'] = str(rootdir)
     if instrumented_dir is not None:
         env[GREMLIN_SOURCES_ENV_VAR] = str(instrumented_dir / 'sources.json')
+    export_spawn_hook(env)
     return command, env
 
 
@@ -3827,6 +3836,7 @@ def _test_gremlin(
     if instrumented_dir is not None:
         sources_file = instrumented_dir / 'sources.json'
         env[GREMLIN_SOURCES_ENV_VAR] = str(sources_file)
+    export_spawn_hook(env)
 
     # Single routing point for the lightweight runner. It always returns None while the runner is
     # disabled (#538), so every gremlin runs through the pytest bootstrap.

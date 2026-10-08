@@ -16,6 +16,7 @@ from pytest_gremlins.instrumentation.origin_finder import (
     file_identity,
     normalize_origin,
 )
+from pytest_gremlins.instrumentation.spawn_hook import SPAWN_HOOK_DIRNAME
 from pytest_gremlins.plugin import (
     _add_source_file,
     _inject_gremlin_active,
@@ -325,3 +326,13 @@ class DescribeAddSourceFileKeepsParsableFiles:
         _add_source_file(path, source_files)
 
         assert list(source_files) == [str(path)]
+
+
+@pytest.mark.medium
+class DescribeSpawnHookIsWritten:
+    """The instrumented directory carries the sitecustomize hook that spawn children load (#604)."""
+
+    def it_writes_the_hook_in_a_directory_of_its_own(self, tmp_path: Path) -> None:
+        result_dir = _write_instrumented_sources({str(tmp_path / 'mymod.py'): ast.parse('x = 1')}, tmp_path)
+
+        assert (result_dir / SPAWN_HOOK_DIRNAME / 'sitecustomize.py').is_file()

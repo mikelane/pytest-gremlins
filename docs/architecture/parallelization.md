@@ -234,9 +234,31 @@ tracked in [#532](https://github.com/mikelane/pytest-gremlins/issues/532). The `
 `InProcessExecutor` classes remain in the code base for that work but are not reachable from the
 command line.
 
+### Code that runs in `multiprocessing` spawn children
+
+A child started with the `spawn` (or `forkserver`) start method is a fresh interpreter, so it never
+inherits the import finder the bootstrap installed in the test process. Before #604 it ran the original
+code, and a gremlin that only that child exercised was reported SURVIVED even when the tests caught it.
+
+Each gremlin run now exports three things that a spawned child inherits through its environment:
+
+- `PYTEST_GREMLINS_SOURCES_FILE`, the instrumented sources.
+- `ACTIVE_GREMLIN`, the gremlin under test.
+- `PYTHONPATH`, with a `spawn_hook` directory prepended to whatever was there. It holds one file,
+  `sitecustomize.py`, which installs the same finder at interpreter start-up. Python runs the first
+  `sitecustomize` on `sys.path`, so the hook then finds and runs the next one itself (coverage.py's
+  subprocess support relies on one). It lives in a directory of its own so that nothing else from the
+  gremlin temp directory becomes importable.
+
+If the hook cannot read the sources file, the child still starts, so your tests are not hidden behind a
+start-up failure, and it prints a `pytest-gremlins:` warning on stderr: that child runs the original code.
+
+Limitation: an interpreter started with `-E`, `-I` or `-S` ignores `PYTHONPATH` or skips `sitecustomize`,
+so a child started that way still runs the original code.
+
 ### Cached results
 
-The incremental cache key includes a runner fidelity version (`rf11`), so verdicts cached by
+The incremental cache key includes a runner fidelity version (`rf12`), so verdicts cached by
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 So are timeouts cached before they were confirmed against the unmutated tests (#565).
 So are verdicts cached while instrumented modules had no `__file__` (#525), when target code that read it
@@ -249,6 +271,8 @@ instrumented code never loaded and that file's gremlins were all cached as SURVI
 So are verdicts cached while a `conftest.py` or a file matching `python_files` was never instrumented (#603),
 because pytest's assertion-rewrite hook served it ahead of the gremlin finder; that file's gremlins were all
 cached as SURVIVED.
+So are verdicts cached while code that ran in a `multiprocessing` `spawn` child was never instrumented (#604);
+a gremlin only that child exercised was cached as SURVIVED.
 So are verdicts cached while instrumented modules were compiled under their module name (#563), when a
 test that looked up source (`inspect.getsource`) failed under every gremlin and was cached as ZAPPED.
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that

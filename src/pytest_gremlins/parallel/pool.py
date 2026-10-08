@@ -23,6 +23,7 @@ import subprocess
 import time
 from typing import Self
 
+from pytest_gremlins.instrumentation.spawn_hook import export_spawn_hook
 from pytest_gremlins.parallel.exit_codes import (
     COLLECTION_KILLING_TEST,
     GREMLIN_COLLECTION_FAILED_EXIT_CODE,
@@ -87,6 +88,7 @@ def _run_gremlin_test(  # pragma: no cover
     env = env_without_xdist_addopts({**os.environ, **env_vars})
     env['ACTIVE_GREMLIN'] = gremlin_id
     env['GREMLIN_ROOTDIR'] = rootdir
+    export_spawn_hook(env)
 
     # Use lightweight runner if available (skips full pytest startup)
     lightweight_cmd = build_lightweight_command(test_command, env_vars)
