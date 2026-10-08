@@ -31,9 +31,6 @@ UNATTRIBUTABLE_MARKER = 'load_failures_unattributable'
 """File written next to ``sources.json`` when the control run failed; the bootstrap then stops
 translating load failures into the collection-failed exit code."""
 
-MAX_NODE_ID_CHARS_PER_COMMAND = 50_000
-"""Cap on node-id characters per control command, far below the OS argument-size limits."""
-
 DIAGNOSTIC_TAIL_LINES = 20
 """Lines of the control run's output kept in the stderr diagnostic (counted in lines, unlike the cap below)."""
 
@@ -139,29 +136,6 @@ def run_unmutated(
     return UnmutatedRunOutcome(timed_out=False, seconds=time.monotonic() - started)
 
 
-def chunk_node_ids(node_ids: Sequence[str], max_chars: int) -> list[list[str]]:
-    """Split node ids into command-sized chunks.
-
-    Args:
-        node_ids: Node ids to pass on a command line.
-        max_chars: Most characters (each id plus one separator) a chunk may hold.
-
-    Returns:
-        Chunks in order; a single id longer than the limit gets a chunk of its own.
-        No node ids yield one empty chunk, so the whole suite is still collected once.
-    """
-    chunks: list[list[str]] = [[]]
-    used = 0
-    for node_id in node_ids:
-        size = len(node_id) + 1
-        if chunks[-1] and used + size > max_chars:
-            chunks.append([])
-            used = 0
-        chunks[-1].append(node_id)
-        used += size
-    return chunks
-
-
 def build_diagnostic(output: str) -> str:
     """Build the stderr message for a failed control run, with hints for the common causes."""
     tail = '\n'.join(output.strip().splitlines()[-DIAGNOSTIC_TAIL_LINES:])
@@ -177,7 +151,7 @@ def run_control(
     env: Mapping[str, str],
     *,
     timeout: int = CONTROL_RUN_TIMEOUT_SECONDS,
-    max_chars_per_command: int = MAX_NODE_ID_CHARS_PER_COMMAND,
+    node_ids_dir: Path | None = None,
 ) -> ControlRunOutcome:
     """Collect the given node ids with the gremlin bootstrap and no active gremlin.
 
@@ -186,26 +160,32 @@ def run_control(
         node_ids: Node ids the gremlins will select; empty collects the whole suite.
         cwd: Directory to run in (the project root).
         env: Environment for the subprocess, without an active gremlin.
-        timeout: Seconds allowed per command.
-        max_chars_per_command: Node-id characters per command before the ids are chunked.
+        timeout: Seconds the run may take.
+        node_ids_dir: Directory to hold a file of the node ids, so they stay off the command line (Windows
+            caps it at 32,767 characters, #485). Without one the ids are appended to the command.
 
     Returns:
-        Whether every chunk collected cleanly, plus the output of the first failing one.
+        Whether the suite collected cleanly, plus the run's output when it did not. A run that times out
+        or cannot be launched does not load cleanly either, and its output says why.
     """
     started = time.monotonic()
-    for chunk in chunk_node_ids(node_ids, max_chars_per_command):
-        try:
-            completed = subprocess.run(  # Intentional: runs the pytest bootstrap
-                [*command, '--collect-only', '--tb=short', *chunk],
-                cwd=str(cwd),
-                env=dict(env),
-                capture_output=True,
-                timeout=timeout,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            return ControlRunOutcome(False, f'control run timed out after {timeout}s', time.monotonic() - started)
-        if completed.returncode != 0:
-            output = (completed.stdout + completed.stderr).decode(errors='replace')
-            return ControlRunOutcome(False, output, time.monotonic() - started)
+    try:
+        completed = subprocess.run(  # Intentional: runs the pytest bootstrap
+            command_with_node_ids_file([*command, '--collect-only', '--tb=short'], node_ids, node_ids_dir),
+            cwd=str(cwd),
+            env=dict(env),
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return ControlRunOutcome(False, f'control run timed out after {timeout}s', time.monotonic() - started)
+    except OSError as launch_error:
+        logger.warning('Could not run the unmutated control run: %s', launch_error)
+        return ControlRunOutcome(
+            False, f'control run could not be launched: {launch_error}', time.monotonic() - started
+        )
+    if completed.returncode != 0:
+        output = (completed.stdout + completed.stderr).decode(errors='replace')
+        return ControlRunOutcome(False, output, time.monotonic() - started)
     return ControlRunOutcome(True, '', time.monotonic() - started)

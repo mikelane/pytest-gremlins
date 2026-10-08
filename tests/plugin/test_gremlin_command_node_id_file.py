@@ -13,12 +13,16 @@ from unittest.mock import patch
 
 import pytest
 
-from pytest_gremlins.control_run import run_unmutated
+from pytest_gremlins.control_run import (
+    run_control,
+    run_unmutated,
+)
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.node_id_file import NODE_IDS_FILE_OPTION
 from pytest_gremlins.plugin import (
     GremlinSession,
     _build_filtered_test_command,
+    _collect_unmutated,
     _confirm_timeout_kill,
 )
 from pytest_gremlins.reporting.results import (
@@ -116,6 +120,64 @@ class DescribeRunUnmutated:
 
     def it_still_puts_the_ids_on_the_command_line_without_a_directory(self, tmp_path: Path) -> None:
         assert self._run(tmp_path, ['a.py::t']) == [*BASE_COMMAND, 'a.py::t']
+
+
+@pytest.mark.medium
+class DescribeRunControlCommand:
+    @staticmethod
+    def _run(tmp_path: Path, node_ids: list[str], **kwargs: Path | None) -> list[list[str]]:
+        captured: list[list[str]] = []
+
+        def finish(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            captured.append(command)
+            return subprocess.CompletedProcess(command, 0, b'', b'')
+
+        with patch('pytest_gremlins.control_run.subprocess.run', autospec=True, side_effect=finish):
+            run_control(BASE_COMMAND, node_ids, tmp_path, {}, timeout=5, **kwargs)
+        return captured
+
+    def it_keeps_every_node_id_off_the_command_line_in_a_single_run(self, tmp_path: Path) -> None:
+        (command,) = self._run(tmp_path, REPORTED_NODE_IDS, node_ids_dir=tmp_path)
+
+        assert not set(REPORTED_NODE_IDS) & set(command)
+        assert len(' '.join(command)) < WINDOWS_MAX_CMDLINE
+        assert _node_ids_in_file(command) == REPORTED_NODE_IDS
+
+    def it_collects_only_with_a_short_traceback(self, tmp_path: Path) -> None:
+        (command,) = self._run(tmp_path, REPORTED_NODE_IDS, node_ids_dir=tmp_path)
+
+        assert command[: len(BASE_COMMAND) + 2] == [*BASE_COMMAND, '--collect-only', '--tb=short']
+
+    def it_collects_the_whole_suite_when_given_no_node_ids(self, tmp_path: Path) -> None:
+        assert self._run(tmp_path, [], node_ids_dir=tmp_path) == [[*BASE_COMMAND, '--collect-only', '--tb=short']]
+
+    def it_still_puts_the_ids_on_the_command_line_without_a_directory(self, tmp_path: Path) -> None:
+        assert self._run(tmp_path, ['a.py::t']) == [[*BASE_COMMAND, '--collect-only', '--tb=short', 'a.py::t']]
+
+    def it_reports_a_launch_failure_as_a_run_that_does_not_load(self, tmp_path: Path) -> None:
+        too_long = OSError(206, 'The filename or extension is too long')
+
+        with patch('pytest_gremlins.control_run.subprocess.run', autospec=True, side_effect=too_long):
+            outcome = run_control(BASE_COMMAND, [], tmp_path, {}, timeout=5)
+
+        assert outcome.loads_cleanly is False
+        assert 'too long' in outcome.output
+
+
+@pytest.mark.medium
+class DescribeCollectUnmutatedCommand:
+    def it_hands_the_instrumented_dir_to_the_control_run(self, session: GremlinSession, tmp_path: Path) -> None:
+        captured: list[str] = []
+
+        def finish(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            captured.extend(command)
+            return subprocess.CompletedProcess(command, 0, b'', b'')
+
+        with patch('pytest_gremlins.control_run.subprocess.run', autospec=True, side_effect=finish):
+            _collect_unmutated(session, tmp_path, REPORTED_NODE_IDS)
+
+        assert not set(REPORTED_NODE_IDS) & set(captured)
+        assert _node_ids_in_file(captured) == REPORTED_NODE_IDS
 
 
 @pytest.mark.medium

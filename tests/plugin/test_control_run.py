@@ -10,27 +10,9 @@ import pytest
 from pytest_gremlins.control_run import (
     DIAGNOSTIC_TAIL_LINES,
     build_diagnostic,
-    chunk_node_ids,
     run_control,
     run_unmutated,
 )
-
-
-@pytest.mark.small
-class DescribeChunkNodeIds:
-    def it_returns_one_chunk_when_everything_fits(self) -> None:
-        assert chunk_node_ids(['a.py::t1', 'a.py::t2'], max_chars=100) == [['a.py::t1', 'a.py::t2']]
-
-    def it_splits_so_that_no_chunk_exceeds_the_limit(self) -> None:
-        node_ids = ['aaaa', 'bbbb', 'cccc', 'dddd']
-
-        assert chunk_node_ids(node_ids, max_chars=10) == [['aaaa', 'bbbb'], ['cccc', 'dddd']]
-
-    def it_keeps_an_oversized_node_id_in_a_chunk_of_its_own(self) -> None:
-        assert chunk_node_ids(['x' * 20, 'y'], max_chars=5) == [['x' * 20], ['y']]
-
-    def it_returns_a_single_empty_chunk_for_no_node_ids(self) -> None:
-        assert chunk_node_ids([], max_chars=100) == [[]]
 
 
 @pytest.mark.small
@@ -149,17 +131,6 @@ class DescribeRunControl:
         outcome = run_control([sys.executable, str(script), '--tb=no', '-q'], [], tmp_path, {}, timeout=30)
 
         assert outcome.output.split()[-1] == '--tb=short'
-
-    def it_stops_at_the_first_failing_chunk(self, tmp_path: Path) -> None:
-        marker = tmp_path / 'runs.txt'
-        code = f'import sys; open({str(marker)!r}, "a").write("x"); sys.exit(4)'
-
-        outcome = run_control(
-            self._command(code), ['a' * 10, 'b' * 10, 'c' * 10], tmp_path, {}, timeout=30, max_chars_per_command=12
-        )
-
-        assert outcome.loads_cleanly is False
-        assert marker.read_text() == 'x'
 
     def it_treats_a_timeout_as_a_failure_to_load(self, tmp_path: Path) -> None:
         outcome = run_control(self._command('import time; time.sleep(30)'), [], tmp_path, {}, timeout=1)

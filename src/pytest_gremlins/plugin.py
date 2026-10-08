@@ -2104,7 +2104,7 @@ def _collect_unmutated(
 ) -> ControlRunOutcome:
     """Collect ``node_ids`` with the bootstrap, using a gremlin run's command and env minus the gremlin."""
     command, env = _unmutated_command_and_env(gremlin_session, rootdir)
-    return run_control(command, node_ids, rootdir, env)
+    return run_control(command, node_ids, rootdir, env, node_ids_dir=gremlin_session.instrumented_dir)
 
 
 def _confirm_collection_kill(
