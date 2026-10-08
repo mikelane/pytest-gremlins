@@ -276,6 +276,10 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
         }
         self._resolving: set[tuple[int, str]] = set()
 
+    def serves(self, instrumented_sources: InstrumentedSources) -> bool:
+        """Return whether this finder was built for exactly ``instrumented_sources``."""
+        return self._instrumented_sources == instrumented_sources
+
     def find_spec(  # noqa: D102
         self, fullname: str, path: Sequence[str] | None = None, target: ModuleType | None = None
     ) -> importlib.machinery.ModuleSpec | None:
@@ -343,7 +347,7 @@ def install(instrumented_sources: InstrumentedSources) -> GremlinFinder:
     installed_finders: list[Any] = [finder for finder in sys.meta_path if getattr(finder, 'is_gremlin_finder', False)]
     for installed in installed_finders:
         sys.meta_path.remove(installed)
-        if installed._instrumented_sources == instrumented_sources:
+        if installed.serves(instrumented_sources):
             sys.meta_path.insert(0, installed)
             return installed  # type: ignore[no-any-return]
     finder = GremlinFinder(instrumented_sources)
