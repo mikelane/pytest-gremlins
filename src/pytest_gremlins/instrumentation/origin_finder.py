@@ -16,7 +16,6 @@ import copy
 import importlib.abc
 import importlib.machinery
 import os
-from pathlib import Path
 import pickle  # nosec B403 - only the parent's own temp-dir data is unpickled
 import sys
 import threading
@@ -189,6 +188,8 @@ class GremlinLoader(importlib.abc.Loader):
         served by it keeps rewritten assertion messages even though this loader runs the instrumented tree.
         """
         # Imported here, never at the top: this file is inlined into a bootstrap that must not import pytest.
+        from pathlib import Path  # noqa: PLC0415
+
         from _pytest.assertion.rewrite import rewrite_asserts  # noqa: PLC0415
 
         hook: Any = self._original_loader
