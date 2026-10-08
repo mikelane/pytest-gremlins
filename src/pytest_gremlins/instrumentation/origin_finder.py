@@ -6,7 +6,9 @@ instrumented source. Names, ``sys.path`` precedence, packages, editable installs
 therefore behave exactly as they do without gremlins, in every execution mode.
 
 This file is copied verbatim into the generated bootstrap script, which cannot import pytest-gremlins and
-must start fast. Keep it standard-library only and free of ``from __future__`` imports.
+must start fast. Keep it standard-library only and free of ``from __future__`` imports. The one exception is
+``_pytest.assertion.rewrite`` (and ``pathlib`` with it), imported lazily inside the loader and only when pytest's
+assertion-rewrite hook served the module; they are never imported at module level.
 """
 
 import ast
@@ -60,9 +62,9 @@ def _switch_gremlin_id(node: ast.AST) -> str | None:
         and len(test.ops) == 1
         and isinstance(test.ops[0], ast.Eq)
         and len(test.comparators) == 1
-        and isinstance(test.comparators[0], ast.Constant)
     )
-    return str(test.comparators[0].value) if is_active_check else None  # type: ignore[attr-defined]
+    comparator = test.comparators[0] if is_active_check else None
+    return str(comparator.value) if isinstance(comparator, ast.Constant) else None
 
 
 class _SwitchIds(ast.NodeVisitor):
@@ -113,8 +115,8 @@ def _specialize_assert(node: ast.Assert) -> ast.stmt:
             comparators=[ast.Constant(value=gremlin_id)],
         )
         fallthrough = [ast.If(test=check, body=[_resolve_assert(node, gremlin_id)], orelse=fallthrough)]
-    chosen: ast.stmt = ast.copy_location(fallthrough[0], node)
-    return ast.fix_missing_locations(chosen)
+    dispatch: ast.stmt = ast.copy_location(fallthrough[0], node)
+    return ast.fix_missing_locations(dispatch)
 
 
 def _resolve_assert(node: ast.Assert, active_id: str | None) -> ast.Assert:
@@ -194,7 +196,7 @@ class GremlinLoader(importlib.abc.Loader):
 
     def _compile_source(self, module: ModuleType) -> CodeType:
         """Compile the shipped source text, asserting like pytest would when pytest's hook served the module."""
-        if not self._is_pytest_rewrite_hook():
+        if not self._original_loader_is_rewrite_hook():
             # The source is our own AST transformation of the user's file, not untrusted input.
             return compile(self._source, module.__name__, 'exec')
         try:
@@ -205,10 +207,13 @@ class GremlinLoader(importlib.abc.Loader):
             # A tree too deep to unpickle is too deep to parse and rewrite: the module runs with plain asserts.
             return compile(self._source, module.__name__, 'exec')
 
-    def _is_pytest_rewrite_hook(self) -> bool:
-        """Tell whether pytest's assertion-rewrite hook found this module, without importing pytest."""
-        hook_type = type(self._original_loader)
-        return hook_type.__module__ == '_pytest.assertion.rewrite' and hook_type.__name__ == 'AssertionRewritingHook'
+    def _original_loader_is_rewrite_hook(self) -> bool:
+        """Tell whether pytest's assertion-rewrite hook found this module, without importing pytest.
+
+        The class is recognised by its module alone: the hook is the only loader that module puts on
+        ``sys.meta_path``, so a rename of the class cannot silently turn rewriting off.
+        """
+        return type(self._original_loader).__module__ == '_pytest.assertion.rewrite'
 
     def _rewrite_asserts(self, tree: ast.Module, source_bytes: bytes, module: ModuleType) -> None:
         """Rewrite the asserts in ``tree`` and record the module as rewritten, as pytest's own loader does.
@@ -235,7 +240,7 @@ class GremlinLoader(importlib.abc.Loader):
             # The parent wrote this tree into its own temp directory from our own transformation of the user's
             # file; it is not untrusted input.
             tree: ast.Module = pickle.loads(base64.b64decode(self._encoded_tree))  # noqa: S301  # nosec B301
-            if self._is_pytest_rewrite_hook():
+            if self._original_loader_is_rewrite_hook():
                 with open(module.__spec__.origin, 'rb') as source_file:  # type: ignore[union-attr, arg-type]  # noqa: PTH123
                     self._rewrite_asserts(tree, source_file.read(), module)
             return compile(tree, module.__spec__.origin, 'exec', dont_inherit=True)  # type: ignore[union-attr, arg-type]

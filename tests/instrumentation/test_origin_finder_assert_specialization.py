@@ -215,6 +215,18 @@ class DescribeGremlinLoaderRewritesSourceForPytestsHook:
 
         assert hook._rewritten_names == {'recorded_mod': Path(self.ORIGIN)}
 
+    def it_explains_asserts_when_pytest_renames_its_hook_class(self, pytestconfig: pytest.Config) -> None:
+        class RenamedRewriteLoader(AssertionRewritingHook):
+            pass
+
+        RenamedRewriteLoader.__module__ = '_pytest.assertion.rewrite'
+        module = _module_from('renamed_hook_mod', self.ORIGIN)
+
+        GremlinLoader(None, RenamedRewriteLoader(pytestconfig), source=self.PLAIN_SOURCE).exec_module(module)
+
+        with pytest.raises(AssertionError, match=r'assert -1 > 0'):
+            module.check(-1)
+
     def it_runs_plain_asserts_when_rewriting_overflows_the_stack(
         self, pytestconfig: pytest.Config, monkeypatch: pytest.MonkeyPatch
     ) -> None:
