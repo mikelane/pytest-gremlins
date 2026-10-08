@@ -92,39 +92,68 @@ class _ResolveSwitches(ast.NodeTransformer):
         return super().generic_visit(node)
 
 
-class _SpecializeAsserts(ast.NodeTransformer):
-    """Give each assert whose condition holds gremlin switches one plain assert per gremlin.
+def _specialize_assert(node: ast.Assert) -> ast.stmt:
+    """Return ``node``, or when its condition holds gremlin switches, one plain assert per gremlin.
 
     pytest explains a failed assert by walking its condition, and a ``mutated if active == 'id' else original``
     switch is opaque to that walk: the message would lose every operand. Choosing the branch with an ``if``
     statement around ordinary asserts lets pytest's rewriter explain each of them as it does without gremlins.
     """
-
-    def visit_Assert(self, node: ast.Assert) -> ast.AST:
-        collector = _SwitchIds()
-        collector.visit(node.test)
-        if node.msg is not None:
-            collector.visit(node.msg)
-        if not collector.ids:
-            return node
-        fallthrough: list[ast.stmt] = [_resolve_assert(node, None)]
-        for gremlin_id in reversed(collector.ids):
-            check = ast.Compare(
-                left=ast.Name(id='__gremlin_active__', ctx=ast.Load()),
-                ops=[ast.Eq()],
-                comparators=[ast.Constant(value=gremlin_id)],
-            )
-            fallthrough = [ast.If(test=check, body=[_resolve_assert(node, gremlin_id)], orelse=fallthrough)]
-        return ast.fix_missing_locations(ast.copy_location(fallthrough[0], node))
+    collector = _SwitchIds()
+    collector.visit(node.test)
+    if node.msg is not None:
+        collector.visit(node.msg)
+    if not collector.ids:
+        return node
+    fallthrough: list[ast.stmt] = [_resolve_assert(node, None)]
+    for gremlin_id in reversed(collector.ids):
+        check = ast.Compare(
+            left=ast.Name(id='__gremlin_active__', ctx=ast.Load()),
+            ops=[ast.Eq()],
+            comparators=[ast.Constant(value=gremlin_id)],
+        )
+        fallthrough = [ast.If(test=check, body=[_resolve_assert(node, gremlin_id)], orelse=fallthrough)]
+    chosen: ast.stmt = ast.copy_location(fallthrough[0], node)
+    return ast.fix_missing_locations(chosen)
 
 
 def _resolve_assert(node: ast.Assert, active_id: str | None) -> ast.Assert:
     return _ResolveSwitches(active_id).visit(copy.deepcopy(node))  # type: ignore[no-any-return]
 
 
+def _nested_statement_lists(node: ast.stmt) -> list[list[ast.stmt]]:
+    """Return the statement lists directly inside ``node``: bodies, else-branches, handlers and match cases."""
+    nested: list[list[ast.stmt]] = []
+    for _, value in ast.iter_fields(node):
+        if not isinstance(value, list):
+            continue
+        if value and all(isinstance(item, ast.stmt) for item in value):
+            nested.append(value)
+        else:
+            nested.extend(item.body for item in value if isinstance(item, (ast.ExceptHandler, ast.match_case)))
+    return nested
+
+
 def _specialize_asserts(tree: ast.Module) -> ast.Module:
-    specialized: ast.Module = _SpecializeAsserts().visit(tree)
-    return ast.fix_missing_locations(specialized)
+    """Specialize every assert in ``tree`` in place, walking statements with an explicit stack.
+
+    A module the parent could instrument is nested as deep as a few hundred ``elif`` branches, which a recursive
+    walk over the whole module cannot always survive. Only the one assert's own expression is walked
+    recursively, and an assert that still overflows the stack is left as it is: it then runs with the
+    switch in its condition, its message unexplained, but the module keeps every other rewritten assert.
+    """
+    pending: list[list[ast.stmt]] = [tree.body]
+    while pending:
+        statements = pending.pop()
+        for index, statement in enumerate(statements):
+            if isinstance(statement, ast.Assert):
+                try:
+                    statements[index] = _specialize_assert(statement)
+                except RecursionError:
+                    continue
+            else:
+                pending.extend(_nested_statement_lists(statement))
+    return tree
 
 
 class GremlinLoader(importlib.abc.Loader):

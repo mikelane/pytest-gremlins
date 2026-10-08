@@ -159,12 +159,10 @@ class DescribeRewriteHookTargetAssertions:
 
 
 _DEEP_BRANCHES = 470
-_IMPORT_CHAIN_LENGTH = 40
 
 _DEEP_TARGET_TESTS = """
 import pytest
 
-import mypkg.link_0
 from mypkg.deep_impl import check_positive
 
 
@@ -187,11 +185,11 @@ def _deep_target_source() -> str:
 @pytest.mark.medium
 @pytest.mark.usefixtures('utf8_child_output')
 class DescribeDeepRewriteHookTargetAssertions:
-    """A deep target the rewrite hook serves keeps rewritten assert messages when specialization runs out of stack.
+    """A deep target the rewrite hook serves keeps rewritten assert messages.
 
-    The parent instruments a few hundred ``elif`` branches, and pytest's own rewriter walks them iteratively, but
-    the recursive assert specialization raises ``RecursionError`` once the module is imported through a chain of
-    imports. The loader then compiles the source with plain asserts, and the survivor is reported ZAPPED again.
+    The parent instruments a few hundred ``elif`` branches. A recursive walk over the module to specialize its
+    asserts overflowed the stack, the loader fell back to plain asserts, and the survivor was reported ZAPPED.
+    The target is imported directly: how much stack a longer import chain leaves differs per platform.
     """
 
     def it_keeps_a_deep_targets_survivor_when_a_test_reads_its_assert_message(
@@ -202,9 +200,6 @@ class DescribeDeepRewriteHookTargetAssertions:
         package.mkdir(parents=True)
         package.joinpath('__init__.py').write_text('')
         package.joinpath('deep_impl.py').write_text(_deep_target_source())
-        for link in range(_IMPORT_CHAIN_LENGTH):
-            package.joinpath(f'link_{link}.py').write_text(f'import mypkg.link_{link + 1}\n')
-        package.joinpath(f'link_{_IMPORT_CHAIN_LENGTH}.py').write_text('import mypkg.deep_impl\n')
         pytester_with_markers.mkdir('tests').joinpath('test_messages.py').write_text(_DEEP_TARGET_TESTS)
 
         result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg/deep_impl.py')
