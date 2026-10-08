@@ -307,6 +307,8 @@ The coverage module integrates with coverage.py's dynamic context feature:
 ```text
 pytest_sessionfinish:
     1. Run: coverage run --dynamic-context=test_function pytest
+       (the node ids are handed over in a file, not on the command line,
+       so a large suite stays under Windows' 32,767 character limit)
     2. Open .coverage SQLite database
     3. Query contexts (test names) and their covered lines
     4. Build CoverageMap from query results
