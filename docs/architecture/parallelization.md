@@ -240,15 +240,15 @@ A child started with the `spawn` (or `forkserver`) start method is a fresh inter
 inherits the import finder the bootstrap installed in the test process. Before #604 it ran the original
 code, and a gremlin that only that child exercised was reported SURVIVED even when the tests caught it.
 
-Each gremlin run now exports three things that a spawned child inherits through its environment:
+Each gremlin's test run sets three environment variables, and a spawned child inherits all of them:
 
-- `PYTEST_GREMLINS_SOURCES_FILE`, the instrumented sources.
+- `PYTEST_GREMLINS_SOURCES_FILE`, the path to the instrumented sources.
 - `ACTIVE_GREMLIN`, the gremlin under test.
-- `PYTHONPATH`, with a `spawn_hook` directory prepended to whatever was there. It holds one file,
-  `sitecustomize.py`, which installs the same finder at interpreter start-up. Python runs the first
-  `sitecustomize` on `sys.path`, so the hook then finds and runs the next one itself (coverage.py's
-  subprocess support relies on one). It lives in a directory of its own so that nothing else from the
-  gremlin temp directory becomes importable.
+- `PYTHONPATH`, with a `spawn_hook` directory prepended to whatever was there. That directory holds one
+  file, `sitecustomize.py`, which installs the same finder at interpreter start-up. Python imports only
+  the first `sitecustomize` it finds on `sys.path`, so the hook shadows any of yours (coverage.py's
+  subprocess measurement can use one); it therefore finds and runs the next one itself. The directory
+  holds nothing else, so no other file from the gremlin temp directory becomes importable.
 
 The hook serves only an interpreter of the same implementation and `(major, minor)` version as the one that
 wrote the sources, which the generated `sitecustomize.py` embeds. The shipped trees are pickled ASTs, and
@@ -260,14 +260,15 @@ unpickle a tree.
 The part of the hook that runs before that version check, and its chaining to your own `sitecustomize`, parse
 and run on every interpreter from Python 2.7 up. The finder's source does not (it evaluates `X | None` at
 import), so the hook carries it as a string and compiles it only after the check passes. An older interpreter
-such as macOS's `/usr/bin/python3` (3.9) therefore starts cleanly: nothing on its stderr, and your
-`sitecustomize` still runs once.
+such as Python 3.9 therefore starts cleanly: nothing on its stderr, and your `sitecustomize` still runs
+once.
 
-If the hook cannot read the sources file, the child still starts, so your tests are not hidden behind a
-start-up failure, and it prints a `pytest-gremlins:` warning on stderr: that child runs the original code.
+If the hook cannot install the finder (for example, the sources file is missing or unreadable), the child
+still starts, so your tests are not hidden behind a start-up failure. It prints a `pytest-gremlins:` warning
+and a traceback on stderr, and that child runs the original code.
 
-Limitation: an interpreter started with `-E`, `-I` or `-S` ignores `PYTHONPATH` or skips `sitecustomize`,
-so a child started that way still runs the original code.
+Limitation: `-E` and `-I` make an interpreter ignore `PYTHONPATH`, and `-S` skips the `site` import that
+loads `sitecustomize`, so a child started with any of them still runs the original code.
 
 ### Cached results
 

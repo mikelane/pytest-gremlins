@@ -62,6 +62,7 @@ def target(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def sources_file(tmp_path: Path, target: Path) -> Path:
+    """A ``sources.json`` that serves the instrumented text of ``target``."""
     path = tmp_path / 'sources.json'
     path.write_text(json.dumps(_sources_for(target)))
     return path
@@ -69,6 +70,7 @@ def sources_file(tmp_path: Path, target: Path) -> Path:
 
 @pytest.fixture
 def hook_dir(tmp_path: Path) -> Path:
+    """The directory holding a freshly written spawn hook for this interpreter."""
     return write_spawn_hook(tmp_path)
 
 
@@ -169,13 +171,15 @@ class DescribeSpawnHookScript:
     def it_runs_the_sitecustomize_the_hook_shadows(
         self, tmp_path: Path, run_child: RunChild, sources_file: Path, hook_dir: Path
     ) -> None:
-        users = tmp_path / 'users_site'
-        users.mkdir()
-        users.joinpath('sitecustomize.py').write_text('import os\nos.environ["USERS_SITECUSTOMIZE_RAN"] = "yes"\n')
+        users_site_dir = tmp_path / 'users_site'
+        users_site_dir.mkdir()
+        users_site_dir.joinpath('sitecustomize.py').write_text(
+            'import os\nos.environ["USERS_SITECUSTOMIZE_RAN"] = "yes"\n'
+        )
 
         completed = run_child(
             'import os, spawn_target; print(os.environ.get("USERS_SITECUSTOMIZE_RAN"), spawn_target.VALUE)',
-            hook_path=os.pathsep.join([str(hook_dir), str(users)]),
+            hook_path=os.pathsep.join([str(hook_dir), str(users_site_dir)]),
             **{SOURCES_FILE_ENV_VAR: str(sources_file)},
         )
 
@@ -187,32 +191,31 @@ class DescribeSpawnHookScript:
         enclosing_run = tmp_path / 'enclosing_run'
         enclosing_run.mkdir()
         enclosing_hook_dir = write_spawn_hook(enclosing_run)
-        users = tmp_path / 'users_site'
-        users.mkdir()
-        users.joinpath('sitecustomize.py').write_text('import os\nos.environ["USERS_SITECUSTOMIZE_RAN"] = "yes"\n')
+        users_site_dir = tmp_path / 'users_site'
+        users_site_dir.mkdir()
+        users_site_dir.joinpath('sitecustomize.py').write_text(
+            'import os\n'
+            'os.environ["USERS_SITECUSTOMIZE_RUNS"] = str(int(os.environ.get("USERS_SITECUSTOMIZE_RUNS", "0")) + 1)\n'
+        )
 
         completed = run_child(
-            'import os, spawn_target; print(os.environ.get("USERS_SITECUSTOMIZE_RAN"), spawn_target.VALUE)',
-            hook_path=os.pathsep.join([str(hook_dir), str(enclosing_hook_dir), str(users)]),
+            'import os, spawn_target; print(os.environ.get("USERS_SITECUSTOMIZE_RUNS"), spawn_target.VALUE)',
+            hook_path=os.pathsep.join([str(hook_dir), str(enclosing_hook_dir), str(users_site_dir)]),
             **{SOURCES_FILE_ENV_VAR: str(sources_file)},
         )
 
-        assert (completed.returncode, completed.stdout.strip(), 'RecursionError' in completed.stderr) == (
-            0,
-            'yes instrumented',
-            False,
-        )
+        assert (completed.returncode, completed.stdout.strip(), completed.stderr) == (0, '1 instrumented', '')
 
     def it_reports_a_failing_sitecustomize_it_chains_and_still_installs_the_finder(
         self, tmp_path: Path, run_child: RunChild, sources_file: Path, hook_dir: Path
     ) -> None:
-        users = tmp_path / 'users_site'
-        users.mkdir()
-        users.joinpath('sitecustomize.py').write_text('raise RuntimeError("users sitecustomize is broken")\n')
+        users_site_dir = tmp_path / 'users_site'
+        users_site_dir.mkdir()
+        users_site_dir.joinpath('sitecustomize.py').write_text('raise RuntimeError("users sitecustomize is broken")\n')
 
         completed = run_child(
             'import spawn_target; print(spawn_target.VALUE)',
-            hook_path=os.pathsep.join([str(hook_dir), str(users)]),
+            hook_path=os.pathsep.join([str(hook_dir), str(users_site_dir)]),
             **{SOURCES_FILE_ENV_VAR: str(sources_file)},
         )
 
@@ -225,6 +228,21 @@ class DescribeSpawnHookScript:
             'instrumented',
             True,
         )
+
+    def it_keeps_itself_as_the_sitecustomize_module_when_the_one_it_chains_fails(
+        self, tmp_path: Path, run_child: RunChild, sources_file: Path, hook_dir: Path
+    ) -> None:
+        users_site_dir = tmp_path / 'users_site'
+        users_site_dir.mkdir()
+        users_site_dir.joinpath('sitecustomize.py').write_text('raise RuntimeError("users sitecustomize is broken")\n')
+
+        completed = run_child(
+            'import pathlib, sys; print(pathlib.Path(sys.modules["sitecustomize"].__file__).parent.name)',
+            hook_path=os.pathsep.join([str(hook_dir), str(users_site_dir)]),
+            **{SOURCES_FILE_ENV_VAR: str(sources_file)},
+        )
+
+        assert (completed.returncode, completed.stdout.strip()) == (0, SPAWN_HOOK_DIRNAME)
 
     def it_serves_the_original_source_to_an_interpreter_of_another_python_version(
         self, tmp_path: Path, run_child: RunChild, sources_file: Path
@@ -256,13 +274,15 @@ class DescribeSpawnHookScript:
         self, tmp_path: Path, run_child: RunChild, sources_file: Path
     ) -> None:
         hook_dir = write_spawn_hook(tmp_path / 'other', implementation=sys.implementation.name, version=(2, 7))
-        users = tmp_path / 'users_site'
-        users.mkdir()
-        users.joinpath('sitecustomize.py').write_text('import os\nos.environ["USERS_SITECUSTOMIZE_RAN"] = "yes"\n')
+        users_site_dir = tmp_path / 'users_site'
+        users_site_dir.mkdir()
+        users_site_dir.joinpath('sitecustomize.py').write_text(
+            'import os\nos.environ["USERS_SITECUSTOMIZE_RAN"] = "yes"\n'
+        )
 
         completed = run_child(
             'import os, spawn_target; print(os.environ.get("USERS_SITECUSTOMIZE_RAN"), spawn_target.VALUE)',
-            hook_path=os.pathsep.join([str(hook_dir), str(users)]),
+            hook_path=os.pathsep.join([str(hook_dir), str(users_site_dir)]),
             **{SOURCES_FILE_ENV_VAR: str(sources_file)},
         )
 
@@ -271,19 +291,21 @@ class DescribeSpawnHookScript:
     def it_says_so_on_stderr_and_lets_the_interpreter_start_when_the_sources_cannot_be_read(
         self, tmp_path: Path, run_child: RunChild, hook_dir: Path
     ) -> None:
-        missing = tmp_path / 'no_such_sources.json'
+        missing_sources_file = tmp_path / 'no_such_sources.json'
 
         completed = run_child(
             'import spawn_target; print(spawn_target.VALUE)',
             hook_path=str(hook_dir),
-            **{SOURCES_FILE_ENV_VAR: str(missing)},
+            **{SOURCES_FILE_ENV_VAR: str(missing_sources_file)},
         )
 
-        assert (completed.returncode, completed.stdout.strip(), 'pytest-gremlins' in completed.stderr) == (
-            0,
-            'original',
-            True,
-        )
+        assert (
+            completed.returncode,
+            completed.stdout.strip(),
+            f'pytest-gremlins: could not install the import finder in this interpreter ({missing_sources_file})'
+            in completed.stderr,
+            'FileNotFoundError' in completed.stderr,
+        ) == (0, 'original', True, True)
 
 
 @pytest.mark.small
@@ -296,15 +318,16 @@ class DescribeSpawnHookOnAnOldInterpreter:
     """
 
     def it_parses_under_the_python_3_6_grammar(self) -> None:
-        ast.parse(get_spawn_hook_script(), feature_version=(3, 6))
+        tree = ast.parse(get_spawn_hook_script(), feature_version=(3, 6))
+
+        assert isinstance(tree, ast.Module)
 
     def it_defines_nothing_of_the_finder_at_module_level(self) -> None:
         tree = ast.parse(get_spawn_hook_script())
 
         definitions = {node.name for node in tree.body if isinstance(node, (ast.ClassDef, ast.FunctionDef))}
 
-        assert 'install' not in definitions
-        assert 'GremlinFinder' not in definitions
+        assert definitions & {'install', 'GremlinFinder'} == set()
 
     def it_does_not_run_the_finder_source_in_an_interpreter_of_another_version(
         self,
@@ -368,8 +391,9 @@ class DescribeExportSpawnHook:
 
         assert env['PYTHONPATH'] == os.pathsep.join([str(tmp_path / SPAWN_HOOK_DIRNAME), '/users/path'])
 
-    def it_sets_the_python_path_when_there_was_none(self, tmp_path: Path) -> None:
-        env = {SOURCES_FILE_ENV_VAR: str(tmp_path / 'sources.json')}
+    @pytest.mark.parametrize('inherited', [pytest.param({}, id='unset'), pytest.param({'PYTHONPATH': ''}, id='empty')])
+    def it_sets_the_python_path_when_there_was_none(self, tmp_path: Path, inherited: dict[str, str]) -> None:
+        env = {SOURCES_FILE_ENV_VAR: str(tmp_path / 'sources.json'), **inherited}
 
         export_spawn_hook(env)
 

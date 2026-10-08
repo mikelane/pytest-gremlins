@@ -146,16 +146,16 @@ def _find_next_sitecustomize():
 
     Return its origin and a function that runs it, or ``(None, None)``.
     """
-    skipped = {_real_directory(os.path.dirname(__file__))}
+    skipped_directories = {_real_directory(os.path.dirname(__file__))}
     while True:
-        others = [entry for entry in sys.path if _real_directory(entry) not in skipped]
-        origin, load = _find_origin(others)
+        remaining_entries = [entry for entry in sys.path if _real_directory(entry) not in skipped_directories]
+        origin, load = _find_origin(remaining_entries)
         if origin is None or not _is_gremlin_hook(origin):
             return origin, load
         hook_directory = _real_directory(os.path.dirname(origin))
-        if hook_directory in skipped:
+        if hook_directory in skipped_directories:
             return None, None
-        skipped.add(hook_directory)
+        skipped_directories.add(hook_directory)
 
 
 def _run_next_sitecustomize():
@@ -223,6 +223,8 @@ def export_spawn_hook(env: MutableMapping[str, str]) -> None:
     if not sources_file:
         return
     hook_dir = str(Path(sources_file).parent / SPAWN_HOOK_DIRNAME)
-    existing = env.get('PYTHONPATH')
-    inherited = [entry for entry in existing.split(os.pathsep) if entry != hook_dir] if existing else []
-    env['PYTHONPATH'] = os.pathsep.join([hook_dir, *inherited])
+    existing_pythonpath = env.get('PYTHONPATH')
+    inherited_entries = (
+        [entry for entry in existing_pythonpath.split(os.pathsep) if entry != hook_dir] if existing_pythonpath else []
+    )
+    env['PYTHONPATH'] = os.pathsep.join([hook_dir, *inherited_entries])

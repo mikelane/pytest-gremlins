@@ -62,13 +62,13 @@ def _gremlin_exported_to_children(gremlin_id: str) -> Iterator[None]:
     ``__gremlin_active__`` attribute toggled below, so without this it would see no active gremlin. The
     environment is restored on exit.
     """
-    saved = {name: os.environ.get(name) for name in _SPAWN_ENV_VARS}
+    saved_env_values = {name: os.environ.get(name) for name in _SPAWN_ENV_VARS}
     os.environ[ACTIVE_GREMLIN_ENV_VAR] = gremlin_id
     export_spawn_hook(os.environ)
     try:
         yield
     finally:
-        for name, value in saved.items():
+        for name, value in saved_env_values.items():
             if value is None:
                 os.environ.pop(name, None)
             else:

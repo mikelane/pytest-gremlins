@@ -360,11 +360,11 @@ def install(instrumented_sources: InstrumentedSources) -> GremlinFinder:
     other sources is replaced.
     """
     installed_finders: list[Any] = [finder for finder in sys.meta_path if getattr(finder, 'is_gremlin_finder', False)]
-    for installed in installed_finders:
-        sys.meta_path.remove(installed)
-        if installed.serves(instrumented_sources):
-            sys.meta_path.insert(0, installed)
-            return installed  # type: ignore[no-any-return]
+    for installed_finder in installed_finders:
+        sys.meta_path.remove(installed_finder)
+        if installed_finder.serves(instrumented_sources):
+            sys.meta_path.insert(0, installed_finder)
+            return installed_finder  # type: ignore[no-any-return]
     finder = GremlinFinder(instrumented_sources)
     sys.meta_path.insert(0, finder)
     return finder

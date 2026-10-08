@@ -21,13 +21,13 @@ GREMLIN_DIR = Path(os.sep) / 'gremlin_dir'
 SOURCES_FILE = str(GREMLIN_DIR / 'sources.json')
 HOOK_DIR = str(GREMLIN_DIR / SPAWN_HOOK_DIRNAME)
 
-Seen = list[dict[str, object]]
+RecordedEnvironments = list[dict[str, object]]
 
 
 @pytest.fixture
-def seen(monkeypatch: pytest.MonkeyPatch) -> Seen:
+def recorded_environments(monkeypatch: pytest.MonkeyPatch) -> RecordedEnvironments:
     """Install an instrumented module and a test that records what a spawn child would inherit."""
-    recorded: Seen = []
+    recorded: RecordedEnvironments = []
     target = types.ModuleType(TARGET)
     target.__gremlin_active__ = None  # type: ignore[attr-defined]
     tests = types.ModuleType(TESTS)
@@ -50,7 +50,7 @@ def seen(monkeypatch: pytest.MonkeyPatch) -> Seen:
     return recorded
 
 
-def _run(gremlin_ids: list[str]) -> None:
+def _execute_gremlins(gremlin_ids: list[str]) -> None:
     InProcessExecutor().execute(gremlin_ids, dict.fromkeys(gremlin_ids, TARGET), [f'{TESTS}::test_records_environment'])
 
 
@@ -58,24 +58,30 @@ def _run(gremlin_ids: list[str]) -> None:
 class DescribeInProcessExecutorExportsTheSpawnEnvironment:
     """While a gremlin is active, ``os.environ`` carries what a spawn child needs to run the same gremlin."""
 
-    def it_exports_the_active_gremlin_and_the_hook_while_the_tests_run(self, seen: Seen) -> None:
-        _run(['g001'])
+    def it_exports_the_active_gremlin_and_the_hook_while_the_tests_run(
+        self, recorded_environments: RecordedEnvironments
+    ) -> None:
+        _execute_gremlins(['g001'])
 
-        assert [(entry['ACTIVE_GREMLIN'], entry['PYTHONPATH']) for entry in seen] == [
+        assert [(entry['ACTIVE_GREMLIN'], entry['PYTHONPATH']) for entry in recorded_environments] == [
             ('g001', os.pathsep.join([HOOK_DIR, '/users/path']))
         ]
 
-    def it_exports_each_gremlin_in_turn(self, seen: Seen) -> None:
-        _run(['g001', 'g002'])
+    def it_exports_each_gremlin_in_turn(self, recorded_environments: RecordedEnvironments) -> None:
+        _execute_gremlins(['g001', 'g002'])
 
-        assert [entry['ACTIVE_GREMLIN'] for entry in seen] == ['g001', 'g002']
+        assert [entry['ACTIVE_GREMLIN'] for entry in recorded_environments] == ['g001', 'g002']
 
-    def it_restores_the_environment_afterwards(self, seen: Seen) -> None:
-        _run(['g001'])
+    def it_restores_the_environment_afterwards(self, recorded_environments: RecordedEnvironments) -> None:
+        _execute_gremlins(['g001'])
 
-        assert (len(seen), os.environ.get('ACTIVE_GREMLIN'), os.environ['PYTHONPATH']) == (1, None, '/users/path')
+        assert (len(recorded_environments), os.environ.get('ACTIVE_GREMLIN'), os.environ['PYTHONPATH']) == (
+            1,
+            None,
+            '/users/path',
+        )
 
-    def it_keeps_toggling_the_module_attribute(self, seen: Seen) -> None:
-        _run(['g001'])
+    def it_keeps_toggling_the_module_attribute(self, recorded_environments: RecordedEnvironments) -> None:
+        _execute_gremlins(['g001'])
 
-        assert [entry['attribute'] for entry in seen] == ['g001']
+        assert [entry['attribute'] for entry in recorded_environments] == ['g001']
