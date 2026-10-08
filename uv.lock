@@ -1798,6 +1798,7 @@ docs = [
 [package.dev-dependencies]
 dev = [
     { name = "commitizen" },
+    { name = "identify" },
     { name = "isort" },
     { name = "mkdocs" },
     { name = "mkdocs-material", extra = ["imaging"] },
@@ -1810,6 +1811,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-test-categories" },
     { name = "pytest-xdist" },
+    { name = "pyyaml" },
     { name = "ruff" },
     { name = "tox" },
     { name = "tox-uv" },
@@ -1835,6 +1837,7 @@ provides-extras = ["docs"]
 [package.metadata.requires-dev]
 dev = [
     { name = "commitizen", specifier = ">=4.18.1" },
+    { name = "identify", specifier = ">=2.5.0" },
     { name = "isort", specifier = ">=9.0.1" },
     { name = "mkdocs", specifier = ">=1.5.0" },
     { name = "mkdocs-material", extras = ["imaging"], specifier = ">=9.7.7" },
@@ -1847,6 +1850,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=4.1.0" },
     { name = "pytest-test-categories", specifier = ">=1.2.2" },
     { name = "pytest-xdist", specifier = ">=3.5.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", specifier = ">=0.1.6" },
     { name = "tox", specifier = ">=4.61.5" },
     { name = "tox-uv", specifier = ">=1.36.0" },
