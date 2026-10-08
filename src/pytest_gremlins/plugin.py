@@ -1736,7 +1736,7 @@ def main():
     # that cannot be read exits with pytest's usage error code, never 1, which would score as a kill.
     try:
         pytest_args = args_with_node_ids_from_file(sys.argv[1:])
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, RecursionError, MemoryError) as error:
         print(f'Error: cannot read the node ids for this run: {error}', file=sys.stderr)
         sys.exit(int(pytest.ExitCode.USAGE_ERROR))
 
