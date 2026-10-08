@@ -31,8 +31,12 @@ SPAWN_HOOK_DIRNAME = 'spawn_hook'
 
 # The hook cannot import pytest-gremlins (the child may not have it on its path, and startup must stay cheap),
 # so it embeds the finder's source exactly as the bootstrap does.
+_HOOK_FIRST_LINE = (
+    '"""pytest-gremlins: serve instrumented sources to this interpreter, then run the next sitecustomize."""'
+)
+
 _SPAWN_HOOK_TEMPLATE = '''\
-"""pytest-gremlins: serve instrumented sources to this interpreter, then run the next sitecustomize."""
+__HOOK_FIRST_LINE_TEXT__
 
 import importlib.machinery
 import importlib.util
@@ -62,16 +66,40 @@ def _install_gremlin_finder():
         traceback.print_exc()
 
 
+def _real_directory(entry):
+    return os.path.normcase(os.path.realpath(entry or os.getcwd()))
+
+
+def _is_gremlin_hook(spec):
+    try:
+        with open(spec.origin, encoding='utf-8') as candidate:
+            return candidate.readline().startswith(__HOOK_FIRST_LINE__)
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def _find_next_sitecustomize():
+    """Find the sitecustomize this one shadows, looking past the hooks of any enclosing gremlin runs.
+
+    Each enclosing run leaves its own hook directory on PYTHONPATH. Every hook does the same job, so chaining to
+    one would only make the two hand control back and forth until the stack ran out.
+    """
+    skipped = {_real_directory(os.path.dirname(__file__))}
+    while True:
+        others = [entry for entry in sys.path if _real_directory(entry) not in skipped]
+        spec = importlib.machinery.PathFinder.find_spec('sitecustomize', others)
+        if spec is None or spec.loader is None or not _is_gremlin_hook(spec):
+            return spec
+        hook_directory = _real_directory(os.path.dirname(spec.origin))
+        if hook_directory in skipped:
+            return None
+        skipped.add(hook_directory)
+
+
 def _run_next_sitecustomize():
     """Run the sitecustomize this one shadows, as Python would have if the hook were not first on the path."""
-    own_directory = os.path.normcase(os.path.realpath(os.path.dirname(__file__)))
-    others = [
-        entry
-        for entry in sys.path
-        if os.path.normcase(os.path.realpath(entry or os.getcwd())) != own_directory
-    ]
-    spec = importlib.machinery.PathFinder.find_spec('sitecustomize', others)
-    if spec is None or spec.loader is None:
+    spec = _find_next_sitecustomize()
+    if spec is None:
         return
     own_module = sys.modules.get(__name__)
     module = importlib.util.module_from_spec(spec)
@@ -93,8 +121,11 @@ _run_next_sitecustomize()
 
 def get_spawn_hook_script() -> str:
     """Return the source of the ``sitecustomize.py`` that installs the finder in a fresh interpreter."""
-    return _SPAWN_HOOK_TEMPLATE.replace('__SOURCES_FILE_ENV_VAR__', SOURCES_FILE_ENV_VAR).replace(
-        '__ORIGIN_FINDER_SOURCE__', inspect.getsource(origin_finder)
+    return (
+        _SPAWN_HOOK_TEMPLATE.replace('__HOOK_FIRST_LINE_TEXT__', _HOOK_FIRST_LINE)
+        .replace('__HOOK_FIRST_LINE__', repr(_HOOK_FIRST_LINE))
+        .replace('__SOURCES_FILE_ENV_VAR__', SOURCES_FILE_ENV_VAR)
+        .replace('__ORIGIN_FINDER_SOURCE__', inspect.getsource(origin_finder))
     )
 
 

@@ -181,6 +181,28 @@ class DescribeSpawnHookScript:
 
         assert (completed.returncode, completed.stdout.strip()) == (0, 'yes instrumented')
 
+    def it_chains_past_the_hook_of_an_enclosing_gremlin_run_to_the_users_sitecustomize(
+        self, tmp_path: Path, run_child: RunChild, sources_file: Path, hook_dir: Path
+    ) -> None:
+        enclosing_run = tmp_path / 'enclosing_run'
+        enclosing_run.mkdir()
+        enclosing_hook_dir = write_spawn_hook(enclosing_run)
+        users = tmp_path / 'users_site'
+        users.mkdir()
+        users.joinpath('sitecustomize.py').write_text('import os\nos.environ["USERS_SITECUSTOMIZE_RAN"] = "yes"\n')
+
+        completed = run_child(
+            'import os, spawn_target; print(os.environ.get("USERS_SITECUSTOMIZE_RAN"), spawn_target.VALUE)',
+            hook_path=os.pathsep.join([str(hook_dir), str(enclosing_hook_dir), str(users)]),
+            **{SOURCES_FILE_ENV_VAR: str(sources_file)},
+        )
+
+        assert (completed.returncode, completed.stdout.strip(), 'RecursionError' in completed.stderr) == (
+            0,
+            'yes instrumented',
+            False,
+        )
+
     def it_reports_a_failing_sitecustomize_it_chains_and_still_installs_the_finder(
         self, tmp_path: Path, run_child: RunChild, sources_file: Path, hook_dir: Path
     ) -> None:
