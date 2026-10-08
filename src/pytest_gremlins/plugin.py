@@ -45,6 +45,7 @@ import coverage
 from coverage.exceptions import CoverageException
 import pytest
 
+from pytest_gremlins import node_id_args
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.types import CachedGremlinResult
@@ -1656,6 +1657,8 @@ import sys
 
 __ORIGIN_FINDER_SOURCE__
 
+__NODE_ID_ARGS_SOURCE__
+
 
 def main():
     sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE')
@@ -1719,8 +1722,17 @@ def main():
     marker = os.path.join(os.path.dirname(sources_file), '__UNATTRIBUTABLE_MARKER__')
     can_attribute_load_failures = not os.path.exists(marker)
 
+    # The parent keeps node ids off the command line (Windows caps it at 32,767 characters) and names a
+    # file holding them; pytest receives the same arguments it would with the ids appended to argv. A file
+    # that cannot be read exits with pytest's usage error code, never 1, which would score as a kill.
+    try:
+        pytest_args = args_with_node_ids_from_file(sys.argv[1:])
+    except (OSError, ValueError) as error:
+        print(f'Error: cannot read the node ids for this run: {error}', file=sys.stderr)
+        sys.exit(int(pytest.ExitCode.USAGE_ERROR))
+
     recorder = SuiteLoadRecorder()
-    exit_code = pytest.main(sys.argv[1:], plugins=[FinderFronter(), recorder])
+    exit_code = pytest.main(pytest_args, plugins=[FinderFronter(), recorder])
     load_failure_exit = exit_code in (pytest.ExitCode.USAGE_ERROR, pytest.ExitCode.INTERRUPTED)
     if can_attribute_load_failures and recorder.suite_failed_to_load and load_failure_exit:
         exit_code = __COLLECTION_FAILED_EXIT_CODE__
@@ -1734,6 +1746,7 @@ if __name__ == '__main__':
         script.replace('__COLLECTION_FAILED_EXIT_CODE__', str(GREMLIN_COLLECTION_FAILED_EXIT_CODE))
         .replace('__UNATTRIBUTABLE_MARKER__', UNATTRIBUTABLE_MARKER)
         .replace('__ORIGIN_FINDER_SOURCE__', inspect.getsource(origin_finder))
+        .replace('__NODE_ID_ARGS_SOURCE__', inspect.getsource(node_id_args))
     )
 
 
