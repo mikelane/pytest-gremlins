@@ -106,7 +106,7 @@ from pytest_gremlins.parallel.lightweight import (
     build_lightweight_command,
     describe_runner_error,
 )
-from pytest_gremlins.parallel.pool import WorkerPool
+from pytest_gremlins.parallel.pool import WorkerPool, WorkerResult
 from pytest_gremlins.reporting.html import (
     HtmlReporter,
     resolve_html_output_path,
@@ -199,6 +199,9 @@ MAX_SELECTION_IDS_IN_MESSAGE = 5
 """Node ids named in a downgraded-timeout message before the rest are summarised as ``(and N more)``."""
 UNMAPPED_SELECTION_PREFIX = 'no verdict: the gremlin has no test to run'
 """Start of the error for a gremlin whose whole selection has no pytest node id (issue #571)."""
+NODE_IDS_WRITE_ERROR_PREFIX = 'no verdict: the node ids file could not be written'
+"""Start of the error for a gremlin whose node ids file write failed, e.g. a full disk or an
+instrumented directory removed mid-run (issue #625)."""
 TIMEOUT_CONFIRMATION_HEADROOM = 0.5
 """Share of ``mutant_timeout`` the unmutated confirmation run may use for a timeout to stay a kill.
 
@@ -2957,11 +2960,24 @@ def _run_batch_mutation_testing(  # pragma: no cover
                 seen_tests.add(test)
                 all_covering_tests.append(test)
 
-    test_command = _build_filtered_test_command(
-        base_test_command,
-        all_covering_tests,
-        gremlin_session,
-    )
+    try:
+        test_command = _build_filtered_test_command(
+            base_test_command,
+            all_covering_tests,
+            gremlin_session,
+        )
+    except OSError as write_error:
+        # One unified command serves the whole batch, so its write failing takes the whole batch's
+        # verdicts: every gremlin still gets an ERROR result, and the run and the report continue.
+        logger.warning(
+            'Node ids file write failed for a batch of %d gremlins: %s',
+            len(gremlins_to_test),
+            write_error,
+        )
+        return [
+            *cached_results,
+            *(_node_ids_write_error_result(gremlin_by_id[gremlin_id], write_error) for gremlin_id in gremlins_to_test),
+        ]
 
     # Execute batches
     executor = BatchExecutor(
@@ -3067,11 +3083,22 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         for gremlin in uncached_gremlins:
             selected_tests = gremlin_tests[gremlin.gremlin_id]
 
-            test_command = _build_filtered_test_command(
-                base_test_command,
-                selected_tests,
-                gremlin_session,
-            )
+            try:
+                test_command = _build_filtered_test_command(
+                    base_test_command,
+                    selected_tests,
+                    gremlin_session,
+                )
+            except OSError as write_error:
+                logger.warning('Node ids file write failed for %s: %s', gremlin.gremlin_id, write_error)
+                aggregator.add_result(
+                    WorkerResult(
+                        gremlin_id=gremlin.gremlin_id,
+                        status=GremlinResultStatus.ERROR,
+                        error_output=_node_ids_write_error_output(write_error),
+                    )
+                )
+                continue
 
             future = pool.submit(
                 gremlin_id=gremlin.gremlin_id,
@@ -3114,13 +3141,20 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             error_output=worker_result.error_output,
             selected_tests=selected_tests,
         )
-        gremlin_result = _confirm_pooled_result(
-            gremlin_result,
-            _build_filtered_test_command(base_test_command, selected_tests, gremlin_session),
-            _node_ids_for_tests(selected_tests, gremlin_session),
-            gremlin_session,
-            rootdir,
-        )
+        try:
+            gremlin_result = _confirm_pooled_result(
+                gremlin_result,
+                _build_filtered_test_command(base_test_command, selected_tests, gremlin_session),
+                _node_ids_for_tests(selected_tests, gremlin_session),
+                gremlin_session,
+                rootdir,
+            )
+        except OSError as write_error:
+            # The worker's own run finished, but the instrumented directory vanished before its
+            # result could be confirmed, so no verdict can be backed anymore: score it ERROR.
+            logger.warning('Node ids file write failed for %s: %s', gremlin.gremlin_id, write_error)
+            results.append(_node_ids_write_error_result(gremlin, write_error))
+            continue
         results.append(gremlin_result)
 
         # Cache the result
@@ -3396,11 +3430,16 @@ def _run_mutation_testing(
 
         _report_gremlin_progress(i, len(gremlin_session.gremlins), gremlin, test_count, total)
 
-        test_command = _build_filtered_test_command(
-            base_test_command,
-            selected_tests,
-            gremlin_session,
-        )
+        try:
+            test_command = _build_filtered_test_command(
+                base_test_command,
+                selected_tests,
+                gremlin_session,
+            )
+        except OSError as write_error:
+            logger.warning('Node ids file write failed for %s: %s', gremlin.gremlin_id, write_error)
+            results.append(_node_ids_write_error_result(gremlin, write_error))
+            continue
         gremlin_result = _test_gremlin(
             gremlin,
             test_command,
@@ -3695,6 +3734,38 @@ def _immediate_result_if_selection_unrunnable(
             f'{UNMAPPED_SELECTION_PREFIX}: {len(dropped)} selected test(s) have no pytest node id, '
             f'so none could run: {shown_ids}{overflow_note}'
         ),
+    )
+
+
+def _node_ids_write_error_output(write_error: OSError) -> str:
+    """Return the diagnostic reported when a gremlin's node ids file cannot be written (issue #625).
+
+    Args:
+        write_error: The ``OSError`` raised while writing the node ids file.
+
+    Returns:
+        The prefixed error message naming the failure, for an ERROR result or a worker result.
+    """
+    return f'{NODE_IDS_WRITE_ERROR_PREFIX}: {write_error}'
+
+
+def _node_ids_write_error_result(gremlin: Gremlin, write_error: OSError) -> GremlinResult:
+    """Return the ERROR result for a gremlin whose node ids file could not be written (issue #625).
+
+    The command could not be built, so no verdict can be backed by a test: the gremlin abstains
+    with an error naming the failure, and the run, the other gremlins and the report continue.
+
+    Args:
+        gremlin: The gremlin whose command could not be built.
+        write_error: The ``OSError`` raised while writing its node ids file.
+
+    Returns:
+        A GremlinResult with ERROR status naming the failure.
+    """
+    return GremlinResult(
+        gremlin=gremlin,
+        status=GremlinResultStatus.ERROR,
+        error_output=_node_ids_write_error_output(write_error),
     )
 
 
