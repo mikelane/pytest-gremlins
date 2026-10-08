@@ -19,14 +19,19 @@ from __future__ import annotations
 from collections.abc import (
     Callable,
     Collection,
+    Iterator,
 )
+from contextlib import contextmanager
 import enum
 import inspect
 import logging
+import os
 import sys
 import time
 from typing import Any
 
+from pytest_gremlins.instrumentation.spawn_hook import export_spawn_hook
+from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
@@ -45,6 +50,29 @@ class _TestOutcome(enum.Enum):
 
 
 logger = logging.getLogger(__name__)
+
+_SPAWN_ENV_VARS = (ACTIVE_GREMLIN_ENV_VAR, 'PYTHONPATH')
+
+
+@contextmanager
+def _gremlin_exported_to_children(gremlin_id: str) -> Iterator[None]:
+    """Export ``gremlin_id`` and the spawn hook through ``os.environ`` for the children this process starts (#604).
+
+    A ``multiprocessing`` spawn child is a fresh interpreter: it inherits the environment, never the
+    ``__gremlin_active__`` attribute toggled below, so without this it would see no active gremlin. The
+    environment is restored on exit.
+    """
+    saved = {name: os.environ.get(name) for name in _SPAWN_ENV_VARS}
+    os.environ[ACTIVE_GREMLIN_ENV_VAR] = gremlin_id
+    export_spawn_hook(os.environ)
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 class InProcessExecutor:
@@ -92,7 +120,8 @@ class InProcessExecutor:
 
         results: list[WorkerResult] = []
         for gremlin_id in gremlin_ids:
-            result = self._test_single_gremlin(gremlin_id, gremlin_module_map, test_specs, ineligible_specs)
+            with _gremlin_exported_to_children(gremlin_id):
+                result = self._test_single_gremlin(gremlin_id, gremlin_module_map, test_specs, ineligible_specs)
             results.append(result)
 
         return results
