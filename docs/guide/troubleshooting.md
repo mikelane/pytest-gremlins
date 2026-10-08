@@ -441,6 +441,30 @@ and the JSON report gains a `timeout_warning` object with the count, the timeout
 
 ---
 
+### Error: Node ids file write fails
+
+**Symptom:**
+
+A gremlin is reported as `ERROR`, with an error text starting with:
+
+```text
+no verdict: the node ids file could not be written
+```
+
+**Cause:** The test command for a gremlin names a file holding its selected node ids, so the file
+is written in the parent before every gremlin run. A full disk, or a temporary-file cleaner removing
+the instrumented directory mid-run, makes that write raise `OSError`. The affected gremlin is scored
+`ERROR` (never a kill or a survivor); the other gremlins, and the run and report, continue. In batch
+mode the whole batch shares one command, so every uncached gremlin in the batch is `ERROR`.
+
+**Solution:**
+
+1. Free disk space, or exclude the temporary directories pytest-gremlins creates (their names start
+   with `pytest_gremlins_`) from temporary-file cleaners.
+2. Re-run pytest-gremlins once the environment can write files again.
+
+---
+
 ### Error: Memory issues with large codebases
 
 **Symptom:**
