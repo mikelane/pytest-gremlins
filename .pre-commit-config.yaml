@@ -32,24 +32,31 @@ repos:
       - id: isort
         files: ^(src|tests)/
 
-  # Ruff - linting and formatting
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.1
+  # Ruff and mypy run from the uv environment so uv.lock is the single source of
+  # truth for tool versions (commit hook, pre-push hook, and CI all agree).
+  # Contributors need `uv sync --dev` before committing.
+  - repo: local
     hooks:
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      - id: ruff-format
-
-  # Type checking
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.1
-    hooks:
-      - id: mypy
-        additional_dependencies:
-          - pytest>=7.0.0
-          - coverage>=7.0.0
-        args: [--strict]
+      - id: ruff-check-fix
+        name: ruff check (uv)
+        entry: uv run ruff check --fix --exit-non-zero-on-fix
+        language: system
+        types_or: [python, pyi]
+        stages: [pre-commit]
+      - id: ruff-format-fix
+        name: ruff format (uv)
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+        stages: [pre-commit]
+      - id: mypy-commit
+        name: mypy (uv, strict via pyproject)
+        entry: uv run mypy src/pytest_gremlins
+        language: system
         files: ^src/
+        types: [python]
+        pass_filenames: false
+        stages: [pre-commit]
 
   # Conventional commits
   - repo: https://github.com/commitizen-tools/commitizen
@@ -147,5 +154,6 @@ ci:
   autoupdate_branch: ''
   autoupdate_commit_msg: 'chore: update pre-commit hook versions'
   autoupdate_schedule: weekly
-  skip: [mypy, cspell]  # mypy needs full deps, cspell may have dict issues in pre-commit.ci
+  # uv-based local hooks need uv and the project env, which pre-commit.ci lacks
+  skip: [ruff-check-fix, ruff-format-fix, mypy-commit, cspell]
   submodules: false

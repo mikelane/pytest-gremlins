@@ -65,6 +65,9 @@ uv run pre-commit install --hook-type commit-msg
 uv run pytest tests/small
 ```
 
+The ruff and mypy pre-commit hooks run through `uv run`, so `uv.lock` pins their versions
+(the same ones CI uses). Run `uv sync --dev` before committing.
+
 ## Development Workflow
 
 ### The Golden Rule: TDD
