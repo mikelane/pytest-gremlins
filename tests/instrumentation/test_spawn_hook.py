@@ -226,6 +226,48 @@ class DescribeSpawnHookScript:
             True,
         )
 
+    def it_serves_the_original_source_to_an_interpreter_of_another_python_version(
+        self, tmp_path: Path, run_child: RunChild, sources_file: Path
+    ) -> None:
+        hook_dir = write_spawn_hook(tmp_path / 'other', implementation=sys.implementation.name, version=(2, 7))
+
+        completed = run_child(
+            'import spawn_target; print(spawn_target.VALUE)',
+            hook_path=str(hook_dir),
+            **{SOURCES_FILE_ENV_VAR: str(sources_file)},
+        )
+
+        assert (completed.returncode, completed.stdout.strip(), completed.stderr) == (0, 'original', '')
+
+    def it_serves_the_original_source_to_an_interpreter_of_another_implementation(
+        self, tmp_path: Path, run_child: RunChild, sources_file: Path
+    ) -> None:
+        hook_dir = write_spawn_hook(tmp_path / 'other', implementation='notpython', version=sys.version_info[:2])
+
+        completed = run_child(
+            'import spawn_target; print(spawn_target.VALUE)',
+            hook_path=str(hook_dir),
+            **{SOURCES_FILE_ENV_VAR: str(sources_file)},
+        )
+
+        assert (completed.returncode, completed.stdout.strip(), completed.stderr) == (0, 'original', '')
+
+    def it_still_runs_the_users_sitecustomize_in_an_interpreter_of_another_python_version(
+        self, tmp_path: Path, run_child: RunChild, sources_file: Path
+    ) -> None:
+        hook_dir = write_spawn_hook(tmp_path / 'other', implementation=sys.implementation.name, version=(2, 7))
+        users = tmp_path / 'users_site'
+        users.mkdir()
+        users.joinpath('sitecustomize.py').write_text('import os\nos.environ["USERS_SITECUSTOMIZE_RAN"] = "yes"\n')
+
+        completed = run_child(
+            'import os, spawn_target; print(os.environ.get("USERS_SITECUSTOMIZE_RAN"), spawn_target.VALUE)',
+            hook_path=os.pathsep.join([str(hook_dir), str(users)]),
+            **{SOURCES_FILE_ENV_VAR: str(sources_file)},
+        )
+
+        assert (completed.returncode, completed.stdout.strip()) == (0, 'yes original')
+
     def it_says_so_on_stderr_and_lets_the_interpreter_start_when_the_sources_cannot_be_read(
         self, tmp_path: Path, run_child: RunChild, hook_dir: Path
     ) -> None:

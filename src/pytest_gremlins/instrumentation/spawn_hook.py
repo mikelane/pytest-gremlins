@@ -13,6 +13,12 @@ spawned child inherits. A ``.pth`` file would not do: those are processed only i
 The hook shadows any ``sitecustomize`` of the user's (``coverage`` relies on one), so it finds and runs the next
 one itself.
 
+The hook serves only an interpreter of the same implementation and ``(major, minor)`` version as the one that
+wrote the sources: the shipped ASTs are pickled, and another version cannot read them (``TypeError`` before
+3.12 reads a 3.13+ tree, ``DeprecationWarning`` the other way round). A test that starts such an interpreter
+(``subprocess.run(['python3.11', ...])``) therefore runs the original code in it, silently, as the control run
+does: at worst a false SURVIVED, never a false ZAPPED.
+
 Limitation: an interpreter started with ``-E``, ``-I`` or ``-S`` ignores ``PYTHONPATH`` or skips ``site``, so a
 child started that way still runs the original code. That is not fixed here.
 """
@@ -23,6 +29,7 @@ from collections.abc import MutableMapping
 import inspect
 import os
 from pathlib import Path
+import sys
 
 from pytest_gremlins.instrumentation import origin_finder
 
@@ -48,9 +55,21 @@ import traceback
 __ORIGIN_FINDER_SOURCE__
 
 
+_PRODUCER_IMPLEMENTATION = __PRODUCER_IMPLEMENTATION__
+_PRODUCER_VERSION = __PRODUCER_VERSION__
+
+
+def _is_producer_interpreter():
+    return (sys.implementation.name, tuple(sys.version_info[:2])) == (_PRODUCER_IMPLEMENTATION, _PRODUCER_VERSION)
+
+
 def _install_gremlin_finder():
     sources_file = os.environ.get('__SOURCES_FILE_ENV_VAR__')
     if not sources_file:
+        return
+    if not _is_producer_interpreter():
+        # The shipped ASTs are pickled and cannot be read by another implementation or minor version. Staying
+        # silent leaves this interpreter running the original code, as the control run does.
         return
     try:
         with open(sources_file, encoding='utf-8') as sources:
@@ -119,21 +138,37 @@ _run_next_sitecustomize()
 '''
 
 
-def get_spawn_hook_script() -> str:
-    """Return the source of the ``sitecustomize.py`` that installs the finder in a fresh interpreter."""
+def get_spawn_hook_script(
+    implementation: str = sys.implementation.name,
+    version: tuple[int, int] = (sys.version_info.major, sys.version_info.minor),
+) -> str:
+    """Return the source of the ``sitecustomize.py`` that installs the finder in a fresh interpreter.
+
+    The hook installs the finder only in an interpreter of the given ``implementation`` and ``(major, minor)``
+    ``version``, which default to this interpreter's: the one that pickles the sources the hook serves.
+    """
     return (
         _SPAWN_HOOK_TEMPLATE.replace('__HOOK_FIRST_LINE_TEXT__', _HOOK_FIRST_LINE)
         .replace('__HOOK_FIRST_LINE__', repr(_HOOK_FIRST_LINE))
         .replace('__SOURCES_FILE_ENV_VAR__', SOURCES_FILE_ENV_VAR)
+        .replace('__PRODUCER_IMPLEMENTATION__', repr(implementation))
+        .replace('__PRODUCER_VERSION__', repr(tuple(version)))
         .replace('__ORIGIN_FINDER_SOURCE__', inspect.getsource(origin_finder))
     )
 
 
-def write_spawn_hook(instrumented_dir: Path) -> Path:
-    """Write the hook into its own directory under ``instrumented_dir`` and return that directory."""
+def write_spawn_hook(
+    instrumented_dir: Path,
+    implementation: str = sys.implementation.name,
+    version: tuple[int, int] = (sys.version_info.major, sys.version_info.minor),
+) -> Path:
+    """Write the hook into its own directory under ``instrumented_dir`` and return that directory.
+
+    ``implementation`` and ``version`` name the interpreter the hook serves; see ``get_spawn_hook_script``.
+    """
     hook_dir = instrumented_dir / SPAWN_HOOK_DIRNAME
-    hook_dir.mkdir(exist_ok=True)
-    (hook_dir / 'sitecustomize.py').write_text(get_spawn_hook_script(), encoding='utf-8')
+    hook_dir.mkdir(parents=True, exist_ok=True)
+    (hook_dir / 'sitecustomize.py').write_text(get_spawn_hook_script(implementation, version), encoding='utf-8')
     return hook_dir
 
 
