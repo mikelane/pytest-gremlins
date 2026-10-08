@@ -325,13 +325,14 @@ may affect bytecode cache sizes.
 Initial instrumentation takes longer than loading uninstrumented code. This is a one-time
 cost that pays for itself after a few mutations.
 
-### Modules Imported Before the Gremlin Finder Is Re-Fronted
+### Interaction with pytest's Assertion Rewriting
 
 The gremlin finder is moved back to the front of `sys.meta_path` after pytest installs its assertion-rewrite
 hook but before any `conftest.py` or test module is imported. Modules that hook would rewrite (a `conftest.py`,
 a file matching `python_files`, a package passed to `pytest.register_assert_rewrite`) are instrumented and
-keep pytest's assertion rewriting, so their assert messages are unchanged. An assert whose own condition
-is too deeply nested for the stack keeps the rewriter's output but loses its operand explanation. Plugins that
+keep pytest's assertion rewriting, so their assert messages are unchanged. Two exceptions: an assert whose
+condition is nested too deeply to split per gremlin is still rewritten, but its failure message shows no
+operand values; and a module too deeply nested to parse runs with asserts that pytest did not rewrite. Plugins that
 pytest imports earlier, through `-p`, entry points or `PYTEST_PLUGINS`, are already loaded by then and cannot
 be instrumented.
 
