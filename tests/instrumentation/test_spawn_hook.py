@@ -286,6 +286,61 @@ class DescribeSpawnHookScript:
         )
 
 
+@pytest.mark.small
+class DescribeSpawnHookOnAnOldInterpreter:
+    """The hook starts cleanly in an interpreter too old for the finder it carries (#604).
+
+    The finder's source evaluates ``X | None`` and ``dict[...]`` at import, which Python 3.9 and earlier cannot. The
+    hook therefore runs only the version gate and the chaining to the user's ``sitecustomize`` at module level, and
+    compiles the finder after the gate has passed.
+    """
+
+    def it_parses_under_the_python_3_6_grammar(self) -> None:
+        ast.parse(get_spawn_hook_script(), feature_version=(3, 6))
+
+    def it_defines_nothing_of_the_finder_at_module_level(self) -> None:
+        tree = ast.parse(get_spawn_hook_script())
+
+        definitions = {node.name for node in tree.body if isinstance(node, (ast.ClassDef, ast.FunctionDef))}
+
+        assert 'install' not in definitions
+        assert 'GremlinFinder' not in definitions
+
+    def it_does_not_run_the_finder_source_in_an_interpreter_of_another_version(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        sources_file: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(inspect, 'getsource', lambda _module: 'raise RuntimeError("finder source ran")\n')
+        monkeypatch.setenv(SOURCES_FILE_ENV_VAR, str(sources_file))
+        monkeypatch.setattr(sys, 'path', [])
+        monkeypatch.setattr(sys, 'modules', dict(sys.modules))
+        script = get_spawn_hook_script(version=(2, 7))
+
+        exec(compile(script, 'sitecustomize.py', 'exec'), {'__name__': 'sitecustomize', '__file__': str(tmp_path)})  # noqa: S102
+
+        assert capsys.readouterr().err == ''
+
+    def it_runs_the_finder_source_in_an_interpreter_of_the_same_version(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        sources_file: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(inspect, 'getsource', lambda _module: 'raise RuntimeError("finder source ran")\n')
+        monkeypatch.setenv(SOURCES_FILE_ENV_VAR, str(sources_file))
+        monkeypatch.setattr(sys, 'path', [])
+        monkeypatch.setattr(sys, 'modules', dict(sys.modules))
+        script = get_spawn_hook_script()
+
+        exec(compile(script, 'sitecustomize.py', 'exec'), {'__name__': 'sitecustomize', '__file__': str(tmp_path)})  # noqa: S102
+
+        assert 'finder source ran' in capsys.readouterr().err
+
+
 @pytest.mark.medium
 class DescribeWriteSpawnHook:
     """The hook lives in a directory of its own, so only ``sitecustomize`` becomes importable."""
@@ -299,7 +354,7 @@ class DescribeWriteSpawnHook:
         )
 
     def it_embeds_the_origin_finder_source(self) -> None:
-        assert inspect.getsource(origin_finder) in get_spawn_hook_script()
+        assert ascii(inspect.getsource(origin_finder)) in get_spawn_hook_script()
 
 
 @pytest.mark.small

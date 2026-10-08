@@ -257,6 +257,12 @@ original code in that child, silently, exactly as in the control run: at worst a
 false ZAPPED. As a second line of defense the loader falls back to the shipped source text whenever it cannot
 unpickle a tree.
 
+The part of the hook that runs before that version check, and its chaining to your own `sitecustomize`, parse
+and run on every interpreter from Python 2.7 up. The finder's source does not (it evaluates `X | None` at
+import), so the hook carries it as a string and compiles it only after the check passes. An older interpreter
+such as macOS's `/usr/bin/python3` (3.9) therefore starts cleanly: nothing on its stderr, and your
+`sitecustomize` still runs once.
+
 If the hook cannot read the sources file, the child still starts, so your tests are not hidden behind a
 start-up failure, and it prints a `pytest-gremlins:` warning on stderr: that child runs the original code.
 
