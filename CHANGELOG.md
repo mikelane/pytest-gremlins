@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.11.3 (2026-10-08)
+
+**More of your code gets real verdicts.** Two kinds of target got verdicts that no test backed.
+Gremlins in modules that pytest rewrites assertions in (`conftest.py`, files matching
+`python_files`, helpers passed to `pytest.register_assert_rewrite`) were never activated, so they
+were reported SURVIVED even when a test caught them. Gremlins in code whose source was looked up
+with `inspect.getsource` were reported ZAPPED, because the lookup failed under every gremlin. Both
+are fixed. Your score may move either way after upgrading.
+
+### Upgrade notes
+
+- **Your score may rise if your targets include files pytest rewrites assertions in.** Those are
+  `conftest.py` files, modules whose names match `python_files` (for example `helper_test.py`), and
+  packages passed to `pytest.register_assert_rewrite`. Their gremlins are now zapped when a test
+  catches them. pytest's assertion rewriting still applies to them, so a test that checks an assert
+  message sees the same message it does without pytest-gremlins. (#603, #616)
+- **Your score may drop if your code or your tests read the source of your code.** Under a
+  gremlin, `inspect.getsource` (and anything built on it, such as `linecache`) failed or returned
+  the wrong lines for instrumented code. The test then failed for that reason alone, and every
+  gremlin in the file was counted as zapped. Those kills no longer count. (#563, #610)
+- **The cache is rebuilt once.** The cache version changed so that the wrong verdicts above are
+  not replayed. The first run after upgrading re-runs every gremlin. (#610, #616)
+
+### Fix
+
+- **Gremlins in files that pytest's assertion-rewrite hook loads were always reported SURVIVED.**
+  See the upgrade notes above. Plugins that pytest loads before reading `conftest.py` files
+  (through `-p`, entry points or `PYTEST_PLUGINS`) are still not instrumented, as before. (#603,
+  #616)
+- **Instrumented code reported a module name instead of its file, and shifted line numbers.**
+  Tracebacks, `inspect` and `linecache` now see the real file path and the original line numbers.
+  A very deeply nested file (hundreds of `elif` branches) keeps the old behaviour. (#563, #610)
+
 ## v1.11.2 (2026-10-06)
 
 **Gremlins are no longer reported as survivors because of how your project is laid out.**
