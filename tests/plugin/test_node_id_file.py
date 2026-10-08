@@ -65,6 +65,44 @@ class DescribeWriteNodeIdsFile:
         assert json.loads(path.read_text(encoding='utf-8')) == node_ids
         assert list(tmp_path.glob('*.tmp')) == []
 
+    def it_raises_a_permission_error_when_no_other_writer_filled_the_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def refuse(*_args: Path) -> Path:
+            raise PermissionError(13, 'access denied')
+
+        monkeypatch.setattr(Path, 'replace', refuse)
+
+        with pytest.raises(PermissionError, match='access denied'):
+            write_node_ids_file(['a.py::t1'], tmp_path)
+        assert list(tmp_path.iterdir()) == []
+
+    def it_raises_any_other_write_failure_and_removes_the_temporary_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fill_then_fail(source: Path, target: Path) -> Path:
+            target.write_text(source.read_text(encoding='utf-8'), encoding='utf-8')
+            raise OSError(28, 'no space left on device')
+
+        monkeypatch.setattr(Path, 'replace', fill_then_fail)
+
+        with pytest.raises(OSError, match='no space left'):
+            write_node_ids_file(['a.py::t1'], tmp_path)
+        assert list(tmp_path.glob('*.tmp')) == []
+
+    def it_reuses_an_existing_file_without_writing_it_again(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        first = write_node_ids_file(['a.py::t1'], tmp_path)
+
+        def forbid_replace(*_args: Path) -> Path:
+            raise AssertionError('an existing selection file was written again')
+
+        monkeypatch.setattr(Path, 'replace', forbid_replace)
+
+        assert write_node_ids_file(['a.py::t1'], tmp_path) == first
+        assert list(tmp_path.iterdir()) == [first]
+
     def it_keeps_non_ascii_ids_intact(self, tmp_path: Path) -> None:
         node_ids = ['tests/test_x.py::test_café[☃]']
 
@@ -118,6 +156,22 @@ class DescribeArgsWithNodeIdsFromFile:
 
         assert args == ['-x', '-q', 'a.py::t1']
 
+    def it_appends_the_ids_of_every_file_in_the_order_the_options_appear(self, tmp_path: Path) -> None:
+        first = write_node_ids_file(['b.py::t2'], tmp_path)
+        second = write_node_ids_file(['a.py::t1'], tmp_path)
+
+        args = args_with_node_ids_from_file(
+            [f'{NODE_IDS_FILE_OPTION}={first}', '-q', f'{NODE_IDS_FILE_OPTION}={second}']
+        )
+
+        assert args == ['-q', 'b.py::t2', 'a.py::t1']
+
+    def it_returns_only_the_remaining_arguments_for_an_empty_selection_file(self, tmp_path: Path) -> None:
+        path = tmp_path / 'ids.json'
+        path.write_text('[]', encoding='utf-8')
+
+        assert args_with_node_ids_from_file(['-q', f'{NODE_IDS_FILE_OPTION}={path}']) == ['-q']
+
     def it_returns_the_arguments_unchanged_without_the_option(self) -> None:
         assert args_with_node_ids_from_file(['-x', 'a.py::t']) == ['-x', 'a.py::t']
 
@@ -132,10 +186,21 @@ class DescribeArgsWithNodeIdsFromFile:
         with pytest.raises(OSError, match=r'missing\.json'):
             args_with_node_ids_from_file([f'{NODE_IDS_FILE_OPTION}={tmp_path / "missing.json"}'])
 
-    @pytest.mark.parametrize('content', ['not json', '{"a": 1}', '[1, 2]'], ids=['garbage', 'object', 'non-strings'])
-    def it_raises_when_the_file_does_not_hold_a_list_of_strings(self, tmp_path: Path, content: str) -> None:
+    @pytest.mark.parametrize(
+        ('content', 'message'),
+        [
+            ('not json', 'is not valid JSON'),
+            ('{"a": 1}', 'does not hold a list of node id strings'),
+            ('[1, 2]', 'does not hold a list of node id strings'),
+            ('["a.py::t", 1]', 'does not hold a list of node id strings'),
+        ],
+        ids=['garbage', 'object', 'non-strings', 'one-non-string'],
+    )
+    def it_raises_when_the_file_does_not_hold_a_list_of_strings(
+        self, tmp_path: Path, content: str, message: str
+    ) -> None:
         path = tmp_path / 'ids.json'
         path.write_text(content, encoding='utf-8')
 
-        with pytest.raises(ValueError, match='node id'):
+        with pytest.raises(ValueError, match=message):
             args_with_node_ids_from_file([f'{NODE_IDS_FILE_OPTION}={path}'])

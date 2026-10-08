@@ -47,15 +47,15 @@ def write_node_ids_file(node_ids: Sequence[str], directory: Path) -> Path:
         ...     json.loads(write_node_ids_file(['a.py::t'], Path(scratch)).read_text(encoding='utf-8'))
         ['a.py::t']
     """
-    content = json.dumps(list(node_ids))
-    digest = hashlib.sha256(content.encode('utf-8')).hexdigest()[:32]
+    serialized_node_ids = json.dumps(list(node_ids))
+    digest = hashlib.sha256(serialized_node_ids.encode('utf-8')).hexdigest()[:32]
     path = directory / f'node_ids_{digest}.json'
     if path.exists():
         return path
     descriptor, temporary_name = tempfile.mkstemp(dir=directory, suffix='.tmp')
     try:
         with os.fdopen(descriptor, 'w', encoding='utf-8') as temporary_file:
-            temporary_file.write(content)
+            temporary_file.write(serialized_node_ids)
         Path(temporary_name).replace(path)
     except BaseException as write_error:
         Path(temporary_name).unlink(missing_ok=True)
@@ -74,7 +74,7 @@ def command_with_node_ids_file(command: Sequence[str], node_ids: Sequence[str], 
 
     Args:
         command: A command whose launcher understands ``--gremlins-node-ids-file``.
-        node_ids: Node ids to run, in order. None leaves ``command`` as it is.
+        node_ids: Node ids to run, in order. An empty sequence leaves ``command`` as it is.
         directory: Where to write the file. When there is none, the ids go on the command line.
 
     Returns:

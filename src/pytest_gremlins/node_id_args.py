@@ -30,12 +30,12 @@ def args_with_node_ids_from_file(args: Sequence[str]) -> list[str]:
         >>> args_with_node_ids_from_file(['-x', 'a.py::t'])
         ['-x', 'a.py::t']
     """
-    remaining = [argument for argument in args if not argument.startswith(_NODE_IDS_FILE_PREFIX)]
+    args_without_option = [argument for argument in args if not argument.startswith(_NODE_IDS_FILE_PREFIX)]
     node_ids: list[str] = []
     for argument in args:
         if argument.startswith(_NODE_IDS_FILE_PREFIX):
             node_ids.extend(_read_node_ids(argument[len(_NODE_IDS_FILE_PREFIX) :]))
-    return [*remaining, *node_ids]
+    return [*args_without_option, *node_ids]
 
 
 def _read_node_ids(path: str) -> list[str]:

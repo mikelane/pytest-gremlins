@@ -220,7 +220,7 @@ class CoveragePrescanLaunchError(Exception):
     """Raised when the operating system cannot start the coverage pre-scan subprocess (issue #485)."""
 
     def __init__(self, cause: OSError) -> None:
-        super().__init__(f'coverage pre-scan could not be run ({cause})')
+        super().__init__(f'coverage pre-scan could not start ({cause})')
         self.cause = cause
 
 
@@ -1737,7 +1737,7 @@ def main():
     try:
         pytest_args = args_with_node_ids_from_file(sys.argv[1:])
     except (OSError, ValueError, RecursionError, MemoryError) as error:
-        print(f'Error: cannot read the node ids for this run: {error}', file=sys.stderr)
+        print(f'pytest-gremlins: cannot read the node ids file for this run ({error})', file=sys.stderr)
         sys.exit(int(pytest.ExitCode.USAGE_ERROR))
 
     recorder = SuiteLoadRecorder()
@@ -2474,8 +2474,8 @@ def _warn_prescan_timeout(seconds: int) -> None:
 def _warn_prescan_launch_failure(launch_error: CoveragePrescanLaunchError) -> None:
     """Warn that the pre-scan could not be run, naming the cause (issue #485)."""
     warnings.warn(
-        f'pytest-gremlins: the coverage pre-scan could not be run ({launch_error.cause}); '
-        'coverage-guided test selection disabled',
+        f'pytest-gremlins: coverage pre-scan could not start ({launch_error.cause}); '
+        'coverage-guided test selection disabled, so every gremlin runs the full test suite',
         stacklevel=1,
     )
 

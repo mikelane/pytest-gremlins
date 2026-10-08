@@ -60,11 +60,11 @@ _EXPECTED_VERDICTS = [
 
 
 def _test_file_source(file_index: int) -> str:
-    first = file_index * TESTS_PER_FILE
+    first_value = file_index * TESTS_PER_FILE
     functions = ''.join(
         f'\n\ndef {TEST_NAME.format(value=value)}():\n'
         f'    assert sample.classify({value}) == {"big" if value > THRESHOLD else "small"!r}\n'
-        for value in range(first, first + TESTS_PER_FILE)
+        for value in range(first_value, first_value + TESTS_PER_FILE)
     )
     return f'import sample\n{functions}'
 
@@ -73,10 +73,13 @@ def _write_large_suite(pytester: pytest.Pytester) -> list[str]:
     pytester.makepyfile(sample=_TARGET)
     node_ids: list[str] = []
     for file_index in range(TEST_FILE_COUNT):
-        name = f'test_sizes_{file_index}'
-        pytester.makepyfile(**{name: _test_file_source(file_index)})
-        first = file_index * TESTS_PER_FILE
-        node_ids.extend(f'{name}.py::{TEST_NAME.format(value=value)}' for value in range(first, first + TESTS_PER_FILE))
+        module_name = f'test_sizes_{file_index}'
+        pytester.makepyfile(**{module_name: _test_file_source(file_index)})
+        first_value = file_index * TESTS_PER_FILE
+        node_ids.extend(
+            f'{module_name}.py::{TEST_NAME.format(value=value)}'
+            for value in range(first_value, first_value + TESTS_PER_FILE)
+        )
     return node_ids
 
 

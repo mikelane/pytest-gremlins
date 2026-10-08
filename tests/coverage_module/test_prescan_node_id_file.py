@@ -162,8 +162,8 @@ class DescribePrescanLaunchFailure:
 
         assert session.test_selector is not None
         assert [str(warning.message) for warning in caught if issubclass(warning.category, UserWarning)] == [
-            'pytest-gremlins: the coverage pre-scan could not be run '
-            '([Errno 206] The filename or extension is too long); coverage-guided test selection disabled',
+            'pytest-gremlins: coverage pre-scan could not start ([Errno 206] The filename or extension is too long); '
+            'coverage-guided test selection disabled, so every gremlin runs the full test suite',
         ]
 
     def it_warns_that_the_pre_scan_could_not_be_run_when_the_node_ids_file_cannot_be_written(
@@ -181,8 +181,8 @@ class DescribePrescanLaunchFailure:
             _collect_coverage(session, tmp_path)
 
         assert [str(warning.message) for warning in caught if issubclass(warning.category, UserWarning)] == [
-            'pytest-gremlins: the coverage pre-scan could not be run '
-            '([Errno 28] No space left on device); coverage-guided test selection disabled',
+            'pytest-gremlins: coverage pre-scan could not start ([Errno 28] No space left on device); '
+            'coverage-guided test selection disabled, so every gremlin runs the full test suite',
         ]
 
     def it_does_not_also_claim_that_no_data_was_recorded(self, tmp_path: Path) -> None:
