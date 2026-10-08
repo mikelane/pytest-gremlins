@@ -39,24 +39,24 @@ repos:
     hooks:
       - id: ruff-check-fix
         name: ruff check (uv)
-        entry: uv run ruff check --force-exclude --fix --exit-non-zero-on-fix
+        entry: uv run --frozen ruff check --force-exclude --fix --exit-non-zero-on-fix
         language: system
-        types_or: [python, pyi]
+        types_or: [python, pyi, jupyter]
         require_serial: true
         stages: [pre-commit]
       - id: ruff-format-fix
         name: ruff format (uv)
-        entry: uv run ruff format --force-exclude
+        entry: uv run --frozen ruff format --force-exclude
         language: system
-        types_or: [python, pyi]
+        types_or: [python, pyi, jupyter]
         require_serial: true
         stages: [pre-commit]
       - id: mypy-commit
         name: mypy (uv, strict via pyproject)
-        entry: uv run mypy src/pytest_gremlins
+        entry: uv run --frozen mypy src/pytest_gremlins
         language: system
         files: ^src/
-        types: [python]
+        types_or: [python, pyi]
         pass_filenames: false
         stages: [pre-commit]
 
