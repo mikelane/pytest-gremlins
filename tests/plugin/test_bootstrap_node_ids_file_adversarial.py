@@ -24,7 +24,8 @@ def _run_bootstrap(project: Path, *args: str) -> subprocess.CompletedProcess[str
     sources_file.write_text('{}', encoding='utf-8')
     bootstrap = scratch / 'gremlin_bootstrap.py'
     bootstrap.write_text(_get_bootstrap_script(), encoding='utf-8')
-    environment = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+    excluded = {'PYTHONPATH', 'COVERAGE_PROCESS_START'}
+    environment = {key: value for key, value in os.environ.items() if key not in excluded}
     environment['PYTEST_GREMLINS_SOURCES_FILE'] = str(sources_file)
     return subprocess.run(
         [sys.executable, '-P', str(bootstrap), '-p', 'no:cacheprovider', '-o', 'addopts=', '-q', *args],
