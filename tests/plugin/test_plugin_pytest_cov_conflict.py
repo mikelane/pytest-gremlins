@@ -59,8 +59,8 @@ class DescribeCoverageSubprocessClearsAddopts:
         addopts_idx = cmd.index('-o')
         assert cmd[addopts_idx + 1] == 'addopts='
 
-    def it_places_addopts_override_before_test_node_ids(self, tmp_path: Path) -> None:
-        """The -o addopts= flag appears before the test node IDs in the command."""
+    def it_places_addopts_override_before_the_node_ids_file(self, tmp_path: Path) -> None:
+        """The -o addopts= flag appears before the option naming the test node IDs in the command (#485)."""
         captured_cmd: list[list[str]] = []
 
         def fake_subprocess_run(cmd: list[str], **_kwargs: object) -> object:
@@ -79,9 +79,8 @@ class DescribeCoverageSubprocessClearsAddopts:
 
         cmd = captured_cmd[0]
         addopts_idx = cmd.index('-o')
-        test_id_positions = [cmd.index(tid) for tid in ['tests/test_a.py::test_one', 'tests/test_b.py::test_two']]
-        for pos in test_id_positions:
-            assert addopts_idx < pos
+        node_ids_idx = next(i for i, argument in enumerate(cmd) if argument.startswith('--gremlins-node-ids-file='))
+        assert addopts_idx < node_ids_idx
 
 
 @pytest.mark.small
