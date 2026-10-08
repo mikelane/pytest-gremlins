@@ -48,6 +48,23 @@ class DescribeWriteNodeIdsFile:
 
         assert list(tmp_path.iterdir()) == [path]
 
+    def it_accepts_a_file_a_concurrent_writer_put_in_place_first(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On Windows, replacing a file another process has open raises PermissionError."""
+        node_ids = ['a.py::t1']
+
+        def lose_the_race(source: Path, target: Path) -> Path:
+            target.write_text(source.read_text(encoding='utf-8'), encoding='utf-8')
+            raise PermissionError(13, 'target is open in another process')
+
+        monkeypatch.setattr(Path, 'replace', lose_the_race)
+
+        path = write_node_ids_file(node_ids, tmp_path)
+
+        assert json.loads(path.read_text(encoding='utf-8')) == node_ids
+        assert list(tmp_path.glob('*.tmp')) == []
+
     def it_keeps_non_ascii_ids_intact(self, tmp_path: Path) -> None:
         node_ids = ['tests/test_x.py::test_café[☃]']
 

@@ -57,10 +57,16 @@ def write_node_ids_file(node_ids: Sequence[str], directory: Path) -> Path:
         with os.fdopen(descriptor, 'w', encoding='utf-8') as temporary_file:
             temporary_file.write(content)
         Path(temporary_name).replace(path)
-    except BaseException:
+    except BaseException as write_error:
         Path(temporary_name).unlink(missing_ok=True)
-        raise
+        if not _lost_race_to_identical_writer(write_error, path):
+            raise
     return path
+
+
+def _lost_race_to_identical_writer(error: BaseException, path: Path) -> bool:
+    """Whether ``error`` is Windows refusing to replace a ``path`` that an equal selection already filled."""
+    return isinstance(error, PermissionError) and path.exists()
 
 
 def command_with_node_ids_file(command: Sequence[str], node_ids: Sequence[str], directory: Path | None) -> list[str]:
