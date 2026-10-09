@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import subprocess
 from typing import Any
 
 import pytest
@@ -82,6 +83,25 @@ def _job_ids_below_skippable_jobs() -> list[str]:
 
 def _checkout_steps(job: dict[str, Any]) -> list[dict[str, Any]]:
     return [step for step in job['steps'] if str(step.get('uses', '')).startswith('actions/checkout')]
+
+
+def _run_step(step: dict[str, Any], cwd: Path, **env: str) -> subprocess.CompletedProcess[str]:
+    """Execute a step's real ``run`` script the way a ``shell: bash`` step runs it (errexit and pipefail)."""
+    return subprocess.run(
+        ['bash', '-eo', 'pipefail', '-c', step['run']],  # noqa: S607
+        cwd=cwd,
+        env={'PATH': '/usr/bin:/bin', **env},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _write_fake_venv_python(root: Path, *, installed_version: str) -> None:
+    interpreter = root / '.venv' / 'bin' / 'python'
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_text(f'#!/bin/sh\necho {installed_version}\n')
+    interpreter.chmod(0o755)
 
 
 def _job_ids_with_checkout(*, excluding: str | None = None) -> list[str]:
@@ -224,15 +244,26 @@ class DescribeReleaseWorkflowTagVerification:
     def it_names_the_guard_step_verify_release_tag(self) -> None:
         assert _step_named('verify-tag', 'Verify release tag')['run'].count('verify_release_tag.py') == 1
 
-    def it_refuses_a_dispatch_that_is_not_from_main_before_anything_else(self) -> None:
+    def it_runs_the_dispatch_from_main_check_before_anything_else(self) -> None:
         first_step = _steps('verify-tag')[0]
 
         assert first_step['env'] == {'EVENT_NAME': '${{ github.event_name }}', 'REF': '${{ github.ref }}'}
         assert '${{' not in first_step['run']
-        assert '"$EVENT_NAME" == "workflow_dispatch"' in first_step['run']
-        assert '"$REF" != "refs/heads/main"' in first_step['run']
-        assert '::error::' in first_step['run']
-        assert 'dispatch release.yml from main' in first_step['run']
+
+    def it_exits_non_zero_for_a_dispatch_that_is_not_from_main(self, tmp_path: Path) -> None:
+        result = _run_step(_steps('verify-tag')[0], tmp_path, EVENT_NAME='workflow_dispatch', REF='refs/heads/feature')
+
+        assert result.returncode != 0
+        assert '::error::Refusing to release from refs/heads/feature; dispatch release.yml from main.' in result.stdout
+
+    @pytest.mark.parametrize(
+        ('event_name', 'ref'),
+        [('workflow_dispatch', 'refs/heads/main'), ('push', 'refs/tags/v1.2.3')],
+    )
+    def it_allows_a_dispatch_from_main_and_a_tag_push(self, tmp_path: Path, event_name: str, ref: str) -> None:
+        result = _run_step(_steps('verify-tag')[0], tmp_path, EVENT_NAME=event_name, REF=ref)
+
+        assert result.returncode == 0, result.stdout
 
 
 @pytest.mark.medium
@@ -265,12 +296,22 @@ class DescribeReleaseWorkflowInstallChecks:
 
         assert '"pytest-gremlins==${RELEASE_TAG#v}"' in install_step['run']
 
-    def it_fails_when_the_test_pypi_version_differs_from_the_release_tag(self) -> None:
+    def it_exits_non_zero_when_the_test_pypi_version_differs_from_the_release_tag(self, tmp_path: Path) -> None:
+        _write_fake_venv_python(tmp_path, installed_version='1.11.3')
         verify_step = _step_named('verify-test-pypi', 'Verify import and version')
 
-        assert '$RELEASE_TAG' in verify_step['run']
-        assert '::error::' in verify_step['run']
-        assert 'exit 1' in verify_step['run']
+        result = _run_step(verify_step, tmp_path, RELEASE_TAG='v1.12.0')
+
+        assert result.returncode != 0
+        assert '::error::Test PyPI version v1.11.3 does not match release tag v1.12.0' in result.stdout
+
+    def it_succeeds_when_the_test_pypi_version_matches_the_release_tag(self, tmp_path: Path) -> None:
+        _write_fake_venv_python(tmp_path, installed_version='1.12.0')
+        verify_step = _step_named('verify-test-pypi', 'Verify import and version')
+
+        result = _run_step(verify_step, tmp_path, RELEASE_TAG='v1.12.0')
+
+        assert result.returncode == 0, result.stdout
 
     def it_names_the_wheel_version_variable_distinctly(self) -> None:
         verify_step = _step_named('verify-wheel', 'Verify import and version')
