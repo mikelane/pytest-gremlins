@@ -158,6 +158,27 @@ class DescribeVerdictsAreUnchanged:
         assert [g.pardoned for g in gremlins] == [True, False, False]
 
 
+@pytest.mark.small
+class DescribeOperandsKeepTheirOwnSwitches:
+    """A gremlin on an outer operation leaves the constructs inside its operands as they were written."""
+
+    @pytest.mark.parametrize(
+        ('body', 'gremlin_number', 'expected'),
+        [
+            pytest.param('(lambda y: y + 1)(x) * 2', 1, 4, id='lambda-inner-gremlin'),
+            pytest.param('(lambda y: y + 1)(x) * 2', 2, 2.0, id='lambda-outer-gremlin'),
+            pytest.param('(n := x + 1) * n', 1, 4, id='walrus-inner-gremlin'),
+            pytest.param('(n := x + 1) * n', 2, 1.0, id='walrus-outer-gremlin'),
+            pytest.param('[y + 1 for y in range(x)] + [True and x > 1]', 2, [1, 2, 3, False], id='bool-constant'),
+            pytest.param('[y + 1 for y in range(x)] + [True and x > 1]', 7, [1, 2, 3, True], id='boolop-over-constant'),
+        ],
+    )
+    def it_matches_the_hand_mutated_result(self, body: str, gremlin_number: int, expected: Any) -> None:
+        source = f'def f(x):\n    return {body}\n'
+
+        assert _call_with_active(source, f'm_f6f7_g{gremlin_number:03d}', 3) == expected
+
+
 @pytest.mark.medium
 class DescribeInstrumentAndWritePath:
     """Instrumenting and writing a long chain stays fast, including pickling the tree for the children."""
