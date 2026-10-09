@@ -315,8 +315,11 @@ jobs:
           uv pip install --python .venv/bin/python --no-deps \
             --index-url https://test.pypi.org/simple/ \
             "pytest-gremlins==${RELEASE_TAG#v}"
+          # SAFETY: the extras filter drops any requirement whose environment marker mentions `extra`. That is
+          # correct for pytest-gremlins, which declares only plain dependencies and plain `extra == '...'` markers.
+          # A marker that mixed extras with other conditions would need a real marker evaluation instead.
           .venv/bin/python -c "from importlib.metadata import requires; print('\n'.join(r for r in (requires('pytest-gremlins') or []) if 'extra' not in r.partition(';')[2]))" > runtime-requirements.txt
-          if [[ -s runtime-requirements.txt ]]; then
+          if grep -q . runtime-requirements.txt; then
             uv pip install --python .venv/bin/python \
               --index-url https://pypi.org/simple/ \
               -r runtime-requirements.txt
