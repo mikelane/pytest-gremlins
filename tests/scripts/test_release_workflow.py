@@ -2,7 +2,8 @@
 
 GitHub Actions gives a job whose ``if:`` has no status-check function an implicit ``success()``. That is false
 when ANY job earlier in its ``needs`` chain was skipped, not only a direct need. These tests pin the workflow
-shape that keeps a skipped job from silently skipping the whole release.
+shape that keeps a skipped job from silently skipping the whole release, plus the guards around tag handling,
+checkout, permissions and the Test PyPI install.
 """
 
 from __future__ import annotations
@@ -16,8 +17,9 @@ import yaml
 
 RELEASE_WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'release.yml'
 
-STATUS_FUNCTIONS = ('always()', '!cancelled()')
-SKIPPABLE_BY_DESIGN = {'publish-test-pypi', 'verify-test-pypi'}
+SKIP_OVERRIDING_STATUS_FUNCTIONS = ('always()', '!cancelled()')
+SKIPPABLE_JOB_IDS = {'publish-test-pypi', 'verify-test-pypi'}
+RELEASE_REF = '${{ env.RELEASE_REF }}'
 
 
 def _workflow() -> dict[Any, Any]:
@@ -26,6 +28,18 @@ def _workflow() -> dict[Any, Any]:
 
 def _jobs() -> dict[str, Any]:
     return dict(_workflow()['jobs'])
+
+
+def _steps(job_id: str) -> list[dict[str, Any]]:
+    return list(_jobs()[job_id]['steps'])
+
+
+def _step_named(job_id: str, name: str) -> dict[str, Any]:
+    return next(step for step in _steps(job_id) if step.get('name') == name)
+
+
+def _step_index(job_id: str, predicate: Any) -> int:
+    return next(index for index, step in enumerate(_steps(job_id)) if predicate(step))
 
 
 def _needs(job: dict[str, Any]) -> list[str]:
@@ -37,18 +51,18 @@ def _condition(job: dict[str, Any]) -> str:
     return str(job.get('if', ''))
 
 
-def _has_status_check(job: dict[str, Any]) -> bool:
-    return any(function in _condition(job) for function in STATUS_FUNCTIONS)
+def _overrides_implicit_success(job: dict[str, Any]) -> bool:
+    return any(function in _condition(job) for function in SKIP_OVERRIDING_STATUS_FUNCTIONS)
 
 
 def _is_skippable(job: dict[str, Any]) -> bool:
     """A job-level ``if`` with no status function skips the job (and its dependents) when false."""
-    return 'if' in job and not _has_status_check(job)
+    return 'if' in job and not _overrides_implicit_success(job)
 
 
-def _ancestors(jobs: dict[str, Any], name: str) -> set[str]:
+def _ancestors(jobs: dict[str, Any], job_id: str) -> set[str]:
     seen: set[str] = set()
-    stack = _needs(jobs[name])
+    stack = _needs(jobs[job_id])
     while stack:
         parent = stack.pop()
         if parent not in seen:
@@ -57,13 +71,21 @@ def _ancestors(jobs: dict[str, Any], name: str) -> set[str]:
     return seen
 
 
-def _skippable_ancestors(jobs: dict[str, Any], name: str) -> set[str]:
-    return {parent for parent in _ancestors(jobs, name) if _is_skippable(jobs[parent])}
+def _skippable_ancestors(jobs: dict[str, Any], job_id: str) -> set[str]:
+    return {parent for parent in _ancestors(jobs, job_id) if _is_skippable(jobs[parent])}
 
 
-def _jobs_below_skippable_jobs() -> list[str]:
+def _job_ids_below_skippable_jobs() -> list[str]:
     jobs = _jobs()
-    return [name for name, job in jobs.items() if _skippable_ancestors(jobs, name) and not _is_skippable(job)]
+    return [job_id for job_id, job in jobs.items() if _skippable_ancestors(jobs, job_id) and not _is_skippable(job)]
+
+
+def _checkout_steps(job: dict[str, Any]) -> list[dict[str, Any]]:
+    return [step for step in job['steps'] if str(step.get('uses', '')).startswith('actions/checkout')]
+
+
+def _job_ids_with_checkout(*, excluding: str | None = None) -> list[str]:
+    return [job_id for job_id, job in _jobs().items() if job_id != excluding and _checkout_steps(job)]
 
 
 @pytest.mark.medium
@@ -71,22 +93,25 @@ class DescribeReleaseWorkflowSkipPropagation:
     def it_has_only_the_test_pypi_jobs_as_skippable_jobs(self) -> None:
         jobs = _jobs()
 
-        skippable = {name for name, job in jobs.items() if _is_skippable(job)}
+        skippable = {job_id for job_id, job in jobs.items() if _is_skippable(job)}
 
-        assert skippable == SKIPPABLE_BY_DESIGN
+        assert skippable == SKIPPABLE_JOB_IDS
 
-    @pytest.mark.parametrize('job_name', _jobs_below_skippable_jobs())
-    def it_checks_results_explicitly_for_every_job_below_a_skippable_job(self, job_name: str) -> None:
+    def it_finds_the_jobs_below_the_skippable_jobs(self) -> None:
+        assert set(_job_ids_below_skippable_jobs()) == {'publish-pypi', 'github-release'}
+
+    @pytest.mark.parametrize('job_id', _job_ids_below_skippable_jobs())
+    def it_checks_results_explicitly_for_every_job_below_a_skippable_job(self, job_id: str) -> None:
         jobs = _jobs()
-        job = jobs[job_name]
+        job = jobs[job_id]
 
         condition = _condition(job)
 
-        assert _has_status_check(job), (
-            f'{job_name} has an implicit success() but sits below skippable job(s) '
-            f'{sorted(_skippable_ancestors(jobs, job_name))}; GitHub skips it whenever they are skipped'
+        assert _overrides_implicit_success(job), (
+            f'{job_id} has an implicit success() but sits below skippable job(s) '
+            f'{sorted(_skippable_ancestors(jobs, job_id))}; GitHub skips it whenever they are skipped'
         )
-        assert re.search(r'needs\.[\w-]+\.result', condition), f'{job_name} must check needs.<job>.result explicitly'
+        assert re.search(r'needs\.[\w-]+\.result', condition), f'{job_id} must check needs.<job>.result explicitly'
 
     def it_runs_verify_tag_on_every_event(self) -> None:
         assert 'if' not in _jobs()['verify-tag']
@@ -102,21 +127,112 @@ class DescribeReleaseWorkflowSkipPropagation:
 
 
 @pytest.mark.medium
+class DescribeReleaseWorkflowPublishGate:
+    def it_needs_exactly_the_build_and_verification_jobs(self) -> None:
+        assert set(_needs(_jobs()['publish-pypi'])) == {'build', 'verify-wheel', 'verify-test-pypi'}
+
+    @pytest.mark.parametrize(
+        'clause',
+        [
+            '!cancelled()',
+            "needs.build.result == 'success'",
+            "needs.verify-wheel.result == 'success'",
+            "needs.verify-test-pypi.result == 'success'",
+            "needs.verify-test-pypi.result == 'skipped' && inputs.skip_test_pypi == true",
+        ],
+    )
+    def it_gates_the_pypi_publish_on_every_required_result(self, clause: str) -> None:
+        condition = ' '.join(_condition(_jobs()['publish-pypi']).split())
+
+        assert clause in condition
+
+    def it_skips_existing_files_when_publishing_to_production_pypi(self) -> None:
+        publish_step = next(step for step in _steps('publish-pypi') if 'pypi-publish' in step.get('uses', ''))
+
+        assert publish_step['with']['skip-existing'] is True
+
+
+@pytest.mark.medium
+class DescribeReleaseWorkflowCheckout:
+    def it_finds_the_jobs_that_check_out_the_release(self) -> None:
+        assert set(_job_ids_with_checkout(excluding='verify-tag')) == {
+            'test',
+            'benchmark',
+            'attrs-compat',
+            'build',
+            'github-release',
+        }
+
+    @pytest.mark.parametrize('job_id', _job_ids_with_checkout(excluding='verify-tag'))
+    def it_checks_out_the_release_ref(self, job_id: str) -> None:
+        for checkout in _checkout_steps(_jobs()[job_id]):
+            assert checkout['with']['ref'] == RELEASE_REF
+
+    @pytest.mark.parametrize('job_id', _job_ids_with_checkout())
+    def it_does_not_persist_credentials_in_the_checkout(self, job_id: str) -> None:
+        for checkout in _checkout_steps(_jobs()[job_id]):
+            assert checkout['with']['persist-credentials'] is False
+
+
+@pytest.mark.medium
+class DescribeReleaseWorkflowPermissions:
+    def it_grants_read_only_contents_by_default(self) -> None:
+        assert _workflow()['permissions'] == {'contents': 'read'}
+
+    @pytest.mark.parametrize('job_id', ['publish-test-pypi', 'publish-pypi'])
+    def it_grants_id_token_write_to_the_publishing_jobs(self, job_id: str) -> None:
+        assert _jobs()[job_id]['permissions'] == {'id-token': 'write'}
+
+    def it_grants_contents_write_to_the_github_release_job(self) -> None:
+        assert _jobs()['github-release']['permissions'] == {'contents': 'write'}
+
+
+@pytest.mark.medium
 class DescribeReleaseWorkflowTagVerification:
-    def it_passes_the_release_tag_to_the_guard_through_the_environment(self) -> None:
-        steps = _jobs()['verify-tag']['steps']
-        guard_step = next(step for step in steps if 'verify_release_tag.py' in step.get('run', ''))
+    def it_passes_the_release_tag_to_every_guard_invocation_through_the_environment(self) -> None:
+        guard_steps = [step for step in _steps('verify-tag') if 'verify_release_tag.py' in step.get('run', '')]
 
-        assert '${{' not in guard_step['run']
-        assert guard_step['run'].count('"$RELEASE_TAG"') >= 1
+        assert len(guard_steps) == 2
+        for step in guard_steps:
+            assert '${{' not in step['run']
+            assert '"$RELEASE_TAG"' in step['run']
 
-    def it_fetches_the_release_tag_before_running_the_guard(self) -> None:
-        steps = _jobs()['verify-tag']['steps']
-        runs = [step.get('run', '') for step in steps]
-        fetch_index = next(i for i, run in enumerate(runs) if 'git fetch' in run and 'refs/tags/$RELEASE_TAG' in run)
-        guard_index = next(i for i, run in enumerate(runs) if 'verify_release_tag.py' in run)
+    def it_fetches_the_release_tag_through_the_environment_inside_quotes(self) -> None:
+        fetch_step = _step_named('verify-tag', 'Fetch release tag')
 
-        assert fetch_index < guard_index
+        assert '${{' not in fetch_step['run']
+        assert re.search(r'"[^"]*\$RELEASE_TAG[^"]*"', fetch_step['run'])
+
+    def it_names_the_missing_tag_when_the_fetch_fails(self) -> None:
+        fetch_step = _step_named('verify-tag', 'Fetch release tag')
+
+        assert (
+            '::error::Release tag $RELEASE_TAG not found on origin. Push the tag before dispatching.'
+            in (fetch_step['run'])
+        )
+
+    def it_checks_the_tag_name_before_fetching_and_the_full_guard_after(self) -> None:
+        name_check = _step_index('verify-tag', lambda step: '--name-only' in step.get('run', ''))
+        fetch = _step_index('verify-tag', lambda step: step.get('name') == 'Fetch release tag')
+        full_guard = _step_index(
+            'verify-tag',
+            lambda step: 'verify_release_tag.py' in step.get('run', '') and '--name-only' not in step['run'],
+        )
+
+        assert name_check < fetch < full_guard
+
+    def it_names_the_guard_step_verify_release_tag(self) -> None:
+        assert _step_named('verify-tag', 'Verify release tag')['run'].count('verify_release_tag.py') == 1
+
+    def it_refuses_a_dispatch_that_is_not_from_main_before_anything_else(self) -> None:
+        first_step = _steps('verify-tag')[0]
+
+        assert first_step['env'] == {'EVENT_NAME': '${{ github.event_name }}', 'REF': '${{ github.ref }}'}
+        assert '${{' not in first_step['run']
+        assert '"$EVENT_NAME" == "workflow_dispatch"' in first_step['run']
+        assert '"$REF" != "refs/heads/main"' in first_step['run']
+        assert '::error::' in first_step['run']
+        assert 'dispatch release.yml from main' in first_step['run']
 
 
 @pytest.mark.medium
@@ -128,8 +244,36 @@ class DescribeReleaseWorkflowPublishing:
         assert 'github.ref_name' in concurrency['group']
         assert concurrency['cancel-in-progress'] is False
 
-    def it_skips_existing_files_when_publishing_to_production_pypi(self) -> None:
-        steps = _jobs()['publish-pypi']['steps']
-        publish_step = next(step for step in steps if 'pypi-publish' in step.get('uses', ''))
+    def it_fails_the_regression_check_step_when_the_report_pipeline_fails(self) -> None:
+        regression_step = _step_named('benchmark', 'Check for regression')
 
-        assert publish_step['with']['skip-existing'] is True
+        assert regression_step['shell'] == 'bash'
+
+    def it_warns_when_the_changelog_has_no_section_for_the_version(self) -> None:
+        changelog_step = _step_named('github-release', 'Extract changelog for this version')
+
+        assert (
+            '::warning::No CHANGELOG.md section found for v$VERSION; release notes fall back to a placeholder.'
+            in changelog_step['run']
+        )
+
+
+@pytest.mark.medium
+class DescribeReleaseWorkflowInstallChecks:
+    def it_pins_the_test_pypi_install_to_the_release_version(self) -> None:
+        install_step = _step_named('verify-test-pypi', 'Install from Test PyPI')
+
+        assert '"pytest-gremlins==${RELEASE_TAG#v}"' in install_step['run']
+
+    def it_fails_when_the_test_pypi_version_differs_from_the_release_tag(self) -> None:
+        verify_step = _step_named('verify-test-pypi', 'Verify import and version')
+
+        assert '$RELEASE_TAG' in verify_step['run']
+        assert '::error::' in verify_step['run']
+        assert 'exit 1' in verify_step['run']
+
+    def it_names_the_wheel_version_variable_distinctly(self) -> None:
+        verify_step = _step_named('verify-wheel', 'Verify import and version')
+
+        assert 'WHEEL_VERSION=' in verify_step['run']
+        assert 'VERSION=' not in verify_step['run'].replace('WHEEL_VERSION=', '')

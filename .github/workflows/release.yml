@@ -17,6 +17,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
 env:
   FORCE_COLOR: "1"
   UV_SYSTEM_PYTHON: "1"
@@ -36,18 +39,37 @@ jobs:
     name: Verify Release Tag
     runs-on: ubuntu-latest
     steps:
+      # A dispatched run uses the workflow file of the ref it was dispatched from, so only main is trusted
+      - name: Require dispatch from main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$REF" != "refs/heads/main" ]]; then
+            echo "::error::Refusing to release from $REF; dispatch release.yml from main."
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
-      - name: Fetch release tag
-        run: git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+      - name: Verify release tag name
+        run: uv run --no-project --python 3.12 python scripts/verify_release_tag.py --name-only "$RELEASE_TAG"
 
-      - name: Verify tag is annotated and matches pyproject.toml
+      - name: Fetch release tag
+        run: |
+          if ! git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"; then
+            echo "::error::Release tag $RELEASE_TAG not found on origin. Push the tag before dispatching."
+            exit 1
+          fi
+
+      - name: Verify release tag
         run: uv run --no-project --python 3.12 python scripts/verify_release_tag.py "$RELEASE_TAG"
 
   # Run full test suite before release
@@ -64,6 +86,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -99,6 +122,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -135,6 +159,7 @@ jobs:
 
       - name: Check for regression
         id: check_regression
+        shell: bash
         run: |
           uv run python benchmarks/check_regression.py \
             --baseline benchmarks/baseline.json \
@@ -174,6 +199,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -219,6 +245,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -283,11 +310,16 @@ jobs:
           uv pip install --python .venv/bin/python \
             --index-url https://test.pypi.org/simple/ \
             --extra-index-url https://pypi.org/simple/ \
-            pytest-gremlins
+            "pytest-gremlins==${RELEASE_TAG#v}"
 
-      - name: Verify import
+      - name: Verify import and version
         run: |
-          .venv/bin/python -c "import pytest_gremlins; print(f'Version: {pytest_gremlins.__version__}')"
+          TEST_PYPI_VERSION=$(.venv/bin/python -c "import pytest_gremlins; print(pytest_gremlins.__version__)")
+          echo "Version: $TEST_PYPI_VERSION"
+          if [[ "v$TEST_PYPI_VERSION" != "$RELEASE_TAG" ]]; then
+            echo "::error::Test PyPI version v$TEST_PYPI_VERSION does not match release tag $RELEASE_TAG"
+            exit 1
+          fi
 
   # Install the built wheel into a fresh venv. Runs on every release (cheap, and the only
   # install check when Test PyPI is skipped); the wheel version must match the release tag.
@@ -315,10 +347,10 @@ jobs:
 
       - name: Verify import and version
         run: |
-          VERSION=$(.venv/bin/python -c "import pytest_gremlins; print(pytest_gremlins.__version__)")
-          echo "Version: $VERSION"
-          if [[ "v$VERSION" != "$RELEASE_TAG" ]]; then
-            echo "::error::Installed wheel version v$VERSION does not match release tag $RELEASE_TAG"
+          WHEEL_VERSION=$(.venv/bin/python -c "import pytest_gremlins; print(pytest_gremlins.__version__)")
+          echo "Version: $WHEEL_VERSION"
+          if [[ "v$WHEEL_VERSION" != "$RELEASE_TAG" ]]; then
+            echo "::error::Installed wheel version v$WHEEL_VERSION does not match release tag $RELEASE_TAG"
             exit 1
           fi
 
@@ -367,6 +399,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -400,6 +433,7 @@ jobs:
 
           # If no specific section found, use a default message
           if [ ! -s release_notes.md ]; then
+            echo "::warning::No CHANGELOG.md section found for v$VERSION; release notes fall back to a placeholder."
             echo "Release $VERSION" > release_notes.md
           fi
 
