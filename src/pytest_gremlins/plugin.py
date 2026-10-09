@@ -47,7 +47,7 @@ import pytest
 
 from pytest_gremlins import node_id_args
 from pytest_gremlins.cache.hasher import ContentHasher
-from pytest_gremlins.cache.incremental import IncrementalCache
+from pytest_gremlins.cache.incremental import IncrementalCache, subprocess_optimize_level
 from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.config import (
     MAX_TIMEOUT_SECONDS,
@@ -3494,6 +3494,7 @@ def _check_cache_for_gremlin(
         source_hash=source_hash,
         test_hashes=test_hashes,
         mutant_timeout=gremlin_session.mutant_timeout,
+        optimize_level=subprocess_optimize_level(os.environ),
     )
 
     if cached is None:
@@ -3558,6 +3559,7 @@ def _cache_gremlin_result(
             error_output=result.error_output,
         ),
         mutant_timeout=gremlin_session.mutant_timeout,
+        optimize_level=subprocess_optimize_level(os.environ),
     )
 
 
