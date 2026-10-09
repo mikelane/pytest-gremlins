@@ -422,49 +422,40 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
             all_gremlins.extend(gremlins)
         return all_gremlins
 
-    def visit_Compare(self, node: ast.Compare) -> ast.expr:
-        """Replace comparison nodes with mutation switching expressions."""
+    def _switch_expression_with_pristine_mutations(self, node: ast.expr) -> ast.expr:
+        """Instrument ``node``'s operands, then switch ``node`` itself between its mutations.
+
+        Only one gremlin is active at a time, so while a mutation of ``node`` is active none of the gremlins
+        inside its operands are. The mutated variants are therefore built from the operands as they were
+        before instrumentation; only the original branch keeps the nested switches. Building the variants
+        from the instrumented operands instead would copy the whole subtree into every variant and make the
+        tree grow exponentially with the depth of a chain such as ``x + x + x + ...``.
+        """
+        pristine = copy.deepcopy(node)
         self.generic_visit(node)
 
-        gremlins = self._create_gremlins_for_node(node)
+        gremlins = self._create_gremlins_for_node(pristine)
         if not gremlins:
             return node
 
         self.gremlins.extend(gremlins)
         return build_switching_expression(node, gremlins)
+
+    def visit_Compare(self, node: ast.Compare) -> ast.expr:
+        """Replace comparison nodes with mutation switching expressions."""
+        return self._switch_expression_with_pristine_mutations(node)
 
     def visit_BinOp(self, node: ast.BinOp) -> ast.expr:
         """Replace binary operation nodes with mutation switching expressions."""
-        self.generic_visit(node)
-
-        gremlins = self._create_gremlins_for_node(node)
-        if not gremlins:
-            return node
-
-        self.gremlins.extend(gremlins)
-        return build_switching_expression(node, gremlins)
+        return self._switch_expression_with_pristine_mutations(node)
 
     def visit_BoolOp(self, node: ast.BoolOp) -> ast.expr:
         """Replace boolean operation nodes with mutation switching expressions."""
-        self.generic_visit(node)
-
-        gremlins = self._create_gremlins_for_node(node)
-        if not gremlins:
-            return node
-
-        self.gremlins.extend(gremlins)
-        return build_switching_expression(node, gremlins)
+        return self._switch_expression_with_pristine_mutations(node)
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> ast.expr:
         """Replace unary operation nodes (including 'not') with mutation switching."""
-        self.generic_visit(node)
-
-        gremlins = self._create_gremlins_for_node(node)
-        if not gremlins:
-            return node
-
-        self.gremlins.extend(gremlins)
-        return build_switching_expression(node, gremlins)
+        return self._switch_expression_with_pristine_mutations(node)
 
     def visit_Constant(self, node: ast.Constant) -> ast.expr:
         """Replace boolean constants with mutation switching expressions."""
