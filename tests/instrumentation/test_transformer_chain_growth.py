@@ -8,6 +8,11 @@ un-instrumented operands now: only one gremlin is active at a time, so they neve
 from __future__ import annotations
 
 import ast
+from functools import reduce
+from itertools import (
+    cycle,
+    islice,
+)
 import json
 from pathlib import Path
 import pickle
@@ -22,6 +27,12 @@ from pytest_gremlins.plugin import _write_instrumented_sources
 
 def _chain(operator: str, terms: int, operand: str = 'x') -> str:
     return f'def f(x):\n    return {f" {operator} ".join([operand] * terms)}\n'
+
+
+def _alternating_boolops(levels: int) -> str:
+    """Left-nested ``(((x and x) or x) and x) ...``: each level is its own BoolOp."""
+    expression = reduce(lambda inner, op: f'({inner} {op} x)', islice(cycle(('and', 'or')), levels), 'x')
+    return f'def f(x):\n    return {expression}\n'
 
 
 def _node_count(source: str) -> int:
@@ -77,7 +88,7 @@ class DescribeGremlinMetadataIsUnchanged:
         assert len(gremlins) == 30
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeInstrumentedTreeGrowth:
     """The instrumented tree grows at most quadratically with the chain length."""
 
@@ -96,6 +107,16 @@ class DescribeInstrumentedTreeGrowth:
         ratio = _node_count(source_for(large)) / _node_count(source_for(small))
 
         assert ratio <= 5
+
+    def it_grows_by_at_most_five_times_for_nested_alternating_boolops_when_the_depth_doubles(self) -> None:
+        ratio = _node_count(_alternating_boolops(10)) / _node_count(_alternating_boolops(5))
+
+        assert ratio <= 5
+
+
+@pytest.mark.small
+class DescribeThirtyTermSumInstrumentsQuickly:
+    """Instrumenting a thirty-term sum stays well under a second."""
 
     def it_instruments_a_thirty_term_sum_in_under_a_second(self) -> None:
         started = time.perf_counter()
