@@ -304,13 +304,23 @@ jobs:
       - name: Wait for Test PyPI to update
         run: sleep 30
 
+      # Only pytest-gremlins comes from Test PyPI, and without its dependencies. Its runtime
+      # dependencies are then installed from PyPI alone. A combined --extra-index-url install cannot
+      # work: uv only takes a package from the first index that has it, and PyPI has older
+      # pytest-gremlins releases but not the one being verified.
       - name: Install from Test PyPI
+        shell: bash
         run: |
           uv venv .venv
-          uv pip install --python .venv/bin/python \
+          uv pip install --python .venv/bin/python --no-deps \
             --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
             "pytest-gremlins==${RELEASE_TAG#v}"
+          .venv/bin/python -c "from importlib.metadata import requires; print('\n'.join(r for r in (requires('pytest-gremlins') or []) if 'extra' not in r.partition(';')[2]))" > runtime-requirements.txt
+          if [[ -s runtime-requirements.txt ]]; then
+            uv pip install --python .venv/bin/python \
+              --index-url https://pypi.org/simple/ \
+              -r runtime-requirements.txt
+          fi
 
       - name: Verify import and version
         run: |
