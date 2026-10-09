@@ -17,14 +17,18 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(['git', *GIT_ENV_ARGS, *args], cwd=repo, check=True, capture_output=True, text=True)  # noqa: S607
 
 
-def _make_repo(tmp_path: Path, version: str = '1.2.3') -> Path:
+def _make_repo_with_pyproject(tmp_path: Path, pyproject: str) -> Path:
     repo = tmp_path / 'repo'
     repo.mkdir()
     _git(repo, 'init', '--quiet')
-    (repo / 'pyproject.toml').write_text(f'[project]\nname = "demo"\nversion = "{version}"\n')
+    (repo / 'pyproject.toml').write_text(pyproject)
     _git(repo, 'add', 'pyproject.toml')
     _git(repo, 'commit', '--quiet', '-m', 'init')
     return repo
+
+
+def _make_repo(tmp_path: Path, version: str = '1.2.3') -> Path:
+    return _make_repo_with_pyproject(tmp_path, f'[project]\nname = "demo"\nversion = "{version}"\n')
 
 
 def _run_guard(repo: Path, tag: str) -> subprocess.CompletedProcess[str]:
@@ -104,3 +108,45 @@ class DescribeRejectedTags:
 
         assert result.returncode == 1
         assert 'pyproject.toml version 1.2.3' in result.stderr
+
+
+@pytest.mark.medium
+class DescribeUnreadablePyproject:
+    def it_reports_a_clean_error_when_pyproject_has_no_project_version(self, tmp_path: Path) -> None:
+        repo = _make_repo_with_pyproject(tmp_path, '[project]\nname = "demo"\ndynamic = ["version"]\n')
+        _git(repo, 'tag', '-a', 'v1.2.3', '-m', 'release')
+
+        result = _run_guard(repo, 'v1.2.3')
+
+        assert result.returncode == 1
+        assert result.stderr.startswith('error:')
+        assert 'Traceback' not in result.stderr
+
+    def it_reports_a_clean_error_when_pyproject_is_malformed_toml(self, tmp_path: Path) -> None:
+        repo = _make_repo_with_pyproject(tmp_path, '[project\nversion = "1.2.3"\n')
+        _git(repo, 'tag', '-a', 'v1.2.3', '-m', 'release')
+
+        result = _run_guard(repo, 'v1.2.3')
+
+        assert result.returncode == 1
+        assert result.stderr.startswith('error:')
+        assert 'Traceback' not in result.stderr
+
+
+@pytest.mark.medium
+class DescribeTagsThatDoNotPointAtACommit:
+    def it_rejects_an_annotated_tag_that_points_at_a_tree_instead_of_a_commit(self, tmp_path: Path) -> None:
+        repo = _make_repo(tmp_path, '1.2.3')
+        tree = subprocess.run(
+            ['git', 'rev-parse', 'HEAD^{tree}'],  # noqa: S607
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        _git(repo, 'tag', '-a', 'v1.2.3', '-m', 'release', tree)
+
+        result = _run_guard(repo, 'v1.2.3')
+
+        assert result.returncode == 1
+        assert 'does not point at a commit' in result.stderr

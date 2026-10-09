@@ -41,12 +41,26 @@ def verify_tag_is_annotated(repo: Path, tag: str) -> None:
         raise ReleaseTagError(f'tag {tag} is not annotated (it is a lightweight tag)')
 
 
+def resolve_tagged_commit(repo: Path, tag: str) -> str:
+    """Return the commit SHA the tag points at, rejecting tags on a tree or blob (they cannot be checked out)."""
+    result = _git(repo, 'rev-parse', '--verify', '--quiet', f'refs/tags/{tag}^{{commit}}')
+    if result.returncode != 0:
+        raise ReleaseTagError(f'tag {tag} does not point at a commit')
+    return result.stdout.strip()
+
+
 def read_version_at_tag(repo: Path, tag: str) -> str:
     """Return ``[project].version`` from pyproject.toml as committed at the tag."""
-    result = _git(repo, 'cat-file', '-p', f'refs/tags/{tag}:pyproject.toml')
+    commit = resolve_tagged_commit(repo, tag)
+    result = _git(repo, 'cat-file', '-p', f'{commit}:pyproject.toml')
     if result.returncode != 0:
         raise ReleaseTagError(f'cannot read pyproject.toml at tag {tag}: {result.stderr.strip()}')
-    return str(tomllib.loads(result.stdout)['project']['version'])
+    try:
+        return str(tomllib.loads(result.stdout)['project']['version'])
+    except tomllib.TOMLDecodeError as error:
+        raise ReleaseTagError(f'pyproject.toml at tag {tag} is not valid TOML: {error}') from error
+    except KeyError as error:
+        raise ReleaseTagError(f'pyproject.toml at tag {tag} has no static [project].version') from error
 
 
 def verify_tag_matches_version(repo: Path, tag: str) -> None:
@@ -60,6 +74,7 @@ def verify_release_tag(repo: Path, tag: str) -> None:
     """Run every release tag check, raising ReleaseTagError on the first failure."""
     verify_tag_name(tag)
     verify_tag_is_annotated(repo, tag)
+    resolve_tagged_commit(repo, tag)
     verify_tag_matches_version(repo, tag)
 
 
