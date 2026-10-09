@@ -183,6 +183,43 @@ If the tag is missing, `--follow-tags` silently skipped a lightweight tag. Root 
 `[tool.commitizen]` must have `annotated_tag = true`. Without it, commitizen creates
 lightweight tags that `--follow-tags` ignores.
 
+**Escape hatch -- Test PyPI is down.** `release.yml` normally runs on the tag push and gates
+PyPI on a Test PyPI publish and install check. If test.pypi.org is unavailable (it returned
+503 to GitHub runners for v1.11.1), re-run the release against the existing tag with the Test
+PyPI steps skipped:
+
+1. If the tag-push run is still in progress (stuck retrying Test PyPI), cancel it first --
+   otherwise the dispatch waits behind it in the concurrency group. Skip this if it already failed.
+
+   ```bash
+   gh run list --workflow release.yml --repo mikelane/pytest-gremlins --limit 5
+   gh run cancel <run-id> --repo mikelane/pytest-gremlins
+   ```
+
+2. Dispatch the workflow from `main` (it refuses any other ref):
+
+   ```bash
+   gh workflow run release.yml --repo mikelane/pytest-gremlins -f tag=vX.Y.Z -f skip_test_pypi=true
+   ```
+
+- The `verify-tag` job runs on every release (tag push and dispatch). It refuses dispatches not
+  from `main`, checks the tag name before fetching anything, and then refuses the run unless
+  the tag exists, is annotated, points at a commit, and equals `v` + the `[project].version` in
+  `pyproject.toml` at that tag. The tag must already exist (step 3 above).
+- A `concurrency` group keyed on the release tag never cancels a running release for that tag,
+  so two runs cannot race to PyPI. A new run waits as pending; the group holds one pending run,
+  so dispatching again cancels the earlier pending run. Cancel a stuck run yourself (step 1).
+- Safe to re-dispatch: the PyPI publish uses `skip-existing`, so a run that already uploaded but
+  failed later (for example at the GitHub Release) can be re-run to finish. PyPI keeps the files
+  from the first upload; the rebuilt files are not re-uploaded there.
+- The dispatched run re-runs the full gate (tests, benchmarks, attrs compatibility) on the
+  tagged commit, so it takes as long as a normal release.
+- With `skip_test_pypi=true`, `publish-test-pypi` and `verify-test-pypi` are skipped. The
+  `verify-wheel` job runs in every release and replaces the install check by installing the
+  built wheel into a fresh venv and comparing its `__version__` to the tag.
+- Omit `skip_test_pypi` (or pass `false`) to re-run the full chain, Test PyPI included.
+- The GitHub Release is created for `tag`, not for the branch the workflow was dispatched from.
+
 **RELEASE_PAT secret**: The workflow requires a `RELEASE_PAT` repo secret with
 `contents: write` and `workflows: write` scopes. Set it to never expire — an expired
 PAT causes a silent checkout failure with no useful error message.

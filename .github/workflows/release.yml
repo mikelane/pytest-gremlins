@@ -4,15 +4,78 @@ on:
   push:
     tags:
       - 'v*'
+  # Escape hatch for when Test PyPI is down (see CLAUDE.md "Release Process").
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing annotated release tag to publish (e.g. v1.12.0)'
+        required: true
+        type: string
+      skip_test_pypi:
+        description: 'Skip the Test PyPI publish and verify steps (use when test.pypi.org is unavailable)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 env:
   FORCE_COLOR: "1"
   UV_SYSTEM_PYTHON: "1"
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  # Empty on tag push so actions/checkout keeps its default (github.sha)
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
+
+# A dispatch and a tag-push run for the same tag must not race each other to PyPI
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
+  # Every run: refuse to publish unless the tag is safe, annotated, and matches pyproject.toml.
+  # Must stay unconditional: a skipped job here would skip every job below it.
+  verify-tag:
+    name: Verify Release Tag
+    runs-on: ubuntu-latest
+    steps:
+      # A dispatched run uses the workflow file of the ref it was dispatched from, so only main is trusted
+      - name: Require dispatch from main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$REF" != "refs/heads/main" ]]; then
+            echo "::error::Refusing to release from $REF; dispatch release.yml from main."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Verify release tag name
+        run: uv run --no-project --python 3.12 python scripts/verify_release_tag.py --name-only "$RELEASE_TAG"
+
+      - name: Fetch release tag
+        run: |
+          if ! git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"; then
+            echo "::error::Release tag $RELEASE_TAG not found on origin. Push the tag before dispatching."
+            exit 1
+          fi
+
+      - name: Verify release tag
+        run: uv run --no-project --python 3.12 python scripts/verify_release_tag.py "$RELEASE_TAG"
+
   # Run full test suite before release
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
+    needs: [verify-tag]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -21,6 +84,9 @@ jobs:
         python-version: ['3.11', '3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -54,6 +120,9 @@ jobs:
     needs: [test]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -79,6 +148,7 @@ jobs:
       - name: Find latest results file
         id: find_results
         run: |
+          # shellcheck disable=SC2012
           LATEST=$(ls -t benchmarks/results/benchmark_*.json 2>/dev/null | head -1 || true)
           if [[ -z "$LATEST" ]]; then
             echo "::error::No benchmark result files found in benchmarks/results/. The benchmark run may have failed silently."
@@ -89,6 +159,7 @@ jobs:
 
       - name: Check for regression
         id: check_regression
+        shell: bash
         run: |
           uv run python benchmarks/check_regression.py \
             --baseline benchmarks/baseline.json \
@@ -100,6 +171,7 @@ jobs:
         if: steps.check_regression.outcome == 'failure'
         run: |
           echo "::warning::Benchmark regression detected (>10% threshold). Review regression_report.txt in the 'benchmark-results' artifact."
+          # shellcheck disable=SC2129
           echo "### Benchmark Regression Detected" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "The benchmark regression check exceeded the 10% threshold." >> "$GITHUB_STEP_SUMMARY"
@@ -125,6 +197,9 @@ jobs:
     needs: [test]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -168,6 +243,9 @@ jobs:
     needs: [test, benchmark, attrs-compat]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -189,6 +267,7 @@ jobs:
   # Publish to Test PyPI first
   publish-test-pypi:
     name: Publish to Test PyPI
+    if: ${{ inputs.skip_test_pypi != true }}
     runs-on: ubuntu-latest
     needs: [build]
     environment:
@@ -212,6 +291,7 @@ jobs:
   # Verify installation from Test PyPI
   verify-test-pypi:
     name: Verify Test PyPI Installation
+    if: ${{ inputs.skip_test_pypi != true }}
     runs-on: ubuntu-latest
     needs: [publish-test-pypi]
     steps:
@@ -224,23 +304,82 @@ jobs:
       - name: Wait for Test PyPI to update
         run: sleep 30
 
+      # Only pytest-gremlins comes from Test PyPI, and without its dependencies. Its runtime
+      # dependencies are then installed from PyPI alone. A combined --extra-index-url install cannot
+      # work: uv only takes a package from the first index that has it, and PyPI has older
+      # pytest-gremlins releases but not the one being verified.
       - name: Install from Test PyPI
+        shell: bash
         run: |
           uv venv .venv
-          uv pip install --python .venv/bin/python \
+          uv pip install --python .venv/bin/python --no-deps \
             --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
-            pytest-gremlins
+            "pytest-gremlins==${RELEASE_TAG#v}"
+          # SAFETY: the extras filter drops any requirement whose environment marker mentions `extra`. That is
+          # correct for pytest-gremlins, which declares only plain dependencies and plain `extra == '...'` markers.
+          # A marker that mixed extras with other conditions would need a real marker evaluation instead.
+          .venv/bin/python -c "from importlib.metadata import requires; print('\n'.join(r for r in (requires('pytest-gremlins') or []) if 'extra' not in r.partition(';')[2]))" > runtime-requirements.txt
+          if grep -q . runtime-requirements.txt; then
+            uv pip install --python .venv/bin/python \
+              --index-url https://pypi.org/simple/ \
+              -r runtime-requirements.txt
+          fi
 
-      - name: Verify import
+      - name: Verify import and version
         run: |
-          .venv/bin/python -c "import pytest_gremlins; print(f'Version: {pytest_gremlins.__version__}')"
+          TEST_PYPI_VERSION=$(.venv/bin/python -c "import pytest_gremlins; print(pytest_gremlins.__version__)")
+          echo "Version: $TEST_PYPI_VERSION"
+          if [[ "v$TEST_PYPI_VERSION" != "$RELEASE_TAG" ]]; then
+            echo "::error::Test PyPI version v$TEST_PYPI_VERSION does not match release tag $RELEASE_TAG"
+            exit 1
+          fi
+
+  # Install the built wheel into a fresh venv. Runs on every release (cheap, and the only
+  # install check when Test PyPI is skipped); the wheel version must match the release tag.
+  verify-wheel:
+    name: Verify Built Wheel
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install built wheel into a fresh venv
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python dist/*.whl
+
+      - name: Verify import and version
+        run: |
+          WHEEL_VERSION=$(.venv/bin/python -c "import pytest_gremlins; print(pytest_gremlins.__version__)")
+          echo "Version: $WHEEL_VERSION"
+          if [[ "v$WHEEL_VERSION" != "$RELEASE_TAG" ]]; then
+            echo "::error::Installed wheel version v$WHEEL_VERSION does not match release tag $RELEASE_TAG"
+            exit 1
+          fi
 
   # Publish to Production PyPI
   publish-pypi:
     name: Publish to PyPI
+    # verify-test-pypi is skipped when skip_test_pypi is set. A skipped need would otherwise
+    # skip this job, so accept 'skipped' only when the skip was requested explicitly.
+    if: >-
+      ${{ !cancelled()
+      && needs.build.result == 'success'
+      && needs.verify-wheel.result == 'success'
+      && (needs.verify-test-pypi.result == 'success'
+      || (needs.verify-test-pypi.result == 'skipped' && inputs.skip_test_pypi == true)) }}
     runs-on: ubuntu-latest
-    needs: [verify-test-pypi]
+    needs: [build, verify-wheel, verify-test-pypi]
     environment:
       name: pypi
       url: https://pypi.org/project/pytest-gremlins/
@@ -255,16 +394,25 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A re-dispatch after a run that uploaded but failed later (e.g. at github-release) must still finish
+          skip-existing: true
 
   # Create GitHub Release
   github-release:
     name: Create GitHub Release
+    # publish-pypi sits below skippable Test PyPI jobs; without an explicit check the implicit
+    # success() would skip this job whenever skip_test_pypi is set
+    if: ${{ !cancelled() && needs.publish-pypi.result == 'success' }}
     runs-on: ubuntu-latest
     needs: [publish-pypi]
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -280,11 +428,9 @@ jobs:
 
       - name: Extract changelog for this version
         id: changelog
-        env:
-          GIT_REF: ${{ github.ref }}
         run: |
-          # Extract version from tag (safe: github.ref is controlled by git tag)
-          VERSION="${GIT_REF#refs/tags/v}"
+          # RELEASE_TAG is the pushed tag, or the validated dispatch input (see verify-tag)
+          VERSION="${RELEASE_TAG#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
           # Extract changelog section for this version.
@@ -300,18 +446,18 @@ jobs:
 
           # If no specific section found, use a default message
           if [ ! -s release_notes.md ]; then
+            echo "::warning::No CHANGELOG.md section found for v$VERSION; release notes fall back to a placeholder."
             echo "Release $VERSION" > release_notes.md
           fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
-        env:
-          GIT_REF: ${{ github.ref }}
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           body_path: release_notes.md
           files: |
             dist/*
             benchmark-results/**/*
           generate_release_notes: true
           draft: false
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          prerelease: ${{ contains(env.RELEASE_TAG, 'alpha') || contains(env.RELEASE_TAG, 'beta') || contains(env.RELEASE_TAG, 'rc') }}
