@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 import subprocess
 import sys
+from types import ModuleType
 
 import pytest
 
@@ -23,6 +25,15 @@ GIT_CONFIG_ARGS = (
 )
 ISOLATED_GIT_ENV = {**os.environ, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
 ENV_WITHOUT_GITHUB_ACTIONS = {key: value for key, value in os.environ.items() if key != 'GITHUB_ACTIONS'}
+
+
+def _load_guard() -> ModuleType:
+    spec = importlib.util.spec_from_file_location('verify_release_tag', SCRIPT)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -246,6 +257,31 @@ class DescribeFailureReporting:
         assert result.returncode == 1
         assert result.stderr.startswith('::error title=Release tag verification failed::')
         assert 'not a valid release tag' in result.stderr
+
+    def it_escapes_a_percent_sign_in_the_annotation_message(self, tmp_path: Path) -> None:
+        repo = _make_repo(tmp_path)
+
+        result = _run_guard(repo, 'v1.2.3%0A', env={**ENV_WITHOUT_GITHUB_ACTIONS, 'GITHUB_ACTIONS': 'true'})
+
+        assert "'v1.2.3%250A' is not a valid release tag" in result.stderr
+
+
+@pytest.mark.small
+class DescribeAnnotationEscaping:
+    @pytest.mark.parametrize(
+        ('message', 'escaped'),
+        [('100%', '100%25'), ('a\rb', 'a%0Db'), ('a\nb', 'a%0Ab'), ('%0A\n', '%250A%0A')],
+    )
+    def it_escapes_workflow_command_characters(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], message: str, escaped: str
+    ) -> None:
+        monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+
+        guard = _load_guard()
+
+        guard._report_failure(guard.ReleaseTagError(message))
+
+        assert capsys.readouterr().err == f'::error title=Release tag verification failed::{escaped}\n'
 
 
 @pytest.mark.medium

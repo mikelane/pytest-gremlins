@@ -87,9 +87,15 @@ def verify_release_tag(repo: Path, tag: str) -> None:
     verify_tag_matches_version(repo, tag)
 
 
+def _escape_workflow_command_data(message: str) -> str:
+    """Escape ``%``, CR and LF so the message cannot end or forge a GitHub workflow command."""
+    return message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+
+
 def _report_failure(error: ReleaseTagError) -> None:
     if os.environ.get('GITHUB_ACTIONS') == 'true':
-        print(f'::error title=Release tag verification failed::{error}', file=sys.stderr)
+        message = _escape_workflow_command_data(str(error))
+        print(f'::error title=Release tag verification failed::{message}', file=sys.stderr)
     else:
         print(f'error: {error}', file=sys.stderr)
 
