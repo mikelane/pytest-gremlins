@@ -192,9 +192,13 @@ release against the existing tag with the Test PyPI steps skipped:
 gh workflow run release.yml --repo mikelane/pytest-gremlins -f tag=vX.Y.Z -f skip_test_pypi=true
 ```
 
-- The `verify-tag` job refuses the run unless the tag exists, is annotated, and equals
-  `v` + the `[project].version` in `pyproject.toml` at that tag. The tag must already exist
-  (step 3 above).
+- The `verify-tag` job runs on every release (tag push and dispatch) and refuses the run unless
+  the tag exists, is annotated, points at a commit, and equals `v` + the `[project].version` in
+  `pyproject.toml` at that tag. The tag must already exist (step 3 above).
+- A `concurrency` group keyed on the release tag queues a dispatch behind a tag-push run for the
+  same tag (it never cancels one), so the two cannot race to PyPI.
+- Re-dispatching is idempotent: the PyPI publish uses `skip-existing`, so a run that already
+  uploaded but failed later (for example at the GitHub Release) can be re-run to finish.
 - The dispatched run re-runs the full gate (tests, benchmarks, attrs compatibility) on the
   tagged commit, so it takes as long as a normal release.
 - With `skip_test_pypi=true`, `publish-test-pypi` and `verify-test-pypi` are skipped. The

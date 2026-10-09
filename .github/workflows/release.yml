@@ -24,11 +24,16 @@ env:
   # Empty on tag push so actions/checkout keeps its default (github.sha)
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
 
+# A dispatch and a tag-push run for the same tag must not race each other to PyPI
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
-  # Dispatched runs only: refuse to publish unless the tag is safe, annotated, and matches pyproject.toml
+  # Every run: refuse to publish unless the tag is safe, annotated, and matches pyproject.toml.
+  # Must stay unconditional: a skipped job here would skip every job below it.
   verify-tag:
     name: Verify Release Tag
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -39,16 +44,15 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
+      - name: Fetch release tag
+        run: git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+
       - name: Verify tag is annotated and matches pyproject.toml
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
         run: uv run --no-project --python 3.12 python scripts/verify_release_tag.py "$RELEASE_TAG"
 
   # Run full test suite before release
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
-    # verify-tag is skipped on tag pushes; run unless it failed or the run was cancelled
-    if: ${{ !cancelled() && (needs.verify-tag.result == 'success' || needs.verify-tag.result == 'skipped') }}
     needs: [verify-tag]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -345,10 +349,16 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A re-dispatch after a run that uploaded but failed later (e.g. at github-release) must still finish
+          skip-existing: true
 
   # Create GitHub Release
   github-release:
     name: Create GitHub Release
+    # publish-pypi sits below skippable Test PyPI jobs; without an explicit check the implicit
+    # success() would skip this job whenever skip_test_pypi is set
+    if: ${{ !cancelled() && needs.publish-pypi.result == 'success' }}
     runs-on: ubuntu-latest
     needs: [publish-pypi]
     permissions:
