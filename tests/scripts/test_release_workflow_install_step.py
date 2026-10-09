@@ -24,6 +24,10 @@ PYPI_URL = 'https://pypi.org/simple/'
 PROJECT = 'pytest-gremlins'
 DEPENDENCY = 'tinydep'
 
+pytestmark = pytest.mark.skipif(
+    sys.platform == 'win32', reason='runs the install step in bash with a POSIX .venv layout'
+)
+
 
 def _record_line(path: str, content: str) -> str:
     digest = base64.urlsafe_b64encode(hashlib.sha256(content.encode()).digest()).rstrip(b'=').decode()

@@ -11,12 +11,16 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import subprocess
+import sys
 from typing import Any
 
 import pytest
 import yaml
 
 RELEASE_WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'release.yml'
+POSIX_ONLY = pytest.mark.skipif(
+    sys.platform == 'win32', reason='runs the step script in bash with a POSIX .venv layout'
+)
 
 SKIP_OVERRIDING_STATUS_FUNCTIONS = ('always()', '!cancelled()')
 SKIPPABLE_JOB_IDS = {'publish-test-pypi', 'verify-test-pypi'}
@@ -250,6 +254,7 @@ class DescribeReleaseWorkflowTagVerification:
         assert first_step['env'] == {'EVENT_NAME': '${{ github.event_name }}', 'REF': '${{ github.ref }}'}
         assert '${{' not in first_step['run']
 
+    @POSIX_ONLY
     def it_exits_non_zero_for_a_dispatch_that_is_not_from_main(self, tmp_path: Path) -> None:
         result = _run_step(_steps('verify-tag')[0], tmp_path, EVENT_NAME='workflow_dispatch', REF='refs/heads/feature')
 
@@ -260,6 +265,7 @@ class DescribeReleaseWorkflowTagVerification:
         ('event_name', 'ref'),
         [('workflow_dispatch', 'refs/heads/main'), ('push', 'refs/tags/v1.2.3')],
     )
+    @POSIX_ONLY
     def it_allows_a_dispatch_from_main_and_a_tag_push(self, tmp_path: Path, event_name: str, ref: str) -> None:
         result = _run_step(_steps('verify-tag')[0], tmp_path, EVENT_NAME=event_name, REF=ref)
 
@@ -296,6 +302,7 @@ class DescribeReleaseWorkflowInstallChecks:
 
         assert '"pytest-gremlins==${RELEASE_TAG#v}"' in install_step['run']
 
+    @POSIX_ONLY
     def it_exits_non_zero_when_the_test_pypi_version_differs_from_the_release_tag(self, tmp_path: Path) -> None:
         _write_fake_venv_python(tmp_path, installed_version='1.11.3')
         verify_step = _step_named('verify-test-pypi', 'Verify import and version')
@@ -305,6 +312,7 @@ class DescribeReleaseWorkflowInstallChecks:
         assert result.returncode != 0
         assert '::error::Test PyPI version v1.11.3 does not match release tag v1.12.0' in result.stdout
 
+    @POSIX_ONLY
     def it_succeeds_when_the_test_pypi_version_matches_the_release_tag(self, tmp_path: Path) -> None:
         _write_fake_venv_python(tmp_path, installed_version='1.12.0')
         verify_step = _step_named('verify-test-pypi', 'Verify import and version')
