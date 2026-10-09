@@ -20,6 +20,9 @@ on:
 env:
   FORCE_COLOR: "1"
   UV_SYSTEM_PYTHON: "1"
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  # Empty on tag push so actions/checkout keeps its default (github.sha)
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
 
 jobs:
   # Dispatched runs only: refuse to publish unless the tag is safe, annotated, and matches pyproject.toml
@@ -56,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -91,7 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -166,7 +169,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -211,7 +214,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -288,8 +291,6 @@ jobs:
     name: Verify Built Wheel
     runs-on: ubuntu-latest
     needs: [build]
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -352,12 +353,10 @@ jobs:
     needs: [publish-pypi]
     permissions:
       contents: write
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
