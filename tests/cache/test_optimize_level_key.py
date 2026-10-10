@@ -30,7 +30,15 @@ class DescribeSubprocessOptimizeLevel:
             ({'PYTHONOPTIMIZE': 'x'}, 1),
             ({'PYTHONOPTIMIZE': '2'}, 2),
             ({'PYTHONOPTIMIZE': '3'}, 2),
-            ({'PYTHONOPTIMIZE': '-1'}, 0),
+            ({'PYTHONOPTIMIZE': '-1'}, 1),
+            ({'PYTHONOPTIMIZE': '-5'}, 1),
+            ({'PYTHONOPTIMIZE': '-0'}, 0),
+            ({'PYTHONOPTIMIZE': ' 2'}, 2),
+            ({'PYTHONOPTIMIZE': '+1'}, 1),
+            ({'PYTHONOPTIMIZE': '0 '}, 1),
+            ({'PYTHONOPTIMIZE': '1_0'}, 1),
+            ({'PYTHONOPTIMIZE': '99999999999'}, 1),
+            ({'PYTHONOPTIMIZE': '2147483647'}, 2),
         ],
     )
     def it_normalizes_the_level(self, environ: dict[str, str], level: int) -> None:
@@ -89,4 +97,7 @@ class DescribePluginCacheLookup:
             monkeypatch.delenv('PYTHONOPTIMIZE', raising=False)
             assert _check_cache_for_gremlin(gremlin, [], session) is not None
             monkeypatch.setenv('PYTHONOPTIMIZE', '1')
+            assert _check_cache_for_gremlin(gremlin, [], session) is None
+
+            monkeypatch.setenv('PYTHONOPTIMIZE', '-1')
             assert _check_cache_for_gremlin(gremlin, [], session) is None

@@ -6,6 +6,7 @@ to implement smart cache invalidation based on content changes.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from pytest_gremlins.cache.hasher import ContentHasher
@@ -60,11 +61,18 @@ a gremlin only that child exercised was cached as SURVIVED.
 """
 
 
+_C_INTEGER = re.compile(r'[ \t\n\v\f\r]*[+-]?[0-9]+')
+_C_INT_MIN = -(2**31)
+_C_INT_MAX = 2**31 - 1
+
+
 def subprocess_optimize_level(environ: Mapping[str, str]) -> int:
     """The optimize level a gremlin subprocess launched with ``environ`` compiles under.
 
-    The subprocess gets no ``-O`` flag, so only ``PYTHONOPTIMIZE`` applies, read as CPython reads it:
-    unset or empty is 0, a value that is not an integer counts as 1, and levels above 2 compile like 2.
+    The subprocess gets no ``-O`` flag, so only ``PYTHONOPTIMIZE`` applies, read as CPython reads it
+    (``strtol`` over the whole string): unset or empty is 0, a value that is not a plain integer (trailing
+    characters, ``_``, non-ASCII digits, overflow past a C ``int``) counts as 1, a negative value counts as 1,
+    and levels above 2 compile like 2.
 
     Args:
         environ: The environment the gremlin subprocess inherits.
@@ -75,11 +83,12 @@ def subprocess_optimize_level(environ: Mapping[str, str]) -> int:
     value = environ.get('PYTHONOPTIMIZE', '')
     if not value:
         return 0
-    try:
-        level = int(value)
-    except ValueError:
+    if _C_INTEGER.fullmatch(value) is None:
         return 1
-    return min(max(level, 0), 2)
+    level = int(value)
+    if not _C_INT_MIN <= level <= _C_INT_MAX or level < 0:
+        return 1
+    return min(level, 2)
 
 
 class IncrementalCache:
