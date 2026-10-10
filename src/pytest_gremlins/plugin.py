@@ -2046,8 +2046,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
     if not gremlin_session.gremlins:
         if gremlin_session.explain_gremlin_id is not None:
-            for notice in gremlin_session.terminal_notices:
-                print(notice)
+            _print_terminal_notices(gremlin_session)
             cause = (
                 'Files were skipped (see above).'
                 if gremlin_session.terminal_notices
@@ -2426,6 +2425,12 @@ def _skip_mutation_unless_baseline_is_green(gremlin_session: GremlinSession, exi
     print(f'pytest-gremlins: skipping mutation testing because {reason}', file=sys.stderr)
     gremlin_session.enabled = False
     return True
+
+
+def _print_terminal_notices(gremlin_session: GremlinSession) -> None:
+    """Print the queued terminal notices for paths that disable the session before the summary hook."""
+    for notice in gremlin_session.terminal_notices:
+        print(notice)
 
 
 def _maybe_short_circuit_for_explain(gremlin_session: GremlinSession) -> bool:
@@ -3198,16 +3203,18 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
     if target_id is None:
         return
 
+    _print_terminal_notices(gremlin_session)
     target_gremlin = next(
         (g for g in gremlin_session.gremlins if g.gremlin_id == target_id),
         None,
     )
 
     if target_gremlin is None:
+        skipped_hint = ' Files were skipped (see above).' if gremlin_session.terminal_notices else ''
         print(
             f'--gremlin-explain: no gremlin with id {target_id!r} in this session. '
             f'Run with --gremlins (without --gremlin-explain) to see the full list of '
-            f'gremlin ids in the progress log.'
+            f'gremlin ids in the progress log.{skipped_hint}'
         )
         gremlin_session.enabled = False
         return
