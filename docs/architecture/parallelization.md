@@ -272,7 +272,7 @@ loads `sitecustomize`, so a child started with any of them still runs the origin
 
 ### Cached results
 
-The incremental cache key includes a runner fidelity version (`rf12`), so verdicts cached by
+The incremental cache key includes a runner fidelity version (`rf13`), so verdicts cached by
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 So are timeouts cached before they were confirmed against the unmutated tests (#565).
 So are verdicts cached while instrumented modules had no `__file__` (#525), when target code that read it
@@ -287,6 +287,8 @@ because pytest's assertion-rewrite hook served it ahead of the gremlin finder; t
 cached as SURVIVED.
 So are verdicts cached while code that ran in a `multiprocessing` `spawn` child was never instrumented (#604);
 a gremlin only that child exercised was cached as SURVIVED.
+The key also carries the interpreter's optimize level, read from `PYTHONOPTIMIZE` the way CPython reads it (#613),
+so a verdict reached with `assert` statements stripped is never served to a run that keeps them.
 So are verdicts cached while instrumented modules were compiled under their module name (#563), when a
 test that looked up source (`inspect.getsource`) failed under every gremlin and was cached as ZAPPED.
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that

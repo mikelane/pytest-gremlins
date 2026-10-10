@@ -6,18 +6,20 @@ to implement smart cache invalidation based on content changes.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf12'
+RUNNER_FIDELITY_VERSION = 'rf13'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
@@ -53,7 +55,40 @@ matching ``python_files``) was never instrumented (#603); every gremlin in such 
 
 ``rf12`` retires verdicts cached while code run in a ``multiprocessing`` spawn child was never instrumented (#604);
 a gremlin only that child exercised was cached as SURVIVED.
+
+``rf13`` retires verdicts cached before the key carried the optimize level (#613); a gremlin only an
+``assert`` kills could be served across ``PYTHONOPTIMIZE`` settings.
 """
+
+
+_C_INTEGER = re.compile(r'[ \t\n\v\f\r]*[+-]?[0-9]+')
+_C_INT_MIN = -(2**31)
+_C_INT_MAX = 2**31 - 1
+
+
+def subprocess_optimize_level(environ: Mapping[str, str]) -> int:
+    """The optimize level a gremlin subprocess launched with ``environ`` compiles under.
+
+    The subprocess gets no ``-O`` flag, so only ``PYTHONOPTIMIZE`` applies, read as CPython reads it
+    (``strtol`` over the whole string): unset or empty is 0, a value that is not a plain integer (trailing
+    characters, ``_``, non-ASCII digits, overflow past a C ``int``) counts as 1, a negative value counts as 1,
+    and levels above 2 compile like 2.
+
+    Args:
+        environ: The environment the gremlin subprocess inherits.
+
+    Returns:
+        0, 1 or 2.
+    """
+    value = environ.get('PYTHONOPTIMIZE', '')
+    if not value:
+        return 0
+    if _C_INTEGER.fullmatch(value) is None:
+        return 1
+    level = int(value)
+    if not _C_INT_MIN <= level <= _C_INT_MAX or level < 0:
+        return 1
+    return min(level, 2)
 
 
 class IncrementalCache:
@@ -73,6 +108,7 @@ class IncrementalCache:
     - source_hash: SHA-256 hash of the source file content
     - test_hashes: Combined hash of all test files covering this gremlin
     - mutant_timeout: the per-gremlin test timeout the verdict was reached under
+    - optimize_level: the optimize level the gremlin subprocess compiled under
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
 
@@ -103,6 +139,7 @@ class IncrementalCache:
         source_hash: str,
         test_hashes: dict[str, str],
         mutant_timeout: int | None = None,
+        optimize_level: int = 0,
     ) -> str:
         """Build a cache key from gremlin and content hashes.
 
@@ -111,12 +148,14 @@ class IncrementalCache:
         - source_hash: content hash of the source file
         - test_hashes: combined hash of all relevant test files (names AND hashes)
         - mutant_timeout: the per-gremlin test timeout in seconds
+        - optimize_level: the optimize level the gremlin subprocess compiles under
 
         Args:
             gremlin_id: Unique identifier for the gremlin.
             source_hash: SHA-256 hash of the source file.
             test_hashes: Mapping of test name to content hash.
             mutant_timeout: Per-gremlin test timeout in seconds; a different value is a miss.
+            optimize_level: Optimize level of the gremlin subprocess; a different level is a miss.
 
         Returns:
             A cache key string.
@@ -126,7 +165,10 @@ class IncrementalCache:
         sorted_test_items = [f'{name}:{test_hashes[name]}' for name in sorted(test_hashes.keys())]
         combined_test_hash = self._hasher.hash_string('|'.join(sorted_test_items)) if sorted_test_items else 'no_tests'
 
-        return f'{gremlin_id}:{source_hash}:{combined_test_hash}:timeout={mutant_timeout}:{RUNNER_FIDELITY_VERSION}'
+        return (
+            f'{gremlin_id}:{source_hash}:{combined_test_hash}:timeout={mutant_timeout}'
+            f':opt={optimize_level}:{RUNNER_FIDELITY_VERSION}'
+        )
 
     def get_cached_result(
         self,
@@ -134,6 +176,7 @@ class IncrementalCache:
         source_hash: str,
         test_hashes: dict[str, str],
         mutant_timeout: int | None = None,
+        optimize_level: int = 0,
     ) -> CachedGremlinResult | None:
         """Retrieve a cached result if available.
 
@@ -148,11 +191,12 @@ class IncrementalCache:
             source_hash: Current SHA-256 hash of the source file.
             test_hashes: Current mapping of test name to content hash.
             mutant_timeout: Per-gremlin test timeout in seconds; a different value is a miss.
+            optimize_level: Optimize level of the gremlin subprocess; a different level is a miss.
 
         Returns:
             Cached result dictionary, or None if cache miss.
         """
-        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes, mutant_timeout)
+        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes, mutant_timeout, optimize_level)
         result = self._store.get(cache_key)
 
         if result is None:
@@ -169,6 +213,8 @@ class IncrementalCache:
         test_hashes: dict[str, str],
         result: CachedGremlinResult,
         mutant_timeout: int | None = None,
+        *,
+        optimize_level: int = 0,
     ) -> None:
         """Cache a gremlin test result.
 
@@ -182,8 +228,9 @@ class IncrementalCache:
             test_hashes: Mapping of test name to content hash.
             result: The result dictionary to cache.
             mutant_timeout: Per-gremlin test timeout in seconds the result was reached under.
+            optimize_level: Optimize level of the gremlin subprocess the result was reached under.
         """
-        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes, mutant_timeout)
+        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes, mutant_timeout, optimize_level)
         self._store.put(cache_key, result)
 
     def cache_result_deferred(
@@ -193,6 +240,8 @@ class IncrementalCache:
         test_hashes: dict[str, str],
         result: CachedGremlinResult,
         mutant_timeout: int | None = None,
+        *,
+        optimize_level: int = 0,
     ) -> None:
         """Cache a gremlin test result without committing immediately.
 
@@ -205,8 +254,9 @@ class IncrementalCache:
             test_hashes: Mapping of test name to content hash.
             result: The result dictionary to cache.
             mutant_timeout: Per-gremlin test timeout in seconds the result was reached under.
+            optimize_level: Optimize level of the gremlin subprocess the result was reached under.
         """
-        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes, mutant_timeout)
+        cache_key = self._build_cache_key(gremlin_id, source_hash, test_hashes, mutant_timeout, optimize_level)
         self._store.put_deferred(cache_key, result)
 
     def flush(self) -> None:
