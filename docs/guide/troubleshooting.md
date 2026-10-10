@@ -206,6 +206,27 @@ If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_
 
 ---
 
+### Warning: a file was skipped and not mutation tested
+
+**Symptom:**
+
+```text
+pytest-gremlins: skipped src/demo/chain.py: could not instrument (RecursionError: maximum recursion depth exceeded)
+```
+
+If every target was skipped, the mutation report says `1 file(s) skipped and not mutation tested`
+and lists the files instead of `No gremlins found`.
+
+**Cause:** Instrumenting the file raised an exception. A very long operator chain (about 120 `+` terms or
+about 245 `|` terms) exceeds Python's recursion limit. Any other exception from instrumentation is
+reported the same way. The rest of the targets are still mutation tested, so the score does not include
+the skipped file. The exit code is unchanged.
+
+**Solution:** Split the long expression, for example into a loop or a `sum(...)`. Run with
+`--log-cli-level=ERROR` to see the full traceback.
+
+---
+
 ### Error: TOML syntax error in pyproject.toml
 
 **Symptom:**

@@ -278,6 +278,11 @@ class GremlinSession:
             abandoned and coverage-guided test selection is disabled (issue #503).
         mutant_timeout: Seconds one gremlin's test run may take before the gremlin
             is reported as a timeout.
+        terminal_notices: Lines for the terminal summary, written directly rather than through
+            ``logging`` (which pytest captures) or ``warnings.warn`` (which ``filterwarnings = error``
+            turns into a crash).  Add one with :func:`_report_to_terminal`.
+        skipped_files: Target files dropped because instrumentation raised, mapped to the
+            ``ExceptionType: message`` that dropped them (issue #638).
         preserved_addopts: The project's pytest ``addopts`` with pytest-cov flags
             stripped (see :func:`_addopts_without_cov`), threaded into the subprocess
             runs as ``-o addopts=<...>`` so collection-affecting options such as
@@ -328,6 +333,8 @@ class GremlinSession:
     no_coverage_filter: bool = False
     test_name_to_node_ids: dict[str, list[str]] = field(default_factory=dict)
     unmapped_selections: dict[str, list[str]] = field(default_factory=dict)
+    terminal_notices: list[str] = field(default_factory=list)
+    skipped_files: dict[str, str] = field(default_factory=dict)
     unrunnable_gremlin_ids: set[str] = field(default_factory=set)
     explain_gremlin_id: str | None = None
     preserved_addopts: str = ''
@@ -1279,8 +1286,13 @@ def _generate_gremlins(
         source = source_files[file_path]
         try:
             gremlins, instrumented_tree = transform_source(source, file_path, gremlin_session.operators)
-        except Exception:
+        except Exception as exc:
             logger.exception('Failed to transform %s; skipping file', file_path)
+            reason = _describe_exception(exc)
+            gremlin_session.skipped_files[file_path] = reason
+            _report_to_terminal(
+                gremlin_session, f'pytest-gremlins: skipped {file_path}: could not instrument ({reason})'
+            )
             continue
         all_gremlins.extend(gremlins)
         instrumented_asts[file_path] = instrumented_tree
@@ -1290,6 +1302,17 @@ def _generate_gremlins(
     if all_gremlins:
         instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir, duplicates)
         gremlin_session.instrumented_dir = instrumented_dir
+
+
+def _describe_exception(exc: BaseException) -> str:
+    """Render an exception as ``Type: message`` on one line."""
+    return f'{type(exc).__name__}: {" ".join(str(exc).split())}'
+
+
+def _report_to_terminal(gremlin_session: GremlinSession, message: str) -> None:
+    """Queue a line for the terminal summary, once per distinct message."""
+    if message not in gremlin_session.terminal_notices:
+        gremlin_session.terminal_notices.append(message)
 
 
 def _spelling_rank(file_path: str, rootdir: Path) -> tuple[bool, str]:
@@ -4006,10 +4029,19 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
+    for notice in gremlin_session.terminal_notices:
+        terminalreporter.write_line(notice)
+
     if not gremlin_session.gremlins:
         terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
         terminalreporter.write_line('')
-        if gremlin_session.target_paths:
+        if gremlin_session.skipped_files:
+            terminalreporter.write_line(
+                f'{len(gremlin_session.skipped_files)} file(s) skipped and not mutation tested:'
+            )
+            for skipped_path in gremlin_session.skipped_files:
+                terminalreporter.write_line(f'  - {skipped_path}')
+        elif gremlin_session.target_paths:
             terminalreporter.write_line('No gremlins found in source code. Searched paths:')
             for searched_path in gremlin_session.target_paths:
                 terminalreporter.write_line(f'  - {searched_path}')
