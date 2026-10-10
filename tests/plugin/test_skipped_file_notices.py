@@ -7,6 +7,7 @@ import pytest
 from pytest_gremlins.plugin import (
     GremlinSession,
     _describe_exception,
+    _printable,
     _report_to_terminal,
 )
 
@@ -24,6 +25,15 @@ class DescribeDescribeException:
 
     def it_renders_only_the_type_when_the_message_is_whitespace(self) -> None:
         assert _describe_exception(ValueError('  \n ')) == 'ValueError'
+
+
+@pytest.mark.small
+class DescribeTerminalSafety:
+    def it_replaces_escape_characters_in_an_exception_message(self) -> None:
+        assert _describe_exception(ValueError('a\x1b[31mred')) == 'ValueError: a?[31mred'
+
+    def it_replaces_escape_characters_in_a_skipped_path(self) -> None:
+        assert _printable('src/\x1b]0;pwn\x07.py') == 'src/?]0;pwn?.py'
 
 
 @pytest.mark.small

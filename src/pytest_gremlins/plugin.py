@@ -1291,7 +1291,7 @@ def _generate_gremlins(
             reason = _describe_exception(exc)
             gremlin_session.skipped_files[file_path] = reason
             _report_to_terminal(
-                gremlin_session, f'pytest-gremlins: skipped {file_path}: could not instrument ({reason})'
+                gremlin_session, f'pytest-gremlins: skipped {_printable(file_path)}: could not instrument ({reason})'
             )
             continue
         all_gremlins.extend(gremlins)
@@ -1304,9 +1304,14 @@ def _generate_gremlins(
         gremlin_session.instrumented_dir = instrumented_dir
 
 
+def _printable(text: str) -> str:
+    """Replace control characters (such as ESC) so untrusted text cannot drive the terminal."""
+    return ''.join(char if char.isprintable() else '?' for char in text)
+
+
 def _describe_exception(exc: BaseException) -> str:
     """Render an exception as ``Type: message`` on one line, or just ``Type`` when it has no message."""
-    message = ' '.join(str(exc).split())
+    message = _printable(' '.join(str(exc).split()))
     return f'{type(exc).__name__}: {message}' if message else type(exc).__name__
 
 
@@ -4020,6 +4025,37 @@ def _write_json_report(score: MutationScore, rootdir: Path) -> Path:
     return output_path
 
 
+def _write_empty_run_report(terminalreporter: pytest.TerminalReporter, gremlin_session: GremlinSession) -> None:
+    """Explain a run that produced no gremlins: files skipped, nothing found, or no paths discovered."""
+    terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
+    terminalreporter.write_line('')
+    if gremlin_session.skipped_files:
+        terminalreporter.write_line(f'{len(gremlin_session.skipped_files)} file(s) skipped and not mutation tested:')
+        for skipped_path in gremlin_session.skipped_files:
+            terminalreporter.write_line(f'  - {_printable(skipped_path)}')
+    elif gremlin_session.target_paths:
+        terminalreporter.write_line('No gremlins found in source code. Searched paths:')
+        for searched_path in gremlin_session.target_paths:
+            terminalreporter.write_line(f'  - {searched_path}')
+    else:
+        terminalreporter.write_line('No gremlins found: no source paths were discovered.')
+        terminalreporter.write_line('')
+        terminalreporter.write_line('pytest-gremlins looks for source code in this order:')
+        terminalreporter.write_line('  1. --gremlin-targets CLI option')
+        terminalreporter.write_line('  2. [tool.pytest-gremlins] paths in pyproject.toml')
+        terminalreporter.write_line('  3. [tool.setuptools] package config in pyproject.toml')
+        terminalreporter.write_line('  4. [project].name heuristic in pyproject.toml')
+        terminalreporter.write_line('  5. setup.cfg [options] / [options.packages.find]')
+        terminalreporter.write_line('  6. Installed package metadata (importlib.metadata)')
+        terminalreporter.write_line('  7. src/ directory')
+        terminalreporter.write_line('')
+        terminalreporter.write_line(
+            'If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_package'
+        )
+    terminalreporter.write_line('')
+    terminalreporter.write_sep('=', '')
+
+
 def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     terminalreporter: pytest.TerminalReporter,
     exitstatus: int,  # noqa: ARG001
@@ -4034,35 +4070,7 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
         terminalreporter.write_line(notice)
 
     if not gremlin_session.gremlins:
-        terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
-        terminalreporter.write_line('')
-        if gremlin_session.skipped_files:
-            terminalreporter.write_line(
-                f'{len(gremlin_session.skipped_files)} file(s) skipped and not mutation tested:'
-            )
-            for skipped_path in gremlin_session.skipped_files:
-                terminalreporter.write_line(f'  - {skipped_path}')
-        elif gremlin_session.target_paths:
-            terminalreporter.write_line('No gremlins found in source code. Searched paths:')
-            for searched_path in gremlin_session.target_paths:
-                terminalreporter.write_line(f'  - {searched_path}')
-        else:
-            terminalreporter.write_line('No gremlins found: no source paths were discovered.')
-            terminalreporter.write_line('')
-            terminalreporter.write_line('pytest-gremlins looks for source code in this order:')
-            terminalreporter.write_line('  1. --gremlin-targets CLI option')
-            terminalreporter.write_line('  2. [tool.pytest-gremlins] paths in pyproject.toml')
-            terminalreporter.write_line('  3. [tool.setuptools] package config in pyproject.toml')
-            terminalreporter.write_line('  4. [project].name heuristic in pyproject.toml')
-            terminalreporter.write_line('  5. setup.cfg [options] / [options.packages.find]')
-            terminalreporter.write_line('  6. Installed package metadata (importlib.metadata)')
-            terminalreporter.write_line('  7. src/ directory')
-            terminalreporter.write_line('')
-            terminalreporter.write_line(
-                'If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_package'
-            )
-        terminalreporter.write_line('')
-        terminalreporter.write_sep('=', '')
+        _write_empty_run_report(terminalreporter, gremlin_session)
         return
 
     score = MutationScore.from_results(gremlin_session.results, mutant_timeout=gremlin_session.mutant_timeout)
