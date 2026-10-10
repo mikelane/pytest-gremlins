@@ -47,7 +47,10 @@ import pytest
 
 from pytest_gremlins import node_id_args
 from pytest_gremlins.cache.hasher import ContentHasher
-from pytest_gremlins.cache.incremental import IncrementalCache, subprocess_optimize_level
+from pytest_gremlins.cache.incremental import (
+    IncrementalCache,
+    subprocess_optimize_level,
+)
 from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.config import (
     MAX_TIMEOUT_SECONDS,

@@ -6,9 +6,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pytest_gremlins.cache.incremental import IncrementalCache, subprocess_optimize_level
+from pytest_gremlins.cache.incremental import (
+    IncrementalCache,
+    subprocess_optimize_level,
+)
 from pytest_gremlins.instrumentation.gremlin import Gremlin
-from pytest_gremlins.plugin import GremlinSession, _check_cache_for_gremlin
+from pytest_gremlins.plugin import (
+    GremlinSession,
+    _check_cache_for_gremlin,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
