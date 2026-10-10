@@ -19,8 +19,11 @@ class DescribeDescribeException:
     def it_collapses_a_multiline_message_to_one_line(self) -> None:
         assert _describe_exception(RuntimeError('first\n  second')) == 'RuntimeError: first second'
 
-    def it_keeps_the_type_when_the_message_is_empty(self) -> None:
-        assert _describe_exception(KeyError()) == 'KeyError: '
+    def it_renders_only_the_type_when_the_message_is_empty(self) -> None:
+        assert _describe_exception(KeyError()) == 'KeyError'
+
+    def it_renders_only_the_type_when_the_message_is_whitespace(self) -> None:
+        assert _describe_exception(ValueError('  \n ')) == 'ValueError'
 
 
 @pytest.mark.small

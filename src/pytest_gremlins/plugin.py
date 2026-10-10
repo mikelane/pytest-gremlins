@@ -1305,8 +1305,9 @@ def _generate_gremlins(
 
 
 def _describe_exception(exc: BaseException) -> str:
-    """Render an exception as ``Type: message`` on one line."""
-    return f'{type(exc).__name__}: {" ".join(str(exc).split())}'
+    """Render an exception as ``Type: message`` on one line, or just ``Type`` when it has no message."""
+    message = ' '.join(str(exc).split())
+    return f'{type(exc).__name__}: {message}' if message else type(exc).__name__
 
 
 def _report_to_terminal(gremlin_session: GremlinSession, message: str) -> None:
