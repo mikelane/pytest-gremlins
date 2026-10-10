@@ -76,7 +76,10 @@ class DescribeSkippedFileReport:
 
         result = run_pytest_isolated(pytester, '--gremlins', '--gremlin-targets', 'src/demo')
 
-        result.stdout.fnmatch_lines(['*age.py*'])
+        # '*age.py*' alone would match the collection line 'tests/test_age.py .'; require age.py's
+        # gremlins to have run and the full mutation report (not the empty-run report) to print.
+        result.stdout.fnmatch_lines(['*Gremlin 1/*: age_*', '*pytest-gremlins mutation report*', 'Zapped: * gremlins*'])
+        result.stdout.no_fnmatch_line('*skipped and not mutation tested*')
 
     def it_names_the_skipped_file_when_warnings_are_errors(
         self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated

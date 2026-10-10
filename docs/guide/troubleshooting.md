@@ -219,8 +219,9 @@ and lists the files instead of `No gremlins found`.
 
 **Cause:** Instrumenting the file raised an exception. A very long operator chain (about 120 `+` terms or
 about 245 `|` terms) exceeds Python's recursion limit. Any other exception from instrumentation is
-reported the same way. The rest of the targets are still mutation tested, so the score does not include
-the skipped file. The exit code is unchanged.
+reported the same way. The other targets are still mutation tested, but the skipped file gets no gremlins,
+so the score says nothing about its tests. The exit code does not change, so a skipped file never fails
+CI on its own. Watch for this line in the output.
 
 **Solution:** Split the long expression, for example into a loop or a `sum(...)`. Run with
 `--log-cli-level=ERROR` to see the full traceback.
