@@ -280,7 +280,7 @@ class GremlinSession:
             is reported as a timeout.
         terminal_notices: Lines for the terminal summary, written directly rather than through
             ``logging`` (which pytest captures) or ``warnings.warn`` (which ``filterwarnings = error``
-            turns into a crash).  Add one with :func:`_report_to_terminal`.
+            turns into a crash).  Add one with :func:`_queue_terminal_notice`.
         skipped_files: Target files dropped because instrumentation raised, mapped to the
             ``ExceptionType: message`` that dropped them (issue #638).
         preserved_addopts: The project's pytest ``addopts`` with pytest-cov flags
@@ -1290,8 +1290,9 @@ def _generate_gremlins(
             logger.exception('Failed to transform %s; skipping file', file_path)
             reason = _describe_exception(exc)
             gremlin_session.skipped_files[file_path] = reason
-            _report_to_terminal(
-                gremlin_session, f'pytest-gremlins: skipped {_printable(file_path)}: could not instrument ({reason})'
+            displayed_path = _neutralize_control_characters(file_path)
+            _queue_terminal_notice(
+                gremlin_session, f'pytest-gremlins: skipped {displayed_path}: could not instrument ({reason})'
             )
             continue
         all_gremlins.extend(gremlins)
@@ -1304,18 +1305,18 @@ def _generate_gremlins(
         gremlin_session.instrumented_dir = instrumented_dir
 
 
-def _printable(text: str) -> str:
+def _neutralize_control_characters(text: str) -> str:
     """Replace control characters (such as ESC) so untrusted text cannot drive the terminal."""
     return ''.join(char if char.isprintable() else '?' for char in text)
 
 
 def _describe_exception(exc: BaseException) -> str:
     """Render an exception as ``Type: message`` on one line, or just ``Type`` when it has no message."""
-    message = _printable(' '.join(str(exc).split()))
+    message = _neutralize_control_characters(' '.join(str(exc).split()))
     return f'{type(exc).__name__}: {message}' if message else type(exc).__name__
 
 
-def _report_to_terminal(gremlin_session: GremlinSession, message: str) -> None:
+def _queue_terminal_notice(gremlin_session: GremlinSession, message: str) -> None:
     """Queue a line for the terminal summary, once per distinct message."""
     if message not in gremlin_session.terminal_notices:
         gremlin_session.terminal_notices.append(message)
@@ -4031,8 +4032,8 @@ def _write_empty_run_report(terminalreporter: pytest.TerminalReporter, gremlin_s
     terminalreporter.write_line('')
     if gremlin_session.skipped_files:
         terminalreporter.write_line(f'{len(gremlin_session.skipped_files)} file(s) skipped and not mutation tested:')
-        for skipped_path in gremlin_session.skipped_files:
-            terminalreporter.write_line(f'  - {_printable(skipped_path)}')
+        for skipped_path, reason in gremlin_session.skipped_files.items():
+            terminalreporter.write_line(f'  - {_neutralize_control_characters(skipped_path)} ({reason})')
     elif gremlin_session.target_paths:
         terminalreporter.write_line('No gremlins found in source code. Searched paths:')
         for searched_path in gremlin_session.target_paths:

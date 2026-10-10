@@ -16,8 +16,8 @@ from pytest_gremlins.plugin import (
     GremlinSession,
     _describe_exception,
     _generate_gremlins,
-    _printable,
-    _report_to_terminal,
+    _neutralize_control_characters,
+    _queue_terminal_notice,
     _write_empty_run_report,
     pytest_terminal_summary,
 )
@@ -48,7 +48,7 @@ class DescribeTerminalSafety:
         assert _describe_exception(ValueError('a\x1b[31mred')) == 'ValueError: a?[31mred'
 
     def it_replaces_escape_characters_in_a_skipped_path(self) -> None:
-        assert _printable('src/\x1b]0;pwn\x07.py') == 'src/?]0;pwn?.py'
+        assert _neutralize_control_characters('src/\x1b]0;pwn\x07.py') == 'src/?]0;pwn?.py'
 
     @pytest.mark.parametrize(
         ('text', 'expected'),
@@ -61,7 +61,7 @@ class DescribeTerminalSafety:
         ],
     )
     def it_replaces_each_control_character_with_a_question_mark(self, text: str, expected: str) -> None:
-        assert _printable(text) == expected
+        assert _neutralize_control_characters(text) == expected
 
     @pytest.mark.parametrize(
         'text',
@@ -73,7 +73,7 @@ class DescribeTerminalSafety:
         ],
     )
     def it_leaves_printable_text_unchanged(self, text: str) -> None:
-        assert _printable(text) == text
+        assert _neutralize_control_characters(text) == text
 
 
 @pytest.mark.small
@@ -81,15 +81,15 @@ class DescribeReportToTerminal:
     def it_queues_a_message(self) -> None:
         session = GremlinSession()
 
-        _report_to_terminal(session, 'hello')
+        _queue_terminal_notice(session, 'hello')
 
         assert session.terminal_notices == ['hello']
 
     def it_queues_a_repeated_message_once(self) -> None:
         session = GremlinSession()
 
-        _report_to_terminal(session, 'hello')
-        _report_to_terminal(session, 'hello')
+        _queue_terminal_notice(session, 'hello')
+        _queue_terminal_notice(session, 'hello')
 
         assert session.terminal_notices == ['hello']
 
@@ -152,8 +152,8 @@ class DescribeWriteEmptyRunReport:
         assert _written_lines(reporter) == [
             '',
             '2 file(s) skipped and not mutation tested:',
-            '  - src/demo/a.py',
-            '  - src/demo/b.py',
+            '  - src/demo/a.py (ValueError: x)',
+            '  - src/demo/b.py (ValueError: y)',
             '',
         ]
 
@@ -163,7 +163,7 @@ class DescribeWriteEmptyRunReport:
 
         _write_empty_run_report(reporter, session)
 
-        assert '  - src/?[31mred.py' in _written_lines(reporter)
+        assert '  - src/?[31mred.py (ValueError: x)' in _written_lines(reporter)
 
     def it_lists_searched_paths_when_nothing_was_skipped(self) -> None:
         reporter = MagicMock(spec=TerminalReporter)
