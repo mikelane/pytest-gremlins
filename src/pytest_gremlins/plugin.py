@@ -1312,7 +1312,11 @@ def _neutralize_control_characters(text: str) -> str:
 
 def _describe_exception(exc: BaseException) -> str:
     """Render an exception as ``Type: message`` on one line, or just ``Type`` when it has no message."""
-    message = _neutralize_control_characters(' '.join(str(exc).split()))
+    try:
+        raw_message = str(exc)
+    except Exception:
+        raw_message = ''
+    message = _neutralize_control_characters(' '.join(raw_message.split()))
     return f'{type(exc).__name__}: {message}' if message else type(exc).__name__
 
 
@@ -2042,10 +2046,14 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
     if not gremlin_session.gremlins:
         if gremlin_session.explain_gremlin_id is not None:
-            print(
-                '--gremlin-explain: no gremlins were generated in this session (nothing to '
-                'explain). Check your `paths`/`--gremlin-targets` configuration.'
+            for notice in gremlin_session.terminal_notices:
+                print(notice)
+            cause = (
+                'Files were skipped (see above).'
+                if gremlin_session.terminal_notices
+                else 'Check your `paths`/`--gremlin-targets` configuration.'
             )
+            print(f'--gremlin-explain: no gremlins were generated in this session (nothing to explain). {cause}')
             gremlin_session.enabled = False
         return
 
