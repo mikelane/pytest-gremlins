@@ -18,7 +18,10 @@ from pytest_gremlins.parallel.runner_eligibility import (
 
 
 def _collect_one(pytester: pytest.Pytester, source: str) -> pytest.Item:
-    items = pytester.getitems(textwrap.dedent(source))
+    """Collect the first test in ``source`` with no plugin that wraps every test (rerunfailures does)."""
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '-p no:rerunfailures')
+        items = pytester.getitems(textwrap.dedent(source))
     return items[0]
 
 
