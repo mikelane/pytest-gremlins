@@ -504,9 +504,13 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
   `--reruns-delay-backoff-factor`, `--reruns-mode`, `--only-rerun`, `--rerun-except`, `--rerun-exclude-path`,
   `--force-reruns` and `--max-suite-reruns`. They go last on the command, so they win over `addopts`, as in pytest.
   Options kept in a file passed as `@file` on the command line are carried over as well, and so are
-  `-o reruns=N` and `-o reruns_delay=S` (also spelled `--override-ini`).
+  `-o` settings for any ini key pytest-rerunfailures reads (`reruns`, `reruns_delay`, `reruns_delay_backoff_factor`,
+  `only_rerun`, `rerun_except`), also spelled `--override-ini` or clustered as in `-qo reruns=2`.
+- The coverage pre-scan gets the same rerun options, so a test that flakes before it reaches your code is rerun
+  and still counts as covering it (otherwise mutants only it could catch would survive).
 - `--fail-on-flaky` and `--rerun-show-tracebacks` are not carried over. `@pytest.mark.flaky` markers need no help.
-- Nothing is added when the plugin is not loaded (or is disabled with `-p no:rerunfailures`), so a project without
+- Nothing is added when the plugin is not loaded under either of its names, `rerunfailures` or
+  `pytest_rerunfailures` (or is disabled with `-p no:rerunfailures`), so a project without
   it never receives an unknown flag.
 
 If a baseline test needed a rerun to pass, gremlins prints one warning that names it (up to ten tests; the rest are

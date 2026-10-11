@@ -2567,6 +2567,7 @@ def _run_prescan_reporting_problems(
             name_to_node_ids=gremlin_session.test_name_to_node_ids,
             coverage_include=coverage_include,
             preserved_addopts=gremlin_session.preserved_addopts,
+            rerun_options=gremlin_session.rerun_options,
             timeout=gremlin_session.coverage_timeout,
         )
     except CoveragePrescanTimeoutError as timeout_error:
@@ -2710,13 +2711,18 @@ def _is_cov_addopt(token: str) -> bool:
     return name in ('--cov', '--no-cov') or name.startswith(('--cov-', '--no-cov-'))
 
 
+# Registered as ``rerunfailures`` when found through its entry point, as ``pytest_rerunfailures`` when loaded
+# by module name (``-p``, ``pytest_plugins``, or ``PYTEST_DISABLE_PLUGIN_AUTOLOAD=1``).
+_RERUNFAILURES_PLUGIN_NAMES = ('rerunfailures', 'pytest_rerunfailures')
+
+
 def _rerun_options_for(config: pytest.Config) -> list[str]:
     """Return the rerun options typed on ``config``'s command line, or none if pytest-rerunfailures is not active.
 
     Options are only forwarded when the plugin is loaded in this session, so a project without it
     never receives a flag its gremlin runs would reject as unrecognized (exit code 4).
     """
-    if not config.pluginmanager.hasplugin('rerunfailures'):
+    if not any(config.pluginmanager.hasplugin(name) for name in _RERUNFAILURES_PLUGIN_NAMES):
         return []
     return rerun_options_in(config.invocation_params.args, base_dir=config.invocation_params.dir)
 
@@ -2823,6 +2829,7 @@ def _run_tests_with_coverage(
     name_to_node_ids: dict[str, list[str]] | None = None,
     coverage_include: list[str] | None = None,
     preserved_addopts: str = '',
+    rerun_options: list[str] | None = None,
     timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS,
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
@@ -2857,6 +2864,10 @@ def _run_tests_with_coverage(
             and the pre-scan would otherwise record nothing (issue #502).  The xdist
             plugin itself stays loaded: without ``-n`` it runs in-process, so its
             fixtures and hooks still work.
+        rerun_options: pytest-rerunfailures options from the command line (see
+            :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended so a test that flakes
+            before reaching the code under test is rerun, as in the baseline, and still lands in the
+            coverage map.
         timeout: Seconds the pre-scan subprocess may run (default 120).
 
     Returns:
@@ -2899,6 +2910,7 @@ def _run_tests_with_coverage(
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
         '--tb=no',
         '-q',
+        *(rerun_options or []),
     ]
 
     try:

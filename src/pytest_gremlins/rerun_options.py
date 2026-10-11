@@ -13,6 +13,7 @@ from collections.abc import (
     Sequence,
 )
 from pathlib import Path
+import re
 
 _ARGUMENT_FILE_PREFIX = '@'
 
@@ -34,9 +35,12 @@ _RERUN_VALUE_OPTS = frozenset(
 )
 
 # pytest-rerunfailures also reads these ini keys, so ``-o reruns=2`` is a command-line rerun option too.
-_RERUN_INI_KEYS = frozenset({'reruns', 'reruns_delay'})
+_RERUN_INI_KEYS = frozenset({'reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except'})
 _SHORT_OVERRIDE_INI = '-o'
 _OVERRIDE_INI_OPTS = frozenset({_SHORT_OVERRIDE_INI, '--override-ini'})
+
+# argparse reads ``-qo reruns=2`` as ``-q -o reruns=2``; only pytest's flags without a value may precede the ``o``.
+_CLUSTERED_OVERRIDE_INI = re.compile(r'-[xqvlshV]*o(?P<attached>.*)', re.DOTALL)
 
 _CARRIED_OPTS = _RERUN_VALUE_OPTS | _OVERRIDE_INI_OPTS
 
@@ -103,9 +107,13 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
 
 def _split_option(arg: str) -> tuple[str, str | None]:
     """Split ``arg`` into the option name and the value written in the same argument, if any."""
-    attached_value = arg[len(_SHORT_OVERRIDE_INI) :]
-    if arg.startswith(_SHORT_OVERRIDE_INI) and attached_value and not attached_value.startswith('='):
-        return _SHORT_OVERRIDE_INI, attached_value
+    clustered = _CLUSTERED_OVERRIDE_INI.fullmatch(arg)
+    if clustered is not None:
+        attached_value = clustered.group('attached')
+        if attached_value and not attached_value.startswith('='):
+            return _SHORT_OVERRIDE_INI, attached_value
+        if not attached_value:
+            return _SHORT_OVERRIDE_INI, None
     name, has_inline_value, inline_value = arg.partition('=')
     return name, inline_value if has_inline_value else None
 
