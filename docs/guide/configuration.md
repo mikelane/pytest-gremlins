@@ -511,7 +511,8 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
 - `--fail-on-flaky` and `--rerun-show-tracebacks` are not carried over. `@pytest.mark.flaky` markers need no help.
 - If you load the plugin with `-p rerunfailures` or `-p pytest_rerunfailures` on the command line (also the attached
   `-p` spelling and `-p=...`), that `-p` is carried too, so runs with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`
-  still recognize the options.
+  still recognize the options. A `-p` loader written inside a file passed as `@file` is not carried, because
+  pytest ignores it there; the rerun options in that file are still carried.
 - Nothing is added when the plugin is not loaded under either of its names, `rerunfailures` or
   `pytest_rerunfailures` (or is disabled with `-p no:rerunfailures`), so a project without
   it never receives an unknown flag.

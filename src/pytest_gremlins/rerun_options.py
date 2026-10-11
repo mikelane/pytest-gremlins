@@ -85,8 +85,9 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
 
     Returns:
         The rerun options in their original order; every other argument is dropped.  When any are
-        returned, a ``-p NAME`` that loaded pytest-rerunfailures on the command line comes first, spelled
-        as typed, so a session that runs with ``PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`` still recognizes them.
+        returned, a top-level ``-p NAME`` that loaded pytest-rerunfailures comes first, spelled as typed, so a
+        session that runs with ``PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`` still recognizes them.  A ``-p`` inside an
+        ``@file`` is not carried, because pytest ignores it.
 
     Example:
         >>> rerun_options_in(['tests/', '--reruns', '2', '-x', '--reruns-delay=0.5'])
@@ -94,18 +95,12 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
         >>> rerun_options_in(['-p', 'pytest_rerunfailures', '--reruns', '2'])
         ['-p', 'pytest_rerunfailures', '--reruns=2']
     """
+    plugin_loaders = _rerunfailures_loaders_in(args)
     expanded = _expand_argument_files(args, base_dir or Path())
-    plugin_loaders: list[str] = []
     options: list[str] = []
     index = 0
     while index < len(expanded):
         arg = expanded[index]
-        if arg == _LOAD_PLUGIN_OPT and index + 1 < len(expanded):
-            _remember_rerunfailures_loader(expanded[index + 1], plugin_loaders)
-            index += 2
-            continue
-        if arg.startswith(_LOAD_PLUGIN_OPT) and not arg.startswith('--'):
-            _remember_rerunfailures_loader(arg[len(_LOAD_PLUGIN_OPT) :].removeprefix('='), plugin_loaders)
         name, value = _split_option(arg)
         index += 1
         if name not in _CARRIED_OPTS:
@@ -119,6 +114,26 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
         if option is not None:
             options.append(option)
     return [*plugin_loaders, *options] if options else []
+
+
+def _rerunfailures_loaders_in(args: Sequence[str]) -> list[str]:
+    """Return ``-p NAME`` for each top-level ``-p`` in ``args`` that names pytest-rerunfailures.
+
+    Only the unexpanded arguments count: pytest reads ``-p`` before it expands ``@file`` arguments, so a
+    loader kept inside an argument file never loads anything.
+    """
+    plugin_loaders: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == _LOAD_PLUGIN_OPT and index + 1 < len(args):
+            _remember_rerunfailures_loader(args[index + 1], plugin_loaders)
+            index += 2
+            continue
+        if arg.startswith(_LOAD_PLUGIN_OPT) and not arg.startswith('--'):
+            _remember_rerunfailures_loader(arg[len(_LOAD_PLUGIN_OPT) :].removeprefix('='), plugin_loaders)
+        index += 1
+    return plugin_loaders
 
 
 def _remember_rerunfailures_loader(plugin_name: str, plugin_loaders: list[str]) -> None:
