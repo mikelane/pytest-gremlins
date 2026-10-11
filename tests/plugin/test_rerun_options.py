@@ -42,6 +42,27 @@ class DescribeRerunOptionsIn:
     def it_keeps_each_rerun_option_with_its_value(self, args: list[str], expected: list[str]) -> None:
         assert rerun_options_in(args) == expected
 
+    @pytest.mark.parametrize(
+        'args',
+        [
+            ['-o', 'reruns=2'],
+            ['-o=reruns=2'],
+            ['-oreruns=2'],
+            ['--override-ini', 'reruns=2'],
+            ['--override-ini=reruns=2'],
+        ],
+    )
+    def it_keeps_the_rerun_ini_settings_overridden_on_the_command_line(self, args: list[str]) -> None:
+        assert rerun_options_in(args) == ['--override-ini=reruns=2']
+
+    def it_keeps_the_rerun_delay_ini_override_and_drops_unrelated_ones(self) -> None:
+        args = ['-o', 'log_level=DEBUG', '-o', 'reruns_delay=0.5', '-o', 'rerunsx=1']
+
+        assert rerun_options_in(args) == ['--override-ini=reruns_delay=0.5']
+
+    def it_does_not_take_a_trailing_override_ini_option_as_a_rerun_setting(self) -> None:
+        assert rerun_options_in(['-o']) == []
+
     def it_ignores_every_other_argument(self) -> None:
         args = ['tests/', '-x', '--reruns', '2', '-k', 'flaky', '--gremlins', '-n', '2']
 

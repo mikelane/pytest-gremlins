@@ -33,6 +33,12 @@ _RERUN_VALUE_OPTS = frozenset(
     }
 )
 
+# pytest-rerunfailures also reads these ini keys, so ``-o reruns=2`` is a command-line rerun option too.
+_RERUN_INI_KEYS = frozenset({'reruns', 'reruns_delay'})
+_OVERRIDE_INI_OPTS = frozenset({'-o', '--override-ini'})
+
+_CARRIED_OPTS = _RERUN_VALUE_OPTS | _OVERRIDE_INI_OPTS
+
 _MAX_NAMED_TESTS = 10
 
 
@@ -79,16 +85,36 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
     options: list[str] = []
     index = 0
     while index < len(expanded):
-        name, has_inline_value, inline_value = expanded[index].partition('=')
+        name, value = _split_option(expanded[index])
         index += 1
-        if name not in _RERUN_VALUE_OPTS:
+        if name not in _CARRIED_OPTS:
             continue
-        if has_inline_value:
-            options.append(f'{name}={inline_value}')
-        elif index < len(expanded):
-            options.append(f'{name}={expanded[index]}')
+        if value is None:
+            if index == len(expanded):
+                break
+            value = expanded[index]
             index += 1
+        option = _carried_form(name, value)
+        if option is not None:
+            options.append(option)
     return options
+
+
+def _split_option(arg: str) -> tuple[str, str | None]:
+    """Split ``arg`` into the option name and the value written in the same argument, if any."""
+    if arg.startswith('-o') and not arg.startswith('--') and arg[2:3] not in ('', '='):
+        return '-o', arg[2:]
+    name, has_inline_value, inline_value = arg.partition('=')
+    return name, inline_value if has_inline_value else None
+
+
+def _carried_form(name: str, value: str) -> str | None:
+    """Return ``name`` and ``value`` as one argument, or None for an ini override that is not a rerun setting."""
+    if name not in _OVERRIDE_INI_OPTS:
+        return f'{name}={value}'
+    if value.partition('=')[0] not in _RERUN_INI_KEYS:
+        return None
+    return f'--override-ini={value}'
 
 
 def baseline_rerun_warning(rerun_test_ids: Collection[str]) -> str | None:
