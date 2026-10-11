@@ -44,6 +44,10 @@ _CLUSTERED_OVERRIDE_INI = re.compile(r'-[xqvlshV]*o(?P<attached>.*)', re.DOTALL)
 
 _CARRIED_OPTS = _RERUN_VALUE_OPTS | _OVERRIDE_INI_OPTS
 
+# ``-p NAME``, ``-pNAME`` and ``-p=NAME`` all load a plugin; only pytest-rerunfailures' own names count.
+_LOAD_PLUGIN_OPT = '-p'
+_RERUNFAILURES_MODULE_NAMES = frozenset({'rerunfailures', 'pytest_rerunfailures'})
+
 _MAX_NAMED_TESTS = 10
 
 
@@ -80,17 +84,29 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
             current directory.  Use ``config.invocation_params.dir``.
 
     Returns:
-        The rerun options in their original order; every other argument is dropped.
+        The rerun options in their original order; every other argument is dropped.  When any are
+        returned, a ``-p NAME`` that loaded pytest-rerunfailures on the command line comes first, spelled
+        as typed, so a session that runs with ``PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`` still recognizes them.
 
     Example:
         >>> rerun_options_in(['tests/', '--reruns', '2', '-x', '--reruns-delay=0.5'])
         ['--reruns=2', '--reruns-delay=0.5']
+        >>> rerun_options_in(['-p', 'pytest_rerunfailures', '--reruns', '2'])
+        ['-p', 'pytest_rerunfailures', '--reruns=2']
     """
     expanded = _expand_argument_files(args, base_dir or Path())
+    plugin_loaders: list[str] = []
     options: list[str] = []
     index = 0
     while index < len(expanded):
-        name, value = _split_option(expanded[index])
+        arg = expanded[index]
+        if arg == _LOAD_PLUGIN_OPT and index + 1 < len(expanded):
+            _remember_rerunfailures_loader(expanded[index + 1], plugin_loaders)
+            index += 2
+            continue
+        if arg.startswith(_LOAD_PLUGIN_OPT) and not arg.startswith('--'):
+            _remember_rerunfailures_loader(arg[len(_LOAD_PLUGIN_OPT) :].removeprefix('='), plugin_loaders)
+        name, value = _split_option(arg)
         index += 1
         if name not in _CARRIED_OPTS:
             continue
@@ -102,7 +118,13 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
         option = _carried_form(name, value)
         if option is not None:
             options.append(option)
-    return options
+    return [*plugin_loaders, *options] if options else []
+
+
+def _remember_rerunfailures_loader(plugin_name: str, plugin_loaders: list[str]) -> None:
+    """Append ``-p plugin_name`` to ``plugin_loaders`` if it names pytest-rerunfailures."""
+    if plugin_name in _RERUNFAILURES_MODULE_NAMES:
+        plugin_loaders.extend((_LOAD_PLUGIN_OPT, plugin_name))
 
 
 def _split_option(arg: str) -> tuple[str, str | None]:
@@ -110,10 +132,9 @@ def _split_option(arg: str) -> tuple[str, str | None]:
     clustered = _CLUSTERED_OVERRIDE_INI.fullmatch(arg)
     if clustered is not None:
         attached_value = clustered.group('attached')
-        if attached_value and not attached_value.startswith('='):
-            return _SHORT_OVERRIDE_INI, attached_value
         if not attached_value:
             return _SHORT_OVERRIDE_INI, None
+        return _SHORT_OVERRIDE_INI, attached_value.removeprefix('=')
     name, has_inline_value, inline_value = arg.partition('=')
     return name, inline_value if has_inline_value else None
 
