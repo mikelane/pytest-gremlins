@@ -35,7 +35,8 @@ _RERUN_VALUE_OPTS = frozenset(
 
 # pytest-rerunfailures also reads these ini keys, so ``-o reruns=2`` is a command-line rerun option too.
 _RERUN_INI_KEYS = frozenset({'reruns', 'reruns_delay'})
-_OVERRIDE_INI_OPTS = frozenset({'-o', '--override-ini'})
+_SHORT_OVERRIDE_INI = '-o'
+_OVERRIDE_INI_OPTS = frozenset({_SHORT_OVERRIDE_INI, '--override-ini'})
 
 _CARRIED_OPTS = _RERUN_VALUE_OPTS | _OVERRIDE_INI_OPTS
 
@@ -102,8 +103,9 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
 
 def _split_option(arg: str) -> tuple[str, str | None]:
     """Split ``arg`` into the option name and the value written in the same argument, if any."""
-    if arg.startswith('-o') and not arg.startswith('--') and arg[2:3] not in ('', '='):
-        return '-o', arg[2:]
+    attached_value = arg[len(_SHORT_OVERRIDE_INI) :]
+    if arg.startswith(_SHORT_OVERRIDE_INI) and attached_value and not attached_value.startswith('='):
+        return _SHORT_OVERRIDE_INI, attached_value
     name, has_inline_value, inline_value = arg.partition('=')
     return name, inline_value if has_inline_value else None
 
