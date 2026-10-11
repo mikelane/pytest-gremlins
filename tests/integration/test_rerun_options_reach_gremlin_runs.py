@@ -99,6 +99,13 @@ class DescribeRerunOptionsOnTheCommandLine:
 
         assert _survivors(result) > 0
 
+    def it_reaches_the_gremlin_runs_from_an_argument_file(self, pytester_with_markers: pytest.Pytester) -> None:
+        (pytester_with_markers.path / 'rerun.args').write_text('--reruns=2\n', encoding='utf-8')
+
+        result = _run_gremlins(pytester_with_markers, '@rerun.args')
+
+        assert _survivors(result) > 0
+
     def it_wins_over_a_rerun_count_in_addopts(self, pytester_with_markers: pytest.Pytester) -> None:
         pytester_with_markers.makeini('[pytest]\naddopts = --reruns 0\n')
 

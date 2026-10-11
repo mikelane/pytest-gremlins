@@ -58,6 +58,41 @@ class DescribeRerunOptionsIn:
         assert rerun_options_in(['--gremlins', 'tests/']) == []
 
 
+@pytest.mark.medium
+class DescribeRerunOptionsInArgumentFiles:
+    """pytest expands ``@file`` arguments, one argument per line, before it parses the command line."""
+
+    def it_reads_rerun_options_from_an_argument_file(self, tmp_path: Path) -> None:
+        (tmp_path / 'args.txt').write_text('--reruns=2\n--only-rerun\nTimeout\n', encoding='utf-8')
+
+        assert rerun_options_in(['@args.txt'], base_dir=tmp_path) == ['--reruns=2', '--only-rerun=Timeout']
+
+    def it_reads_an_argument_file_given_by_absolute_path(self, tmp_path: Path) -> None:
+        argument_file = tmp_path / 'args.txt'
+        argument_file.write_text('--reruns=3\n', encoding='utf-8')
+
+        assert rerun_options_in([f'@{argument_file}']) == ['--reruns=3']
+
+    def it_pairs_an_option_ending_a_file_with_the_value_that_follows_it(self, tmp_path: Path) -> None:
+        (tmp_path / 'args.txt').write_text('-x\n--reruns\n', encoding='utf-8')
+
+        assert rerun_options_in(['@args.txt', '2'], base_dir=tmp_path) == ['--reruns=2']
+
+    def it_reads_argument_files_named_inside_argument_files(self, tmp_path: Path) -> None:
+        (tmp_path / 'outer.txt').write_text('@inner.txt\n', encoding='utf-8')
+        (tmp_path / 'inner.txt').write_text('--reruns=4\n', encoding='utf-8')
+
+        assert rerun_options_in(['@outer.txt'], base_dir=tmp_path) == ['--reruns=4']
+
+    def it_ignores_an_argument_file_that_does_not_exist(self, tmp_path: Path) -> None:
+        assert rerun_options_in(['@missing.txt', '--reruns=2'], base_dir=tmp_path) == ['--reruns=2']
+
+    def it_stops_at_an_argument_file_that_names_itself(self, tmp_path: Path) -> None:
+        (tmp_path / 'loop.txt').write_text('--reruns=2\n@loop.txt\n', encoding='utf-8')
+
+        assert rerun_options_in(['@loop.txt'], base_dir=tmp_path) == ['--reruns=2']
+
+
 @pytest.mark.small
 class DescribeBuildTestCommandWithRerunOptions:
     def it_appends_the_rerun_options_to_the_bootstrap_command(self, tmp_path: Path) -> None:
@@ -104,7 +139,7 @@ class DescribeBaselineRerunWarning:
 
 def _config(*, has_rerunfailures: bool, args: list[str]) -> Any:
     pluginmanager = SimpleNamespace(hasplugin=lambda name: has_rerunfailures and name == 'rerunfailures')
-    return SimpleNamespace(pluginmanager=pluginmanager, invocation_params=SimpleNamespace(args=tuple(args)))
+    return SimpleNamespace(pluginmanager=pluginmanager, invocation_params=SimpleNamespace(args=tuple(args), dir=Path()))
 
 
 @pytest.mark.small

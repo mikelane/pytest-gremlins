@@ -2718,7 +2718,7 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     """
     if not config.pluginmanager.hasplugin('rerunfailures'):
         return []
-    return rerun_options_in(config.invocation_params.args)
+    return rerun_options_in(config.invocation_params.args, base_dir=config.invocation_params.dir)
 
 
 def _addopts_without_cov(raw_addopts: list[str]) -> str:
