@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.11.4 (2026-10-11)
+
+**Fewer silent gaps.** Code that ran only in a `spawn` or `forkserver` child was never mutated,
+so its gremlins were reported SURVIVED even when a test caught them. A source file that failed to
+instrument was dropped without a word, and the report could say "No gremlins found". Large
+suites crashed on Windows, and long chains of operators made instrumentation look hung. All of
+these are fixed. Your score may rise after upgrading.
+
+### Upgrade notes
+
+- **Your score may rise if your tests exercise code in `multiprocessing` children.** Children
+  started with `spawn` (the default on macOS and Windows) or `forkserver` now run the mutated
+  code, so their gremlins are zapped when a test catches them. A child running a different
+  Python version or implementation from the one pytest runs under still runs the original code,
+  as before. (#604, #620)
+- **Files that can't be instrumented are now reported.** Each one prints
+  `pytest-gremlins: skipped <path>: could not instrument (<Type>: <message>)`, and the JSON and
+  HTML reports list it under `skipped_files`. Those files are not mutation tested, so they are
+  not counted in the score. (#638, #645, #644, #646)
+- **The cache is rebuilt once.** Cached verdicts are now keyed on the `PYTHONOPTIMIZE` level, and
+  the spawn fix changed verdicts, so the first run after upgrading re-runs every gremlin. (#613,
+  #632, #620)
+
+### Fix
+
+- **Gremlins exercised only in a `spawn` or `forkserver` child were always reported SURVIVED.**
+  See the upgrade notes above. A user `sitecustomize` module still runs in those children, once.
+  (#604, #620)
+- **Large suites crashed on Windows with `WinError 206`.** The selected node ids were passed on
+  the subprocess command line, which Windows caps at 32,767 characters. They now go through a
+  file. pytest receives the same arguments as before, so test selection and order are unchanged.
+  (#485, #624, #626)
+- **A file that failed to instrument was skipped silently.** For example, a very long operator
+  chain could raise `RecursionError`. The file's gremlins vanished, and if no other file had any, the
+  run said "No gremlins found" and exited 0. See the upgrade notes above. When every target file
+  is skipped, no JSON or HTML report is written yet (#648). Thanks @kocaemre for the JSON and
+  HTML report entries. (#638, #645, #644, #646)
+- **A cached verdict was reused across `PYTHONOPTIMIZE` levels.** A gremlin zapped only by an
+  `assert` could keep its ZAPPED verdict on a run where asserts are stripped. (#613, #632)
+
+### Performance
+
+- **Long operator chains no longer make instrumentation look hung.** The instrumented tree
+  doubled with every extra term: an 18-term sum took about 100 s to instrument, and 30 terms
+  never finished. A 40-term sum now instruments in 0.15 s. (#611, #641)
+
+### Internal
+
+- `release.yml` can be re-run against an existing tag with Test PyPI skipped, for when
+  test.pypi.org is down. Every release now checks that the tag is annotated and matches the
+  package version, and installs the built wheel to check its version. (#602, #636)
+- The pre-commit ruff and mypy hooks run the versions pinned in `uv.lock`. (#583, #630)
+- Bumped `cairosvg` to 2.9.1 to clear CVE-2026-107378. (#633, #634)
+
 ## v1.11.3 (2026-10-08)
 
 **More of your code gets real verdicts.** Two kinds of target got verdicts that no test backed.
