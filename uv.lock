@@ -1808,6 +1808,7 @@ dev = [
     { name = "playwright" },
     { name = "pre-commit" },
     { name = "pytest-cov" },
+    { name = "pytest-rerunfailures" },
     { name = "pytest-test-categories" },
     { name = "pytest-xdist" },
     { name = "pyyaml" },
@@ -1846,6 +1847,7 @@ dev = [
     { name = "playwright", specifier = ">=1.63.0" },
     { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pytest-cov", specifier = ">=4.1.0" },
+    { name = "pytest-rerunfailures", specifier = ">=16.7" },
     { name = "pytest-test-categories", specifier = ">=1.2.2" },
     { name = "pytest-xdist", specifier = ">=3.5.0" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -1858,6 +1860,19 @@ docs = [
     { name = "mkdocs-material", extras = ["imaging"], specifier = ">=9.7.7" },
     { name = "mkdocs-minify-plugin", specifier = ">=0.7.0" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.24.0" },
+]
+
+[[package]]
+name = "pytest-rerunfailures"
+version = "16.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/b0/6b5337f9d59b26b0069ea3d5e863c31dc04b69e51bbfb1cf2ea6328fba87/pytest_rerunfailures-16.7.tar.gz", hash = "sha256:6956ddfb65ca1d07e7e3d99e2c5359d82300f4cb062e6049563bd2c106f72d5c", size = 59666, upload-time = "2026-09-17T07:08:48.871Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/d3/07ea35102cf2020ddaaac368d2a6f0bcc63d6523fb8918805bac3eb8b98f/pytest_rerunfailures-16.7-py3-none-any.whl", hash = "sha256:edf1886209c2b7dafe35b5bf1708d6ec40ccf6c6b357f0f02807efcec0204c99", size = 23952, upload-time = "2026-09-17T07:08:47.635Z" },
 ]
 
 [[package]]
