@@ -491,6 +491,36 @@ value of `-n`, so this also covers spellings the option stripper cannot see, suc
 `addopts = "-xn 2"` or `PYTEST_ADDOPTS="-xn 2"`. xdist stays loaded, so `worker_id` still works. Without
 xdist installed, nothing is added.
 
+### Flaky Tests and pytest-rerunfailures
+
+A gremlin is zapped when a test that covers it fails. A flaky test that fails for reasons unrelated to the
+mutation would therefore zap every gremlin it covers, and you would score tests that cannot tell good code from bad.
+
+If [pytest-rerunfailures](https://github.com/pytest-dev/pytest-rerunfailures) is installed, per-gremlin runs use
+the same rerun settings as your baseline run, so a gremlin is zapped only when the test fails on every attempt:
+
+- Options in `addopts` and `PYTEST_ADDOPTS`, and the `reruns` ini settings, reach per-gremlin runs as they always did.
+- Rerun options typed on the command line are now carried over too: `--reruns`, `--reruns-delay`,
+  `--reruns-delay-backoff-factor`, `--reruns-mode`, `--only-rerun`, `--rerun-except`, `--rerun-exclude-path`,
+  `--force-reruns` and `--max-suite-reruns`. They go last on the command, so they win over `addopts`, as in pytest.
+- `--fail-on-flaky` and `--rerun-show-tracebacks` are not carried over. `@pytest.mark.flaky` markers need no help.
+- Nothing is added when the plugin is not loaded (or is disabled with `-p no:rerunfailures`), so a project without
+  it never receives an unknown flag.
+
+If a baseline test needed a rerun to pass, gremlins prints one warning that names it (up to ten tests; the rest are
+counted):
+
+```text
+pytest-gremlins: warning: 1 baseline test(s) needed a rerun to pass: tests/test_api.py::test_fetch. Gremlin runs use ...
+```
+
+The warning is a prompt to fix the flake, not an error.
+
+**Cost.** A gremlin that your tests do kill now runs the failing test up to `N + 1` times (with `--reruns N`), plus
+any `--reruns-delay`. Survivors cost nothing extra, because their tests pass. A suite whose tests fail often
+under mutation therefore takes noticeably longer, most of all with a large `--reruns-delay`. Re-running each
+killing test before a kill counts, for projects that do not use pytest-rerunfailures, is not implemented.
+
 ### Coverage Pre-Scan Timeout
 
 The pre-scan is limited to 120 seconds by default. If it runs longer, gremlins emits this warning (wrapped here for width)

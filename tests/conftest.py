@@ -132,7 +132,12 @@ def make_pytest_config() -> Callable[..., Any]:
 
         ini_values = {'addopts': addopts if addopts is not None else []}
 
+        class _InvocationParams:
+            args: tuple[str, ...] = ()
+
         class _Config:
+            invocation_params = _InvocationParams()
+
             def getini(self, name: str) -> object:
                 # Mirror real pytest: an unregistered ini name raises rather than
                 # silently returning a falsy default that could mask a config read.
