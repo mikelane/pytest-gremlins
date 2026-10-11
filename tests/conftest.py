@@ -134,6 +134,7 @@ def make_pytest_config() -> Callable[..., Any]:
 
         class _InvocationParams:
             args: tuple[str, ...] = ()
+            dir = Path()
 
         class _Config:
             invocation_params = _InvocationParams()
