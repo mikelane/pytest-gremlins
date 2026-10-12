@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -20,6 +21,7 @@ from pytest_gremlins.plugin import (
 )
 from pytest_gremlins.rerun_options import (
     baseline_rerun_warning,
+    rerun_ini_overrides,
     rerun_options_in,
 )
 
@@ -156,9 +158,16 @@ class DescribeBaselineRerunWarning:
         assert '13 baseline test(s) needed a rerun' in warning
 
 
-def _config(*, registered_plugin: str | None, args: list[str]) -> pytest.Config:
+def _config(
+    *, registered_plugin: str | None, args: list[str], ini: dict[str, str | list[str]] | None = None
+) -> pytest.Config:
     pluginmanager = SimpleNamespace(hasplugin=lambda name: name == registered_plugin)
-    fake = SimpleNamespace(pluginmanager=pluginmanager, invocation_params=SimpleNamespace(args=tuple(args), dir=Path()))
+    ini_values = ini or {}
+    fake = SimpleNamespace(
+        pluginmanager=pluginmanager,
+        invocation_params=SimpleNamespace(args=tuple(args), dir=Path()),
+        getini=lambda name: ini_values.get(name, [] if name in ('only_rerun', 'rerun_except') else ''),
+    )
     return cast('pytest.Config', fake)
 
 
@@ -180,6 +189,62 @@ class DescribeRerunOptionsFor:
         config = _config(registered_plugin='pytest_rerunfailures', args=['--gremlins', '--reruns', '2'])
 
         assert _rerun_options_for(config) == ['--reruns=2']
+
+    def it_forwards_rerun_ini_settings_as_ini_overrides_so_a_config_file_reaches_gremlin_runs(self) -> None:
+        config = _config(registered_plugin='rerunfailures', args=['-c', 'ci.ini'], ini={'reruns': '2'})
+
+        assert _rerun_options_for(config) == ['--override-ini=reruns=2']
+
+    def it_puts_the_command_line_after_the_ini_settings_so_it_wins(self) -> None:
+        config = _config(registered_plugin='rerunfailures', args=['--reruns', '3'], ini={'reruns': '1'})
+
+        assert _rerun_options_for(config) == ['--override-ini=reruns=1', '--reruns=3']
+
+    def it_does_not_repeat_an_ini_setting_the_command_line_already_overrides(self) -> None:
+        config = _config(registered_plugin='rerunfailures', args=['-o', 'reruns=2'], ini={'reruns': '2'})
+
+        assert _rerun_options_for(config) == ['--override-ini=reruns=2']
+
+    def it_forwards_no_ini_settings_when_pytest_rerunfailures_is_not_loaded(self) -> None:
+        config = _config(registered_plugin=None, args=[], ini={'reruns': '2'})
+
+        assert _rerun_options_for(config) == []
+
+
+@pytest.mark.small
+class DescribeRerunIniOverrides:
+    @staticmethod
+    def _reader(values: dict[str, str | list[str]]) -> Callable[[str], object]:
+        return lambda key: values.get(key, [] if key in ('only_rerun', 'rerun_except') else '')
+
+    def it_returns_nothing_when_no_rerun_ini_key_is_set(self) -> None:
+        assert rerun_ini_overrides(self._reader({})) == []
+
+    def it_forwards_each_set_key_as_an_ini_override_in_a_fixed_order(self) -> None:
+        values = {'reruns_delay': '0.5', 'reruns': '2', 'reruns_delay_backoff_factor': '2'}
+
+        assert rerun_ini_overrides(self._reader(values)) == [
+            '--override-ini=reruns=2',
+            '--override-ini=reruns_delay=0.5',
+            '--override-ini=reruns_delay_backoff_factor=2',
+        ]
+
+    def it_joins_a_list_setting_with_newlines_so_pytest_parses_the_same_list(self) -> None:
+        values: dict[str, str | list[str]] = {
+            'only_rerun': ['no such failure', 'AssertionError'],
+            'rerun_except': ['X'],
+        }
+
+        assert rerun_ini_overrides(self._reader(values)) == [
+            '--override-ini=only_rerun=no such failure\nAssertionError',
+            '--override-ini=rerun_except=X',
+        ]
+
+    def it_keeps_a_zero_count_from_a_toml_file_so_it_still_overrides_the_gremlin_runs_own_config(self) -> None:
+        assert rerun_ini_overrides(self._reader({'reruns': 0})) == ['--override-ini=reruns=0']  # type: ignore[dict-item]
+
+    def it_converts_a_non_string_value_from_a_toml_file_to_text(self) -> None:
+        assert rerun_ini_overrides(self._reader({'reruns': 2})) == ['--override-ini=reruns=2']  # type: ignore[dict-item]
 
 
 def _report(node_id: str, outcome: str) -> pytest.TestReport:

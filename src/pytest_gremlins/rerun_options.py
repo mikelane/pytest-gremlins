@@ -2,13 +2,15 @@
 
 A mutant is zapped when a covering test fails.  A flaky test that fails for reasons unrelated to the
 mutation would zap every mutant it covers, unless the gremlin run reruns it the way the baseline did.
-Rerun options in the project's ``addopts`` already reach gremlin runs, as do ``reruns`` ini settings
-and ``PYTEST_ADDOPTS``; this module carries the ones typed on the command line.
+Rerun options in the project's ``addopts`` and ``PYTEST_ADDOPTS`` already reach gremlin runs; this module
+carries the ones typed on the command line and the rerun ini settings, which a ``-c`` config file holds
+where the gremlin runs cannot read it.
 """
 
 from __future__ import annotations
 
 from collections.abc import (
+    Callable,
     Collection,
     Sequence,
 )
@@ -42,7 +44,10 @@ _RERUN_VALUE_OPTIONS = frozenset(
 
 # pytest-rerunfailures also reads these ini keys, so ``-o reruns=2`` is a command-line rerun option too.
 _RERUN_INI_KEYS = frozenset({'reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except'})
+# The order the settings are forwarded in; the list-valued keys are ``linelist`` ini options.
+_FORWARDED_INI_KEYS = ('reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except')
 _SHORT_OVERRIDE_INI = '-o'
+_OVERRIDE_INI_ARGUMENT = '--override-ini='
 _OVERRIDE_INI_OPTIONS = frozenset({_SHORT_OVERRIDE_INI, '--override-ini'})
 
 # argparse reads ``-qo reruns=2`` as ``-q -o reruns=2``; only pytest's flags without a value may precede the ``o``.
@@ -147,7 +152,46 @@ def _carried_form(name: str, value: str) -> str | None:
         return f'{name}={value}'
     if value.partition('=')[0] not in _RERUN_INI_KEYS:
         return None
-    return f'--override-ini={value}'
+    return f'{_OVERRIDE_INI_ARGUMENT}{value}'
+
+
+def rerun_ini_overrides(read_ini: Callable[[str], object], *, overridden_by: Sequence[str] = ()) -> list[str]:
+    r"""Return the pytest-rerunfailures ini settings the main session resolved, as ``--override-ini`` arguments.
+
+    A gremlin run starts its own pytest, which does not read a config file named with ``-c`` or
+    ``--config-file``.  Passing the resolved values on the command line gives that run the settings the
+    baseline ran with.  A setting that is unset or empty is left out.
+
+    A ``linelist`` setting (``only_rerun``, ``rerun_except``) is written one pattern per line, which is how
+    pytest splits the value of ``-o``, so a pattern containing a space survives.
+
+    Args:
+        read_ini: Reads an ini key as the main session resolved it, such as ``config.getini``.
+        overridden_by: Options from :func:`rerun_options_in`.  A key one of them already overrides is left
+            out, so the command line is not contradicted or repeated.
+
+    Returns:
+        One ``--override-ini=key=value`` argument per set key.
+
+    Example:
+        >>> rerun_ini_overrides({'reruns': '2', 'only_rerun': ['Timeout', 'bad gateway']}.get)
+        ['--override-ini=reruns=2', '--override-ini=only_rerun=Timeout\nbad gateway']
+    """
+    already_overridden = {
+        option.removeprefix(_OVERRIDE_INI_ARGUMENT).partition('=')[0]
+        for option in overridden_by
+        if option.startswith(_OVERRIDE_INI_ARGUMENT)
+    }
+    overrides: list[str] = []
+    for key in _FORWARDED_INI_KEYS:
+        if key in already_overridden:
+            continue
+        value = read_ini(key)
+        if isinstance(value, list):
+            value = '\n'.join(value)
+        if value not in (None, ''):
+            overrides.append(f'{_OVERRIDE_INI_ARGUMENT}{key}={value}')
+    return overrides
 
 
 def baseline_rerun_warning(rerun_test_ids: Collection[str]) -> str | None:

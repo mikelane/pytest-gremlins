@@ -500,7 +500,11 @@ earn.
 If [pytest-rerunfailures](https://github.com/pytest-dev/pytest-rerunfailures) is installed, per-gremlin runs use
 the same rerun settings as your baseline run, so a gremlin is zapped only when the test fails on every attempt:
 
-- Options in `addopts` and `PYTEST_ADDOPTS`, and the `reruns` ini settings, reach per-gremlin runs as they always did.
+- Options in `addopts` and `PYTEST_ADDOPTS` reach per-gremlin runs as they always did.
+- The rerun ini settings (`reruns`, `reruns_delay`, `reruns_delay_backoff_factor`, `only_rerun`, `rerun_except`)
+  reach them too, wherever pytest found them, including a file named with `-c` or `--config-file`. Gremlins passes
+  each setting that is set to the gremlin runs as `--override-ini`, so a rerun option typed on the command line
+  still wins over the file, as in pytest.
 - Rerun options typed on the command line are carried over too: `--reruns`, `--reruns-delay`,
   `--reruns-delay-backoff-factor`, `--reruns-mode`, `--only-rerun`, `--rerun-except`, `--rerun-exclude-path`,
   `--force-reruns` and `--max-suite-reruns`. They go last on the command, so they win over `addopts`, as in pytest.

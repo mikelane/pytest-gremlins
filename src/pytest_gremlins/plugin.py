@@ -123,6 +123,7 @@ from pytest_gremlins.reporting.results import (
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.rerun_options import (
     baseline_rerun_warning,
+    rerun_ini_overrides,
     rerun_options_in,
 )
 from pytest_gremlins.xdist_options import (
@@ -2717,14 +2718,18 @@ _RERUNFAILURES_PLUGIN_NAMES = ('rerunfailures', 'pytest_rerunfailures')
 
 
 def _rerun_options_for(config: pytest.Config) -> list[str]:
-    """Return the rerun options typed on ``config``'s command line, or none if pytest-rerunfailures is not active.
+    """Return the rerun settings of ``config`` for gremlin runs, or none if pytest-rerunfailures is not active.
 
-    Options are only forwarded when the plugin is loaded in this session, so a project without it
+    That is the rerun ini settings the main session resolved (so a ``-c`` file reaches the gremlin runs,
+    which never read it) followed by the rerun options typed on the command line, which win over them.
+    Settings are only forwarded when the plugin is loaded in this session, so a project without it
     never receives a flag its gremlin runs would reject as unrecognized (exit code 4).
     """
     if not any(config.pluginmanager.hasplugin(name) for name in _RERUNFAILURES_PLUGIN_NAMES):
         return []
-    return rerun_options_in(config.invocation_params.args, base_dir=config.invocation_params.dir)
+    command_line_options = rerun_options_in(config.invocation_params.args, base_dir=config.invocation_params.dir)
+    ini_overrides = rerun_ini_overrides(config.getini, overridden_by=command_line_options)
+    return [*ini_overrides, *command_line_options]
 
 
 def _addopts_without_cov(raw_addopts: list[str]) -> str:

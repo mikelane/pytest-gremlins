@@ -79,6 +79,53 @@ class DescribeRerunOptionsInAddopts:
 
 
 @pytest.mark.medium
+class DescribeRerunIniKeysInAConfigFileNamedOnTheCommandLine:
+    """Gremlin runs never read the ``-c`` file, so the settings it holds must be forwarded to them."""
+
+    @pytest.mark.parametrize('config_args', [('-c', 'ci.ini'), ('--config-file=ci.ini',)])
+    def it_leaves_the_mutants_the_flaky_test_cannot_catch_alive(
+        self, pytester_with_markers: pytest.Pytester, config_args: tuple[str, ...]
+    ) -> None:
+        (pytester_with_markers.path / 'ci.ini').write_text('[pytest]\nreruns = 2\n', encoding='utf-8')
+
+        result = run_gremlins(pytester_with_markers, *config_args)
+
+        assert 'needed a rerun' in result.stderr.str()
+        assert survivor_count(result.stdout.str()) > 0
+
+    def it_lets_a_rerun_count_on_the_command_line_win_over_the_file(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        (pytester_with_markers.path / 'ci.ini').write_text('[pytest]\nreruns = 0\n', encoding='utf-8')
+
+        result = run_gremlins(pytester_with_markers, '-c', 'ci.ini', '--reruns', '2')
+
+        assert survivor_count(result.stdout.str()) > 0
+
+    def it_forwards_a_list_setting_whose_pattern_contains_a_space(self, pytester_with_markers: pytest.Pytester) -> None:
+        # Only a failure matching ``only_rerun`` is rerun; if the list were mangled on the way, nothing would be.
+        (pytester_with_markers.path / 'ci.ini').write_text(
+            '[pytest]\nreruns = 2\nonly_rerun =\n    no such failure\n    AssertionError\n', encoding='utf-8'
+        )
+
+        result = run_gremlins(pytester_with_markers, '-c', 'ci.ini')
+
+        assert survivor_count(result.stdout.str()) > 0
+
+    def it_does_not_zap_everything_when_a_pattern_in_the_list_never_matches(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        (pytester_with_markers.path / 'ci.ini').write_text(
+            '[pytest]\nreruns = 2\nonly_rerun = no such failure\n', encoding='utf-8'
+        )
+
+        result = run_gremlins(pytester_with_markers, '-c', 'ci.ini')
+
+        # The baseline itself fails when the flake is not rerun, so mutation testing never starts.
+        assert verdicts(result.stdout.str())['Zapped'] == 0
+
+
+@pytest.mark.medium
 class DescribeProjectsWithoutRerunOptions:
     def it_completes_without_rerun_flags_or_a_warning(self, pytester_with_markers: pytest.Pytester) -> None:
         pytester_with_markers.makepyfile(sample=SAMPLE)
