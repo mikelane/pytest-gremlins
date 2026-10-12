@@ -4699,7 +4699,8 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
 
     if not gremlin_session.gremlins:
         _write_empty_run_report(terminalreporter, gremlin_session)
-        return
+        if not gremlin_session.skipped_files:
+            return
 
     score = MutationScore.from_results(
         gremlin_session.results,
@@ -4729,6 +4730,9 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
         except OSError as exc:
             logger.warning('Failed to write JSON report: %s', exc)
             terminalreporter.write_line(f'JSON report write failed: {exc}')
+
+    if not gremlin_session.gremlins:
+        return
 
     terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
     terminalreporter.write_line('')
