@@ -20,7 +20,7 @@ _ARGUMENT_FILE_PREFIX = '@'
 # Every pytest-rerunfailures option that takes a value.  ``--fail-on-flaky`` is left out because it
 # turns a test that passed on a rerun into exit code 7, which a gremlin run would not read as a kill;
 # ``--rerun-show-tracebacks`` is left out because it only changes the output.
-_RERUN_VALUE_OPTS = frozenset(
+_RERUN_VALUE_OPTIONS = frozenset(
     {
         '--reruns',
         '--reruns-delay',
@@ -37,12 +37,12 @@ _RERUN_VALUE_OPTS = frozenset(
 # pytest-rerunfailures also reads these ini keys, so ``-o reruns=2`` is a command-line rerun option too.
 _RERUN_INI_KEYS = frozenset({'reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except'})
 _SHORT_OVERRIDE_INI = '-o'
-_OVERRIDE_INI_OPTS = frozenset({_SHORT_OVERRIDE_INI, '--override-ini'})
+_OVERRIDE_INI_OPTIONS = frozenset({_SHORT_OVERRIDE_INI, '--override-ini'})
 
 # argparse reads ``-qo reruns=2`` as ``-q -o reruns=2``; only pytest's flags without a value may precede the ``o``.
-_CLUSTERED_OVERRIDE_INI = re.compile(r'-[xqvlshV]*o(?P<attached>.*)', re.DOTALL)
+_CLUSTERED_OVERRIDE_INI_PATTERN = re.compile(r'-[xqvlshV]*o(?P<attached>.*)', re.DOTALL)
 
-_CARRIED_OPTS = _RERUN_VALUE_OPTS | _OVERRIDE_INI_OPTS
+_CARRIED_OPTIONS = _RERUN_VALUE_OPTIONS | _OVERRIDE_INI_OPTIONS
 
 _MAX_NAMED_TESTS = 10
 
@@ -51,20 +51,23 @@ def _expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read
     """Replace each ``@file`` argument with the lines of that file, the way pytest's parser does.
 
     A file that cannot be read, or that is already being read further up (a cycle), contributes nothing.
+    pytest itself rejects an unreadable ``@file`` as a usage error and recurses without end on a cycle,
+    so by the time this runs pytest has already read every file once; a read can fail here only if a
+    file changed after pytest parsed it or does not decode as UTF-8.
     """
     expanded: list[str] = []
     for arg in args:
         if not arg.startswith(_ARGUMENT_FILE_PREFIX):
             expanded.append(arg)
             continue
-        path = base_dir / arg[len(_ARGUMENT_FILE_PREFIX) :]
-        if path in files_being_read:
+        argument_file = base_dir / arg[len(_ARGUMENT_FILE_PREFIX) :]
+        if argument_file in files_being_read:
             continue
         try:
-            lines = path.read_text(encoding='utf-8').splitlines()
+            lines = argument_file.read_text(encoding='utf-8').splitlines()
         except (OSError, ValueError):
             continue
-        expanded.extend(_expand_argument_files(lines, base_dir, (*files_being_read, path)))
+        expanded.extend(_expand_argument_files(lines, base_dir, (*files_being_read, argument_file)))
     return expanded
 
 
@@ -80,8 +83,8 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
             current directory.  Use ``config.invocation_params.dir``.
 
     Returns:
-        The rerun options in their original order; every other argument is dropped.  When any are
-        returned; a ``-p`` plugin loader is never carried.
+        The rerun options in their original order; every other argument is dropped.  A ``-p`` plugin
+        loader is never carried.
 
     Example:
         >>> rerun_options_in(['tests/', '--reruns', '2', '-x', '--reruns-delay=0.5'])
@@ -96,7 +99,7 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
         arg = expanded[index]
         name, value = _split_option(arg)
         index += 1
-        if name not in _CARRIED_OPTS:
+        if name not in _CARRIED_OPTIONS:
             continue
         if value is None:
             if index == len(expanded):
@@ -111,9 +114,9 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
 
 def _split_option(arg: str) -> tuple[str, str | None]:
     """Split ``arg`` into the option name and the value written in the same argument, if any."""
-    clustered = _CLUSTERED_OVERRIDE_INI.fullmatch(arg)
-    if clustered is not None:
-        attached_value = clustered.group('attached')
+    clustered_match = _CLUSTERED_OVERRIDE_INI_PATTERN.fullmatch(arg)
+    if clustered_match is not None:
+        attached_value = clustered_match.group('attached')
         if not attached_value:
             return _SHORT_OVERRIDE_INI, None
         return _SHORT_OVERRIDE_INI, attached_value.removeprefix('=')
@@ -123,7 +126,7 @@ def _split_option(arg: str) -> tuple[str, str | None]:
 
 def _carried_form(name: str, value: str) -> str | None:
     """Return ``name`` and ``value`` as one argument, or None for an ini override that is not a rerun setting."""
-    if name not in _OVERRIDE_INI_OPTS:
+    if name not in _OVERRIDE_INI_OPTIONS:
         return f'{name}={value}'
     if value.partition('=')[0] not in _RERUN_INI_KEYS:
         return None
@@ -147,13 +150,13 @@ def baseline_rerun_warning(rerun_test_ids: Collection[str]) -> str | None:
     """
     if not rerun_test_ids:
         return None
-    ordered = sorted(rerun_test_ids)
-    named = ', '.join(ordered[:_MAX_NAMED_TESTS])
-    hidden = len(ordered) - _MAX_NAMED_TESTS
-    if hidden > 0:
-        named += f', and {hidden} more'
+    sorted_test_ids = sorted(rerun_test_ids)
+    named_tests = ', '.join(sorted_test_ids[:_MAX_NAMED_TESTS])
+    unnamed_count = len(sorted_test_ids) - _MAX_NAMED_TESTS
+    if unnamed_count > 0:
+        named_tests += f', and {unnamed_count} more'
     return (
-        f'pytest-gremlins: warning: {len(ordered)} baseline test(s) needed a rerun to pass: {named}. '
-        'Gremlin runs use the same rerun settings, so a mutant is zapped only if these tests fail on every attempt; '
-        'fix the flakiness to keep the score reliable'
+        f'pytest-gremlins: warning: {len(sorted_test_ids)} baseline test(s) needed a rerun to pass: {named_tests}. '
+        'Gremlin runs use the same rerun settings, so a gremlin is zapped only if these tests fail on every attempt; '
+        'fix the flaky tests so your mutation score reflects your tests, not luck'
     )

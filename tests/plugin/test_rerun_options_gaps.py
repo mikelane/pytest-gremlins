@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import cast
 
 import pytest
 
@@ -22,9 +22,10 @@ from pytest_gremlins.plugin import (
 from pytest_gremlins.rerun_options import rerun_options_in
 
 
-def _config_with_plugin_named(plugin_name: str, args: list[str]) -> Any:
+def _config_with_plugin_named(plugin_name: str, args: list[str]) -> pytest.Config:
     pluginmanager = SimpleNamespace(hasplugin=lambda name: name == plugin_name)
-    return SimpleNamespace(pluginmanager=pluginmanager, invocation_params=SimpleNamespace(args=tuple(args), dir=Path()))
+    fake = SimpleNamespace(pluginmanager=pluginmanager, invocation_params=SimpleNamespace(args=tuple(args), dir=Path()))
+    return cast('pytest.Config', fake)
 
 
 @pytest.mark.small
@@ -62,10 +63,10 @@ class DescribeCoveragePrescanRerunOptions:
         # A test that flakes before it reaches the code under test records no coverage on its failed
         # attempt.  Without the reruns the baseline used, it drops out of the coverage map and every
         # mutant only it could catch is judged by weaker tests alone (a false survivor).
-        launched: list[list[str]] = []
-        monkeypatch.setattr(plugin, '_launch_prescan', lambda command, *_args: launched.append(command))
+        prescan_commands: list[list[str]] = []
+        monkeypatch.setattr(plugin, '_launch_prescan', lambda command, *_args: prescan_commands.append(command))
         gremlin_session = GremlinSession(enabled=True, rerun_options=['--reruns=2'])
 
         _run_prescan_reporting_problems(['test_a.py::test_flaky'], tmp_path, gremlin_session, coverage_include=None)
 
-        assert '--reruns=2' in launched[0]
+        assert '--reruns=2' in prescan_commands[0]

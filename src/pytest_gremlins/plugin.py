@@ -2829,7 +2829,7 @@ def _run_tests_with_coverage(
     name_to_node_ids: dict[str, list[str]] | None = None,
     coverage_include: list[str] | None = None,
     preserved_addopts: str = '',
-    rerun_options: list[str] | None = None,
+    rerun_options: Sequence[str] = (),
     timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS,
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
@@ -2910,7 +2910,7 @@ def _run_tests_with_coverage(
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
         '--tb=no',
         '-q',
-        *(rerun_options or []),
+        *rerun_options,
     ]
 
     try:

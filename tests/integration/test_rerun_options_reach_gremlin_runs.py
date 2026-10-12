@@ -92,7 +92,8 @@ class DescribeRerunOptionsOnTheCommandLine:
             _run_gremlins(pytester_with_markers, '--reruns', '2', tests=_FLAKY_STRONG_TEST).stdout.str()
         )
 
-        assert (verdicts['Survived'], verdicts['Zapped'] > 0) == (0, True)
+        assert verdicts['Survived'] == 0
+        assert verdicts['Zapped'] > 0
 
     def it_reaches_the_gremlin_runs_of_an_xdist_session(self, pytester_with_markers: pytest.Pytester) -> None:
         result = _run_gremlins(pytester_with_markers, '--reruns', '2', '-n', '2')
@@ -157,4 +158,6 @@ class DescribeBaselineRerunWarning:
             pytester_with_markers, '--reruns', '2', tests=_FLAKY_STRONG_TEST.replace('len(calls) > 1', 'True')
         )
 
+        # The zaps prove the run reached mutation testing, so the missing warning is not a crash.
+        assert _verdicts(result.stdout.str())['Zapped'] > 0
         assert 'needed a rerun' not in result.stderr.str()

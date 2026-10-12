@@ -494,21 +494,23 @@ xdist installed, nothing is added.
 ### Flaky Tests and pytest-rerunfailures
 
 A gremlin is zapped when a test that covers it fails. A flaky test that fails for reasons unrelated to the
-mutation would therefore zap every gremlin it covers, and you would score tests that cannot tell good code from bad.
+mutation would therefore zap every gremlin it covers, inflating your mutation score with kills your tests did not
+earn.
 
 If [pytest-rerunfailures](https://github.com/pytest-dev/pytest-rerunfailures) is installed, per-gremlin runs use
 the same rerun settings as your baseline run, so a gremlin is zapped only when the test fails on every attempt:
 
 - Options in `addopts` and `PYTEST_ADDOPTS`, and the `reruns` ini settings, reach per-gremlin runs as they always did.
-- Rerun options typed on the command line are now carried over too: `--reruns`, `--reruns-delay`,
+- Rerun options typed on the command line are carried over too: `--reruns`, `--reruns-delay`,
   `--reruns-delay-backoff-factor`, `--reruns-mode`, `--only-rerun`, `--rerun-except`, `--rerun-exclude-path`,
   `--force-reruns` and `--max-suite-reruns`. They go last on the command, so they win over `addopts`, as in pytest.
-  Options kept in a file passed as `@file` on the command line are carried over as well, and so are
+- Rerun options kept in a file passed as `@file` on the command line are carried over as well, and so are
   `-o` settings for any ini key pytest-rerunfailures reads (`reruns`, `reruns_delay`, `reruns_delay_backoff_factor`,
   `only_rerun`, `rerun_except`), also spelled `--override-ini` or clustered as in `-qo reruns=2`.
 - The coverage pre-scan gets the same rerun options, so a test that flakes before it reaches your code is rerun
-  and still counts as covering it (otherwise mutants only it could catch would survive).
-- `--fail-on-flaky` and `--rerun-show-tracebacks` are not carried over. `@pytest.mark.flaky` markers need no help.
+  and still counts as covering it (otherwise gremlins only it could catch would survive).
+- `--fail-on-flaky` and `--rerun-show-tracebacks` are not carried over. `@pytest.mark.flaky` markers work with no
+  extra setup.
 - Nothing is added when the plugin is not loaded under either of its names, `rerunfailures` or
   `pytest_rerunfailures` (or is disabled with `-p no:rerunfailures`), so a project without
   it never receives an unknown flag.
@@ -523,12 +525,13 @@ counted):
 pytest-gremlins: warning: 1 baseline test(s) needed a rerun to pass: tests/test_api.py::test_fetch. Gremlin runs use ...
 ```
 
-The warning is a prompt to fix the flake, not an error.
+The warning does not fail the run. It tells you which tests to stabilize so your score reflects your tests, not
+luck.
 
-**Cost.** A gremlin that your tests do kill now runs the failing test up to `N + 1` times (with `--reruns N`), plus
+**Cost.** A gremlin that your tests do kill runs the failing test up to `N + 1` times (with `--reruns N`), plus
 any `--reruns-delay`. Survivors cost nothing extra, because their tests pass. A suite whose tests fail often
-under mutation therefore takes noticeably longer, most of all with a large `--reruns-delay`. Re-running each
-killing test before a kill counts, for projects that do not use pytest-rerunfailures, is not implemented.
+under mutation therefore takes noticeably longer, most of all with a large `--reruns-delay`. Without
+pytest-rerunfailures, gremlins does not re-run a killing test before it counts the kill.
 
 ### Coverage Pre-Scan Timeout
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import cast
 
 import pytest
 
@@ -63,6 +63,10 @@ class DescribeRerunOptionsIn:
     def it_does_not_take_a_trailing_override_ini_option_as_a_rerun_setting(self) -> None:
         assert rerun_options_in(['-o']) == []
 
+    def it_does_not_read_an_o_clustered_after_a_flag_that_takes_a_value_as_an_ini_override(self) -> None:
+        # argparse reads ``-ko reruns=2`` as ``-k o`` followed by the positional ``reruns=2``.
+        assert rerun_options_in(['-ko', 'reruns=2']) == []
+
     def it_ignores_every_other_argument(self) -> None:
         args = ['tests/', '-x', '--reruns', '2', '-k', 'flaky', '--gremlins', '-n', '2']
 
@@ -113,6 +117,25 @@ class DescribeRerunOptionsInArgumentFiles:
 
         assert rerun_options_in(['@loop.txt'], base_dir=tmp_path) == ['--reruns=2']
 
+    def it_stops_at_a_cycle_through_two_argument_files(self, tmp_path: Path) -> None:
+        (tmp_path / 'first.txt').write_text('--reruns=2\n@second.txt\n', encoding='utf-8')
+        (tmp_path / 'second.txt').write_text('--reruns-delay=1\n@first.txt\n', encoding='utf-8')
+
+        assert rerun_options_in(['@first.txt'], base_dir=tmp_path) == ['--reruns=2', '--reruns-delay=1']
+
+    def it_ignores_an_argument_file_that_is_not_utf8(self, tmp_path: Path) -> None:
+        (tmp_path / 'binary.txt').write_bytes(b'--reruns=9\n\xff\xfe\n')
+
+        assert rerun_options_in(['@binary.txt', '--reruns=2'], base_dir=tmp_path) == ['--reruns=2']
+
+    def it_resolves_a_relative_argument_file_against_the_current_directory_by_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / 'args.txt').write_text('--reruns=5\n', encoding='utf-8')
+        monkeypatch.chdir(tmp_path)
+
+        assert rerun_options_in(['@args.txt']) == ['--reruns=5']
+
 
 @pytest.mark.small
 class DescribeBuildTestCommandWithRerunOptions:
@@ -157,10 +180,24 @@ class DescribeBaselineRerunWarning:
         assert 't::test_10' not in warning
         assert 'and 3 more' in warning
 
+    def it_names_exactly_ten_tests_without_a_summary(self) -> None:
+        warning = baseline_rerun_warning({f't::test_{number:02d}' for number in range(10)})
 
-def _config(*, has_rerunfailures: bool, args: list[str]) -> Any:
+        assert warning is not None
+        assert 't::test_09' in warning
+        assert 'more' not in warning
+
+    def it_states_how_many_baseline_tests_needed_a_rerun(self) -> None:
+        warning = baseline_rerun_warning({f't::test_{number:02d}' for number in range(13)})
+
+        assert warning is not None
+        assert '13 baseline test(s) needed a rerun' in warning
+
+
+def _config(*, has_rerunfailures: bool, args: list[str]) -> pytest.Config:
     pluginmanager = SimpleNamespace(hasplugin=lambda name: has_rerunfailures and name == 'rerunfailures')
-    return SimpleNamespace(pluginmanager=pluginmanager, invocation_params=SimpleNamespace(args=tuple(args), dir=Path()))
+    fake = SimpleNamespace(pluginmanager=pluginmanager, invocation_params=SimpleNamespace(args=tuple(args), dir=Path()))
+    return cast('pytest.Config', fake)
 
 
 @pytest.mark.small
