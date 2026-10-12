@@ -123,10 +123,10 @@ class DescribeRerunOptionsInArgumentFiles:
 
         assert rerun_options_in(['@first.txt'], base_dir=tmp_path) == ['--reruns=2', '--reruns-delay=1']
 
-    def it_ignores_an_argument_file_that_is_not_utf8(self, tmp_path: Path) -> None:
-        (tmp_path / 'binary.txt').write_bytes(b'--reruns=9\n\xff\xfe\n')
+    def it_reads_an_argument_file_with_a_byte_that_is_not_utf8_the_way_argparse_does(self, tmp_path: Path) -> None:
+        (tmp_path / 'latin1.txt').write_bytes(b'--reruns\n2\n# caf\xe9\n')
 
-        assert rerun_options_in(['@binary.txt', '--reruns=2'], base_dir=tmp_path) == ['--reruns=2']
+        assert rerun_options_in(['@latin1.txt'], base_dir=tmp_path) == ['--reruns=2']
 
     def it_resolves_a_relative_argument_file_against_the_current_directory_by_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

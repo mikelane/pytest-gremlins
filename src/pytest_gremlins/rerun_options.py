@@ -14,6 +14,7 @@ from collections.abc import (
 )
 from pathlib import Path
 import re
+import sys
 
 _ARGUMENT_FILE_PREFIX = '@'
 
@@ -50,10 +51,12 @@ _MAX_NAMED_TESTS = 10
 def _expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read: tuple[Path, ...] = ()) -> list[str]:
     """Replace each ``@file`` argument with the lines of that file, the way pytest's parser does.
 
+    A file is decoded the way argparse decodes it: with the filesystem encoding, and with the filesystem
+    error handler, so a byte that is not valid in that encoding does not hide the options around it.
     A file that cannot be read, or that is already being read further up (a cycle), contributes nothing.
     pytest itself rejects an unreadable ``@file`` as a usage error and recurses without end on a cycle,
     so by the time this runs pytest has already read every file once; a read can fail here only if a
-    file changed after pytest parsed it or does not decode as UTF-8.
+    file changed after pytest parsed it.
     """
     expanded: list[str] = []
     for arg in args:
@@ -64,8 +67,10 @@ def _expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read
         if argument_file in files_being_read:
             continue
         try:
-            lines = argument_file.read_text(encoding='utf-8').splitlines()
-        except (OSError, ValueError):
+            lines = argument_file.read_text(
+                encoding=sys.getfilesystemencoding(), errors=sys.getfilesystemencodeerrors()
+            ).splitlines()
+        except OSError:
             continue
         expanded.extend(_expand_argument_files(lines, base_dir, (*files_being_read, argument_file)))
     return expanded
