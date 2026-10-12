@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import locale
 from pathlib import Path
 
 import pytest
 
+from pytest_gremlins import rerun_options
 from pytest_gremlins.rerun_options import rerun_options_in
 
 
@@ -68,3 +70,41 @@ class DescribeRerunOptionsInArgumentFiles:
         (tmp_path / 'args.txt').write_text('-p\npytest_rerunfailures\n--reruns\n2\n', encoding='utf-8')
 
         assert rerun_options_in(['@args.txt'], base_dir=tmp_path) == ['--reruns=2']
+
+
+@pytest.mark.medium
+class DescribeArgumentFilesOnPythonBefore312:
+    """Python 3.11's argparse opens an ``@file`` with the locale encoding, strictly; 3.12+ uses the filesystem's."""
+
+    @pytest.fixture(autouse=True)
+    def _argparse_reads_the_locale_encoding(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(rerun_options, '_ARGPARSE_READS_LOCALE_ENCODING', True)
+        monkeypatch.setattr(locale, 'getpreferredencoding', lambda *_args: 'cp1252')
+
+    def it_reads_a_file_in_the_locale_encoding_that_the_filesystem_encoding_would_reject(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr('sys.getfilesystemencoding', lambda: 'utf-8')
+        monkeypatch.setattr('sys.getfilesystemencodeerrors', lambda: 'surrogatepass')
+        (tmp_path / 'args.txt').write_bytes('-k\ncafé\n--reruns\n2\n'.encode('cp1252'))
+
+        assert rerun_options_in(['@args.txt'], base_dir=tmp_path) == ['--reruns=2']
+
+    def it_ignores_a_file_the_locale_encoding_cannot_decode_instead_of_raising(self, tmp_path: Path) -> None:
+        # cp1252 leaves 0x81 undefined, so a strict read fails; pytest would have rejected this file already.
+        (tmp_path / 'args.txt').write_bytes(b'--reruns\n2\n\x81\n')
+
+        assert rerun_options_in(['@args.txt', '--reruns-delay=1'], base_dir=tmp_path) == ['--reruns-delay=1']
+
+
+@pytest.mark.medium
+class DescribeArgumentFilesOnPython312AndLater:
+    def it_ignores_a_file_the_filesystem_encoding_cannot_decode_instead_of_raising(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(rerun_options, '_ARGPARSE_READS_LOCALE_ENCODING', False)
+        monkeypatch.setattr('sys.getfilesystemencoding', lambda: 'utf-8')
+        monkeypatch.setattr('sys.getfilesystemencodeerrors', lambda: 'strict')
+        (tmp_path / 'args.txt').write_bytes(b'--reruns\n2\n\xff\n')
+
+        assert rerun_options_in(['@args.txt', '--reruns-delay=1'], base_dir=tmp_path) == ['--reruns-delay=1']

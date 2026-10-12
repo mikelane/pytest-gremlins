@@ -12,11 +12,16 @@ from collections.abc import (
     Collection,
     Sequence,
 )
+import locale
 from pathlib import Path
 import re
 import sys
 
 _ARGUMENT_FILE_PREFIX = '@'
+
+# argparse opens an ``@file`` with the locale encoding (strict) before Python 3.12 and with the filesystem
+# encoding and error handler from 3.12 on.
+_ARGPARSE_READS_LOCALE_ENCODING = sys.version_info < (3, 12)
 
 # Every pytest-rerunfailures option that takes a value.  ``--fail-on-flaky`` is left out because it
 # turns a test that passed on a rerun into exit code 7, which a gremlin run would not read as a kill;
@@ -48,12 +53,20 @@ _CARRIED_OPTIONS = _RERUN_VALUE_OPTIONS | _OVERRIDE_INI_OPTIONS
 _MAX_NAMED_TESTS = 10
 
 
+def _argparse_file_decoding() -> tuple[str, str]:
+    """Return the encoding and error handler the running Python's argparse reads an ``@file`` with."""
+    if _ARGPARSE_READS_LOCALE_ENCODING:
+        return locale.getpreferredencoding(False), 'strict'
+    return sys.getfilesystemencoding(), sys.getfilesystemencodeerrors()
+
+
 def _expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read: tuple[Path, ...] = ()) -> list[str]:
     """Replace each ``@file`` argument with the lines of that file, the way pytest's parser does.
 
-    A file is decoded the way argparse decodes it: with the filesystem encoding, and with the filesystem
-    error handler, so a byte that is not valid in that encoding does not hide the options around it.
-    A file that cannot be read, or that is already being read further up (a cycle), contributes nothing.
+    A file is decoded the way the running Python's argparse decodes it: with the locale encoding, strictly,
+    before Python 3.12, and with the filesystem encoding and error handler from 3.12 on.
+    A file that cannot be read or decoded, or that is already being read further up (a cycle), contributes
+    nothing.
     pytest itself rejects an unreadable ``@file`` as a usage error and recurses without end on a cycle,
     so by the time this runs pytest has already read every file once; a read can fail here only if a
     file changed after pytest parsed it.
@@ -67,10 +80,9 @@ def _expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read
         if argument_file in files_being_read:
             continue
         try:
-            lines = argument_file.read_text(
-                encoding=sys.getfilesystemencoding(), errors=sys.getfilesystemencodeerrors()
-            ).splitlines()
-        except OSError:
+            encoding, errors = _argparse_file_decoding()
+            lines = argument_file.read_text(encoding=encoding, errors=errors).splitlines()
+        except (OSError, UnicodeDecodeError):
             continue
         expanded.extend(_expand_argument_files(lines, base_dir, (*files_being_read, argument_file)))
     return expanded
