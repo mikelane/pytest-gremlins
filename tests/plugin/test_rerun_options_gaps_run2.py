@@ -32,8 +32,8 @@ def test_big():
 """
 
 
-def _survivor_count(output: str) -> int:
-    match = re.search(r'Survived: (\d+) gremlins', output)
+def _count_in(output: str, label: str) -> int:
+    match = re.search(rf'{label}: (\d+) gremlins', output)
     return int(match.group(1)) if match else 0
 
 
@@ -46,12 +46,12 @@ class DescribeOverrideIniClusteredWithAnInlineValue:
 
 @pytest.mark.medium
 class DescribeRerunfailuresLoadedWithPOnTheCommandLine:
-    def it_leaves_the_mutants_the_flaky_test_cannot_catch_alive_when_autoload_is_disabled(
+    def it_reports_every_gremlin_as_an_error_and_zaps_none_when_autoload_is_disabled(
         self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # With PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 the baseline only knows ``--reruns`` because ``-p`` loaded the
-        # plugin.  Gremlin runs that get ``--reruns=2`` without that ``-p`` reject it as unrecognized, so every
-        # gremlin is reported as an error.
+        # plugin.  A ``-p`` is not forwarded, so gremlin runs reject ``--reruns=2`` as unrecognized.  The plugin
+        # abstains: every gremlin is an error and none is falsely zapped.  Loading it there is tracked in #654.
         monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
         pytester_with_markers.makeini('[pytest]\naddopts = -p pytest_gremlins.plugin -p pytest_cov\n')
         pytester_with_markers.makepyfile(sample=_SAMPLE)
@@ -69,4 +69,7 @@ class DescribeRerunfailuresLoadedWithPOnTheCommandLine:
             '2',
         )
 
-        assert _survivor_count(result.stdout.str()) > 0
+        output = result.stdout.str()
+        assert _count_in(output, 'Error') > 0
+        assert _count_in(output, 'Zapped') == 0
+        assert _count_in(output, 'Survived') == 0
