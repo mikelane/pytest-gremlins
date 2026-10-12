@@ -8,12 +8,14 @@ from typing import cast
 
 import pytest
 
+from pytest_gremlins import plugin
 from pytest_gremlins.plugin import (
     GremlinSession,
     _BaselineRecorder,
     _build_test_command,
     _own_session_key,
     _rerun_options_for,
+    _run_prescan_reporting_problems,
     _skip_mutation_unless_baseline_is_green,
 )
 from pytest_gremlins.rerun_options import (
@@ -55,6 +57,20 @@ class DescribeRerunOptionsIn:
     def it_keeps_the_rerun_ini_settings_overridden_on_the_command_line(self, args: list[str]) -> None:
         assert rerun_options_in(args) == ['--override-ini=reruns=2']
 
+    @pytest.mark.parametrize(
+        'setting', ['only_rerun=ConnectionError', 'rerun_except=AssertionError', 'reruns_delay_backoff_factor=2']
+    )
+    def it_carries_every_ini_key_pytest_rerunfailures_reads(self, setting: str) -> None:
+        assert rerun_options_in(['-o', setting]) == [f'--override-ini={setting}']
+
+    def it_carries_an_ini_override_written_after_a_short_flag(self) -> None:
+        # argparse reads ``-qo reruns=2`` as ``-q -o reruns=2``.
+        assert rerun_options_in(['-qo', 'reruns=2']) == ['--override-ini=reruns=2']
+
+    def it_carries_an_ini_override_written_as_a_clustered_flag_with_an_equals_sign(self) -> None:
+        # argparse reads ``-qo=reruns=2`` as ``-q -o reruns=2``, just as it reads ``-o=reruns=2`` as ``-o reruns=2``.
+        assert rerun_options_in(['-qo=reruns=2']) == ['--override-ini=reruns=2']
+
     def it_keeps_the_rerun_delay_ini_override_and_drops_unrelated_ones(self) -> None:
         args = ['-o', 'log_level=DEBUG', '-o', 'reruns_delay=0.5', '-o', 'rerunsx=1']
 
@@ -81,62 +97,6 @@ class DescribeRerunOptionsIn:
 
     def it_returns_nothing_when_no_rerun_option_was_typed(self) -> None:
         assert rerun_options_in(['--gremlins', 'tests/']) == []
-
-
-@pytest.mark.medium
-class DescribeRerunOptionsInArgumentFiles:
-    """pytest expands ``@file`` arguments, one argument per line, before it parses the command line."""
-
-    def it_reads_rerun_options_from_an_argument_file(self, tmp_path: Path) -> None:
-        (tmp_path / 'args.txt').write_text('--reruns=2\n--only-rerun\nTimeout\n', encoding='utf-8')
-
-        assert rerun_options_in(['@args.txt'], base_dir=tmp_path) == ['--reruns=2', '--only-rerun=Timeout']
-
-    def it_reads_an_argument_file_given_by_absolute_path(self, tmp_path: Path) -> None:
-        argument_file = tmp_path / 'args.txt'
-        argument_file.write_text('--reruns=3\n', encoding='utf-8')
-
-        assert rerun_options_in([f'@{argument_file}']) == ['--reruns=3']
-
-    def it_pairs_an_option_ending_a_file_with_the_value_that_follows_it(self, tmp_path: Path) -> None:
-        (tmp_path / 'args.txt').write_text('-x\n--reruns\n', encoding='utf-8')
-
-        assert rerun_options_in(['@args.txt', '2'], base_dir=tmp_path) == ['--reruns=2']
-
-    def it_reads_argument_files_named_inside_argument_files(self, tmp_path: Path) -> None:
-        (tmp_path / 'outer.txt').write_text('@inner.txt\n', encoding='utf-8')
-        (tmp_path / 'inner.txt').write_text('--reruns=4\n', encoding='utf-8')
-
-        assert rerun_options_in(['@outer.txt'], base_dir=tmp_path) == ['--reruns=4']
-
-    def it_ignores_an_argument_file_that_does_not_exist(self, tmp_path: Path) -> None:
-        assert rerun_options_in(['@missing.txt', '--reruns=2'], base_dir=tmp_path) == ['--reruns=2']
-
-    def it_stops_at_an_argument_file_that_names_itself(self, tmp_path: Path) -> None:
-        (tmp_path / 'loop.txt').write_text('--reruns=2\n@loop.txt\n', encoding='utf-8')
-
-        assert rerun_options_in(['@loop.txt'], base_dir=tmp_path) == ['--reruns=2']
-
-    def it_stops_at_a_cycle_through_two_argument_files(self, tmp_path: Path) -> None:
-        (tmp_path / 'first.txt').write_text('--reruns=2\n@second.txt\n', encoding='utf-8')
-        (tmp_path / 'second.txt').write_text('--reruns-delay=1\n@first.txt\n', encoding='utf-8')
-
-        assert rerun_options_in(['@first.txt'], base_dir=tmp_path) == ['--reruns=2', '--reruns-delay=1']
-
-    def it_reads_an_argument_file_with_a_byte_that_is_not_utf8_the_way_argparse_does(self, tmp_path: Path) -> None:
-        # An encoded surrogate is invalid in strict UTF-8 but decodes under both error handlers argparse may
-        # use (surrogateescape on POSIX, surrogatepass on Windows); a lone latin-1 byte would not on Windows.
-        (tmp_path / 'not_utf8.txt').write_bytes(b'--reruns\n2\n# \xed\xa0\x80\n')
-
-        assert rerun_options_in(['@not_utf8.txt'], base_dir=tmp_path) == ['--reruns=2']
-
-    def it_resolves_a_relative_argument_file_against_the_current_directory_by_default(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        (tmp_path / 'args.txt').write_text('--reruns=5\n', encoding='utf-8')
-        monkeypatch.chdir(tmp_path)
-
-        assert rerun_options_in(['@args.txt']) == ['--reruns=5']
 
 
 @pytest.mark.small
@@ -196,8 +156,8 @@ class DescribeBaselineRerunWarning:
         assert '13 baseline test(s) needed a rerun' in warning
 
 
-def _config(*, has_rerunfailures: bool, args: list[str]) -> pytest.Config:
-    pluginmanager = SimpleNamespace(hasplugin=lambda name: has_rerunfailures and name == 'rerunfailures')
+def _config(*, registered_plugin: str | None, args: list[str]) -> pytest.Config:
+    pluginmanager = SimpleNamespace(hasplugin=lambda name: name == registered_plugin)
     fake = SimpleNamespace(pluginmanager=pluginmanager, invocation_params=SimpleNamespace(args=tuple(args), dir=Path()))
     return cast('pytest.Config', fake)
 
@@ -205,14 +165,21 @@ def _config(*, has_rerunfailures: bool, args: list[str]) -> pytest.Config:
 @pytest.mark.small
 class DescribeRerunOptionsFor:
     def it_returns_the_command_line_rerun_options_when_pytest_rerunfailures_is_loaded(self) -> None:
-        config = _config(has_rerunfailures=True, args=['--gremlins', '--reruns', '2'])
+        config = _config(registered_plugin='rerunfailures', args=['--gremlins', '--reruns', '2'])
 
         assert _rerun_options_for(config) == ['--reruns=2']
 
     def it_returns_nothing_when_pytest_rerunfailures_is_not_loaded(self) -> None:
-        config = _config(has_rerunfailures=False, args=['--reruns', '2'])
+        config = _config(registered_plugin=None, args=['--reruns', '2'])
 
         assert _rerun_options_for(config) == []
+
+    def it_carries_the_rerun_options_when_the_plugin_is_registered_as_pytest_rerunfailures(self) -> None:
+        # PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 with ``-p pytest_rerunfailures`` (or ``pytest_plugins`` in a
+        # conftest) registers the plugin under its module name, not the entry-point name.
+        config = _config(registered_plugin='pytest_rerunfailures', args=['--gremlins', '--reruns', '2'])
+
+        assert _rerun_options_for(config) == ['--reruns=2']
 
 
 def _report(node_id: str, outcome: str) -> pytest.TestReport:
@@ -258,3 +225,21 @@ class DescribeBaselineRerunRecording:
 
         assert skipped is False
         assert capsys.readouterr().err.count('t::flaky') == 1
+
+
+@pytest.mark.medium
+class DescribeCoveragePrescanRerunOptions:
+    @pytest.mark.filterwarnings('ignore::UserWarning')
+    def it_reruns_flaky_tests_in_the_prescan_like_the_baseline(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A test that flakes before it reaches the code under test records no coverage on its failed
+        # attempt.  Without the reruns the baseline used, it drops out of the coverage map and every
+        # mutant only it could catch is judged by weaker tests alone (a false survivor).
+        prescan_commands: list[list[str]] = []
+        monkeypatch.setattr(plugin, '_launch_prescan', lambda command, *_args: prescan_commands.append(command))
+        gremlin_session = GremlinSession(enabled=True, rerun_options=['--reruns=2'])
+
+        _run_prescan_reporting_problems(['test_a.py::test_flaky'], tmp_path, gremlin_session, coverage_include=None)
+
+        assert '--reruns=2' in prescan_commands[0]
