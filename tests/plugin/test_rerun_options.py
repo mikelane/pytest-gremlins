@@ -240,6 +240,14 @@ class DescribeRerunIniOverrides:
             '--override-ini=rerun_except=X',
         ]
 
+    def it_skips_a_key_the_installed_pytest_rerunfailures_does_not_register(self) -> None:
+        def read_ini(key: str) -> object:
+            if key != 'reruns':
+                raise ValueError(f'unknown configuration value: {key!r}')
+            return '2'
+
+        assert rerun_ini_overrides(read_ini) == ['--override-ini=reruns=2']
+
     def it_keeps_a_zero_count_from_a_toml_file_so_it_still_overrides_the_gremlin_runs_own_config(self) -> None:
         assert rerun_ini_overrides(self._reader({'reruns': 0})) == ['--override-ini=reruns=0']  # type: ignore[dict-item]
 
