@@ -248,6 +248,14 @@ class DescribeRerunIniOverrides:
 
         assert rerun_ini_overrides(read_ini) == ['--override-ini=reruns=2']
 
+    def it_skips_a_key_pytest_cannot_read_as_a_string_and_forwards_the_rest(self) -> None:
+        def read_ini(key: str) -> object:
+            if key == 'reruns':
+                raise TypeError("expected str, got int for 'reruns'")
+            return '0.5' if key == 'reruns_delay' else ''
+
+        assert rerun_ini_overrides(read_ini) == ['--override-ini=reruns_delay=0.5']
+
     def it_keeps_a_zero_count_from_a_toml_file_so_it_still_overrides_the_gremlin_runs_own_config(self) -> None:
         assert rerun_ini_overrides(self._reader({'reruns': 0})) == ['--override-ini=reruns=0']  # type: ignore[dict-item]
 

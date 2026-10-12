@@ -17,6 +17,7 @@ from rerun_samples import (
     run_gremlins,
     survivor_count,
     verdicts,
+    write_flaky_project,
 )
 
 
@@ -123,6 +124,21 @@ class DescribeRerunIniKeysInAConfigFileNamedOnTheCommandLine:
 
         # The baseline itself fails when the flake is not rerun, so mutation testing never starts.
         assert verdicts(result.stdout.str())['Zapped'] == 0
+
+
+@pytest.mark.medium
+class DescribeNumericRerunSettingsInNativeToml:
+    def it_runs_gremlins_without_an_internal_error_when_reruns_is_a_toml_integer(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        steady_test = "from sample import classify\n\n\ndef test_big():\n    assert classify(11) == 'big'\n"
+        write_flaky_project(pytester_with_markers, steady_test)
+        pytester_with_markers.makefile('.toml', pyproject='[tool.pytest]\nreruns = 2\n')
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS)
+
+        assert 'INTERNALERROR' not in result.stdout.str()
+        assert verdicts(result.stdout.str())['Zapped'] > 0
 
 
 @pytest.mark.medium

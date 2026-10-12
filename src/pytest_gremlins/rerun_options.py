@@ -160,8 +160,10 @@ def rerun_ini_overrides(read_ini: Callable[[str], object], *, overridden_by: Seq
 
     A gremlin run starts its own pytest, which does not read a config file named with ``-c`` or
     ``--config-file``.  Passing the resolved values on the command line gives that run the settings the
-    baseline ran with.  A setting that is unset or empty is left out, and so is one the installed
-    pytest-rerunfailures does not register (``config.getini`` raises ``ValueError`` for it).
+    baseline ran with.  A setting that is unset or empty is left out.  So is one the installed
+    pytest-rerunfailures does not register (``config.getini`` raises ``ValueError`` for it), and one pytest
+    cannot read as a string (``config.getini`` raises ``TypeError`` for a number in native ``[tool.pytest]``
+    TOML, which pytest-rerunfailures also skips).
 
     A ``linelist`` setting (``only_rerun``, ``rerun_except``) is written one pattern per line, which is how
     pytest splits the value of ``-o``, so a pattern containing a space survives.
@@ -189,7 +191,7 @@ def rerun_ini_overrides(read_ini: Callable[[str], object], *, overridden_by: Seq
             continue
         try:
             value = read_ini(key)
-        except ValueError:
+        except (ValueError, TypeError):
             continue
         if isinstance(value, list):
             value = '\n'.join(value)
