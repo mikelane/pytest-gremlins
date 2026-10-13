@@ -508,7 +508,7 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
   is set as `--override-ini`, and a rerun option typed on the command line still wins over the file, as in pytest.
 - pytest strips each line of a list value given with `-o`, splits it at line breaks and drops empty lines. Under
   `-c`, an `only_rerun` or `rerun_except` list with an item that has leading or trailing whitespace, a line
-  break, or is empty (possible in a TOML list such as `rerun_except = ["xyz "]`) would reach the gremlin runs
+  break, a NUL byte, or is empty (possible in a TOML list such as `rerun_except = ["xyz "]`) would reach the gremlin runs
   changed, and a changed pattern reruns fewer failures than your baseline did. Gremlins does not forward that
   key and prints `pytest-gremlins: warning: the ini setting 'rerun_except' is not carried into gremlin runs ...`.
   The gremlin runs then rerun more failures than the baseline, so a gremlin your tests would zap can survive,

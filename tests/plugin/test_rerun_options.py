@@ -293,7 +293,19 @@ class DescribeSurvivesOverrideIni:
 
     @pytest.mark.parametrize(
         'items',
-        [['xyz '], [' xyz'], ['a', 'b '], ['a\nb'], ['a\rb'], ['a\r'], [''], ['a', ''], ['\t'], ['a\u00a0']],
+        [
+            ['xyz '],
+            [' xyz'],
+            ['a', 'b '],
+            ['a\nb'],
+            ['a\rb'],
+            ['a\r'],
+            [''],
+            ['a', ''],
+            ['\t'],
+            ['a\u00a0'],
+            ['a\x00b'],
+        ],
         ids=[
             'trailing',
             'leading',
@@ -305,6 +317,7 @@ class DescribeSurvivesOverrideIni:
             'empty-second',
             'tab',
             'nbsp',
+            'null-byte',
         ],
     )
     def it_rejects_items_pytest_would_strip_split_or_drop(self, items: list[str]) -> None:

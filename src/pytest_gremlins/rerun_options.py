@@ -56,6 +56,9 @@ _OVERRIDE_INI_OPTIONS = frozenset({_SHORT_OVERRIDE_INI, '--override-ini'})
 # argparse reads ``-qo reruns=2`` as ``-q -o reruns=2``; only pytest's flags without a value may precede the ``o``.
 _CLUSTERED_OVERRIDE_INI_PATTERN = re.compile(r'-[xqvlshV]*o(?P<attached>.*)', re.DOTALL)
 
+# A line break inside an item splits it in two; a NUL byte makes the subprocess launch fail.
+_UNSAFE_ITEM_CHARACTERS = frozenset('\n\r\x00')
+
 _CARRIED_OPTIONS = _RERUN_VALUE_OPTIONS | _OVERRIDE_INI_OPTIONS
 
 _MAX_NAMED_TESTS = 10
@@ -163,13 +166,13 @@ def survives_override_ini(items: Sequence[str]) -> bool:
 
     pytest splits the value of ``-o`` for a ``linelist`` key on newlines, strips each line and drops the
     empty ones.  An item with leading or trailing whitespace, with a line break inside, or an empty item
-    therefore arrives changed.
+    therefore arrives changed.  An item with a NUL byte cannot be passed on a command line at all.
 
     Args:
         items: The items of a ``linelist`` ini setting, as ``config.getini`` returns them.
 
     Returns:
-        True when every item is non-empty, has no surrounding whitespace and holds no line break.
+        True when every item is non-empty, has no surrounding whitespace and holds no line break or NUL byte.
 
     Example:
         >>> survives_override_ini(['Timeout', 'bad gateway'])
@@ -179,7 +182,7 @@ def survives_override_ini(items: Sequence[str]) -> bool:
         >>> survives_override_ini(['a\nb'])
         False
     """
-    return all(item and item == item.strip() and '\n' not in item and '\r' not in item for item in items)
+    return all(item and item == item.strip() and not _UNSAFE_ITEM_CHARACTERS.intersection(item) for item in items)
 
 
 def _resolved_ini_settings(read_ini: Callable[[str], object], overridden_by: Sequence[str]) -> list[tuple[str, object]]:
@@ -270,8 +273,9 @@ def unforwarded_rerun_key_warning(key: str) -> str:
         True
     """
     return (
-        f'pytest-gremlins: warning: the ini setting {key!r} is not carried into gremlin runs because pytest '
-        'would strip or split its patterns on the command line; gremlin runs will rerun more failures than '
+        f'pytest-gremlins: warning: the ini setting {key!r} is not carried into gremlin runs because its patterns '
+        'cannot be passed unchanged on the command line (pytest strips and splits them, and a NUL byte cannot be '
+        'passed at all); gremlin runs will rerun more failures than '
         'the baseline did, so some gremlins may survive that your tests would zap'
     )
 
