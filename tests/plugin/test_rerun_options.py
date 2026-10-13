@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Mapping,
+)
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -320,10 +323,7 @@ class DescribeRerunIniSettingsUnderAConfigFileOption:
 
         warnings = _rerun_ini_warnings_for(config)
 
-        assert [('only_rerun' in warning, 'rerun_except' in warning) for warning in warnings] == [
-            (True, False),
-            (False, True),
-        ]
+        assert warnings == [unforwarded_rerun_key_warning('only_rerun'), unforwarded_rerun_key_warning('rerun_except')]
 
     def it_does_not_warn_about_a_key_the_command_line_overrides(self) -> None:
         config = _config(
@@ -376,7 +376,7 @@ class DescribeSurvivesOverrideIni:
         [[], ['Timeout'], ['bad gateway', 'AssertionError'], ['a\tb'], ['trailing\\']],
     )
     def it_accepts_items_pytest_reads_back_unchanged(self, items: list[str]) -> None:
-        assert survives_override_ini(items)
+        assert survives_override_ini(items) is True
 
     @pytest.mark.parametrize(
         'items',
@@ -408,14 +408,17 @@ class DescribeSurvivesOverrideIni:
         ],
     )
     def it_rejects_items_pytest_would_strip_split_or_drop(self, items: list[str]) -> None:
-        assert not survives_override_ini(items)
+        assert survives_override_ini(items) is False
+
+
+def _ini_reader(values: dict[str, str | list[str]]) -> Callable[[str], object]:
+    """Return a ``config.getini`` stand-in that reads an unset list key as ``[]`` and any other as ``''``."""
+    return lambda key: values.get(key, [] if key in ('only_rerun', 'rerun_except') else '')
 
 
 @pytest.mark.small
 class DescribeUnforwardableRerunKeys:
-    @staticmethod
-    def _reader(values: dict[str, str | list[str]]) -> Callable[[str], object]:
-        return lambda key: values.get(key, [] if key in ('only_rerun', 'rerun_except') else '')
+    _reader = staticmethod(_ini_reader)
 
     def it_names_each_list_key_with_an_item_pytest_would_change(self) -> None:
         values: dict[str, str | list[str]] = {'reruns': '2', 'only_rerun': ['a '], 'rerun_except': ['b ']}
@@ -432,6 +435,11 @@ class DescribeUnforwardableRerunKeys:
 
         assert unforwardable_rerun_keys(self._reader(values), overridden_by=overridden_by) == []
 
+    def it_skips_a_key_a_parsed_option_already_sets(self) -> None:
+        values: dict[str, str | list[str]] = {'only_rerun': ['a '], 'rerun_except': ['b ']}
+
+        assert unforwardable_rerun_keys(self._reader(values), option_keys_set={'only_rerun'}) == ['rerun_except']
+
     def it_leaves_the_offending_list_out_of_the_overrides(self) -> None:
         values: dict[str, str | list[str]] = {'reruns': '2', 'rerun_except': ['a ']}
 
@@ -444,12 +452,40 @@ def _resets(*keys: str) -> list[str]:
 
 _ALL_RERUN_KEYS = ('reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except')
 
+# Every rerun ini key set to a value ``--override-ini`` carries unchanged.
+_EVERY_RERUN_KEY_SET: dict[str, str | list[str]] = {
+    'reruns': '2',
+    'reruns_delay': '2',
+    'reruns_delay_backoff_factor': '2',
+    'only_rerun': ['a'],
+    'rerun_except': ['a'],
+}
+
+
+def _all_rerun_keys_except(key: str) -> list[str]:
+    return [other for other in _ALL_RERUN_KEYS if other != key]
+
+
+def _keys_of(overrides: list[str]) -> list[str]:
+    """Return the ini key of each ``--override-ini=key=value`` argument, in order."""
+    return [override.removeprefix('--override-ini=').partition('=')[0] for override in overrides]
+
+
+def _reader_raising(errors: Mapping[str, Exception], values: dict[str, str] | None = None) -> Callable[[str], object]:
+    """Return a ``config.getini`` stand-in that raises the error given for a key and reads others from ``values``."""
+    known_values = values or {}
+
+    def read_ini(key: str) -> object:
+        if key in errors:
+            raise errors[key]
+        return known_values.get(key, [] if key in ('only_rerun', 'rerun_except') else '')
+
+    return read_ini
+
 
 @pytest.mark.small
 class DescribeRerunResets:
-    @staticmethod
-    def _reader(values: dict[str, str | list[str]]) -> Callable[[str], object]:
-        return lambda key: values.get(key, [] if key in ('only_rerun', 'rerun_except') else '')
+    _reader = staticmethod(_ini_reader)
 
     def it_resets_each_key_that_is_unset(self) -> None:
         assert rerun_resets(self._reader({'reruns': '2'})) == _resets(
@@ -492,36 +528,32 @@ class DescribeRerunResets:
             (['--only-rerun=a'], 'only_rerun'),
             (['--reruns-delay=1'], 'reruns_delay'),
             (['--reruns=2'], 'reruns'),
+            (['--reruns-delay-backoff-factor=2'], 'reruns_delay_backoff_factor'),
+            (['--rerun-except=a'], 'rerun_except'),
+            (['--override-ini=reruns_delay=1'], 'reruns_delay'),
         ],
     )
     def it_leaves_alone_a_key_the_command_line_already_overrides(self, overridden_by: list[str], key: str) -> None:
         resets = rerun_resets(self._reader({}), overridden_by=overridden_by)
 
-        assert f'--override-ini={key}=' not in resets
-        assert len(resets) == len(_ALL_RERUN_KEYS) - 1
+        assert resets == _resets(*_all_rerun_keys_except(key))
 
     @pytest.mark.parametrize('key', _ALL_RERUN_KEYS)
     def it_leaves_alone_a_key_a_parsed_option_already_sets(self, key: str) -> None:
         resets = rerun_resets(self._reader({}), option_keys_set=[key])
 
-        assert resets == _resets(*(other for other in _ALL_RERUN_KEYS if other != key))
+        assert resets == _resets(*_all_rerun_keys_except(key))
 
     def it_skips_a_key_the_installed_pytest_rerunfailures_does_not_register(self) -> None:
-        def read_ini(key: str) -> object:
-            if key == 'only_rerun':
-                raise ValueError(key)
-            return []
+        read_ini = _reader_raising({'only_rerun': ValueError('only_rerun')})
 
         expected = _resets('reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'rerun_except')
         assert rerun_resets(read_ini) == expected
 
     def it_resets_a_key_pytest_cannot_read_as_a_string_because_the_project_file_could_set_it(self) -> None:
-        def read_ini(key: str) -> object:
-            if key == 'reruns_delay':
-                raise TypeError(key)
-            return []
+        read_ini = _reader_raising({'reruns_delay': TypeError('reruns_delay')}, {'reruns': '2'})
 
-        assert '--override-ini=reruns_delay=' in rerun_resets(read_ini)
+        assert rerun_resets(read_ini) == _resets(*_all_rerun_keys_except('reruns'))
 
 
 @pytest.mark.small
@@ -556,16 +588,13 @@ class DescribeKeysACommandLineOptionOverrides:
         ],
     )
     def it_keeps_the_ini_key_it_replaces_out_of_the_forwarded_overrides(self, option: str, key: str) -> None:
-        def read_ini(name: str) -> object:
-            return ['a'] if name in ('only_rerun', 'rerun_except') else '2'
+        forwarded = rerun_ini_overrides(_ini_reader(_EVERY_RERUN_KEY_SET), overridden_by=[option])
 
-        forwarded = rerun_ini_overrides(read_ini, overridden_by=[option])
-
-        assert not any(argument.startswith(f'--override-ini={key}=') for argument in forwarded)
+        assert _keys_of(forwarded) == _all_rerun_keys_except(key)
 
     def it_does_not_report_a_key_a_command_line_option_replaces(self) -> None:
         values: dict[str, str | list[str]] = {'only_rerun': ['a '], 'rerun_except': ['b ']}
-        reader = DescribeRerunResets._reader(values)
+        reader = _ini_reader(values)
 
         assert unforwardable_rerun_keys(reader, overridden_by=['--only-rerun=a']) == ['rerun_except']
 
@@ -585,15 +614,13 @@ class DescribeUnforwardedRerunKeyWarning:
 
 @pytest.mark.small
 class DescribeRerunIniOverrides:
-    @staticmethod
-    def _reader(values: dict[str, str | list[str]]) -> Callable[[str], object]:
-        return lambda key: values.get(key, [] if key in ('only_rerun', 'rerun_except') else '')
+    _reader = staticmethod(_ini_reader)
 
     def it_returns_nothing_when_no_rerun_ini_key_is_set(self) -> None:
         assert rerun_ini_overrides(self._reader({})) == []
 
     def it_forwards_each_set_key_as_an_ini_override_in_a_fixed_order(self) -> None:
-        values = {'reruns_delay': '0.5', 'reruns': '2', 'reruns_delay_backoff_factor': '2'}
+        values: dict[str, str | list[str]] = {'reruns_delay': '0.5', 'reruns': '2', 'reruns_delay_backoff_factor': '2'}
 
         assert rerun_ini_overrides(self._reader(values)) == [
             '--override-ini=reruns=2',
@@ -613,20 +640,20 @@ class DescribeRerunIniOverrides:
         ]
 
     def it_skips_a_key_the_installed_pytest_rerunfailures_does_not_register(self) -> None:
-        def read_ini(key: str) -> object:
-            if key != 'reruns':
-                raise ValueError(f'unknown configuration value: {key!r}')
-            return '2'
+        unregistered = ValueError('unknown configuration value')
+        read_ini = _reader_raising(dict.fromkeys(_all_rerun_keys_except('reruns'), unregistered), {'reruns': '2'})
 
         assert rerun_ini_overrides(read_ini) == ['--override-ini=reruns=2']
 
     def it_skips_a_key_pytest_cannot_read_as_a_string_and_forwards_the_rest(self) -> None:
-        def read_ini(key: str) -> object:
-            if key == 'reruns':
-                raise TypeError("expected str, got int for 'reruns'")
-            return '0.5' if key == 'reruns_delay' else ''
+        read_ini = _reader_raising({'reruns': TypeError("expected str, got int for 'reruns'")}, {'reruns_delay': '0.5'})
 
         assert rerun_ini_overrides(read_ini) == ['--override-ini=reruns_delay=0.5']
+
+    def it_leaves_out_a_key_a_parsed_option_already_sets(self) -> None:
+        overrides = rerun_ini_overrides(_ini_reader(_EVERY_RERUN_KEY_SET), option_keys_set={'reruns', 'only_rerun'})
+
+        assert _keys_of(overrides) == ['reruns_delay', 'reruns_delay_backoff_factor', 'rerun_except']
 
     def it_keeps_a_zero_count_from_a_toml_file_so_it_still_overrides_the_gremlin_runs_own_config(self) -> None:
         assert rerun_ini_overrides(self._reader({'reruns': 0})) == ['--override-ini=reruns=0']  # type: ignore[dict-item]

@@ -57,14 +57,9 @@ _RERUN_VALUE_OPTIONS = frozenset(
 _RERUN_INI_KEYS = frozenset({'reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except'})
 # The order the settings are forwarded in; the list-valued keys are ``linelist`` ini options.
 _FORWARDED_INI_KEYS = ('reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except')
-# The command-line option pytest-rerunfailures reads before the ini key of the same setting.
-_OPTION_FOR_INI_KEY = {
-    '--reruns': 'reruns',
-    '--reruns-delay': 'reruns_delay',
-    '--reruns-delay-backoff-factor': 'reruns_delay_backoff_factor',
-    '--only-rerun': 'only_rerun',
-    '--rerun-except': 'rerun_except',
-}
+# The command-line option pytest-rerunfailures reads before the ini key of the same setting.  Each such
+# option is the ini key spelled as a long option, and its argparse ``dest`` is the ini key itself.
+_OPTION_FOR_INI_KEY = {f'--{key.replace("_", "-")}': key for key in _FORWARDED_INI_KEYS}
 _SHORT_OVERRIDE_INI = '-o'
 _OVERRIDE_INI_ARGUMENT = '--override-ini='
 _OVERRIDE_INI_OPTIONS = frozenset({_SHORT_OVERRIDE_INI, '--override-ini'})
@@ -228,13 +223,13 @@ def _keys_overridden_by(overridden_by: Sequence[str], option_keys_set: Collectio
     Both ``--override-ini=key=...`` and the option pytest-rerunfailures reads instead of the key
     (``--only-rerun`` for ``only_rerun``) count, and so does every key in ``option_keys_set``.
     """
-    keys: set[str] = set(option_keys_set)
+    overridden_keys: set[str] = set(option_keys_set)
     for option in overridden_by:
         if option.startswith(_OVERRIDE_INI_ARGUMENT):
-            keys.add(option.removeprefix(_OVERRIDE_INI_ARGUMENT).partition('=')[0])
+            overridden_keys.add(option.removeprefix(_OVERRIDE_INI_ARGUMENT).partition('=')[0])
         elif (key := _OPTION_FOR_INI_KEY.get(option.partition('=')[0])) is not None:
-            keys.add(key)
-    return keys
+            overridden_keys.add(key)
+    return overridden_keys
 
 
 def _read_not_overridden(
@@ -250,18 +245,18 @@ def _read_not_overridden(
     ``unreadable_as_unset`` is set; a key the plugin does not register (``ValueError``) is always skipped.
     """
     already_overridden = _keys_overridden_by(overridden_by, option_keys_set)
-    values: list[tuple[str, object]] = []
+    unoverridden_settings: list[tuple[str, object]] = []
     for key in _FORWARDED_INI_KEYS:
         if key in already_overridden:
             continue
         try:
-            values.append((key, read_ini(key)))
+            unoverridden_settings.append((key, read_ini(key)))
         except TypeError:
             if unreadable_as_unset:
-                values.append((key, None))
+                unoverridden_settings.append((key, None))
         except ValueError:
             continue
-    return values
+    return unoverridden_settings
 
 
 def _resolved_ini_settings(
@@ -276,6 +271,7 @@ def _resolved_ini_settings(
 
 
 def _is_changed_by_override_ini(value: object) -> bool:
+    """Return whether ``value`` is a ``linelist`` value whose items ``-o`` would not pass unchanged."""
     return isinstance(value, list) and not survives_override_ini(value)
 
 
@@ -318,8 +314,8 @@ def rerun_ini_overrides(
     for key, value in _resolved_ini_settings(read_ini, overridden_by, option_keys_set):
         if _is_changed_by_override_ini(value):
             continue
-        text = '\n'.join(value) if isinstance(value, list) else value
-        overrides.append(f'{_OVERRIDE_INI_ARGUMENT}{key}={text}')
+        override_value = '\n'.join(value) if isinstance(value, list) else value
+        overrides.append(f'{_OVERRIDE_INI_ARGUMENT}{key}={override_value}')
     return overrides
 
 
@@ -390,10 +386,12 @@ def unforwarded_rerun_key_warning(key: str) -> str:
         True
     """
     return (
-        f'pytest-gremlins: warning: the ini setting {key!r} is not carried into gremlin runs because its patterns '
-        'cannot be passed unchanged on the command line (pytest strips and splits them, and a NUL byte cannot be '
-        'passed at all); gremlin runs use no filter for it, so they rerun more failures than '
-        'the baseline did, and some gremlins may survive that your tests would zap'
+        f'pytest-gremlins: warning: the ini setting {key!r} is not carried into gremlin runs because some of its '
+        'patterns cannot be passed unchanged on the command line (pytest strips and splits them, and a NUL byte '
+        'cannot be passed at all); gremlin runs use no filter for it, so they rerun more failures than '
+        'the baseline did, and some gremlins may survive that your tests would zap. To fix this, remove leading '
+        'and trailing whitespace, line breaks, NUL bytes and empty items from its patterns, or move the setting to '
+        'a config file pytest finds without -c'
     )
 
 

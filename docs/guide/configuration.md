@@ -516,16 +516,16 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
   `-c` file or `PYTEST_ADDOPTS`. pytest-rerunfailures reads the option before the ini key, and gremlin runs receive
   those `addopts` themselves. (A `-c` that reaches the gremlin runs through `PYTEST_ADDOPTS` is read by them.)
 - pytest strips each line of a list value given with `-o`, splits it at line breaks and drops empty lines. Under
-  `-c`, an `only_rerun` or `rerun_except` list with an item that has leading or trailing whitespace, a line
-  break, a NUL byte, or is empty (possible in a TOML list such as `rerun_except = ["xyz "]`) would reach the gremlin runs
-  changed, and a changed pattern reruns fewer failures than your baseline did. Gremlins does not forward that
-  key, resets it to no filter, and prints
+  `-c`, an `only_rerun` or `rerun_except` list with an empty item, or an item that has leading or trailing
+  whitespace, a line break or a NUL byte (possible in a TOML list such as `rerun_except = ["xyz "]`), would
+  reach the gremlin runs changed, and a changed pattern reruns fewer failures than your baseline did. So
+  gremlins does not forward that key: it resets it to no filter and prints
   `pytest-gremlins: warning: the ini setting 'rerun_except' is not carried into gremlin runs ...`.
+  The gremlin runs then rerun more failures than the baseline, so a gremlin your tests would zap can survive,
+  but a flaky test never zaps one it should not. To avoid this, remove the whitespace, line breaks, NUL bytes
+  and empty items from the list, or put the config in a file pytest finds without `-c`.
   The warning is not printed when `--only-rerun` or `--rerun-except` (from the command line, the `-c` file's
   `addopts` or `PYTEST_ADDOPTS`) or a `-o` setting already replaces the key.
-  The gremlin runs then rerun more failures than the baseline, so a gremlin your tests would zap can survive,
-  but a flaky test never zaps one it should not. Remove the whitespace, or put the config in a file pytest finds
-  without `-c`, to avoid it.
 - Rerun options typed on the command line are carried over too: `--reruns`, `--reruns-delay`,
   `--reruns-delay-backoff-factor`, `--reruns-mode`, `--only-rerun`, `--rerun-except`, `--rerun-exclude-path`,
   `--force-reruns` and `--max-suite-reruns`. They go last on the command, so they win over `addopts`, as in pytest.

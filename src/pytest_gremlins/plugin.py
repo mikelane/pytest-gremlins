@@ -2737,6 +2737,7 @@ def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
 
 
 def _command_line_rerun_options(config: pytest.Config) -> list[str]:
+    """Return the rerun options in the session's invocation arguments, ``@file`` arguments expanded."""
     return rerun_options_in(config.invocation_params.args, base_dir=config.invocation_params.dir)
 
 
@@ -2781,6 +2782,7 @@ def _rerun_ini_warnings_for(config: pytest.Config) -> list[str]:
 
 
 def _rerunfailures_is_loaded(config: pytest.Config) -> bool:
+    """Return whether pytest-rerunfailures is registered in this session under either of its plugin names."""
     return any(config.pluginmanager.hasplugin(name) for name in _RERUNFAILURES_PLUGIN_NAMES)
 
 
