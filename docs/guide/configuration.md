@@ -506,11 +506,20 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
   reads the settings itself; gremlins forwards nothing. With `-c` or `--config-file` (also through
   `PYTEST_ADDOPTS` or an `@file`), the gremlin runs cannot read that file, so gremlins passes each setting that
   is set as `--override-ini`, and a rerun option typed on the command line still wins over the file, as in pytest.
+- With `-c`, a gremlin run finds the project's own config file (`pytest.ini`, `pyproject.toml`...), which your
+  baseline never read. So under `-c`, gremlins also resets each filter list (`only_rerun`, `rerun_except`) that
+  the `-c` file leaves unset, or that it cannot carry (next item), with an empty `--override-ini`. An empty list
+  means no filter, so the project file cannot restrict reruns where your baseline did not. A key that a command-line
+  `--only-rerun`, `--rerun-except` or `-o` setting already overrides is left alone. The count and delay settings
+  need no reset: when the `-c` file leaves them unset the baseline reran nothing, so a value from the project file
+  can only add reruns or a delay.
 - pytest strips each line of a list value given with `-o`, splits it at line breaks and drops empty lines. Under
   `-c`, an `only_rerun` or `rerun_except` list with an item that has leading or trailing whitespace, a line
   break, a NUL byte, or is empty (possible in a TOML list such as `rerun_except = ["xyz "]`) would reach the gremlin runs
   changed, and a changed pattern reruns fewer failures than your baseline did. Gremlins does not forward that
-  key and prints `pytest-gremlins: warning: the ini setting 'rerun_except' is not carried into gremlin runs ...`.
+  key, resets it to no filter, and prints
+  `pytest-gremlins: warning: the ini setting 'rerun_except' is not carried into gremlin runs ...`.
+  The warning is not printed when a command-line `--only-rerun` or `--rerun-except` already replaces the key.
   The gremlin runs then rerun more failures than the baseline, so a gremlin your tests would zap can survive,
   but a flaky test never zaps one it should not. Remove the whitespace, or put the config in a file pytest finds
   without `-c`, to avoid it.

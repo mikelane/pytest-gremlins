@@ -22,6 +22,7 @@ from pytest_gremlins.plugin import (
 )
 from pytest_gremlins.rerun_options import (
     baseline_rerun_warning,
+    rerun_filter_resets,
     rerun_ini_overrides,
     rerun_options_in,
     survives_override_ini,
@@ -204,21 +205,33 @@ class DescribeRerunOptionsFor:
             registered_plugin='rerunfailures', args=['-c', 'ci.ini'], ini={'reruns': '2'}, inifilename='ci.ini'
         )
 
-        assert _rerun_options_for(config) == ['--override-ini=reruns=2']
+        assert _rerun_options_for(config) == [
+            '--override-ini=reruns=2',
+            '--override-ini=only_rerun=',
+            '--override-ini=rerun_except=',
+        ]
 
-    def it_puts_the_command_line_after_the_ini_settings_so_it_wins(self) -> None:
+    def it_leaves_out_an_ini_count_the_command_line_option_replaces(self) -> None:
         config = _config(
             registered_plugin='rerunfailures', args=['--reruns', '3'], ini={'reruns': '1'}, inifilename='ci.ini'
         )
 
-        assert _rerun_options_for(config) == ['--override-ini=reruns=1', '--reruns=3']
+        assert _rerun_options_for(config) == [
+            '--override-ini=only_rerun=',
+            '--override-ini=rerun_except=',
+            '--reruns=3',
+        ]
 
     def it_does_not_repeat_an_ini_setting_the_command_line_already_overrides(self) -> None:
         config = _config(
             registered_plugin='rerunfailures', args=['-o', 'reruns=2'], ini={'reruns': '2'}, inifilename='ci.ini'
         )
 
-        assert _rerun_options_for(config) == ['--override-ini=reruns=2']
+        assert _rerun_options_for(config) == [
+            '--override-ini=only_rerun=',
+            '--override-ini=rerun_except=',
+            '--override-ini=reruns=2',
+        ]
 
     def it_forwards_no_ini_settings_when_pytest_rerunfailures_is_not_loaded(self) -> None:
         config = _config(registered_plugin=None, args=[], ini={'reruns': '2'})
@@ -253,7 +266,35 @@ class DescribeRerunIniSettingsUnderAConfigFileOption:
         ini: dict[str, str | list[str]] = {'reruns': '2', 'rerun_except': ['xyz '], 'only_rerun': ['Timeout']}
         config = _config(registered_plugin='rerunfailures', args=[], ini=ini, inifilename='ci.toml')
 
-        assert _rerun_options_for(config) == ['--override-ini=reruns=2', '--override-ini=only_rerun=Timeout']
+        assert _rerun_options_for(config) == [
+            '--override-ini=reruns=2',
+            '--override-ini=only_rerun=Timeout',
+            '--override-ini=rerun_except=',
+        ]
+
+    def it_resets_a_list_setting_the_config_file_leaves_unset_so_the_project_file_cannot_fill_it_in(self) -> None:
+        config = _config(registered_plugin='rerunfailures', args=[], ini={'reruns': '2'}, inifilename='ci.ini')
+
+        assert _rerun_options_for(config) == [
+            '--override-ini=reruns=2',
+            '--override-ini=only_rerun=',
+            '--override-ini=rerun_except=',
+        ]
+
+    def it_puts_the_resets_before_the_command_line_so_the_command_line_wins(self) -> None:
+        config = _config(registered_plugin='rerunfailures', args=['--only-rerun', 'Timeout'], inifilename='ci.ini')
+
+        assert _rerun_options_for(config) == ['--override-ini=rerun_except=', '--only-rerun=Timeout']
+
+    def it_does_not_warn_about_a_key_a_command_line_option_replaces(self) -> None:
+        config = _config(
+            registered_plugin='rerunfailures',
+            args=['--rerun-except', 'safe'],
+            ini={'rerun_except': ['xyz ']},
+            inifilename='ci.toml',
+        )
+
+        assert _rerun_ini_warnings_for(config) == []
 
     def it_warns_once_per_left_out_key(self) -> None:
         ini: dict[str, str | list[str]] = {'rerun_except': [' a'], 'only_rerun': ['b\r']}
@@ -352,6 +393,82 @@ class DescribeUnforwardableRerunKeys:
 
 
 @pytest.mark.small
+class DescribeRerunFilterResets:
+    @staticmethod
+    def _reader(values: dict[str, str | list[str]]) -> Callable[[str], object]:
+        return lambda key: values.get(key, [] if key in ('only_rerun', 'rerun_except') else '')
+
+    def it_resets_each_list_key_that_is_unset(self) -> None:
+        assert rerun_filter_resets(self._reader({'reruns': '2'})) == [
+            '--override-ini=only_rerun=',
+            '--override-ini=rerun_except=',
+        ]
+
+    @pytest.mark.parametrize('unset', [None, '', []])
+    def it_treats_every_empty_value_as_unset(self, unset: object) -> None:
+        assert rerun_filter_resets(lambda _key: unset) == [
+            '--override-ini=only_rerun=',
+            '--override-ini=rerun_except=',
+        ]
+
+    def it_resets_a_list_key_whose_items_pytest_would_change(self) -> None:
+        values: dict[str, str | list[str]] = {'only_rerun': ['a'], 'rerun_except': ['b ']}
+
+        assert rerun_filter_resets(self._reader(values)) == ['--override-ini=rerun_except=']
+
+    def it_leaves_a_list_key_alone_when_it_is_forwarded(self) -> None:
+        values: dict[str, str | list[str]] = {'only_rerun': ['a'], 'rerun_except': ['b c']}
+
+        assert rerun_filter_resets(self._reader(values)) == []
+
+    @pytest.mark.parametrize(
+        'overridden_by',
+        [
+            ['--override-ini=only_rerun=a'],
+            ['--only-rerun=a'],
+        ],
+    )
+    def it_leaves_alone_a_key_the_command_line_already_overrides(self, overridden_by: list[str]) -> None:
+        assert rerun_filter_resets(self._reader({}), overridden_by=overridden_by) == ['--override-ini=rerun_except=']
+
+    def it_skips_a_key_the_installed_pytest_rerunfailures_does_not_register(self) -> None:
+        def read_ini(key: str) -> object:
+            if key == 'only_rerun':
+                raise ValueError(key)
+            return []
+
+        assert rerun_filter_resets(read_ini) == ['--override-ini=rerun_except=']
+
+
+@pytest.mark.small
+class DescribeKeysACommandLineOptionOverrides:
+    @pytest.mark.parametrize(
+        ('option', 'key'),
+        [
+            ('--reruns=2', 'reruns'),
+            ('--reruns-delay=1', 'reruns_delay'),
+            ('--reruns-delay-backoff-factor=2', 'reruns_delay_backoff_factor'),
+            ('--only-rerun=a', 'only_rerun'),
+            ('--rerun-except=a', 'rerun_except'),
+            ('--override-ini=only_rerun=a', 'only_rerun'),
+        ],
+    )
+    def it_keeps_the_ini_key_it_replaces_out_of_the_forwarded_overrides(self, option: str, key: str) -> None:
+        def read_ini(name: str) -> object:
+            return ['a'] if name in ('only_rerun', 'rerun_except') else '2'
+
+        forwarded = rerun_ini_overrides(read_ini, overridden_by=[option])
+
+        assert not any(argument.startswith(f'--override-ini={key}=') for argument in forwarded)
+
+    def it_does_not_report_a_key_a_command_line_option_replaces(self) -> None:
+        values: dict[str, str | list[str]] = {'only_rerun': ['a '], 'rerun_except': ['b ']}
+        reader = DescribeRerunFilterResets._reader(values)
+
+        assert unforwardable_rerun_keys(reader, overridden_by=['--only-rerun=a']) == ['rerun_except']
+
+
+@pytest.mark.small
 class DescribeUnforwardedRerunKeyWarning:
     def it_names_the_key_and_says_gremlin_runs_rerun_more_failures(self) -> None:
         warning = unforwarded_rerun_key_warning('only_rerun')
@@ -360,6 +477,7 @@ class DescribeUnforwardedRerunKeyWarning:
         assert "'only_rerun'" in warning
         assert 'not carried into gremlin runs' in warning
         assert 'rerun more failures than the baseline' in warning
+        assert 'no filter' in warning
         assert '\n' not in warning
 
 
