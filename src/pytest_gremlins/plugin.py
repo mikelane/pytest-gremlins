@@ -1718,6 +1718,9 @@ instrumented code with mutation switching logic, then runs pytest.
 import json
 import os
 import sys
+import traceback
+
+import pytest
 
 __ORIGIN_FINDER_SOURCE__
 
@@ -1728,7 +1731,7 @@ def main():
     sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE')
     if not sources_file:
         print('Error: PYTEST_GREMLINS_SOURCES_FILE not set', file=sys.stderr)
-        sys.exit(1)
+        sys.exit(int(pytest.ExitCode.USAGE_ERROR))
 
     with open(sources_file, encoding='utf-8') as f:
         instrumented_sources = json.load(f)
@@ -1737,7 +1740,6 @@ def main():
     finder = install(instrumented_sources)
 
     # Now run pytest with remaining arguments
-    import pytest
     from _pytest.config import ConftestImportFailure
 
     class FinderFronter:
@@ -1804,7 +1806,14 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # An exception that escapes main (a plugin that cannot register, a corrupt sources file) would end the
+    # interpreter with exit 1, the code for a failing test, and score the mutant as caught although no test
+    # ran. Exit with pytest's internal-error code instead; SystemExit and KeyboardInterrupt pass through.
+    try:
+        main()
+    except Exception:
+        traceback.print_exc()
+        sys.exit(int(pytest.ExitCode.INTERNAL_ERROR))
 """
     return (
         script.replace('__COLLECTION_FAILED_EXIT_CODE__', str(GREMLIN_COLLECTION_FAILED_EXIT_CODE))

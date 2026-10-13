@@ -24,6 +24,8 @@ RunBootstrap = Callable[..., int]
 
 PASSING_TEST = 'def test_ok():\n    pass\n'
 RAISES_ON_IMPORT = 'raise RuntimeError("mutant broke the import")\n'
+# pytest registers _pytest.logging as 'logging'; loading it again by module name hits pluggy's ValueError.
+ALREADY_REGISTERED_PLUGIN = '_pytest.logging'
 PARAMETRIZED_TEST = 'import pytest\n\n@pytest.mark.parametrize("level", [1, 2])\ndef test_level(level):\n    pass\n'
 
 
@@ -120,6 +122,72 @@ class DescribeBootstrapKeepsOurOwnFailuresDistinct:
         )
 
         assert exit_code == pytest.ExitCode.INTERNAL_ERROR
+
+    def it_reports_a_plugin_registration_crash_as_an_internal_error(self, run_bootstrap: RunBootstrap) -> None:
+        exit_code = run_bootstrap({'test_sample.py': PASSING_TEST}, '-p', ALREADY_REGISTERED_PLUGIN, 'test_sample.py')
+
+        assert exit_code == pytest.ExitCode.INTERNAL_ERROR
+
+    def it_does_not_report_a_plugin_registration_crash_as_a_caught_mutant(self, run_bootstrap: RunBootstrap) -> None:
+        exit_code = run_bootstrap({'test_sample.py': PASSING_TEST}, '-p', ALREADY_REGISTERED_PLUGIN, 'test_sample.py')
+
+        assert exit_code != 1
+
+    def it_prints_the_traceback_of_a_startup_crash_to_stderr(self, tmp_path: Path) -> None:
+        bootstrap = tmp_path / 'gremlin_bootstrap.py'
+        bootstrap.write_text(_get_bootstrap_script())
+        sources_file = tmp_path / 'sources.json'
+        sources_file.write_text('{}')
+        environment = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+        environment['PYTEST_GREMLINS_SOURCES_FILE'] = str(sources_file)
+
+        completed = subprocess.run(
+            [sys.executable, '-P', str(bootstrap), '-p', ALREADY_REGISTERED_PLUGIN],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+
+        assert b'Plugin already registered under a different name' in completed.stderr
+
+    def it_reports_a_missing_sources_file_variable_as_a_usage_error(self, tmp_path: Path) -> None:
+        bootstrap = tmp_path / 'gremlin_bootstrap.py'
+        bootstrap.write_text(_get_bootstrap_script())
+        environment = {
+            key: value for key, value in os.environ.items() if key not in ('PYTHONPATH', 'PYTEST_GREMLINS_SOURCES_FILE')
+        }
+
+        completed = subprocess.run(
+            [sys.executable, '-P', str(bootstrap)],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+
+        assert completed.returncode == pytest.ExitCode.USAGE_ERROR
+
+    def it_reports_an_unreadable_sources_file_as_an_internal_error(self, tmp_path: Path) -> None:
+        bootstrap = tmp_path / 'gremlin_bootstrap.py'
+        bootstrap.write_text(_get_bootstrap_script())
+        sources_file = tmp_path / 'sources.json'
+        sources_file.write_text('not json')
+        environment = {key: value for key, value in os.environ.items() if key != 'PYTHONPATH'}
+        environment['PYTEST_GREMLINS_SOURCES_FILE'] = str(sources_file)
+
+        completed = subprocess.run(
+            [sys.executable, '-P', str(bootstrap)],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+
+        assert completed.returncode == pytest.ExitCode.INTERNAL_ERROR
 
     def it_keeps_a_passing_run_at_exit_0(self, run_bootstrap: RunBootstrap) -> None:
         assert run_bootstrap({'test_sample.py': PASSING_TEST}, 'test_sample.py::test_ok') == 0
