@@ -172,3 +172,49 @@ class DescribeBaselineRerunWarning:
         # The zaps prove the run reached mutation testing, so the missing warning is not a crash.
         assert verdicts(result.stdout.str())['Zapped'] > 0
         assert 'needed a rerun' not in result.stderr.str()
+
+
+_FLAKY_TEST_FAILING_WITH_XYZ = FLAKY_WEAK_TEST.replace(
+    "'flaky: fails on the first call in every fresh process'", "'flaky xyz'"
+)
+_TOML_WITH_TRAILING_SPACE_PATTERN = '[tool.pytest.ini_options]\nreruns = 2\nrerun_except = ["xyz "]\n'
+# An ini file strips trailing whitespace itself; only a TOML list can hold ``"xyz "``.
+
+
+@pytest.mark.medium
+class DescribeRerunPatternsPytestWouldStripOnTheCommandLine:
+    """``-o`` strips each line of a list value, so ``"xyz "`` would arrive as ``xyz`` and stop reruns (refs #658)."""
+
+    def it_reads_the_project_config_itself_so_the_pattern_keeps_its_space(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        (pytester_with_markers.path / 'pyproject.toml').write_text(_TOML_WITH_TRAILING_SPACE_PATTERN, encoding='utf-8')
+
+        result = run_gremlins(pytester_with_markers, tests=_FLAKY_TEST_FAILING_WITH_XYZ)
+
+        counts = verdicts(result.stdout.str())
+        assert counts['Survived'] > 0
+        assert counts['Zapped'] == 1
+
+    def it_skips_the_pattern_under_a_config_file_and_says_so(self, pytester_with_markers: pytest.Pytester) -> None:
+        (pytester_with_markers.path / 'ci.toml').write_text(_TOML_WITH_TRAILING_SPACE_PATTERN, encoding='utf-8')
+
+        result = run_gremlins(pytester_with_markers, '-c', 'ci.toml', tests=_FLAKY_TEST_FAILING_WITH_XYZ)
+
+        warnings = [line for line in result.stderr.lines if 'rerun_except' in line]
+        assert len(warnings) == 1
+        assert warnings[0].startswith('pytest-gremlins: warning:')
+        assert 'not carried into gremlin runs' in warnings[0]
+        assert survivor_count(result.stdout.str()) > 0
+
+    def it_still_forwards_the_other_rerun_settings_under_a_config_file(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        (pytester_with_markers.path / 'ci.toml').write_text(_TOML_WITH_TRAILING_SPACE_PATTERN, encoding='utf-8')
+
+        result = run_gremlins(pytester_with_markers, '-c', 'ci.toml', tests=_FLAKY_TEST_FAILING_WITH_XYZ)
+
+        counts = verdicts(result.stdout.str())
+        assert 'needed a rerun' in result.stderr.str()
+        assert counts['Survived'] > 0
+        assert counts['Zapped'] == 1

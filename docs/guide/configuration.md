@@ -502,9 +502,18 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
 
 - Options in `addopts` and `PYTEST_ADDOPTS` reach per-gremlin runs as they always did.
 - The rerun ini settings (`reruns`, `reruns_delay`, `reruns_delay_backoff_factor`, `only_rerun`, `rerun_except`)
-  reach them too, wherever pytest found them, including a file named with `-c` or `--config-file`. Gremlins passes
-  each setting that is set to the gremlin runs as `--override-ini`, so a rerun option typed on the command line
-  still wins over the file, as in pytest.
+  reach them too. Without `-c`/`--config-file`, a gremlin run finds the same project config file you did and
+  reads the settings itself; gremlins forwards nothing. With `-c` or `--config-file` (also through
+  `PYTEST_ADDOPTS` or an `@file`), the gremlin runs cannot read that file, so gremlins passes each setting that
+  is set as `--override-ini`, and a rerun option typed on the command line still wins over the file, as in pytest.
+- pytest strips each line of a list value given with `-o`, splits it at line breaks and drops empty lines. Under
+  `-c`, an `only_rerun` or `rerun_except` list with an item that has leading or trailing whitespace, a line
+  break, or is empty (possible in a TOML list such as `rerun_except = ["xyz "]`) would reach the gremlin runs
+  changed, and a changed pattern reruns fewer failures than your baseline did. Gremlins does not forward that
+  key and prints `pytest-gremlins: warning: the ini setting 'rerun_except' is not carried into gremlin runs ...`.
+  The gremlin runs then rerun more failures than the baseline, so a gremlin your tests would zap can survive,
+  but a flaky test never zaps one it should not. Remove the whitespace, or put the config in a file pytest finds
+  without `-c`, to avoid it.
 - Rerun options typed on the command line are carried over too: `--reruns`, `--reruns-delay`,
   `--reruns-delay-backoff-factor`, `--reruns-mode`, `--only-rerun`, `--rerun-except`, `--rerun-exclude-path`,
   `--force-reruns` and `--max-suite-reruns`. They go last on the command, so they win over `addopts`, as in pytest.
