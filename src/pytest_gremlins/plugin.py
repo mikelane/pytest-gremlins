@@ -2734,6 +2734,10 @@ def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
     return bool(getattr(config.option, 'inifilename', None))
 
 
+def _command_line_rerun_options(config: pytest.Config) -> list[str]:
+    return rerun_options_in(config.invocation_params.args, base_dir=config.invocation_params.dir)
+
+
 def _rerun_options_for(config: pytest.Config) -> list[str]:
     """Return the rerun settings of ``config`` for gremlin runs, or none if pytest-rerunfailures is not active.
 
@@ -2748,7 +2752,7 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     """
     if not _rerunfailures_is_loaded(config):
         return []
-    command_line_options = rerun_options_in(config.invocation_params.args, base_dir=config.invocation_params.dir)
+    command_line_options = _command_line_rerun_options(config)
     if not _rerun_ini_settings_are_forwarded(config):
         return command_line_options
     ini_overrides = rerun_ini_overrides(config.getini, overridden_by=command_line_options)
@@ -2759,7 +2763,7 @@ def _rerun_ini_warnings_for(config: pytest.Config) -> list[str]:
     """Return one warning per rerun ini setting that ``-c`` holds and gremlin runs cannot be given."""
     if not _rerunfailures_is_loaded(config) or not _rerun_ini_settings_are_forwarded(config):
         return []
-    command_line_options = rerun_options_in(config.invocation_params.args, base_dir=config.invocation_params.dir)
+    command_line_options = _command_line_rerun_options(config)
     skipped_keys = unforwardable_rerun_keys(config.getini, overridden_by=command_line_options)
     return [unforwarded_rerun_key_warning(key) for key in skipped_keys]
 
