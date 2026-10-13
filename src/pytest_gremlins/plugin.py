@@ -123,9 +123,10 @@ from pytest_gremlins.reporting.results import (
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.rerun_options import (
     baseline_rerun_warning,
-    rerun_filter_resets,
     rerun_ini_overrides,
+    rerun_keys_set_in,
     rerun_options_in,
+    rerun_resets,
     unforwardable_rerun_keys,
     unforwarded_rerun_key_warning,
 )
@@ -2743,12 +2744,15 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     """Return the rerun settings of ``config`` for gremlin runs, or none if pytest-rerunfailures is not active.
 
     That is the rerun options typed on the command line, preceded, only when the session was started with
-    ``-c``/``--config-file`` (which gremlin runs never read), by the rerun ini settings the main session
-    resolved; the command line wins over them.  Without ``-c`` the gremlin runs read the project config
-    themselves, and forwarding its values through ``--override-ini`` would only risk pytest altering them
-    (issue #658).  Under ``-c`` a gremlin run finds the project's own config file instead, so a filter list
-    (``only_rerun``, ``rerun_except``) the ``-c`` file leaves unset, or whose items ``--override-ini`` would
-    change, is reset to empty (no filter) rather than left to that file; see :func:`_rerun_ini_warnings_for`.
+    ``-c``/``--config-file`` (which gremlin runs are not given, so they do not read that file), by the rerun
+    ini settings the main session resolved; the command line wins over them.  Without ``-c`` the gremlin
+    runs read the project config themselves, and forwarding its values through ``--override-ini`` would only
+    risk pytest altering them (issue #658).  Under ``-c`` a gremlin run finds the project's own config file
+    instead, so every rerun key the ``-c`` file leaves unset, or whose items ``--override-ini`` would change,
+    is reset to empty (the baseline's defaults) rather than left to that file; see
+    :func:`_rerun_ini_warnings_for`.  A key whose parsed option is set, from the command line, ``addopts`` or
+    ``PYTEST_ADDOPTS``, is neither forwarded nor reset: gremlin runs get those options themselves, and
+    pytest-rerunfailures reads an option before its ini key.
     Settings are only forwarded when the plugin is loaded in this session, so a project without it
     never receives a flag its gremlin runs would reject as unrecognized (exit code 4).
     """
@@ -2757,9 +2761,12 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     command_line_options = _command_line_rerun_options(config)
     if not _rerun_ini_settings_are_forwarded(config):
         return command_line_options
-    ini_overrides = rerun_ini_overrides(config.getini, overridden_by=command_line_options)
-    filter_resets = rerun_filter_resets(config.getini, overridden_by=command_line_options)
-    return [*ini_overrides, *filter_resets, *command_line_options]
+    option_keys_set = rerun_keys_set_in(config.option)
+    ini_overrides = rerun_ini_overrides(
+        config.getini, overridden_by=command_line_options, option_keys_set=option_keys_set
+    )
+    resets = rerun_resets(config.getini, overridden_by=command_line_options, option_keys_set=option_keys_set)
+    return [*ini_overrides, *resets, *command_line_options]
 
 
 def _rerun_ini_warnings_for(config: pytest.Config) -> list[str]:
@@ -2767,7 +2774,9 @@ def _rerun_ini_warnings_for(config: pytest.Config) -> list[str]:
     if not _rerunfailures_is_loaded(config) or not _rerun_ini_settings_are_forwarded(config):
         return []
     command_line_options = _command_line_rerun_options(config)
-    skipped_keys = unforwardable_rerun_keys(config.getini, overridden_by=command_line_options)
+    skipped_keys = unforwardable_rerun_keys(
+        config.getini, overridden_by=command_line_options, option_keys_set=rerun_keys_set_in(config.option)
+    )
     return [unforwarded_rerun_key_warning(key) for key in skipped_keys]
 
 

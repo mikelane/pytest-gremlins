@@ -67,3 +67,16 @@ class DescribeTheSkippedPatternWarning:
 
         assert survivor_count(result.stdout.str()) > 0
         assert 'not carried into gremlin runs' not in result.stderr.str()
+
+    def it_stays_silent_when_the_config_file_addopts_already_replaces_the_skipped_setting(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        (pytester_with_markers.path / 'ci.toml').write_text(
+            '[tool.pytest.ini_options]\nreruns = 2\naddopts = "--only-rerun flaky"\nonly_rerun = ["flaky "]\n',
+            encoding='utf-8',
+        )
+
+        result = run_gremlins(pytester_with_markers, '-c', 'ci.toml')
+
+        assert survivor_count(result.stdout.str()) > 0
+        assert 'not carried into gremlin runs' not in result.stderr.str()
