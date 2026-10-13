@@ -1720,8 +1720,6 @@ import os
 import sys
 import traceback
 
-import pytest
-
 __ORIGIN_FINDER_SOURCE__
 
 __NODE_ID_ARGS_SOURCE__
@@ -1731,7 +1729,7 @@ def main():
     sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE')
     if not sources_file:
         print('Error: PYTEST_GREMLINS_SOURCES_FILE not set', file=sys.stderr)
-        sys.exit(int(pytest.ExitCode.USAGE_ERROR))
+        sys.exit(__USAGE_ERROR_EXIT_CODE__)
 
     with open(sources_file, encoding='utf-8') as f:
         instrumented_sources = json.load(f)
@@ -1739,7 +1737,10 @@ def main():
     # Serve each instrumented file under whatever name the import system resolves it to.
     finder = install(instrumented_sources)
 
-    # Now run pytest with remaining arguments
+    # Now run pytest with remaining arguments. pytest is imported only now: its own imports (pluggy,
+    # iniconfig, pygments) must be served by the finder installed above, or a project mutating one of
+    # them would run unmutated.
+    import pytest
     from _pytest.config import ConftestImportFailure
 
     class FinderFronter:
@@ -1813,10 +1814,12 @@ if __name__ == '__main__':
         main()
     except Exception:
         traceback.print_exc()
-        sys.exit(int(pytest.ExitCode.INTERNAL_ERROR))
+        sys.exit(__INTERNAL_ERROR_EXIT_CODE__)
 """
     return (
         script.replace('__COLLECTION_FAILED_EXIT_CODE__', str(GREMLIN_COLLECTION_FAILED_EXIT_CODE))
+        .replace('__USAGE_ERROR_EXIT_CODE__', str(int(pytest.ExitCode.USAGE_ERROR)))
+        .replace('__INTERNAL_ERROR_EXIT_CODE__', str(int(pytest.ExitCode.INTERNAL_ERROR)))
         .replace('__UNATTRIBUTABLE_MARKER__', UNATTRIBUTABLE_MARKER)
         .replace('__ORIGIN_FINDER_SOURCE__', inspect.getsource(origin_finder))
         .replace('__NODE_ID_ARGS_SOURCE__', inspect.getsource(node_id_args))
