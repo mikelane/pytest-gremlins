@@ -2731,7 +2731,7 @@ def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
     wherever it came from (command line, ``PYTEST_ADDOPTS`` or an ``@file``), because pytest parses them all
     into one namespace.
     """
-    return bool(config.option.inifilename)
+    return bool(getattr(config.option, 'inifilename', None))
 
 
 def _rerun_options_for(config: pytest.Config) -> list[str]:
