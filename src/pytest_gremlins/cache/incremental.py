@@ -59,8 +59,8 @@ a gremlin only that child exercised was cached as SURVIVED.
 ``rf13`` retires verdicts cached before the key carried the optimize level (#613); a gremlin only an
 ``assert`` kills could be served across ``PYTHONOPTIMIZE`` settings.
 
-``rf14`` retires verdicts cached while a gremlin subprocess that crashed during pytest startup was scored ZAPPED
-(#656); it is now an ERROR.
+``rf14`` retires verdicts cached while a gremlin subprocess that crashed outside a test, such as during pytest
+startup, was scored ZAPPED (#656); it is now an ERROR.
 """
 
 

@@ -291,6 +291,8 @@ The key also carries the interpreter's optimize level, read from `PYTHONOPTIMIZE
 so a verdict reached with `assert` statements stripped is never served to a run that keeps them.
 So are verdicts cached while instrumented modules were compiled under their module name (#563), when a
 test that looked up source (`inspect.getsource`) failed under every gremlin and was cached as ZAPPED.
+So are verdicts cached when a gremlin subprocess that crashed outside a test, such as a plugin that could
+not register during pytest startup, was scored ZAPPED (#656); it is now an ERROR.
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that
 failed to collect, or a changed parametrize id) are recorded as ZAPPED with the killing test
 `<collection>`; ones cached as ERROR before that change are recomputed too.

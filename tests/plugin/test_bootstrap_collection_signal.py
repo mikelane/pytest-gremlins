@@ -208,7 +208,10 @@ class DescribeBootstrapInstrumentsModulesPytestImports:
     def it_serves_a_module_pytest_imports_at_startup_from_the_instrumented_sources(
         self, run_bootstrap_process: RunBootstrapProcess
     ) -> None:
-        origin = Path(importlib.util.find_spec('iniconfig').origin)  # type: ignore[union-attr, arg-type]
+        spec = importlib.util.find_spec('iniconfig')
+        assert spec is not None
+        assert spec.origin is not None
+        origin = Path(spec.origin)
         instrumented = origin.read_text(encoding='utf-8') + '\nINSTRUMENTED_MARKER = True\n'
         entry = {'source': instrumented, 'origin': str(origin), 'tree': None}
         sources = json.dumps({normalize_origin(str(origin)): entry})

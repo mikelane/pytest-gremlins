@@ -45,6 +45,7 @@ def _run_bootstrap(project: Path, *args: str) -> subprocess.CompletedProcess[byt
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
+    """Return a throwaway project directory holding one passing test."""
     directory = tmp_path / 'project'
     directory.mkdir()
     (directory / 'test_sample.py').write_text(PASSING_TEST, encoding='utf-8')
@@ -56,12 +57,12 @@ class DescribeStartupCrashThatIsNotAnException:
     """``pytest.fail`` raises ``Failed``, a ``BaseException``; ``except Exception`` lets it end the interpreter at 1."""
 
     @pytest.mark.parametrize('plugin_source', [FAILS_ON_IMPORT, FAILS_IN_STARTUP_HOOK], ids=['import', 'hook'])
-    def it_does_not_exit_with_the_failing_test_code(self, project: Path, plugin_source: str) -> None:
+    def it_exits_with_the_internal_error_code(self, project: Path, plugin_source: str) -> None:
         (project / 'refusing_plugin.py').write_text(plugin_source, encoding='utf-8')
 
         completed = _run_bootstrap(project, '-p', 'refusing_plugin', 'test_sample.py')
 
-        assert completed.returncode != pytest.ExitCode.TESTS_FAILED, completed.stderr.decode(errors='replace')
+        assert completed.returncode == pytest.ExitCode.INTERNAL_ERROR, completed.stderr.decode(errors='replace')
 
 
 @pytest.mark.medium
