@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf13'
+RUNNER_FIDELITY_VERSION = 'rf14'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
@@ -58,6 +58,9 @@ a gremlin only that child exercised was cached as SURVIVED.
 
 ``rf13`` retires verdicts cached before the key carried the optimize level (#613); a gremlin only an
 ``assert`` kills could be served across ``PYTHONOPTIMIZE`` settings.
+
+``rf14`` retires verdicts cached while a gremlin subprocess that crashed during pytest startup was scored ZAPPED
+(#656); it is now an ERROR.
 """
 
 

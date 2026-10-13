@@ -1810,9 +1810,18 @@ if __name__ == '__main__':
     # An exception that escapes main (a plugin that cannot register, a corrupt sources file) would end the
     # interpreter with exit 1, the code for a failing test, and score the mutant as caught although no test
     # ran. Exit with pytest's internal-error code instead; SystemExit and KeyboardInterrupt pass through.
+    # pytest.fail and pytest.skip raise BaseException subclasses, so the guard catches BaseException. The
+    # parent keeps only the first 2000 characters of stderr, so a one-line cause comes before the traceback.
     try:
         main()
-    except Exception:
+    except BaseException as error:
+        if isinstance(error, (SystemExit, KeyboardInterrupt)):
+            raise
+        cause = ''.join(traceback.format_exception_only(type(error), error)).strip()
+        print(
+            f'pytest-gremlins: the gremlin subprocess crashed before running tests: {cause[:500]}',
+            file=sys.stderr,
+        )
         traceback.print_exc()
         sys.exit(__INTERNAL_ERROR_EXIT_CODE__)
 """
