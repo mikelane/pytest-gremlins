@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from pytest_gremlins import plugin
@@ -102,3 +104,51 @@ class DescribeMutantTimeoutThroughTheRealEntryPoint:
         timeout = _configured_mutant_timeout(pytester, '-p', 'no:rerunfailures', ini='reruns = 2')
 
         assert timeout == 30
+
+
+_ADDITION = """
+def add(a, b):
+    return a + b
+"""
+
+_TEST_THAT_KILLS_THE_MUTANT = """
+import pytest
+from sample import add
+
+
+@pytest.mark.medium
+def test_add():
+    assert add(2, 3) == 5
+"""
+
+# The mutant's covering test fails, is rerun after the delay, and fails again.  The delay alone is longer than the
+# limit of one attempt, so only a timeout widened by the rerun budget lets that kill finish as a kill.  The pytest
+# start-up of the two attempts (up to 7s each on a loaded runner) fits in the scaled limit with room to spare.
+_ONE_ATTEMPT_LIMIT = 10
+_RERUN_DELAY = 12
+
+
+@pytest.mark.medium
+class DescribeRerunDelayEndToEnd:
+    def it_zaps_a_mutant_whose_covering_test_waits_out_a_rerun_delay(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+        pytester.makepyfile(sample=_ADDITION, test_sample=_TEST_THAT_KILLS_THE_MUTANT)
+
+        result = pytester.runpytest_subprocess(
+            '--gremlins',
+            '--gremlin-targets=sample.py',
+            '--gremlin-operators=arithmetic',
+            '--gremlin-mutant-timeout',
+            str(_ONE_ATTEMPT_LIMIT),
+            '--reruns',
+            '1',
+            '--reruns-delay',
+            str(_RERUN_DELAY),
+            '-p',
+            'no:cacheprovider',
+        )
+
+        output = result.stdout.str()
+        assert re.search(r'Zapped: [1-9]\d* gremlins', output), output

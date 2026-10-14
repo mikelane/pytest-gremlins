@@ -291,7 +291,9 @@ class GremlinSession:
         coverage_timeout: Seconds the coverage pre-scan may run before it is
             abandoned and coverage-guided test selection is disabled (issue #503).
         mutant_timeout: Seconds one gremlin's test run may take before the gremlin
-            is reported as a timeout.
+            is reported as a timeout.  This is the configured limit already scaled by the
+            session's pytest-rerunfailures budget (issue #655), so the timeout warning and the
+            cache key see the effective value.
         terminal_notices: Lines for the terminal summary, written directly rather than through
             ``logging`` (which pytest captures) or ``warnings.warn`` (which ``filterwarnings = error``
             turns into a crash).  Add one with :func:`_queue_terminal_notice`.
@@ -713,7 +715,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         dest='gremlin_mutant_timeout',
         help=(
             "Seconds one gremlin's test run may take before the gremlin is reported as a timeout "
-            f'(default: {DEFAULT_MUTANT_TIMEOUT_SECONDS}, max: {MAX_TIMEOUT_SECONDS})'
+            f'(default: {DEFAULT_MUTANT_TIMEOUT_SECONDS}, max: {MAX_TIMEOUT_SECONDS}). '
+            'With pytest-rerunfailures active the limit is scaled: each rerun adds another attempt of this '
+            'length plus the --reruns-delay wait (limit * (reruns + 1) + reruns * delay)'
         ),
     )
     group.addoption(
