@@ -26,9 +26,12 @@ from collections.abc import (
     Sequence,
 )
 import locale
+import math
 from pathlib import Path
 import re
 import sys
+
+from pytest_gremlins.config import MAX_TIMEOUT_SECONDS
 
 _ARGUMENT_FILE_PREFIX = '@'
 
@@ -422,3 +425,35 @@ def baseline_rerun_warning(rerun_test_ids: Collection[str]) -> str | None:
         'Gremlin runs use the same rerun settings, so a gremlin is zapped only if these tests fail on every attempt; '
         'fix the flaky tests so your mutation score reflects your tests, not luck'
     )
+
+
+def scaled_mutant_timeout(base: int, *, reruns: int, reruns_delay: float) -> int:
+    """Return the per-mutant timeout widened to cover the reruns pytest-rerunfailures may make (issue #655).
+
+    ``base`` is the budget of one attempt.  A killed mutant's covering test fails, is rerun ``reruns`` times
+    and sleeps ``reruns_delay`` seconds before each rerun, so the run may need
+    ``base * (reruns + 1) + ceil(reruns * reruns_delay)`` seconds before the mutant is judged.
+    A negative or NaN delay counts as 0 (pytest-rerunfailures treats a negative one as 0).  No reruns leave
+    ``base`` unchanged.  The result never exceeds ``MAX_TIMEOUT_SECONDS``.
+
+    Args:
+        base: Seconds one attempt may take.
+        reruns: Reruns allowed per test; zero or less means none.
+        reruns_delay: Seconds slept before each rerun.
+
+    Returns:
+        The timeout in whole seconds.
+
+    Example:
+        >>> scaled_mutant_timeout(30, reruns=2, reruns_delay=20)
+        130
+        >>> scaled_mutant_timeout(30, reruns=0, reruns_delay=20)
+        30
+    """
+    if reruns <= 0:
+        return base
+    usable_delay = reruns_delay if reruns_delay > 0 else 0.0
+    total_delay = reruns * usable_delay
+    if total_delay >= MAX_TIMEOUT_SECONDS:
+        return MAX_TIMEOUT_SECONDS
+    return min(base * (reruns + 1) + math.ceil(total_delay), MAX_TIMEOUT_SECONDS)
