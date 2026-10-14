@@ -341,7 +341,7 @@ unmutated tests did not finish within half the timeout.
 | Field | Type | Description |
 |-------|------|-------------|
 | `downgraded` | integer | Number of timeouts counted as errors instead of kills |
-| `mutant_timeout` | integer | The per-gremlin timeout in seconds |
+| `mutant_timeout` | integer | The effective per-gremlin timeout in seconds, scaled up by the rerun budget when pytest-rerunfailures is active |
 | `message` | string | The explanation, including the option to raise the timeout |
 
 **Files Object:**
