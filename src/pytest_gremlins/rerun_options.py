@@ -457,3 +457,50 @@ def scaled_mutant_timeout(base: int, *, reruns: int, reruns_delay: float) -> int
     if total_delay >= MAX_TIMEOUT_SECONDS:
         return MAX_TIMEOUT_SECONDS
     return min(base * (reruns + 1) + math.ceil(total_delay), MAX_TIMEOUT_SECONDS)
+
+
+def session_rerun_budget(option: object, read_ini: Callable[[str], object]) -> tuple[int, float]:
+    """Return the ``(reruns, reruns_delay)`` pytest-rerunfailures applies to a test with no ``flaky`` marker.
+
+    This mirrors the plugin's own session-level reading: ``--force-reruns`` replaces the count outright;
+    otherwise the ``--reruns`` option wins over the ``reruns`` ini key.  ``--reruns-delay`` wins over the
+    ``reruns_delay`` ini key.  An ini value that is not a number, an ini key the installed plugin does not
+    register, and an unset setting all count as no reruns and no delay.  A ``flaky`` marker on a test
+    is not visible here and is not accounted for.
+
+    Args:
+        option: The parsed options, such as ``config.option``.
+        read_ini: Reads an ini key as a string, such as ``config.getini``.
+
+    Returns:
+        The rerun count (0 when none) and the delay in seconds before each rerun (0.0 when none).
+
+    Example:
+        >>> from types import SimpleNamespace
+        >>> session_rerun_budget(SimpleNamespace(reruns=None, reruns_delay=None), {'reruns': '2'}.get)
+        (2, 0.0)
+        >>> session_rerun_budget(SimpleNamespace(force_reruns=3, reruns_delay=1.5), {}.get)
+        (3, 1.5)
+    """
+    return _session_reruns(option, read_ini), _session_reruns_delay(option, read_ini)
+
+
+def _session_reruns(option: object, read_ini: Callable[[str], object]) -> int:
+    for from_option in (getattr(option, 'force_reruns', None), getattr(option, 'reruns', None)):
+        if from_option is not None:
+            return int(from_option)
+    return int(_read_number(read_ini, 'reruns', int))
+
+
+def _session_reruns_delay(option: object, read_ini: Callable[[str], object]) -> float:
+    from_option = getattr(option, 'reruns_delay', None)
+    if from_option is not None:
+        return float(from_option)
+    return float(_read_number(read_ini, 'reruns_delay', float))
+
+
+def _read_number(read_ini: Callable[[str], object], key: str, parse: Callable[[str], float]) -> float:
+    try:
+        return parse(str(read_ini(key)))
+    except (TypeError, ValueError):
+        return 0

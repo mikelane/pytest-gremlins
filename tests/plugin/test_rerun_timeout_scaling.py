@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from pytest_gremlins import plugin
 from pytest_gremlins.config import MAX_TIMEOUT_SECONDS
 from pytest_gremlins.rerun_options import scaled_mutant_timeout
 
@@ -47,3 +48,57 @@ class DescribeScaledMutantTimeout:
 
     def it_treats_a_delay_that_is_not_a_number_as_no_delay(self) -> None:
         assert scaled_mutant_timeout(30, reruns=2, reruns_delay=float('nan')) == 90
+
+
+def _configured_mutant_timeout(pytester: pytest.Pytester, *args: str, ini: str = '') -> int:
+    pytester.makepyfile(sample='def one():\n    return 1\n')
+    pytester.makeini(f'[pytest]\n{ini}\n')
+    pytester.parseconfigure('--gremlins', '--gremlin-targets=sample.py', *args)
+    session = plugin._get_session()
+    assert session is not None
+    assert session.enabled
+    return session.mutant_timeout
+
+
+@pytest.mark.medium
+class DescribeMutantTimeoutThroughTheRealEntryPoint:
+    def it_scales_the_default_timeout_by_the_command_line_reruns(self, pytester: pytest.Pytester) -> None:
+        assert _configured_mutant_timeout(pytester, '--reruns', '2', '--reruns-delay', '20') == 130
+
+    def it_scales_an_explicit_timeout_too(self, pytester: pytest.Pytester) -> None:
+        timeout = _configured_mutant_timeout(pytester, '--gremlin-mutant-timeout', '5', '--reruns', '1')
+
+        assert timeout == 10
+
+    def it_scales_by_the_reruns_in_the_ini_file(self, pytester: pytest.Pytester) -> None:
+        assert _configured_mutant_timeout(pytester, ini='reruns = 2\nreruns_delay = 1.5') == 93
+
+    def it_prefers_the_command_line_count_over_the_ini_count(self, pytester: pytest.Pytester) -> None:
+        assert _configured_mutant_timeout(pytester, '--reruns', '1', ini='reruns = 5') == 60
+
+    def it_takes_the_delay_from_the_ini_file_when_only_the_count_is_on_the_command_line(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        assert _configured_mutant_timeout(pytester, '--reruns', '1', ini='reruns_delay = 9') == 69
+
+    def it_prefers_the_command_line_delay_over_the_ini_delay(self, pytester: pytest.Pytester) -> None:
+        assert (
+            _configured_mutant_timeout(pytester, '--reruns', '1', '--reruns-delay', '2', ini='reruns_delay = 9') == 62
+        )
+
+    def it_lets_force_reruns_set_the_rerun_count(self, pytester: pytest.Pytester) -> None:
+        assert _configured_mutant_timeout(pytester, '--force-reruns', '3', '--reruns', '1') == 120
+
+    def it_leaves_the_timeout_alone_when_reruns_is_zero(self, pytester: pytest.Pytester) -> None:
+        assert _configured_mutant_timeout(pytester, '--reruns', '0', '--reruns-delay', '20') == 30
+
+    def it_leaves_the_timeout_alone_when_no_reruns_are_configured(self, pytester: pytest.Pytester) -> None:
+        assert _configured_mutant_timeout(pytester) == 30
+
+    def it_ignores_a_value_that_is_not_a_number_in_the_ini_file(self, pytester: pytest.Pytester) -> None:
+        assert _configured_mutant_timeout(pytester, ini='reruns = lots') == 30
+
+    def it_leaves_the_timeout_alone_when_pytest_rerunfailures_is_not_loaded(self, pytester: pytest.Pytester) -> None:
+        timeout = _configured_mutant_timeout(pytester, '-p', 'no:rerunfailures', ini='reruns = 2')
+
+        assert timeout == 30
