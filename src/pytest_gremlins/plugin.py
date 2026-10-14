@@ -714,11 +714,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         dest='gremlin_mutant_timeout',
         help=(
-            "Seconds one gremlin's test run may take before the gremlin is reported as a timeout "
+            "Seconds one attempt of a gremlin's test run may take before the gremlin is reported as a timeout "
             f'(default: {DEFAULT_MUTANT_TIMEOUT_SECONDS}, max: {MAX_TIMEOUT_SECONDS}). '
-            'With pytest-rerunfailures active the limit is scaled: each rerun adds another attempt of this '
-            'length plus the --reruns-delay wait (limit * (reruns + 1) + ceil(reruns * delay), '
-            'the delay term rounded up to whole seconds)'
+            'With pytest-rerunfailures active, each rerun adds another attempt plus the --reruns-delay wait: '
+            f'limit * (reruns + 1) + ceil(reruns * delay) seconds, capped at {MAX_TIMEOUT_SECONDS}'
         ),
     )
     group.addoption(
