@@ -2812,7 +2812,15 @@ def _rerun_scaled_mutant_timeout(config: pytest.Config, per_run_timeout: int) ->
     if not _rerunfailures_is_loaded(config):
         return per_run_timeout
     reruns, reruns_delay = session_rerun_budget(config.option, config.getini)
-    return scaled_mutant_timeout(per_run_timeout, reruns=reruns, reruns_delay=reruns_delay)
+    scaled_timeout = scaled_mutant_timeout(per_run_timeout, reruns=reruns, reruns_delay=reruns_delay)
+    logger.debug(
+        'Mutant timeout scaled for pytest-rerunfailures: %ds per attempt, reruns=%d, reruns_delay=%.1fs -> %ds',
+        per_run_timeout,
+        reruns,
+        reruns_delay,
+        scaled_timeout,
+    )
+    return scaled_timeout
 
 
 def _rerun_ini_warnings_for(config: pytest.Config) -> list[str]:

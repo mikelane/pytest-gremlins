@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import re
+from types import SimpleNamespace
 
 import pytest
 
 from pytest_gremlins import plugin
 from pytest_gremlins.config import MAX_TIMEOUT_SECONDS
-from pytest_gremlins.rerun_options import scaled_mutant_timeout
+from pytest_gremlins.rerun_options import (
+    scaled_mutant_timeout,
+    session_rerun_budget,
+)
 
 
 @pytest.mark.small
@@ -54,6 +59,44 @@ class DescribeScaledMutantTimeout:
 
     def it_treats_a_delay_that_is_not_a_number_as_no_delay(self) -> None:
         assert scaled_mutant_timeout(30, reruns=2, reruns_delay=float('nan')) == 90
+
+
+def _unregistered_ini_key(key: str) -> object:
+    # config.getini raises ValueError for a key no loaded plugin registers.
+    raise ValueError(f'unknown configuration value: {key!r}')
+
+
+@pytest.mark.small
+class DescribeSessionRerunBudget:
+    def it_counts_an_ini_key_the_installed_plugin_does_not_register_as_no_reruns(self) -> None:
+        option = SimpleNamespace(reruns=None, reruns_delay=None)
+
+        assert session_rerun_budget(option, _unregistered_ini_key) == (0, 0.0)
+
+    def it_reads_the_ini_file_when_the_options_are_not_registered_at_all(self) -> None:
+        ini = {'reruns': '2', 'reruns_delay': '1.5'}
+
+        assert session_rerun_budget(SimpleNamespace(), ini.get) == (2, 1.5)
+
+    def it_falls_back_to_the_reruns_option_when_force_reruns_is_unset(self) -> None:
+        option = SimpleNamespace(force_reruns=None, reruns=1, reruns_delay=None)
+
+        assert session_rerun_budget(option, {'reruns': '5'}.get) == (1, 0.0)
+
+
+@pytest.mark.small
+class DescribeRerunScaledMutantTimeoutLog:
+    def it_logs_the_scaled_timeout_at_debug_level(self, caplog: pytest.LogCaptureFixture) -> None:
+        config = SimpleNamespace(
+            option=SimpleNamespace(force_reruns=None, reruns=2, reruns_delay=20.0),
+            getini=lambda _key: None,
+            pluginmanager=SimpleNamespace(hasplugin=lambda _name: True),
+        )
+
+        with caplog.at_level(logging.DEBUG, logger=plugin.logger.name):
+            plugin._rerun_scaled_mutant_timeout(config, 30)
+
+        assert '-> 130s' in caplog.text
 
 
 def _configured_mutant_timeout(pytester: pytest.Pytester, *args: str, ini: str = '') -> int:
@@ -156,3 +199,5 @@ class DescribeRerunDelayEndToEnd:
 
         output = result.stdout.str()
         assert re.search(r'Zapped: [1-9]\d* gremlins', output), output
+        assert 'Timeout:' not in output, output
+        assert 'Error:' not in output, output
