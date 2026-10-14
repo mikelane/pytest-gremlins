@@ -452,6 +452,8 @@ def scaled_mutant_timeout(base: int, *, reruns: int, reruns_delay: float) -> int
     """
     if reruns <= 0:
         return base
+    if reruns >= MAX_TIMEOUT_SECONDS:
+        return MAX_TIMEOUT_SECONDS
     usable_delay = reruns_delay if reruns_delay > 0 else 0.0
     total_delay = reruns * usable_delay
     if total_delay >= MAX_TIMEOUT_SECONDS:

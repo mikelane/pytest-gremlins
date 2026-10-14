@@ -48,6 +48,10 @@ class DescribeScaledMutantTimeout:
     def it_clamps_an_infinite_delay_to_the_maximum_timeout(self) -> None:
         assert scaled_mutant_timeout(30, reruns=2, reruns_delay=float('inf')) == MAX_TIMEOUT_SECONDS
 
+    @pytest.mark.parametrize('delay', [0, 0.5, 20])
+    def it_clamps_a_rerun_count_too_large_for_a_float_to_the_maximum_timeout(self, delay: float) -> None:
+        assert scaled_mutant_timeout(30, reruns=10**400, reruns_delay=delay) == MAX_TIMEOUT_SECONDS
+
     def it_treats_a_delay_that_is_not_a_number_as_no_delay(self) -> None:
         assert scaled_mutant_timeout(30, reruns=2, reruns_delay=float('nan')) == 90
 

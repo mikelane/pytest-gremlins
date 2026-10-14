@@ -590,6 +590,13 @@ are configured, or when pytest-rerunfailures is not loaded.
 - `@pytest.mark.flaky(reruns=..., reruns_delay=...)` markers are not visible at session level and are not
   counted. A test whose marker sets a long delay can still exceed the timeout. If it does, raise
   `--gremlin-mutant-timeout` yourself.
+- The formula assumes a constant delay and one failing test. `--reruns-delay-backoff-factor` (which multiplies the
+  delay after each attempt), `--reruns-mode append` (which adds the global count to a marker's count) and a
+  selection with several failing tests, each rerun in turn, can need more time than the formula allows. A
+  gremlin that runs out of time this way is still reported as a timeout and counted as a kill when its
+  unmutated tests finish in half the limit; it is never counted as a survivor. Raise `--gremlin-mutant-timeout`
+  if you rely on these options. `--max-suite-reruns` and `--only-rerun` can only make the real time shorter than
+  the formula, never longer.
 
 ### Coverage Pre-Scan Timeout
 
