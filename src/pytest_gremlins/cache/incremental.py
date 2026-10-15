@@ -82,7 +82,7 @@ def _effective_rerun_budget(rerun_budget: RerunBudget) -> RerunBudget:
     reruns, reruns_delay = rerun_budget
     if reruns <= 0:
         return NO_RERUNS
-    return reruns, max(float(reruns_delay), 0.0) + 0.0
+    return reruns, float(reruns_delay) if reruns_delay > 0 else 0.0
 
 
 _C_INTEGER = re.compile(r'[ \t\n\v\f\r]*[+-]?[0-9]+')
