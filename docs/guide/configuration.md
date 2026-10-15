@@ -578,8 +578,10 @@ are configured, or when pytest-rerunfailures is not loaded in the parent run.
 A command-line `-p no:rerunfailures` stops only the parent run from scaling. Gremlin runs do not receive that
 `-p` flag, so they still autoload pytest-rerunfailures and apply the ini reruns settings. To disable it for
 gremlin runs too, put `-p no:rerunfailures` in `addopts` or `PYTEST_ADDOPTS` (both reach gremlin runs), or
-remove the reruns ini keys. Until that is fixed (#670), the cache keys the verdicts of such a run as no reruns,
-so they can be served to a later run that does rerun.
+remove the reruns ini keys. Until that is fixed (#670), the cache keys such a run as having no reruns, even
+though its gremlin runs still rerun. It can therefore reuse verdicts cached by a run that really had no reruns,
+and report a kill from a flaky test that failed once, which this run would have rerun (a false kill). The
+reverse also happens: a later run with no reruns can reuse this run's verdicts.
 
 - The reruns and the delay are read the way pytest-rerunfailures reads them for a test with no marker:
   `--force-reruns` sets the count outright; otherwise `--reruns` wins over the `reruns` ini key, and
@@ -591,10 +593,10 @@ so they can be served to a later run that does rerun.
   confirming a timeout kill uses it too.
 - The incremental cache keys each verdict on the effective timeout and on the rerun budget itself (the rerun count,
   including `--force-reruns`, and the delay), so cached verdicts are judged again when either changes. Two settings
-  that scale to the same timeout still do not share verdicts: `--gremlin-mutant-timeout 60` with no reruns and
-  `--gremlin-mutant-timeout 30 --reruns 1` both give 60 seconds, and any two settings that both reach the 86400 cap
-  share a timeout, but each is judged on its own, because a kill from a flaky test that failed without reruns
-  must not be reused by a run that reruns it.
+  that scale to the same timeout still do not share verdicts. For example, `--gremlin-mutant-timeout 60` with no
+  reruns and `--gremlin-mutant-timeout 30 --reruns 1` both give 60 seconds, but each is judged on its own. The same
+  holds for two settings that both reach the 86400 cap. A kill from a flaky test that failed without reruns must
+  not be reused by a run that reruns it.
 - **A large delay makes runs slower, not wrong.** A kill is only finished after every rerun, so each killed
   gremlin costs about `reruns * reruns_delay` seconds of waiting on top of the test time. Lower
   `--reruns-delay` if your mutation runs become too slow.

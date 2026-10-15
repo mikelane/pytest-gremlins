@@ -13,18 +13,26 @@ from rerun_samples import (
 )
 
 from pytest_gremlins import plugin
-from pytest_gremlins.cache.incremental import IncrementalCache
+from pytest_gremlins.cache.incremental import (
+    IncrementalCache,
+    RerunBudget,
+)
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
     GremlinSession,
     _check_cache_for_gremlin,
 )
+from pytest_gremlins.reporting.results import GremlinResultStatus
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from pytest_gremlins.cache.types import CachedGremlinResult
+
 TEST_HASHES = {'tests/test_x.py::test_a': 'hash_a'}
 SAME_EFFECTIVE_TIMEOUT = 60
+ZAPPED: CachedGremlinResult = {'status': 'zapped', 'killing_test': 'tests/test_x.py::test_a', 'execution_time_ms': 1.0}
+SURVIVED: CachedGremlinResult = {'status': 'survived', 'killing_test': None, 'execution_time_ms': 1.0}
 
 # Zaps every comparison mutant of ``classify`` on the first attempt, so a run that reruns and one that does not
 # agree, except that pytest-rerunfailures sleeps the delay before each rerun and ``time.sleep(nan)`` raises.
@@ -44,11 +52,11 @@ class DescribeRerunBudgetCacheKey:
 
     def it_misses_a_result_cached_under_another_budget_with_the_same_timeout(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
-            cache.cache_result(  # type: ignore[arg-type]
+            cache.cache_result(
                 'g001',
                 'src_hash',
                 TEST_HASHES,
-                {'status': 'zapped'},
+                ZAPPED,
                 SAME_EFFECTIVE_TIMEOUT,
                 rerun_budget=(0, 0.0),
             )
@@ -60,13 +68,12 @@ class DescribeRerunBudgetCacheKey:
 
     def it_hits_a_result_cached_under_the_same_budget(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
-            cache.cache_result(  # type: ignore[arg-type]
-                'g001', 'src_hash', TEST_HASHES, {'status': 'survived'}, SAME_EFFECTIVE_TIMEOUT, rerun_budget=(1, 0.5)
-            )
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, SURVIVED, SAME_EFFECTIVE_TIMEOUT, rerun_budget=(1, 0.5))
 
-            assert cache.get_cached_result(
-                'g001', 'src_hash', TEST_HASHES, SAME_EFFECTIVE_TIMEOUT, rerun_budget=(1, 0.5)
-            ) == {'status': 'survived'}
+            assert (
+                cache.get_cached_result('g001', 'src_hash', TEST_HASHES, SAME_EFFECTIVE_TIMEOUT, rerun_budget=(1, 0.5))
+                == SURVIVED
+            )
 
     def it_misses_when_only_the_delay_changes(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
@@ -82,9 +89,7 @@ class DescribeRerunBudgetCacheKey:
 
     def it_misses_a_deferred_result_cached_under_another_budget(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
-            cache.cache_result_deferred(  # type: ignore[arg-type]
-                'g001', 'src_hash', TEST_HASHES, {'status': 'zapped'}, rerun_budget=(0, 0.0)
-            )
+            cache.cache_result_deferred('g001', 'src_hash', TEST_HASHES, ZAPPED, rerun_budget=(0, 0.0))
             cache.flush()
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES, rerun_budget=(2, 0.0)) is None
@@ -105,7 +110,7 @@ class DescribeEquivalentRerunBudgetsShareAKey:
         ],
     )
     def it_builds_one_key_for_equivalent_budgets(
-        self, tmp_path: Path, spelling: tuple[int, float], equivalent_spelling: tuple[int, float]
+        self, tmp_path: Path, spelling: RerunBudget, equivalent_spelling: RerunBudget
     ) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             assert cache._build_cache_key(
@@ -137,16 +142,16 @@ class DescribeNanRerunDelay:
         pytester = pytester_with_markers
         pytester.makepyfile(sample=SAMPLE)
         pytester.makepyfile(test_sample=STEADY_TEST)
-        cache = ('--gremlin-cache',)
+        cache_args = ('--gremlin-cache',)
 
-        def run(delay: str, *extra: str) -> pytest.RunResult:
-            return pytester.runpytest_subprocess(*GREMLIN_ARGS, '--reruns', '1', '--reruns-delay', delay, *extra)
+        def run(delay: str, *extra_args: str) -> pytest.RunResult:
+            return pytester.runpytest_subprocess(*GREMLIN_ARGS, '--reruns', '1', '--reruns-delay', delay, *extra_args)
 
-        fresh = run('nan')
-        run('0', *cache)
-        reused = run('nan', *cache)
+        uncached_run = run('nan')
+        run('0', *cache_args)
+        cached_run = run('nan', *cache_args)
 
-        assert verdicts(reused.stdout.str()) == verdicts(fresh.stdout.str())
+        assert verdicts(cached_run.stdout.str()) == verdicts(uncached_run.stdout.str())
 
 
 @pytest.mark.medium
@@ -159,8 +164,8 @@ class DescribePluginCacheLookupUnderRerunBudget:
             looked_up_under = GremlinSession(
                 enabled=True, cache_enabled=True, cache=cache, mutant_timeout=60, rerun_budget=(1, 0.0)
             )
-            for session in (cached_under, looked_up_under):
-                session.source_hashes = {'src/x.py': 'src_hash'}
+            cached_under.source_hashes = {'src/x.py': 'src_hash'}
+            looked_up_under.source_hashes = {'src/x.py': 'src_hash'}
             gremlin = Gremlin.__new__(Gremlin)
             object.__setattr__(gremlin, 'gremlin_id', 'g001')
             object.__setattr__(gremlin, 'file_path', 'src/x.py')
@@ -168,15 +173,15 @@ class DescribePluginCacheLookupUnderRerunBudget:
                 'pytest_gremlins.plugin._build_test_hashes_for_gremlin', lambda _tests, _session: TEST_HASHES
             )
             monkeypatch.delenv('PYTHONOPTIMIZE', raising=False)
-            cache.cache_result(  # type: ignore[arg-type]
-                'g001', 'src_hash', TEST_HASHES, {'status': 'zapped'}, 60, rerun_budget=cached_under.rerun_budget
-            )
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED, 60, rerun_budget=cached_under.rerun_budget)
 
-            assert _check_cache_for_gremlin(gremlin, [], cached_under) is not None
+            hit = _check_cache_for_gremlin(gremlin, [], cached_under)
+            assert hit is not None
+            assert hit.status == GremlinResultStatus.ZAPPED
             assert _check_cache_for_gremlin(gremlin, [], looked_up_under) is None
 
 
-def _configured_rerun_budget(pytester: pytest.Pytester, *args: str) -> tuple[int, float]:
+def _configured_rerun_budget(pytester: pytest.Pytester, *args: str) -> RerunBudget:
     pytester.makepyfile(sample='def one():\n    return 1\n')
     pytester.parseconfigure('--gremlins', '--gremlin-targets=sample.py', *args)
     session = plugin._get_session()

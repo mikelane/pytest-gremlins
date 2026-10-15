@@ -7,7 +7,10 @@ to implement smart cache invalidation based on content changes.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    TypeAlias,
+)
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore
@@ -67,10 +70,11 @@ could be served to a run that reruns flaky tests whenever both settings scaled t
 """
 
 
-RerunBudget = tuple[int, float]
-"""``(reruns, reruns_delay)`` a gremlin run may use; see ``session_rerun_budget``."""
+RerunBudget: TypeAlias = tuple[int, float]
+"""``(reruns, reruns_delay)`` a gremlin run may use; see ``pytest_gremlins.rerun_options.session_rerun_budget``."""
 
 NO_RERUNS: RerunBudget = (0, 0.0)
+"""The budget of a run that never reruns a failing test: no reruns and no delay."""
 
 
 def _effective_rerun_budget(rerun_budget: RerunBudget) -> RerunBudget:
