@@ -431,6 +431,7 @@ The cache is stored in `.gremlins_cache/` in your project root. Cache keys inclu
 - Source file content hash
 - Test file content hash
 - Gremlin ID
+- Effective mutant timeout, the optimize level and the pytest-rerunfailures budget (`reruns` and `reruns_delay`)
 
 When source or test files change, affected gremlins are re-tested.
 
@@ -587,10 +588,12 @@ remove the reruns ini keys.
 - The scaled value is the timeout everywhere: the timeout warning, the `mutant_timeout` field of the JSON report
   and the timeout-downgrade message show it, not the configured limit. The half-the-limit check for
   confirming a timeout kill uses it too.
-- The incremental cache keys each verdict on the effective timeout, so cached verdicts are judged again when the
-  effective timeout changes. A change that leaves the effective timeout the same reuses them. For example,
-  `--gremlin-mutant-timeout 60` with no reruns and `--gremlin-mutant-timeout 30 --reruns 1` both give 60
-  seconds, and any two settings that both reach the 86400 cap share verdicts.
+- The incremental cache keys each verdict on the effective timeout and on the rerun budget itself (the rerun count,
+  including `--force-reruns`, and the delay), so cached verdicts are judged again when either changes. Two settings
+  that scale to the same timeout still do not share verdicts: `--gremlin-mutant-timeout 60` with no reruns and
+  `--gremlin-mutant-timeout 30 --reruns 1` both give 60 seconds, and any two settings that both reach the 86400 cap
+  share a timeout, but each is judged on its own, because a kill from a flaky test that failed without reruns
+  must not be reused by a run that reruns it.
 - **A large delay makes runs slower, not wrong.** A kill is only finished after every rerun, so each killed
   gremlin costs about `reruns * reruns_delay` seconds of waiting on top of the test time. Lower
   `--reruns-delay` if your mutation runs become too slow.
@@ -646,7 +649,7 @@ mutant_timeout = 120
 
 The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
 the TOML key. The incremental cache keys each verdict on the timeout it was reached under, so a changed
-timeout judges every gremlin again.
+timeout judges every gremlin again. So does a changed rerun count or delay.
 
 With pytest-rerunfailures configured, the limit is the budget of one attempt and the effective timeout is
 larger; see [Flaky Tests and pytest-rerunfailures](#flaky-tests-and-pytest-rerunfailures).

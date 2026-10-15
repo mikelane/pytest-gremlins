@@ -48,7 +48,9 @@ import pytest
 from pytest_gremlins import node_id_args
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import (
+    NO_RERUNS,
     IncrementalCache,
+    RerunBudget,
     subprocess_optimize_level,
 )
 from pytest_gremlins.cache.types import CachedGremlinResult
@@ -359,6 +361,7 @@ class GremlinSession:
     baseline_rerun_test_ids: set[str] = field(default_factory=set)
     coverage_timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS
     mutant_timeout: int = DEFAULT_MUTANT_TIMEOUT_SECONDS
+    rerun_budget: RerunBudget = NO_RERUNS
     collection_errors: int = 0
     baseline_aborted: bool = False
     baseline_failed_test_ids: set[str] = field(default_factory=set)
@@ -1080,6 +1083,7 @@ def pytest_configure(config: pytest.Config) -> None:
             mutant_timeout=_rerun_scaled_mutant_timeout(
                 config, merged_config.mutant_timeout or DEFAULT_MUTANT_TIMEOUT_SECONDS
             ),
+            rerun_budget=_gremlin_run_rerun_budget(config),
         ),
     )
 
@@ -2800,6 +2804,17 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     return [*ini_overrides, *resets, *command_line_options]
 
 
+def _gremlin_run_rerun_budget(config: pytest.Config) -> RerunBudget:
+    """Return the ``(reruns, reruns_delay)`` gremlin runs may use, or no reruns without pytest-rerunfailures.
+
+    The incremental cache keys verdicts on it (issue #671): the scaled timeout alone cannot tell
+    ``--gremlin-mutant-timeout 60`` from ``--gremlin-mutant-timeout 30 --reruns 1``.
+    """
+    if not _rerunfailures_is_loaded(config):
+        return NO_RERUNS
+    return session_rerun_budget(config.option, config.getini)
+
+
 def _rerun_scaled_mutant_timeout(config: pytest.Config, per_run_timeout: int) -> int:
     """Return ``per_run_timeout`` widened to the rerun budget of the session (issue #655).
 
@@ -3696,6 +3711,7 @@ def _check_cache_for_gremlin(
         test_hashes=test_hashes,
         mutant_timeout=gremlin_session.mutant_timeout,
         optimize_level=subprocess_optimize_level(os.environ),
+        rerun_budget=gremlin_session.rerun_budget,
     )
 
     if cached is None:
@@ -3761,6 +3777,7 @@ def _cache_gremlin_result(
         ),
         mutant_timeout=gremlin_session.mutant_timeout,
         optimize_level=subprocess_optimize_level(os.environ),
+        rerun_budget=gremlin_session.rerun_budget,
     )
 
 
