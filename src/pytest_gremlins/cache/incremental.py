@@ -72,6 +72,19 @@ RerunBudget = tuple[int, float]
 
 NO_RERUNS: RerunBudget = (0, 0.0)
 
+
+def _effective_rerun_budget(rerun_budget: RerunBudget) -> RerunBudget:
+    """Return ``rerun_budget`` reduced to what the runs actually do, so equal behavior keys equally.
+
+    A non-positive count means no reruns, and a delay only applies before a rerun; a negative or
+    ``-0.0`` delay waits no time.
+    """
+    reruns, reruns_delay = rerun_budget
+    if reruns <= 0:
+        return NO_RERUNS
+    return reruns, max(float(reruns_delay), 0.0) + 0.0
+
+
 _C_INTEGER = re.compile(r'[ \t\n\v\f\r]*[+-]?[0-9]+')
 _C_INT_MIN = -(2**31)
 _C_INT_MAX = 2**31 - 1
@@ -182,7 +195,7 @@ class IncrementalCache:
         sorted_test_items = [f'{name}:{test_hashes[name]}' for name in sorted(test_hashes.keys())]
         combined_test_hash = self._hasher.hash_string('|'.join(sorted_test_items)) if sorted_test_items else 'no_tests'
 
-        reruns, reruns_delay = rerun_budget
+        reruns, reruns_delay = _effective_rerun_budget(rerun_budget)
         return (
             f'{gremlin_id}:{source_hash}:{combined_test_hash}:timeout={mutant_timeout}'
             f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:{RUNNER_FIDELITY_VERSION}'

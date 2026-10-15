@@ -74,6 +74,31 @@ class DescribeRerunBudgetCacheKey:
 
 
 @pytest.mark.medium
+class DescribeEquivalentRerunBudgetsShareAKey:
+    """Budgets that run the same reruns the same way key identically, however they were spelled."""
+
+    @pytest.mark.parametrize(
+        ('spelling', 'equivalent_spelling'),
+        [
+            pytest.param((2, 1), (2, 1.0), id='integer-delay-equals-float-delay'),
+            pytest.param((1, -0.0), (1, 0.0), id='negative-zero-delay-equals-zero-delay'),
+            pytest.param((1, -2.5), (1, 0.0), id='negative-delay-is-no-delay'),
+            pytest.param((0, 3.0), (0, 0.0), id='delay-without-reruns-is-no-delay'),
+            pytest.param((-1, 0.0), (0, 0.0), id='negative-count-is-no-reruns'),
+        ],
+    )
+    def it_builds_one_key_for_equivalent_budgets(
+        self, tmp_path: Path, spelling: tuple[int, float], equivalent_spelling: tuple[int, float]
+    ) -> None:
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            assert cache._build_cache_key(
+                'g001', 'src_hash', TEST_HASHES, SAME_EFFECTIVE_TIMEOUT, rerun_budget=spelling
+            ) == cache._build_cache_key(
+                'g001', 'src_hash', TEST_HASHES, SAME_EFFECTIVE_TIMEOUT, rerun_budget=equivalent_spelling
+            )
+
+
+@pytest.mark.medium
 class DescribePluginCacheLookupUnderRerunBudget:
     """The plugin looks up verdicts under the rerun budget of the session."""
 
