@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import pytest
+from rerun_samples import (
+    GREMLIN_ARGS,
+    SAMPLE,
+    verdicts,
+)
 
 from pytest_gremlins import plugin
 from pytest_gremlins.cache.incremental import IncrementalCache
@@ -19,6 +25,17 @@ if TYPE_CHECKING:
 
 TEST_HASHES = {'tests/test_x.py::test_a': 'hash_a'}
 SAME_EFFECTIVE_TIMEOUT = 60
+
+# Zaps every comparison mutant of ``classify`` on the first attempt, so a run that reruns and one that does not
+# agree, except that pytest-rerunfailures sleeps the delay before each rerun and ``time.sleep(nan)`` raises.
+STEADY_TEST = """
+from sample import classify
+
+
+def test_big():
+    assert classify(11) == 'big'
+    assert classify(10) == 'small'
+"""
 
 
 @pytest.mark.medium
@@ -96,6 +113,40 @@ class DescribeEquivalentRerunBudgetsShareAKey:
             ) == cache._build_cache_key(
                 'g001', 'src_hash', TEST_HASHES, SAME_EFFECTIVE_TIMEOUT, rerun_budget=equivalent_spelling
             )
+
+
+@pytest.mark.medium
+class DescribeNanRerunDelay:
+    """pytest-rerunfailures sleeps a NaN delay, which raises; it does not treat it as no delay."""
+
+    def it_keys_a_nan_delay_apart_from_no_delay(self, tmp_path: Path) -> None:
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            assert cache._build_cache_key(
+                'g001', 'src_hash', TEST_HASHES, SAME_EFFECTIVE_TIMEOUT, rerun_budget=(1, math.nan)
+            ) != cache._build_cache_key('g001', 'src_hash', TEST_HASHES, SAME_EFFECTIVE_TIMEOUT, rerun_budget=(1, 0.0))
+
+    def it_builds_one_key_for_every_nan_delay(self, tmp_path: Path) -> None:
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            assert cache._build_cache_key(
+                'g001', 'src_hash', TEST_HASHES, SAME_EFFECTIVE_TIMEOUT, rerun_budget=(1, math.nan)
+            ) == cache._build_cache_key(
+                'g001', 'src_hash', TEST_HASHES, SAME_EFFECTIVE_TIMEOUT, rerun_budget=(1, -math.nan)
+            )
+
+    def it_does_not_serve_a_zero_delay_verdict_to_a_nan_delay_run(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester = pytester_with_markers
+        pytester.makepyfile(sample=SAMPLE)
+        pytester.makepyfile(test_sample=STEADY_TEST)
+        cache = ('--gremlin-cache',)
+
+        def run(delay: str, *extra: str) -> pytest.RunResult:
+            return pytester.runpytest_subprocess(*GREMLIN_ARGS, '--reruns', '1', '--reruns-delay', delay, *extra)
+
+        fresh = run('nan')
+        run('0', *cache)
+        reused = run('nan', *cache)
+
+        assert verdicts(reused.stdout.str()) == verdicts(fresh.stdout.str())
 
 
 @pytest.mark.medium

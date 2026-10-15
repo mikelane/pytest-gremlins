@@ -293,6 +293,8 @@ So are verdicts cached while instrumented modules were compiled under their modu
 test that looked up source (`inspect.getsource`) failed under every gremlin and was cached as ZAPPED.
 So are verdicts cached when a gremlin subprocess that crashed outside a test, such as a plugin that could
 not register during pytest startup, was scored ZAPPED (#656); it is now an ERROR.
+So are verdicts cached before the key carried the rerun budget (#671); a kill reached without reruns was
+served to a run that reruns flaky tests whenever both settings scaled to the same timeout.
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that
 failed to collect, or a changed parametrize id) are recorded as ZAPPED with the killing test
 `<collection>`; ones cached as ERROR before that change are recomputed too.

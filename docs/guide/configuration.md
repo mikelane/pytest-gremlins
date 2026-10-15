@@ -578,7 +578,8 @@ are configured, or when pytest-rerunfailures is not loaded in the parent run.
 A command-line `-p no:rerunfailures` stops only the parent run from scaling. Gremlin runs do not receive that
 `-p` flag, so they still autoload pytest-rerunfailures and apply the ini reruns settings. To disable it for
 gremlin runs too, put `-p no:rerunfailures` in `addopts` or `PYTEST_ADDOPTS` (both reach gremlin runs), or
-remove the reruns ini keys.
+remove the reruns ini keys. Until that is fixed (#670), the cache keys the verdicts of such a run as no reruns,
+so they can be served to a later run that does rerun.
 
 - The reruns and the delay are read the way pytest-rerunfailures reads them for a test with no marker:
   `--force-reruns` sets the count outright; otherwise `--reruns` wins over the `reruns` ini key, and

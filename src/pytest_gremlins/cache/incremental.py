@@ -77,12 +77,13 @@ def _effective_rerun_budget(rerun_budget: RerunBudget) -> RerunBudget:
     """Return ``rerun_budget`` reduced to what the runs actually do, so equal behavior keys equally.
 
     A non-positive count means no reruns, and a delay only applies before a rerun; a negative or
-    ``-0.0`` delay waits no time.
+    ``-0.0`` delay waits no time. A NaN delay is kept: pytest-rerunfailures sleeps it, which raises, so it
+    behaves like neither no delay nor any real one and keys as ``nan``.
     """
     reruns, reruns_delay = rerun_budget
     if reruns <= 0:
         return NO_RERUNS
-    return reruns, float(reruns_delay) if reruns_delay > 0 else 0.0
+    return reruns, 0.0 if reruns_delay <= 0 else float(reruns_delay)
 
 
 _C_INTEGER = re.compile(r'[ \t\n\v\f\r]*[+-]?[0-9]+')
