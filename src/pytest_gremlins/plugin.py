@@ -2792,7 +2792,7 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     pytest-rerunfailures reads an option before its ini key.
     Settings are only forwarded when the plugin is loaded in this session, so a project without it
     never receives a flag its gremlin runs would reject as unrecognized (exit code 4).
-    A session without the plugin loaded hands on a block (``-p no:rerunfailures``), so gremlin runs, which do not
+    A session without the plugin loaded forwards a block (``-p no:rerunfailures``), so gremlin runs, which do not
     get the session's own ``-p no:rerunfailures`` or ``--disable-plugin-autoload``, do not autoload it and rerun
     with ini settings the session's budget never assumed (issue #670).  Blocking a plugin that is not installed
     is harmless.  A plugin that is loaded wins: ``-p no:pytest_rerunfailures`` blocks only the module name, the

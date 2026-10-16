@@ -1,4 +1,7 @@
-"""A command-line ``-p no:rerunfailures`` reaches gremlin runs, so they match the session (issue #670)."""
+"""A session that does not load pytest-rerunfailures blocks it in gremlin runs too, so they match it (issue #670).
+
+That covers a command-line ``-p no:rerunfailures``, ``--disable-plugin-autoload`` and the plugin not being installed.
+"""
 
 from __future__ import annotations
 
@@ -61,39 +64,29 @@ BLOCK_RERUNFAILURES = ('-p', 'no:rerunfailures')
 AUTOLOAD_DISABLED = ('--disable-plugin-autoload', '-p', 'gremlins')
 
 
-def _session_with(*, blocked: tuple[str, ...], loaded: tuple[str, ...] = ()) -> SimpleNamespace:
+def _session_with(*, loaded: tuple[str, ...] = ()) -> SimpleNamespace:
     return SimpleNamespace(
-        pluginmanager=SimpleNamespace(
-            hasplugin=lambda name: name in loaded,
-            is_blocked=lambda name: name in blocked,
-        ),
+        pluginmanager=SimpleNamespace(hasplugin=lambda name: name in loaded),
         option=SimpleNamespace(inifilename=None),
         invocation_params=SimpleNamespace(args=(), dir=None),
     )
 
 
 @pytest.mark.small
-class DescribeRerunOptionsWhenTheSessionBlockedThePlugin:
-    @pytest.mark.parametrize('blocked_name', ['rerunfailures', 'pytest_rerunfailures'])
-    def it_forwards_the_block_to_gremlin_runs(self, blocked_name: str) -> None:
-        config = _session_with(blocked=(blocked_name,))
+class DescribeRerunOptionsWhenTheSessionDidNotLoadThePlugin:
+    def it_forwards_the_block_to_gremlin_runs(self) -> None:
+        # ``-p no:rerunfailures``, ``-p no:pytest_rerunfailures`` with autoload off, and ``--disable-plugin-autoload``
+        # all leave the session without the plugin; gremlin runs would still autoload it.
+        config = _session_with(loaded=())
 
         assert plugin._rerun_options_for(config) == ['-p', 'no:rerunfailures']  # type: ignore[arg-type]
 
-    def it_forwards_the_block_when_the_plugin_is_neither_loaded_nor_blocked(self) -> None:
-        # ``--disable-plugin-autoload`` leaves the session with neither; gremlin runs would still autoload it.
-        assert plugin._rerun_options_for(_session_with(blocked=())) == ['-p', 'no:rerunfailures']  # type: ignore[arg-type]
-
-    def it_does_not_block_the_entry_point_plugin_the_session_loaded_when_only_the_module_name_was_blocked(self) -> None:
+    @pytest.mark.parametrize('loaded_name', ['rerunfailures', 'pytest_rerunfailures'])
+    def it_forwards_no_block_when_the_session_loaded_the_plugin(self, loaded_name: str) -> None:
         # ``-p no:pytest_rerunfailures`` blocks only the module name; the plugin still autoloads as ``rerunfailures``.
-        config = _session_with(blocked=('pytest_rerunfailures',), loaded=('rerunfailures',))
+        config = _session_with(loaded=(loaded_name,))
 
         assert plugin._rerun_options_for(config) == []  # type: ignore[arg-type]
-
-    def it_does_not_block_a_plugin_the_session_loaded(self) -> None:
-        config = _session_with(blocked=(), loaded=('rerunfailures',))
-
-        assert '-p' not in plugin._rerun_options_for(config)  # type: ignore[arg-type]
 
 
 @pytest.mark.medium
