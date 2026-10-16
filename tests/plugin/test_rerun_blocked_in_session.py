@@ -70,6 +70,12 @@ class DescribeRerunOptionsWhenTheSessionBlockedThePlugin:
     def it_forwards_nothing_when_the_plugin_is_neither_loaded_nor_blocked(self) -> None:
         assert plugin._rerun_options_for(_session_with(blocked=())) == []  # type: ignore[arg-type]
 
+    def it_does_not_block_the_entry_point_plugin_the_session_loaded_when_only_the_module_name_was_blocked(self) -> None:
+        # ``-p no:pytest_rerunfailures`` blocks only the module name; the plugin still autoloads as ``rerunfailures``.
+        config = _session_with(blocked=('pytest_rerunfailures',), loaded=('rerunfailures',))
+
+        assert plugin._rerun_options_for(config) == []  # type: ignore[arg-type]
+
     def it_does_not_block_a_plugin_the_session_loaded(self) -> None:
         config = _session_with(blocked=(), loaded=('rerunfailures',))
 
