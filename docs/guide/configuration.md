@@ -538,8 +538,8 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
 - `--fail-on-flaky` and `--rerun-show-tracebacks` are not carried over. `@pytest.mark.flaky` markers work with no
   extra setup.
 - Nothing is added when the plugin is not loaded under either of its names, `rerunfailures` or
-  `pytest_rerunfailures` (or is disabled with `-p no:rerunfailures`), so a project without
-  it never receives an unknown flag.
+  `pytest_rerunfailures`, so a project without it never receives an unknown flag. A session that disabled the
+  plugin with a command-line `-p no:rerunfailures` hands that flag on to gremlin runs instead (see above).
 - A `-p` plugin loader is never carried into gremlin runs. When plugin autoload is disabled and rerunfailures is
   loaded only by a command-line `-p`, gremlin runs can't load it and are reported as errors (see
   [#654](https://github.com/mikelane/pytest-gremlins/issues/654)).
@@ -575,13 +575,11 @@ For example, `--reruns 2 --reruns-delay 20` with the default limit gives `30 * 3
 is capped at 86400 seconds, and a negative delay counts as 0. Nothing is scaled with `--reruns 0`, when no reruns
 are configured, or when pytest-rerunfailures is not loaded in the parent run.
 
-A command-line `-p no:rerunfailures` stops only the parent run from scaling. Gremlin runs do not receive that
-`-p` flag, so they still autoload pytest-rerunfailures and apply the ini reruns settings. To disable it for
-gremlin runs too, put `-p no:rerunfailures` in `addopts` or `PYTEST_ADDOPTS` (both reach gremlin runs), or
-remove the reruns ini keys. Until that is fixed (#670), the cache keys such a run as having no reruns, even
-though its gremlin runs still rerun. It can therefore reuse verdicts cached by a run that really had no reruns,
-and report a kill from a flaky test that failed once, which this run would have rerun (a false kill). The
-reverse also happens: a later run with no reruns can reuse this run's verdicts.
+A command-line `-p no:rerunfailures` is passed on to gremlin runs, the coverage pre-scan and the confirmation
+runs, so they do not load pytest-rerunfailures either: they never rerun a failing test, whatever the ini file says,
+and the timeout is not scaled. This matches the main run, and the cache keys the verdicts as having no reruns,
+which is what they were reached with. (`-p no:rerunfailures` in `addopts` or `PYTEST_ADDOPTS` reaches gremlin runs
+by itself.)
 
 - The reruns and the delay are read the way pytest-rerunfailures reads them for a test with no marker:
   `--force-reruns` sets the count outright; otherwise `--reruns` wins over the `reruns` ini key, and

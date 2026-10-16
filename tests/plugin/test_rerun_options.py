@@ -175,7 +175,7 @@ def _config(
     inifilename: str | None = None,
     parsed_options: dict[str, object] | None = None,
 ) -> pytest.Config:
-    pluginmanager = SimpleNamespace(hasplugin=lambda name: name == registered_plugin)
+    pluginmanager = SimpleNamespace(hasplugin=lambda name: name == registered_plugin, is_blocked=lambda _name: False)
     ini_values = ini or {}
     fake = SimpleNamespace(
         pluginmanager=pluginmanager,

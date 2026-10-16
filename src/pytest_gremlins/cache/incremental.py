@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf15'
+RUNNER_FIDELITY_VERSION = 'rf16'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
@@ -67,6 +67,9 @@ startup, was scored ZAPPED (#656); it is now an ERROR.
 
 ``rf15`` retires verdicts cached before the key carried the rerun budget (#671); a kill reached without reruns
 could be served to a run that reruns flaky tests whenever both settings scaled to the same timeout.
+
+``rf16`` retires verdicts cached while gremlin runs reran failing tests under a command-line
+``-p no:rerunfailures`` that the session had honored (#670); the key said no reruns, the runs rerun.
 """
 
 
