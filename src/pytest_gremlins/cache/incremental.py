@@ -68,8 +68,9 @@ startup, was scored ZAPPED (#656); it is now an ERROR.
 ``rf15`` retires verdicts cached before the key carried the rerun budget (#671); a kill reached without reruns
 could be served to a run that reruns flaky tests whenever both settings scaled to the same timeout.
 
-``rf16`` retires verdicts cached while gremlin runs reran failing tests under a command-line
-``-p no:rerunfailures`` that the session had honored (#670); the key said no reruns, the runs rerun.
+``rf16`` retires verdicts cached while gremlin runs reran failing tests in a session that did not load
+pytest-rerunfailures, through a command-line ``-p no:rerunfailures`` or ``--disable-plugin-autoload`` (#670);
+the key said no reruns, the runs rerun.
 """
 
 

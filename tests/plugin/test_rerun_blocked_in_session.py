@@ -45,7 +45,20 @@ def test_big():
     assert classify(11) == 'big'
 """
 
+# Mutants at the boundary of ``classify`` stay alive, so a gremlin run must reach the end of the flaky test.
+FLAKY_MARKER_TEST = """
+import pytest
+from sample import classify
+
+
+@pytest.mark.flaky(reruns=1, reruns_delay=8)
+def test_big():
+    assert classify(11) == 'big'
+    assert classify(10) == 'small'
+"""
+
 BLOCK_RERUNFAILURES = ('-p', 'no:rerunfailures')
+AUTOLOAD_DISABLED = ('--disable-plugin-autoload', '-p', 'gremlins')
 
 
 def _session_with(*, blocked: tuple[str, ...], loaded: tuple[str, ...] = ()) -> SimpleNamespace:
@@ -67,8 +80,9 @@ class DescribeRerunOptionsWhenTheSessionBlockedThePlugin:
 
         assert plugin._rerun_options_for(config) == ['-p', 'no:rerunfailures']  # type: ignore[arg-type]
 
-    def it_forwards_nothing_when_the_plugin_is_neither_loaded_nor_blocked(self) -> None:
-        assert plugin._rerun_options_for(_session_with(blocked=())) == []  # type: ignore[arg-type]
+    def it_forwards_the_block_when_the_plugin_is_neither_loaded_nor_blocked(self) -> None:
+        # ``--disable-plugin-autoload`` leaves the session with neither; gremlin runs would still autoload it.
+        assert plugin._rerun_options_for(_session_with(blocked=())) == ['-p', 'no:rerunfailures']  # type: ignore[arg-type]
 
     def it_does_not_block_the_entry_point_plugin_the_session_loaded_when_only_the_module_name_was_blocked(self) -> None:
         # ``-p no:pytest_rerunfailures`` blocks only the module name; the plugin still autoloads as ``rerunfailures``.
@@ -133,3 +147,84 @@ class DescribeGremlinRunsUnderACommandLineBlock:
         cached_run = run(*cache_args)
 
         assert verdicts(cached_run.stdout.str()) == verdicts(uncached_run.stdout.str())
+
+
+@pytest.mark.medium
+class DescribeGremlinRunsWithPluginAutoloadDisabled:
+    def it_does_not_let_the_ini_reruns_delay_outlast_the_timeout(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester = pytester_with_markers
+        pytester.makepyfile(sample=SAMPLE)
+        pytester.makepyfile(test_sample=STEADY_TEST)
+        pytester.makeini('[pytest]\nreruns = 1\nreruns_delay = 8\n')
+
+        result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '--gremlin-mutant-timeout', '3', *AUTOLOAD_DISABLED)
+
+        output = result.stdout.str()
+        assert 'Timeout' not in output
+        assert verdicts(output)['Zapped'] > 0
+
+    def it_serves_a_verdict_cached_without_reruns_the_same_as_a_fresh_run(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester = pytester_with_markers
+        pytester.makepyfile(sample=SAMPLE)
+        pytester.makepyfile(test_sample=FLAKY_UNDER_GREMLINS_TEST)
+        pytester.makeini('[pytest]\nreruns = 2\n')
+        cache_args = ('--gremlin-cache',)
+
+        def run(*extra_args: str) -> pytest.RunResult:
+            return pytester.runpytest_subprocess(*GREMLIN_ARGS, *AUTOLOAD_DISABLED, *extra_args)
+
+        uncached_run = run()
+        pytester.runpytest_subprocess(*GREMLIN_ARGS, '-o', 'reruns=0', *cache_args)
+        cached_run = run(*cache_args)
+
+        assert verdicts(cached_run.stdout.str()) == verdicts(uncached_run.stdout.str())
+
+
+@pytest.mark.medium
+class DescribeGremlinRunsUnderABlockWithOtherRunModes:
+    def it_ignores_a_flaky_marker_reruns_delay(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester = pytester_with_markers
+        pytester.makepyfile(sample=SAMPLE)
+        pytester.makepyfile(test_sample=FLAKY_MARKER_TEST)
+
+        result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '--gremlin-mutant-timeout', '3', *BLOCK_RERUNFAILURES)
+
+        output = result.stdout.str()
+        assert 'Timeout' not in output
+        assert verdicts(output)['Zapped'] > 0
+
+    def it_applies_the_block_to_parallel_workers(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester = pytester_with_markers
+        pytester.makepyfile(sample=SAMPLE)
+        pytester.makepyfile(test_sample=STEADY_TEST)
+        pytester.makeini('[pytest]\nreruns = 1\nreruns_delay = 8\n')
+
+        result = pytester.runpytest_subprocess(
+            *GREMLIN_ARGS,
+            '--gremlin-mutant-timeout',
+            '3',
+            '--gremlin-parallel',
+            '--gremlin-workers',
+            '2',
+            *BLOCK_RERUNFAILURES,
+        )
+
+        output = result.stdout.str()
+        assert 'Timeout' not in output
+        assert verdicts(output)['Zapped'] > 0
+
+    def it_applies_the_block_to_batched_runs(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester = pytester_with_markers
+        pytester.makepyfile(sample=SAMPLE)
+        pytester.makepyfile(test_sample=STEADY_TEST)
+        pytester.makeini('[pytest]\nreruns = 1\nreruns_delay = 8\n')
+
+        result = pytester.runpytest_subprocess(
+            *GREMLIN_ARGS, '--gremlin-mutant-timeout', '3', '--gremlin-batch', *BLOCK_RERUNFAILURES
+        )
+
+        output = result.stdout.str()
+        assert 'Timeout' not in output
+        assert verdicts(output)['Zapped'] > 0

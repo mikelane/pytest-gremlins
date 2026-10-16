@@ -193,10 +193,10 @@ class DescribeRerunOptionsFor:
 
         assert _rerun_options_for(config) == ['--reruns=2']
 
-    def it_returns_nothing_when_pytest_rerunfailures_is_not_loaded(self) -> None:
+    def it_returns_only_the_block_when_pytest_rerunfailures_is_not_loaded(self) -> None:
         config = _config(registered_plugin=None, args=['--reruns', '2'])
 
-        assert _rerun_options_for(config) == []
+        assert _rerun_options_for(config) == ['-p', 'no:rerunfailures']
 
     def it_carries_the_rerun_options_when_the_plugin_is_registered_as_pytest_rerunfailures(self) -> None:
         # PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 with ``-p pytest_rerunfailures`` (or ``pytest_plugins`` in a
@@ -247,7 +247,7 @@ class DescribeRerunOptionsFor:
     def it_forwards_no_ini_settings_when_pytest_rerunfailures_is_not_loaded(self) -> None:
         config = _config(registered_plugin=None, args=[], ini={'reruns': '2'})
 
-        assert _rerun_options_for(config) == []
+        assert _rerun_options_for(config) == ['-p', 'no:rerunfailures']
 
 
 @pytest.mark.small

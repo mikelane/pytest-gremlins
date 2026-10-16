@@ -2792,13 +2792,14 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     pytest-rerunfailures reads an option before its ini key.
     Settings are only forwarded when the plugin is loaded in this session, so a project without it
     never receives a flag its gremlin runs would reject as unrecognized (exit code 4).
-    A session that blocked the plugin and has it unloaded (a command-line ``-p no:rerunfailures``, which gremlin
-    runs are not given) hands the block on, so their budget matches the session's and the ini reruns do not apply
-    (issue #670).  A plugin that is still loaded wins over a block: ``-p no:pytest_rerunfailures`` blocks only the
-    module name, the entry-point plugin loads anyway, and the session's budget assumes reruns.
+    A session without the plugin loaded hands on a block (``-p no:rerunfailures``), so gremlin runs, which do not
+    get the session's own ``-p no:rerunfailures`` or ``--disable-plugin-autoload``, do not autoload it and rerun
+    with ini settings the session's budget never assumed (issue #670).  Blocking a plugin that is not installed
+    is harmless.  A plugin that is loaded wins: ``-p no:pytest_rerunfailures`` blocks only the module name, the
+    entry-point plugin loads anyway, and the session's budget assumes reruns.
     """
     if not _rerunfailures_is_loaded(config):
-        return list(_BLOCK_RERUNFAILURES_OPTION) if _rerunfailures_is_blocked(config) else []
+        return list(_BLOCK_RERUNFAILURES_OPTION)
     command_line_options = _command_line_rerun_options(config)
     if not _rerun_ini_settings_are_forwarded(config):
         return command_line_options
@@ -2853,11 +2854,6 @@ def _rerun_ini_warnings_for(config: pytest.Config) -> list[str]:
         config.getini, overridden_by=command_line_options, option_keys_set=rerun_keys_set_in(config.option)
     )
     return [unforwarded_rerun_key_warning(key) for key in skipped_keys]
-
-
-def _rerunfailures_is_blocked(config: pytest.Config) -> bool:
-    """Return whether this session blocked pytest-rerunfailures (``-p no:rerunfailures``) under either name."""
-    return any(config.pluginmanager.is_blocked(name) for name in _RERUNFAILURES_PLUGIN_NAMES)
 
 
 def _rerunfailures_is_loaded(config: pytest.Config) -> bool:
