@@ -115,3 +115,43 @@ class DescribeAWarmCacheUnderXdist:
         second = project.runpytest_subprocess(*_GREMLIN_ARGS, '-n', '2').stdout.str()
 
         assert _from_cache(second) == _count(first, 'Zapped') + _count(first, 'Survived')
+
+
+@pytest.fixture
+def project_with_a_test_outside_rootdir(
+    pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> pytest.Pytester:
+    project_dir = pytester_with_markers.path / 'proj'
+    project_dir.mkdir()
+    (project_dir / 'pyproject.toml').write_text('[tool.pytest.ini_options]\npythonpath = ["."]\n')
+    (project_dir / 'sample.py').write_text(_SAMPLE)
+    (project_dir / 'test_in.py').write_text('def test_in():\n    assert True\n')
+    (pytester_with_markers.path / 'outside').mkdir()
+    (pytester_with_markers.path / 'outside' / 'test_ext.py').write_text(_CATCHES)
+    monkeypatch.chdir(project_dir)
+    return pytester_with_markers
+
+
+@pytest.mark.medium
+class DescribeATestOutsideRootdirWithTheCache:
+    @pytest.mark.parametrize('xdist_args', [(), ('-n', '2')])
+    def it_does_not_crash(
+        self, project_with_a_test_outside_rootdir: pytest.Pytester, xdist_args: tuple[str, ...]
+    ) -> None:
+        result = project_with_a_test_outside_rootdir.runpytest_subprocess(
+            *_GREMLIN_ARGS, *xdist_args, '../outside/test_ext.py', 'test_in.py'
+        )
+
+        assert result.ret != pytest.ExitCode.INTERNAL_ERROR
+        assert 'IsADirectoryError' not in result.stdout.str() + result.stderr.str()
+
+    @pytest.mark.parametrize('xdist_args', [(), ('-n', '2')])
+    def it_never_replays_a_verdict_it_could_not_key(
+        self, project_with_a_test_outside_rootdir: pytest.Pytester, xdist_args: tuple[str, ...]
+    ) -> None:
+        args = (*_GREMLIN_ARGS, *xdist_args, '../outside/test_ext.py', 'test_in.py')
+        project_with_a_test_outside_rootdir.runpytest_subprocess(*args)
+
+        second = project_with_a_test_outside_rootdir.runpytest_subprocess(*args).stdout.str()
+
+        assert _from_cache(second) == 0
