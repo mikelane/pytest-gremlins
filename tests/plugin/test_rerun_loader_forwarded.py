@@ -49,7 +49,8 @@ def _session_with(*, loaded: tuple[str, ...] = ()) -> SimpleNamespace:
 
 @pytest.mark.small
 class DescribeRerunOptionsWhenAutoloadIsDisabled:
-    @pytest.mark.parametrize('autoload_value', ['1', 'true', 'yes'])
+    # Pytest tests the variable for truthiness of the string, so '0' and 'false' disable autoload too.
+    @pytest.mark.parametrize('autoload_value', ['1', 'true', 'yes', '0', 'false'])
     def it_forwards_the_loader_when_the_session_loaded_the_plugin(
         self, monkeypatch: pytest.MonkeyPatch, autoload_value: str
     ) -> None:
