@@ -2775,10 +2775,10 @@ def _arguments_gremlin_runs_inherit(config: pytest.Config) -> list[str]:
     so toward a missed kill rather than a false one.
     """
     try:
-        from_environment = shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))
+        pytest_addopts_args = shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))
     except ValueError:
-        from_environment = []
-    return expand_argument_files([*config.getini('addopts'), *from_environment], base_dir=_get_rootdir(config))
+        pytest_addopts_args = []
+    return expand_argument_files([*config.getini('addopts'), *pytest_addopts_args], base_dir=_get_rootdir(config))
 
 
 def _gremlin_runs_disable_plugin_autoload(config: pytest.Config) -> bool:
@@ -2854,8 +2854,8 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     """
     if not _rerunfailures_is_loaded(config):
         return list(_BLOCK_RERUNFAILURES_OPTION)
-    loader = _loader_for_gremlin_runs(config, _RERUNFAILURES_PLUGIN_NAMES)
-    return [*loader, *_rerun_settings_for(config)]
+    loader_options = _loader_for_gremlin_runs(config, _RERUNFAILURES_PLUGIN_NAMES)
+    return [*loader_options, *_rerun_settings_for(config)]
 
 
 def _rerun_settings_for(config: pytest.Config) -> list[str]:

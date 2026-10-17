@@ -69,8 +69,7 @@ class DescribeRerunOptionsWhenAutoloadIsDisabled:
         config = _session_with(loaded=('pytest_rerunfailures',))
         config.invocation_params.args = ('--reruns=2',)
 
-        assert plugin._rerun_options_for(config)[:2] == ['-p', 'pytest_rerunfailures']  # type: ignore[arg-type]
-        assert plugin._rerun_options_for(config)[2:] == ['--reruns=2']  # type: ignore[arg-type]
+        assert plugin._rerun_options_for(config) == ['-p', 'pytest_rerunfailures', '--reruns=2']  # type: ignore[arg-type]
 
     def it_still_blocks_the_plugin_when_the_session_did_not_load_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(AUTOLOAD_ENV_VAR, '1')
@@ -78,15 +77,16 @@ class DescribeRerunOptionsWhenAutoloadIsDisabled:
 
         assert plugin._rerun_options_for(config) == ['-p', 'no:rerunfailures']  # type: ignore[arg-type]
 
-    @pytest.mark.parametrize('autoload_value', [None, ''])
-    def it_forwards_no_loader_when_gremlin_runs_autoload_the_plugin(
-        self, monkeypatch: pytest.MonkeyPatch, autoload_value: str | None
-    ) -> None:
+    def it_forwards_no_loader_when_gremlin_runs_autoload_the_plugin(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Autoload on: gremlin runs register the entry point, and a second ``-p`` would register it twice.
-        if autoload_value is None:
-            monkeypatch.delenv(AUTOLOAD_ENV_VAR, raising=False)
-        else:
-            monkeypatch.setenv(AUTOLOAD_ENV_VAR, autoload_value)
+        monkeypatch.delenv(AUTOLOAD_ENV_VAR, raising=False)
+        config = _session_with(loaded=('rerunfailures',))
+
+        assert plugin._rerun_options_for(config) == []  # type: ignore[arg-type]
+
+    def it_forwards_no_loader_when_the_autoload_variable_is_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Pytest treats an empty value as unset, so gremlin runs autoload the plugin.
+        monkeypatch.setenv(AUTOLOAD_ENV_VAR, '')
         config = _session_with(loaded=('rerunfailures',))
 
         assert plugin._rerun_options_for(config) == []  # type: ignore[arg-type]
@@ -184,7 +184,7 @@ class DescribeGremlinRunsWhenAutoloadIsDisabledAndTheLoaderIsOnTheCommandLine:
         autoload_on = pytester.runpytest_subprocess(*GREMLIN_ARGS)
 
         assert verdicts(autoload_off.stdout.str()) == verdicts(autoload_on.stdout.str())
-        assert verdicts(autoload_off.stdout.str())['Survived'] > 0
+        assert verdicts(autoload_off.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
 
     def it_does_not_register_the_plugin_twice_when_addopts_repeats_the_loader(
         self, pytester_with_markers: pytest.Pytester
@@ -195,8 +195,7 @@ class DescribeGremlinRunsWhenAutoloadIsDisabledAndTheLoaderIsOnTheCommandLine:
 
         result = pytester.runpytest_subprocess(*GREMLIN_ARGS, *LOAD_PLUGINS)
 
-        assert verdicts(result.stdout.str())['Error'] == 0
-        assert verdicts(result.stdout.str())['Survived'] > 0
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
 
     def it_does_not_register_the_plugin_twice_when_pytest_addopts_repeats_the_loader(
         self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
@@ -207,8 +206,7 @@ class DescribeGremlinRunsWhenAutoloadIsDisabledAndTheLoaderIsOnTheCommandLine:
 
         result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '-p', 'gremlins')
 
-        assert verdicts(result.stdout.str())['Error'] == 0
-        assert verdicts(result.stdout.str())['Survived'] > 0
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
 
     def it_does_not_register_the_plugin_twice_when_a_conftest_loads_it(
         self, pytester_with_markers: pytest.Pytester
@@ -219,8 +217,7 @@ class DescribeGremlinRunsWhenAutoloadIsDisabledAndTheLoaderIsOnTheCommandLine:
 
         result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '-p', 'gremlins')
 
-        assert verdicts(result.stdout.str())['Error'] == 0
-        assert verdicts(result.stdout.str())['Survived'] > 0
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
 
     def it_does_not_serve_a_verdict_cached_without_reruns_to_a_run_that_reruns(
         self, pytester_with_markers: pytest.Pytester
@@ -246,4 +243,4 @@ class DescribeGremlinRunsWhenAutoloadIsDisabledAndTheLoaderIsOnTheCommandLine:
         second_run = pytester.runpytest_subprocess(*GREMLIN_ARGS, *LOAD_PLUGINS, *cache_args)
 
         assert verdicts(second_run.stdout.str()) == verdicts(first_run.stdout.str())
-        assert verdicts(second_run.stdout.str())['Survived'] > 0
+        assert verdicts(second_run.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}

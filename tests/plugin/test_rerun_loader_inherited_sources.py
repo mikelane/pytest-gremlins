@@ -234,7 +234,7 @@ class DescribeCachedVerdictsWhenAnInheritedFlagDisablesAutoload:
         cached_run = pytester.runpytest_subprocess(*GREMLIN_ARGS, '-p', 'pytest_rerunfailures', *cache_args)
 
         assert verdicts(cached_run.stdout.str()) == verdicts(uncached_run.stdout.str())
-        assert verdicts(cached_run.stdout.str())['Survived'] > 0
+        assert verdicts(cached_run.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
 
 
 def _write_project_run_from_subdirectory(

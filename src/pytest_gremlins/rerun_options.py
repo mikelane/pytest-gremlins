@@ -93,8 +93,10 @@ def expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read:
     A file that cannot be read or decoded, or that is already being read further up (a cycle), contributes
     nothing.
     pytest itself rejects an unreadable ``@file`` as a usage error and recurses without end on a cycle,
-    so by the time this runs pytest has already read every file once; a read can fail here only if a
-    file changed after pytest parsed it.
+    so a file pytest read from ``base_dir`` can fail to read here only if it changed after pytest parsed it.
+    ``base_dir`` may differ from the directory pytest read from (the plugin passes the rootdir, while pytest
+    expanded from the session's current directory), so a read can also fail for that reason.
+    Either way the unreadable file is skipped.
     """
     expanded: list[str] = []
     for arg in args:

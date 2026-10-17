@@ -50,9 +50,7 @@ class DescribeRerunfailuresLoadedWithPOnTheCommandLine:
             '2',
         )
 
-        counts = verdicts(result.stdout.str())
-        assert counts['Error'] == 0
-        assert counts['Survived'] > 0
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
 
 
 @pytest.mark.medium
