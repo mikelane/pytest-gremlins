@@ -488,32 +488,41 @@ create yourself with `OperatorRegistry()` is never seen by a run.
 
 ```python
 # conftest.py
+import ast
+import copy
+
 from pytest_gremlins.instrumentation.transformer import get_default_registry
 
 
-@get_default_registry().register_decorator('django-queryset')
-class DjangoQuerySetOperator:
-    """Mutate Django QuerySet methods."""
+@get_default_registry().register_decorator('string-empty')
+class StringEmptyOperator:
+    """Replace non-empty string literals with empty strings."""
 
     @property
     def name(self) -> str:
-        return "django-queryset"
+        return 'string-empty'
 
     @property
     def description(self) -> str:
-        return "Mutate Django QuerySet methods"
+        return 'Replace non-empty string literals with empty strings'
 
-    def can_mutate(self, node) -> bool:
-        # Check for .filter(), .exclude(), etc.
-        ...
+    def can_mutate(self, node: ast.AST) -> bool:
+        return isinstance(node, ast.Constant) and isinstance(node.value, str) and len(node.value) > 0
 
-    def mutate(self, node) -> list:
-        # Generate mutations
-        ...
+    def mutate(self, node: ast.AST) -> list[ast.AST]:
+        mutated = copy.deepcopy(node)
+        mutated.value = ''
+        return [mutated]
 ```
 
 A registered operator runs with the built-in operators. Its name also works in the
-`operators` list and in `--gremlin-operators`, for example `--gremlin-operators=django-queryset`.
+`operators` list and in `--gremlin-operators`, for example `--gremlin-operators=string-empty`.
+
+A custom operator is offered only comparisons, binary and boolean operations, unary operations,
+literals and `return` statements. An operator that matches anything else, such as a method call
+like Django's `.filter()`, produces no gremlins today
+([#698](https://github.com/mikelane/pytest-gremlins/issues/698)). See
+[Which Nodes an Operator Is Offered](extensibility.md#which-nodes-an-operator-is-offered).
 
 ## Summary
 
