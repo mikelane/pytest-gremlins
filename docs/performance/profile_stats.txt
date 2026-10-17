@@ -116,5 +116,3 @@
       316    0.000    0.000    0.000    0.000 transformer.py:169(_get_boolean_description)
      1870    0.000    0.000    0.000    0.000 {method 'extend' of 'list' objects}
        98    0.000    0.000    0.025    0.000 boolean.py:72(_mutate_boolop)
-
-

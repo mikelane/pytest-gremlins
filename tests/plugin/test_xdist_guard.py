@@ -37,9 +37,13 @@ def _load_plugin_fresh(*, block_xdist: bool) -> object:
     return fresh
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeXdistHookGuard:
-    """xdist hooks are only defined when xdist is importable."""
+    """xdist hooks are only defined when xdist is importable.
+
+    Medium because ``_load_plugin_fresh`` executes ``plugin.py`` from disk, which reads
+    the source (and pytest's cached bytecode) from the installed package directory.
+    """
 
     def it_defines_pytest_configure_node_when_xdist_available(self) -> None:
         """With xdist installed (our dev env), the hook exists."""
