@@ -13,6 +13,8 @@ import pytest
 
 _TESTS_CONFTEST = Path(__file__).resolve().parents[1] / 'conftest.py'
 _FAKE_SECRET_VALUE = 'fake-secret-value-0123456789'  # noqa: S105  # pragma: allowlist secret
+_CHILD_TIMEOUT_SECONDS = 120
+_CHILD_PLATFORM_VARIABLES = ('PATH', 'SYSTEMROOT')
 
 _FAILING_ENV_TEST = """
 import os
@@ -34,6 +36,18 @@ def _load_tests_conftest() -> ModuleType:
 
 
 tests_conftest = _load_tests_conftest()
+
+
+def _child_environment() -> dict[str, str]:
+    """Return a minimal environment holding the fake secret, for a child pytest run.
+
+    The environment stays small so pytest's truncated ``-l`` repr of it would still show the secret if
+    the scrub broke. It keeps ``SYSTEMROOT``, which a Python child needs to start on Windows.
+    """
+    environment = {name: os.environ[name] for name in _CHILD_PLATFORM_VARIABLES if name in os.environ}
+    environment['PYTHONIOENCODING'] = 'utf-8'
+    environment['FAKE_SECRET_TOKEN'] = _FAKE_SECRET_VALUE
+    return environment
 
 
 @pytest.mark.small
@@ -109,24 +123,36 @@ class DescribeScrubSecretEnv:
         assert (environ, removed) == ({'PATH': '/bin'}, {})
 
 
+@pytest.mark.small
+class DescribeChildEnvironment:
+    def it_keeps_the_platform_variables_a_windows_interpreter_needs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('SYSTEMROOT', r'C:\Windows')
+
+        assert _child_environment()['SYSTEMROOT'] == r'C:\Windows'
+
+    def it_adds_the_fake_secret(self) -> None:
+        assert _child_environment()['FAKE_SECRET_TOKEN'] == _FAKE_SECRET_VALUE
+
+    def it_leaves_out_other_parent_variables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTHONPATH', 'parent')
+
+        assert 'PYTHONPATH' not in _child_environment()
+
+
 @pytest.mark.medium
 class DescribeSessionScrub:
     def it_keeps_secret_values_out_of_verbose_failure_output(self, tmp_path: Path) -> None:
         (tmp_path / 'conftest.py').write_text(_TESTS_CONFTEST.read_text(encoding='utf-8'), encoding='utf-8')
         (tmp_path / 'test_env.py').write_text(_FAILING_ENV_TEST, encoding='utf-8')
-        child_env = {
-            'PATH': os.environ['PATH'],
-            'HOME': str(tmp_path),
-            'FAKE_SECRET_TOKEN': _FAKE_SECRET_VALUE,
-        }
-
         result = subprocess.run(
-            [sys.executable, '-m', 'pytest', '-v', '-l', '-p', 'no:cacheprovider', str(tmp_path)],
+            [sys.executable, '-P', '-m', 'pytest', '-v', '-l', '-p', 'no:cacheprovider', str(tmp_path)],
             capture_output=True,
-            text=True,
-            env=child_env,
+            encoding='utf-8',
+            errors='replace',
+            env=_child_environment(),
             cwd=tmp_path,
             check=False,
+            timeout=_CHILD_TIMEOUT_SECONDS,
         )
 
         assert (result.returncode, _FAKE_SECRET_VALUE in result.stdout + result.stderr) == (1, False)
