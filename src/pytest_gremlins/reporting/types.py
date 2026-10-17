@@ -18,18 +18,14 @@ class StrykerLocation(TypedDict):
     """A line/column position in a source file."""
 
     line: int
-    column: int | None
+    column: int
 
 
 class StrykerPosition(TypedDict):
-    """Start and optional end location for a mutant.
-
-    ``start`` is always present; ``end`` is only present when the
-    AST node has ``end_lineno`` set.
-    """
+    """Start and end location for a mutant; both are required by the schema."""
 
     start: StrykerLocation
-    end: NotRequired[StrykerLocation]
+    end: StrykerLocation
 
 
 class StrykerMutant(TypedDict):
@@ -53,6 +49,7 @@ class StrykerFileResult(TypedDict):
     """Per-file results in the Stryker report."""
 
     language: str
+    source: str
     mutants: list[StrykerMutant]
 
 

@@ -9,15 +9,15 @@ See: https://github.com/stryker-mutator/mutation-testing-elements
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest_gremlins
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.reporting.results import GremlinResult
     from pytest_gremlins.reporting.score import MutationScore
@@ -48,6 +48,22 @@ SCORE_NOTE = (
 )
 
 
+def read_source(file_path: str) -> str:
+    """Read the original source of a mutated file, which the schema requires per file.
+
+    Args:
+        file_path: Path of the mutated file, as recorded on the gremlin.
+
+    Returns:
+        The file's text, or an empty string when it cannot be read (the schema
+        requires the key, so an unreadable file still yields a valid report).
+    """
+    try:
+        return Path(file_path).read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return ''
+
+
 class StrykerExporter:
     """Exporter that produces Stryker Dashboard compatible JSON.
 
@@ -66,14 +82,21 @@ class StrykerExporter:
         >>> # json_str = exporter.to_json(score)
     """
 
-    def __init__(self, thresholds: dict[str, int] | None = None) -> None:
-        """Initialize the exporter with optional thresholds.
+    def __init__(
+        self,
+        thresholds: dict[str, int] | None = None,
+        source_reader: Callable[[str], str] | None = None,
+    ) -> None:
+        """Initialize the exporter with optional thresholds and source reader.
 
         Args:
             thresholds: Optional dict with 'high' and 'low' score thresholds.
                         Defaults to high=80, low=60.
+            source_reader: Optional callable returning a mutated file's source text
+                           from its path. Defaults to reading the file from disk.
         """
         self._thresholds = thresholds or {'high': 80, 'low': 60}
+        self._source_reader = source_reader or read_source
 
     def to_json(self, score: MutationScore) -> str:
         """Convert mutation score to Stryker format JSON string.
@@ -170,6 +193,7 @@ class StrykerExporter:
         return {
             file_path: {
                 'language': 'python',
+                'source': self._source_reader(file_path),
                 'mutants': [self._build_mutant(r) for r in results],
             }
             for file_path, results in results_by_file.items()
@@ -207,26 +231,21 @@ class StrykerExporter:
         return mutant
 
     def _build_location(self, gremlin: Gremlin) -> StrykerPosition:
-        """Build location object from gremlin's AST node.
+        """Build a schema location with 1-based start and end positions.
+
+        Python AST columns are 0-based and the schema's positions start at one, so
+        every column is shifted by one. The schema requires ``end``; a node without
+        end information gets an empty range at its start.
 
         Args:
             gremlin: The Gremlin containing location information.
 
         Returns:
-            Location dictionary with start and optionally end positions.
+            Location dictionary with start and end positions.
         """
         node = gremlin.original_node
-        start: StrykerLocation = {
-            'line': node.lineno,
-            'column': node.col_offset,
-        }
-        location: StrykerPosition = {'start': start}
-
-        if node.end_lineno is not None:
-            end: StrykerLocation = {
-                'line': node.end_lineno,
-                'column': node.end_col_offset,
-            }
-            location['end'] = end
-
-        return location
+        start: StrykerLocation = {'line': node.lineno, 'column': node.col_offset + 1}
+        end: StrykerLocation = start
+        if node.end_lineno is not None and node.end_col_offset is not None:
+            end = {'line': node.end_lineno, 'column': node.end_col_offset + 1}
+        return {'start': start, 'end': end}

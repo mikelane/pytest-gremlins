@@ -690,6 +690,13 @@ simple_json = exporter.to_score_only_json(score)
 Path('mutation-score.json').write_text(simple_json)
 ```
 
+**Schema validity.** The full report validates against the official
+[mutation-testing-report-schema](https://github.com/stryker-mutator/mutation-testing-elements/tree/master/packages/report-schema).
+Each file entry carries its original `source`, read from disk when the report is built (an
+unreadable file exports an empty string, which the schema accepts). Mutant `location` positions
+are 1-based for both line and column, with a required `end`; the Python AST's 0-based columns are
+shifted by one on export. A node without end information gets an `end` equal to its `start`.
+
 #### Uploading to Stryker Dashboard
 
 1. **Enable repository on dashboard.stryker-mutator.io**
@@ -933,7 +940,8 @@ The two numbers agree when the run has no `ERROR` gremlins and at least one grem
 toward the score. When nothing counts (no gremlins at all, every gremlin pardoned, or every
 remaining gremlin an `ERROR`), Stryker's formula has no score; pytest-gremlins reports 0.0 in
 those cases. When `ERROR` gremlins exist alongside countable ones, a score recomputed by a Stryker
-dashboard from the mutant statuses is higher than `mutationScore`. Treat
+dashboard from the mutant statuses is higher than `mutationScore` (or equal, when nothing was detected:
+with no zapped or timed-out gremlins both scores are 0.0). Treat
 `config.pytestGremlins.mutationScore` as the authoritative number, and look into the `ERROR`
 count when the two differ. Pardoned gremlins are exported as `Ignored`, which Stryker also leaves
 out of its score.
