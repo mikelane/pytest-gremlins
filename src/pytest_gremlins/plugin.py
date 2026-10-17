@@ -2754,8 +2754,9 @@ def _is_cov_addopt(token: str) -> bool:
     return name in ('--cov', '--no-cov') or name.startswith(('--cov-', '--no-cov-'))
 
 
-# Registered as ``rerunfailures`` when found through its entry point, as ``pytest_rerunfailures`` when loaded
-# by module name (``-p``, ``pytest_plugins``, or ``PYTEST_DISABLE_PLUGIN_AUTOLOAD=1``).
+# Registered as ``rerunfailures`` when found through its entry point (autoload, or ``-p rerunfailures``, which
+# pytest resolves even with autoload disabled), as ``pytest_rerunfailures`` when loaded by module name
+# (``-p pytest_rerunfailures``, ``pytest_plugins`` or ``PYTEST_PLUGINS``).
 _RERUNFAILURES_PLUGIN_NAMES = ('rerunfailures', 'pytest_rerunfailures')
 # Blocking by the entry-point name also blocks the plugin when it is loaded by module name.
 _BLOCK_RERUNFAILURES_OPTION = ('-p', 'no:rerunfailures')
