@@ -4,9 +4,18 @@ Complete CI/CD configurations for running pytest-gremlins in your pipelines.
 
 !!! tip "Prefer the GitHub Action?"
     If you use GitHub Actions, the easiest way to add mutation testing is the
-    [`pytest-gremlins-action`](github-action.md). It handles installation, caching,
-    parallelism, and score enforcement in a single step. The manual workflows below
-    are for teams that need more control or use a different CI platform.
+    [`pytest-gremlins-action`](github-action.md). It installs pytest-gremlins, runs it,
+    and ratchets the mutation score in a single step. Its cache step currently caches
+    nothing (see [Caching](github-action.md#caching)). The manual workflows below are for
+    teams that need more control or use a different CI platform.
+
+!!! note "pytest-gremlins has no score threshold"
+    There is no threshold setting in `pyproject.toml` or on the command line. Surviving
+    gremlins don't change pytest's exit code. The only result-based failure is an exceeded
+    pardon limit (`--strict-pardons`, `--gremlin-max-pardons-pct`, `--max-pardons`), which
+    exits 1.
+    To fail CI on a low score, read `summary.percentage` from the JSON report in a separate
+    step, as the GitHub Actions example below does.
 
 ## How Caching Works in CI
 
@@ -29,7 +38,7 @@ the inner cache instantly.
 
 ### Why `if: always()` on cache save
 
-If the mutation score falls below the configured threshold, the threshold check step fails and
+If the mutation score falls below the threshold in your score check step, that step fails and
 the job exits non-zero. Without explicit handling, CI skips the cache save. The next run starts
 cold and re-analyzes everything — even the code that didn't change.
 
@@ -42,7 +51,8 @@ Subsequent runs only re-test what changed.
 
 ### Goal
 
-Run mutation testing on every PR and block merges if the mutation score drops below a threshold.
+Run mutation testing on every PR and fail the job if the mutation score drops below a threshold
+that the workflow checks.
 
 ### Prerequisites
 
@@ -53,7 +63,7 @@ Run mutation testing on every PR and block merges if the mutation score drops be
 ### Steps
 
 1. Create the workflow file at `.github/workflows/mutation.yml`
-2. Configure the mutation score threshold in `pyproject.toml`
+2. Set the minimum score in its "Check mutation score" step (80 in the example)
 3. Push changes and verify the workflow runs
 
 ### Configuration
@@ -108,12 +118,21 @@ jobs:
       - name: Run mutation testing
         run: |
           pytest --gremlins \
-            --gremlin-report=html \
+            --gremlin-report=html,json \
             --gremlin-cache
+
+      - name: Check mutation score
+        run: |
+          SCORE=$(jq '.summary.percentage' coverage/gremlins/gremlins.json)
+          echo "Mutation score: $SCORE%"
+          if (( $(echo "$SCORE < 80" | bc -l) )); then
+            echo "::error::Mutation score $SCORE% is below 80%"
+            exit 1
+          fi
 
       - name: Save gremlins cache
         uses: actions/cache/save@v4
-        if: always()   # Save even if threshold check fails
+        if: always()   # Save even if the score check fails
         with:
           path: .gremlins_cache
           key: ${{ runner.os }}-gremlins-${{ hashFiles('src/**/*.py', 'tests/**/*.py', 'pyproject.toml') }}
@@ -130,7 +149,7 @@ jobs:
 Note: The restore and save steps use `actions/cache/restore` and `actions/cache/save` separately,
 not the combined `actions/cache`. The combined action ties the save to the step's success condition,
 which means `if: always()` cannot be applied independently. The split approach lets the save run
-regardless of whether the threshold check passed.
+regardless of whether the score check passed.
 
 The cache key includes `pyproject.toml` because operator configuration lives there — changing which
 operators run changes mutation results, so the old cache is invalid.
@@ -152,7 +171,9 @@ exclude = [
 1. Push a commit to trigger the workflow
 2. Check the Actions tab for the "Mutation Testing" workflow
 3. Verify the mutation report artifact is uploaded
-4. On PRs, verify the comment appears with results
+4. Check that the "Check mutation score" step prints the score
+
+This workflow doesn't comment on PRs. The [GitHub Action](github-action.md) does.
 
 ### Troubleshooting
 
@@ -465,7 +486,8 @@ workflows:
 ```
 
 Note: CircleCI does not have a `when: always` equivalent on `save_cache`. The cache is saved
-after the final step in the job. If the mutation step exits non-zero (threshold failure), CircleCI
+after the final step in the job. If the mutation step exits non-zero (for example, an exceeded
+pardon limit), CircleCI
 marks the job failed but still executes subsequent steps — so `save-gremlin-cache` runs regardless.
 Ensure the cache save step comes after the mutation run step, not before.
 
@@ -582,7 +604,7 @@ Apply mutation testing best practices to any CI system.
    - pytest-gremlins caches results in `.gremlins_cache/`
    - Key cache by source and test file hashes, not commit SHA
    - Use `restore-keys` prefix fallback so a file change gets a warm partial cache
-   - Save the cache with `if: always()` (or equivalent) — threshold failures must not discard it
+   - Save the cache with `if: always()` (or equivalent) — a failing score check must not discard it
 
 2. **Use incremental caching**
    - Use `--gremlin-cache` to skip unchanged code

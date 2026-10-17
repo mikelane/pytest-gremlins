@@ -724,18 +724,18 @@ pytest --gremlins \
 ### GitHub Actions (Recommended)
 
 The [pytest-gremlins-action](https://github.com/marketplace/actions/pytest-gremlins)
-handles installation, parallel execution, caching, and score gating in a single step:
+installs pytest-gremlins, runs it, and gates the score with a ratchet file in a single step.
+Check out your code, set up Python and install your project before it:
 
 ```yaml
 - uses: mikelane/pytest-gremlins-action@v1
   with:
-    threshold: 80
     parallel: 'true'
-    cache: 'true'
+    ratchet-file: '.gremlins-score'
 ```
 
-See the [GitHub Action cookbook](../cookbook/github-action.md) for full configuration
-options, caching details, and advanced usage.
+See the [GitHub Action cookbook](../cookbook/github-action.md) for every input and output,
+how the ratchet works, and a known problem with the action's cache step.
 
 If you need a manual workflow instead (e.g., self-hosted runners without marketplace access):
 
@@ -784,8 +784,6 @@ mutation_testing:
     - pip install uv && uv sync
     - uv run pytest --gremlins --gremlin-cache --gremlin-parallel --gremlin-report=json
   artifacts:
-    reports:
-      junit: coverage/gremlins/gremlins.json
     paths:
       - coverage/gremlins/
 ```
@@ -879,13 +877,25 @@ This shows:
 
 ## Configuration Validation
 
-pytest-gremlins validates configuration at startup and reports errors:
+pytest-gremlins checks `[tool.pytest-gremlins]` and the `--gremlin-*` options at startup.
+Each kind of problem is handled differently:
 
-```text
-pytest-gremlins: Invalid configuration
-  - Unknown operator 'typo' in operators list
-  - Path 'nonexistent/' does not exist
-```
+- **A value of the wrong type or out of range** stops the run with a usage error and exit
+  code 4. For example, `cache = "yes"` prints:
+
+    ```text
+    ERROR: pytest-gremlins: [tool.pytest-gremlins].cache must be a boolean (e.g. cache = true), got 'yes'
+    ```
+
+- **An unknown operator name** in `operators` or `--gremlin-operators` is skipped with a
+  `UserWarning`, and the run goes on with the operators that do exist:
+
+    ```text
+    UserWarning: Unknown operator 'typo' requested, ignoring
+    ```
+
+- **A path in `paths` that doesn't exist** is dropped without a message. If no configured
+  path exists, no gremlins are found.
 
 Use the `--collect-only` flag to validate configuration without running tests:
 

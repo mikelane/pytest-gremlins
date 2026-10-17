@@ -479,17 +479,19 @@ def test_get_user():
 ## Custom Operators
 
 pytest-gremlins supports custom operators for domain-specific mutations.
-See the [API Reference](../api/index.md) for details on implementing custom operators.
+See the [Extensibility Guide](extensibility.md) for a full walkthrough.
 
-Example third-party operator:
+`pytest --gremlins` reads its operators from one registry, the one returned by
+`get_default_registry()`. Register your operator there, in the `conftest.py` at your project
+root, so it is in place before pytest-gremlins reads the registry at startup. A registry you
+create yourself with `OperatorRegistry()` is never seen by a run.
 
 ```python
-from pytest_gremlins.operators.registry import OperatorRegistry
+# conftest.py
+from pytest_gremlins.instrumentation.transformer import get_default_registry
 
-# Create a registry instance
-registry = OperatorRegistry()
 
-@registry.register_decorator("django-queryset")
+@get_default_registry().register_decorator('django-queryset')
 class DjangoQuerySetOperator:
     """Mutate Django QuerySet methods."""
 
@@ -509,6 +511,9 @@ class DjangoQuerySetOperator:
         # Generate mutations
         ...
 ```
+
+A registered operator runs with the built-in operators. Its name also works in the
+`operators` list and in `--gremlin-operators`, for example `--gremlin-operators=django-queryset`.
 
 ## Summary
 

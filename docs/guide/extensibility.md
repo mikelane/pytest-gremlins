@@ -213,64 +213,41 @@ class TestStringEmptyOperatorMutate:
 
 Once your operator is implemented and tested, register it so pytest-gremlins can discover it.
 
-### Method 1: Entry Points (Planned for Packages)
+`pytest --gremlins` reads its operators from a single registry, the one returned by
+`get_default_registry()`, when the plugin starts. Register your operator on that registry, at
+import time, in the `conftest.py` at your project root. A registry you create yourself with
+`OperatorRegistry()` is a separate object that a run never reads, so registering on it has no
+effect.
 
-<!-- TODO: verify entry point discovery is implemented — as of v1.5.0,
-     no entry_points loading code exists in the plugin -->
-
-!!! warning "Not yet implemented"
-    Entry point discovery is planned but not yet available. Use direct registration
-    (Method 2) or decorator registration (Method 3) for now.
-
-If you're distributing your operator as a package, the planned approach uses Python entry points:
-
-```toml
-# pyproject.toml
-[project.entry-points."pytest_gremlins.operators"]
-my_operators = "my_package.operators:register_operators"
-```
+### Method 1: Direct Registration (Recommended)
 
 ```python
-# my_package/operators/__init__.py
-from pytest_gremlins.operators import OperatorRegistry
-
-from .string_empty import StringEmptyOperator
-
-
-def register_operators() -> None:
-    """Register custom operators with pytest-gremlins."""
-    registry = OperatorRegistry()
-    registry.register(StringEmptyOperator)
-```
-
-### Method 2: Direct Registration (Recommended)
-
-For operators used only in your project, register them in `conftest.py`:
-
-```python
-# conftest.py
-from pytest_gremlins.operators import OperatorRegistry
+# conftest.py (at the project root)
+from pytest_gremlins.instrumentation.transformer import get_default_registry
 
 from my_operators import StringEmptyOperator
 
-
-def pytest_configure(config):
-    """Register custom operators."""
-    registry = OperatorRegistry()
-    registry.register(StringEmptyOperator)
+get_default_registry().register(StringEmptyOperator)
 ```
 
-### Method 3: Decorator Registration
+Run `pytest --gremlins` as usual. The custom operator runs with the built-in operators, and its
+gremlins appear in the reports under its name (`string-empty`). The name also works in the
+`operators` list and in `--gremlin-operators`:
 
-The registry also supports a decorator pattern:
+```bash
+pytest --gremlins --gremlin-operators=string-empty
+```
+
+### Method 2: Decorator Registration
+
+The default registry also supports a decorator:
 
 ```python
-from pytest_gremlins.operators import OperatorRegistry
+# conftest.py (at the project root)
+from pytest_gremlins.instrumentation.transformer import get_default_registry
 
-registry = OperatorRegistry()
 
-
-@registry.register_decorator('my-operator')
+@get_default_registry().register_decorator('my-operator')
 class MyOperator:
     """Custom operator registered via decorator."""
 
@@ -280,6 +257,14 @@ class MyOperator:
 
     # ... rest of implementation
 ```
+
+### Entry Points (Not Implemented)
+
+!!! warning "Not yet implemented"
+    pytest-gremlins doesn't load operators from entry points. A
+    `[project.entry-points."pytest_gremlins.operators"]` table in a package's `pyproject.toml`
+    has no effect. To use an operator from a package, import it in your project's root
+    `conftest.py` and register it as in Method 1.
 
 ## AST Manipulation Patterns
 

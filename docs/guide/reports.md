@@ -50,13 +50,19 @@ Run with --gremlin-report=html for detailed report.
 
 Timeout, Error, and Pardoned lines only appear when their count is greater than zero.
 
+The percentages on these lines are shares of all gremlins (`zapped / total` for the Zapped
+line). They are not the mutation score, which counts timeouts as kills and leaves pardoned
+gremlins out: `(zapped + timeout) / (total - pardoned)`. In this example the mutation score is
+(142 + 5) / 167 = 88%, not 85%. The JSON report's `summary.percentage` holds the mutation
+score; see [Understanding Mutation Score](#understanding-mutation-score).
+
 ### Console Output Sections
 
 **Summary Section:**
 
 | Field | Description |
 |-------|-------------|
-| Zapped | Number and percentage of gremlins caught by tests |
+| Zapped | Number of gremlins caught by tests, and their share of all gremlins (not the mutation score) |
 | Survived | Number and percentage of gremlins that escaped tests |
 | Timeout | Number and percentage of gremlins that caused test timeouts and whose tests finish in time without the mutant (shown when > 0); these count as kills |
 | Error | Number and percentage of gremlins that caused errors, including timeouts whose unmutated tests do not finish within half the timeout (shown when > 0) |
@@ -580,9 +586,9 @@ mutation_testing:
     when: always
     paths:
       - coverage/gremlins/
-    reports:
-      junit: coverage/gremlins/gremlins.json
 ```
+
+`gremlins.json` is not a JUnit XML file, so don't list it under `artifacts:reports:junit`.
 
 ### Jenkins Pipeline
 

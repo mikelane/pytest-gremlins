@@ -205,7 +205,11 @@ tests = coverage_map.tests_for_line("src/legacy.py", 100)
 # Returns: set()  # Empty - no tests cover this line
 ```
 
-These mutations are marked as **automatically surviving** - they indicate a coverage gap.
+pytest-gremlins doesn't mark these gremlins as survived. When coverage maps no test to a
+gremlin's line, it runs the whole test suite for that gremlin. This also covers module-level
+code (class attribute defaults, module constants) that runs at import time, which coverage.py
+records outside any test's context. A gremlin in code that no test reaches still survives, but
+only after the full suite has run against it.
 
 ### Dynamic Code Execution
 
