@@ -1,9 +1,15 @@
+---
+search:
+  exclude: true
+---
+
 # pytest-gremlins Performance Profiling Report
 
 > **ARCHIVED — out of date.** This report reflects v0.1.1, when subprocess execution was the
 > only mode. The "Priority 1" recommendation below (in-process execution) shipped in #349
 > (`InProcessExecutor`/`ForkExecutor`, see `--gremlin-executor`), and the persistent worker
-> pool shipped in #58. Kept for historical context only — do not treat its numbers or
+> pool shipped in #58. The in-process and fork executors have been disabled since v1.10.1 because they did not run
+> the mutated code (#532). Kept for historical context only — do not treat its numbers or
 > recommendations as current.
 
 **Date:** January 2026

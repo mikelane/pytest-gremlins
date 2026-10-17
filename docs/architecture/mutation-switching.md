@@ -76,13 +76,13 @@ def is_adult(age):
 
 ### Activating Mutations
 
-To test mutation `g001`, we simply set an environment variable:
+To test a gremlin, pytest-gremlins starts a pytest subprocess for the gremlin's selected tests
+with `ACTIVE_GREMLIN=<gremlin id>` in its environment. In that subprocess an import hook serves
+the instrumented code, which checks the variable and executes the mutated path. No file is
+modified on disk.
 
-```bash
-ACTIVE_GREMLIN=g001 pytest tests/
-```
-
-The instrumented code checks this variable and executes the mutated path. No file modification, no reimporting, no waiting.
+Setting `ACTIVE_GREMLIN` yourself on a plain `pytest` run does nothing: without `--gremlins`,
+no instrumented code is loaded.
 
 ### The Flow
 
@@ -288,14 +288,15 @@ The decorator wraps the instrumented function, not the original.
 
 ## Debugging Instrumented Code
 
-### Validating a Specific Mutation
+### Investigating a Specific Mutation
+
+There is no command that runs one gremlin by hand; `ACTIVE_GREMLIN=g001 pytest ...` without
+`--gremlins` runs the original code. To see which tests a gremlin ran and why, pass its full id
+(from the progress lines or the JSON report's `gremlin_id`) to `--gremlin-explain`:
 
 ```bash
-# Run with a specific mutation active
-ACTIVE_GREMLIN=g001 pytest tests/test_specific.py -v
+pytest --gremlins --gremlin-explain=calculator_e336_g001
 ```
-
-<!-- TODO: verify whether --show-instrumented and --list-gremlins flags exist in a future version -->
 
 ## Comparison with File-Based Mutation
 

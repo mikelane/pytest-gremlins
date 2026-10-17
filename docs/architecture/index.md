@@ -103,6 +103,13 @@ These optimizations multiply together:
 A project that would take 8 hours with naive mutation testing can complete in **seconds**
 on incremental runs with all optimizations active.
 
+!!! warning "Projections, not measurements"
+    These figures are design projections, not benchmarks, and they predate v1.10.1. Since
+    v1.10.1 every gremlin runs its selected tests in a fresh pytest subprocess, so each gremlin
+    also pays pytest's startup cost (plugin loading, collection, imports of your code). The
+    projections don't include that cost, and real runs are slower than they suggest. The
+    incremental cache still skips unchanged gremlins entirely.
+
 ## How It All Fits Together
 
 Here is the complete flow from running `pytest --gremlins` to getting your results:
@@ -190,7 +197,10 @@ We hold ourselves to concrete performance targets:
 1. **Incremental run on unchanged code:** < 5 seconds
 2. **Full run on 10K LOC project:** < 5 minutes (8 cores)
 3. **Zero config for basic usage:** `pytest --gremlins` just works
-4. **No false positives:** Every reported survivor is a real gap in test coverage
+4. **Verdicts backed by real test runs:** every zap and every survivor comes from running the
+   gremlin's tests through pytest against the mutated code. A survivor is not always a test gap:
+   some gremlins are equivalent mutants that no test can catch, which you can
+   [pardon](../guide/configuration.md#inline-pardoning).
 
 ## Next Steps
 
