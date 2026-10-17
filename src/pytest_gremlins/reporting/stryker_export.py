@@ -277,8 +277,8 @@ class StrykerExporter:
 
         Python AST columns are 0-based UTF-8 byte offsets and the schema's positions are
         1-based UTF-16 code unit columns, so each column is converted to UTF-16 units and
-        shifted by one. The schema requires ``end``; a node without end information gets an empty range
-        at its start.
+        shifted by one. The schema requires ``end``; a node without end information gets an
+        empty range at its start.
 
         Args:
             gremlin: The Gremlin containing location information.

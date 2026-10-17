@@ -28,13 +28,14 @@ from pytest_gremlins.reporting.types import (
 )
 
 EMOJI = '\U0001f600'
+FILE_PATH = 'positions.py'
 
 
 def _location_for(make_gremlin, source: str, **gremlin_args) -> dict:
-    gremlin = make_gremlin(**gremlin_args)
+    gremlin = make_gremlin(file_path=FILE_PATH, **gremlin_args)
     exporter = StrykerExporter(source_reader=lambda _path: source)
     score = MutationScore.from_results([GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED)])
-    return json.loads(exporter.to_json(score))['files']['test.py']['mutants'][0]['location']
+    return json.loads(exporter.to_json(score))['files'][FILE_PATH]['mutants'][0]['location']
 
 
 @pytest.mark.small
