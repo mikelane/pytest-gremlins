@@ -87,10 +87,10 @@ The terminal summary counts errored gremlins on the `Error` line but doesn't lis
 why each one errored, use the HTML report's "Errored Gremlins" table or the `error_output`
 field in the JSON report.
 
-The Python API's `ConsoleReporter` (`pytest_gremlins.reporting.console`) prints a fuller
-report than the terminal summary. After the survivors it adds a `Top errored gremlins:` section
-listing up to ten errored gremlins, each with its location and the last line of its error
-output (up to 120 characters).
+The Python API's `ConsoleReporter` (`pytest_gremlins.reporting.console`) adds a
+`Top errored gremlins:` section that the terminal summary doesn't have. It lists up to ten
+errored gremlins, each with its location and the last line of its error output (up to 120
+characters).
 
 **Cache Statistics (when caching enabled):**
 

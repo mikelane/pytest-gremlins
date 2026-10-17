@@ -2,7 +2,8 @@
 
 This page explains how pytest-gremlins decides each gremlin's verdict, which code it mutates,
 and what pytest's exit code means after a `--gremlins` run. The version in parentheses is the
-release where a behavior was introduced; see the [Changelog](../changelog.md) for details.
+release whose changelog entry describes the behavior; see the [Changelog](../changelog.md) for
+details.
 
 ## How a Gremlin Is Scored
 
@@ -89,8 +90,9 @@ don't need to be removed for `--gremlins`.
   `pytest-gremlins: skipping mutation testing because <reason>` to stderr and runs no gremlins.
   pytest's exit code is unchanged. A failing non-test check such as `--cov-fail-under` doesn't
   block mutation testing (v1.10.1).
-- **Pardon limits exit 1.** `--strict-pardons`, `--gremlin-max-pardons-pct` and `--max-pardons`
-  end the run with exit code 1 when exceeded.
+- **Pardon checks exit 1.** `--strict-pardons` ends the run with exit code 1 when any gremlin is
+  pardoned. `--gremlin-max-pardons-pct` and `--max-pardons` end it with exit code 1 when their
+  limit is exceeded.
 - **Invalid configuration exits 4 (v1.11.0).** A bad `[tool.pytest-gremlins]` value, an
   out-of-range `--gremlin-*` value, or `--gremlin-executor=fork`/`inprocess` stops the run with
   a usage error before any test runs. See
