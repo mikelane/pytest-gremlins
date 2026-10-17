@@ -2915,8 +2915,8 @@ def _rerun_scaled_timeout(config: pytest.Config, per_run_timeout: int, *, label:
     """Return ``per_run_timeout`` widened to the rerun budget of the session (issues #655, #672, #673).
 
     The mutant runs and the coverage pre-scan both inherit the session's pytest-rerunfailures settings, so a
-    killed mutant's test (or a flaky test in the pre-scan) is rerun
-    and, with ``--reruns-delay`` (scaled by ``--reruns-delay-backoff-factor``), waits between attempts.
+    killed mutant's test (or a flaky test in the pre-scan) is rerun and, with ``--reruns-delay`` (scaled by
+    ``--reruns-delay-backoff-factor``), waits between attempts.
     Without scaling, that alone would outlast the timeout and the kill would be reported as a timeout or
     error.  The configured timeout is the budget of one attempt; see
     :func:`~pytest_gremlins.rerun_options.scaled_mutant_timeout`.  Nothing is scaled when
