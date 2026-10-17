@@ -98,13 +98,9 @@ class DescribeHtmlReporterContent:
         assert 'Files skipped and not mutation tested' not in html
 
     def it_renders_skipped_section_with_existing_html_escaping(self) -> None:
-        reporter = HtmlReporter()
-        skipped = {'a<&".py': 'failed <&"'}
+        html = HtmlReporter().to_html(MutationScore.from_results([]), skipped_files={'a<&".py': 'failed <&"'})
 
-        assert reporter._render_skipped_section(skipped) == (
-            '<section aria-label="Skipped files"><h2>Files skipped and not mutation tested</h2>'
-            '<ul><li>a&lt;&amp;&quot;.py: failed &lt;&amp;&quot;</li></ul></section>'
-        )
+        assert '<li>a&lt;&amp;&quot;.py: failed &lt;&amp;&quot;</li>' in html
 
     def it_includes_title(self, make_result):
         results = [make_result(GremlinResultStatus.ZAPPED)]
