@@ -108,6 +108,7 @@ from pytest_gremlins.parallel.exit_codes import (
 )
 from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
+    REWRITE_API_BROKEN_PREFIX,
     build_lightweight_command,
     describe_runner_error,
 )
@@ -3820,7 +3821,7 @@ def _cache_gremlin_result(
 
     # A verdict scored while load failures were unattributable, or downgraded because the unmutated
     # selection does not load, is too slow without a mutant, or cannot be launched to confirm a timeout,
-    # depends on a harness or config problem
+    # or was aborted because pytest's assertion-rewrite API changed (#617), depends on a harness or config problem
     # the user is told to fix; replaying it from a warm cache after the fix would keep reporting stale errors.
     if not gremlin_session.load_failures_attributable:
         return
@@ -3828,6 +3829,7 @@ def _cache_gremlin_result(
         SELECTION_FAILS_TO_LOAD_PREFIX,
         TIMEOUT_NOT_CONFIRMED_PREFIX,
         TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX,
+        REWRITE_API_BROKEN_PREFIX,
     )
     if (result.error_output or '').startswith(uncacheable_error_prefixes):
         return
