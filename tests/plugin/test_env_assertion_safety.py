@@ -6,7 +6,6 @@ Session-wide secret scrubbing (#649) is the real defense. Shapes the guard accep
 - aliases held on attributes (``self.env = os.environ``)
 - aliases bound by ``for`` targets, ``match`` or ``async with`` bodies
 - the environment passed into a call inside the assertion (``assert check(os.environ)``)
-- comprehension aliases (``{k: v for k, v in os.environ.items() if ...}``)
 - ``os.environ | {...}``, ``os.environ.pop(...)`` and ``patch.dict(os.environ, ...) as env``
 - an alias reassigned inside a branch, which drops the alias for later asserts
 """
@@ -57,6 +56,11 @@ class DescribeEnvironmentAssertionChecker:
             ("assert run.call_args[1]['env'] == {}", [1]),
             ("env = run.call_args[1]['env']\nassert 'SECRET' not in env", [2]),
             ("assert run.call_args[0]['env'] == {}", []),
+            ("env = {k: v for k, v in os.environ.items() if k}\nassert 'SECRET' not in env", [2]),
+            ("env = dict(os.environ)\nfiltered = {k: v for k, v in env.items()}\nassert 'SECRET' not in filtered", [3]),
+            ('assert {k: v for k, v in os.environ.items()} == {}', [1]),
+            ("env = {k: v for k, v in other.items()}\nassert 'SECRET' not in env", []),
+            ("e = {k: v for k, v in os.environ.items()}\nassert e['SECRET'] == 'ok'", []),  # pragma: allowlist secret
         ],
     )
     def it_flags_only_whole_environment_assertions(self, source: str, expected: list[int]) -> None:
@@ -90,6 +94,14 @@ def _is_positional_call_kwargs(node: ast.expr) -> bool:
     )
 
 
+def _mapping_draws_on_environment(node: ast.Dict | ast.DictComp, names: set[str]) -> bool:
+    if isinstance(node, ast.DictComp):
+        return any(_is_environment_source(generator.iter, names) for generator in node.generators)
+    return any(
+        key is None and _is_environment_source(value, names) for key, value in zip(node.keys, node.values, strict=True)
+    )
+
+
 def _is_environment_source(node: ast.expr, names: set[str]) -> bool:
     if isinstance(node, ast.NamedExpr):
         node = node.value
@@ -103,11 +115,8 @@ def _is_environment_source(node: ast.expr, names: set[str]) -> bool:
             and node.slice.value == 'env'
             and (_is_named(node.value, 'kwargs') or _is_positional_call_kwargs(node.value))
         )
-    if isinstance(node, ast.Dict):
-        return any(
-            key is None and _is_environment_source(value, names)
-            for key, value in zip(node.keys, node.values, strict=True)
-        )
+    if isinstance(node, (ast.Dict, ast.DictComp)):
+        return _mapping_draws_on_environment(node, names)
     if isinstance(node, ast.Call):
         return (
             isinstance(node.func, ast.Attribute)
