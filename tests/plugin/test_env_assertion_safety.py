@@ -245,10 +245,17 @@ def _unsafe_assertions_in_source(source: str) -> list[int]:
     return _scan_assertions(tree.body, set()) + _embedded_assertions(tree)
 
 
+# Files whose unsafe environment assertions are deliberate fixtures: this file's checker cases, and the
+# child test that test_secret_env_scrub.py runs in a subprocess to prove the session scrub works.
+_INTENTIONALLY_UNSAFE_FIXTURE_FILES = frozenset(
+    {Path(__file__).resolve(), Path(__file__).resolve().with_name('test_secret_env_scrub.py')}
+)
+
+
 def _unsafe_env_assertions(tests_dir: Path) -> list[str]:
     unsafe: list[str] = []
     for path in sorted({*tests_dir.rglob('test_*.py'), *tests_dir.rglob('conftest.py')}):
-        if path == Path(__file__).resolve():  # This file contains intentionally unsafe checker fixtures.
+        if path.resolve() in _INTENTIONALLY_UNSAFE_FIXTURE_FILES:
             continue
         unsafe.extend(
             f'{path.relative_to(tests_dir)}:{line}'
