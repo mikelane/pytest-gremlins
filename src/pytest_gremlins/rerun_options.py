@@ -77,6 +77,9 @@ _CARRIED_OPTIONS = _RERUN_VALUE_OPTIONS | _OVERRIDE_INI_OPTIONS
 
 _MAX_NAMED_TESTS = 10
 
+# pytest-rerunfailures' default ``reruns_delay_backoff_factor``: every rerun waits the same delay.
+_NO_BACKOFF = 1.0
+
 
 def _argparse_file_decoding() -> tuple[str, str]:
     """Return the encoding and error handler the running Python's argparse reads an ``@file`` with."""
@@ -429,19 +432,25 @@ def baseline_rerun_warning(rerun_test_ids: Collection[str]) -> str | None:
     )
 
 
-def scaled_mutant_timeout(base: int, *, reruns: int, reruns_delay: float) -> int:
-    """Return the per-mutant timeout widened to cover the reruns pytest-rerunfailures may make (issue #655).
+def scaled_mutant_timeout(
+    base: int, *, reruns: int, reruns_delay: float, reruns_delay_backoff_factor: float = _NO_BACKOFF
+) -> int:
+    """Return the per-mutant timeout widened to cover the reruns pytest-rerunfailures may make (issues #655, #672).
 
     ``base`` is the budget of one attempt.  A killed mutant's covering test fails, is rerun ``reruns`` times
-    and sleeps ``reruns_delay`` seconds before each rerun, so the run may need
-    ``base * (reruns + 1) + ceil(reruns * reruns_delay)`` seconds before the mutant is judged.
-    A negative or NaN delay counts as 0 (pytest-rerunfailures treats a negative one as 0).  No reruns leave
-    ``base`` unchanged.  The result never exceeds ``MAX_TIMEOUT_SECONDS``.
+    and sleeps ``reruns_delay * factor ** (n - 1)`` seconds before rerun ``n``, where ``factor`` is
+    ``reruns_delay_backoff_factor``, so the run may need
+    ``base * (reruns + 1) + ceil(reruns_delay * (1 + factor + ... + factor ** (reruns - 1)))`` seconds before
+    the mutant is judged.  With the default factor of 1 that is ``ceil(reruns * reruns_delay)``.
+    A negative or NaN delay counts as 0 (pytest-rerunfailures treats a negative one as 0), and a negative or NaN
+    factor counts as 1 (it falls back to 1.0 for a negative one).  No reruns leave ``base`` unchanged.  The result
+    never exceeds ``MAX_TIMEOUT_SECONDS``.
 
     Args:
         base: Seconds one attempt may take.
         reruns: Reruns allowed per test; zero or less means none.
-        reruns_delay: Seconds slept before each rerun.
+        reruns_delay: Seconds slept before the first rerun.
+        reruns_delay_backoff_factor: What the delay is multiplied by after each rerun.
 
     Returns:
         The timeout in whole seconds.
@@ -449,6 +458,8 @@ def scaled_mutant_timeout(base: int, *, reruns: int, reruns_delay: float) -> int
     Example:
         >>> scaled_mutant_timeout(30, reruns=2, reruns_delay=20)
         130
+        >>> scaled_mutant_timeout(30, reruns=2, reruns_delay=1, reruns_delay_backoff_factor=3)
+        94
         >>> scaled_mutant_timeout(30, reruns=0, reruns_delay=20)
         30
     """
@@ -456,11 +467,31 @@ def scaled_mutant_timeout(base: int, *, reruns: int, reruns_delay: float) -> int
         return base
     if reruns >= MAX_TIMEOUT_SECONDS:
         return MAX_TIMEOUT_SECONDS
-    usable_delay = reruns_delay if reruns_delay > 0 else 0.0
-    total_delay = reruns * usable_delay
+    total_delay = _total_rerun_delay(reruns, reruns_delay, reruns_delay_backoff_factor)
     if total_delay >= MAX_TIMEOUT_SECONDS:
         return MAX_TIMEOUT_SECONDS
     return min(base * (reruns + 1) + math.ceil(total_delay), MAX_TIMEOUT_SECONDS)
+
+
+def _total_rerun_delay(reruns: int, reruns_delay: float, reruns_delay_backoff_factor: float) -> float:
+    """Return the seconds pytest-rerunfailures sleeps over ``reruns`` reruns, ``inf`` when a float cannot hold it."""
+    if not reruns_delay > 0:
+        return 0.0
+    factor = _usable_backoff_factor(reruns_delay_backoff_factor)
+    if factor == _NO_BACKOFF:
+        return reruns * reruns_delay
+    try:
+        delay_multiple = (factor**reruns - 1) / (factor - 1)
+    except OverflowError:
+        return math.inf
+    if math.isnan(delay_multiple):
+        return math.inf
+    return reruns_delay * delay_multiple
+
+
+def _usable_backoff_factor(factor: float) -> float:
+    """Return ``factor``, or 1.0 where pytest-rerunfailures rejects it (negative) or sleeping on it would fail (NaN)."""
+    return factor if factor >= 0 else _NO_BACKOFF
 
 
 def session_rerun_budget(option: object, read_ini: Callable[[str], object]) -> tuple[int, float]:
@@ -489,6 +520,35 @@ def session_rerun_budget(option: object, read_ini: Callable[[str], object]) -> t
     return _session_reruns(option, read_ini), _session_reruns_delay(option, read_ini)
 
 
+def session_rerun_backoff_factor(option: object, read_ini: Callable[[str], object]) -> float:
+    """Return the ``reruns_delay_backoff_factor`` pytest-rerunfailures applies to a test with no ``flaky`` marker.
+
+    The ``--reruns-delay-backoff-factor`` option wins over the ``reruns_delay_backoff_factor`` ini key.  An ini
+    value that is not a number, an ini key the installed plugin does not register, and an unset setting all
+    count as 1.0, and so does a negative factor, which the plugin replaces with 1.0 (and warns about).
+
+    Args:
+        option: The parsed options, such as ``config.option``.
+        read_ini: Reads an ini key as a string, such as ``config.getini``.
+
+    Returns:
+        The factor the delay is multiplied by after each rerun.
+
+    Example:
+        >>> from types import SimpleNamespace
+        >>> session_rerun_backoff_factor(SimpleNamespace(reruns_delay_backoff_factor=2.0), {}.get)
+        2.0
+        >>> session_rerun_backoff_factor(SimpleNamespace(), {}.get)
+        1.0
+    """
+    from_option = getattr(option, 'reruns_delay_backoff_factor', None)
+    if from_option is not None:
+        return _usable_backoff_factor(float(from_option))
+    return _usable_backoff_factor(
+        float(_read_number(read_ini, 'reruns_delay_backoff_factor', float, default=_NO_BACKOFF))
+    )
+
+
 def _session_reruns(option: object, read_ini: Callable[[str], object]) -> int:
     for from_option in (getattr(option, 'force_reruns', None), getattr(option, 'reruns', None)):
         if from_option is not None:
@@ -503,8 +563,10 @@ def _session_reruns_delay(option: object, read_ini: Callable[[str], object]) -> 
     return float(_read_number(read_ini, 'reruns_delay', float))
 
 
-def _read_number(read_ini: Callable[[str], object], key: str, parse: Callable[[str], float]) -> float:
+def _read_number(
+    read_ini: Callable[[str], object], key: str, parse: Callable[[str], float], *, default: float = 0
+) -> float:
     try:
         return parse(str(read_ini(key)))
     except (TypeError, ValueError):
-        return 0
+        return default
