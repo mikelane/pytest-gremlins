@@ -30,6 +30,11 @@ def test_big():
     assert classify(11) == 'big'
 """
 
+_UNRELATED = """
+def test_unrelated():
+    assert True
+"""
+
 _GREMLIN_ARGS = (
     '--gremlins',
     '--gremlin-targets=sample.py',
@@ -88,6 +93,21 @@ class DescribeAWarmCacheUnderXdist:
 
         assert _from_cache(second) == 0
         assert _count(second, 'Survived') > 0
+
+    def it_misses_after_a_covering_test_changes_when_another_test_file_shares_its_name(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makepyfile(sample=_SAMPLE)
+        pytester_with_markers.makepyfile(test_a=_CATCHES)
+        (pytester_with_markers.path / 'sub').mkdir()
+        (pytester_with_markers.path / 'sub' / '__init__.py').write_text('')
+        (pytester_with_markers.path / 'sub' / 'test_a.py').write_text(_UNRELATED)
+        pytester_with_markers.runpytest_subprocess(*_GREMLIN_ARGS, '-n', '2')
+        pytester_with_markers.makepyfile(test_a=_WEAKER)
+
+        second = pytester_with_markers.runpytest_subprocess(*_GREMLIN_ARGS, '-n', '2').stdout.str()
+
+        assert _from_cache(second) == 0
 
     def it_shares_the_cache_with_a_run_without_xdist(self, project: pytest.Pytester) -> None:
         first = project.runpytest_subprocess(*_GREMLIN_ARGS).stdout.str()

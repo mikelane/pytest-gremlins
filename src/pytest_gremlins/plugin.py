@@ -262,7 +262,7 @@ class GremlinSession:
         cache_enabled: Whether incremental caching is enabled.
         cache: The incremental cache instance (if caching is enabled).
         source_hashes: Content hashes for source files.
-        test_hashes: Content hashes for test files.
+        test_hashes: Content hashes for test files, keyed by the file part of their normalized node ids.
         cache_hits: Number of cache hits in this session.
         cache_misses: Number of cache misses in this session.
         parallel_enabled: Whether parallel execution is enabled.
@@ -1277,7 +1277,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
 
-    _hash_sources_and_tests_for_cache(gremlin_session, source_files)
+    _hash_sources_and_tests_for_cache(gremlin_session, source_files, rootdir)
 
     if gremlin_session.xdist_active and not session.items:
         logger.debug(
@@ -1289,19 +1289,23 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     _generate_gremlins(gremlin_session, source_files, rootdir)
 
 
-def _hash_sources_and_tests_for_cache(gremlin_session: GremlinSession, source_files: dict[str, str]) -> None:
+def _hash_sources_and_tests_for_cache(
+    gremlin_session: GremlinSession, source_files: dict[str, str], rootdir: Path
+) -> None:
     """Record content hashes of the source and test files that key the incremental cache.
 
     Without these hashes the cache can neither store nor replay a verdict, so every gremlin runs again.
+    Test hashes are keyed by the file part of the normalized node ids, so a test binds to its own file's
+    hash by exact lookup and the keys are the same with or without xdist.
     """
     if not gremlin_session.cache_enabled:
         return
     hasher = ContentHasher()
     for file_path, source in source_files.items():
         gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
-    for test_file in gremlin_session.test_files:
+    for test_file in {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}:
         with contextlib.suppress(FileNotFoundError):
-            gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
+            gremlin_session.test_hashes[test_file] = hasher.hash_file(rootdir / test_file)
 
 
 def _generate_gremlins(
@@ -2424,7 +2428,7 @@ def _rebuild_state_from_xdist_workers(
     logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
-    _hash_sources_and_tests_for_cache(gremlin_session, source_files)
+    _hash_sources_and_tests_for_cache(gremlin_session, source_files, rootdir)
     logger.debug('pytest_sessionfinish: xdist Phase 2 discovered %d source files', len(source_files))
     _generate_gremlins(gremlin_session, source_files, rootdir)
     logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
@@ -3749,11 +3753,9 @@ def _build_test_hashes_for_gremlin(
                 node_id = candidates[0]
 
         if '::' in node_id:
-            test_file = node_id.split('::')[0]
-            for file_path, file_hash in gremlin_session.test_hashes.items():
-                if file_path.endswith(test_file) or test_file in file_path:
-                    test_hashes[test_name] = file_hash
-                    break
+            file_hash = gremlin_session.test_hashes.get(node_id.split('::')[0])
+            if file_hash is not None:
+                test_hashes[test_name] = file_hash
 
     return test_hashes
 

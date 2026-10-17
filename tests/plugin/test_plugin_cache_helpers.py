@@ -58,6 +58,17 @@ class DescribeBuildTestHashesForGremlin:
 
         assert result == {}
 
+    def it_ignores_the_hash_of_a_test_file_whose_path_only_ends_with_the_node_id_file(self) -> None:
+        gs = GremlinSession(
+            enabled=True,
+            test_node_ids={'test_a.py::test_root': 'test_a.py::test_root'},
+            test_hashes={'sub/test_a.py': 'unrelated_hash', 'test_a.py': 'covering_hash'},
+        )
+
+        result = _build_test_hashes_for_gremlin(['test_a.py::test_root'], gs)
+
+        assert result == {'test_a.py::test_root': 'covering_hash'}
+
 
 @pytest.mark.small
 class DescribeCheckCacheForGremlin:
