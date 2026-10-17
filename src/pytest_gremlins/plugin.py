@@ -2884,12 +2884,13 @@ def _gremlin_run_rerun_budget(config: pytest.Config) -> RerunBudget:
 
 
 def _rerun_scaled_mutant_timeout(config: pytest.Config, per_run_timeout: int) -> int:
-    """Return ``per_run_timeout`` widened to the rerun budget of the session (issue #655).
+    """Return ``per_run_timeout`` widened to the rerun budget of the session (issues #655, #672).
 
     A gremlin run inherits the session's pytest-rerunfailures settings, so a killed mutant's test is rerun
-    and, with ``--reruns-delay``, waits between attempts.  Without scaling, that alone would outlast the
-    timeout and the kill would be reported as a timeout or error.  The configured timeout is the budget of
-    one attempt; see :func:`~pytest_gremlins.rerun_options.scaled_mutant_timeout`.  Nothing is scaled when
+    and, with ``--reruns-delay`` (scaled by ``--reruns-delay-backoff-factor``), waits between attempts.
+    Without scaling, that alone would outlast the timeout and the kill would be reported as a timeout or
+    error.  The configured timeout is the budget of one attempt; see
+    :func:`~pytest_gremlins.rerun_options.scaled_mutant_timeout`.  Nothing is scaled when
     pytest-rerunfailures is not loaded.
     """
     if not _rerunfailures_is_loaded(config):
