@@ -2424,7 +2424,6 @@ def _rebuild_state_from_xdist_workers(
         xdist_name_to_nodes.setdefault(func_name, []).append(nid)
     gremlin_session.test_name_to_node_ids = xdist_name_to_nodes
     gremlin_session.total_tests = len(normalized)
-    gremlin_session.test_files = sorted({rootdir / nid.split('::')[0] for nid in normalized})
     logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
