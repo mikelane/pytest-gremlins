@@ -2769,15 +2769,16 @@ def _arguments_gremlin_runs_inherit(config: pytest.Config) -> list[str]:
     """Return the arguments gremlin runs get from the project's ``addopts`` and from ``PYTEST_ADDOPTS``.
 
     The session's own command line is not among them: gremlin runs are given neither its flags nor its ``-p``.
-    ``@file`` arguments are expanded, as pytest does, against the directory pytest was run from; one that cannot
-    be read contributes nothing (pytest rejects an unreadable one as a usage error before this runs), which
-    errs toward a missed loader and so toward a missed kill rather than a false one.
+    ``@file`` arguments are expanded, as pytest does, against the directory gremlin runs start in, which is the
+    rootdir (not the directory the session was started from).  One that cannot be read contributes nothing
+    (pytest rejects an unreadable one as a usage error before this runs), which errs toward a missed loader and
+    so toward a missed kill rather than a false one.
     """
     try:
         from_environment = shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))
     except ValueError:
         from_environment = []
-    return expand_argument_files([*config.getini('addopts'), *from_environment], base_dir=config.invocation_params.dir)
+    return expand_argument_files([*config.getini('addopts'), *from_environment], base_dir=_get_rootdir(config))
 
 
 def _gremlin_runs_disable_plugin_autoload(config: pytest.Config) -> bool:

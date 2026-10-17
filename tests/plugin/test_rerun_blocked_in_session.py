@@ -5,8 +5,8 @@ That covers a command-line ``-p no:rerunfailures``, ``--disable-plugin-autoload`
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
 
 import pytest
 from rerun_samples import (
@@ -17,9 +17,6 @@ from rerun_samples import (
 
 from pytest_gremlins import plugin
 from pytest_gremlins.cache.incremental import IncrementalCache
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 # Kills every comparison mutant of ``classify`` on the first attempt.
 STEADY_TEST = """
@@ -69,6 +66,7 @@ def _session_with(*, loaded: tuple[str, ...] = ()) -> SimpleNamespace:
         pluginmanager=SimpleNamespace(hasplugin=lambda name: name in loaded),
         option=SimpleNamespace(inifilename=None),
         invocation_params=SimpleNamespace(args=(), dir=None),
+        rootdir=Path(),
         getini=lambda name: [] if name == 'addopts' else None,
     )
 

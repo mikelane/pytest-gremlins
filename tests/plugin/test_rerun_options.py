@@ -180,6 +180,7 @@ def _config(
     fake = SimpleNamespace(
         pluginmanager=pluginmanager,
         invocation_params=SimpleNamespace(args=tuple(args), dir=Path()),
+        rootdir=Path(),
         getini=lambda name: ini_values.get(name, [] if name in ('only_rerun', 'rerun_except') else ''),
         option=SimpleNamespace(inifilename=inifilename, **(parsed_options or {})),
     )

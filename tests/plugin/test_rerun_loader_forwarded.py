@@ -6,6 +6,7 @@ not, so they used to run without reruns while the budget, timeout and cache key 
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -46,6 +47,7 @@ def _session_with(
         pluginmanager=SimpleNamespace(hasplugin=lambda name: name in loaded),
         option=SimpleNamespace(inifilename=None),
         invocation_params=SimpleNamespace(args=args, dir=None),
+        rootdir=Path(),
         getini=lambda name: list(addopts) if name == 'addopts' else None,
     )
 

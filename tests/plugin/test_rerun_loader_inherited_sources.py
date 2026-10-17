@@ -14,6 +14,8 @@ from rerun_samples import (
 )
 
 AUTOLOAD_ENV_VAR = 'PYTEST_DISABLE_PLUGIN_AUTOLOAD'
+# The session autoloads these but gremlin runs with autoload off would not; block them so only reruns differ.
+SESSION_ONLY_BLOCKS = ('-p', 'no:xdist', '-p', 'no:test_categories')
 
 FLAKY_UNDER_GREMLINS_TEST = """
 import os
@@ -233,3 +235,65 @@ class DescribeCachedVerdictsWhenAnInheritedFlagDisablesAutoload:
 
         assert verdicts(cached_run.stdout.str()) == verdicts(uncached_run.stdout.str())
         assert verdicts(cached_run.stdout.str())['Survived'] > 0
+
+
+def _write_project_run_from_subdirectory(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, *, at_rootdir: str, at_invocation_dir: str
+) -> None:
+    pytester.makepyfile(sample=SAMPLE)
+    pytester.makepyfile(test_sample=FLAKY_UNDER_GREMLINS_TEST)
+    pytester.makeini('[pytest]\nreruns = 2\naddopts = @shared.args -p pytest_cov -p gremlins\n')
+    pytester.makefile('.args', shared=at_rootdir)
+    invocation_dir = pytester.mkdir('sub')
+    (invocation_dir / 'shared.args').write_text(at_invocation_dir)
+    monkeypatch.chdir(invocation_dir)
+
+
+@pytest.mark.medium
+class DescribeArgumentFileResolvedFromTheDirectoryGremlinRunsStartIn:
+    """Gremlin runs start in the rootdir, so a relative ``@file`` in ``addopts`` is read from there.
+
+    The detector must read the copy gremlin runs read, not the copy beside a session started from a subdirectory.
+    """
+
+    def it_reruns_when_only_the_rootdir_copy_of_the_argument_file_disables_autoload(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pytester = pytester_with_markers
+        _write_project_run_from_subdirectory(
+            pytester, monkeypatch, at_rootdir='--disable-plugin-autoload\n', at_invocation_dir='-q\n'
+        )
+
+        result = pytester.runpytest_subprocess(
+            *GREMLIN_ARGS, '-p', 'rerunfailures', *SESSION_ONLY_BLOCKS, str(pytester.path)
+        )
+
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+    def it_scores_no_errors_when_only_the_invocation_dir_copy_disables_autoload(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pytester = pytester_with_markers
+        _write_project_run_from_subdirectory(
+            pytester, monkeypatch, at_rootdir='-q\n', at_invocation_dir='--disable-plugin-autoload\n'
+        )
+
+        result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '-p', 'pytest_rerunfailures', str(pytester.path))
+
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+    def it_reruns_when_both_copies_disable_autoload(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Control: same content in both places, so the detector and gremlin runs agree.
+        pytester = pytester_with_markers
+        _write_project_run_from_subdirectory(
+            pytester,
+            monkeypatch,
+            at_rootdir='--disable-plugin-autoload\n',
+            at_invocation_dir='--disable-plugin-autoload\n',
+        )
+
+        result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '-p', 'pytest_rerunfailures', str(pytester.path))
+
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
