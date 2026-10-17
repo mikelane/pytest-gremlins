@@ -78,6 +78,13 @@ class DescribeScaledMutantTimeout:
     ) -> None:
         assert scaled_mutant_timeout(30, reruns=reruns, reruns_delay=1, reruns_delay_backoff_factor=factor) == expected
 
+    def it_does_not_round_down_a_factor_just_above_one(self) -> None:
+        # The exact sum is 50000.000125 seconds; a closed-form (f**n - 1) / (f - 1) cancels to 50000.0.
+        assert (
+            scaled_mutant_timeout(1, reruns=5000, reruns_delay=10, reruns_delay_backoff_factor=1 + 1e-12)
+            == 5001 + 50001
+        )
+
     def it_behaves_as_a_constant_delay_when_the_factor_is_one(self) -> None:
         assert scaled_mutant_timeout(30, reruns=2, reruns_delay=20, reruns_delay_backoff_factor=1.0) == 130
 
@@ -95,6 +102,12 @@ class DescribeScaledMutantTimeout:
 
         assert scaled_mutant_timeout(30, reruns=2, reruns_delay=1, reruns_delay_backoff_factor=factor) == (
             MAX_TIMEOUT_SECONDS
+        )
+
+    def it_clamps_an_infinite_delay_with_a_zero_factor_to_the_maximum_timeout(self) -> None:
+        assert (
+            scaled_mutant_timeout(30, reruns=3, reruns_delay=float('inf'), reruns_delay_backoff_factor=0)
+            == MAX_TIMEOUT_SECONDS
         )
 
     @pytest.mark.parametrize('factor', [-1, -0.5, float('nan')])

@@ -480,13 +480,16 @@ def _total_rerun_delay(reruns: int, reruns_delay: float, reruns_delay_backoff_fa
     factor = _usable_backoff_factor(reruns_delay_backoff_factor)
     if factor == _NO_BACKOFF:
         return reruns * reruns_delay
+    # Sum the sleeps one by one: the closed form (factor**reruns - 1) / (factor - 1) cancels for a factor near 1
+    # and can round the total down.  ``reruns`` is below MAX_TIMEOUT_SECONDS here, so the loop is bounded.
     try:
-        delay_multiple = (factor**reruns - 1) / (factor - 1)
+        total_delay = math.fsum(reruns_delay * factor**attempt for attempt in range(reruns))
     except OverflowError:
         return math.inf
-    if math.isnan(delay_multiple):
+    # An infinite delay times a zero factor's 0.0 makes NaN; the first rerun alone already sleeps forever.
+    if math.isnan(total_delay):
         return math.inf
-    return reruns_delay * delay_multiple
+    return total_delay
 
 
 def _usable_backoff_factor(factor: float) -> float:
