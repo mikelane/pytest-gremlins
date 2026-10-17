@@ -225,6 +225,33 @@ class DescribeMutationScoreWithDowngradedTimeouts:
         assert warning is not None
         assert warning.startswith('1 timeout counted as an error, not a kill: without the mutant, its tests ')
 
+    def it_names_the_per_attempt_and_the_rerun_scaled_limit(self, make_result):
+        score = MutationScore.from_results(
+            [self._downgraded(make_result)], mutant_timeout=130, mutant_attempt_timeout=30
+        )
+
+        warning = score.timeout_warning
+
+        assert warning is not None
+        assert 'half the 130s timeout (30s per attempt, scaled for the pytest-rerunfailures budget)' in warning
+        assert 'Raise the per-attempt limit with --gremlin-mutant-timeout' in warning
+
+    def it_keeps_the_unscaled_wording_when_the_attempt_limit_equals_the_limit(self, make_result):
+        score = MutationScore.from_results(
+            [self._downgraded(make_result)], mutant_timeout=30, mutant_attempt_timeout=30
+        )
+
+        warning = score.timeout_warning
+
+        assert warning is not None
+        assert 'half the 30s timeout. Raise the timeout with --gremlin-mutant-timeout' in warning
+
+    def it_carries_the_attempt_limit_into_the_per_file_scores(self, make_result):
+        result = self._downgraded(make_result)
+        score = MutationScore.from_results([result], mutant_timeout=130, mutant_attempt_timeout=30)
+
+        assert {file: s.mutant_attempt_timeout for file, s in score.by_file().items()} == {result.gremlin.file_path: 30}
+
     def it_names_the_mutant_timeout_generically_when_the_limit_is_unknown(self, make_result):
         warning = MutationScore.from_results([self._downgraded(make_result)]).timeout_warning
 

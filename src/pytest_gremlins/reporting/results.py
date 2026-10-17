@@ -22,6 +22,13 @@ TIMEOUT_NOT_CONFIRMED_PREFIX = "timeout not counted as a kill: the gremlin's tes
 """Start of the ``error_output`` of a timeout that was downgraded to ERROR."""
 
 
+def scaled_limit_note(attempt_timeout: int | None, scaled_timeout: int) -> str:
+    """Return the ``(Ns per attempt, ...)`` aside for a limit that rerun scaling widened, else an empty string."""
+    if attempt_timeout is None or attempt_timeout == scaled_timeout:
+        return ''
+    return f' ({attempt_timeout}s per attempt, scaled for the pytest-rerunfailures budget)'
+
+
 class GremlinResultStatus(Enum):
     """Status of a gremlin after mutation testing.
 

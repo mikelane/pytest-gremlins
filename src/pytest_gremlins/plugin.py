@@ -121,6 +121,7 @@ from pytest_gremlins.reporting.results import (
     TIMEOUT_NOT_CONFIRMED_PREFIX,
     GremlinResult,
     GremlinResultStatus,
+    scaled_limit_note,
 )
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.rerun_options import (
@@ -2339,7 +2340,7 @@ def _timeout_not_confirmed_message(
     if hidden_count > 0:
         shown_ids += f' (and {hidden_count} more)'
     headroom_percent = f'{TIMEOUT_CONFIRMATION_HEADROOM:.0%}'
-    scaled_note = _scaled_limit_note(attempt_timeout, mutant_timeout)
+    scaled_note = scaled_limit_note(attempt_timeout, mutant_timeout)
     unmutated_run_summary = (
         f'did not finish in {mutant_timeout}s{scaled_note}'
         if unmutated_outcome.timed_out
@@ -2586,16 +2587,9 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     return relative_node_ids
 
 
-def _scaled_limit_note(attempt_timeout: int | None, scaled_timeout: int) -> str:
-    """Return the ``(Ns per attempt, ...)`` aside for a limit that rerun scaling widened, else an empty string."""
-    if attempt_timeout is None or attempt_timeout == scaled_timeout:
-        return ''
-    return f' ({attempt_timeout}s per attempt, scaled for the pytest-rerunfailures budget)'
-
-
 def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> None:
     """Warn that the pre-scan timed out, which is a different cause from "no data" (issues #503, #673)."""
-    scaled_note = _scaled_limit_note(attempt_timeout, seconds)
+    scaled_note = scaled_limit_note(attempt_timeout, seconds)
     raised_limit = 'the per-attempt limit' if scaled_note else 'it'
     warnings.warn(
         f'pytest-gremlins: coverage pre-scan exceeded {seconds}s{scaled_note}; '
@@ -4379,7 +4373,11 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
         _write_empty_run_report(terminalreporter, gremlin_session)
         return
 
-    score = MutationScore.from_results(gremlin_session.results, mutant_timeout=gremlin_session.mutant_timeout)
+    score = MutationScore.from_results(
+        gremlin_session.results,
+        mutant_timeout=gremlin_session.mutant_timeout,
+        mutant_attempt_timeout=gremlin_session.mutant_attempt_timeout,
+    )
 
     # Write file-based reports as requested
     rootdir = _get_rootdir(config)
