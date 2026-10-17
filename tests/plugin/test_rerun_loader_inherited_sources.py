@@ -116,6 +116,63 @@ class DescribeAutoloadDisabledByAFlagThatGremlinRunsInherit:
 
 
 @pytest.mark.medium
+class DescribeInheritedFlagsKeptInAnArgumentFile:
+    """pytest expands ``@file`` in ``addopts`` and ``PYTEST_ADDOPTS``, relative to the directory it was run from.
+
+    A flag or loader inside such a file reaches gremlin runs just like a bare one, so it must count.
+    """
+
+    def it_reruns_when_ini_addopts_names_an_argument_file_that_disables_autoload(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester = pytester_with_markers
+        _write_flaky_project(
+            pytester, '[pytest]\nreruns = 2\naddopts = @autoload.args -p pytest_cov.plugin -p gremlins\n'
+        )
+        pytester.makefile('.args', autoload='--disable-plugin-autoload\n')
+
+        result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '-p', 'pytest_rerunfailures')
+
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+    def it_reruns_when_pytest_addopts_names_an_argument_file_that_disables_autoload(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pytester = pytester_with_markers
+        monkeypatch.setenv('PYTEST_ADDOPTS', '@autoload.args -p pytest_cov.plugin -p gremlins')
+        _write_flaky_project(pytester, '[pytest]\nreruns = 2\n')
+        pytester.makefile('.args', autoload='--disable-plugin-autoload\n')
+
+        result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '-p', 'pytest_rerunfailures')
+
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+    def it_reruns_when_the_flag_sits_in_a_nested_argument_file(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester = pytester_with_markers
+        _write_flaky_project(pytester, '[pytest]\nreruns = 2\naddopts = @outer.args -p pytest_cov.plugin -p gremlins\n')
+        pytester.makefile('.args', outer='@inner.args\n', inner='--disable-plugin-autoload\n')
+
+        result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '-p', 'pytest_rerunfailures')
+
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+    def it_does_not_serve_a_verdict_cached_without_reruns_to_a_session_with_autoload_on(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester = pytester_with_markers
+        _write_flaky_project(
+            pytester, '[pytest]\nreruns = 2\naddopts = @autoload.args -p pytest_cov.plugin -p gremlins\n'
+        )
+        pytester.makefile('.args', autoload='--disable-plugin-autoload\n')
+        pytester.runpytest_subprocess(*GREMLIN_ARGS, '-p', 'pytest_rerunfailures', '--gremlin-cache')
+        pytester.makeini('[pytest]\nreruns = 2\n')
+
+        result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '--gremlin-cache')
+
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+
+@pytest.mark.medium
 class DescribeLoaderOnTheSessionCommandLine:
     def it_reruns_when_the_command_line_loads_the_plugin_by_entry_point_name(
         self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch

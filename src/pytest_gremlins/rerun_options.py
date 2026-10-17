@@ -85,7 +85,7 @@ def _argparse_file_decoding() -> tuple[str, str]:
     return sys.getfilesystemencoding(), sys.getfilesystemencodeerrors()
 
 
-def _expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read: tuple[Path, ...] = ()) -> list[str]:
+def expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read: tuple[Path, ...] = ()) -> list[str]:
     """Replace each ``@file`` argument with the lines of that file, the way pytest's parser does.
 
     A file is decoded the way the running Python's argparse decodes it: with the locale encoding, strictly,
@@ -109,7 +109,7 @@ def _expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read
             lines = argument_file.read_text(encoding=encoding, errors=errors).splitlines()
         except (OSError, UnicodeDecodeError):
             continue
-        expanded.extend(_expand_argument_files(lines, base_dir, (*files_being_read, argument_file)))
+        expanded.extend(expand_argument_files(lines, base_dir, (*files_being_read, argument_file)))
     return expanded
 
 
@@ -134,7 +134,7 @@ def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> li
         >>> rerun_options_in(['-p', 'pytest_rerunfailures', '--reruns', '2'])
         ['--reruns=2']
     """
-    expanded = _expand_argument_files(args, base_dir or Path())
+    expanded = expand_argument_files(args, base_dir or Path())
     options: list[str] = []
     index = 0
     while index < len(expanded):
