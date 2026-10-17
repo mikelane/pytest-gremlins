@@ -692,11 +692,19 @@ Path('mutation-score.json').write_text(simple_json)
 
 **Schema validity.** The full report validates against the official
 [mutation-testing-report-schema](https://github.com/stryker-mutator/mutation-testing-elements/tree/master/packages/report-schema).
-Each file entry carries its original `source`, read from disk when the report is built (an
-unreadable file exports an empty string, which the schema accepts). Mutant `location` positions
-are 1-based for both line and column, with a required `end`; the Python AST's 0-based byte columns
-are converted to character columns and shifted by one on export. A node without end information
-gets an `end` equal to its `start`.
+Each file entry carries its original `source`, read from disk when the report is built. The file is
+decoded the way pytest-gremlins decodes it for instrumentation: a UTF-8 byte-order mark is
+dropped and a PEP 263 `coding:` declaration is honoured. Line endings in the exported `source` are
+normalized to `\n`. A file that cannot be read exports an empty `source`, which the schema accepts;
+its mutant columns are then the AST's byte columns plus one, because there is no text to convert
+them against. Mutant `location` positions are 1-based for both line and column, with a required
+`end`; the Python AST's 0-based UTF-8 byte columns are converted to character columns and shifted by
+one on export. A node without end information gets an `end` equal to its `start`.
+
+!!! warning "Reports embed your source code"
+    Each file entry in a Stryker report contains the full text of the mutated file. Uploading the
+    report to the Stryker Dashboard, or sharing the JSON (for example as a CI artifact), shares that
+    source code. Do not publish it for private or proprietary repositories unless you intend to.
 
 #### Uploading to Stryker Dashboard
 
@@ -891,13 +899,14 @@ jobs:
   "files": {
     "src/auth.py": {
       "language": "python",
+      "source": "if age >= 18:\n    grant()\n",
       "mutants": [
         {
           "id": "g001",
           "mutatorName": "comparison",
           "location": {
-            "start": {"line": 42, "column": 8},
-            "end": {"line": 42, "column": 14}
+            "start": {"line": 1, "column": 4},
+            "end": {"line": 1, "column": 13}
           },
           "status": "Killed",
           "killedBy": ["test_auth.py::test_login"],
