@@ -76,6 +76,32 @@ class DescribeSkippedFileReport:
         assert list(report['skipped_files']) == [str(pytester.path / 'src/demo/chain.py')]
         assert 'RecursionError' in report['skipped_files'][str(pytester.path / 'src/demo/chain.py')]
 
+    def it_overwrites_stale_reports_when_every_target_is_skipped(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
+        _write_project(pytester, with_age=False)
+        report_dir = pytester.path / 'coverage/gremlins'
+        report_dir.mkdir(parents=True)
+        json_path = report_dir / 'gremlins.json'
+        html_path = report_dir / 'index.html'
+        json_path.write_text('{"summary": {"total": 5}}')
+        html_path.write_text('stale score')
+
+        result = run_pytest_isolated(
+            pytester, '--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json,html'
+        )
+
+        result.stdout.fnmatch_lines(['*1 file(s) skipped and not mutation tested*'])
+        report = json.loads(json_path.read_text())
+        assert report['summary']['total'] == 0
+        assert list(report['skipped_files']) == [str(pytester.path / 'src/demo/chain.py')]
+        assert 'RecursionError' in report['skipped_files'][str(pytester.path / 'src/demo/chain.py')]
+        html = html_path.read_text()
+        assert 'stale score' not in html
+        assert 'Files skipped and not mutation tested' in html
+        assert 'chain.py' in html
+        assert not (report_dir / 'history.json').exists()
+
     def it_records_skipped_files_in_html_when_other_files_mutate(
         self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
     ) -> None:
