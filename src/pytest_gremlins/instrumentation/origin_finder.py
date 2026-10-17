@@ -256,11 +256,14 @@ class GremlinLoader(importlib.abc.Loader):
         hook: Any = self._original_loader
         spec = module.__spec__
         origin: str = spec.origin  # type: ignore[union-attr, assignment]
+        origin_path = Path(origin)
+        specialized_tree = _specialize_asserts(tree)
+        # Only pytest's private API is inside the guard: an error in our own code must not read as a pytest change.
         try:
             from _pytest.assertion.rewrite import rewrite_asserts  # noqa: PLC0415
 
-            hook._rewritten_names[module.__name__] = Path(origin)
-            rewrite_asserts(_specialize_asserts(tree), source_bytes, origin, hook.config)
+            hook._rewritten_names[module.__name__] = origin_path
+            rewrite_asserts(specialized_tree, source_bytes, origin, hook.config)
         except (AttributeError, ImportError, TypeError) as error:
             _end_run_because_assert_rewriting_broke(error)
 
