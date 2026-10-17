@@ -6,6 +6,7 @@ Session-wide secret scrubbing (#649) is the real defense. Shapes the guard accep
 - aliases held on attributes (``self.env = os.environ``)
 - aliases bound by ``for`` targets, ``match`` or ``async with`` bodies
 - the environment passed into a call inside the assertion (``assert check(os.environ)``)
+- an alias formatted into the assert message (``assert ok, f'bad {env}'``)
 - ``os.environ | {...}``, ``os.environ.pop(...)`` and ``patch.dict(os.environ, ...) as env``
 - an alias reassigned inside a branch, which drops the alias for later asserts
 """
