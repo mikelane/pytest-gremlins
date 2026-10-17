@@ -39,11 +39,14 @@ def test_big():
 """
 
 
-def _session_with(*, loaded: tuple[str, ...] = ()) -> SimpleNamespace:
+def _session_with(
+    *, loaded: tuple[str, ...] = (), addopts: tuple[str, ...] = (), args: tuple[str, ...] = ()
+) -> SimpleNamespace:
     return SimpleNamespace(
         pluginmanager=SimpleNamespace(hasplugin=lambda name: name in loaded),
         option=SimpleNamespace(inifilename=None),
-        invocation_params=SimpleNamespace(args=(), dir=None),
+        invocation_params=SimpleNamespace(args=args, dir=None),
+        getini=lambda name: list(addopts) if name == 'addopts' else None,
     )
 
 
@@ -82,6 +85,59 @@ class DescribeRerunOptionsWhenAutoloadIsDisabled:
             monkeypatch.delenv(AUTOLOAD_ENV_VAR, raising=False)
         else:
             monkeypatch.setenv(AUTOLOAD_ENV_VAR, autoload_value)
+        config = _session_with(loaded=('rerunfailures',))
+
+        assert plugin._rerun_options_for(config) == []  # type: ignore[arg-type]
+
+
+@pytest.mark.small
+class DescribeTheLoaderNameForwardedToGremlinRuns:
+    """The loader repeats the name the session registered, so no gremlin run sees the module under two names."""
+
+    @pytest.mark.parametrize('registered_name', ['rerunfailures', 'pytest_rerunfailures'])
+    def it_forwards_the_loader_under_the_registered_name(
+        self, monkeypatch: pytest.MonkeyPatch, registered_name: str
+    ) -> None:
+        monkeypatch.setenv(AUTOLOAD_ENV_VAR, '1')
+        config = _session_with(loaded=(registered_name,))
+
+        assert plugin._rerun_options_for(config) == ['-p', registered_name]  # type: ignore[arg-type]
+
+
+@pytest.mark.small
+class DescribeRerunOptionsWhenGremlinRunsInheritTheAutoloadFlag:
+    """Gremlin runs get the project's ``addopts`` and ``PYTEST_ADDOPTS``, so a flag there disables their autoload."""
+
+    @pytest.fixture(autouse=True)
+    def _autoload_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv(AUTOLOAD_ENV_VAR, raising=False)
+        monkeypatch.delenv('PYTEST_ADDOPTS', raising=False)
+
+    def it_forwards_the_loader_when_ini_addopts_disables_autoload(self) -> None:
+        config = _session_with(loaded=('pytest_rerunfailures',), addopts=('-v', '--disable-plugin-autoload'))
+
+        assert plugin._rerun_options_for(config) == ['-p', 'pytest_rerunfailures']  # type: ignore[arg-type]
+
+    def it_forwards_the_loader_when_pytest_addopts_disables_autoload(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', "-p 'my plugin' --disable-plugin-autoload")
+        config = _session_with(loaded=('pytest_rerunfailures',))
+
+        assert plugin._rerun_options_for(config) == ['-p', 'pytest_rerunfailures']  # type: ignore[arg-type]
+
+    def it_forwards_no_loader_when_only_the_session_command_line_disables_autoload(self) -> None:
+        # The command line is not inherited, so gremlin runs autoload the plugin and would register it twice.
+        config = _session_with(loaded=('pytest_rerunfailures',), args=('--disable-plugin-autoload',))
+
+        assert plugin._rerun_options_for(config) == []  # type: ignore[arg-type]
+
+    def it_ignores_an_option_that_merely_contains_the_flag_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '--disable-plugin-autoload-not')
+        config = _session_with(loaded=('rerunfailures',), addopts=('--ignore=--disable-plugin-autoload',))
+
+        assert plugin._rerun_options_for(config) == []  # type: ignore[arg-type]
+
+    def it_tolerates_unparsable_pytest_addopts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '"unterminated')
         config = _session_with(loaded=('rerunfailures',))
 
         assert plugin._rerun_options_for(config) == []  # type: ignore[arg-type]

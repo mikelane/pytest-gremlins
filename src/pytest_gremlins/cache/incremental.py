@@ -73,7 +73,8 @@ pytest-rerunfailures, through a command-line ``-p no:rerunfailures`` or ``--disa
 the key said no reruns, the runs rerun.
 
 ``rf17`` retires verdicts cached while gremlin runs did not rerun in a session that loaded pytest-rerunfailures
-by a command-line ``-p`` with ``PYTEST_DISABLE_PLUGIN_AUTOLOAD`` set (#679); the key said reruns, the runs did not.
+by a command-line ``-p`` while autoload was disabled for them, by ``PYTEST_DISABLE_PLUGIN_AUTOLOAD`` or by
+``--disable-plugin-autoload`` in ``addopts`` or ``PYTEST_ADDOPTS`` (#679); the key said reruns, the runs did not.
 """
 
 

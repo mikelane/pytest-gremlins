@@ -69,6 +69,7 @@ def _session_with(*, loaded: tuple[str, ...] = ()) -> SimpleNamespace:
         pluginmanager=SimpleNamespace(hasplugin=lambda name: name in loaded),
         option=SimpleNamespace(inifilename=None),
         invocation_params=SimpleNamespace(args=(), dir=None),
+        getini=lambda name: [] if name == 'addopts' else None,
     )
 
 
