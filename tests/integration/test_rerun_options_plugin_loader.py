@@ -10,8 +10,9 @@ and pluggy refuses it: ``ValueError: Plugin already registered under a different
 command-line flag the gremlin subprocesses never see it.  Every gremlin run then fails before any test runs, and each
 mutant would be reported as zapped.
 
-With ``PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`` the baseline only knows ``--reruns`` because ``-p`` loaded the plugin; the
-plugin abstains there rather than guess (tracked in #654).
+With ``PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`` the baseline only knows ``--reruns`` because ``-p`` loaded the plugin, and
+gremlin runs inherit the variable, not the flag.  The plugin hands them ``-p pytest_rerunfailures`` so they rerun like
+the baseline (#679).
 """
 
 from __future__ import annotations
@@ -28,11 +29,10 @@ from rerun_samples import (
 
 @pytest.mark.medium
 class DescribeRerunfailuresLoadedWithPOnTheCommandLine:
-    def it_reports_every_gremlin_as_an_error_and_zaps_none_when_autoload_is_disabled(
+    def it_leaves_the_mutant_the_flaky_test_cannot_catch_alive_when_autoload_is_disabled(
         self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # A ``-p`` is not forwarded, so gremlin runs reject ``--reruns=2`` as unrecognized.  The plugin
-        # abstains: every gremlin is an error and none is falsely zapped.
+        # The loader is forwarded with ``--reruns=2``, so gremlin runs rerun the flaky test as the baseline does.
         monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
         pytester_with_markers.makeini('[pytest]\naddopts = -p pytest_gremlins.plugin -p pytest_cov\n')
         pytester_with_markers.makepyfile(sample=SAMPLE)
@@ -51,9 +51,8 @@ class DescribeRerunfailuresLoadedWithPOnTheCommandLine:
         )
 
         counts = verdicts(result.stdout.str())
-        assert counts['Error'] > 0
-        assert counts['Zapped'] == 0
-        assert counts['Survived'] == 0
+        assert counts['Error'] == 0
+        assert counts['Survived'] > 0
 
 
 @pytest.mark.medium
