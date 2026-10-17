@@ -175,7 +175,7 @@ Run with --gremlin-report=html for detailed report.
 |------|---------|
 | **Zapped** | Your tests caught these mutations - good! |
 | **Survived** | Your tests missed these mutations - these are test gaps |
-| **Mutation Score** | Percentage of gremlins zapped (higher is better) |
+| **Mutation Score** | `(zapped + timeout) / (total - pardoned)`, as a percentage (higher is better). The console doesn't print it; the `Zapped` percentage is `zapped / total`. The JSON report's `summary.percentage` holds the score. |
 
 In this example, two gremlins survived:
 

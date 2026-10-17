@@ -580,13 +580,20 @@ unmutated tests use more than half the limit, downgraded to an error. So when py
 gremlins scales the per-mutant timeout by the rerun budget of the session:
 
 ```text
-effective timeout = limit * (reruns + 1) + ceil(reruns * reruns_delay)
+effective timeout = limit * (reruns + 1) + ceil(total delay)
+total delay       = reruns_delay * (1 + factor + factor^2 + ... + factor^(reruns - 1))
 ```
+
+`factor` is `--reruns-delay-backoff-factor` (default 1.0), which pytest-rerunfailures uses to multiply the delay after
+each rerun. With the default factor the total delay is `reruns * reruns_delay`.
 
 `limit` is the configured per-mutant timeout (`--gremlin-mutant-timeout`, `[tool.pytest-gremlins].mutant_timeout`
 or the default of 30). It is the budget of one attempt, so it is scaled too, not treated as an absolute cap.
 For example, `--reruns 2 --reruns-delay 20` with the default limit gives `30 * 3 + 40 = 130` seconds. The result
-is capped at 86400 seconds, and a negative delay counts as 0. Nothing is scaled with `--reruns 0`, when no reruns
+is capped at 86400 seconds, and a negative delay counts as 0. With
+`--reruns 2 --reruns-delay 1 --reruns-delay-backoff-factor 3` the waits are 1 and 3 seconds, so the total delay is 4
+and the default limit gives `30 * 3 + 4 = 94` seconds. A negative factor counts as 1.0, as in pytest-rerunfailures.
+Nothing is scaled with `--reruns 0`, when no reruns
 are configured, or when pytest-rerunfailures is not loaded in the parent run.
 
 When pytest-rerunfailures is not loaded in the session (a command-line `-p no:rerunfailures`,
@@ -601,7 +608,8 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
 
 - The reruns and the delay are read the way pytest-rerunfailures reads them for a test with no marker:
   `--force-reruns` sets the count outright; otherwise `--reruns` wins over the `reruns` ini key, and
-  `--reruns-delay` wins over the `reruns_delay` ini key. An ini value that is not a number counts as unset.
+  `--reruns-delay` wins over the `reruns_delay` ini key, and `--reruns-delay-backoff-factor` wins over the
+  `reruns_delay_backoff_factor` ini key. An ini value that is not a number counts as unset.
   `addopts`, `PYTEST_ADDOPTS`, `@file` arguments and `-c` files are all covered, because they are read from
   the parsed session.
 - The scaled value is the timeout everywhere: the timeout warning, the `mutant_timeout` field of the JSON report
@@ -619,9 +627,8 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
 - `@pytest.mark.flaky(reruns=..., reruns_delay=...)` markers are not visible at session level and are not
   counted. A test whose marker sets a long delay can still exceed the timeout. If it does, raise
   `--gremlin-mutant-timeout` yourself.
-- The formula assumes a constant delay and one failing test. `--reruns-delay-backoff-factor` (which multiplies the
-  delay after each attempt), `--reruns-mode append` (which adds the global count to a marker's count) and a
-  selection with several failing tests, each rerun in turn, can need more time than the formula allows. A
+- The formula assumes one failing test. `--reruns-mode append` (which adds the global count to a marker's count)
+  and a selection with several failing tests, each rerun in turn, can need more time than the formula allows. A
   gremlin that runs out of time this way is still reported as a timeout and counted as a kill when its
   unmutated tests finish within half the effective timeout; it is never counted as a survivor. Raise
   `--gremlin-mutant-timeout` if you rely on these options. `--max-suite-reruns` and `--only-rerun` can only make
@@ -724,18 +731,18 @@ pytest --gremlins \
 ### GitHub Actions (Recommended)
 
 The [pytest-gremlins-action](https://github.com/marketplace/actions/pytest-gremlins)
-handles installation, parallel execution, caching, and score gating in a single step:
+installs pytest-gremlins, runs it, and gates the score with a ratchet file in a single step.
+Check out your code, set up Python and install your project before it:
 
 ```yaml
 - uses: mikelane/pytest-gremlins-action@v1
   with:
-    threshold: 80
     parallel: 'true'
-    cache: 'true'
+    ratchet-file: '.gremlins-score'
 ```
 
-See the [GitHub Action cookbook](../cookbook/github-action.md) for full configuration
-options, caching details, and advanced usage.
+See the [GitHub Action cookbook](../cookbook/github-action.md) for every input and output,
+how the ratchet works, and a known problem with the action's cache step.
 
 If you need a manual workflow instead (e.g., self-hosted runners without marketplace access):
 
@@ -784,8 +791,6 @@ mutation_testing:
     - pip install uv && uv sync
     - uv run pytest --gremlins --gremlin-cache --gremlin-parallel --gremlin-report=json
   artifacts:
-    reports:
-      junit: coverage/gremlins/gremlins.json
     paths:
       - coverage/gremlins/
 ```
@@ -879,13 +884,25 @@ This shows:
 
 ## Configuration Validation
 
-pytest-gremlins validates configuration at startup and reports errors:
+pytest-gremlins checks `[tool.pytest-gremlins]` and the `--gremlin-*` options at startup.
+Each kind of problem is handled differently:
 
-```text
-pytest-gremlins: Invalid configuration
-  - Unknown operator 'typo' in operators list
-  - Path 'nonexistent/' does not exist
-```
+- **A value of the wrong type or out of range** stops the run with a usage error and exit
+  code 4. For example, `cache = "yes"` prints:
+
+    ```text
+    ERROR: pytest-gremlins: [tool.pytest-gremlins].cache must be a boolean (e.g. cache = true), got 'yes'
+    ```
+
+- **An unknown operator name** in `operators` or `--gremlin-operators` is skipped with a
+  `UserWarning`, and the run goes on with the operators that do exist:
+
+    ```text
+    UserWarning: Unknown operator 'typo' requested, ignoring
+    ```
+
+- **A path in `paths` that doesn't exist** is dropped without a message. If no configured
+  path exists, no gremlins are found.
 
 Use the `--collect-only` flag to validate configuration without running tests:
 

@@ -1,26 +1,57 @@
 # GitHub Action
 
 The [`pytest-gremlins-action`](https://github.com/marketplace/actions/pytest-gremlins)
-is a composite GitHub Action that installs your project, runs mutation testing, and
-enforces a score threshold -- all in one step.
+is a composite GitHub Action that runs mutation testing, ratchets the mutation score so it
+can only go up, comments on pull requests, and builds a badge URL. This page describes
+`mikelane/pytest-gremlins-action@v1`.
+
+The action does not check out your code, set up Python, or install your project. Run
+`actions/checkout`, `actions/setup-python` and your own install step before it.
 
 ## What It Does
 
-1. Checks out your code and sets up Python
-2. Installs your project with the command you specify
-3. Runs `pytest --gremlins` with caching and optional parallelism
-4. Parses the "Zapped: N gremlins (X%)" line from pytest output
-5. Fails the step if the score is below your threshold
+1. Restores a cache (see [Caching](#caching) for a known problem)
+2. Runs `pip install "pytest-gremlins>=1.5.1"`, unless `skip-install` is `'true'`
+3. Runs `pytest --gremlins --gremlin-report=json`, plus flags built from the inputs
+   (`--gremlin-parallel`, `--gremlin-workers=N`, `--gremlin-cache`, `--gremlin-targets=...`
+   and `extra-args`), prefixed with `command-prefix` if you set one
+4. Reads the summary from `coverage/gremlins/gremlins.json`
+5. Compares `.summary.percentage` to the score stored in the ratchet file, and fails the
+   step if the score is lower (see [Score Ratchet](#score-ratchet))
+6. On `pull_request` events, posts or updates a PR comment with the results, if
+   `pr-comment` is `'true'`
+7. Builds a Shields.io badge URL for the score
 
 ## Action Inputs
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `threshold` | `80` | Minimum mutation score (%). The step fails if the score is below this value. |
-| `parallel` | `'true'` | Run mutation testing with `-n auto` (xdist parallel). |
-| `cache` | `'true'` | Enable incremental cache with `--gremlin-cache`. Uses `actions/cache` to persist `.gremlins_cache/` between runs. |
-| `python-version` | `'3.x'` | Python version for `actions/setup-python`. |
-| `install-command` | `'pip install -e ".[dev]"'` | Command to install the project and its dependencies. |
+| `python-version` | `'3.12'` | Declared, but no step of the action reads it. Use `actions/setup-python` to choose the Python version. |
+| `parallel` | `'true'` | Adds `--gremlin-parallel`. |
+| `workers` | `''` | Adds `--gremlin-workers=N`. Must be a positive integer. Empty means one worker per CPU core. |
+| `cache` | `'true'` | Adds `--gremlin-cache` and turns on the action's cache step. |
+| `targets` | `''` | Adds `--gremlin-targets=<value>` (comma-separated source paths to mutate). |
+| `extra-args` | `''` | Extra arguments appended to the pytest command, split on whitespace. |
+| `ratchet-file` | `'.gremlins-score'` | File that stores the score threshold for the ratchet. |
+| `command-prefix` | `''` | Command to put in front of `pytest`, for example `uv run`, `poetry run` or `pdm run`. |
+| `skip-install` | `'false'` | Set to `'true'` to skip `pip install pytest-gremlins` when your environment already provides it. |
+| `pr-comment` | `'true'` | Post the mutation report as a PR comment on `pull_request` events. |
+
+## Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `score` | Mutation score percentage (`.summary.percentage` from `gremlins.json`) |
+| `zapped` | Number of zapped gremlins |
+| `survived` | Number of surviving gremlins |
+| `timeout` | Number of gremlins caught by a timeout |
+| `total` | Total number of gremlins |
+| `pardoned` | Number of pardoned gremlins |
+| `passed` | `'true'` if the score is at or above the ratchet threshold |
+| `badge-url` | Shields.io badge URL for the score |
+
+If `gremlins.json` is missing, the action warns, reports every count as `0` and the score as
+`100`, and goes on.
 
 ## Basic Usage
 
@@ -29,86 +60,116 @@ name: Mutation Testing
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches: [main]   # not pull_request: see "Known Problem: Pull Request Runs" below
 
 jobs:
   gremlins:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # the ratchet commits .gremlins-score
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mikelane/pytest-gremlins-action@v1
+      - uses: actions/setup-python@v5
         with:
-          threshold: 80
-          parallel: 'true'
-          cache: 'true'
+          python-version: '3.12'
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      - uses: mikelane/pytest-gremlins-action@v1
+        id: gremlins
+
+      - name: Show score
+        run: echo "Mutation score: ${{ steps.gremlins.outputs.score }}%"
 ```
 
 ## Full Usage (All Inputs)
 
 ```yaml
-name: Mutation Testing
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-jobs:
-  gremlins:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
       - uses: mikelane/pytest-gremlins-action@v1
         with:
-          threshold: 85
           parallel: 'true'
+          workers: '4'
           cache: 'true'
-          python-version: '3.12'
-          install-command: 'pip install -e ".[dev]"'
+          targets: 'src/my_package'
+          extra-args: '--gremlin-operators=comparison,boundary'
+          ratchet-file: '.gremlins-score'
+          command-prefix: ''
+          skip-install: 'false'
+          pr-comment: 'true'
 ```
 
-## How Caching Works
+## Score Ratchet
 
-When `cache: 'true'` (the default), the action uses `actions/cache` to persist the
-`.gremlins_cache/` directory between workflow runs. The cache key is based on
-`hashFiles` over your source files, test files, and `pyproject.toml`. A `restore-keys`
-prefix fallback ensures that changing one file still gets a warm partial cache from
-the previous run.
+The action reads `.summary.percentage` from `coverage/gremlins/gremlins.json`. That value
+is the mutation score, `(zapped + timeout) / (total - pardoned) * 100`; see
+[Understanding Mutation Score](../guide/reports.md#understanding-mutation-score). It is not
+the `Zapped: N gremlins (X%)` percentage on the console, which is `zapped / total`.
 
-The cache is saved with `if: always()` so that a failing score gate does not discard
-the warm cache. The next run only re-tests gremlins in the files you changed.
+The threshold comes from the file named by `ratchet-file`:
 
-For details on how the two-layer cache works, see
-[CI/CD Integration](ci-integration.md#how-caching-works-in-ci).
+- If the file doesn't exist, the threshold is `0`.
+- If the score is below the threshold, the step fails with
+  `Mutation score <score>% is below ratchet threshold <threshold>%`.
+- If the score is above the threshold, the action writes the new score to the file, commits
+  it as `github-actions[bot]` with the message `chore: update mutation score to <score>%`,
+  and runs `git push origin HEAD`. The job needs `contents: write` for that push.
+- If the score equals the threshold, nothing changes.
 
-## Score Gate
+There is no input for a fixed threshold. To start from a minimum score, commit a ratchet file
+that holds it, for example a `.gremlins-score` file containing `80`.
 
-The action parses pytest's summary output for the line:
+pytest-gremlins itself doesn't fail the run because gremlins survived. The ratchet is the
+only score gate.
 
-```text
-Zapped: 142 gremlins (85%)
-```
+### Known Problem: Pull Request Runs
 
-It extracts the percentage and compares it to your `threshold` input. If the score
-is below the threshold, the step exits with code 1 and the workflow fails.
+The ratchet push fails on `pull_request` runs. On `pull_request` events, `actions/checkout`
+checks out the PR's merge commit as a detached HEAD. When the score goes up,
+`git push origin HEAD` is then rejected because `HEAD` isn't a branch, and the step fails. On a
+first run there is no ratchet file, the threshold is `0`, and any score above 0 counts as an
+improvement, so the first PR run fails. This is tracked in
+[pytest-gremlins-action#21](https://github.com/mikelane/pytest-gremlins-action/issues/21).
+
+On `push` events, `actions/checkout` checks out the branch, so the push works there. Until the
+action is fixed, run it on `push` to your main branch, as [Basic Usage](#basic-usage) does, so
+the ratchet file is created and updated there. If you also run it on `pull_request`, the step
+passes only when the PR's score equals the committed threshold: a lower score fails the gate,
+and a higher one fails at the push.
+
+## Caching
+
+With `cache: 'true'`, the action passes `--gremlin-cache` and runs `actions/cache@v4` on the
+path `.gremlin-cache.db`, keyed on `hashFiles('src/**/*.py', 'tests/**/*.py')`. pytest-gremlins
+writes its cache to `.gremlins_cache/`, not `.gremlin-cache.db`, so that step saves nothing and
+every run starts cold. This is tracked in
+[pytest-gremlins-action#20](https://github.com/mikelane/pytest-gremlins-action/issues/20).
+
+Until that is fixed, the action's cache step doesn't help. To keep the cache between runs,
+use the manual workflow in [CI/CD Integration](ci-integration.md#how-caching-works-in-ci),
+which restores and saves `.gremlins_cache/` itself.
+
+## PR Comment
+
+On `pull_request` events with `pr-comment: 'true'`, the action posts a comment headed
+**Mutation Testing Report**. It shows the score, the ratchet threshold, a count table and up
+to 20 surviving gremlins. Later runs update the same comment instead of adding a new one. The
+job needs `pull-requests: write`.
+
+The comment step runs after the ratchet step. When the ratchet step fails on a `pull_request`
+run (see [Known Problem: Pull Request Runs](#known-problem-pull-request-runs)), the comment
+isn't posted.
 
 ## Combining with Other Steps
 
-Upload the HTML report as an artifact so reviewers can browse it:
+The action asks only for the JSON report. To get the HTML report too, add it with
+`extra-args` and upload the directory as an artifact:
 
 ```yaml
-jobs:
-  gremlins:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
       - uses: mikelane/pytest-gremlins-action@v1
         with:
-          threshold: 80
+          extra-args: '--gremlin-report=html'
 
       - name: Upload mutation report
         uses: actions/upload-artifact@v4
@@ -121,15 +182,23 @@ jobs:
 
 ## Using with uv
 
-If your project uses [uv](https://github.com/astral-sh/uv) instead of pip, override
-the install command:
+If your project uses [uv](https://github.com/astral-sh/uv), install it, sync your project
+(with pytest-gremlins in its dev dependencies), and run pytest through `uv run`:
 
 ```yaml
-- uses: mikelane/pytest-gremlins-action@v1
-  with:
-    install-command: 'pip install uv && uv sync'
-    threshold: 80
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Install project
+        run: uv sync
+
+      - uses: mikelane/pytest-gremlins-action@v1
+        with:
+          command-prefix: 'uv run'
+          skip-install: 'true'
 ```
+
+`skip-install: 'true'` stops the action from running `pip install` outside your uv
+environment.
 
 ## Manual Workflow Alternative
 

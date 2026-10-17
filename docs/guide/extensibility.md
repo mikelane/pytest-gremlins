@@ -12,6 +12,10 @@ The built-in operators cover common mutation patterns, but your domain may have 
 - **Data validation**: Remove required field checks, alter regex patterns
 
 Custom operators let you catch bugs specific to your codebase that generic operators miss.
+Today a custom operator can only mutate six kinds of node (comparisons, binary and boolean
+operations, unary operations, literals and `return` statements), so ideas that change method
+calls, like the Django ORM swaps above, don't work yet. See
+[Which Nodes an Operator Is Offered](#which-nodes-an-operator-is-offered).
 
 ## Prerequisites
 
@@ -59,8 +63,30 @@ class GremlinOperator(Protocol):
 | -------------- | ------------------------------------------------------------------------------- |
 | `name`         | Unique string identifier used in configuration and reports                      |
 | `description`  | Shown in reports and `--help` output                                            |
-| `can_mutate()` | Fast check - called for every AST node, return `True` only for nodes you handle |
+| `can_mutate()` | Fast check - called for every node of an offered type (see below), return `True` only for nodes you handle |
 | `mutate()`     | Generate mutation variants - called only when `can_mutate()` returns `True`     |
+
+### Which Nodes an Operator Is Offered
+
+pytest-gremlins doesn't pass every AST node to your operator. The instrumentation step calls
+`can_mutate()` only for these six node types:
+
+| Node type | Python code it covers |
+|-----------|-----------------------|
+| `ast.Compare` | Comparisons: `a < b`, `x == y`, `k in d` |
+| `ast.BinOp` | Binary operations: `a + b`, `a * b` |
+| `ast.BoolOp` | `and` / `or` |
+| `ast.UnaryOp` | `not x`, `-x` |
+| `ast.Constant` | Literals: `'text'`, `42`, `True` |
+| `ast.Return` | `return` statements |
+
+An operator that matches any other node type, such as `ast.Call`, `ast.Attribute` or
+`ast.Subscript`, never produces a gremlin. Its `can_mutate()` is never called for those nodes,
+and a run reports no gremlins for it. Supporting more node types needs a code change, tracked in
+[#698](https://github.com/mikelane/pytest-gremlins/issues/698).
+
+For the five expression types, `mutate()` must return expression nodes. For `ast.Return`, it
+must return `ast.Return` statements.
 
 ## Creating Your First Operator
 
@@ -213,64 +239,41 @@ class TestStringEmptyOperatorMutate:
 
 Once your operator is implemented and tested, register it so pytest-gremlins can discover it.
 
-### Method 1: Entry Points (Planned for Packages)
+`pytest --gremlins` reads its operators from a single registry, the one returned by
+`get_default_registry()`, when the plugin starts. Register your operator on that registry, at
+import time, in the `conftest.py` at your project root. A registry you create yourself with
+`OperatorRegistry()` is a separate object that a run never reads, so registering on it has no
+effect.
 
-<!-- TODO: verify entry point discovery is implemented — as of v1.5.0,
-     no entry_points loading code exists in the plugin -->
-
-!!! warning "Not yet implemented"
-    Entry point discovery is planned but not yet available. Use direct registration
-    (Method 2) or decorator registration (Method 3) for now.
-
-If you're distributing your operator as a package, the planned approach uses Python entry points:
-
-```toml
-# pyproject.toml
-[project.entry-points."pytest_gremlins.operators"]
-my_operators = "my_package.operators:register_operators"
-```
+### Method 1: Direct Registration (Recommended)
 
 ```python
-# my_package/operators/__init__.py
-from pytest_gremlins.operators import OperatorRegistry
-
-from .string_empty import StringEmptyOperator
-
-
-def register_operators() -> None:
-    """Register custom operators with pytest-gremlins."""
-    registry = OperatorRegistry()
-    registry.register(StringEmptyOperator)
-```
-
-### Method 2: Direct Registration (Recommended)
-
-For operators used only in your project, register them in `conftest.py`:
-
-```python
-# conftest.py
-from pytest_gremlins.operators import OperatorRegistry
+# conftest.py (at the project root)
+from pytest_gremlins.instrumentation.transformer import get_default_registry
 
 from my_operators import StringEmptyOperator
 
-
-def pytest_configure(config):
-    """Register custom operators."""
-    registry = OperatorRegistry()
-    registry.register(StringEmptyOperator)
+get_default_registry().register(StringEmptyOperator)
 ```
 
-### Method 3: Decorator Registration
+Run `pytest --gremlins` as usual. The custom operator runs with the built-in operators, and its
+gremlins appear in the reports under its name (`string-empty`). The name also works in the
+`operators` list and in `--gremlin-operators`:
 
-The registry also supports a decorator pattern:
+```bash
+pytest --gremlins --gremlin-operators=string-empty
+```
+
+### Method 2: Decorator Registration
+
+The default registry also supports a decorator:
 
 ```python
-from pytest_gremlins.operators import OperatorRegistry
+# conftest.py (at the project root)
+from pytest_gremlins.instrumentation.transformer import get_default_registry
 
-registry = OperatorRegistry()
 
-
-@registry.register_decorator('my-operator')
+@get_default_registry().register_decorator('my-operator')
 class MyOperator:
     """Custom operator registered via decorator."""
 
@@ -280,6 +283,14 @@ class MyOperator:
 
     # ... rest of implementation
 ```
+
+### Entry Points (Not Implemented)
+
+!!! warning "Not yet implemented"
+    pytest-gremlins doesn't load operators from entry points. A
+    `[project.entry-points."pytest_gremlins.operators"]` table in a package's `pyproject.toml`
+    has no effect. To use an operator from a package, import it in your project's root
+    `conftest.py` and register it as in Method 1.
 
 ## AST Manipulation Patterns
 
@@ -314,6 +325,11 @@ def mutate(self, node: ast.AST) -> list[ast.AST]:
 ```
 
 ### Pattern 3: Function Call Modification
+
+!!! warning "Doesn't work yet"
+    This pattern and Pattern 4 match `ast.Call`, which pytest-gremlins doesn't offer to custom
+    operators (see [Which Nodes an Operator Is Offered](#which-nodes-an-operator-is-offered)
+    and [#698](https://github.com/mikelane/pytest-gremlins/issues/698)).
 
 Swap method names or arguments:
 
@@ -369,12 +385,13 @@ def mutate(self, node: ast.AST) -> list[ast.AST]:
 
 ### Keep can_mutate() Fast
 
-`can_mutate()` is called for every AST node in the codebase. Keep it simple:
+`can_mutate()` is called for every offered node (every comparison, operation, literal and
+`return`) in the code under test. Keep it simple:
 
 ```python
 # Good: Fast type check first
 def can_mutate(self, node: ast.AST) -> bool:
-    if not isinstance(node, ast.Call):
+    if not isinstance(node, ast.Constant):
         return False
     # More expensive checks after type check passes
     return self._is_target_function(node)
@@ -449,7 +466,13 @@ class MyOperator:
 
 ## Complete Example: Django QuerySet Operator
 
-Here's a complete, production-ready example for Django ORM mutations:
+!!! warning "Doesn't produce gremlins yet"
+    This operator matches `ast.Call` nodes, which pytest-gremlins doesn't offer to custom
+    operators today, so a run with it reports no gremlins. It is kept as a design example until
+    [#698](https://github.com/mikelane/pytest-gremlins/issues/698) lands. For an operator that
+    works now, see [Creating Your First Operator](#creating-your-first-operator).
+
+Here's a complete example for Django ORM mutations:
 
 ```python
 """Django QuerySet mutation operator.
@@ -541,19 +564,16 @@ class DjangoQuerySetOperator:
 
 ### Registration for the Django Example
 
-Register your custom operator in `conftest.py`:
+Register your custom operator on the default registry, at import time, in the `conftest.py` at
+your project root (see [Registration](#registration)):
 
 ```python
-# conftest.py
-from pytest_gremlins.operators import OperatorRegistry
+# conftest.py (at the project root)
+from pytest_gremlins.instrumentation.transformer import get_default_registry
 
 from my_django_operators.queryset import DjangoQuerySetOperator
 
-
-def pytest_configure(config):
-    """Register Django-specific operators."""
-    registry = OperatorRegistry()
-    registry.register(DjangoQuerySetOperator)
+get_default_registry().register(DjangoQuerySetOperator)
 ```
 
 ### Using the Django Operator
@@ -650,9 +670,15 @@ def get_users():
 
 ### My Operator Isn't Being Discovered
 
-1. Verify your `conftest.py` `pytest_configure` hook calls `registry.register()`
-2. Check that the conftest is in a directory pytest scans (project root or test dir)
-3. Add a `print(registry.available())` call to your `pytest_configure` to confirm registration
+If `--gremlin-operators=<name>` gives `UserWarning: Unknown operator '<name>' requested, ignoring`,
+the run's registry doesn't have your operator:
+
+1. Register on `get_default_registry()` from `pytest_gremlins.instrumentation.transformer`. An
+   operator registered on a registry you made with `OperatorRegistry()` never reaches a run.
+2. Register at import time in the `conftest.py` at your project root, not inside a function that
+   might run after pytest-gremlins has read the registry.
+3. Add `print(get_default_registry().available())` after the `register()` call to confirm your
+   operator's name is listed.
 
 ### Mutations Aren't Being Generated
 
