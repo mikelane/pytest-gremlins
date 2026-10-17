@@ -44,9 +44,8 @@ def _child_environment() -> dict[str, str]:
     The environment stays small so pytest's truncated ``-l`` repr of it would still show the secret if
     the scrub broke. It keeps ``SYSTEMROOT``, which a Python child needs to start on Windows.
     """
-    environment = {name: os.environ[name] for name in _CHILD_PLATFORM_VARIABLES if name in os.environ}
-    environment['PYTHONIOENCODING'] = 'utf-8'
-    environment['FAKE_SECRET_TOKEN'] = _FAKE_SECRET_VALUE
+    environment = {'FAKE_SECRET_TOKEN': _FAKE_SECRET_VALUE, 'PYTHONIOENCODING': 'utf-8'}
+    environment.update({name: os.environ[name] for name in _CHILD_PLATFORM_VARIABLES if name in os.environ})
     return environment
 
 
@@ -155,7 +154,7 @@ class DescribeSessionScrub:
         (tmp_path / 'conftest.py').write_text(_TESTS_CONFTEST.read_text(encoding='utf-8'), encoding='utf-8')
         (tmp_path / 'test_env.py').write_text(_FAILING_ENV_TEST, encoding='utf-8')
         result = subprocess.run(
-            [sys.executable, '-P', '-m', 'pytest', '-v', '-l', '-p', 'no:cacheprovider', str(tmp_path)],
+            [sys.executable, '-P', '-m', 'pytest', '-vv', '-l', '-p', 'no:cacheprovider', str(tmp_path)],
             capture_output=True,
             encoding='utf-8',
             errors='replace',
