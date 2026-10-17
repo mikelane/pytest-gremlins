@@ -276,6 +276,8 @@ class GremlinSession:
             shared by many gremlins is checked once.
         unmutated_timeout_checks: Memo of unmutated timed runs keyed by the ordered node ids, so a
             selection shared by many timed-out gremlins is run once (issue #565).
+        pytest_cov_loaded: Whether pytest-cov is registered in the parent session, used to
+            preserve its CLI flag when starting a gremlin subprocess.
         xdist_item_ids: Test node IDs captured from the first xdist worker after
             collection finishes.  ``None`` until the hook fires; ``[]`` if the
             worker collected nothing.
@@ -340,6 +342,7 @@ class GremlinSession:
     unmutated_timeout_checks: dict[tuple[str, ...], UnmutatedRunOutcome] = field(default_factory=dict)
     xdist_active: bool = False
     xdist_loaded: bool = False
+    pytest_cov_loaded: bool = False
     xdist_workers: int | None = None
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
     private_coverage: coverage.Coverage | None = None
@@ -1076,6 +1079,9 @@ def pytest_configure(config: pytest.Config) -> None:
             explain_gremlin_id=getattr(config.option, 'gremlin_explain', None),
             xdist_active=xdist_active,
             xdist_loaded=config.pluginmanager.hasplugin('xdist'),
+            pytest_cov_loaded=bool(
+                config.pluginmanager.hasplugin('pytest_cov') or config.pluginmanager.hasplugin('_cov')
+            ),
             xdist_workers=xdist_worker_int if xdist_active else None,
             preserved_addopts=_addopts_without_cov(config.getini('addopts')),
             rerun_options=_rerun_options_for(config),
@@ -2180,6 +2186,7 @@ def _unmutated_command_and_env(gremlin_session: GremlinSession, rootdir: Path) -
         instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        pytest_cov_loaded=gremlin_session.pytest_cov_loaded,
         rerun_options=gremlin_session.rerun_options,
     )
     env = env_without_xdist_addopts(os.environ)
@@ -3194,6 +3201,7 @@ def _run_batch_mutation_testing(  # pragma: no cover
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        pytest_cov_loaded=gremlin_session.pytest_cov_loaded,
         rerun_options=gremlin_session.rerun_options,
     )
     gremlins = gremlin_session.gremlins
@@ -3312,6 +3320,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        pytest_cov_loaded=gremlin_session.pytest_cov_loaded,
         rerun_options=gremlin_session.rerun_options,
     )
     gremlins = gremlin_session.gremlins
@@ -3649,6 +3658,7 @@ def _run_mutation_testing(
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        pytest_cov_loaded=gremlin_session.pytest_cov_loaded,
         rerun_options=gremlin_session.rerun_options,
     )
 
@@ -4050,29 +4060,12 @@ def _build_filtered_test_command(
     )
 
 
-def _pytest_cov_available() -> bool:
-    """Check if pytest-cov is available in the current environment.
-
-    The check runs in the parent process (where gremlins is running),
-    not the subprocess.  This is correct because gremlins and the target
-    project share the same venv.
-
-    Returns:
-        True when ``pytest-cov`` is importable, False otherwise.
-    """
-    try:
-        import pytest_cov  # type: ignore  # noqa: F401, PLC0415
-    except ImportError:
-        return False
-    else:
-        return True
-
-
 def _build_test_command(
     instrumented_dir: Path | None,
     preserved_addopts: str = '',
     *,
     xdist_loaded: bool = False,
+    pytest_cov_loaded: bool = False,
     rerun_options: Sequence[str] = (),
 ) -> list[str]:
     """Build the command to run tests.
@@ -4081,9 +4074,8 @@ def _build_test_command(
     to register import hooks before running pytest. Otherwise, runs
     pytest directly.
 
-    ``--no-cov`` is only appended when ``pytest-cov`` is installed so
-    that projects without the plugin do not receive an unknown CLI flag
-    (which causes pytest exit-code 4).
+    ``--no-cov`` is appended only when pytest-cov is loaded in the parent
+    session, so subprocesses with plugin autoload disabled do not reject it.
 
     Args:
         instrumented_dir: Directory containing bootstrap infrastructure, or None.
@@ -4099,6 +4091,7 @@ def _build_test_command(
             token stripper does not recognise) can distribute the run.  xdist itself stays
             loaded, so ``worker_id`` still works.  Without xdist the flag would be rejected as
             unrecognized, so it is omitted.
+        pytest_cov_loaded: Whether pytest-cov is registered in the main session.
         rerun_options: pytest-rerunfailures options typed on the command line (see
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended last so they win over
             ``addopts`` as they do in the baseline run.  A flaky test then has to fail on every
@@ -4131,7 +4124,9 @@ def _build_test_command(
             f'addopts={gremlin_addopts}',
         ]
 
-    if _pytest_cov_available():
+    if pytest_cov_loaded:
+        if os.environ.get('PYTEST_DISABLE_PLUGIN_AUTOLOAD'):
+            command.extend(['-p', 'pytest_cov'])
         command.append('--no-cov')
 
     if xdist_loaded:

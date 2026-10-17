@@ -34,7 +34,6 @@ from pytest_gremlins.plugin import (
     _is_xdist_worker,
     _make_node_ids_relative,
     _parse_cli_report_formats,
-    _pytest_cov_available,
     _read_parallel_config,
     _select_tests_for_gremlin_prioritized,
     _should_include_file,
@@ -364,17 +363,32 @@ class DescribeBuildTestCommand:
         assert 'addopts=' in result
 
     def it_includes_no_cov_when_pytest_cov_is_available(self) -> None:
-        """When pytest-cov is importable, --no-cov is appended."""
-        with patch('pytest_gremlins.plugin._pytest_cov_available', return_value=True):
-            result = _build_test_command(None)
+        """When pytest-cov is loaded, --no-cov is appended."""
+        result = _build_test_command(None, pytest_cov_loaded=True)
 
         assert '--no-cov' in result
 
     def it_omits_no_cov_when_pytest_cov_is_unavailable(self) -> None:
-        """When pytest-cov is not importable, --no-cov is omitted."""
-        with patch('pytest_gremlins.plugin._pytest_cov_available', return_value=False):
-            result = _build_test_command(None)
+        """When pytest-cov is not loaded, --no-cov is omitted."""
+        result = _build_test_command(None)
 
+        assert '--no-cov' not in result
+
+    def it_explicitly_loads_cov_when_autoload_is_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A loaded parent plugin must also register its flag in the child."""
+        monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
+
+        result = _build_test_command(None, pytest_cov_loaded=True)
+
+        assert result[-3:] == ['-p', 'pytest_cov', '--no-cov']
+
+    def it_does_not_load_cov_when_parent_lacks_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The child's disabled autoload must not become an implicit opt-in."""
+        monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
+
+        result = _build_test_command(None)
+
+        assert 'pytest_cov' not in result
         assert '--no-cov' not in result
 
 
@@ -404,55 +418,22 @@ class DescribeBuildTestCommandFileIO:
         assert 'addopts=' in result
 
     def it_includes_no_cov_when_pytest_cov_is_available_with_instrumented_dir(self, tmp_path: Path) -> None:
-        """When pytest-cov is importable with instrumented_dir, --no-cov is appended."""
+        """When pytest-cov is loaded with instrumented_dir, --no-cov is appended."""
         instrumented_dir = tmp_path / 'instrumented'
         instrumented_dir.mkdir()
 
-        with patch('pytest_gremlins.plugin._pytest_cov_available', return_value=True):
-            result = _build_test_command(instrumented_dir)
+        result = _build_test_command(instrumented_dir, pytest_cov_loaded=True)
 
         assert '--no-cov' in result
 
     def it_omits_no_cov_when_pytest_cov_is_unavailable_with_instrumented_dir(self, tmp_path: Path) -> None:
-        """When pytest-cov is not importable with instrumented_dir, --no-cov is omitted."""
+        """When pytest-cov is not loaded with instrumented_dir, --no-cov is omitted."""
         instrumented_dir = tmp_path / 'instrumented'
         instrumented_dir.mkdir()
 
-        with patch('pytest_gremlins.plugin._pytest_cov_available', return_value=False):
-            result = _build_test_command(instrumented_dir)
+        result = _build_test_command(instrumented_dir)
 
         assert '--no-cov' not in result
-
-
-@pytest.mark.small
-class DescribePytestCovAvailable:
-    """Tests for _pytest_cov_available helper.
-
-    Both True and False branches are tested so a hardcoded return value fails.
-    """
-
-    def it_returns_true_when_pytest_cov_is_importable(self) -> None:
-        """Returns True when pytest_cov can be imported."""
-        result = _pytest_cov_available()
-
-        # In our dev environment, pytest-cov is installed
-        assert result is True
-
-    def it_returns_false_when_pytest_cov_import_fails(self) -> None:
-        """Returns False when pytest_cov import raises ImportError."""
-        import builtins  # noqa: PLC0415
-
-        original_import = builtins.__import__
-
-        def mock_import(name: str, *args: object, **kwargs: object) -> object:
-            if name == 'pytest_cov':
-                raise ImportError('No module named pytest_cov')
-            return original_import(name, *args, **kwargs)
-
-        with patch('builtins.__import__', side_effect=mock_import):
-            result = _pytest_cov_available()
-
-        assert result is False
 
 
 @pytest.mark.small
