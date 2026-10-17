@@ -403,6 +403,7 @@ commands:
     description: Save mutation testing cache
     steps:
       - save_cache:
+          when: always   # Save even if the mutation step fails
           key: gremlin-v1-{{ checksum "/tmp/gremlins-sources.txt" }}
           paths:
             - .gremlins_cache
@@ -485,11 +486,11 @@ workflows:
             - test
 ```
 
-Note: CircleCI does not have a `when: always` equivalent on `save_cache`. The cache is saved
-after the final step in the job. If the mutation step exits non-zero (for example, an exceeded
-pardon limit), CircleCI
-marks the job failed but still executes subsequent steps — so `save-gremlin-cache` runs regardless.
-Ensure the cache save step comes after the mutation run step, not before.
+Note: by default, CircleCI runs no further steps in a job after a step fails. If the mutation
+step exits non-zero (for example, an exceeded pardon limit), a plain `save_cache` step after it
+is skipped and the next run starts cold. The `save_cache` step above sets `when: always`, which
+makes it run whether or not earlier steps succeeded. Keep the cache save step after the mutation
+run step, not before.
 
 Add to `pyproject.toml`:
 

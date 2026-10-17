@@ -60,15 +60,13 @@ name: Mutation Testing
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches: [main]   # not pull_request: see "Known Problem: Pull Request Runs" below
 
 jobs:
   gremlins:
     runs-on: ubuntu-latest
     permissions:
-      contents: write        # the ratchet commits .gremlins-score
-      pull-requests: write   # the PR comment
+      contents: write   # the ratchet commits .gremlins-score
     steps:
       - uses: actions/checkout@v4
 
@@ -125,6 +123,21 @@ that holds it, for example a `.gremlins-score` file containing `80`.
 pytest-gremlins itself doesn't fail the run because gremlins survived. The ratchet is the
 only score gate.
 
+### Known Problem: Pull Request Runs
+
+The ratchet push fails on `pull_request` runs. On `pull_request` events, `actions/checkout`
+checks out the PR's merge commit as a detached HEAD. When the score goes up,
+`git push origin HEAD` is then rejected because `HEAD` isn't a branch, and the step fails. On a
+first run there is no ratchet file, the threshold is `0`, and any score above 0 counts as an
+improvement, so the first PR run fails. This is tracked in
+[pytest-gremlins-action#21](https://github.com/mikelane/pytest-gremlins-action/issues/21).
+
+On `push` events, `actions/checkout` checks out the branch, so the push works there. Until the
+action is fixed, run it on `push` to your main branch, as [Basic Usage](#basic-usage) does, so
+the ratchet file is created and updated there. If you also run it on `pull_request`, the step
+passes only when the PR's score equals the committed threshold: a lower score fails the gate,
+and a higher one fails at the push.
+
 ## Caching
 
 With `cache: 'true'`, the action passes `--gremlin-cache` and runs `actions/cache@v4` on the
@@ -143,6 +156,10 @@ On `pull_request` events with `pr-comment: 'true'`, the action posts a comment h
 **Mutation Testing Report**. It shows the score, the ratchet threshold, a count table and up
 to 20 surviving gremlins. Later runs update the same comment instead of adding a new one. The
 job needs `pull-requests: write`.
+
+The comment step runs after the ratchet step. When the ratchet step fails on a `pull_request`
+run (see [Known Problem: Pull Request Runs](#known-problem-pull-request-runs)), the comment
+isn't posted.
 
 ## Combining with Other Steps
 

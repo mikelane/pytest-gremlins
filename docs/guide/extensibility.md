@@ -526,19 +526,16 @@ class DjangoQuerySetOperator:
 
 ### Registration for the Django Example
 
-Register your custom operator in `conftest.py`:
+Register your custom operator on the default registry, at import time, in the `conftest.py` at
+your project root (see [Registration](#registration)):
 
 ```python
-# conftest.py
-from pytest_gremlins.operators import OperatorRegistry
+# conftest.py (at the project root)
+from pytest_gremlins.instrumentation.transformer import get_default_registry
 
 from my_django_operators.queryset import DjangoQuerySetOperator
 
-
-def pytest_configure(config):
-    """Register Django-specific operators."""
-    registry = OperatorRegistry()
-    registry.register(DjangoQuerySetOperator)
+get_default_registry().register(DjangoQuerySetOperator)
 ```
 
 ### Using the Django Operator
@@ -635,9 +632,15 @@ def get_users():
 
 ### My Operator Isn't Being Discovered
 
-1. Verify your `conftest.py` `pytest_configure` hook calls `registry.register()`
-2. Check that the conftest is in a directory pytest scans (project root or test dir)
-3. Add a `print(registry.available())` call to your `pytest_configure` to confirm registration
+If `--gremlin-operators=<name>` gives `UserWarning: Unknown operator '<name>' requested, ignoring`,
+the run's registry doesn't have your operator:
+
+1. Register on `get_default_registry()` from `pytest_gremlins.instrumentation.transformer`. An
+   operator registered on a registry you made with `OperatorRegistry()` never reaches a run.
+2. Register at import time in the `conftest.py` at your project root, not inside a function that
+   might run after pytest-gremlins has read the registry.
+3. Add `print(get_default_registry().available())` after the `register()` call to confirm your
+   operator's name is listed.
 
 ### Mutations Aren't Being Generated
 
