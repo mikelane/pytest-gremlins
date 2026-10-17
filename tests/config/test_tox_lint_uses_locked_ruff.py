@@ -30,6 +30,9 @@ class DescribeToxLintEnv:
         declared_deps = _read_lint_env().get('deps', '')
         assert 'ruff' not in declared_deps
 
+    def it_overrides_the_inherited_testenv_deps_with_an_empty_list(self) -> None:
+        assert _read_lint_env().get('deps') == ''
+
     @pytest.mark.parametrize('ruff_subcommand', ['ruff check', 'ruff format --check'])
     def it_runs_ruff_through_the_frozen_lockfile(self, ruff_subcommand: str) -> None:
         assert any(command.startswith(f'uv run --frozen {ruff_subcommand}') for command in _lint_commands())
