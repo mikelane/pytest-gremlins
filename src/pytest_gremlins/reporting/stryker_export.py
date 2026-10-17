@@ -13,6 +13,7 @@ from collections.abc import Callable
 import json
 from pathlib import Path
 import re
+import tokenize
 from typing import TYPE_CHECKING
 
 import pytest_gremlins
@@ -58,12 +59,14 @@ def read_source(file_path: str) -> str:
         file_path: Path of the mutated file, as recorded on the gremlin.
 
     Returns:
-        The file's text, or an empty string when it cannot be read (the schema
-        requires the key, so an unreadable file still yields a valid report).
+        The file's text decoded the way the plugin decodes it for instrumentation (PEP 263
+        declarations honoured, BOM stripped), or an empty string when it cannot be read (the
+        schema requires the key, so an unreadable file still yields a valid report).
     """
     try:
-        return Path(file_path).read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
+        with tokenize.open(file_path) as source_stream:
+            return source_stream.read()
+    except (OSError, UnicodeDecodeError, SyntaxError):
         return ''
 
 
@@ -77,6 +80,12 @@ def character_column(source_lines: list[str], line: int, byte_offset: int) -> in
 
     Returns:
         The 0-based character column, or ``byte_offset`` unchanged when the line is not available.
+
+    Example:
+        >>> character_column(["s = 'é'; x"], 1, 9)
+        8
+        >>> character_column([], 1, 4)
+        4
     """
     if not 1 <= line <= len(source_lines):
         return byte_offset
@@ -212,7 +221,7 @@ class StrykerExporter:
         files: dict[str, StrykerFileResult] = {}
         for file_path, results in results_by_file.items():
             source = self._source_reader(file_path)
-            source_lines = LINE_BREAK.split(source)
+            source_lines = LINE_BREAK.split(source) if source else []
             files[file_path] = {
                 'language': 'python',
                 'source': source,
