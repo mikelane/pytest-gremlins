@@ -698,8 +698,10 @@ Path('mutation-score.json').write_text(simple_json)
   byte-order mark is dropped and a PEP 263 `coding:` declaration is honored. Line endings are
   normalized to `\n`.
 - **Positions:** mutant `location` positions are 1-based for both line and column, with a required
-  `end`. The Python AST's 0-based UTF-8 byte columns are converted to character columns and shifted
-  by one. A node without end information gets an `end` equal to its `start`.
+  `end`. The Python AST's 0-based UTF-8 byte columns are converted to UTF-16 code unit columns and
+  shifted by one, matching the string indices of the report viewer, so a character outside the Basic
+  Multilingual Plane (such as an emoji) counts as two columns. A node without end information gets an
+  `end` equal to its `start`.
 - **Unreadable files:** a file that cannot be read exports an empty `source`, which the schema
   accepts. Its mutant columns are then the AST's byte columns plus one, because there is no text to
   convert them against.
