@@ -133,6 +133,49 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
 
+  pytest-compat:
+    name: Test (pytest ${{ matrix.pytest }})
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported release of each supported pytest major, then the latest release.
+        # The first entry must equal the pytest floor in pyproject.toml and tox.ini
+        # (guarded by tests/config/test_pytest_version_matrix.py).
+        pytest: ['8.4.0', '9.0.0', 'latest']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install pytest ${{ matrix.pytest }}
+        env:
+          PYTEST_VERSION: ${{ matrix.pytest }}
+        run: |
+          if [[ "$PYTEST_VERSION" == "latest" ]]; then
+            uv pip install --python .venv/bin/python --upgrade pytest
+          else
+            uv pip install --python .venv/bin/python "pytest==$PYTEST_VERSION"
+          fi
+          uv run --no-sync pytest --version
+
+      - name: Run tests
+        env:
+          PYTHONPATH: .
+        run: uv run --no-sync pytest tests -m "small or medium and not wip" -v
+
   docs:
     name: Documentation
     runs-on: ubuntu-latest
@@ -229,7 +272,7 @@ jobs:
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [changes, lint, typecheck, test, docs, security, attrs-smoke]
+    needs: [changes, lint, typecheck, test, pytest-compat, docs, security, attrs-smoke]
     if: always()
     steps:
       - name: Verify all jobs succeeded
@@ -239,6 +282,7 @@ jobs:
           LINT_RESULT: ${{ needs.lint.result }}
           TYPECHECK_RESULT: ${{ needs.typecheck.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          PYTEST_COMPAT_RESULT: ${{ needs.pytest-compat.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
           ATTRS_SMOKE_RESULT: ${{ needs.attrs-smoke.result }}
@@ -248,6 +292,7 @@ jobs:
             if [[ "$LINT_RESULT" != "success" ]] || \
                [[ "$TYPECHECK_RESULT" != "success" ]] || \
                [[ "$TEST_RESULT" != "success" ]] || \
+               [[ "$PYTEST_COMPAT_RESULT" != "success" ]] || \
                [[ "$SECURITY_RESULT" != "success" ]] || \
                [[ "$ATTRS_SMOKE_RESULT" != "success" ]]; then
               echo "Source code checks failed"

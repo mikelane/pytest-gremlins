@@ -15,7 +15,7 @@ pytest-gremlins calls these mutations "gremlins" - and your job is to zap them w
 Before you begin, ensure you have:
 
 - Python 3.11 or later
-- pytest 7.0 or later
+- pytest 8.4 or later
 - A project with existing tests
 
 ## Installation

@@ -26,7 +26,7 @@ class DescribeToxTestenv:
         tox_config = configparser.ConfigParser()
         tox_config.read(TOX_INI_PATH, encoding='utf-8')
         declared_requirements = {
-            canonicalize_name(Requirement(line).name)
+            canonicalize_name(Requirement(line.split(':')[-1].strip()).name)
             for line in tox_config['testenv']['deps'].split('\n')
             if line.strip()
         }
