@@ -118,3 +118,27 @@ class DescribeOneBasedPositions:
 
         location = report['files']['test.py']['mutants'][0]['location']
         assert location['end'] == location['start'] == {'line': 5, 'column': 3}
+
+
+@pytest.mark.small
+class DescribeCharacterColumns:
+    """The AST counts columns in UTF-8 bytes; the schema counts characters."""
+
+    SOURCE = "s = 'é'; x >= 0\n"
+
+    def it_counts_start_and_end_columns_in_characters_after_multibyte_text(self, make_gremlin):
+        gremlin = make_gremlin(line_number=1, column_offset=10, end_column_offset=16)
+        exporter = StrykerExporter(source_reader=lambda _path: self.SOURCE)
+
+        report = _export(GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED), exporter=exporter)
+
+        location = report['files']['test.py']['mutants'][0]['location']
+        assert location == {'start': {'line': 1, 'column': 10}, 'end': {'line': 1, 'column': 16}}
+
+    def it_keeps_the_ast_columns_when_the_source_line_is_unavailable(self, make_gremlin):
+        gremlin = make_gremlin(line_number=7, column_offset=10, end_column_offset=16)
+
+        report = _export(GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED))
+
+        location = report['files']['test.py']['mutants'][0]['location']
+        assert location == {'start': {'line': 7, 'column': 11}, 'end': {'line': 7, 'column': 17}}

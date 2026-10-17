@@ -694,8 +694,9 @@ Path('mutation-score.json').write_text(simple_json)
 [mutation-testing-report-schema](https://github.com/stryker-mutator/mutation-testing-elements/tree/master/packages/report-schema).
 Each file entry carries its original `source`, read from disk when the report is built (an
 unreadable file exports an empty string, which the schema accepts). Mutant `location` positions
-are 1-based for both line and column, with a required `end`; the Python AST's 0-based columns are
-shifted by one on export. A node without end information gets an `end` equal to its `start`.
+are 1-based for both line and column, with a required `end`; the Python AST's 0-based byte columns
+are converted to character columns and shifted by one on export. A node without end information
+gets an `end` equal to its `start`.
 
 #### Uploading to Stryker Dashboard
 
