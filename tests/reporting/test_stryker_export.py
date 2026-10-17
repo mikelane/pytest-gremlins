@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(autouse=True)
-def _no_source_reads(monkeypatch):
+def _no_source_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep small tests off the filesystem; source reading is covered in test_stryker_schema.py."""
     monkeypatch.setattr('pytest_gremlins.reporting.stryker_export.read_source', lambda _path: '')
 

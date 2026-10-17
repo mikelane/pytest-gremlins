@@ -9,9 +9,8 @@ See: https://github.com/stryker-mutator/mutation-testing-elements
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable
 import json
-from pathlib import Path
+import logging
 import re
 import tokenize
 from typing import TYPE_CHECKING
@@ -20,6 +19,9 @@ import pytest_gremlins
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.reporting.results import GremlinResult
     from pytest_gremlins.reporting.score import MutationScore
@@ -32,6 +34,8 @@ if TYPE_CHECKING:
         StrykerReport,
         StrykerScoreSummary,
     )
+
+logger = logging.getLogger(__name__)
 
 
 STATUS_MAP: dict[GremlinResultStatus, str] = {
@@ -67,15 +71,16 @@ def read_source(file_path: str) -> str:
         with tokenize.open(file_path) as source_stream:
             return source_stream.read()
     except (OSError, UnicodeDecodeError, SyntaxError):
+        logger.warning('Could not read %s for the Stryker report; exporting empty source', file_path, exc_info=True)
         return ''
 
 
-def character_column(source_lines: list[str], line: int, byte_offset: int) -> int:
+def character_column(source_lines: list[str], line_number: int, byte_offset: int) -> int:
     """Convert an AST column, counted in UTF-8 bytes, to a 0-based character column.
 
     Args:
         source_lines: The file's lines.
-        line: 1-based line number the column belongs to.
+        line_number: 1-based line number the column belongs to.
         byte_offset: The AST's 0-based UTF-8 byte offset within that line.
 
     Returns:
@@ -87,9 +92,9 @@ def character_column(source_lines: list[str], line: int, byte_offset: int) -> in
         >>> character_column([], 1, 4)
         4
     """
-    if not 1 <= line <= len(source_lines):
+    if not 1 <= line_number <= len(source_lines):
         return byte_offset
-    return len(source_lines[line - 1].encode('utf-8')[:byte_offset].decode('utf-8', errors='ignore'))
+    return len(source_lines[line_number - 1].encode('utf-8')[:byte_offset].decode('utf-8', errors='ignore'))
 
 
 class StrykerExporter:

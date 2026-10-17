@@ -193,7 +193,8 @@ class DescribeJsonReporterErrorOutput:
 
 
 @pytest.fixture
-def _no_source_reads(monkeypatch):
+def _no_source_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep these small tests off the filesystem by stubbing the exporter's source reader."""
     monkeypatch.setattr('pytest_gremlins.reporting.stryker_export.read_source', lambda _path: '')
 
 

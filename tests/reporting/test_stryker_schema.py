@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import jsonschema
 import pytest
@@ -24,12 +25,12 @@ from pytest_gremlins.reporting.stryker_export import StrykerExporter
 SCHEMA = json.loads((Path(__file__).parent / 'data' / 'mutation-testing-report-schema.json').read_text())
 
 
-def _export(*results: GremlinResult, exporter: StrykerExporter | None = None) -> dict:
+def _export(*results: GremlinResult, exporter: StrykerExporter | None = None) -> dict[str, Any]:
     exporter = exporter or StrykerExporter(source_reader=lambda _path: '')
     return json.loads(exporter.to_json(MutationScore.from_results(list(results))))
 
 
-def _export_reading_disk(result: GremlinResult) -> dict:
+def _export_reading_disk(result: GremlinResult) -> dict[str, Any]:
     return _export(result, exporter=StrykerExporter())
 
 
@@ -81,6 +82,22 @@ class DescribeFileSource:
 
         assert report['files'][str(tmp_path / 'missing.py')]['source'] == ''
 
+    @pytest.mark.parametrize(
+        'content',
+        [
+            pytest.param(b'x = "\xff"\n', id='invalid-utf8-raises-unicode-decode-error'),
+            pytest.param(b'\xef\xbb\xbf# coding: latin-1\nx = 1\n', id='bom-conflicting-coding-raises-syntax-error'),
+        ],
+    )
+    def it_exports_an_empty_source_when_the_file_cannot_be_decoded(self, make_gremlin, tmp_path, content):
+        source_file = tmp_path / 'undecodable.py'
+        source_file.write_bytes(content)
+        gremlin = make_gremlin(file_path=str(source_file))
+
+        report = _export_reading_disk(GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED))
+
+        assert report['files'][str(source_file)]['source'] == ''
+
     def it_decodes_source_as_utf8(self, make_gremlin, tmp_path):
         source_file = tmp_path / 'unicode.py'
         source_file.write_text("name = 'café'\n", encoding='utf-8')
@@ -109,10 +126,18 @@ class DescribeOneBasedPositions:
         end = report['files']['test.py']['mutants'][0]['location']['end']
         assert end == {'line': 10, 'column': 11}
 
-    def it_falls_back_to_the_start_position_when_the_node_has_no_end(self, make_gremlin):
+    @pytest.mark.parametrize(
+        ('end_lineno', 'end_col_offset'),
+        [
+            pytest.param(None, None, id='no-end-line-or-column'),
+            pytest.param(None, 8, id='no-end-line'),
+            pytest.param(5, None, id='no-end-column'),
+        ],
+    )
+    def it_falls_back_to_the_start_position_when_the_node_has_no_end(self, make_gremlin, end_lineno, end_col_offset):
         gremlin = make_gremlin(line_number=5, column_offset=2)
-        gremlin.original_node.end_lineno = None
-        gremlin.original_node.end_col_offset = None
+        gremlin.original_node.end_lineno = end_lineno
+        gremlin.original_node.end_col_offset = end_col_offset
 
         report = _export(GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED))
 
@@ -129,6 +154,15 @@ class DescribeCharacterColumns:
     def it_counts_start_and_end_columns_in_characters_after_multibyte_text(self, make_gremlin):
         gremlin = make_gremlin(line_number=1, column_offset=10, end_column_offset=16)
         exporter = StrykerExporter(source_reader=lambda _path: self.SOURCE)
+
+        report = _export(GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED), exporter=exporter)
+
+        location = report['files']['test.py']['mutants'][0]['location']
+        assert location == {'start': {'line': 1, 'column': 10}, 'end': {'line': 1, 'column': 16}}
+
+    def it_counts_columns_in_characters_on_a_final_line_without_a_newline(self, make_gremlin):
+        gremlin = make_gremlin(line_number=1, column_offset=10, end_column_offset=16)
+        exporter = StrykerExporter(source_reader=lambda _path: self.SOURCE.rstrip('\n'))
 
         report = _export(GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED), exporter=exporter)
 

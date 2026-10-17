@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import jsonschema
 import pytest
@@ -13,7 +14,7 @@ SCHEMA = json.loads((Path(__file__).parent / 'data' / 'mutation-testing-report-s
 FORMAT_HEADING = '#### Stryker Dashboard Format (mutation-testing-report-schema)'
 
 
-def _documented_example() -> dict:
+def _documented_example() -> dict[str, Any]:
     guide = (REPO_ROOT / 'docs' / 'guide' / 'reports.md').read_text(encoding='utf-8')
     section = guide.split(FORMAT_HEADING, 1)[1]
     return json.loads(section.split('```json', 1)[1].split('```', 1)[0])
