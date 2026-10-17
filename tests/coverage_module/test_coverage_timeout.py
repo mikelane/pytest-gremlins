@@ -180,6 +180,25 @@ class DescribeCollectCoverageTimeoutWarning:
             '(set coverage_timeout / --gremlin-coverage-timeout to raise it)'
         ]
 
+    def it_names_the_per_attempt_and_the_rerun_scaled_limit(self, tmp_path: Path) -> None:
+        session = GremlinSession(enabled=True, coverage_timeout=400, coverage_attempt_timeout=120)
+        with (
+            patch(
+                'pytest_gremlins.plugin._run_tests_with_coverage',
+                autospec=True,
+                side_effect=CoveragePrescanTimeoutError(400),
+            ),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter('always')
+            _collect_coverage(session, tmp_path)
+
+        assert [str(w.message) for w in caught if issubclass(w.category, UserWarning)] == [
+            'pytest-gremlins: coverage pre-scan exceeded 400s (120s per attempt, scaled for the pytest-rerunfailures '
+            'budget); coverage-guided test selection disabled '
+            '(set coverage_timeout / --gremlin-coverage-timeout to raise the per-attempt limit)'
+        ]
+
     def it_does_not_also_emit_the_no_data_warning(self, tmp_path: Path) -> None:
         messages = [str(w.message) for w in self._collect_with_timeout(tmp_path, 45)]
 
