@@ -1,4 +1,14 @@
-"""Keep assertion rewriting from displaying a process or subprocess environment."""
+"""Keep assertion rewriting from displaying a process or subprocess environment.
+
+The guard is a cheap AST heuristic over ``test_*.py`` and ``conftest.py`` files, not a proof.
+Session-wide secret scrubbing (#649) is the real defense. Shapes the guard accepts missing:
+
+- aliases held on attributes (``self.env = os.environ``)
+- aliases bound by ``for`` targets, ``match`` or ``async with`` bodies
+- the environment passed into a call inside the assertion (``assert check(os.environ)``)
+- ``os.environ | {...}``, ``os.environ.pop(...)`` and ``patch.dict(os.environ, ...) as env``
+- an alias reassigned inside a branch, which drops the alias for later asserts
+"""
 
 from __future__ import annotations
 
@@ -31,6 +41,26 @@ class DescribeEnvironmentAssertionChecker:
             ("env = _prescan_env().copy()\nassert 'SECRET' not in env", [2]),
             ("env = os.environ\nassert env.get('SECRET') is None", [2]),
             ("env = os.environ\nassert env['SECRET'] == 'ok'", []),  # pragma: allowlist secret
+            ('assert ok, os.environ', [1]),
+            ("env = dict(os.environ)\nassert ok, f'bad {env}'", []),
+            ('assert ok, dict(os.environ)', [1]),
+            ('from os import environ\nassert environ == {}', [2]),
+            ('from os import environ as process_env\nassert len(process_env) == 0', [2]),
+            ("from os import environ\nassert environ['SECRET'] == 'ok'", []),  # pragma: allowlist secret
+            ("if (env := os.environ):\n    assert 'SECRET' not in env", [2]),
+            ("assert (env := os.environ.copy()) and 'SECRET' not in env", [1]),
+            ('assert (env := os.environ) == {}', [1]),
+            ("env, other = os.environ, {}\nassert 'SECRET' not in env", [2]),
+            ("other, env = {}, os.environ\nassert 'SECRET' not in other", []),
+            ("other, env = {}, os.environ\nassert 'SECRET' not in env", [2]),
+            ("assert run.call_args[1]['env'] == {}", [1]),
+            ("env = run.call_args[1]['env']\nassert 'SECRET' not in env", [2]),
+            ("assert run.call_args[0]['env'] == {}", []),
+            ("env = {k: v for k, v in os.environ.items() if k}\nassert 'SECRET' not in env", [2]),
+            ("env = dict(os.environ)\nfiltered = {k: v for k, v in env.items()}\nassert 'SECRET' not in filtered", [3]),
+            ('assert {k: v for k, v in os.environ.items()} == {}', [1]),
+            ("env = {k: v for k, v in other.items()}\nassert 'SECRET' not in env", []),
+            ("e = {k: v for k, v in os.environ.items()}\nassert e['SECRET'] == 'ok'", []),  # pragma: allowlist secret
         ],
     )
     def it_flags_only_whole_environment_assertions(self, source: str, expected: list[int]) -> None:
@@ -51,7 +81,30 @@ class DescribeEnvironmentAssertionChecker:
         assert _unsafe_assertions_in_source(source) == [4]
 
 
+def _is_named(node: ast.expr, name: str) -> bool:
+    return (isinstance(node, ast.Name) and node.id == name) or (isinstance(node, ast.Attribute) and node.attr == name)
+
+
+def _is_positional_call_kwargs(node: ast.expr) -> bool:
+    return (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.slice, ast.Constant)
+        and node.slice.value == 1
+        and _is_named(node.value, 'call_args')
+    )
+
+
+def _mapping_draws_on_environment(node: ast.Dict | ast.DictComp, names: set[str]) -> bool:
+    if isinstance(node, ast.DictComp):
+        return any(_is_environment_source(generator.iter, names) for generator in node.generators)
+    return any(
+        key is None and _is_environment_source(value, names) for key, value in zip(node.keys, node.values, strict=True)
+    )
+
+
 def _is_environment_source(node: ast.expr, names: set[str]) -> bool:
+    if isinstance(node, ast.NamedExpr):
+        node = node.value
     if isinstance(node, ast.Name):
         return node.id in names
     if isinstance(node, ast.Attribute):
@@ -60,16 +113,10 @@ def _is_environment_source(node: ast.expr, names: set[str]) -> bool:
         return (
             isinstance(node.slice, ast.Constant)
             and node.slice.value == 'env'
-            and (
-                (isinstance(node.value, ast.Name) and node.value.id == 'kwargs')
-                or (isinstance(node.value, ast.Attribute) and node.value.attr == 'kwargs')
-            )
+            and (_is_named(node.value, 'kwargs') or _is_positional_call_kwargs(node.value))
         )
-    if isinstance(node, ast.Dict):
-        return any(
-            key is None and _is_environment_source(value, names)
-            for key, value in zip(node.keys, node.values, strict=True)
-        )
+    if isinstance(node, (ast.Dict, ast.DictComp)):
+        return _mapping_draws_on_environment(node, names)
     if isinstance(node, ast.Call):
         return (
             isinstance(node.func, ast.Attribute)
@@ -108,9 +155,43 @@ def _assertion_operands(expression: ast.expr) -> list[ast.expr]:
     return operands
 
 
-def _assigned_names(statement: ast.Assign | ast.AnnAssign) -> list[str]:
-    targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
-    return [target.id for target in targets if isinstance(target, ast.Name)]
+def _bind_alias(target: ast.expr, value: ast.expr, names: set[str]) -> None:
+    if isinstance(target, ast.Name):
+        if _is_environment_alias(value, names):
+            names.add(target.id)
+        else:
+            names.discard(target.id)
+    elif isinstance(target, ast.Tuple) and isinstance(value, ast.Tuple) and len(target.elts) == len(value.elts):
+        for element_target, element_value in zip(target.elts, value.elts, strict=True):
+            _bind_alias(element_target, element_value, names)
+
+
+def _bind_walrus_aliases(expression: ast.expr, names: set[str]) -> None:
+    for node in ast.walk(expression):
+        if isinstance(node, ast.NamedExpr):
+            _bind_alias(node.target, node.value, names)
+
+
+def _bind_environ_import(statement: ast.ImportFrom, names: set[str]) -> None:
+    if statement.module == 'os':
+        names.update(alias.asname or alias.name for alias in statement.names if alias.name == 'environ')
+
+
+def _bind_statement_aliases(statement: ast.ImportFrom | ast.Assign | ast.AnnAssign, names: set[str]) -> None:
+    if isinstance(statement, ast.ImportFrom):
+        _bind_environ_import(statement, names)
+    elif isinstance(statement, ast.Assign):
+        for target in statement.targets:
+            _bind_alias(target, statement.value, names)
+    elif statement.value is not None:
+        _bind_alias(statement.target, statement.value, names)
+
+
+def _is_unsafe_assert(statement: ast.Assert, names: set[str]) -> bool:
+    operands = _assertion_operands(statement.test)
+    if statement.msg is not None:
+        operands.append(statement.msg)
+    return any(_is_environment_source(node, names) for node in operands)
 
 
 def _nested_statement_bodies(statement: ast.stmt) -> list[list[ast.stmt]]:
@@ -131,18 +212,16 @@ def _scan_assertions(statements: list[ast.stmt], names: set[str], offset: int = 
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             unsafe.extend(_scan_assertions(statement.body, set(names), offset))
         elif _nested_statement_bodies(statement):
+            if isinstance(statement, (ast.If, ast.While)):
+                _bind_walrus_aliases(statement.test, names)
             for body in _nested_statement_bodies(statement):
                 unsafe.extend(_scan_assertions(body, names, offset))
-        elif isinstance(statement, (ast.Assign, ast.AnnAssign)) and statement.value is not None:
-            for name in _assigned_names(statement):
-                if _is_environment_alias(statement.value, names):
-                    names.add(name)
-                else:
-                    names.discard(name)
-        elif isinstance(statement, ast.Assert) and any(
-            _is_environment_source(node, names) for node in _assertion_operands(statement.test)
-        ):
-            unsafe.append(statement.lineno + offset)
+        elif isinstance(statement, (ast.ImportFrom, ast.Assign, ast.AnnAssign)):
+            _bind_statement_aliases(statement, names)
+        elif isinstance(statement, ast.Assert):
+            _bind_walrus_aliases(statement.test, names)
+            if _is_unsafe_assert(statement, names):
+                unsafe.append(statement.lineno + offset)
     return unsafe
 
 
@@ -168,7 +247,7 @@ def _unsafe_assertions_in_source(source: str) -> list[int]:
 
 def _unsafe_env_assertions(tests_dir: Path) -> list[str]:
     unsafe: list[str] = []
-    for path in tests_dir.rglob('test_*.py'):
+    for path in sorted({*tests_dir.rglob('test_*.py'), *tests_dir.rglob('conftest.py')}):
         if path == Path(__file__).resolve():  # This file contains intentionally unsafe checker fixtures.
             continue
         unsafe.extend(
@@ -185,3 +264,15 @@ class DescribeEnvironmentAssertionSafety:
     def it_keeps_environment_mappings_out_of_assertions(self) -> None:
         """A failed assertion must not print a full environment mapping."""
         assert _unsafe_env_assertions(Path(__file__).resolve().parents[1]) == []
+
+    def it_scans_conftest_files(self, tmp_path: Path) -> None:
+        (tmp_path / 'conftest.py').write_text('assert os.environ == {}\n', encoding='utf-8')
+        assert _unsafe_env_assertions(tmp_path) == ['conftest.py:1']
+
+    def it_scans_test_files(self, tmp_path: Path) -> None:
+        (tmp_path / 'test_sample.py').write_text('assert os.environ == {}\n', encoding='utf-8')
+        assert _unsafe_env_assertions(tmp_path) == ['test_sample.py:1']
+
+    def it_ignores_other_modules(self, tmp_path: Path) -> None:
+        (tmp_path / 'helpers.py').write_text('assert os.environ == {}\n', encoding='utf-8')
+        assert _unsafe_env_assertions(tmp_path) == []
