@@ -239,6 +239,7 @@ nav:
       - North Star: design/NORTH_STAR.md
       - Operators Design: design/OPERATORS.md
       - Agent Guidelines: design/AGENT_GUIDELINES.md
+      - Execution Loop: architecture/gremlin-execution-loop.md
       - Performance Analysis: performance/profiling-report.md
 
 # Extra Configuration
