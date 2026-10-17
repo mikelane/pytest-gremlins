@@ -20,6 +20,10 @@ def _read_lint_env() -> configparser.SectionProxy:
     return tox_config['testenv:lint']
 
 
+def _lint_commands() -> list[str]:
+    return [line.strip() for line in _read_lint_env()['commands'].split('\n') if line.strip()]
+
+
 @pytest.mark.medium
 class DescribeToxLintEnv:
     def it_does_not_install_ruff_from_an_unpinned_requirement(self) -> None:
@@ -28,5 +32,4 @@ class DescribeToxLintEnv:
 
     @pytest.mark.parametrize('ruff_subcommand', ['ruff check', 'ruff format --check'])
     def it_runs_ruff_through_the_frozen_lockfile(self, ruff_subcommand: str) -> None:
-        commands = [line.strip() for line in _read_lint_env()['commands'].split('\n') if line.strip()]
-        assert any(command.startswith(f'uv run --frozen {ruff_subcommand}') for command in commands)
+        assert any(command.startswith(f'uv run --frozen {ruff_subcommand}') for command in _lint_commands())

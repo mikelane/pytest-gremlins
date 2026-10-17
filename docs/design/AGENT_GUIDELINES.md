@@ -477,6 +477,13 @@ repos:
         types_or: [python, pyi, jupyter]
         require_serial: true
         stages: [pre-commit]
+      - id: ruff-format-commit
+        name: ruff format (staged files)
+        entry: uv run --frozen ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
+        stages: [pre-commit]
       - id: mypy-commit
         name: mypy (strict, commit)
         entry: uv run --frozen mypy src/pytest_gremlins

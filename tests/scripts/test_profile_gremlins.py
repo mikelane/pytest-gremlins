@@ -18,14 +18,28 @@ MODULE_NAME = 'profile_gremlins_under_test'
 
 @pytest.fixture
 def script(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    """Load the script by path (``scripts/`` is not importable); dataclasses need it in ``sys.modules``."""
+    """Load the script by path (``scripts/`` is not importable); dataclasses need it in ``sys.modules``.
+
+    The script prepends ``src/`` to ``sys.path`` on import, so ``sys.path`` is restored afterwards.
+    """
     spec = importlib.util.spec_from_file_location(MODULE_NAME, SCRIPT)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, MODULE_NAME, module)
+    monkeypatch.setattr(sys, 'path', [*sys.path])
     spec.loader.exec_module(module)
     return module
+
+
+def _functions_calling(callee: str) -> set[str]:
+    return {
+        function.name
+        for function in ast.walk(ast.parse(SCRIPT.read_text()))
+        if isinstance(function, ast.FunctionDef)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call) and getattr(node.func, 'id', None) == callee
+    }
 
 
 @pytest.mark.medium
@@ -54,15 +68,7 @@ class DescribeWriteReportText:
 @pytest.mark.medium
 class DescribeReportWriters:
     def it_routes_both_the_stats_writer_and_the_json_writer_through_the_helper(self) -> None:
-        calling_functions = {
-            function.name
-            for function in ast.walk(ast.parse(SCRIPT.read_text()))
-            if isinstance(function, ast.FunctionDef)
-            for node in ast.walk(function)
-            if isinstance(node, ast.Call) and getattr(node.func, 'id', None) == 'write_report_text'
-        }
-
-        assert calling_functions == {'run_cprofile_analysis', 'main'}
+        assert _functions_calling('write_report_text') == {'run_cprofile_analysis', 'main'}
 
     def it_writes_a_stats_report_with_one_trailing_newline(self, script: ModuleType, tmp_path: Path) -> None:
         target = tmp_path / 'target'
