@@ -38,8 +38,10 @@ def _intercept_process_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr('os._exit', _exit_by_raising)
 
 
-def _load(hook: AssertionRewritingHook) -> None:
-    GremlinLoader(None, hook, source=SOURCE).exec_module(_served_module())
+def _load(hook: AssertionRewritingHook) -> ModuleType:
+    module = _served_module()
+    GremlinLoader(None, hook, source=SOURCE).exec_module(module)
+    return module
 
 
 @pytest.mark.small
@@ -111,4 +113,6 @@ class DescribeGremlinLoaderWhenPytestsRewriteApiChanged:
 
         monkeypatch.setattr('_pytest.assertion.rewrite.rewrite_asserts', overflow)
 
-        _load(AssertionRewritingHook(pytestconfig))
+        module = _load(AssertionRewritingHook(pytestconfig))
+
+        assert module.check(1) is None
