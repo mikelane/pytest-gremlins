@@ -238,6 +238,11 @@ rebuilds the file.
 This is useful for tracking whether your mutation score is trending up or down as your
 project evolves, without needing an external dashboard.
 
+!!! note "Known limitation"
+    History entries record only the score, not skipped files. A run that skipped a file can
+    plot a higher score than it would have with that file included, so check the skipped
+    files list above the charts before reading a rise in the trend as an improvement.
+
 ### Accessibility
 
 The HTML report meets WCAG 2.1 AA standards:
@@ -300,9 +305,6 @@ The directory is created automatically if it does not exist.
       "percentage": 87.5
     }
   },
-  "skipped_files": {
-    "src/broken.py": "RecursionError: maximum recursion depth exceeded"
-  },
   "results": [
     {
       "gremlin_id": "g001",
@@ -321,7 +323,10 @@ The directory is created automatically if it does not exist.
       "description": "+ -> -",
       "killing_test": "test_utils.py::test_calculate"
     }
-  ]
+  ],
+  "skipped_files": {
+    "src/broken.py": "RecursionError: maximum recursion depth exceeded"
+  }
 }
 ```
 
