@@ -71,6 +71,10 @@ class DescribeSecretEnvNames:
             'TWINE_USERNAME',
             'FAKE_SECRET_TOKEN',
             'lowercase_api_key',
+            'RELEASE_PAT',
+            'GITHUB_PAT',
+            'OPENAI_APIKEY',
+            'GPG_PASSPHRASE',
         ],
     )
     def it_flags_secret_shaped_names(self, name: str) -> None:
@@ -93,6 +97,12 @@ class DescribeSecretEnvNames:
             'TOKENIZERS_PARALLELISM',
             'SECRETARY',
             'PASSTHROUGH',
+            'PYTHON_COMPAT',
+            'LIBEXPAT',
+            'SYSTEMROOT',
+            'USERPROFILE',
+            'APPDATA',
+            'GIT_ASKPASS',
         ],
     )
     def it_keeps_names_the_suite_or_tools_need(self, name: str) -> None:

@@ -24,7 +24,9 @@ from pytest_gremlins.plugin import _set_session
 # Enable pytester fixture for plugin testing
 pytest_plugins = ['pytester']
 
-_SECRET_ENV_NAME = re.compile(r'^(PYPI|TWINE)_|(^|_)(TOKEN|SECRET|PASSWORD|PASSWD|PASS|CREDENTIALS?|KEY|KEY_ID)$')
+_SECRET_ENV_NAME = re.compile(
+    r'^(PYPI|TWINE)_|(^|_)(TOKEN|PAT|SECRET|PASSWORD|PASSWD|PASS|PASSPHRASE|CREDENTIALS?|KEY|APIKEY|KEY_ID)$'
+)
 
 
 def _is_secret_env_name(name: str) -> bool:
