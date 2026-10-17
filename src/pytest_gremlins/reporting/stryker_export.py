@@ -75,8 +75,11 @@ def read_source(file_path: str) -> str:
         return ''
 
 
-def character_column(source_lines: list[str], line_number: int, byte_offset: int) -> int:
-    """Convert an AST column, counted in UTF-8 bytes, to a 0-based character column.
+def utf16_column(source_lines: list[str], line_number: int, byte_offset: int) -> int:
+    """Convert an AST column, counted in UTF-8 bytes, to a 0-based UTF-16 code unit column.
+
+    The report viewer indexes source text with JavaScript string indices, which count UTF-16
+    code units, so a character outside the BMP (an emoji) occupies two columns.
 
     Args:
         source_lines: The file's lines.
@@ -84,17 +87,20 @@ def character_column(source_lines: list[str], line_number: int, byte_offset: int
         byte_offset: The AST's 0-based UTF-8 byte offset within that line.
 
     Returns:
-        The 0-based character column, or ``byte_offset`` unchanged when the line is not available.
+        The 0-based UTF-16 column, or ``byte_offset`` unchanged when the line is not available.
 
     Example:
-        >>> character_column(["s = 'é'; x"], 1, 9)
+        >>> utf16_column(["s = 'é'; x"], 1, 9)
         8
-        >>> character_column([], 1, 4)
+        >>> utf16_column(["s = '\U0001f600'; x"], 1, 12)
+        10
+        >>> utf16_column([], 1, 4)
         4
     """
     if not 1 <= line_number <= len(source_lines):
         return byte_offset
-    return len(source_lines[line_number - 1].encode('utf-8')[:byte_offset].decode('utf-8', errors='ignore'))
+    prefix = source_lines[line_number - 1].encode('utf-8')[:byte_offset].decode('utf-8', errors='ignore')
+    return len(prefix.encode('utf-16-le')) // 2
 
 
 class StrykerExporter:
@@ -239,7 +245,7 @@ class StrykerExporter:
 
         Args:
             result: The GremlinResult to convert.
-            source_lines: Lines of the mutated file, used to convert byte columns to character columns.
+            source_lines: Lines of the mutated file, used to convert byte columns to UTF-16 columns.
 
         Returns:
             Dictionary representing this mutant in Stryker format.
@@ -266,30 +272,30 @@ class StrykerExporter:
 
         return mutant
 
-    def _build_location(self, gremlin: Gremlin, source_lines: list[str]) -> StrykerPosition:
+    def _build_location(self, gremlin: Gremlin, source_lines: list[str]) -> StrykerLocation:
         """Build a schema location with 1-based start and end positions.
 
         Python AST columns are 0-based UTF-8 byte offsets and the schema's positions are
-        1-based character columns, so each column is converted to characters and shifted by
-        one. The schema requires ``end``; a node without end information gets an empty range
+        1-based UTF-16 code unit columns, so each column is converted to UTF-16 units and
+        shifted by one. The schema requires ``end``; a node without end information gets an empty range
         at its start.
 
         Args:
             gremlin: The Gremlin containing location information.
-            source_lines: Lines of the mutated file, used to convert byte columns to character columns.
+            source_lines: Lines of the mutated file, used to convert byte columns to UTF-16 columns.
 
         Returns:
             Location dictionary with start and end positions.
         """
         node = gremlin.original_node
-        start: StrykerLocation = {
+        start: StrykerPosition = {
             'line': node.lineno,
-            'column': character_column(source_lines, node.lineno, node.col_offset) + 1,
+            'column': utf16_column(source_lines, node.lineno, node.col_offset) + 1,
         }
-        end: StrykerLocation = start
+        end: StrykerPosition = start
         if node.end_lineno is not None and node.end_col_offset is not None:
             end = {
                 'line': node.end_lineno,
-                'column': character_column(source_lines, node.end_lineno, node.end_col_offset) + 1,
+                'column': utf16_column(source_lines, node.end_lineno, node.end_col_offset) + 1,
             }
         return {'start': start, 'end': end}

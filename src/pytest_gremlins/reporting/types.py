@@ -14,18 +14,18 @@ from typing import (
 # ── Stryker Dashboard format ──────────────────────────────────────────
 
 
-class StrykerLocation(TypedDict):
-    """A line/column position in a source file."""
+class StrykerPosition(TypedDict):
+    """A 1-based line and column in a source file, as the report schema calls a Position."""
 
     line: int
     column: int
 
 
-class StrykerPosition(TypedDict):
-    """Start and end location for a mutant; both are required by the schema."""
+class StrykerLocation(TypedDict):
+    """Start and end positions for a mutant; both are required by the schema."""
 
-    start: StrykerLocation
-    end: StrykerLocation
+    start: StrykerPosition
+    end: StrykerPosition
 
 
 class StrykerMutant(TypedDict):
@@ -37,7 +37,7 @@ class StrykerMutant(TypedDict):
 
     id: str
     mutatorName: str
-    location: StrykerPosition
+    location: StrykerLocation
     status: str
     description: str
     killedBy: NotRequired[list[str]]
