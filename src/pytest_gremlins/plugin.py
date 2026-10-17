@@ -2759,6 +2759,17 @@ def _is_cov_addopt(token: str) -> bool:
 _RERUNFAILURES_PLUGIN_NAMES = ('rerunfailures', 'pytest_rerunfailures')
 # Blocking by the entry-point name also blocks the plugin when it is loaded by module name.
 _BLOCK_RERUNFAILURES_OPTION = ('-p', 'no:rerunfailures')
+# With autoload disabled the plugin is registered under its module name, and gremlin runs inherit the environment
+# variable but not a ``-p`` from the command line.  Pytest skips a module name that is already registered, so this
+# is harmless when ``addopts``, ``PYTEST_ADDOPTS`` or a conftest loads the plugin too.  Never use it with autoload
+# on: the entry point registers the same module as ``rerunfailures`` and pluggy rejects the second name.
+_LOAD_RERUNFAILURES_OPTION = ('-p', 'pytest_rerunfailures')
+_PLUGIN_AUTOLOAD_DISABLED_ENV_VAR = 'PYTEST_DISABLE_PLUGIN_AUTOLOAD'
+
+
+def _plugin_autoload_is_disabled() -> bool:
+    """Return whether the environment, which gremlin runs inherit, disables pytest's plugin autoload."""
+    return bool(os.environ.get(_PLUGIN_AUTOLOAD_DISABLED_ENV_VAR))
 
 
 def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
@@ -2797,9 +2808,18 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     with ini settings the session's budget never assumed (issue #670).  Blocking a plugin that is not installed
     is harmless.  A plugin that is loaded wins: ``-p no:pytest_rerunfailures`` blocks only the module name, the
     entry-point plugin loads anyway, and the session's budget assumes reruns.
+    A session that loaded the plugin while ``PYTEST_DISABLE_PLUGIN_AUTOLOAD`` is set forwards a loader
+    (``-p pytest_rerunfailures``) first: gremlin runs inherit the variable, so without it they would not load a plugin
+    the session got from its command line and would not rerun, while the budget assumes they do (issue #679).
     """
     if not _rerunfailures_is_loaded(config):
         return list(_BLOCK_RERUNFAILURES_OPTION)
+    loader = list(_LOAD_RERUNFAILURES_OPTION) if _plugin_autoload_is_disabled() else []
+    return [*loader, *_rerun_settings_for(config)]
+
+
+def _rerun_settings_for(config: pytest.Config) -> list[str]:
+    """Return the rerun options and ini settings of a session that loaded pytest-rerunfailures."""
     command_line_options = _command_line_rerun_options(config)
     if not _rerun_ini_settings_are_forwarded(config):
         return command_line_options

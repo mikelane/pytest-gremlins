@@ -540,8 +540,16 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
 - No rerun options are added when the plugin is not loaded under either of its names, `rerunfailures` or
   `pytest_rerunfailures`. `-p no:rerunfailures` is handed on instead (see **Timeout scaling** below). pytest
   accepts it even when the plugin is not installed, so a project without it never receives an unknown flag.
-- A `-p` plugin loader is never carried into gremlin runs. When plugin autoload is disabled and rerunfailures is
-  loaded only by a command-line `-p`, gremlin runs can't load it and are reported as errors (see
+- A command-line `-p` plugin loader is not carried into gremlin runs, with one exception: when
+  `PYTEST_DISABLE_PLUGIN_AUTOLOAD` is set and the session loaded rerunfailures, gremlins puts
+  `-p pytest_rerunfailures` first among the options it hands on, so gremlin runs, the coverage pre-scan and the
+  confirmation runs rerun like the main run. Without it they would inherit the variable, not load the plugin and
+  never rerun, while the rerun budget, the scaled timeout and the cache key still described reruns. pytest skips a
+  module name that is already registered, so a loader that `addopts`, `PYTEST_ADDOPTS` or a conftest also supplies
+  does not register the plugin twice. With autoload on nothing is added: gremlin runs load the plugin through its
+  entry point. The `--disable-plugin-autoload` flag is not inherited either, so a session started with it and a `-p`
+  loader still has gremlin runs that autoload the plugin and rerun. Other plugins loaded only by a command-line `-p`
+  with autoload disabled, pytest-cov for one, are still not carried over (see
   [#654](https://github.com/mikelane/pytest-gremlins/issues/654)).
 
 If a baseline test needed a rerun to pass, gremlins prints one warning that names it (up to ten tests; the rest are
