@@ -1277,14 +1277,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
 
-    # Compute content hashes for source and test files (for caching)
-    if gremlin_session.cache_enabled:
-        hasher = ContentHasher()
-        for file_path, source in source_files.items():
-            gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
-        for test_file in gremlin_session.test_files:
-            with contextlib.suppress(FileNotFoundError):
-                gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
+    _hash_sources_and_tests_for_cache(gremlin_session, source_files)
 
     if gremlin_session.xdist_active and not session.items:
         logger.debug(
@@ -1294,6 +1287,21 @@ def pytest_collection_finish(session: pytest.Session) -> None:
         return
 
     _generate_gremlins(gremlin_session, source_files, rootdir)
+
+
+def _hash_sources_and_tests_for_cache(gremlin_session: GremlinSession, source_files: dict[str, str]) -> None:
+    """Record content hashes of the source and test files that key the incremental cache.
+
+    Without these hashes the cache can neither store nor replay a verdict, so every gremlin runs again.
+    """
+    if not gremlin_session.cache_enabled:
+        return
+    hasher = ContentHasher()
+    for file_path, source in source_files.items():
+        gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
+    for test_file in gremlin_session.test_files:
+        with contextlib.suppress(FileNotFoundError):
+            gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
 
 
 def _generate_gremlins(
@@ -2412,9 +2420,11 @@ def _rebuild_state_from_xdist_workers(
         xdist_name_to_nodes.setdefault(func_name, []).append(nid)
     gremlin_session.test_name_to_node_ids = xdist_name_to_nodes
     gremlin_session.total_tests = len(normalized)
+    gremlin_session.test_files = sorted({rootdir / nid.split('::')[0] for nid in normalized})
     logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
+    _hash_sources_and_tests_for_cache(gremlin_session, source_files)
     logger.debug('pytest_sessionfinish: xdist Phase 2 discovered %d source files', len(source_files))
     _generate_gremlins(gremlin_session, source_files, rootdir)
     logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
