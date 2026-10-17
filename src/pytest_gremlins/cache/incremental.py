@@ -98,9 +98,9 @@ def _effective_rerun_budget(rerun_budget: RerunBudget) -> RerunBudget:
     return reruns, 0.0 if reruns_delay <= 0 else float(reruns_delay)
 
 
-_C_INTEGER = re.compile(r'[ \t\n\v\f\r]*[+-]?[0-9]+')
-_C_INT_MIN = -(2**31)
+_C_INTEGER = re.compile(r'[ \t\n\v\f\r]*(?P<sign>[+-]?)(?P<digits>[0-9]+)')
 _C_INT_MAX = 2**31 - 1
+_C_INT_MAX_DIGITS = len(str(_C_INT_MAX))
 
 
 def subprocess_optimize_level(environ: Mapping[str, str]) -> int:
@@ -109,7 +109,8 @@ def subprocess_optimize_level(environ: Mapping[str, str]) -> int:
     The subprocess gets no ``-O`` flag, so only ``PYTHONOPTIMIZE`` applies, read as CPython reads it
     (``strtol`` over the whole string): unset or empty is 0, a value that is not a plain integer (trailing
     characters, ``_``, non-ASCII digits, overflow past a C ``int``) counts as 1, a negative value counts as 1,
-    and levels above 2 compile like 2.
+    and levels above 2 compile like 2. Length does not matter: thousands of leading zeros still read as the
+    number they spell, and the child interpreter starts normally either way.
 
     Args:
         environ: The environment the gremlin subprocess inherits.
@@ -120,10 +121,22 @@ def subprocess_optimize_level(environ: Mapping[str, str]) -> int:
     value = environ.get('PYTHONOPTIMIZE', '')
     if not value:
         return 0
-    if _C_INTEGER.fullmatch(value) is None:
+    match = _C_INTEGER.fullmatch(value)
+    if match is None:
         return 1
-    level = int(value)
-    if not _C_INT_MIN <= level <= _C_INT_MAX or level < 0:
+    return _level_from_digits(match['sign'], match['digits'].lstrip('0'))
+
+
+def _level_from_digits(sign: str, significant_digits: str) -> int:
+    """Return the level for a C integer given as a sign and digits without leading zeros.
+
+    The digit count is checked before ``int`` runs, so a value of any length is read without tripping
+    the interpreter's int/str conversion digit limit.
+    """
+    if len(significant_digits) > _C_INT_MAX_DIGITS:
+        return 1
+    level = int(significant_digits or '0')
+    if level > _C_INT_MAX or (sign == '-' and level > 0):
         return 1
     return min(level, 2)
 
