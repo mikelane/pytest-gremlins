@@ -32,10 +32,11 @@ InstrumentedEntry = dict[str, Any]
 InstrumentedSources = dict[str, InstrumentedEntry]
 
 
-REWRITE_API_BROKEN_EXIT_CODE = 3
-"""Exit code of a run that cannot rewrite asserts: pytest's INTERNAL_ERROR, which the parent scores as an ERROR.
+REWRITE_API_BROKEN_EXIT_CODE = 72
+"""Exit code of a run that cannot rewrite asserts, which the parent scores as an ERROR and explains.
 
-Spelled out because this file ships without pytest at import time. Exit 1 would score as a caught mutant.
+Equal to ``pytest_gremlins.parallel.exit_codes.REWRITE_API_BROKEN_EXIT_CODE``, spelled out because this file
+ships without pytest-gremlins on the path. Exit 1 would score as a caught mutant.
 """
 
 
