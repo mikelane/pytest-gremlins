@@ -32,6 +32,33 @@ InstrumentedEntry = dict[str, Any]
 InstrumentedSources = dict[str, InstrumentedEntry]
 
 
+REWRITE_API_BROKEN_EXIT_CODE = 3
+"""Exit code of a run that cannot rewrite asserts: pytest's INTERNAL_ERROR, which the parent scores as an ERROR.
+
+Spelled out because this file ships without pytest at import time. Exit 1 would score as a caught mutant.
+"""
+
+
+def _end_run_because_assert_rewriting_broke(error: BaseException) -> None:
+    """Print why asserts cannot be rewritten, then end this process without running another test.
+
+    Plain asserts would let tests that match assert messages fail on every gremlin, and the parent would score
+    each failure as a kill (#603). An exception raised here would not help either: a module imported inside a
+    test turns it into that test's failure, which exits 1 like a caught mutant. Only ending the process
+    reports a runner error whenever the module is imported.
+    """
+    import pytest  # noqa: PLC0415 - already loaded when the rewrite hook served a module
+
+    sys.stderr.write(
+        f'pytest-gremlins: assertion rewriting is unavailable with pytest {pytest.__version__}, which changed the '
+        f'private pytest API pytest-gremlins relies on ({type(error).__name__}: {error}). Aborting this run '
+        'instead of reporting verdicts from plain asserts. Please report it at '
+        'https://github.com/mikelane/pytest-gremlins/issues.\n'
+    )
+    sys.stderr.flush()
+    os._exit(REWRITE_API_BROKEN_EXIT_CODE)
+
+
 def normalize_origin(path: str) -> str:
     """Return the one spelling of ``path`` that both sides of ``sources.json`` agree on."""
     return os.path.normcase(os.path.realpath(path))
@@ -225,13 +252,16 @@ class GremlinLoader(importlib.abc.Loader):
         # Imported here, never at the top: this file is inlined into a bootstrap that must not import pytest.
         from pathlib import Path  # noqa: PLC0415
 
-        from _pytest.assertion.rewrite import rewrite_asserts  # noqa: PLC0415
-
         hook: Any = self._original_loader
         spec = module.__spec__
         origin: str = spec.origin  # type: ignore[union-attr, assignment]
-        hook._rewritten_names[module.__name__] = Path(origin)
-        rewrite_asserts(_specialize_asserts(tree), source_bytes, origin, hook.config)
+        try:
+            from _pytest.assertion.rewrite import rewrite_asserts  # noqa: PLC0415
+
+            hook._rewritten_names[module.__name__] = Path(origin)
+            rewrite_asserts(_specialize_asserts(tree), source_bytes, origin, hook.config)
+        except (AttributeError, ImportError, TypeError) as error:
+            _end_run_because_assert_rewriting_broke(error)
 
     @staticmethod
     def _unpickle_tree(encoded_tree: str) -> ast.Module | None:

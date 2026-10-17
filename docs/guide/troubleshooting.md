@@ -508,6 +508,21 @@ for large codebases.
 
 ---
 
+### Error: assertion rewriting is unavailable with pytest X.Y
+
+**Symptom:** Gremlins report ERROR, and the error output begins with
+`pytest-gremlins: assertion rewriting is unavailable with pytest X.Y`.
+
+**Cause:** pytest-gremlins reuses pytest's private assertion-rewriting API so that assert messages in
+gremlin runs match those of a normal run. A pytest release changed that API. Running on with plain
+asserts would make tests that match assert messages fail for every gremlin and report false kills,
+so the run stops instead.
+
+**Solution:** Pin pytest to the last version that worked, and
+[report the pytest version](https://github.com/mikelane/pytest-gremlins/issues) so support can be added.
+
+---
+
 ### Error: RuntimeError - WorkerPool is not active
 
 **Symptom:**
