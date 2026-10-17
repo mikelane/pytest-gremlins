@@ -690,6 +690,25 @@ simple_json = exporter.to_score_only_json(score)
 Path('mutation-score.json').write_text(simple_json)
 ```
 
+**Schema validity.** The full report validates against the official
+[mutation-testing-report-schema](https://github.com/stryker-mutator/mutation-testing-elements/tree/master/packages/report-schema).
+
+- **Source:** each file entry carries its original `source`, read from disk when the report is
+  built. The file is decoded the way pytest-gremlins decodes it for instrumentation: a UTF-8
+  byte-order mark is dropped and a PEP 263 `coding:` declaration is honored. Line endings are
+  normalized to `\n`.
+- **Positions:** mutant `location` positions are 1-based for both line and column, with a required
+  `end`. The Python AST's 0-based UTF-8 byte columns are converted to character columns and shifted
+  by one. A node without end information gets an `end` equal to its `start`.
+- **Unreadable files:** a file that cannot be read exports an empty `source`, which the schema
+  accepts. Its mutant columns are then the AST's byte columns plus one, because there is no text to
+  convert them against.
+
+!!! warning "Reports embed your source code"
+    Each file entry in a Stryker report contains the full text of the mutated file. Uploading the
+    report to the Stryker Dashboard, or sharing the JSON (for example as a CI artifact), shares that
+    source code. Do not publish it for private or proprietary repositories unless you intend to.
+
 #### Uploading to Stryker Dashboard
 
 1. **Enable repository on dashboard.stryker-mutator.io**
@@ -883,13 +902,14 @@ jobs:
   "files": {
     "src/auth.py": {
       "language": "python",
+      "source": "if age >= 18:\n    grant()\n",
       "mutants": [
         {
           "id": "g001",
           "mutatorName": "comparison",
           "location": {
-            "start": {"line": 42, "column": 8},
-            "end": {"line": 42, "column": 14}
+            "start": {"line": 1, "column": 4},
+            "end": {"line": 1, "column": 13}
           },
           "status": "Killed",
           "killedBy": ["test_auth.py::test_login"],
@@ -933,7 +953,8 @@ The two numbers agree when the run has no `ERROR` gremlins and at least one grem
 toward the score. When nothing counts (no gremlins at all, every gremlin pardoned, or every
 remaining gremlin an `ERROR`), Stryker's formula has no score; pytest-gremlins reports 0.0 in
 those cases. When `ERROR` gremlins exist alongside countable ones, a score recomputed by a Stryker
-dashboard from the mutant statuses is higher than `mutationScore`. Treat
+dashboard from the mutant statuses is higher than `mutationScore` (or equal, when nothing was detected:
+with no zapped or timed-out gremlins both scores are 0.0). Treat
 `config.pytestGremlins.mutationScore` as the authoritative number, and look into the `ERROR`
 count when the two differ. Pardoned gremlins are exported as `Ignored`, which Stryker also leaves
 out of its score.

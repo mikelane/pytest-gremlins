@@ -10,12 +10,16 @@ from __future__ import annotations
 
 from collections import defaultdict
 import json
+import logging
+import re
+import tokenize
 from typing import TYPE_CHECKING
 
 import pytest_gremlins
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from pytest_gremlins.instrumentation.gremlin import Gremlin
@@ -31,6 +35,8 @@ if TYPE_CHECKING:
         StrykerScoreSummary,
     )
 
+logger = logging.getLogger(__name__)
+
 
 STATUS_MAP: dict[GremlinResultStatus, str] = {
     GremlinResultStatus.ZAPPED: 'Killed',
@@ -40,12 +46,55 @@ STATUS_MAP: dict[GremlinResultStatus, str] = {
     GremlinResultStatus.PARDONED: 'Ignored',
 }
 
+LINE_BREAK = re.compile(r'\r\n|\r|\n')
+
 SCORE_NOTE = (
     'pytest-gremlins mutation score: (zapped + timeout) / (total - pardoned). ERROR gremlins are exported as '
     'RuntimeError, which Stryker excludes from its score denominator, but pytest-gremlins keeps them in the '
     'denominator, so a score recomputed from the mutant statuses can be higher than this one. This value is '
     'authoritative.'
 )
+
+
+def read_source(file_path: str) -> str:
+    """Read the original source of a mutated file, which the schema requires per file.
+
+    Args:
+        file_path: Path of the mutated file, as recorded on the gremlin.
+
+    Returns:
+        The file's text decoded the way the plugin decodes it for instrumentation (PEP 263
+        declarations honoured, BOM stripped), or an empty string when it cannot be read (the
+        schema requires the key, so an unreadable file still yields a valid report).
+    """
+    try:
+        with tokenize.open(file_path) as source_stream:
+            return source_stream.read()
+    except (OSError, UnicodeDecodeError, SyntaxError):
+        logger.warning('Could not read %s for the Stryker report; exporting empty source', file_path, exc_info=True)
+        return ''
+
+
+def character_column(source_lines: list[str], line_number: int, byte_offset: int) -> int:
+    """Convert an AST column, counted in UTF-8 bytes, to a 0-based character column.
+
+    Args:
+        source_lines: The file's lines.
+        line_number: 1-based line number the column belongs to.
+        byte_offset: The AST's 0-based UTF-8 byte offset within that line.
+
+    Returns:
+        The 0-based character column, or ``byte_offset`` unchanged when the line is not available.
+
+    Example:
+        >>> character_column(["s = 'é'; x"], 1, 9)
+        8
+        >>> character_column([], 1, 4)
+        4
+    """
+    if not 1 <= line_number <= len(source_lines):
+        return byte_offset
+    return len(source_lines[line_number - 1].encode('utf-8')[:byte_offset].decode('utf-8', errors='ignore'))
 
 
 class StrykerExporter:
@@ -66,14 +115,21 @@ class StrykerExporter:
         >>> # json_str = exporter.to_json(score)
     """
 
-    def __init__(self, thresholds: dict[str, int] | None = None) -> None:
-        """Initialize the exporter with optional thresholds.
+    def __init__(
+        self,
+        thresholds: dict[str, int] | None = None,
+        source_reader: Callable[[str], str] | None = None,
+    ) -> None:
+        """Initialize the exporter with optional thresholds and source reader.
 
         Args:
             thresholds: Optional dict with 'high' and 'low' score thresholds.
                         Defaults to high=80, low=60.
+            source_reader: Optional callable returning a mutated file's source text
+                           from its path. Defaults to reading the file from disk.
         """
         self._thresholds = thresholds or {'high': 80, 'low': 60}
+        self._source_reader = source_reader or read_source
 
     def to_json(self, score: MutationScore) -> str:
         """Convert mutation score to Stryker format JSON string.
@@ -167,19 +223,23 @@ class StrykerExporter:
         for result in score.results:
             results_by_file[result.gremlin.file_path].append(result)
 
-        return {
-            file_path: {
+        files: dict[str, StrykerFileResult] = {}
+        for file_path, results in results_by_file.items():
+            source = self._source_reader(file_path)
+            source_lines = LINE_BREAK.split(source) if source else []
+            files[file_path] = {
                 'language': 'python',
-                'mutants': [self._build_mutant(r) for r in results],
+                'source': source,
+                'mutants': [self._build_mutant(r, source_lines) for r in results],
             }
-            for file_path, results in results_by_file.items()
-        }
+        return files
 
-    def _build_mutant(self, result: GremlinResult) -> StrykerMutant:
+    def _build_mutant(self, result: GremlinResult, source_lines: list[str]) -> StrykerMutant:
         """Build a single mutant entry.
 
         Args:
             result: The GremlinResult to convert.
+            source_lines: Lines of the mutated file, used to convert byte columns to character columns.
 
         Returns:
             Dictionary representing this mutant in Stryker format.
@@ -188,7 +248,7 @@ class StrykerExporter:
         mutant: StrykerMutant = {
             'id': gremlin.gremlin_id,
             'mutatorName': gremlin.operator_name,
-            'location': self._build_location(gremlin),
+            'location': self._build_location(gremlin, source_lines),
             'status': STATUS_MAP[result.status],
             'description': gremlin.description,
         }
@@ -206,27 +266,30 @@ class StrykerExporter:
 
         return mutant
 
-    def _build_location(self, gremlin: Gremlin) -> StrykerPosition:
-        """Build location object from gremlin's AST node.
+    def _build_location(self, gremlin: Gremlin, source_lines: list[str]) -> StrykerPosition:
+        """Build a schema location with 1-based start and end positions.
+
+        Python AST columns are 0-based UTF-8 byte offsets and the schema's positions are
+        1-based character columns, so each column is converted to characters and shifted by
+        one. The schema requires ``end``; a node without end information gets an empty range
+        at its start.
 
         Args:
             gremlin: The Gremlin containing location information.
+            source_lines: Lines of the mutated file, used to convert byte columns to character columns.
 
         Returns:
-            Location dictionary with start and optionally end positions.
+            Location dictionary with start and end positions.
         """
         node = gremlin.original_node
         start: StrykerLocation = {
             'line': node.lineno,
-            'column': node.col_offset,
+            'column': character_column(source_lines, node.lineno, node.col_offset) + 1,
         }
-        location: StrykerPosition = {'start': start}
-
-        if node.end_lineno is not None:
-            end: StrykerLocation = {
+        end: StrykerLocation = start
+        if node.end_lineno is not None and node.end_col_offset is not None:
+            end = {
                 'line': node.end_lineno,
-                'column': node.end_col_offset,
+                'column': character_column(source_lines, node.end_lineno, node.end_col_offset) + 1,
             }
-            location['end'] = end
-
-        return location
+        return {'start': start, 'end': end}

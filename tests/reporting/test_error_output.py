@@ -192,7 +192,14 @@ class DescribeJsonReporterErrorOutput:
         assert 'error_output' not in data['results'][0]
 
 
+@pytest.fixture
+def _no_source_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep these small tests off the filesystem by stubbing the exporter's source reader."""
+    monkeypatch.setattr('pytest_gremlins.reporting.stryker_export.read_source', lambda _path: '')
+
+
 @pytest.mark.small
+@pytest.mark.usefixtures('_no_source_reads')
 class DescribeStrykerExporterErrorOutput:
     """Tests for statusReason in Stryker export."""
 
