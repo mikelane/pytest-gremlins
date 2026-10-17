@@ -58,6 +58,23 @@ class DescribeScaledMutantTimeout:
     def it_clamps_a_rerun_count_too_large_for_a_float_to_the_maximum_timeout(self, delay: float) -> None:
         assert scaled_mutant_timeout(30, reruns=10**400, reruns_delay=delay) == MAX_TIMEOUT_SECONDS
 
+    @pytest.mark.parametrize(('delayed_tests', 'expected'), [(0, 19), (1, 19), (3, 33)])
+    def it_pays_the_rerun_delay_once_for_each_test_that_waits(self, delayed_tests: int, expected: int) -> None:
+        timeout = scaled_mutant_timeout(6, reruns=1, reruns_delay=7, delayed_tests=delayed_tests)
+
+        assert timeout == expected
+
+    def it_does_not_multiply_the_per_attempt_budget_by_the_waiting_tests(self) -> None:
+        assert scaled_mutant_timeout(30, reruns=2, reruns_delay=20, delayed_tests=2) == 170
+
+    def it_caps_the_timeout_when_many_tests_wait(self) -> None:
+        timeout = scaled_mutant_timeout(30, reruns=2, reruns_delay=20, delayed_tests=10**9)
+
+        assert timeout == MAX_TIMEOUT_SECONDS
+
+    def it_leaves_the_timeout_alone_without_reruns_however_many_tests_wait(self) -> None:
+        assert scaled_mutant_timeout(30, reruns=0, reruns_delay=20, delayed_tests=5) == 30
+
     def it_treats_a_delay_that_is_not_a_number_as_no_delay(self) -> None:
         assert scaled_mutant_timeout(30, reruns=2, reruns_delay=float('nan')) == 90
 

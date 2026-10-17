@@ -620,6 +620,12 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
 - The coverage pre-scan timeout (`--gremlin-coverage-timeout`) is scaled by the same formula, because the
   pre-scan runs with the same rerun options and a flaky test there waits out `--reruns-delay` too. For example,
   `--reruns 2 --reruns-delay 20` with the default pre-scan limit of 120 gives `120 * 3 + 40 = 400` seconds.
+  The pre-scan runs the whole suite, so every flaky test waits out the delays. The delay term is therefore
+  multiplied by the number of tests that needed a rerun in the baseline run (at least one), while the per-attempt
+  limit is not. With three such tests the example gives `120 * 3 + 40 * 3 = 480` seconds. A pre-scan timeout
+  only turns coverage-guided test selection off, so every gremlin runs the full suite; it never changes a verdict.
+- When rerun scaling has already pushed a limit to the 86400-second cap, the timeout messages say to lower
+  `--reruns` or `--reruns-delay` instead of advising a higher per-attempt limit, which could not help.
 - The incremental cache keys each verdict on the effective timeout and on the rerun budget itself (the rerun count,
   including `--force-reruns`, and the delay), so cached verdicts are judged again when either changes. Two settings
   that scale to the same timeout still do not share verdicts. For example, `--gremlin-mutant-timeout 60` with no

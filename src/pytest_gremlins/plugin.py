@@ -118,9 +118,11 @@ from pytest_gremlins.reporting.html import (
 )
 from pytest_gremlins.reporting.json_reporter import JsonReporter
 from pytest_gremlins.reporting.results import (
+    CAPPED_LIMIT_ADVICE,
     TIMEOUT_NOT_CONFIRMED_PREFIX,
     GremlinResult,
     GremlinResultStatus,
+    limit_is_capped,
     scaled_limit_note,
 )
 from pytest_gremlins.reporting.score import MutationScore
@@ -373,6 +375,7 @@ class GremlinSession:
     mutant_timeout: int = DEFAULT_MUTANT_TIMEOUT_SECONDS
     mutant_attempt_timeout: int | None = None
     rerun_budget: RerunBudget = NO_RERUNS
+    rerun_backoff_factor: float = 1.0
     collection_errors: int = 0
     baseline_aborted: bool = False
     baseline_failed_test_ids: set[str] = field(default_factory=set)
@@ -1096,6 +1099,7 @@ def pytest_configure(config: pytest.Config) -> None:
             mutant_timeout=_rerun_scaled_timeout(config, mutant_attempt_timeout, label='Mutant'),
             mutant_attempt_timeout=mutant_attempt_timeout,
             rerun_budget=_gremlin_run_rerun_budget(config),
+            rerun_backoff_factor=_gremlin_run_rerun_backoff_factor(config),
         ),
     )
 
@@ -2350,10 +2354,15 @@ def _timeout_not_confirmed_message(
         )
     )
     raised_limit = 'the per-attempt limit' if scaled_note else 'the limit'
+    is_capped = bool(scaled_note) and limit_is_capped(mutant_timeout)
+    advice = (
+        f'{CAPPED_LIMIT_ADVICE[0].upper()}{CAPPED_LIMIT_ADVICE[1:]}'
+        if is_capped
+        else f'Raise {raised_limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout'
+    )
     return (
         f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (selection: {shown_ids}; unmutated run {unmutated_run_summary}). '
-        f'Raise {raised_limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout, '
-        'or speed up these tests.'
+        f'{advice}, or speed up these tests.'
     )
 
 
@@ -2591,10 +2600,15 @@ def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> N
     """Warn that the pre-scan timed out, which is a different cause from "no data" (issues #503, #673)."""
     scaled_note = scaled_limit_note(attempt_timeout, seconds)
     raised_limit = 'the per-attempt limit' if scaled_note else 'it'
+    advice = (
+        CAPPED_LIMIT_ADVICE
+        if scaled_note and limit_is_capped(seconds)
+        else f'set coverage_timeout / --gremlin-coverage-timeout to raise {raised_limit}'
+    )
     warnings.warn(
         f'pytest-gremlins: coverage pre-scan exceeded {seconds}s{scaled_note}; '
         'coverage-guided test selection disabled '
-        f'(set coverage_timeout / --gremlin-coverage-timeout to raise {raised_limit})',
+        f'({advice})',
         stacklevel=1,
     )
 
@@ -2627,6 +2641,7 @@ def _run_prescan_reporting_problems(
     coverage_include: list[str] | None,
 ) -> dict[str, dict[str, list[int]]]:
     """Run the coverage pre-scan, warning (with the right cause) when it yields nothing."""
+    prescan_timeout = _prescan_timeout(gremlin_session)
     try:
         coverage_data = _run_tests_with_coverage(
             node_ids,
@@ -2635,7 +2650,7 @@ def _run_prescan_reporting_problems(
             coverage_include=coverage_include,
             preserved_addopts=gremlin_session.preserved_addopts,
             rerun_options=gremlin_session.rerun_options,
-            timeout=gremlin_session.coverage_timeout,
+            timeout=prescan_timeout,
         )
     except CoveragePrescanTimeoutError as timeout_error:
         _warn_prescan_timeout(timeout_error.seconds, gremlin_session.coverage_attempt_timeout)
@@ -2903,6 +2918,33 @@ def _gremlin_run_rerun_budget(config: pytest.Config) -> RerunBudget:
     if not _rerunfailures_is_loaded(config):
         return NO_RERUNS
     return session_rerun_budget(config.option, config.getini)
+
+
+def _gremlin_run_rerun_backoff_factor(config: pytest.Config) -> float:
+    """Return the delay backoff factor gremlin runs may use, or 1.0 without pytest-rerunfailures."""
+    if not _rerunfailures_is_loaded(config):
+        return 1.0
+    return session_rerun_backoff_factor(config.option, config.getini)
+
+
+def _prescan_timeout(gremlin_session: GremlinSession) -> int:
+    """Return the pre-scan limit, paying the rerun delay once for each test the baseline had to rerun (issue #673).
+
+    The pre-scan runs the whole suite, so every flaky test waits out the delays, not just one.  The baseline
+    already ran the suite, so its rerun count is the best estimate there is; a timeout here only turns
+    coverage-guided selection off.
+    """
+    attempt_timeout = gremlin_session.coverage_attempt_timeout
+    if attempt_timeout is None:
+        return gremlin_session.coverage_timeout
+    reruns, reruns_delay = gremlin_session.rerun_budget
+    return scaled_mutant_timeout(
+        attempt_timeout,
+        reruns=reruns,
+        reruns_delay=reruns_delay,
+        reruns_delay_backoff_factor=gremlin_session.rerun_backoff_factor,
+        delayed_tests=len(gremlin_session.baseline_rerun_test_ids),
+    )
 
 
 def _rerun_scaled_timeout(config: pytest.Config, per_run_timeout: int, *, label: str) -> int:

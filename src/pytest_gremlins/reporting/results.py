@@ -14,12 +14,23 @@ from dataclasses import (
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from pytest_gremlins.config import MAX_TIMEOUT_SECONDS
+
 if TYPE_CHECKING:
     from pytest_gremlins.instrumentation.gremlin import Gremlin
 
 
 TIMEOUT_NOT_CONFIRMED_PREFIX = "timeout not counted as a kill: the gremlin's tests are too slow even without the mutant"
 """Start of the ``error_output`` of a timeout that was downgraded to ERROR."""
+
+
+CAPPED_LIMIT_ADVICE = f'the limit is capped at {MAX_TIMEOUT_SECONDS}s; lower --reruns or --reruns-delay'
+"""What to do instead of raising a limit that rerun scaling already pushed to ``MAX_TIMEOUT_SECONDS``."""
+
+
+def limit_is_capped(timeout: int) -> bool:
+    """Return whether ``timeout`` is the longest limit there is, so raising the per-attempt limit cannot help."""
+    return timeout >= MAX_TIMEOUT_SECONDS
 
 
 def scaled_limit_note(attempt_timeout: int | None, scaled_timeout: int) -> str:

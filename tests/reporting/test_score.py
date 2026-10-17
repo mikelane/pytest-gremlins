@@ -252,6 +252,17 @@ class DescribeMutationScoreWithDowngradedTimeouts:
 
         assert {file: s.mutant_attempt_timeout for file, s in score.by_file().items()} == {result.gremlin.file_path: 30}
 
+    def it_does_not_advise_raising_the_limit_when_it_is_already_at_the_cap(self, make_result):
+        score = MutationScore.from_results(
+            [self._downgraded(make_result)], mutant_timeout=86400, mutant_attempt_timeout=30000
+        )
+
+        warning = score.timeout_warning
+
+        assert warning is not None
+        assert 'The limit is capped at 86400s; lower --reruns or --reruns-delay, or speed up those tests.' in warning
+        assert 'Raise' not in warning
+
     def it_names_the_mutant_timeout_generically_when_the_limit_is_unknown(self, make_result):
         warning = MutationScore.from_results([self._downgraded(make_result)]).timeout_warning
 
