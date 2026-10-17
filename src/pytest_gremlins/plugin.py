@@ -132,6 +132,7 @@ from pytest_gremlins.rerun_options import (
     rerun_options_in,
     rerun_resets,
     scaled_mutant_timeout,
+    session_rerun_backoff_factor,
     session_rerun_budget,
     unforwardable_rerun_keys,
     unforwarded_rerun_key_warning,
@@ -2884,23 +2885,29 @@ def _gremlin_run_rerun_budget(config: pytest.Config) -> RerunBudget:
 
 
 def _rerun_scaled_mutant_timeout(config: pytest.Config, per_run_timeout: int) -> int:
-    """Return ``per_run_timeout`` widened to the rerun budget of the session (issue #655).
+    """Return ``per_run_timeout`` widened to the rerun budget of the session (issues #655, #672).
 
     A gremlin run inherits the session's pytest-rerunfailures settings, so a killed mutant's test is rerun
-    and, with ``--reruns-delay``, waits between attempts.  Without scaling, that alone would outlast the
-    timeout and the kill would be reported as a timeout or error.  The configured timeout is the budget of
-    one attempt; see :func:`~pytest_gremlins.rerun_options.scaled_mutant_timeout`.  Nothing is scaled when
+    and, with ``--reruns-delay`` (scaled by ``--reruns-delay-backoff-factor``), waits between attempts.
+    Without scaling, that alone would outlast the timeout and the kill would be reported as a timeout or
+    error.  The configured timeout is the budget of one attempt; see
+    :func:`~pytest_gremlins.rerun_options.scaled_mutant_timeout`.  Nothing is scaled when
     pytest-rerunfailures is not loaded.
     """
     if not _rerunfailures_is_loaded(config):
         return per_run_timeout
     reruns, reruns_delay = session_rerun_budget(config.option, config.getini)
-    scaled_timeout = scaled_mutant_timeout(per_run_timeout, reruns=reruns, reruns_delay=reruns_delay)
+    backoff_factor = session_rerun_backoff_factor(config.option, config.getini)
+    scaled_timeout = scaled_mutant_timeout(
+        per_run_timeout, reruns=reruns, reruns_delay=reruns_delay, reruns_delay_backoff_factor=backoff_factor
+    )
     logger.debug(
-        'Mutant timeout scaled for pytest-rerunfailures: %ds per attempt, reruns=%d, reruns_delay=%.1fs -> %ds',
+        'Mutant timeout scaled for pytest-rerunfailures: %ds per attempt, reruns=%d, reruns_delay=%.1fs, '
+        'backoff_factor=%s -> %ds',
         per_run_timeout,
         reruns,
         reruns_delay,
+        backoff_factor,
         scaled_timeout,
     )
     return scaled_timeout

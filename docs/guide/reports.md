@@ -50,13 +50,19 @@ Run with --gremlin-report=html for detailed report.
 
 Timeout, Error, and Pardoned lines only appear when their count is greater than zero.
 
+The percentages on these lines are shares of all gremlins (`zapped / total` for the Zapped
+line). They are not the mutation score, which counts timeouts as kills and leaves pardoned
+gremlins out: `(zapped + timeout) / (total - pardoned)`. In this example the mutation score is
+(142 + 5) / 167 = 88%, not 85%. The JSON report's `summary.percentage` holds the mutation
+score; see [Understanding Mutation Score](#understanding-mutation-score).
+
 ### Console Output Sections
 
 **Summary Section:**
 
 | Field | Description |
 |-------|-------------|
-| Zapped | Number and percentage of gremlins caught by tests |
+| Zapped | Number of gremlins caught by tests, and their share of all gremlins (not the mutation score) |
 | Survived | Number and percentage of gremlins that escaped tests |
 | Timeout | Number and percentage of gremlins that caused test timeouts and whose tests finish in time without the mutant (shown when > 0); these count as kills |
 | Error | Number and percentage of gremlins that caused errors, including timeouts whose unmutated tests do not finish within half the timeout (shown when > 0) |
@@ -580,9 +586,9 @@ mutation_testing:
     when: always
     paths:
       - coverage/gremlins/
-    reports:
-      junit: coverage/gremlins/gremlins.json
 ```
+
+`gremlins.json` is not a JUnit XML file, so don't list it under `artifacts:reports:junit`.
 
 ### Jenkins Pipeline
 
@@ -698,8 +704,10 @@ Path('mutation-score.json').write_text(simple_json)
   byte-order mark is dropped and a PEP 263 `coding:` declaration is honored. Line endings are
   normalized to `\n`.
 - **Positions:** mutant `location` positions are 1-based for both line and column, with a required
-  `end`. The Python AST's 0-based UTF-8 byte columns are converted to character columns and shifted
-  by one. A node without end information gets an `end` equal to its `start`.
+  `end`. The Python AST's 0-based UTF-8 byte columns are converted to UTF-16 code unit columns and
+  shifted by one, matching the string indices of the report viewer, so a character outside the Basic
+  Multilingual Plane (such as an emoji) counts as two columns. A node without end information gets an
+  `end` equal to its `start`.
 - **Unreadable files:** a file that cannot be read exports an empty `source`, which the schema
   accepts. Its mutant columns are then the AST's byte columns plus one, because there is no text to
   convert them against.
