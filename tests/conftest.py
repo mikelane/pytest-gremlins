@@ -9,8 +9,11 @@ from __future__ import annotations
 from collections.abc import (
     Callable,
     Generator,
+    MutableMapping,
 )
+import os
 from pathlib import Path
+import re
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -20,6 +23,33 @@ from pytest_gremlins.plugin import _set_session
 
 # Enable pytester fixture for plugin testing
 pytest_plugins = ['pytester']
+
+_SECRET_ENV_NAME = re.compile(r'^(PYPI|TWINE)_|(^|_)(TOKEN|SECRET|PASSWORD|PASSWD|PASS|CREDENTIALS?|KEY|KEY_ID)$')
+
+
+def _is_secret_env_name(name: str) -> bool:
+    return _SECRET_ENV_NAME.search(name.upper()) is not None
+
+
+def _scrub_secret_env(environ: MutableMapping[str, str]) -> dict[str, str]:
+    """Remove secret-shaped variables from ``environ`` and return what was removed.
+
+    Pytest's ``-l`` and assertion rewriting print locals such as ``dict(os.environ)``
+    on failure, which would leak CI secrets into logs. Scrubbing at import time keeps
+    pytester and subprocess children from inheriting them too.
+    """
+    removed = {name: value for name, value in environ.items() if _is_secret_env_name(name)}
+    for name in removed:
+        del environ[name]
+    return removed
+
+
+_SCRUBBED_SECRET_ENV = _scrub_secret_env(os.environ)
+
+
+def pytest_unconfigure() -> None:
+    """Restore the secret variables scrubbed when this conftest was imported."""
+    os.environ.update(_SCRUBBED_SECRET_ENV)
 
 
 # Register markers for test categories
