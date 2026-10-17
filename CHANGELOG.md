@@ -5,6 +5,83 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.12.0 (2026-10-17)
+
+**Flaky tests no longer inflate the score.** If you use pytest-rerunfailures, a flaky test that
+failed once under a gremlin counted as a kill, even though the plugin would have passed it on a
+rerun. Gremlin runs now rerun failing tests the way your main run does, and the per-gremlin
+timeout grows to leave room for those reruns. A gremlin run that crashed before any test ran is
+now an error, not a kill. The Stryker export now validates against the official schema. Your
+score may drop after upgrading.
+
+### Upgrade notes
+
+- **Your score may drop if you use pytest-rerunfailures.** Gremlins that were zapped only because
+  a flaky test failed once, with no rerun, are now SURVIVED. Gremlin runs that crashed at startup
+  are now ERROR instead of ZAPPED. In the other direction, a killed gremlin whose test waited out
+  `--reruns-delay` and used to time out is now ZAPPED. (#659, #663, #674, #680, #689)
+- **Gremlin runs take longer when reruns are on.** A killed gremlin can run its killing test up to
+  `reruns + 1` times. The per-gremlin timeout is now
+  `limit × (reruns + 1) + ceil(reruns × reruns_delay)`, capped at 86400 s. An explicit
+  `--gremlin-mutant-timeout` or `mutant_timeout` is the limit for one attempt, and is scaled too.
+  (#659, #674)
+- **The cache is rebuilt once.** Cached verdicts are now keyed on the rerun budget (`reruns` and
+  `reruns_delay`), and the verdict changes above retire older entries, so the first run after
+  upgrading re-runs every gremlin. (#663, #678, #680, #689)
+- **Stryker reports now contain your source code.** Each file entry in a `StrykerExporter` report
+  carries the full text of the mutated file, as the schema requires. Uploading the report to the
+  Stryker Dashboard, or sharing it as a CI artifact, shares that code. (#592, #682)
+
+### Feature
+
+- **pytest-rerunfailures settings now reach gremlin runs.** `--reruns`, `--reruns-delay`,
+  `--only-rerun`, `--rerun-except` and the delay backoff factor are passed to gremlin runs and the
+  coverage pre-scan, including when they come from `@file` argument files or `-o`. With
+  `-c`/`--config-file`, the rerun ini settings from that file are forwarded too; without it,
+  gremlin runs read them from the project config. A `-c` rerun pattern that `-o` would change,
+  such as one with leading or trailing whitespace, is reset to no filter and named in a warning.
+  When a test needed a rerun in the unmutated baseline, one warning names it. (#546, #658, #659,
+  #662)
+
+### Fix
+
+- **A gremlin run that crashed before any test ran was scored as a kill.** The crash exited with
+  code 1, the code pytest uses for a failing test, so the gremlin was reported ZAPPED. One example
+  is pluggy's `Plugin already registered under a different name` at startup. Such a crash now
+  exits 3 and is reported as ERROR, and a missing `PYTEST_GREMLINS_SOURCES_FILE` exits 4. A run
+  where a test fails and a teardown hook then raises is also ERROR now. (#656, #663)
+- **A killed gremlin could time out when its test waited out `--reruns-delay`.** The timeout did
+  not include rerun delays, so the gremlin scored TIMEOUT or ERROR instead of ZAPPED. See the
+  upgrade notes for the new timeout. (#655, #674)
+- **Two rerun settings with the same timeout shared cached verdicts.** For example,
+  `--gremlin-mutant-timeout 60` with no reruns and `--gremlin-mutant-timeout 30 --reruns 1` both
+  give a 60 s timeout. A kill cached by the run without reruns could be reused by the run with
+  reruns, which is a false kill. The cache key now includes the rerun budget. (#671, #678)
+- **Gremlin runs reran failing tests when the main run did not load pytest-rerunfailures.** With
+  `-p no:rerunfailures`, `--disable-plugin-autoload`, or the plugin not installed, gremlin runs
+  still loaded it and reran tests from the ini settings. Their timeout was not scaled for the
+  reruns, and the cache recorded them as having none. Gremlin runs, the coverage pre-scan and
+  confirmation runs now get `-p no:rerunfailures`. (#670, #680)
+- **With plugin autoload off, gremlin runs never reran failing tests.** When the session loaded
+  pytest-rerunfailures with `-p` and gremlin runs started with autoload off, the session reran
+  flaky tests and gremlin runs did not, which caused false kills. Autoload is off in gremlin runs
+  when `PYTEST_DISABLE_PLUGIN_AUTOLOAD` is set, or when `--disable-plugin-autoload` comes from ini
+  `addopts` or `PYTEST_ADDOPTS`, including `@file` argument files read relative to the rootdir.
+  Gremlin runs now load the plugin under the name the session registered it under. (#679, #689)
+- **The Stryker export did not validate against the official report schema.** Each file entry now
+  carries `source`, positions are 1-based with a required `end`, and columns count characters
+  instead of UTF-8 bytes. Files with a byte-order mark or a PEP 263 `coding:` declaration are
+  located correctly. A file that cannot be read exports an empty `source` and logs a warning.
+  (#592, #682)
+
+### Internal
+
+- Test assertions no longer print the process environment when they fail, including when pytest
+  prints local variables, and an AST check enforces it. (#537, #647)
+- The Stryker schema tests use a vendored copy of the report schema and a new dev-only
+  `jsonschema` dependency. (#682)
+- Bumped commitizen to 4.19.2, tox to 4.65.2 and ruff to 0.17.0. (#664, #665, #666)
+
 ## v1.11.4 (2026-10-11)
 
 **Fewer silent gaps.** Code that ran only in a `spawn` or `forkserver` child was never mutated,
@@ -21,9 +98,10 @@ these are fixed. Your score may rise after upgrading.
   Python version or implementation from the one pytest runs under still runs the original code,
   as before. (#604, #620)
 - **Files that can't be instrumented are now reported.** Each one prints
-  `pytest-gremlins: skipped <path>: could not instrument (<Type>: <message>)`, and the JSON and
-  HTML reports list it under `skipped_files`. Those files are not mutation tested, so they are
-  not counted in the score. (#638, #645, #644, #646)
+  `pytest-gremlins: skipped <path>: could not instrument (<Type>: <message>)`. The JSON report
+  lists it under `skipped_files`, and the HTML report lists it in the "Files skipped and not
+  mutation tested" section. Those files are not mutation tested, so they are not counted in the
+  score. (#638, #645, #644, #646)
 - **The cache is rebuilt once.** Cached verdicts are now keyed on the `PYTHONOPTIMIZE` level, and
   the spawn fix changed verdicts, so the first run after upgrading re-runs every gremlin. (#613,
   #632, #620)
