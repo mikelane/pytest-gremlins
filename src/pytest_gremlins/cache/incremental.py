@@ -78,6 +78,9 @@ by a command-line ``-p`` while autoload was disabled for them, by ``PYTEST_DISAB
 
 ``rf18`` retires verdicts cached under a key that ignored the rerun settings beyond count and delay (backoff factor,
 ``only_rerun``, ``rerun_except``, ``--reruns-mode``, ``--rerun-exclude-path``, ``--max-suite-reruns``; #677).
+
+It also retires verdicts cached while doctest gremlins errored, because ``--doctest-modules`` typed on the command
+line never reached gremlin runs (#594).
 """
 
 
