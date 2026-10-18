@@ -345,11 +345,7 @@ class DescribeCommandLine:
     def it_accepts_only_the_version_and_the_two_input_paths(self) -> None:
         result = subprocess.run([sys.executable, str(SCRIPT), '--help'], capture_output=True, text=True, check=False)
 
-        assert set(re.findall(r'--[a-z][a-z-]*', result.stdout.split('\n\n')[0])) == {
-            '--help',
-            '--site-dir',
-            '--changelog',
-        }
+        assert set(re.findall(r'--[a-z][a-z-]*', result.stdout.split('\n\n')[0])) == {'--site-dir', '--changelog'}
 
     @pytest.mark.parametrize('variable', ['SKIP_RELEASE_DOCS_CHECK', 'CI_SKIP_DOCS', 'FORCE', 'SKIP_DOCS_CHECK'])
     def it_ignores_environment_variables(self, tmp_path: Path, variable: str) -> None:
