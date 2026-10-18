@@ -32,6 +32,7 @@ jobs:
               - 'src/**'
               - 'tests/**'
               - 'pyproject.toml'
+              - 'tox.ini'
               - 'uv.lock'
               - '.github/workflows/ci.yml'
             docs:
@@ -138,13 +139,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.12'
     strategy:
       fail-fast: false
       matrix:
         # Oldest supported release of each supported pytest major, then the latest release.
         # The first entry must equal the pytest floor in pyproject.toml and tox.ini
         # (guarded by tests/config/test_pytest_version_matrix.py).
-        pytest: ['8.4.0', '9.0.0', 'latest']
+        pytest: ['8.4.2', '9.0.0', 'latest']
     steps:
       - uses: actions/checkout@v7
 
@@ -164,11 +167,13 @@ jobs:
         env:
           PYTEST_VERSION: ${{ matrix.pytest }}
         run: |
+          # pytest-test-categories 1.2.2 needs pytest>=9.1.1; 1.2.1 is the newest release for older pytest.
           if [[ "$PYTEST_VERSION" == "latest" ]]; then
-            uv pip install --python .venv/bin/python --upgrade pytest
+            uv pip install --python .venv/bin/python --upgrade pytest pytest-test-categories
           else
-            uv pip install --python .venv/bin/python "pytest==$PYTEST_VERSION"
+            uv pip install --python .venv/bin/python "pytest==$PYTEST_VERSION" "pytest-test-categories<1.2.2"
           fi
+          uv pip check --python .venv/bin/python
           uv run --no-sync pytest --version
 
       - name: Run tests

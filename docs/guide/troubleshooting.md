@@ -59,7 +59,7 @@ ERROR: Ignored the following versions that require a different python version: .
 **Symptom:**
 
 ```text
-ERROR: pytest-gremlins requires pytest>=8.4.0, but you have pytest 7.x.x
+ERROR: pytest-gremlins requires pytest>=8.4.2, but you have pytest 7.x.x
 ```
 
 Or pip resolver errors mentioning pytest version conflicts.
@@ -79,7 +79,7 @@ Or pip resolver errors mentioning pytest version conflicts.
    ```toml
    [project]
    dependencies = [
-       "pytest>=8.4.0",
+       "pytest>=8.4.2",
    ]
    ```
 
