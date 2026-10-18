@@ -11,11 +11,22 @@ from pytest_gremlins import plugin
 from pytest_gremlins.cache.incremental import RUNNER_FIDELITY_VERSION
 
 
-def _session(args: tuple[str, ...], addopts: list[str] | None = None) -> SimpleNamespace:
-    return SimpleNamespace(
-        invocation_params=SimpleNamespace(args=args, dir=Path.cwd()),
-        getini=lambda _name: addopts or [],
-    )
+def _session(
+    args: tuple[str, ...], addopts: list[str] | None = None, ini: dict[str, object] | None = None
+) -> SimpleNamespace:
+    values: dict[str, object] = {'addopts': addopts or [], 'doctest_optionflags': [], 'doctest_encoding': 'utf-8'}
+    values.update(ini or {})
+
+    def getini(name: str) -> object:
+        if name not in values:
+            raise ValueError(name)
+        return values[name]
+
+    return SimpleNamespace(invocation_params=SimpleNamespace(args=args, dir=Path.cwd()), getini=getini)
+
+
+def _unknown_ini(name: str) -> object:
+    raise ValueError(name)
 
 
 @pytest.mark.small
@@ -54,6 +65,25 @@ class DescribeDoctestOptionsInGremlinRunAddopts:
         config = _session(('--doctest-modules',), addopts=['--cov=src', '-q'])
 
         assert plugin._addopts_for_gremlin_runs(config) == '-q --doctest-modules'  # type: ignore[arg-type]
+
+
+@pytest.mark.small
+class DescribeDoctestIniValuesInGremlinRunAddopts:
+    def it_forwards_the_resolved_optionflags(self) -> None:
+        config = _session((), ini={'doctest_optionflags': ['NORMALIZE_WHITESPACE', 'ELLIPSIS']})
+
+        expected = "-o 'doctest_optionflags=NORMALIZE_WHITESPACE ELLIPSIS'"
+        assert plugin._addopts_for_gremlin_runs(config) == expected  # type: ignore[arg-type]
+
+    def it_forwards_a_non_default_encoding(self) -> None:
+        config = _session((), ini={'doctest_encoding': 'latin-1'})
+
+        assert plugin._addopts_for_gremlin_runs(config) == '-o doctest_encoding=latin-1'  # type: ignore[arg-type]
+
+    def it_skips_settings_the_session_does_not_know(self) -> None:
+        config = SimpleNamespace(getini=_unknown_ini)
+
+        assert plugin._doctest_ini_overrides(config) == []  # type: ignore[arg-type]
 
 
 @pytest.mark.small

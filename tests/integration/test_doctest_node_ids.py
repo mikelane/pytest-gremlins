@@ -66,3 +66,45 @@ class DescribeDoctestCoveredGremlins:
         counts = verdicts(result.stdout.str())
         assert counts['Error'] == 0
         assert counts['Zapped'] > 0
+
+
+LOOSE_DOCTEST_SAMPLE = '''
+def scale(n):
+    """Scale a number.
+
+    >>> _ = scale(3); print('a     b')
+    a b
+    """
+    if n > 2:
+        return n * 10
+    return n + 1
+'''
+
+
+@pytest.mark.medium
+class DescribeDoctestIniSettingsInGremlinRuns:
+    """The doctest only passes under NORMALIZE_WHITESPACE and never checks ``scale``, so nothing may be zapped."""
+
+    def it_leaves_survivors_when_the_optionflags_come_from_dash_o(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester_with_markers.makepyfile(sample=LOOSE_DOCTEST_SAMPLE)
+
+        flags = 'doctest_optionflags=NORMALIZE_WHITESPACE'  # pragma: allowlist secret
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '--doctest-modules', '-o', flags)
+
+        counts = verdicts(result.stdout.str())
+        assert counts['Zapped'] == 0
+        assert counts['Survived'] > 0
+
+    def it_leaves_survivors_when_the_optionflags_come_from_a_dash_c_file(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makepyfile(sample=LOOSE_DOCTEST_SAMPLE)
+        (pytester_with_markers.path / 'alt.ini').write_text(
+            '[pytest]\ndoctest_optionflags = NORMALIZE_WHITESPACE\n', encoding='utf-8'
+        )
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '--doctest-modules', '-c', 'alt.ini')
+
+        counts = verdicts(result.stdout.str())
+        assert counts['Zapped'] == 0
+        assert counts['Survived'] > 0

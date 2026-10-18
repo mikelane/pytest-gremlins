@@ -2885,16 +2885,36 @@ def _doctest_options_in(args: Sequence[str]) -> list[str]:
     return options
 
 
+def _doctest_ini_overrides(config: pytest.Config) -> list[str]:
+    """Return ``-o`` overrides carrying the session's resolved doctest ini values (#594).
+
+    Gremlin runs re-read the project config, so a value set by ``-o`` or ``-c`` would be lost and a doctest that
+    needs it (``NORMALIZE_WHITESPACE``) would fail in every run, fabricating a kill for every gremlin it covers.
+    Resolving through ``getini`` covers ``-o``, ``-c`` and the project file alike.
+    """
+    overrides: list[str] = []
+    for key, default in (('doctest_optionflags', []), ('doctest_encoding', 'utf-8')):
+        try:
+            value = config.getini(key)
+        except ValueError:
+            continue
+        if value and value != default:
+            text = ' '.join(value) if isinstance(value, list) else str(value)
+            overrides.extend(['-o', shlex.quote(f'{key}={text}')])
+    return overrides
+
+
 def _addopts_for_gremlin_runs(config: pytest.Config) -> str:
-    """Return the ``addopts`` for gremlin runs: the project's, minus pytest-cov, plus command-line doctest options.
+    """Return the ``addopts`` for gremlin runs: the project's, minus pytest-cov, plus the session's doctest settings.
 
     A doctest node id such as ``sample.py::sample.classify`` only resolves where doctests are collected, and
     ``--doctest-modules`` typed on the command line is otherwise lost, because gremlin runs replace ``addopts``.
+    The doctest ini values are forwarded too (see :func:`_doctest_ini_overrides`).
     Options inside an ``@argfile`` are not expanded.
     """
     project_addopts = _addopts_without_cov(config.getini('addopts'))
     doctest_options = ' '.join(shlex.quote(option) for option in _doctest_options_in(config.invocation_params.args))
-    return ' '.join(part for part in (project_addopts, doctest_options) if part)
+    return ' '.join(part for part in (project_addopts, doctest_options, *_doctest_ini_overrides(config)) if part)
 
 
 def _command_line_rerun_options(config: pytest.Config) -> list[str]:
