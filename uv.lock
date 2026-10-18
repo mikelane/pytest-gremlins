@@ -1889,7 +1889,7 @@ dev = [
     { name = "pytest-test-categories", specifier = ">=1.2.2" },
     { name = "pytest-xdist", specifier = ">=3.5.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "ruff", specifier = ">=0.1.6" },
+    { name = "ruff", specifier = ">=0.8.0" },
     { name = "tox", specifier = ">=4.61.5" },
     { name = "tox-uv", specifier = ">=1.36.0" },
 ]

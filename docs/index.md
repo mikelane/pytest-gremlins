@@ -5,7 +5,7 @@
 [![CI](https://github.com/mikelane/pytest-gremlins/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelane/pytest-gremlins/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mikelane/pytest-gremlins/branch/main/graph/badge.svg)](https://codecov.io/gh/mikelane/pytest-gremlins)
 [![Documentation](https://readthedocs.org/projects/pytest-gremlins/badge/?version=latest)](https://pytest-gremlins.readthedocs.io)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/mikelane/pytest-gremlins/blob/main/LICENSE)
 
 > Let the gremlins loose. See which ones survive.
 
@@ -57,7 +57,7 @@ Run with --gremlin-report=html for detailed report.
 - **Fast** -- Mutation switching, coverage-guided selection, incremental analysis, parallel execution
 - **Native pytest integration** -- Works with your existing test suite, including pytest-xdist (`-n auto`)
 - **Inline pardoning** -- Suppress equivalent or untestable mutations with `# gremlin: pardon[reason]`
-- **Configurable** -- Full `pyproject.toml` support for all options, plus CLI flags
+- **Configurable** -- Settings in `pyproject.toml` or on the command line (a few options are [CLI-only](guide/configuration.md))
 - **Great reports** -- Console, HTML (with trend charts), and JSON output; multiple formats in one run
 - **GitHub Action** -- One-step CI with [`pytest-gremlins-action`](cookbook/github-action.md)
 

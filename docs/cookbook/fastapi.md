@@ -86,7 +86,7 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.23.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
     "httpx>=0.26.0",
 ]
 

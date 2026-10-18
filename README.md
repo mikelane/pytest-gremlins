@@ -146,7 +146,7 @@ operators = ["comparison", "arithmetic", "boolean", "boundary", "return"]
 paths = ["src"]
 
 # Patterns to exclude
-exclude = ["**/migrations/*", "**/test_*"]
+exclude = ["**/migrations/*"]
 
 # Report formats: "console", "html", "json" (default: console)
 report = ["console", "html"]

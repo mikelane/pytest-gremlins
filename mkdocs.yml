@@ -12,6 +12,16 @@ repo_name: mikelane/pytest-gremlins
 repo_url: https://github.com/mikelane/pytest-gremlins
 edit_uri: edit/main/docs/
 
+# Pages kept out of the site: demo production notes and a design doc for an
+# implemented change (both stay readable in the repository).
+exclude_docs: |
+  demo/**
+  design/XDIST_INTEGRATION.md
+
+# Built and linked from other pages, but deliberately left out of the nav.
+not_in_nav: |
+  performance/0.1.1/profiling-report.md
+
 # Theme Configuration
 theme:
   name: material
@@ -211,8 +221,10 @@ nav:
       - Configuration: guide/configuration.md
       - Operators: guide/operators.md
       - Reports: guide/reports.md
+      - Verdicts and Exit Codes: guide/verdicts.md
       - Comparison: guide/comparison.md
       - Troubleshooting: guide/troubleshooting.md
+      - Custom Operators: guide/extensibility.md
 
   - Cookbook:
       - Overview: cookbook/index.md
@@ -236,6 +248,12 @@ nav:
       - Reporting: api/reporting.md
 
   - Architecture:
+      - Overview: architecture/index.md
+      - The Four Pillars of Speed: architecture/speed.md
+      - Mutation Switching: architecture/mutation-switching.md
+      - Coverage Guidance: architecture/coverage-guidance.md
+      - Incremental Analysis: architecture/incremental-analysis.md
+      - Parallel Execution: architecture/parallelization.md
       - North Star: design/NORTH_STAR.md
       - Operators Design: design/OPERATORS.md
       - Agent Guidelines: design/AGENT_GUIDELINES.md

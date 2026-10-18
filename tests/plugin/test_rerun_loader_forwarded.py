@@ -148,7 +148,7 @@ class DescribeRerunOptionsWhenGremlinRunsInheritTheAutoloadFlag:
 @pytest.mark.small
 class DescribeFidelityVersionAfterTheLoaderIsForwarded:
     def it_retires_verdicts_cached_while_gremlin_runs_never_reran(self) -> None:
-        assert RUNNER_FIDELITY_VERSION == 'rf17'
+        assert RUNNER_FIDELITY_VERSION == 'rf18'
 
 
 def _write_flaky_project(pytester: pytest.Pytester) -> None:

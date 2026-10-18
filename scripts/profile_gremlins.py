@@ -17,6 +17,7 @@ from dataclasses import (
     dataclass,
     field,
 )
+import io
 import json
 import os
 from pathlib import Path
@@ -339,6 +340,11 @@ def profile_mutation_testing(target_path: Path, test_path: Path) -> ProfilingRes
     return results
 
 
+def write_report_text(path: Path, text: str) -> None:
+    """Write text to path ending in exactly one newline, as the end-of-file-fixer hook requires."""
+    path.write_text(text.rstrip('\n') + '\n')
+
+
 def run_cprofile_analysis(target_path: Path, output_dir: Path) -> Path:
     """Run cProfile analysis and save results."""
     profiler = cProfile.Profile()
@@ -361,14 +367,15 @@ def run_cprofile_analysis(target_path: Path, output_dir: Path) -> Path:
 
     # Generate human-readable report
     stats_report = output_dir / 'profile_stats.txt'
-    with stats_report.open('w') as f:
-        ps = pstats.Stats(profiler, stream=f)
-        ps.strip_dirs()
-        ps.sort_stats('cumulative')
-        ps.print_stats(50)
-        f.write('\n\n--- Sorted by Internal Time ---\n\n')
-        ps.sort_stats('tottime')
-        ps.print_stats(50)
+    report = io.StringIO()
+    ps = pstats.Stats(profiler, stream=report)
+    ps.strip_dirs()
+    ps.sort_stats('cumulative')
+    ps.print_stats(50)
+    report.write('\n\n--- Sorted by Internal Time ---\n\n')
+    ps.sort_stats('tottime')
+    ps.print_stats(50)
+    write_report_text(stats_report, report.getvalue())
 
     return stats_report
 
@@ -393,8 +400,7 @@ def main() -> ProfilingResults:
 
     # Save JSON results
     json_output = output_dir / 'profiling_data.json'
-    with json_output.open('w') as f:
-        json.dump(results.to_dict(), f, indent=2)
+    write_report_text(json_output, json.dumps(results.to_dict(), indent=2))
     print(f'JSON results saved to: {json_output}')
 
     # Run cProfile analysis
