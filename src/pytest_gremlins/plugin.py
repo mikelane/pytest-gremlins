@@ -220,6 +220,8 @@ def _detect_coverage_mode(config: pytest.Config) -> CoverageMode:
 
 DEFAULT_COVERAGE_TIMEOUT_SECONDS = 120
 DEFAULT_MUTANT_TIMEOUT_SECONDS = 30
+DEFAULT_BATCH_SIZE = 10
+DEFAULT_REPORT_FORMATS: tuple[str, ...] = ('console',)
 MAX_SELECTION_IDS_IN_MESSAGE = 5
 """Node ids named in a downgraded-timeout message before the rest are summarised as ``(and N more)``."""
 UNMAPPED_SELECTION_PREFIX = 'no verdict: the gremlin has no test to run'
@@ -328,7 +330,7 @@ class GremlinSession:
 
     enabled: bool = False
     operators: list[GremlinOperator] = field(default_factory=list)
-    report_formats: list[str] = field(default_factory=lambda: ['console'])
+    report_formats: list[str] = field(default_factory=lambda: list(DEFAULT_REPORT_FORMATS))
     gremlins: list[Gremlin] = field(default_factory=list)
     results: list[GremlinResult] = field(default_factory=list)
     source_files: dict[str, str] = field(default_factory=dict)
@@ -349,7 +351,7 @@ class GremlinSession:
     parallel_enabled: bool = False
     parallel_workers: int | None = None
     batch_enabled: bool = False
-    batch_size: int = 10
+    batch_size: int = DEFAULT_BATCH_SIZE
     xdist_item_ids: list[str] | None = None
     load_failures_attributable: bool = True
     unmutated_load_checks: dict[tuple[str, ...], ControlRunOutcome] = field(default_factory=dict)
@@ -1070,10 +1072,10 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # Batch and report: merge_configs already resolved CLI-beats-TOML
     batch_enabled = config.option.gremlin_batch
-    batch_size: int = toml_batch_size if toml_batch_size is not None else 10
+    batch_size: int = toml_batch_size if toml_batch_size is not None else DEFAULT_BATCH_SIZE
     coverage_timeout = merged_config.coverage_timeout or DEFAULT_COVERAGE_TIMEOUT_SECONDS
     mutant_attempt_timeout = merged_config.mutant_timeout or DEFAULT_MUTANT_TIMEOUT_SECONDS
-    report_formats: list[str] = toml_report if toml_report is not None else ['console']
+    report_formats: list[str] = toml_report if toml_report is not None else list(DEFAULT_REPORT_FORMATS)
 
     _install_session(
         config,

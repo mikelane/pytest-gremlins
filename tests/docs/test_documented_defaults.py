@@ -11,15 +11,14 @@ The code default comes from the parser (a non-``None`` argparse default), from a
 
 from __future__ import annotations
 
-import dataclasses
-
 import pytest
 
 from pytest_gremlins.config import CONFIG_KEYS
 from pytest_gremlins.plugin import (
+    DEFAULT_BATCH_SIZE,
     DEFAULT_COVERAGE_TIMEOUT_SECONDS,
     DEFAULT_MUTANT_TIMEOUT_SECONDS,
-    GremlinSession,
+    DEFAULT_REPORT_FORMATS,
 )
 
 from .docs_facts import (
@@ -45,15 +44,10 @@ CONFIG_KEY_TO_FLAG: dict[str, str] = {
 }
 
 
-def _session_default(field_name: str) -> object:
-    field = next(field for field in dataclasses.fields(GremlinSession) if field.name == field_name)
-    return field.default_factory() if field.default is dataclasses.MISSING else field.default
-
-
 def _as_text(value: object) -> str:
     if isinstance(value, bool):
         return str(value).lower()
-    if isinstance(value, list):
+    if isinstance(value, list | tuple):
         return ','.join(value)
     return str(value)
 
@@ -63,8 +57,8 @@ def _normalize(cell: str) -> str:
 
 
 CODE_DEFAULTS: dict[str, object] = {
-    '--gremlin-batch-size': _session_default('batch_size'),
-    '--gremlin-report': _session_default('report_formats'),
+    '--gremlin-batch-size': DEFAULT_BATCH_SIZE,
+    '--gremlin-report': DEFAULT_REPORT_FORMATS,
     '--gremlin-coverage-timeout': DEFAULT_COVERAGE_TIMEOUT_SECONDS,
     '--gremlin-mutant-timeout': DEFAULT_MUTANT_TIMEOUT_SECONDS,
 }
