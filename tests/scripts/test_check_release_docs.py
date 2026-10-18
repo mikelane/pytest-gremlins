@@ -171,6 +171,92 @@ class DescribeGatedBullets:
 
 
 @pytest.mark.small
+class DescribeSectionHeadings:
+    @pytest.mark.parametrize('heading', ['Feat', 'Features', 'Fixed', 'Fixes', 'Upgrade Notes', 'Changed', 'Perf'])
+    def it_names_a_heading_outside_the_known_sections(self, heading: str) -> None:
+        checker = _load_checker()
+        bullet = f'- **Fixed it.** [docs]({DOCS_URL}/guide/configuration/)'
+
+        problems = checker.find_problems(_entry(bullet, heading), '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert f'"### {heading}"' in problems[0]
+
+    @pytest.mark.parametrize('heading', ['Upgrade notes', 'Feature', 'Fix', 'Internal', 'Documentation'])
+    def it_accepts_each_known_section(self, heading: str) -> None:
+        checker = _load_checker()
+        bullet = f'- **Fixed it.** [docs]({DOCS_URL}/guide/configuration/)'
+
+        assert checker.find_problems(_entry(bullet, heading), '2.0.0', SITE) == []
+
+    def it_exempts_the_documentation_section(self) -> None:
+        checker = _load_checker()
+
+        assert checker.find_problems(_entry('- **Reworded a page.** (#3)', 'Documentation'), '2.0.0', SITE) == []
+
+    def it_fails_a_bullet_that_sits_under_no_section_heading(self) -> None:
+        checker = _load_checker()
+        changelog = '## v2.0.0 (2026-11-01)\n\n- **The default batch size is now 10.** (#1)\n'
+
+        problems = checker.find_problems(changelog, '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'no "###" section heading' in problems[0]
+        assert 'default batch size' in problems[0]
+
+
+@pytest.mark.small
+class DescribeBulletMarkers:
+    MARKERS = ('- ', '* ', '+ ', '1. ', '1) ', ' - ', '   * ', '  12) ')
+
+    @pytest.mark.parametrize('marker', MARKERS)
+    def it_gates_a_bullet_written_with_any_commonmark_list_marker(self, marker: str) -> None:
+        checker = _load_checker()
+
+        problems = checker.find_problems(_entry(f'{marker}**Changed a thing.** (#3)'), '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'Changed a thing' in problems[0]
+
+    @pytest.mark.parametrize('marker', MARKERS)
+    def it_accepts_a_linked_bullet_written_with_any_commonmark_list_marker(self, marker: str) -> None:
+        checker = _load_checker()
+        bullet = f'{marker}**Fixed it.** [docs]({DOCS_URL}/guide/configuration/)'
+
+        assert checker.find_problems(_entry(bullet), '2.0.0', SITE) == []
+
+
+@pytest.mark.small
+class DescribeNestedSubBullets:
+    def it_gates_a_sub_bullet_separately_from_its_linked_parent(self) -> None:
+        checker = _load_checker()
+        bullets = (
+            f'- **Parent change.** [docs]({DOCS_URL}/guide/configuration/)\n'
+            '  - **A second, unrelated user-visible change with no docs.**'
+        )
+
+        problems = checker.find_problems(_entry(bullets), '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'second, unrelated' in problems[0]
+
+    def it_gates_a_parent_separately_from_its_linked_sub_bullet(self) -> None:
+        checker = _load_checker()
+        bullets = f'- **Parent change.**\n  - **Child change.** [docs]({DOCS_URL}/guide/configuration/)'
+
+        problems = checker.find_problems(_entry(bullets), '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'Parent change' in problems[0]
+
+    def it_reads_a_link_alone_on_an_indented_continuation_line(self) -> None:
+        checker = _load_checker()
+        bullet = f'- **Fixed it.** (#3)\n  [docs]({DOCS_URL}/guide/configuration/)'
+
+        assert checker.find_problems(_entry(bullet), '2.0.0', SITE) == []
+
+
+@pytest.mark.small
 class DescribeReferenceResolution:
     @pytest.mark.parametrize(
         'target',

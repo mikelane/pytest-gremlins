@@ -31,9 +31,12 @@ import sys
 from typing import Protocol
 
 GATED_SECTIONS = ('Upgrade notes', 'Feature', 'Fix')
+EXEMPT_SECTIONS = ('Internal', 'Documentation')
+KNOWN_SECTIONS = (*GATED_SECTIONS, *EXEMPT_SECTIONS)
+NO_SECTION = ''
 DOCS_URL = re.compile(r'https://pytest-gremlins\.readthedocs\.io/en/latest(?=[/#?]|$)')
 URL_SCHEME = re.compile(r'[a-zA-Z][a-zA-Z0-9+.-]*:')
-BULLET_MARKERS = ('- ', '* ')
+BULLET = re.compile(r'\s*(?:[-*+]|\d{1,9}[.)])(?:\s+(.*)|$)')
 BULLET_LABEL_LENGTH = 70
 PROBLEM_PREFIX = 'PROBLEM: '
 DEFAULT_CHANGELOG = Path(__file__).resolve().parents[1] / 'CHANGELOG.md'
@@ -56,10 +59,16 @@ def _entry_lines(changelog: str, version: str) -> list[tuple[int, str]] | None:
     return entry if in_entry else None
 
 
+def _unknown_headings(entry: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """Return ``(line number, heading)`` for each ``###`` heading that is not a known section."""
+    headings = ((number, line[4:].strip()) for number, line in entry if line.startswith('### '))
+    return [(number, heading) for number, heading in headings if heading not in KNOWN_SECTIONS]
+
+
 def _gated_bullets(entry: list[tuple[int, str]]) -> list[tuple[str, int, str]]:
-    """Return ``(section, first line number, text)`` for each bullet in a gated section."""
+    """Return ``(section, first line number, text)`` for each bullet that needs a docs reference or exemption."""
     bullets: list[tuple[str, int, str]] = []
-    section = ''
+    section = NO_SECTION
     current: list[str] = []
     start = 0
 
@@ -69,14 +78,15 @@ def _gated_bullets(entry: list[tuple[int, str]]) -> list[tuple[str, int, str]]:
             current.clear()
 
     for number, line in entry:
+        bullet = BULLET.match(line)
         if line.startswith('### '):
             close()
             section = line[4:].strip()
-        elif section in GATED_SECTIONS and line.startswith(BULLET_MARKERS):
+        elif bullet and section in (NO_SECTION, *GATED_SECTIONS):
             close()
             start = number
-            current.append(line[2:].strip())
-        elif current and line.strip():
+            current.append((bullet.group(1) or '').strip())
+        elif current and line.strip() and not bullet:
             current.append(line.strip())
         else:
             close()
@@ -127,9 +137,12 @@ def _parse_reference(target: str) -> Reference:
     return Reference(target=target, page=_page_of(path.partition('?')[0]), anchor=anchor)
 
 
+def _shorten(text: str) -> str:
+    return text if len(text) <= BULLET_LABEL_LENGTH else f'{text[:BULLET_LABEL_LENGTH]}...'
+
+
 def _label(section: str, number: int, text: str) -> str:
-    shortened = text if len(text) <= BULLET_LABEL_LENGTH else f'{text[:BULLET_LABEL_LENGTH]}...'
-    return f'bullet under "### {section}" at line {number} ({shortened})'
+    return f'bullet under "### {section}" at line {number} ({_shorten(text)})'
 
 
 def _reference_problem(reference: Reference, site: Site) -> str | None:
@@ -142,6 +155,8 @@ def _reference_problem(reference: Reference, site: Site) -> str | None:
 
 
 def _bullet_problems(section: str, number: int, text: str, site: Site) -> list[str]:
+    if section == NO_SECTION:
+        return [f'bullet at line {number} ({_shorten(text)}) is under no "###" section heading']
     label = _label(section, number, text)
     exemptions = EXEMPTION.findall(text)
     if any(not reason.strip() for reason in exemptions):
@@ -158,11 +173,16 @@ def find_problems(changelog: str, version: str, site: Site) -> list[str]:
     entry = _entry_lines(changelog, version)
     if entry is None:
         return [f'CHANGELOG.md has no "## v{version.removeprefix("v")}" entry']
-    return [
+    heading_problems = [
+        f'unknown section heading "### {heading}" at line {number}; use one of: {", ".join(KNOWN_SECTIONS)}'
+        for number, heading in _unknown_headings(entry)
+    ]
+    bullet_problems = [
         problem
         for section, number, text in _gated_bullets(entry)
         for problem in _bullet_problems(section, number, text, site)
     ]
+    return heading_problems + bullet_problems
 
 
 class _AnchorCollector(HTMLParser):
