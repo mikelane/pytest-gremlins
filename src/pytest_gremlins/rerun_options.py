@@ -363,6 +363,33 @@ def rerun_resets(
     ]
 
 
+def rerun_ini_as_gremlin_runs_read(read_ini: Callable[[str], object], resets: Sequence[str]) -> Callable[[str], object]:
+    """Return ``read_ini`` as the gremlin runs see it: a key in ``resets`` reads as empty.
+
+    A reset (:func:`rerun_resets`) makes the gremlin runs ignore what the main session resolved for the key, so
+    the incremental cache must key on the empty value, not on the file's (issue #677).
+
+    Args:
+        read_ini: Reads an ini key as the main session resolved it, such as ``config.getini``.
+        resets: The ``--override-ini=key=`` arguments from :func:`rerun_resets`.
+
+    Returns:
+        A reader that gives ``''`` for each reset key and defers to ``read_ini`` for the rest.
+
+    Example:
+        >>> ini = {'rerun_except': ['xyz '], 'reruns': '2'}.get
+        >>> read = rerun_ini_as_gremlin_runs_read(ini, ['--override-ini=rerun_except='])
+        >>> read('rerun_except'), read('reruns')
+        ('', '2')
+    """
+    reset_keys = _keys_overridden_by(resets)
+
+    def read(key: str) -> object:
+        return '' if key in reset_keys else read_ini(key)
+
+    return read
+
+
 def unforwardable_rerun_keys(
     read_ini: Callable[[str], object], *, overridden_by: Sequence[str] = (), option_keys_set: Collection[str] = ()
 ) -> list[str]:

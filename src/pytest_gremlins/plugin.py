@@ -131,6 +131,7 @@ from pytest_gremlins.rerun_options import (
     baseline_rerun_warning,
     expand_argument_files,
     rerun_cache_settings,
+    rerun_ini_as_gremlin_runs_read,
     rerun_ini_overrides,
     rerun_keys_set_in,
     rerun_options_in,
@@ -147,7 +148,10 @@ from pytest_gremlins.xdist_options import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import (
+        Callable,
+        Sequence,
+    )
 
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.operators import GremlinOperator
@@ -2909,8 +2913,16 @@ def _rerun_settings_for(config: pytest.Config) -> list[str]:
     ini_overrides = rerun_ini_overrides(
         config.getini, overridden_by=command_line_options, option_keys_set=option_keys_set
     )
-    resets = rerun_resets(config.getini, overridden_by=command_line_options, option_keys_set=option_keys_set)
-    return [*ini_overrides, *resets, *command_line_options]
+    return [*ini_overrides, *_rerun_resets_for(config), *command_line_options]
+
+
+def _rerun_resets_for(config: pytest.Config) -> list[str]:
+    """Return the ``--override-ini`` resets gremlin runs get under ``-c`` for rerun keys they must not read."""
+    return rerun_resets(
+        config.getini,
+        overridden_by=_command_line_rerun_options(config),
+        option_keys_set=rerun_keys_set_in(config.option),
+    )
 
 
 def _gremlin_run_rerun_budget(config: pytest.Config) -> RerunBudget:
@@ -2938,7 +2950,10 @@ def _gremlin_run_rerun_cache_settings(config: pytest.Config) -> str:
     """
     if not _rerunfailures_is_loaded(config):
         return ''
-    return rerun_cache_settings(config.option, config.getini)
+    read_ini: Callable[[str], object] = config.getini
+    if _rerun_ini_settings_are_forwarded(config):
+        read_ini = rerun_ini_as_gremlin_runs_read(read_ini, _rerun_resets_for(config))
+    return rerun_cache_settings(config.option, read_ini)
 
 
 def _prescan_timeout(gremlin_session: GremlinSession) -> int:

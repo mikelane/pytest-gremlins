@@ -7,7 +7,10 @@ from types import SimpleNamespace
 import pytest
 
 from pytest_gremlins import plugin
-from pytest_gremlins.rerun_options import rerun_cache_settings
+from pytest_gremlins.rerun_options import (
+    rerun_cache_settings,
+    rerun_ini_as_gremlin_runs_read,
+)
 
 
 def _option(**overrides: object) -> SimpleNamespace:
@@ -82,6 +85,26 @@ class DescribeRerunCacheSettings:
             raise ValueError
 
         assert rerun_cache_settings(_option(), unreadable) == rerun_cache_settings(_option(), _ini())
+
+
+@pytest.mark.small
+class DescribeRerunIniAsGremlinRunsRead:
+    """A key reset for the gremlin runs reads as empty, so the cache key shows what they run with."""
+
+    def it_reads_a_reset_key_as_empty(self) -> None:
+        read = rerun_ini_as_gremlin_runs_read(_ini(rerun_except=['xyz ']), ['--override-ini=rerun_except='])
+
+        assert read('rerun_except') == ''
+
+    def it_reads_a_key_that_is_not_reset_unchanged(self) -> None:
+        read = rerun_ini_as_gremlin_runs_read(_ini(only_rerun=['A']), ['--override-ini=rerun_except='])
+
+        assert read('only_rerun') == ['A']
+
+    def it_keys_a_reset_filter_like_an_unset_one(self) -> None:
+        read = rerun_ini_as_gremlin_runs_read(_ini(rerun_except=['xyz ']), ['--override-ini=rerun_except='])
+
+        assert rerun_cache_settings(_option(), read) == rerun_cache_settings(_option(), _ini())
 
 
 @pytest.mark.medium
