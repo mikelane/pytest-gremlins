@@ -9,10 +9,14 @@ import re
 import subprocess
 import sys
 from types import ModuleType
+from typing import Any
 
 import pytest
+import yaml
 
 SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'check_release_docs.py'
+WORKFLOWS = Path(__file__).resolve().parents[2] / '.github' / 'workflows'
+GATE_COMMAND = 'check_release_docs.py'
 DOCS_URL = 'https://pytest-gremlins.readthedocs.io/en/latest'
 SITE_PAGES = {'guide/configuration': frozenset({'batch-size', 'caching'}), '': frozenset()}
 
@@ -354,3 +358,107 @@ class DescribeCommandLine:
         result = self._run(tmp_path, _entry('- **Changed a thing.** (#3)'), '2.0.0', env=env)
 
         assert result.returncode == 1
+
+
+def _jobs(workflow: str) -> dict[str, Any]:
+    document = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding='utf-8'))
+    jobs: dict[str, Any] = document['jobs']
+    return jobs
+
+
+def _steps(workflow: str, job_id: str) -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = _jobs(workflow)[job_id]['steps']
+    return steps
+
+
+def _step_index(workflow: str, job_id: str, command: str) -> int:
+    matches = [i for i, step in enumerate(_steps(workflow, job_id)) if command in step.get('run', '')]
+    assert len(matches) == 1, f'expected exactly one step running {command!r} in {workflow}:{job_id}'
+    return matches[0]
+
+
+def _ancestors(jobs: dict[str, Any], job_id: str) -> set[str]:
+    needs = jobs[job_id].get('needs', [])
+    direct = {needs} if isinstance(needs, str) else set(needs)
+    return direct.union(*(_ancestors(jobs, parent) for parent in direct))
+
+
+@pytest.mark.medium
+class DescribeReleaseWorkflowGate:
+    def it_runs_the_check_in_verify_tag_after_a_strict_docs_build(self) -> None:
+        gate = _step_index('release.yml', 'verify-tag', GATE_COMMAND)
+        build = _step_index('release.yml', 'verify-tag', 'mkdocs build --strict')
+
+        assert build < gate
+
+    def it_checks_the_tagged_commit_before_building_the_docs(self) -> None:
+        checkout = _step_index('release.yml', 'verify-tag', 'git checkout --detach "refs/tags/$RELEASE_TAG"')
+        build = _step_index('release.yml', 'verify-tag', 'mkdocs build --strict')
+
+        assert checkout < build
+
+    @pytest.mark.parametrize('command', [GATE_COMMAND, 'mkdocs build --strict'])
+    def it_never_skips_or_tolerates_failure_of_a_gate_step(self, command: str) -> None:
+        step = _steps('release.yml', 'verify-tag')[_step_index('release.yml', 'verify-tag', command)]
+
+        assert 'if' not in step
+        assert 'continue-on-error' not in step
+        assert 'if' not in _jobs('release.yml')['verify-tag']
+        assert 'continue-on-error' not in _jobs('release.yml')['verify-tag']
+
+    def it_makes_every_other_job_depend_on_verify_tag(self) -> None:
+        jobs = _jobs('release.yml')
+        others = [job_id for job_id in jobs if job_id != 'verify-tag']
+
+        assert all('verify-tag' in _ancestors(jobs, job_id) for job_id in others)
+
+    @pytest.mark.parametrize('workflow', ['release.yml', 'cut-release.yml'])
+    def it_has_no_input_that_mentions_the_docs_check(self, workflow: str) -> None:
+        document = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding='utf-8'))
+        inputs = document[True]['workflow_dispatch']['inputs']
+
+        assert not [name for name in inputs if 'doc' in name.lower()]
+
+    def it_does_not_pass_the_skip_test_pypi_input_to_the_check(self) -> None:
+        step = _steps('release.yml', 'verify-tag')[_step_index('release.yml', 'verify-tag', GATE_COMMAND)]
+
+        assert 'skip_test_pypi' not in str(step)
+
+
+@pytest.mark.medium
+class DescribeCutReleaseWorkflowGate:
+    def it_runs_the_check_before_the_version_is_bumped(self) -> None:
+        gate = _step_index('cut-release.yml', 'cut-release', GATE_COMMAND)
+        bump = _step_index('cut-release.yml', 'cut-release', 'cz bump --yes')
+
+        assert gate < bump
+
+    def it_asks_commitizen_for_the_version_the_bump_will_produce(self) -> None:
+        step = _steps('cut-release.yml', 'cut-release')[_step_index('cut-release.yml', 'cut-release', GATE_COMMAND)]
+
+        assert 'cz bump --get-next' in step['run']
+
+    def it_never_skips_or_tolerates_failure_of_the_check(self) -> None:
+        step = _steps('cut-release.yml', 'cut-release')[_step_index('cut-release.yml', 'cut-release', GATE_COMMAND)]
+
+        assert 'if' not in step
+        assert 'continue-on-error' not in step
+
+
+@pytest.mark.medium
+class DescribePullRequestWorkflowGate:
+    def it_runs_the_check_when_the_changelog_changes(self) -> None:
+        step = _steps('ci.yml', 'docs')[_step_index('ci.yml', 'docs', GATE_COMMAND)]
+
+        assert step['if'] == "needs.changes.outputs.changelog == 'true'"
+
+    def it_checks_the_topmost_changelog_entry_against_a_strict_docs_build(self) -> None:
+        gate = _step_index('ci.yml', 'docs', GATE_COMMAND)
+        build = _step_index('ci.yml', 'docs', 'mkdocs build --strict')
+
+        assert build < gate
+
+    def it_does_not_tolerate_failure_of_the_check(self) -> None:
+        step = _steps('ci.yml', 'docs')[_step_index('ci.yml', 'docs', GATE_COMMAND)]
+
+        assert 'continue-on-error' not in step

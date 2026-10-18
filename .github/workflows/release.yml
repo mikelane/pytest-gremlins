@@ -33,7 +33,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Every run: refuse to publish unless the tag is safe, annotated, and matches pyproject.toml.
+  # Every run: refuse to publish unless the tag is safe, annotated, matches pyproject.toml, and its
+  # changelog entry documents every user-facing change.
   # Must stay unconditional: a skipped job here would skip every job below it.
   verify-tag:
     name: Verify Release Tag
@@ -71,6 +72,18 @@ jobs:
 
       - name: Verify release tag
         run: uv run --no-project --python 3.12 python scripts/verify_release_tag.py "$RELEASE_TAG"
+
+      # Release docs gate. It has no input, variable or condition that skips it (skip_test_pypi does not
+      # touch it), and every job below depends on this one, so a failure here blocks every publish.
+      # A dispatched run starts on main; check out the tag so the changelog, docs and script are the ones released.
+      - name: Check out the tagged commit
+        run: git checkout --detach "refs/tags/$RELEASE_TAG"
+
+      - name: Build the docs site
+        run: uv run --only-group docs mkdocs build --strict --site-dir "$RUNNER_TEMP/site"
+
+      - name: Check the changelog entry links to the docs
+        run: uv run --no-project --python 3.12 python scripts/check_release_docs.py "$RELEASE_TAG" --site-dir "$RUNNER_TEMP/site"
 
   # Run full test suite before release
   test:

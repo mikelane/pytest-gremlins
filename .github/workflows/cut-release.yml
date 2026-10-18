@@ -74,6 +74,25 @@ jobs:
             git log --oneline >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # Fail before a tag exists. The version is the one `cz bump` is about to produce.
+      # release.yml runs the same check again on the tag; that run is the one that blocks a publish.
+      - name: Check the changelog entry links to the docs
+        env:
+          BUMP_TYPE: ${{ inputs.bump }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          bump_args=()
+          if [[ "$BUMP_TYPE" != "auto" ]]; then
+            bump_args+=(--increment "${BUMP_TYPE^^}")
+          fi
+          if [[ -n "$PRERELEASE" ]]; then
+            bump_args+=(--prerelease "$PRERELEASE")
+          fi
+          next_version=$(uv run cz bump --get-next "${bump_args[@]}")
+          echo "Checking the changelog entry for v${next_version}"
+          uv run mkdocs build --strict --site-dir "$RUNNER_TEMP/site"
+          uv run python scripts/check_release_docs.py "$next_version" --site-dir "$RUNNER_TEMP/site"
+
       - name: Bump version and create tag
         id: bump
         env:
