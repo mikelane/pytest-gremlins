@@ -58,6 +58,17 @@ class DescribeBuildTestHashesForGremlin:
 
         assert result == {}
 
+    def it_ignores_the_hash_of_a_test_file_whose_path_only_ends_with_the_node_id_file(self) -> None:
+        gs = GremlinSession(
+            enabled=True,
+            test_node_ids={'test_a.py::test_root': 'test_a.py::test_root'},
+            test_hashes={'sub/test_a.py': 'unrelated_hash', 'test_a.py': 'covering_hash'},
+        )
+
+        result = _build_test_hashes_for_gremlin(['test_a.py::test_root'], gs)
+
+        assert result == {'test_a.py::test_root': 'covering_hash'}
+
 
 @pytest.mark.small
 class DescribeCheckCacheForGremlin:
@@ -132,6 +143,25 @@ class DescribeCacheGremlinResult:
         _cache_gremlin_result(gremlin, [], result, gs)
 
         mock_cache.cache_result_deferred.assert_called_once()
+
+    def it_skips_caching_when_a_selected_test_file_has_no_hash(self) -> None:
+        mock_cache = MagicMock(spec=IncrementalCache)
+        gs = GremlinSession(
+            enabled=True,
+            cache_enabled=True,
+            cache=mock_cache,
+            source_hashes={'src/module.py': 'hash123'},
+            test_node_ids={'test_ext': '::test_ext'},
+            test_hashes={},
+        )
+        gremlin = MagicMock()  # Gremlin is a frozen dataclass; spec= misses instance fields; bare-mock: ok
+        gremlin.file_path = 'src/module.py'
+        gremlin.gremlin_id = 'g001'
+        result = GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED)
+
+        _cache_gremlin_result(gremlin, ['test_ext'], result, gs)
+
+        mock_cache.cache_result_deferred.assert_not_called()
 
     def it_skips_caching_when_source_hash_missing(self) -> None:
         """cache_result_deferred is NOT called when gremlin's file has no source hash."""
