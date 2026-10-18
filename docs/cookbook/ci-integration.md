@@ -625,11 +625,9 @@ Apply mutation testing best practices to any CI system.
 [tool.pytest-gremlins]
 paths = ["src"]
 
-# Exclude generated and test code
+# Exclude generated code (test files are skipped automatically)
 exclude = [
     "**/migrations/*",
-    "**/test_*",
     "**/__pycache__/*",
-    "**/conftest.py",
 ]
 ```

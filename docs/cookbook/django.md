@@ -80,7 +80,7 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-django>=4.5.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest.ini_options]

@@ -15,7 +15,7 @@ edit_uri: edit/main/docs/
 # Pages kept out of the site: demo production notes and a design doc for an
 # implemented change (both stay readable in the repository).
 exclude_docs: |
-  demo/*.md
+  demo/**
   design/XDIST_INTEGRATION.md
 
 # Built and linked from other pages, but deliberately left out of the nav.
