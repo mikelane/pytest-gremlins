@@ -25,6 +25,16 @@ def test_environment_is_empty():
     assert env == {}
 """
 
+_IN_PROCESS_USAGE_ERROR_RUN = """
+import os
+import sys
+
+import pytest
+
+pytest.main(['-p', 'no:cacheprovider', '--no-such-option', sys.argv[1]])
+print('FAKE_SECRET_TOKEN' in os.environ)
+"""
+
 
 def _load_tests_conftest() -> ModuleType:
     spec = importlib.util.spec_from_file_location('_tests_conftest_under_test', _TESTS_CONFTEST)
@@ -74,6 +84,8 @@ class DescribeSecretEnvNames:
             'GITHUB_PAT',
             'OPENAI_APIKEY',
             'GPG_PASSPHRASE',
+            'CLIENT_SECRETS',
+            'DB_PWD',
         ],
     )
     def it_flags_secret_shaped_names(self, name: str) -> None:
@@ -102,6 +114,9 @@ class DescribeSecretEnvNames:
             'USERPROFILE',
             'APPDATA',
             'GIT_ASKPASS',
+            'PWD',
+            'OLDPWD',
+            'MAX_TOKENS',
         ],
     )
     def it_keeps_names_the_suite_or_tools_need(self, name: str) -> None:
@@ -165,3 +180,20 @@ class DescribeSessionScrub:
         )
 
         assert (result.returncode, _FAKE_SECRET_VALUE in result.stdout + result.stderr) == (1, False)
+
+    def it_restores_the_secrets_when_an_in_process_session_fails_to_configure(self, tmp_path: Path) -> None:
+        (tmp_path / 'conftest.py').write_text(_TESTS_CONFTEST.read_text(encoding='utf-8'), encoding='utf-8')
+        (tmp_path / 'test_env.py').write_text(_FAILING_ENV_TEST, encoding='utf-8')
+        (tmp_path / 'run_in_process.py').write_text(_IN_PROCESS_USAGE_ERROR_RUN, encoding='utf-8')
+        result = subprocess.run(
+            [sys.executable, '-P', str(tmp_path / 'run_in_process.py'), str(tmp_path)],
+            capture_output=True,
+            encoding='utf-8',
+            errors='replace',
+            env=_child_environment(),
+            cwd=tmp_path,
+            check=False,
+            timeout=_CHILD_TIMEOUT_SECONDS,
+        )
+
+        assert result.stdout.splitlines()[-1:] == ['True']
