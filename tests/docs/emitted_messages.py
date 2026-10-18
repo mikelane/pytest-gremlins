@@ -9,8 +9,16 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 import re
+from typing import TypeGuard
 
 MESSAGE_PREFIX = 'pytest-gremlins:'
+VALIDATION_MODULE = 'config.py'
+"""The module whose ``ValueError`` messages the plugin re-raises as ``pytest.UsageError``."""
+
+
+class _ValueErrorRaise(ast.Raise):
+    exc: ast.Call
+
 
 _WILDCARD = '\x00'
 _FORMAT_FIELD = re.compile(r'%[sdrif]|\{[^{}]*\}')
@@ -33,13 +41,30 @@ def message_templates(source: str) -> list[str]:
     return [template for template in templates if _has_stable_phrase(template)]
 
 
+def wrapped_validation_templates(source: str) -> list[str]:
+    """Return a template for each literal message of a ``raise ValueError(...)`` in ``source``.
+
+    The plugin prints a config validation error as ``pytest-gremlins: <message>``, so each template carries that
+    prefix; the wrapper in the plugin has no stable phrase of its own to check a docs line against.
+    """
+    templates: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if _is_value_error_raise(node):
+            text = _template_text(node.exc.args[0])
+            if text is not None:
+                templates.append(f'{MESSAGE_PREFIX} {text}')
+    return templates
+
+
 def message_templates_under(root: Path) -> list[str]:
     """Return the message templates of every Python file under ``root``."""
-    return [
-        template
-        for path in sorted(root.rglob('*.py'))
-        for template in message_templates(path.read_text(encoding='utf-8'))
-    ]
+    templates: list[str] = []
+    for path in sorted(root.rglob('*.py')):
+        source = path.read_text(encoding='utf-8')
+        templates.extend(message_templates(source))
+        if path.name == VALIDATION_MODULE:
+            templates.extend(wrapped_validation_templates(source))
+    return templates
 
 
 def line_is_emittable(doc_line: str, templates: list[str], *, continues: bool) -> bool:
@@ -55,6 +80,16 @@ def line_is_emittable(doc_line: str, templates: list[str], *, continues: bool) -
     if elided or continues:
         return any(_starts_a_message(text, template) for template in templates)
     return any(re.fullmatch(_pattern(template), text) for template in templates)
+
+
+def _is_value_error_raise(node: ast.AST) -> TypeGuard[_ValueErrorRaise]:
+    return (
+        isinstance(node, ast.Raise)
+        and isinstance(node.exc, ast.Call)
+        and isinstance(node.exc.func, ast.Name)
+        and node.exc.func.id == 'ValueError'
+        and len(node.exc.args) == 1
+    )
 
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:

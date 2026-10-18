@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from pytest_gremlins.plugin import pytest_addoption as real_hook
 
 from . import docs_facts
-from .docs_facts import registered_flags
+from .docs_facts import (
+    quoted_messages,
+    registered_flags,
+)
 
 
 @pytest.mark.medium
@@ -34,3 +39,16 @@ class DescribeRegisteredOptions:
 
     def it_still_includes_the_gremlins_group_options(self):
         assert '--gremlins' in registered_flags()
+
+
+@pytest.mark.medium
+class DescribeQuotedMessages:
+    """A message quoted as pytest prints a usage error is checked like any other."""
+
+    def it_finds_a_message_quoted_after_the_error_prefix(self, tmp_path: Path):
+        (tmp_path / 'page.md').write_text(
+            '```text\n$ pytest --gremlins\nERROR: pytest-gremlins: this message does not exist\n```\n',
+            encoding='utf-8',
+        )
+
+        assert [quoted.text for quoted in quoted_messages(tmp_path)] == ['pytest-gremlins: this message does not exist']

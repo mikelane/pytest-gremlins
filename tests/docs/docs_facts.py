@@ -27,6 +27,8 @@ CONFIGURATION_PAGE = DOCS_ROOT / 'guide' / 'configuration.md'
 # every exemption visible; a hidden option that is not listed fails the suite.
 HIDDEN_OPTIONS: frozenset[str] = frozenset()
 
+USAGE_ERROR_PREFIX = 'ERROR: '
+
 FLAG_MENTION = re.compile(r'(?<![\w-])(--(?:gremlins?|strict-pardons|max-pardons)(?:-[a-z0-9]+)*)(?![\w*-])')
 _HELP_DEFAULT = re.compile(r'\(default: ([^,)]+)')
 _TABLE_ROW_FLAG = re.compile(r'^\|\s*`(--[a-z0-9-]+)`\s*\|')
@@ -175,14 +177,15 @@ def quoted_messages(docs_root: Path = DOCS_ROOT) -> list[QuotedMessage]:
     quoted: list[QuotedMessage] = []
     for page in sorted(docs_root.rglob('*.md')):
         for _, lines in fenced_blocks(page):
-            for index, (number, text) in enumerate(lines):
-                if text.strip().startswith(MESSAGE_PREFIX):
+            for index, (number, line) in enumerate(lines):
+                text = line.strip().removeprefix(USAGE_ERROR_PREFIX)
+                if text.startswith(MESSAGE_PREFIX):
                     following = lines[index + 1][1].strip() if index + 1 < len(lines) else ''
                     quoted.append(
                         QuotedMessage(
                             page=page,
                             line_number=number,
-                            text=text.strip(),
+                            text=text,
                             continues=bool(following) and not following.startswith(MESSAGE_PREFIX),
                         )
                     )
