@@ -608,7 +608,7 @@ def _write_output_as_utf8() -> None:
     # Windows consoles default to a legacy code page (cp1252) that cannot encode every changelog character.
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
-            stream.reconfigure(encoding='utf-8')
+            stream.reconfigure(encoding='utf-8', errors=stream.errors)
 
 
 def main(argv: list[str] | None = None) -> int:

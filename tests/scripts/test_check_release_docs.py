@@ -1061,6 +1061,7 @@ def _run_gate_on_bytes(
         [sys.executable, str(SCRIPT), '--site-dir', str(site), '--changelog', str(changelog_path), *args],
         capture_output=True,
         text=True,
+        encoding='utf-8',
         check=False,
         env=env,
     )
@@ -1166,6 +1167,20 @@ class DescribeInputsThatMadeTheReleaseNotesDifferFromTheCheckedEntry:
 
         assert result.returncode == 1, result.stderr
         assert 'PROBLEM: ' in result.stdout
+
+
+@pytest.mark.medium
+class DescribeStderrAfterTheUtf8Reconfigure:
+    @pytest.mark.skipif(sys.platform == 'win32', reason='argv bytes that are not UTF-8 exist only on POSIX')
+    def it_exits_2_when_the_could_not_check_reason_has_a_path_that_is_not_utf8(self, tmp_path: Path) -> None:
+        site = _write_site(tmp_path)
+        changelog = os.fsencode(tmp_path) + b'/missing-\xff.md'
+        command = [os.fsencode(sys.executable), os.fsencode(SCRIPT), b'2.0.0', b'--site-dir', os.fsencode(site)]
+
+        result = subprocess.run([*command, b'--changelog', changelog], capture_output=True, check=False)
+
+        assert result.returncode == 2, result.stderr
+        assert b'could not check the release docs' in result.stderr
 
 
 @pytest.mark.small
