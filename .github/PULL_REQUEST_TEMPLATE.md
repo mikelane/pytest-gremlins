@@ -20,6 +20,17 @@
 - [ ] Performance improvement
 - [ ] Test coverage improvement
 
+## Docs (required)
+
+<!--
+Tick exactly one. User-facing behavior means: options or defaults, verdicts, exit codes,
+console, report or warning output, or what gets mutated.
+A PR that changes user-facing behavior without touching docs/ is a MEDIUM review finding.
+-->
+
+- [ ] User-facing behavior changed; docs updated in: <!-- list the files under docs/ -->
+- [ ] No user-facing change <!-- if docs/ is untouched but behavior changed, say why no docs change is needed -->
+
 ## Related Issues
 
 <!-- Link to related issues: Fixes #123, Closes #456, Related to #789 -->
