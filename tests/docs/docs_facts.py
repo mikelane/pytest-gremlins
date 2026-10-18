@@ -14,8 +14,6 @@ import re
 import tomllib
 from typing import Any
 
-import pytest
-
 from pytest_gremlins.config import load_config
 from pytest_gremlins.plugin import pytest_addoption
 
@@ -52,15 +50,52 @@ class RegisteredOption:
     hidden: bool
 
 
-def _registered_parser_options() -> list[Any]:
-    """Return the option objects of every group after the plugin's hook has run on a fresh parser.
+class _RecordedOption:
+    """One ``addoption`` call: its flag names and keyword arguments, as the plugin passed them."""
 
-    A fresh parser holds no pytest built-ins, so every option found here is the plugin's own, whether the hook
-    put it in the ``gremlins`` group, another named group or the anonymous group (``parser.addoption``).
+    def __init__(self, names: tuple[str, ...], attrs: dict[str, Any]) -> None:
+        self._names = names
+        self._attrs = attrs
+
+    def names(self) -> list[str]:
+        return list(self._names)
+
+    def attrs(self) -> dict[str, Any]:
+        return self._attrs
+
+    @property
+    def default(self) -> object:
+        if 'default' in self._attrs:
+            return self._attrs['default']
+        return {'store_true': False, 'store_false': True}.get(self._attrs.get('action'))
+
+
+class _RecordingGroup:
+    """Stands in for a pytest option group and records every option added to it."""
+
+    def __init__(self, recorded: list[_RecordedOption]) -> None:
+        self._recorded = recorded
+
+    def addoption(self, *names: str, **attrs: Any) -> None:
+        self._recorded.append(_RecordedOption(names, attrs))
+
+
+class _RecordingParser(_RecordingGroup):
+    """Stands in for ``pytest.Parser`` using only the public ``addoption`` / ``getgroup`` surface.
+
+    Pytest's own ``Parser`` and ``Argument`` internals differ between releases, so the hook is run against
+    this recorder instead of a real parser.
     """
-    parser = pytest.Parser(_ispytest=True)
-    pytest_addoption(parser)
-    return [option for group in parser._groups for option in group.options]
+
+    def getgroup(self, *_group_args: object, **_group_kwargs: object) -> _RecordingGroup:
+        return _RecordingGroup(self._recorded)
+
+
+def _registered_parser_options() -> list[Any]:
+    """Return every option the plugin's hook registers, whichever group (or none) it adds them to."""
+    recorded: list[_RecordedOption] = []
+    pytest_addoption(_RecordingParser(recorded))  # type: ignore[arg-type]
+    return recorded
 
 
 def registered_options() -> list[RegisteredOption]:
