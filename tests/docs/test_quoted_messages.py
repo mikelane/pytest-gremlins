@@ -14,6 +14,8 @@ from .emitted_messages import (
 )
 
 SOURCE_ROOT = REPO_ROOT / 'src' / 'pytest_gremlins'
+# Fewer than this many quoted lines or templates means the scan broke, not that the docs and source are clean.
+SCAN_SANITY_FLOOR = 10
 
 
 @pytest.mark.medium
@@ -32,7 +34,7 @@ class DescribeQuotedMessages:
         assert not invented, 'Docs quote messages the plugin never prints:\n' + '\n'.join(invented)
 
     def it_finds_the_messages_the_docs_quote(self):
-        assert len(quoted_messages()) >= 10
+        assert len(quoted_messages()) >= SCAN_SANITY_FLOOR
 
     def it_finds_message_templates_in_the_source(self):
-        assert len(message_templates_under(SOURCE_ROOT)) >= 10
+        assert len(message_templates_under(SOURCE_ROOT)) >= SCAN_SANITY_FLOOR

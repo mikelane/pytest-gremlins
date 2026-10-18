@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 import tomllib
@@ -15,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from pytest_gremlins.config import load_config
 from pytest_gremlins.plugin import pytest_addoption
 
 from .emitted_messages import MESSAGE_PREFIX
@@ -30,8 +32,15 @@ HIDDEN_OPTIONS: frozenset[str] = frozenset()
 USAGE_ERROR_PREFIX = 'ERROR: '
 
 FLAG_MENTION = re.compile(r'(?<![\w-])(--(?:gremlins?|strict-pardons|max-pardons)(?:-[a-z0-9]+)*)(?![\w*-])')
+DEFAULT_COLUMN_HEADER = 'Default'
+
 _HELP_DEFAULT = re.compile(r'\(default: ([^,)]+)')
 _TABLE_ROW_FLAG = re.compile(r'^\|\s*`(--[a-z0-9-]+)`\s*\|')
+_FENCE = re.compile(r'^\s*```(\w*)')
+
+
+class DocsFormatError(ValueError):
+    """A docs page is shaped in a way the drift checks cannot read; the message names the page and line."""
 
 
 @dataclass(frozen=True)
@@ -102,10 +111,6 @@ def flags_mentioned_in_docs(docs_root: Path = DOCS_ROOT) -> dict[str, list[str]]
     return {flag: sorted(pages) for flag, pages in mentions.items()}
 
 
-_FENCE = re.compile(r'^\s*```(\w*)')
-CONFIG_TABLE = 'tool.pytest-gremlins'
-
-
 def fenced_blocks(page: Path) -> list[tuple[str, list[tuple[int, str]]]]:
     """Return ``(language, [(line_number, line), ...])`` for every fenced code block on ``page``."""
     blocks: list[tuple[str, list[tuple[int, str]]]] = []
@@ -115,12 +120,16 @@ def fenced_blocks(page: Path) -> list[tuple[str, list[tuple[int, str]]]]:
         fence = _FENCE.match(line)
         if fence and language is None:
             language, lines = fence.group(1), []
-        elif fence:
+        elif fence and language is not None:
             blocks.append((language, lines))
             language = None
         elif language is not None:
             lines.append((number, line))
     return blocks
+
+
+def _location(page: Path, line_number: int) -> str:
+    return f'{page.name}:{line_number}'
 
 
 def pytest_gremlins_toml_blocks(page: Path = CONFIGURATION_PAGE) -> list[dict[str, object]]:
@@ -129,29 +138,68 @@ def pytest_gremlins_toml_blocks(page: Path = CONFIGURATION_PAGE) -> list[dict[st
     for language, lines in fenced_blocks(page):
         if language != 'toml':
             continue
-        parsed = tomllib.loads('\n'.join(text for _, text in lines))
+        try:
+            parsed = tomllib.loads('\n'.join(text for _, text in lines))
+        except tomllib.TOMLDecodeError as error:
+            fence_line = lines[0][0] - 1 if lines else 0
+            msg = f'{_location(page, fence_line)}: this TOML block does not parse ({error})'
+            raise DocsFormatError(msg) from error
         table = parsed.get('tool', {}).get('pytest-gremlins')
         if table is not None:
             tables.append(table)
     return tables
 
 
+def _cells(line: str) -> list[str]:
+    return [column.strip() for column in line.strip().strip('|').split('|')]
+
+
 def default_cells(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
-    """Map each name in the first column of a ``Default`` table on ``page`` to its raw Default cell."""
+    """Map each name in the first column of a ``Default`` table on ``page`` to its raw Default cell.
+
+    The Default column is the one whose header is ``Default``, wherever it sits.
+    """
     cells: dict[str, str] = {}
-    in_default_table = False
-    for line in page.read_text(encoding='utf-8').splitlines():
-        columns = [column.strip() for column in line.strip().strip('|').split('|')]
+    default_column: int | None = None
+    for number, line in enumerate(page.read_text(encoding='utf-8').splitlines(), start=1):
+        columns = _cells(line)
         if not line.lstrip().startswith('|'):
-            in_default_table = False
-        elif 'Default' in columns:
-            in_default_table = columns.index('Default') == _DEFAULT_COLUMN
-        elif in_default_table and columns[0].startswith('`'):
-            cells[columns[0].strip('`')] = columns[_DEFAULT_COLUMN]
+            default_column = None
+        elif DEFAULT_COLUMN_HEADER in columns:
+            default_column = columns.index(DEFAULT_COLUMN_HEADER)
+        elif default_column is not None and columns[0].startswith('`'):
+            if default_column >= len(columns):
+                msg = f'{_location(page, number)}: row has no {DEFAULT_COLUMN_HEADER} cell: {line.strip()}'
+                raise DocsFormatError(msg)
+            cells[columns[0].strip('`')] = columns[default_column]
     return cells
 
 
-_DEFAULT_COLUMN = 2
+def documented_keys(page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
+    """Return the ``pyproject.toml`` keys named in a ``Default`` table on ``page`` (everything but flags)."""
+    return frozenset(name for name in default_cells(page) if not name.startswith('--'))
+
+
+def keys_shown_in_toml_blocks(page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
+    """Return the keys that appear under ``[tool.pytest-gremlins]`` in any TOML block on ``page``."""
+    return frozenset(key for block in pytest_gremlins_toml_blocks(page) for key in block)
+
+
+def keys_the_loader_ignores(workdir: Path, page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
+    """Load each TOML example value on ``page`` from ``workdir`` and return the keys that did not reach the config."""
+    ignored: set[str] = set()
+    for block in pytest_gremlins_toml_blocks(page):
+        for key, value in block.items():
+            (workdir / 'pyproject.toml').write_text(
+                f'[tool.pytest-gremlins]\n{key} = {_toml_literal(value)}\n', encoding='utf-8'
+            )
+            if getattr(load_config(workdir), key.replace('-', '_'), None) is None:
+                ignored.add(key)
+    return frozenset(ignored)
+
+
+def _toml_literal(value: object) -> str:
+    return 'true' if value is True else 'false' if value is False else json.dumps(value)
 
 
 @dataclass(frozen=True)

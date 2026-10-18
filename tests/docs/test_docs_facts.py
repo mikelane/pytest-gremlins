@@ -10,6 +10,9 @@ from pytest_gremlins.plugin import pytest_addoption as real_hook
 
 from . import docs_facts
 from .docs_facts import (
+    DocsFormatError,
+    default_cells,
+    pytest_gremlins_toml_blocks,
     quoted_messages,
     registered_flags,
 )
@@ -52,3 +55,38 @@ class DescribeQuotedMessages:
         )
 
         assert [quoted.text for quoted in quoted_messages(tmp_path)] == ['pytest-gremlins: this message does not exist']
+
+
+@pytest.mark.medium
+class DescribeTomlBlocks:
+    """A TOML block that does not parse is reported with its page and line."""
+
+    def it_names_the_page_and_line_of_a_block_that_does_not_parse(self, tmp_path: Path):
+        page = tmp_path / 'configuration.md'
+        page.write_text('intro\n\n```toml\n[tool.pytest-gremlins]\nworkers = ...\n```\n', encoding='utf-8')
+
+        with pytest.raises(DocsFormatError, match=r'configuration\.md:3: .*TOML'):
+            pytest_gremlins_toml_blocks(page)
+
+
+@pytest.mark.medium
+class DescribeDefaultCells:
+    """The Default column is found by its header, wherever it sits."""
+
+    def it_reads_a_table_whose_default_column_is_second(self, tmp_path: Path):
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '| Key | Default | Description |\n|---|---|---|\n| `batch_size` | `99` | batch size |\n',
+            encoding='utf-8',
+        )
+
+        assert default_cells(page) == {'batch_size': '`99`'}
+
+    def it_names_the_page_and_line_of_a_row_too_short_to_have_a_default(self, tmp_path: Path):
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '| Key | Description | Default |\n|---|---|---|\n| `batch_size` | batch size |\n', encoding='utf-8'
+        )
+
+        with pytest.raises(DocsFormatError, match=r'configuration\.md:3: .*Default'):
+            default_cells(page)
