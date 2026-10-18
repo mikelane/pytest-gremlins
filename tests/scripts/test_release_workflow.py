@@ -286,13 +286,10 @@ class DescribeReleaseWorkflowPublishing:
 
         assert regression_step['shell'] == 'bash'
 
-    def it_warns_when_the_changelog_has_no_section_for_the_version(self) -> None:
+    def it_fails_the_release_when_the_gate_wrote_no_release_notes(self) -> None:
         changelog_step = _step_named('github-release', 'Extract changelog for this version')
 
-        assert (
-            '::warning::No CHANGELOG.md section found for v$VERSION; release notes fall back to a placeholder.'
-            in changelog_step['run']
-        )
+        assert '::error::The release docs gate wrote no release notes for $RELEASE_TAG.' in changelog_step['run']
 
 
 @pytest.mark.medium

@@ -194,10 +194,13 @@ The PR fails CI until the entry passes the release docs gate.
   first `###` heading.
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
   heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
-- An entry runs to the next `## vX.Y.Z` heading, as in the release notes. Any other `##` line inside it
+- An entry runs to the next `## vX.Y.Z` heading. Any other `##` line inside it
   (`## Highlights`, or one inside a `<details>` block) fails the check, and so does a heading hidden behind a
   same-line comment (`<!-- x --> ### Fix`). Under the three gated headings, U+2028, U+2029, U+0085 and the form
   feed, vertical tab and `\x1c`-`\x1e` characters fail it too: Markdown does not break lines at them.
+- A carriage return that is not part of a CRLF line ending fails the check, and so does a copy of the version
+  heading being released inside an HTML comment or code fence (it confuses readers and other tools). Only ASCII
+  digits make a `##` line a version heading.
 - A `###` heading may have up to 3 leading spaces, a tab after the `###` and a closing `###`
   (`### Internal ###`). It is read like any other heading, so it must be one of the five names above.
 
@@ -236,6 +239,11 @@ or anchor that is not in the site. It exits 2 when it could not run. It runs in 
 2. `cut-release.yml`, before the tag is created, against the version `cz bump --get-next` reports.
 3. The `verify-tag` job of `release.yml`, against the tagged commit. Every other job in that workflow depends on
    `verify-tag`, so a failing check blocks the publish however the release was started.
+
+The GitHub release notes are not extracted separately: `github-release` in `release.yml` runs the same script with
+`--notes-out release_notes.md`, which writes the exact text of the entry that passed (its heading line up to the next
+`## vX.Y.Z` heading) and writes nothing when the check fails. The published notes are always the text the gate checked,
+and the job fails if the file is empty.
 
 **There is no bypass.** No workflow input, environment variable or flag skips the check, and `skip_test_pypi` does
 not affect it. To ship a change without docs, write a `(no docs: <reason>)` exemption in the changelog PR, where the

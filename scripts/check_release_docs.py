@@ -24,6 +24,12 @@ Nothing skips this check: it has no flag, environment variable or input that tur
 ``--newest`` checks the topmost ``## [v]X.Y.Z`` entry instead of a named version; it selects, never skips. When
 the topmost ``##`` heading is not such an entry (``## Unreleased``), it exits 2 instead of checking an older one.
 
+``--notes-out PATH`` writes the exact text of the entry that was checked (its heading line up to the next version
+heading, line breaks unchanged) to ``PATH`` when the check passes, and nothing otherwise. ``release.yml`` publishes that
+file, so the release notes are the text that passed the gate and no second parser can choose a different span. A
+carriage return that does not belong to a CRLF line ending, and a copy of the version heading inside an HTML comment or
+code fence, are problems.
+
 Exit codes: 0 when the entry passes, 1 when the check fails (each problem is printed on stdout with a
 ``PROBLEM:`` prefix, naming the bullet or link), 2 when the check could not run (bad input, missing changelog
 or missing site; the reason is printed on stderr). Exit 2 is never a pass.
@@ -49,7 +55,7 @@ ENTRY_LEVEL = 2
 SECTION_LEVEL = 3
 DOCS_URL = re.compile(r'https://pytest-gremlins\.readthedocs\.io/en/latest(?=[/#?]|$)')
 URL_SCHEME = re.compile(r'[a-zA-Z][a-zA-Z0-9+.-]*:')
-BULLET = re.compile(r'\s*(?:[-*+]|\d{1,9}[.)])(?:\s+(.*)|$)')
+BULLET = re.compile(r'\s*(?:[-*+]|[0-9]{1,9}[.)])(?:\s+(.*)|$)')
 BULLET_LABEL_LENGTH = 70
 PROBLEM_PREFIX = 'PROBLEM: '
 DEFAULT_CHANGELOG = Path(__file__).resolve().parents[1] / 'CHANGELOG.md'
@@ -57,9 +63,11 @@ FENCE = re.compile(r'\s*(`{3,}|~{3,})(.*)')
 COMMENT_OPEN = '<!--'
 COMMENT_CLOSE = '-->'
 CODE_SPAN = re.compile(r'(`+).+?(?<!`)\1(?!`)', re.DOTALL)
-NEWEST_HEADING = re.compile(r'## v?(\d\S*)')
+NEWEST_HEADING = re.compile(r'## v?([0-9]\S*)')
 LINE_BREAK = re.compile(r'\r\n|\r|\n')
-VERSION_HEADING_START = re.compile(r'## v?\d')
+VERSION_HEADING_START = re.compile(r'## v?[0-9]')
+LINE_WITH_BREAK = re.compile(r'[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+')
+LONE_CARRIAGE_RETURN = re.compile(r'\r(?!\n)')
 NON_MARKDOWN_BREAK = re.compile('[\u2028\u2029\x85\x0c\x0b\x1c\x1d\x1e]')
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
 LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
@@ -148,6 +156,7 @@ class _Scanner:
     def __init__(self, neutralized: frozenset[int]) -> None:
         self.lines: list[_Line] = []
         self.hidden_headings: list[tuple[_Region, int]] = []
+        self.hidden_version_headings: list[tuple[_Region, int, str]] = []
         self.open_region: _Region | None = None
         self._neutralized = neutralized
         self._fence = ''
@@ -156,6 +165,8 @@ class _Scanner:
     def feed(self, number: int, text: str) -> None:
         if self.open_region is not None and _structural_title(text, SECTION_LEVEL) is not None:
             self.hidden_headings.append((self.open_region, number))
+        if self.open_region is not None and VERSION_HEADING_START.match(text):
+            self.hidden_version_headings.append((self.open_region, number, text))
         if self._fence:
             self._feed_fenced(text)
             return
@@ -190,6 +201,8 @@ class _Scan:
     lines: list[_Line]
     unclosed: list[_Region]
     hidden_headings: list[tuple[_Region, int]]
+    hidden_version_headings: list[tuple[_Region, int, str]]
+    raw_lines: list[str]
 
 
 def _scan(changelog: str) -> _Scan:
@@ -205,7 +218,13 @@ def _scan(changelog: str) -> _Scan:
         for number, text in enumerate(raw, start=1):
             scanner.feed(number, text)
         if scanner.open_region is None:
-            return _Scan(scanner.lines, unclosed, scanner.hidden_headings)
+            return _Scan(
+                scanner.lines,
+                unclosed,
+                scanner.hidden_headings,
+                scanner.hidden_version_headings,
+                LINE_WITH_BREAK.findall(changelog),
+            )
         unclosed.append(scanner.open_region)
         neutralized.add(scanner.open_region.number)
 
@@ -214,12 +233,14 @@ def _scan(changelog: str) -> _Scan:
 class _Entry:
     lines: list[_Line]
     problems: list[str]
+    text: str
 
 
 def _find_entry(changelog: str, version: str) -> _Entry | None:
     """Return the lines of the ``## vX.Y.Z`` entry and the problems with its fences and comments, or ``None``."""
     scan = _scan(changelog)
-    heading = re.compile(rf'## v?{re.escape(version.removeprefix("v"))}(\s|$)')
+    bare_version = version.removeprefix('v')
+    heading = re.compile(rf'## v?{re.escape(bare_version)}(\s|$)')
     start = next((i for i, line in enumerate(scan.lines) if heading.match(line.heading)), None)
     if start is None:
         return None
@@ -238,8 +259,17 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
         for region, number in scan.hidden_headings
         if first <= number < last
     ]
+    problems += [
+        f'{region.kind} opened at line {region.number} hides a copy of the "## v{bare_version}" heading '
+        f'at line {number}'
+        for region, number, text in scan.hidden_version_headings
+        if heading.match(text)
+    ]
     lines = scan.lines[start + 1 : end]
-    return _Entry(lines, problems + _stray_heading_problems(lines))
+    text = ''.join(scan.raw_lines[first - 1 : last - 1])
+    return _Entry(
+        lines, problems + _stray_heading_problems(lines), text if text.endswith(('\n', '\r')) else f'{text}\n'
+    )
 
 
 def _stray_heading_problems(lines: list[_Line]) -> list[str]:
@@ -446,13 +476,40 @@ def find_problems(changelog: str, version: str, site: Site) -> list[str]:
         One line per problem: content the gate does not accept, an unknown ``###`` heading, a bullet under no
         heading, a gated bullet with no reference or exemption, or a reference that does not resolve.
     """
+    carriage_returns = _lone_carriage_return_problems(changelog)
     entry = _find_entry(changelog, version)
     if entry is None:
-        return [f'CHANGELOG.md has no "## v{version.removeprefix("v")}" entry']
+        return [*carriage_returns, f'CHANGELOG.md has no "## v{version.removeprefix("v")}" entry']
     reader = _EntryReader()
     reader.read(entry.lines)
     bullet_problems = [problem for item in reader.items for problem in _bullet_problems(item, site)]
-    return entry.problems + reader.problems + bullet_problems
+    return carriage_returns + entry.problems + reader.problems + bullet_problems
+
+
+def release_notes(changelog: str, version: str) -> str | None:
+    """Return the exact text of the ``## vX.Y.Z`` entry that ``find_problems`` checks, or ``None`` if it is missing.
+
+    The text runs from the version heading up to, not including, the next version heading, with its line breaks
+    unchanged. The release notes are this text, so they cannot differ from what the gate checked.
+
+    Args:
+        changelog: The text of ``CHANGELOG.md``, read with its line breaks unchanged.
+        version: The release version, with or without the leading ``v``.
+
+    Returns:
+        The entry text, or ``None`` when the changelog has no such entry.
+    """
+    entry = _find_entry(changelog, version)
+    return None if entry is None else entry.text
+
+
+def _lone_carriage_return_problems(changelog: str) -> list[str]:
+    r"""Report each ``\r`` not followed by ``\n``: it breaks a line here but not in the tools that read the notes."""
+    return [
+        f'a carriage return at line {1 + len(LINE_BREAK.findall(changelog, 0, match.start()))} is not followed by a '
+        'line feed; use "\\n" or "\\r\\n" line endings'
+        for match in LONE_CARRIAGE_RETURN.finditer(changelog)
+    ]
 
 
 class _AnchorCollector(HTMLParser):
@@ -499,9 +556,18 @@ class BuiltSite:
 
 def _read_changelog(path: Path) -> str:
     try:
-        return path.read_text(encoding='utf-8')
+        with path.open(encoding='utf-8', newline='') as file:
+            return file.read()
     except (OSError, UnicodeDecodeError) as error:
         raise CannotCheckError(f'cannot read {path}: {error}') from error
+
+
+def _write_notes(path: Path, notes: str) -> None:
+    try:
+        with path.open('w', encoding='utf-8', newline='') as file:
+            file.write(notes)
+    except OSError as error:
+        raise CannotCheckError(f'cannot write {path}: {error}') from error
 
 
 def _check(args: argparse.Namespace) -> tuple[str, list[str]]:
@@ -509,7 +575,13 @@ def _check(args: argparse.Namespace) -> tuple[str, list[str]]:
     version = newest_version(changelog) if args.newest else args.version
     if not version.removeprefix('v'):
         raise CannotCheckError('the version is empty')
-    return version, find_problems(changelog, version, BuiltSite(args.site_dir))
+    problems = find_problems(changelog, version, BuiltSite(args.site_dir))
+    if args.notes_out is not None:
+        args.notes_out.unlink(missing_ok=True)
+        notes = None if problems else release_notes(changelog, version)
+        if notes is not None:
+            _write_notes(args.notes_out, notes)
+    return version, problems
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -520,6 +592,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument('--newest', action='store_true', help='check the topmost entry of the changelog instead')
     parser.add_argument('--site-dir', type=Path, required=True, help='output directory of `mkdocs build --strict`')
     parser.add_argument('--changelog', type=Path, default=DEFAULT_CHANGELOG, help='path to CHANGELOG.md')
+    parser.add_argument(
+        '--notes-out',
+        type=Path,
+        help='when the check passes, write the exact text of the checked entry here, for the release notes',
+    )
     args = parser.parse_args(argv)
     if args.newest == (args.version is not None):
         parser.error('give exactly one of the version and --newest')

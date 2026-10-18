@@ -439,6 +439,11 @@ jobs:
           name: benchmark-results
           path: benchmark-results/
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      # The release notes are the exact entry the release docs gate checks: the checker writes them with
+      # --notes-out only when the entry passes, so no second parser can pick a different span of CHANGELOG.md.
       - name: Extract changelog for this version
         id: changelog
         run: |
@@ -446,21 +451,14 @@ jobs:
           VERSION="${RELEASE_TAG#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-          # Extract changelog section for this version.
-          # The range pattern /start/,/end/ misfires when the start line also matches
-          # the end pattern (e.g. "## v1.4.0" matches both /v?1.4.0/ and /v?[0-9]/).
-          # Use a stateful awk instead: print lines after the version header is found,
-          # stopping (without printing) when the next section header appears.
-          awk "
-            found && /^## v?[0-9]/ { exit }
-            /^## v?$VERSION/       { found=1 }
-            found                  { print }
-          " CHANGELOG.md > release_notes.md
+          rm -f release_notes.md
+          uv run --only-group docs mkdocs build --strict --site-dir "$RUNNER_TEMP/site"
+          uv run --no-project --python 3.12 python scripts/check_release_docs.py "$RELEASE_TAG" \
+            --site-dir "$RUNNER_TEMP/site" --notes-out release_notes.md
 
-          # If no specific section found, use a default message
           if [ ! -s release_notes.md ]; then
-            echo "::warning::No CHANGELOG.md section found for v$VERSION; release notes fall back to a placeholder."
-            echo "Release $VERSION" > release_notes.md
+            echo "::error::The release docs gate wrote no release notes for $RELEASE_TAG."
+            exit 1
           fi
 
       - name: Create GitHub Release

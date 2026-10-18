@@ -806,12 +806,12 @@ class DescribeCommandLine:
         assert result.returncode == 2
         assert 'the version is empty' in result.stderr
 
-    def it_accepts_only_the_version_the_newest_mode_and_the_two_input_paths(self) -> None:
+    def it_accepts_only_the_version_the_newest_mode_the_two_input_paths_and_the_notes_output(self) -> None:
         result = subprocess.run([sys.executable, str(SCRIPT), '--help'], capture_output=True, text=True, check=False)
 
         flags = set(re.findall(r'--[a-z][a-z-]*', result.stdout.split('\n\n')[0]))
 
-        assert flags == {'--site-dir', '--changelog', '--newest'}
+        assert flags == {'--site-dir', '--changelog', '--newest', '--notes-out'}
 
     @pytest.mark.parametrize('variable', ['SKIP_RELEASE_DOCS_CHECK', 'CI_SKIP_DOCS', 'FORCE', 'SKIP_DOCS_CHECK'])
     def it_ignores_environment_variables(self, tmp_path: Path, variable: str) -> None:
@@ -1033,3 +1033,172 @@ class DescribeOneLineCommentBeforeAHeading:
 
         assert any('HTML comment at line 8' in problem for problem in problems)
         assert any('Fixed a crash on Windows' in problem for problem in problems)
+
+
+LINK = '[docs](guide/configuration.md#batch-size)'
+ENTRY_V2 = f'## v2.0.0 (2026-11-01)\n\n### Fix\n\n- A {LINK}\n'
+NOTES_V2 = f'{ENTRY_V2}\n'
+UNLINKED = '- **Fixed a crash on Windows.** (#5)'
+OLDER = '\n## v1.0.0 (2026-01-01)\n\n### Fix\n\n- ok (no docs: r)\n'
+CHANGELOG_V2 = f'# Changelog\n\n{ENTRY_V2}{OLDER}'
+HIDDEN_COPY_ABOVE = {
+    'html comment': f'# Changelog\n\n<!--\n## v2.0.0\n\n### Fix\n\n{UNLINKED}\n-->\n\n{ENTRY_V2}{OLDER}',
+    'code fence': f'# Changelog\n\n```\n## v2.0.0\n\n### Fix\n\n{UNLINKED}\n```\n\n{ENTRY_V2}{OLDER}',
+}
+NON_ASCII_DIGIT_HEADINGS = {
+    'arabic-indic': f'## v{chr(0x0661)} highlights',
+    'fullwidth': f'## {chr(0xFF12)}{chr(0xFF10)}{chr(0xFF12)}{chr(0xFF16)} roadmap',
+}
+
+
+def _run_gate_on_bytes(tmp_path: Path, changelog: bytes, *args: str) -> subprocess.CompletedProcess[str]:
+    changelog_path = tmp_path / 'CHANGELOG.md'
+    changelog_path.write_bytes(changelog)
+    site = _write_site(tmp_path)
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), '--site-dir', str(site), '--changelog', str(changelog_path), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.medium
+class DescribeNotesOut:
+    def it_writes_the_entry_that_passed_the_check(self, tmp_path: Path) -> None:
+        notes = tmp_path / 'notes.md'
+
+        result = _run_gate_on_bytes(tmp_path, CHANGELOG_V2.encode(), '2.0.0', '--notes-out', str(notes))
+
+        assert result.returncode == 0, result.stdout
+        assert notes.read_bytes() == NOTES_V2.encode()
+
+    def it_keeps_crlf_line_endings_in_the_notes(self, tmp_path: Path) -> None:
+        notes = tmp_path / 'notes.md'
+        changelog = CHANGELOG_V2.replace('\n', '\r\n').encode()
+
+        result = _run_gate_on_bytes(tmp_path, changelog, '2.0.0', '--notes-out', str(notes))
+
+        assert result.returncode == 0, result.stdout
+        assert notes.read_bytes() == NOTES_V2.replace('\n', '\r\n').encode()
+
+    def it_writes_the_entry_up_to_the_end_of_the_file_for_the_oldest_entry(self, tmp_path: Path) -> None:
+        notes = tmp_path / 'notes.md'
+
+        result = _run_gate_on_bytes(tmp_path, CHANGELOG_V2.encode(), '1.0.0', '--notes-out', str(notes))
+
+        assert result.returncode == 0, result.stdout
+        assert notes.read_text(encoding='utf-8') == OLDER.lstrip('\n')
+
+    def it_writes_the_newest_entry_in_newest_mode(self, tmp_path: Path) -> None:
+        notes = tmp_path / 'notes.md'
+
+        result = _run_gate_on_bytes(tmp_path, CHANGELOG_V2.encode(), '--newest', '--notes-out', str(notes))
+
+        assert result.returncode == 0, result.stdout
+        assert notes.read_bytes() == NOTES_V2.encode()
+
+    def it_writes_nothing_when_the_check_fails(self, tmp_path: Path) -> None:
+        notes = tmp_path / 'notes.md'
+        changelog = CHANGELOG_V2.replace(LINK, '(#3)')
+
+        result = _run_gate_on_bytes(tmp_path, changelog.encode(), '2.0.0', '--notes-out', str(notes))
+
+        assert result.returncode == 1
+        assert not notes.exists()
+
+    def it_writes_nothing_when_the_check_could_not_run(self, tmp_path: Path) -> None:
+        notes = tmp_path / 'notes.md'
+
+        result = _run_gate_on_bytes(tmp_path, CHANGELOG_V2.encode(), '--newest', '2.0.0', '--notes-out', str(notes))
+
+        assert result.returncode == 2
+        assert not notes.exists()
+
+    def it_replaces_notes_left_by_an_earlier_run_when_the_check_fails(self, tmp_path: Path) -> None:
+        notes = tmp_path / 'notes.md'
+        notes.write_text('stale', encoding='utf-8')
+        changelog = CHANGELOG_V2.replace(LINK, '(#3)')
+
+        _run_gate_on_bytes(tmp_path, changelog.encode(), '2.0.0', '--notes-out', str(notes))
+
+        assert not notes.exists()
+
+
+@pytest.mark.medium
+class DescribeInputsThatMadeTheReleaseNotesDifferFromTheCheckedEntry:
+    @pytest.mark.parametrize('changelog', HIDDEN_COPY_ABOVE.values(), ids=HIDDEN_COPY_ABOVE.keys())
+    def it_fails_a_hidden_copy_of_the_version_heading(self, tmp_path: Path, changelog: str) -> None:
+        notes = tmp_path / 'notes.md'
+
+        result = _run_gate_on_bytes(tmp_path, changelog.encode(), '2.0.0', '--notes-out', str(notes))
+
+        assert result.returncode == 1
+        assert 'line 4' in result.stdout
+        assert not notes.exists()
+
+    def it_fails_a_lone_carriage_return_before_a_version_heading(self, tmp_path: Path) -> None:
+        changelog = f'# Changelog\n\n{ENTRY_V2.rstrip()}\r## v1.9.9\r\r### Fix\r\r{UNLINKED}\n{OLDER}'
+
+        result = _run_gate_on_bytes(tmp_path, changelog.encode(), '2.0.0')
+
+        assert result.returncode == 1
+        assert 'carriage return' in result.stdout
+
+    @pytest.mark.parametrize('heading', NON_ASCII_DIGIT_HEADINGS.values(), ids=NON_ASCII_DIGIT_HEADINGS.keys())
+    def it_reports_a_level_two_heading_that_starts_with_a_non_ascii_digit(self, tmp_path: Path, heading: str) -> None:
+        changelog = f'# Changelog\n\n{ENTRY_V2}\n{heading}\n\n### Fix\n\n{UNLINKED}\n{OLDER}'
+
+        result = _run_gate_on_bytes(tmp_path, changelog.encode(), '2.0.0')
+
+        assert result.returncode == 1
+        assert 'line 9' in result.stdout
+
+
+@pytest.mark.small
+class DescribeHiddenCopyOfTheVersionHeading:
+    @pytest.mark.parametrize('changelog', HIDDEN_COPY_ABOVE.values(), ids=HIDDEN_COPY_ABOVE.keys())
+    def it_names_the_region_and_the_line_of_the_hidden_copy(self, changelog: str) -> None:
+        checker = _load_checker()
+
+        problems = checker.find_problems(changelog, '2.0.0', SITE)
+
+        assert any('hides a copy of the "## v2.0.0" heading at line 4' in problem for problem in problems)
+
+    def it_ignores_a_hidden_heading_of_another_version(self) -> None:
+        checker = _load_checker()
+        changelog = f'# Changelog\n\n```\n## v1.5.0\n```\n\n{ENTRY_V2}{OLDER}'
+
+        assert checker.find_problems(changelog, '2.0.0', SITE) == []
+
+
+@pytest.mark.medium
+class DescribeReleaseNotesStep:
+    @staticmethod
+    def _notes_step() -> dict[str, Any]:
+        steps = [
+            step
+            for job in _jobs('release.yml').values()
+            for step in job.get('steps', [])
+            if step.get('id') == 'changelog'
+        ]
+        assert len(steps) == 1
+        return steps[0]
+
+    def it_takes_the_release_notes_from_the_checker(self) -> None:
+        run = self._notes_step()['run']
+
+        assert GATE_COMMAND in run
+        assert '--notes-out' in run
+
+    def it_does_not_extract_the_notes_with_a_second_parser(self) -> None:
+        run = self._notes_step()['run']
+
+        assert 'awk' not in run
+        assert 'sed' not in run
+
+    def it_fails_the_step_when_the_notes_are_missing_or_empty(self) -> None:
+        run = self._notes_step()['run']
+
+        assert '[ ! -s release_notes.md ]' in run
+        assert 'exit 1' in run
