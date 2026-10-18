@@ -35,9 +35,9 @@ def classify(n):
 '''
 
 
-def run_doctest_gremlins(pytester: pytest.Pytester, sample: str, *extra_args: str) -> dict[str, int]:
+def run_doctest_gremlins(pytester: pytest.Pytester, sample: str) -> dict[str, int]:
     pytester.makepyfile(sample=sample)
-    result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '--doctest-modules', *extra_args)
+    result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '--doctest-modules')
     return verdicts(result.stdout.str())
 
 
