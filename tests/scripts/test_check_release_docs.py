@@ -257,6 +257,71 @@ class DescribeNestedSubBullets:
 
 
 @pytest.mark.small
+class DescribeInvisibleReferences:
+    @pytest.mark.parametrize(
+        'text',
+        [
+            '<!-- [docs](guide/configuration.md#batch-size) -->',
+            '<!--\n  [docs](guide/configuration.md#batch-size)\n  -->',
+            '`[docs](guide/configuration.md#batch-size)`',
+            '``[docs](guide/configuration.md#batch-size)``',
+            '<!-- (no docs: hidden reason) -->',
+            'Write `(no docs: <reason>)` to exempt a bullet.',
+        ],
+    )
+    def it_ignores_a_reference_or_exemption_a_reader_cannot_see(self, text: str) -> None:
+        checker = _load_checker()
+
+        problems = checker.find_problems(_entry(f'- **Changed a thing.** {text}'), '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'no docs reference' in problems[0]
+        assert 'Changed a thing' in problems[0]
+
+    def it_still_reads_a_visible_reference_beside_a_code_span(self) -> None:
+        checker = _load_checker()
+        bullet = f'- **Fixed `it`.** [docs]({DOCS_URL}/guide/configuration/)'
+
+        assert checker.find_problems(_entry(bullet), '2.0.0', SITE) == []
+
+    def it_keeps_the_line_numbers_of_bullets_after_a_multi_line_comment(self) -> None:
+        checker = _load_checker()
+        changelog = '## v2.0.0\n\n<!--\nnote\n-->\n\n### Fix\n\n- **Changed a thing.** (#3)\n'
+
+        assert 'line 9' in checker.find_problems(changelog, '2.0.0', SITE)[0]
+
+
+@pytest.mark.small
+class DescribeFencedCode:
+    def it_does_not_end_the_entry_at_a_heading_inside_a_fence(self) -> None:
+        checker = _load_checker()
+        changelog = (
+            '## v2.0.0\n\n### Fix\n\n'
+            f'- **Linked.** [docs]({DOCS_URL}/guide/configuration/)\n\n'
+            '```markdown\n## v1.0.0\n```\n\n'
+            '- **Changed a thing after the fence.** (#3)\n'
+        )
+
+        problems = checker.find_problems(changelog, '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'after the fence' in problems[0]
+
+    @pytest.mark.parametrize('fence', ['```', '~~~', '````'])
+    def it_does_not_gate_a_bullet_shaped_line_inside_a_fence(self, fence: str) -> None:
+        checker = _load_checker()
+        changelog = f'## v2.0.0\n\n### Fix\n\n{fence}\n- not a real bullet\n{fence}\n'
+
+        assert checker.find_problems(changelog, '2.0.0', SITE) == []
+
+    def it_does_not_find_an_entry_heading_inside_a_fence(self) -> None:
+        checker = _load_checker()
+        changelog = '```markdown\n## v2.0.0\n```\n'
+
+        assert 'no "## v2.0.0" entry' in checker.find_problems(changelog, '2.0.0', SITE)[0]
+
+
+@pytest.mark.small
 class DescribeReferenceResolution:
     @pytest.mark.parametrize(
         'target',
@@ -317,7 +382,8 @@ def _write_site(root: Path) -> Path:
     (site / 'guide' / 'configuration').mkdir(parents=True)
     (site / 'index.html').write_text('<html><body><h1 id="home">Home</h1></body></html>', encoding='utf-8')
     (site / 'guide' / 'configuration' / 'index.html').write_text(
-        '<html><body><h2 id="batch-size">Batch size</h2><a name="legacy-anchor"></a></body></html>',
+        '<html><head><meta name="description" content="x"><meta name="viewport" content="y"></head>'
+        '<body><input name="query"><h2 id="batch-size">Batch size</h2><a name="legacy-anchor"></a></body></html>',
         encoding='utf-8',
     )
     return site

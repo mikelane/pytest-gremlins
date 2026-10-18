@@ -40,8 +40,34 @@ BULLET = re.compile(r'\s*(?:[-*+]|\d{1,9}[.)])(?:\s+(.*)|$)')
 BULLET_LABEL_LENGTH = 70
 PROBLEM_PREFIX = 'PROBLEM: '
 DEFAULT_CHANGELOG = Path(__file__).resolve().parents[1] / 'CHANGELOG.md'
+FENCE = re.compile(r' {0,3}(`{3,}|~{3,})(.*)')
+HTML_COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
+CODE_SPAN = re.compile(r'(`+).+?(?<!`)\1(?!`)', re.DOTALL)
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
 LINK_TARGET = re.compile(r'\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
+
+
+def _outside_fences(changelog: str) -> list[tuple[int, str]]:
+    """Return the numbered lines of ``changelog`` that are not part of a fenced code block."""
+    lines: list[tuple[int, str]] = []
+    fence = ''
+    for number, line in enumerate(changelog.splitlines(), start=1):
+        opening = FENCE.match(line)
+        if not fence and opening and not (opening.group(1)[0] == '`' and '`' in opening.group(2)):
+            fence = opening.group(1)
+        elif fence and opening and opening.group(1)[0] == fence[0] and len(opening.group(1)) >= len(fence):
+            fence = '' if not opening.group(2).strip() else fence
+        elif not fence:
+            lines.append((number, line))
+    return lines
+
+
+def _without_html_comments(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """Blank out ``<!-- ... -->`` comments, keeping every line number."""
+    if not lines:
+        return lines
+    text = HTML_COMMENT.sub(lambda match: re.sub(r'[^\n]', ' ', match.group()), '\n'.join(line for _, line in lines))
+    return [(number, line) for (number, _), line in zip(lines, text.split('\n'), strict=True)]
 
 
 def _entry_lines(changelog: str, version: str) -> list[tuple[int, str]] | None:
@@ -49,7 +75,7 @@ def _entry_lines(changelog: str, version: str) -> list[tuple[int, str]] | None:
     heading = re.compile(rf'## v?{re.escape(version.removeprefix("v"))}(\s|$)')
     entry: list[tuple[int, str]] = []
     in_entry = False
-    for number, line in enumerate(changelog.splitlines(), start=1):
+    for number, line in _without_html_comments(_outside_fences(changelog)):
         if in_entry and line.startswith('## '):
             break
         if in_entry:
@@ -158,10 +184,11 @@ def _bullet_problems(section: str, number: int, text: str, site: Site) -> list[s
     if section == NO_SECTION:
         return [f'bullet at line {number} ({_shorten(text)}) is under no "###" section heading']
     label = _label(section, number, text)
-    exemptions = EXEMPTION.findall(text)
+    visible = CODE_SPAN.sub(' ', text)
+    exemptions = EXEMPTION.findall(visible)
     if any(not reason.strip() for reason in exemptions):
         return [f'{label} has an empty "(no docs: )" exemption; give a reason']
-    references = [_parse_reference(target) for target in LINK_TARGET.findall(text) if _is_docs_reference(target)]
+    references = [_parse_reference(target) for target in LINK_TARGET.findall(visible) if _is_docs_reference(target)]
     if not references and not exemptions:
         return [f'{label} has no docs reference and no "(no docs: <reason>)" exemption']
     problems = (_reference_problem(reference, site) for reference in references)
@@ -186,14 +213,15 @@ def find_problems(changelog: str, version: str, site: Site) -> list[str]:
 
 
 class _AnchorCollector(HTMLParser):
-    """Collects every ``id`` and ``name`` attribute value on a page."""
+    """Collects the fragment targets on a page: every ``id`` and the ``name`` of ``<a>`` tags."""
 
     def __init__(self) -> None:
         super().__init__()
         self.anchors: set[str] = set()
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:  # noqa: ARG002
-        self.anchors.update(value for name, value in attrs if name in ('id', 'name') and value)
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        fragment_attributes = ('id', 'name') if tag == 'a' else ('id',)
+        self.anchors.update(value for name, value in attrs if name in fragment_attributes and value)
 
 
 class BuiltSite:
