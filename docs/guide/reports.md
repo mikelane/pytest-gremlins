@@ -922,6 +922,7 @@ jobs:
 
 #### Stryker Dashboard Format (mutation-testing-report-schema)
 
+<!-- stryker-report-example -->
 ```json
 {
   "schemaVersion": "1.0",
