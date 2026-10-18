@@ -67,7 +67,7 @@ class _RecordedOption:
     def default(self) -> object:
         if 'default' in self._attrs:
             return self._attrs['default']
-        return {'store_true': False, 'store_false': True}.get(self._attrs.get('action'))
+        return {'store_true': False, 'store_false': True}.get(self._attrs.get('action', ''))
 
 
 class _RecordingGroup:
