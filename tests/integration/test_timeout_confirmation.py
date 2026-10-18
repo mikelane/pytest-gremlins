@@ -96,6 +96,24 @@ class DescribeTimeoutShorterThanTheUnmutatedTests:
         assert result.stdout.str().count('Raise the timeout with --gremlin-mutant-timeout') == 1
 
 
+@pytest.mark.medium
+class DescribeTimeoutScaledByTheRerunBudget:
+    """The score warning names the per-attempt limit next to the rerun-scaled one (issue #673)."""
+
+    def it_names_both_limits_in_the_warning(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester_with_markers.makepyfile(sample=_TARGET_WITH_A_COMPARISON)
+        pytester_with_markers.makepyfile(test_sample=_SLOW_TEST_THAT_ASSERTS_NOTHING)
+
+        result = pytester_with_markers.runpytest_subprocess(
+            *_COMMON_ARGS, '--gremlin-operators=comparison', '--gremlin-mutant-timeout=1', '--reruns=1'
+        )
+
+        warning = _json_report(pytester_with_markers)['timeout_warning']
+        assert warning['mutant_timeout'] == 2
+        assert '2s timeout (1s per attempt, scaled for the pytest-rerunfailures budget)' in warning['message']
+        assert result.stdout.str().count('Raise the per-attempt limit with --gremlin-mutant-timeout') == 1
+
+
 @pytest.mark.large
 class DescribeTimeoutCausedByTheMutant:
     """A mutant that hangs a test that is fast without it is still a kill."""

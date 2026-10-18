@@ -109,6 +109,15 @@ Central registry for managing mutation operators.
 
 ### Usage Examples
 
+!!! note "Registering an operator for `pytest --gremlins`"
+    A run reads operators only from the registry returned by
+    `pytest_gremlins.instrumentation.transformer.get_default_registry()`. A registry created
+    with `OperatorRegistry()`, as in the examples below, is for programmatic use, such as
+    passing `registry.get_all()` to `transform_source(..., operators=...)`. It never affects a
+    run. To add an operator to runs, call `get_default_registry().register(MyOperator)` in your
+    project's root `conftest.py`; see the
+    [Extensibility Guide](../guide/extensibility.md#registration).
+
 ```python
 from pytest_gremlins.operators import OperatorRegistry, ComparisonOperator
 

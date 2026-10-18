@@ -176,12 +176,14 @@ pytest-gremlins uses branch coverage when available to improve test selection ac
 
 ## Configuration
 
-Coverage guidance is built into the plugin and is always active when `--gremlins` is
-enabled. There are no separate TOML keys or CLI flags to toggle it -- pytest-gremlins
-automatically collects per-test coverage data and uses it for test selection.
+Coverage guidance is on by default whenever `--gremlins` is enabled: pytest-gremlins collects
+per-test coverage data in a pre-scan and uses it for test selection. Two options change it:
 
-<!-- TODO: verify whether coverage_guidance, coverage_branch,
-     coverage_threshold config keys are planned for a future version -->
+- `--gremlin-no-coverage-filter` turns it off, so every gremlin runs the whole test suite. This
+  is slow, but it rules out test selection as the reason a gremlin survived.
+- `--gremlin-coverage-timeout` (or `coverage_timeout` in `[tool.pytest-gremlins]`, default 120
+  seconds) limits how long the pre-scan may run. If it runs out, pytest-gremlins warns and
+  every gremlin runs every test.
 
 ## Edge Cases
 
@@ -205,7 +207,11 @@ tests = coverage_map.tests_for_line("src/legacy.py", 100)
 # Returns: set()  # Empty - no tests cover this line
 ```
 
-These mutations are marked as **automatically surviving** - they indicate a coverage gap.
+pytest-gremlins doesn't mark these gremlins as survived. When coverage maps no test to a
+gremlin's line, it runs the whole test suite for that gremlin. This also covers module-level
+code (class attribute defaults, module constants) that runs at import time, which coverage.py
+records outside any test's context. A gremlin in code that no test reaches still survives, but
+only after the full suite has run against it.
 
 ### Dynamic Code Execution
 
@@ -235,7 +241,13 @@ pytest --gremlins --gremlin-report=html
 The HTML report lists each surviving gremlin with its file, line, operator,
 and description, giving you enough context to add the missing test.
 
-<!-- TODO: verify whether --show-coverage, --explain-survivor, --refresh-coverage flags are planned -->
+To check test selection for one gremlin, pass its full id to `--gremlin-explain`. It prints the
+tests whose coverage includes the gremlin's line, the tests selected for it, and any that were
+dropped, then skips the mutation run:
+
+```bash
+pytest --gremlins --gremlin-explain=calculator_e336_g001
+```
 
 ## Performance Characteristics
 

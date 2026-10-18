@@ -45,6 +45,13 @@ class DescribeSubprocessOptimizeLevel:
             ({'PYTHONOPTIMIZE': '1_0'}, 1),
             ({'PYTHONOPTIMIZE': '99999999999'}, 1),
             ({'PYTHONOPTIMIZE': '2147483647'}, 2),
+            ({'PYTHONOPTIMIZE': '1' * 5000}, 1),
+            ({'PYTHONOPTIMIZE': '-' + '1' * 5000}, 1),
+            ({'PYTHONOPTIMIZE': '0' * 5000}, 0),
+            ({'PYTHONOPTIMIZE': '-' + '0' * 5000}, 0),
+            ({'PYTHONOPTIMIZE': '0' * 5000 + '1'}, 1),
+            ({'PYTHONOPTIMIZE': '0' * 5000 + '2'}, 2),
+            ({'PYTHONOPTIMIZE': '0' * 5000 + '2147483648'}, 1),
         ],
     )
     def it_normalizes_the_level(self, environ: dict[str, str], level: int) -> None:

@@ -140,20 +140,21 @@ pytest-gremlins uses a playful "gremlins" theme throughout its API:
 # Run mutation testing from command line
 # pytest --gremlins
 
-# Programmatic access to operators
+# Programmatic access to operators. This registry is local to this script:
+# pytest --gremlins reads only get_default_registry(), so it never sees it.
 from pytest_gremlins.operators import OperatorRegistry, ComparisonOperator
 
 registry = OperatorRegistry()
 registry.register(ComparisonOperator)
 
-# Transform source code
+# Transform source code with the operators from this registry
 from pytest_gremlins.instrumentation import transform_source
 
 source = '''
 def is_adult(age):
     return age >= 18
 '''
-gremlins, tree = transform_source(source, 'example.py')
+gremlins, tree = transform_source(source, 'example.py', operators=registry.get_all())
 print(f'Found {len(gremlins)} gremlins')
 
 # Work with results
