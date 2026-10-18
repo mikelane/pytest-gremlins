@@ -900,7 +900,17 @@ and `### Fix` must end with either a docs reference or an exemption:
   exactly like that. Any other heading (`Feat`, `Fixes`, `Upgrade Notes`) fails the check, and so does a bullet
   that sits under no `###` heading.
 - Every list item is a bullet: `-`, `*`, `+`, `1.` and `1)` markers all count, and a nested sub-bullet needs its
-  own reference or exemption. A reference or exemption inside an HTML comment or a code span does not count.
+  own reference or exemption. A reference or exemption inside an HTML comment, a code span, an image
+  (`![x](...)`) or an escaped link (`\[x](...)`) does not count.
+- Under `### Upgrade notes`, `### Feature` and `### Fix` the only accepted lines are blank lines, list items and
+  their indented continuation lines. Prose paragraphs, `•` pseudo-bullets, block quotes (`>`), code fences,
+  HTML comments (`<!--` anywhere, even in a code span), other headings (`####`, indented or tab-indented `#`),
+  thematic breaks and underlined headings fail the check, and the failure names the line. Put prose before the
+  first `###` heading.
+- A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
+  heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
+- A `###` heading may have up to 3 leading spaces, a tab after the `###` and a closing `###`
+  (`### Internal ###`). It is read like any other heading, so it must be one of the five names above.
 
 Put a long link on its own indented line so the bullet still passes markdownlint:
 

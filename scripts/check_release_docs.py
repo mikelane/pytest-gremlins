@@ -12,9 +12,17 @@ Takes the version being released. In that version's ``## vX.Y.Z`` entry of ``CHA
 * An exemption is ``(no docs: <reason>)`` with a non-empty reason. The reason is public and is reviewed in the
   changelog PR.
 
+The accepted format is strict, because the changelog is authored here and this check is a release gate. Under a
+gated heading the only accepted lines are blank lines and list items with their indented continuation lines;
+prose, blockquotes, fences, HTML comments, other headings, thematic breaks and setext underlines are problems, as
+is any ``###`` heading that is not one of the known sections. A fence or HTML comment is allowed in the exempt
+sections (``Internal``, ``Documentation``) and before the first heading, but it must be closed and must not hide a
+``###`` heading. The check fails closed: whatever it does not understand is reported, never skipped.
+
 Nothing skips this check: it has no flag, environment variable or input that turns it off.
 
-``--newest`` checks the topmost ``## [v]X.Y.Z`` entry instead of a named version; it selects, never skips.
+``--newest`` checks the topmost ``## [v]X.Y.Z`` entry instead of a named version; it selects, never skips. When
+the topmost ``##`` heading is not such an entry (``## Unreleased``), it exits 2 instead of checking an older one.
 
 Exit codes: 0 when the entry passes, 1 when the check fails (each problem is printed on stdout with a
 ``PROBLEM:`` prefix, naming the bullet or link), 2 when the check could not run (bad input, missing changelog
@@ -37,107 +45,296 @@ EXEMPT_SECTIONS = ('Internal', 'Documentation')
 KNOWN_SECTIONS = (*GATED_SECTIONS, *EXEMPT_SECTIONS)
 NO_SECTION = ''
 HOME_PAGE = ''
+ENTRY_LEVEL = 2
+SECTION_LEVEL = 3
 DOCS_URL = re.compile(r'https://pytest-gremlins\.readthedocs\.io/en/latest(?=[/#?]|$)')
 URL_SCHEME = re.compile(r'[a-zA-Z][a-zA-Z0-9+.-]*:')
 BULLET = re.compile(r'\s*(?:[-*+]|\d{1,9}[.)])(?:\s+(.*)|$)')
 BULLET_LABEL_LENGTH = 70
 PROBLEM_PREFIX = 'PROBLEM: '
 DEFAULT_CHANGELOG = Path(__file__).resolve().parents[1] / 'CHANGELOG.md'
-FENCE = re.compile(r' {0,3}(`{3,}|~{3,})(.*)')
-HTML_COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
+FENCE = re.compile(r'\s*(`{3,}|~{3,})(.*)')
+COMMENT_OPEN = '<!--'
+COMMENT_CLOSE = '-->'
 CODE_SPAN = re.compile(r'(`+).+?(?<!`)\1(?!`)', re.DOTALL)
 NEWEST_HEADING = re.compile(r'## v?(\d\S*)')
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
-LINK_TARGET = re.compile(r'\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
+LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
+SECTION_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
+HEADING_CLOSER = re.compile(r'(?:^|[ \t]+)#+[ \t]*$')
+UNSUPPORTED_SHAPES = (
+    (re.compile(r'\s*>'), 'a blockquote'),
+    (re.compile(r'\s*#{1,6}(?:[ \t]|$)'), 'a heading other than a "###" section heading'),
+    (re.compile(r'\s*(?:=+|-{2,}|(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$'), 'a thematic break or setext underline'),
+    (re.compile(r'\s*[\u2022\u2023\u25e6\u25aa\u25cf]'), 'a pseudo-bullet; write "-"'),
+)
 
 
-def _outside_fences(changelog: str) -> list[tuple[int, str]]:
-    """Return the numbered lines of ``changelog`` that are not part of a fenced code block."""
-    lines: list[tuple[int, str]] = []
-    fence = ''
-    for number, line in enumerate(changelog.splitlines(), start=1):
-        opening = FENCE.match(line)
-        if not fence and opening and not (opening.group(1)[0] == '`' and '`' in opening.group(2)):
-            fence = opening.group(1)
-        elif fence and opening and opening.group(1)[0] == fence[0] and len(opening.group(1)) >= len(fence):
-            fence = '' if not opening.group(2).strip() else fence
-        elif not fence:
-            lines.append((number, line))
-    return lines
+@dataclass(frozen=True)
+class _Line:
+    """A changelog line as a reader sees it: ``text`` has HTML comments removed; fenced code is not a line."""
+
+    number: int
+    text: str
+    opens_fence: bool = False
+    opens_comment: bool = False
 
 
-def _without_html_comments(lines: list[tuple[int, str]]) -> list[tuple[int, str]]:
-    """Blank out ``<!-- ... -->`` comments, keeping every line number."""
-    if not lines:
-        return lines
-    text = HTML_COMMENT.sub(lambda match: re.sub(r'[^\n]', ' ', match.group()), '\n'.join(line for _, line in lines))
-    return [(number, line) for (number, _), line in zip(lines, text.split('\n'), strict=True)]
+@dataclass(frozen=True)
+class _Region:
+    """A fence or HTML comment, identified by the line it opens on."""
+
+    number: int
+    kind: str
 
 
-def _entry_lines(changelog: str, version: str) -> list[tuple[int, str]] | None:
-    """Return the numbered lines of the ``## vX.Y.Z`` entry, or ``None`` when it is missing."""
-    heading = re.compile(rf'## v?{re.escape(version.removeprefix("v"))}(\s|$)')
-    entry: list[tuple[int, str]] = []
-    in_entry = False
-    for number, line in _without_html_comments(_outside_fences(changelog)):
-        if in_entry and line.startswith('## '):
-            break
-        if in_entry:
-            entry.append((number, line))
-        elif heading.match(line):
-            in_entry = True
-    return entry if in_entry else None
+def _structural_title(text: str, level: int) -> str | None:
+    """Return the title when ``text`` is an ATX heading of ``level`` indented by at most 3 spaces."""
+    match = SECTION_HEADING.match(text)
+    if match is None or len(match.group(1)) != level:
+        return None
+    return HEADING_CLOSER.sub('', match.group(2) or '').strip()
 
 
-def _unknown_headings(entry: list[tuple[int, str]]) -> list[tuple[int, str]]:
-    """Return ``(line number, heading)`` for each ``###`` heading that is not a known section."""
-    headings = ((number, line[4:].strip()) for number, line in entry if line.startswith('### '))
-    return [(number, heading) for number, heading in headings if heading not in KNOWN_SECTIONS]
+def _fence_marker(text: str) -> str | None:
+    match = FENCE.match(text)
+    if match is None:
+        return None
+    marker, info = match.groups()
+    return None if marker[0] == '`' and '`' in info else marker
 
 
-def _gated_bullets(entry: list[tuple[int, str]]) -> list[tuple[str, int, str]]:
-    """Return ``(section, first line number, text)`` for each bullet that needs a docs reference or exemption."""
-    bullets: list[tuple[str, int, str]] = []
-    section = NO_SECTION
-    current: list[str] = []
-    start = 0
+def _closes_fence(text: str, marker: str) -> bool:
+    match = FENCE.match(text)
+    if match is None:
+        return False
+    closer, trailing = match.groups()
+    return closer[0] == marker[0] and len(closer) >= len(marker) and not trailing.strip()
 
-    def close() -> None:
-        if current:
-            bullets.append((section, start, ' '.join(current)))
-            current.clear()
 
-    for number, line in entry:
-        bullet = BULLET.match(line)
-        if line.startswith('### '):
-            close()
-            section = line[4:].strip()
-        elif bullet and section in (NO_SECTION, *GATED_SECTIONS):
-            close()
-            start = number
-            current.append((bullet.group(1) or '').strip())
-        elif current and line.strip() and not bullet:
-            current.append(line.strip())
+def _strip_comments(text: str, in_comment: bool, allow_open: bool) -> tuple[str, bool, bool]:
+    """Remove HTML comments from ``text``; return its visible text, if one opened here, and if one is still open."""
+    visible: list[str] = []
+    opened = False
+    rest = text
+    while True:
+        if in_comment:
+            end = rest.find(COMMENT_CLOSE)
+            if end < 0:
+                return ''.join(visible), opened, True
+            rest = rest[end + len(COMMENT_CLOSE) :]
+            in_comment = False
+            continue
+        start = rest.find(COMMENT_OPEN) if allow_open else -1
+        if start < 0:
+            visible.append(rest)
+            return ''.join(visible), opened, False
+        visible.append(rest[:start])
+        rest = rest[start + len(COMMENT_OPEN) :]
+        opened = in_comment = True
+
+
+class _Scanner:
+    """Walks the changelog once, hiding fenced code and HTML comments the way a Markdown renderer does."""
+
+    def __init__(self, neutralized: frozenset[int]) -> None:
+        self.lines: list[_Line] = []
+        self.hidden_headings: list[tuple[_Region, int]] = []
+        self.open_region: _Region | None = None
+        self._neutralized = neutralized
+        self._fence = ''
+        self._in_comment = False
+
+    def feed(self, number: int, text: str) -> None:
+        if self.open_region is not None and _structural_title(text, SECTION_LEVEL) is not None:
+            self.hidden_headings.append((self.open_region, number))
+        if self._fence:
+            self._feed_fenced(text)
+            return
+        marker = None if self._in_comment or number in self._neutralized else _fence_marker(text)
+        if marker:
+            self._fence = marker
+            self.open_region = _Region(number, 'code fence')
+            self.lines.append(_Line(number, text, opens_fence=True))
         else:
-            close()
-    close()
-    return bullets
+            self._feed_text(number, text)
+
+    def _feed_fenced(self, text: str) -> None:
+        if _closes_fence(text, self._fence):
+            self._fence = ''
+            self.open_region = None
+
+    def _feed_text(self, number: int, text: str) -> None:
+        visible, opened, still_open = _strip_comments(
+            text, self._in_comment, allow_open=number not in self._neutralized
+        )
+        self.lines.append(_Line(number, visible, opens_comment=opened or COMMENT_OPEN in visible))
+        if not still_open:
+            self.open_region = None
+        elif opened:
+            self.open_region = _Region(number, 'HTML comment')
+        self._in_comment = still_open
 
 
-def newest_version(changelog: str) -> str | None:
-    """Return the version of the topmost ``## [v]X.Y.Z`` entry, or ``None`` when there is none.
+@dataclass(frozen=True)
+class _Scan:
+    lines: list[_Line]
+    unclosed: list[_Region]
+    hidden_headings: list[tuple[_Region, int]]
+
+
+def _scan(changelog: str) -> _Scan:
+    """Scan ``changelog``; a fence or comment that is never closed is reported, then read as plain text.
+
+    Reading it as plain text keeps it from hiding the rest of the file, so later sections are still checked.
+    """
+    raw = changelog.splitlines()
+    neutralized: set[int] = set()
+    unclosed: list[_Region] = []
+    while True:
+        scanner = _Scanner(frozenset(neutralized))
+        for number, text in enumerate(raw, start=1):
+            scanner.feed(number, text)
+        if scanner.open_region is None:
+            return _Scan(scanner.lines, unclosed, scanner.hidden_headings)
+        unclosed.append(scanner.open_region)
+        neutralized.add(scanner.open_region.number)
+
+
+@dataclass(frozen=True)
+class _Entry:
+    lines: list[_Line]
+    problems: list[str]
+
+
+def _find_entry(changelog: str, version: str) -> _Entry | None:
+    """Return the lines of the ``## vX.Y.Z`` entry and the problems with its fences and comments, or ``None``."""
+    scan = _scan(changelog)
+    heading = re.compile(rf'## v?{re.escape(version.removeprefix("v"))}(\s|$)')
+    start = next((i for i, line in enumerate(scan.lines) if heading.match(line.text)), None)
+    if start is None:
+        return None
+    end = next(
+        (
+            i
+            for i in range(start + 1, len(scan.lines))
+            if _structural_title(scan.lines[i].text, ENTRY_LEVEL) is not None
+        ),
+        len(scan.lines),
+    )
+    first = scan.lines[start].number
+    last = scan.lines[end].number if end < len(scan.lines) else sys.maxsize
+    problems = [
+        f'{region.kind} opened at line {region.number} is never closed'
+        for region in scan.unclosed
+        if first <= region.number < last
+    ] + [
+        f'{region.kind} opened at line {region.number} hides the "###" heading at line {number}'
+        for region, number in scan.hidden_headings
+        if first <= number < last
+    ]
+    return _Entry(scan.lines[start + 1 : end], problems)
+
+
+def _unsupported_shape(text: str) -> str | None:
+    return next((description for shape, description in UNSUPPORTED_SHAPES if shape.match(text)), None)
+
+
+@dataclass
+class _Item:
+    section: str
+    number: int
+    parts: list[str]
+
+
+class _EntryReader:
+    """Reads an entry line by line, collecting the gated list items and everything the gate cannot accept."""
+
+    def __init__(self) -> None:
+        self.section = NO_SECTION
+        self.items: list[_Item] = []
+        self.problems: list[str] = []
+        self._open: _Item | None = None
+
+    def read(self, lines: list[_Line]) -> None:
+        for line in lines:
+            self._read_line(line)
+
+    def _read_line(self, line: _Line) -> None:
+        title = _structural_title(line.text, SECTION_LEVEL)
+        if title is not None:
+            self._start_section(line.number, title)
+        elif self.section in GATED_SECTIONS:
+            self._read_gated_line(line)
+        elif self.section == NO_SECTION:
+            self._read_preamble_line(line)
+
+    def _start_section(self, number: int, title: str) -> None:
+        self._open = None
+        self.section = title
+        if title not in KNOWN_SECTIONS:
+            self.problems.append(
+                f'unknown section heading "### {title}" at line {number}; use one of: {", ".join(KNOWN_SECTIONS)}'
+            )
+
+    def _read_preamble_line(self, line: _Line) -> None:
+        bullet = BULLET.match(line.text)
+        if bullet:
+            text = _shorten((bullet.group(1) or '').strip())
+            self.problems.append(f'bullet at line {line.number} ({text}) is under no "###" section heading')
+
+    def _read_gated_line(self, line: _Line) -> None:
+        if line.opens_comment:
+            self.problems.append(f'HTML comment at line {line.number} under "### {self.section}"; remove it')
+        reason = 'a code fence' if line.opens_fence else _unsupported_shape(line.text)
+        if reason:
+            self._open = None
+            self._reject(line.number, reason)
+        elif not line.text.strip():
+            self._open = None
+        else:
+            self._read_list_line(line)
+
+    def _read_list_line(self, line: _Line) -> None:
+        bullet = BULLET.match(line.text)
+        if bullet:
+            self._open = _Item(self.section, line.number, [(bullet.group(1) or '').strip()])
+            self.items.append(self._open)
+        elif self._open is not None and line.text[0] in ' \t':
+            self._open.parts.append(line.text.strip())
+        else:
+            self._open = None
+            self._reject(line.number, 'a paragraph that is not part of a list item')
+
+    def _reject(self, number: int, reason: str) -> None:
+        self.problems.append(
+            f'{reason} at line {number} under "### {self.section}"; this section may hold only list items'
+        )
+
+
+def newest_version(changelog: str) -> str:
+    """Return the version of the topmost ``## [v]X.Y.Z`` entry.
 
     Args:
         changelog: The text of ``CHANGELOG.md``.
 
     Returns:
         The version without its leading ``v``.
+
+    Raises:
+        CannotCheckError: When the changelog has no ``##`` heading, or the topmost one is not a version entry. An
+            older entry is never selected instead.
     """
-    for _, line in _without_html_comments(_outside_fences(changelog)):
-        heading = NEWEST_HEADING.match(line)
-        if heading:
-            return heading.group(1)
-    return None
+    for line in _scan(changelog).lines:
+        if _structural_title(line.text, ENTRY_LEVEL) is None:
+            continue
+        heading = NEWEST_HEADING.match(line.text)
+        if heading is None:
+            raise CannotCheckError(
+                f'the topmost "##" heading, "{line.text.strip()}" at line {line.number}, is not a "## vX.Y.Z" entry'
+            )
+        return heading.group(1)
+    raise CannotCheckError('CHANGELOG.md has no "## vX.Y.Z" entry')
 
 
 class CannotCheckError(Exception):
@@ -200,9 +397,8 @@ def _reference_problem(reference: Reference, site: Site) -> str | None:
     return None
 
 
-def _bullet_problems(section: str, number: int, text: str, site: Site) -> list[str]:
-    if section == NO_SECTION:
-        return [f'bullet at line {number} ({_shorten(text)}) is under no "###" section heading']
+def _bullet_problems(item: _Item, site: Site) -> list[str]:
+    section, number, text = item.section, item.number, ' '.join(item.parts)
     label = _label(section, number, text)
     visible = CODE_SPAN.sub(' ', text)
     exemptions = EXEMPTION.findall(visible)
@@ -225,22 +421,16 @@ def find_problems(changelog: str, version: str, site: Site) -> list[str]:
         site: The built docs site that references are resolved against.
 
     Returns:
-        One line per problem: an unknown ``###`` heading, a bullet under no heading, a gated bullet with no
-        reference or exemption, or a reference that does not resolve.
+        One line per problem: content the gate does not accept, an unknown ``###`` heading, a bullet under no
+        heading, a gated bullet with no reference or exemption, or a reference that does not resolve.
     """
-    entry = _entry_lines(changelog, version)
+    entry = _find_entry(changelog, version)
     if entry is None:
         return [f'CHANGELOG.md has no "## v{version.removeprefix("v")}" entry']
-    heading_problems = [
-        f'unknown section heading "### {heading}" at line {number}; use one of: {", ".join(KNOWN_SECTIONS)}'
-        for number, heading in _unknown_headings(entry)
-    ]
-    bullet_problems = [
-        problem
-        for section, number, text in _gated_bullets(entry)
-        for problem in _bullet_problems(section, number, text, site)
-    ]
-    return heading_problems + bullet_problems
+    reader = _EntryReader()
+    reader.read(entry.lines)
+    bullet_problems = [problem for item in reader.items for problem in _bullet_problems(item, site)]
+    return entry.problems + reader.problems + bullet_problems
 
 
 class _AnchorCollector(HTMLParser):
@@ -295,8 +485,6 @@ def _read_changelog(path: Path) -> str:
 def _check(args: argparse.Namespace) -> tuple[str, list[str]]:
     changelog = _read_changelog(args.changelog)
     version = newest_version(changelog) if args.newest else args.version
-    if version is None:
-        raise CannotCheckError('CHANGELOG.md has no "## vX.Y.Z" entry')
     if not version.removeprefix('v'):
         raise CannotCheckError('the version is empty')
     return version, find_problems(changelog, version, BuiltSite(args.site_dir))

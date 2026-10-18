@@ -185,7 +185,17 @@ The PR fails CI until the entry passes the release docs gate.
   exactly like that. Any other heading (`Feat`, `Fixes`, `Upgrade Notes`) fails the check, and so does a bullet
   that sits under no `###` heading.
 - Every list item is a bullet: `-`, `*`, `+`, `1.` and `1)` markers all count, and a nested sub-bullet needs its
-  own reference or exemption. A reference or exemption inside an HTML comment or a code span does not count.
+  own reference or exemption. A reference or exemption inside an HTML comment, a code span, an image
+  (`![x](...)`) or an escaped link (`\[x](...)`) does not count.
+- Under `### Upgrade notes`, `### Feature` and `### Fix` the only accepted lines are blank lines, list items and
+  their indented continuation lines. Prose paragraphs, `•` pseudo-bullets, block quotes (`>`), code fences,
+  HTML comments (`<!--` anywhere, even in a code span), other headings (`####`, indented or tab-indented `#`),
+  thematic breaks and underlined headings fail the check, and the failure names the line. Put prose before the
+  first `###` heading.
+- A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
+  heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
+- A `###` heading may have up to 3 leading spaces, a tab after the `###` and a closing `###`
+  (`### Internal ###`). It is read like any other heading, so it must be one of the five names above.
 
 Put a long link on its own indented line so the bullet still passes markdownlint:
 
@@ -217,7 +227,8 @@ the entry is missing, a bullet has neither a reference nor a non-empty exemption
 or anchor that is not in the site. It exits 2 when it could not run. It runs in three places:
 
 1. `ci.yml`, whenever a PR changes `CHANGELOG.md`, against the topmost entry, so the changelog PR fails
-   first. `--newest` picks that entry by the same heading rule the check uses, where the `v` is optional.
+   first. `--newest` picks that entry by the same heading rule the check uses, where the `v` is optional. If the
+   topmost `##` heading is not a version entry (`## Unreleased`), it exits 2 rather than checking an older entry.
 2. `cut-release.yml`, before the tag is created, against the version `cz bump --get-next` reports.
 3. The `verify-tag` job of `release.yml`, against the tagged commit. Every other job in that workflow depends on
    `verify-tag`, so a failing check blocks the publish however the release was started.

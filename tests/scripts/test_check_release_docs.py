@@ -177,7 +177,11 @@ class DescribeGatedBullets:
         checker = _load_checker()
         bullets = '- **First.** (#3)\n- **Second.** (#4)'
 
-        assert len(checker.find_problems(_entry(bullets), '2.0.0', SITE)) == 2
+        problems = checker.find_problems(_entry(bullets), '2.0.0', SITE)
+
+        assert len(problems) == 2
+        assert 'First' in problems[0]
+        assert 'Second' in problems[1]
 
 
 @pytest.mark.small
@@ -271,12 +275,11 @@ class DescribeInvisibleReferences:
     @pytest.mark.parametrize(
         'text',
         [
-            '<!-- [docs](guide/configuration.md#batch-size) -->',
-            '<!--\n  [docs](guide/configuration.md#batch-size)\n  -->',
             '`[docs](guide/configuration.md#batch-size)`',
             '``[docs](guide/configuration.md#batch-size)``',
-            '<!-- (no docs: hidden reason) -->',
             'Write `(no docs: <reason>)` to exempt a bullet.',
+            '![docs](guide/configuration.md#batch-size)',
+            r'\[docs](guide/configuration.md#batch-size)',
         ],
     )
     def it_ignores_a_reference_or_exemption_a_reader_cannot_see(self, text: str) -> None:
@@ -306,10 +309,9 @@ class DescribeFencedCode:
     def it_does_not_end_the_entry_at_a_heading_inside_a_fence(self) -> None:
         checker = _load_checker()
         changelog = (
-            '## v2.0.0\n\n### Fix\n\n'
-            f'- **Linked.** [docs]({DOCS_URL}/guide/configuration/)\n\n'
+            '## v2.0.0\n\n### Internal\n\n'
             '```markdown\n## v1.0.0\n```\n\n'
-            '- **Changed a thing after the fence.** (#3)\n'
+            '### Fix\n\n- **Changed a thing after the fence.** (#3)\n'
         )
 
         problems = checker.find_problems(changelog, '2.0.0', SITE)
@@ -320,7 +322,7 @@ class DescribeFencedCode:
     @pytest.mark.parametrize('fence', ['```', '~~~', '````'])
     def it_does_not_gate_a_bullet_shaped_line_inside_a_fence(self, fence: str) -> None:
         checker = _load_checker()
-        changelog = f'## v2.0.0\n\n### Fix\n\n{fence}\n- not a real bullet\n{fence}\n'
+        changelog = f'## v2.0.0\n\n{fence}\n- not a real bullet\n{fence}\n'
 
         assert checker.find_problems(changelog, '2.0.0', SITE) == []
 
@@ -329,6 +331,212 @@ class DescribeFencedCode:
         changelog = '```markdown\n## v2.0.0\n```\n'
 
         assert 'no "## v2.0.0" entry' in checker.find_problems(changelog, '2.0.0', SITE)[0]
+
+
+def _problems_of(body: str) -> str:
+    """Return every problem the checker reports for a ``v2.0.0`` entry made of ``body``, one per line."""
+    checker = _load_checker()
+    changelog = f'# Changelog\n\n## v2.0.0 (2026-11-01)\n\n{body}\n\n## v1.9.0 (2026-10-01)\n\n### Internal\n\n- x\n'
+    return '\n'.join(checker.find_problems(changelog, '2.0.0', SITE))
+
+
+LINKED = f'[docs]({DOCS_URL}/guide/configuration/)'
+
+
+@pytest.mark.small
+class DescribeGatedSectionContent:
+    @pytest.mark.parametrize('section', ['Upgrade notes', 'Feature', 'Fix'])
+    def it_rejects_a_paragraph_in_each_gated_section(self, section: str) -> None:
+        problems = _problems_of(f'### {section}\n\nFixed a crash when the cache is read-only. (#1)\n')
+
+        assert 'paragraph' in problems
+        assert 'line 7' in problems
+        assert f'"### {section}"' in problems
+
+    @pytest.mark.parametrize(
+        ('content', 'shape'),
+        [
+            ('\u2022 Fixed a crash. (#1)', 'pseudo-bullet'),
+            ('  \u2022 Fixed a crash. (#1)', 'pseudo-bullet'),
+            ('> - Fixed a crash. (#1)', 'blockquote'),
+            ('>- Fixed a crash. (#1)', 'blockquote'),
+            ('  > - Fixed a crash. (#1)', 'blockquote'),
+            ('#### Detail', 'heading'),
+            ('    ### Internal', 'heading'),
+            ('\t### Internal', 'heading'),
+            ('# Title', 'heading'),
+            ('---', 'thematic break'),
+            ('***', 'thematic break'),
+            ('* * *', 'thematic break'),
+            ('___', 'thematic break'),
+            ('- - -', 'thematic break'),
+            ('===', 'thematic break or setext underline'),
+            ('--', 'thematic break or setext underline'),
+            ('```\ncode\n```', 'code fence'),
+            ('~~~\ncode\n~~~', 'code fence'),
+            ('  ```shell', 'code fence'),
+            ('<!-- note -->', 'HTML comment'),
+            ('- Fixed `<!--` handling. (no docs: x)', 'HTML comment'),
+            ('Fixed. <!--', 'HTML comment'),
+        ],
+    )
+    def it_rejects_anything_in_a_gated_section_that_is_not_a_list_item(self, content: str, shape: str) -> None:
+        problems = _problems_of(f'### Fix\n\n{content}\n')
+
+        assert shape in problems
+
+    def it_rejects_a_blockquoted_bullet_after_a_linked_bullet(self) -> None:
+        problems = _problems_of(f'### Fix\n\n- **Fixed A.** {LINKED}\n> - **Fixed B.** (#2)\n')
+
+        assert 'blockquote' in problems
+        assert 'line 8' in problems
+
+    def it_rejects_a_blockquote_nested_in_a_linked_bullet(self) -> None:
+        problems = _problems_of(f'### Fix\n\n- **Fixed A.** {LINKED}\n  > - **Fixed B.** (#2)\n')
+
+        assert 'blockquote' in problems
+
+    def it_rejects_a_heading_nested_in_a_linked_bullet(self) -> None:
+        problems = _problems_of(f'### Fix\n\n- **Fixed A.** {LINKED}\n    ### Internal\n')
+
+        assert 'heading' in problems
+
+    def it_rejects_an_indented_line_that_follows_a_blank_line(self) -> None:
+        problems = _problems_of(f'### Fix\n\n- **Fixed A.** (#1)\n\n  {LINKED}\n')
+
+        assert 'paragraph' in problems
+
+    def it_rejects_text_that_follows_a_closing_comment(self) -> None:
+        problems = _problems_of(f'### Fix\n\n- **Fixed A.** (#1)\n<!--\nnote\n--> {LINKED}\n')
+
+        assert 'HTML comment' in problems
+        assert 'paragraph' in problems
+
+    def it_reads_a_list_with_blank_lines_between_bullets(self) -> None:
+        assert (
+            _problems_of(f'### Fix\n\n- **Fixed A.** {LINKED}\n\n- **Fixed B.** {LINKED}\n\n  - **C.** {LINKED}\n')
+            == ''
+        )
+
+
+@pytest.mark.small
+class DescribeExemptSectionContent:
+    @pytest.mark.parametrize('section', ['Internal', 'Documentation'])
+    @pytest.mark.parametrize(
+        'content',
+        [
+            'Plain prose. <!-- a comment --> more prose.',
+            '> quoted',
+            '#### Detail',
+            '```shell\npytest --gremlins\n```',
+            '~~~\n- a bullet-shaped line\n~~~',
+            '<!--\nmulti-line\ncomment\n-->',
+            '- Wrote a `<!-- x -->` example. (#1)',
+        ],
+    )
+    def it_allows_prose_fences_and_comments_that_are_closed(self, section: str, content: str) -> None:
+        assert _problems_of(f'### {section}\n\n{content}\n') == ''
+
+    @pytest.mark.parametrize(
+        ('opener', 'kind'),
+        [('```shell', 'code fence'), ('~~~', 'code fence'), ('<!-- note', 'HTML comment')],
+    )
+    def it_reports_a_construct_that_is_never_closed(self, opener: str, kind: str) -> None:
+        problems = _problems_of(f'### Internal\n\n{opener}\n\n### Fix\n\n- **Changed a thing.** (#3)\n')
+
+        assert f'{kind} opened at line 7 is never closed' in problems
+
+    @pytest.mark.parametrize('opener', ['```shell', '~~~', '<!-- note'])
+    def it_still_gates_the_sections_after_a_construct_that_is_never_closed(self, opener: str) -> None:
+        problems = _problems_of(f'### Internal\n\n{opener}\n\n### Fix\n\n- **Changed a thing.** (#3)\n')
+
+        assert 'Changed a thing' in problems
+
+    def it_does_not_let_an_unclosed_fence_swallow_the_next_entry(self) -> None:
+        checker = _load_checker()
+        changelog = '## v2.0.0\n\n### Internal\n\n```\n\n## v1.9.0\n\n### Fix\n\n- x\n'
+
+        problems = checker.find_problems(changelog, '2.0.0', SITE)
+
+        assert problems == ['code fence opened at line 5 is never closed']
+
+    def it_reports_an_unclosed_fence_in_a_list_item_and_still_gates_the_next_bullet(self) -> None:
+        body = (
+            '### Fix\n\n- **Fixed `--gremlins`.** (no docs: restores it)\n'
+            '  ```shell\n  pytest --gremlins\n- **Fixed a crash.** (#5)\n'
+        )
+
+        problems = _problems_of(body)
+
+        assert 'code fence' in problems
+        assert 'Fixed a crash' in problems
+
+
+@pytest.mark.small
+class DescribeConstructsThatHideHeadings:
+    def it_reports_a_comment_opened_in_a_code_span_that_a_later_code_span_closes(self) -> None:
+        body = (
+            '**The HTML report no longer drops text after a `<!--` in a docstring.**\n\n'
+            '### Fix\n\n- **Fixed a crash on Windows.** (#5)\n\n'
+            '### Internal\n\n- Renamed the `opener --> closer` helper. (#6)\n'
+        )
+
+        problems = _problems_of(body)
+
+        assert 'HTML comment opened at line 5 hides the "###" heading at line 7' in problems
+
+    def it_reports_a_comment_opened_in_an_exempt_section_that_hides_a_gated_section(self) -> None:
+        body = (
+            '### Internal\n\n- Wrote `<!--` in a docstring.\n\n'
+            '### Fix\n\n- **Fixed a crash on Windows.** (#5)\n\n'
+            '### Documentation\n\n- Wrote `-->` in a docstring.\n'
+        )
+
+        problems = _problems_of(body)
+
+        assert 'HTML comment opened at line 7 hides the "###" heading at line 9' in problems
+
+    def it_reports_a_fence_that_hides_a_gated_section(self) -> None:
+        body = '### Internal\n\n- A step.\n  ```\n### Fix\n\n- **Fixed a crash on Windows.** (#5)\n\n  ```\n'
+
+        problems = _problems_of(body)
+
+        assert 'code fence opened at line 8 hides the "###" heading at line 9' in problems
+
+    def it_reports_a_fence_line_inside_a_comment(self) -> None:
+        body = '### Fix\n\n<!--\n```\n-->\n- **Fixed a crash.** (#1)\n<!--\n```\n-->\n'
+
+        problems = _problems_of(body)
+
+        assert 'Fixed a crash' in problems
+        assert 'HTML comment' in problems
+
+    def it_does_not_report_a_hash_line_in_a_fence_that_is_not_a_section_heading(self) -> None:
+        assert _problems_of('### Internal\n\n```shell\n# install\n#### note\n```\n') == ''
+
+
+@pytest.mark.small
+class DescribeSectionHeadingSyntax:
+    @pytest.mark.parametrize(
+        'heading', [' ### Fix', '  ### Feature', '   ### Upgrade notes', '###\tFix', '### Fix ###']
+    )
+    def it_gates_the_bullets_under_an_indented_or_closed_gated_heading_after_internal(self, heading: str) -> None:
+        body = f'### Internal\n\n- Bumped a dev dependency. (#1)\n\n{heading}\n\n- **Fixed a crash.** (#2)\n'
+
+        problems = _problems_of(body)
+
+        assert 'Fixed a crash' in problems
+
+    @pytest.mark.parametrize('heading', ['### Internal ###', '### Internal #', ' ### Internal', '###\tInternal'])
+    def it_accepts_an_internal_heading_written_with_extra_syntax(self, heading: str) -> None:
+        assert _problems_of(f'{heading}\n\n- Bumped a dev dependency. (#1)\n') == ''
+
+    @pytest.mark.parametrize('heading', [' ### Fixes', '### Fixes ###', '###', '### ###'])
+    def it_names_an_unknown_heading_written_with_extra_syntax(self, heading: str) -> None:
+        assert 'unknown section heading' in _problems_of(f'{heading}\n\n- x\n')
+
+    def it_does_not_read_a_hash_without_a_space_as_a_heading(self) -> None:
+        assert 'unknown section heading' not in _problems_of('### Fix\n\n- **Fixed #12.** (no docs: x)\n#hashtag\n')
 
 
 @pytest.mark.small
@@ -402,7 +610,10 @@ class DescribeReferenceResolution:
         checker = _load_checker()
         bullet = f'- **Fixed it.** (no docs: reason) [b]({DOCS_URL}/guide/gone/)'
 
-        assert len(checker.find_problems(_entry(bullet), '2.0.0', SITE)) == 1
+        problems = checker.find_problems(_entry(bullet), '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'guide/gone' in problems[0]
 
 
 def _write_site(root: Path) -> Path:
@@ -546,15 +757,39 @@ class DescribeCommandLine:
 
         result = self._run(tmp_path, changelog, '--newest')
 
-        assert 'Changed' not in result.stdout
+        assert result.returncode == 1
         assert 'v9.9.9' not in result.stdout
         assert 'x (#3)' in result.stdout
 
-    def it_exits_two_in_newest_mode_when_the_changelog_has_no_version_entry(self, tmp_path: Path) -> None:
-        result = self._run(tmp_path, '# Changelog\n\n## Unreleased\n', '--newest')
+    def it_exits_two_in_newest_mode_when_the_changelog_has_no_entry_at_all(self, tmp_path: Path) -> None:
+        result = self._run(tmp_path, '# Changelog\n\nNothing yet.\n', '--newest')
 
         assert result.returncode == 2
         assert 'no "## vX.Y.Z" entry' in result.stderr
+
+    @pytest.mark.parametrize(
+        'heading',
+        [
+            '## Unreleased',
+            '## [2.0.0](https://example.com/compare) (2026-11-01)',
+            '##  v2.0.0',
+            '## V2.0.0',
+            ' ## v2.0.0',
+        ],
+    )
+    def it_exits_two_in_newest_mode_when_the_topmost_heading_is_not_a_version_entry(
+        self, tmp_path: Path, heading: str
+    ) -> None:
+        changelog = (
+            f'# Changelog\n\n{heading}\n\n### Fix\n\n- unlinked (#9)\n\n## v1.0.0\n\n### Fix\n\n- ok (no docs: r)\n'
+        )
+
+        result = self._run(tmp_path, changelog, '--newest')
+
+        assert result.returncode == 2
+        assert heading.strip() in result.stderr
+        assert 'line 3' in result.stderr
+        assert result.stdout == ''
 
     @pytest.mark.parametrize('args', [['--newest', '2.0.0'], []])
     def it_exits_two_unless_exactly_one_of_the_version_and_newest_mode_is_given(
