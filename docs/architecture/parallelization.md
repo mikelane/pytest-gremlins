@@ -217,7 +217,7 @@ directly, without starting pytest. That is only faithful for a test that needs n
 pytest, and it fabricated verdicts for async, parametrized and fixture-taking tests, for tests
 that depend on `conftest.py` imports or `pytest_configure` hooks, and for tests that import
 helpers from pytest's `sys.path` (the test file's directory or an ini `pythonpath`). Gating
-which tests it may judge kept leaking cases, so it is off in 1.9.1 and the redesign is tracked in
+which tests it may judge kept leaking cases, so it is off in v1.10.1 and the redesign is tracked in
 [#538](https://github.com/mikelane/pytest-gremlins/issues/538). Plain suites are slower as a
 result (roughly 5x in one measurement), in exchange for verdicts that come from pytest itself.
 
@@ -272,7 +272,7 @@ loads `sitecustomize`, so a child started with any of them still runs the origin
 
 ### Cached results
 
-The incremental cache key includes a runner fidelity version (`rf17`), so verdicts cached by
+The incremental cache key includes a runner fidelity version (`rf18`), so verdicts cached by
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 So are timeouts cached before they were confirmed against the unmutated tests (#565).
 So are verdicts cached while instrumented modules had no `__file__` (#525), when target code that read it

@@ -69,7 +69,6 @@ members = ["packages/*"]
 exclude = [
     "**/migrations/*",
     "**/__pycache__/*",
-    "**/conftest.py",
 ]
 
 # Default operators (can be overridden per package)
@@ -95,7 +94,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest-gremlins]
@@ -120,7 +119,7 @@ dependencies = ["core"]
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest-gremlins]
@@ -139,7 +138,7 @@ dependencies = ["core"]
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest-gremlins]

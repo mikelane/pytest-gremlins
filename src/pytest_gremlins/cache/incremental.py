@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf17'
+RUNNER_FIDELITY_VERSION = 'rf18'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
@@ -75,6 +75,9 @@ the key said no reruns, the runs rerun.
 ``rf17`` retires verdicts cached while gremlin runs did not rerun in a session that loaded pytest-rerunfailures
 by a command-line ``-p`` while autoload was disabled for them, by ``PYTEST_DISABLE_PLUGIN_AUTOLOAD`` or by
 ``--disable-plugin-autoload`` in ``addopts`` or ``PYTEST_ADDOPTS`` (#679); the key said reruns, the runs did not.
+
+``rf18`` retires verdicts cached under a key that ignored the rerun settings beyond count and delay (backoff factor,
+``only_rerun``, ``rerun_except``, ``--reruns-mode``, ``--rerun-exclude-path``, ``--max-suite-reruns``; #677).
 """
 
 
@@ -160,6 +163,7 @@ class IncrementalCache:
     - mutant_timeout: the per-gremlin test timeout the verdict was reached under
     - optimize_level: the optimize level the gremlin subprocess compiled under
     - rerun_budget: the ``(reruns, reruns_delay)`` the gremlin runs were allowed
+    - rerun_settings: the other resolved rerun settings (backoff factor, filters, mode, exclusions, suite cap)
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
 
@@ -193,6 +197,7 @@ class IncrementalCache:
         optimize_level: int = 0,
         *,
         rerun_budget: RerunBudget = NO_RERUNS,
+        rerun_settings: str = '',
     ) -> str:
         """Build a cache key from gremlin and content hashes.
 
@@ -203,6 +208,7 @@ class IncrementalCache:
         - mutant_timeout: the per-gremlin test timeout in seconds
         - optimize_level: the optimize level the gremlin subprocess compiles under
         - rerun_budget: the reruns and rerun delay the gremlin runs were allowed
+        - rerun_settings: the other resolved rerun settings the gremlin runs used
 
         Args:
             gremlin_id: Unique identifier for the gremlin.
@@ -212,6 +218,8 @@ class IncrementalCache:
             optimize_level: Optimize level of the gremlin subprocess; a different level is a miss.
             rerun_budget: ``(reruns, reruns_delay)`` the gremlin runs were allowed; a different budget is a miss
                 even when it scales the timeout to the same value.
+            rerun_settings: The other resolved rerun settings (backoff factor, filters, mode, exclusions, suite
+                cap) the gremlin runs used; different settings are a miss.
 
         Returns:
             A cache key string.
@@ -224,7 +232,7 @@ class IncrementalCache:
         reruns, reruns_delay = _effective_rerun_budget(rerun_budget)
         return (
             f'{gremlin_id}:{source_hash}:{combined_test_hash}:timeout={mutant_timeout}'
-            f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:{RUNNER_FIDELITY_VERSION}'
+            f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}:{RUNNER_FIDELITY_VERSION}'
         )
 
     def get_cached_result(
@@ -236,6 +244,7 @@ class IncrementalCache:
         optimize_level: int = 0,
         *,
         rerun_budget: RerunBudget = NO_RERUNS,
+        rerun_settings: str = '',
     ) -> CachedGremlinResult | None:
         """Retrieve a cached result if available.
 
@@ -252,12 +261,19 @@ class IncrementalCache:
             mutant_timeout: Per-gremlin test timeout in seconds; a different value is a miss.
             optimize_level: Optimize level of the gremlin subprocess; a different level is a miss.
             rerun_budget: ``(reruns, reruns_delay)`` of the run; a different budget is a miss.
+            rerun_settings: The other resolved rerun settings of the run; different settings are a miss.
 
         Returns:
             Cached result dictionary, or None if cache miss.
         """
         cache_key = self._build_cache_key(
-            gremlin_id, source_hash, test_hashes, mutant_timeout, optimize_level, rerun_budget=rerun_budget
+            gremlin_id,
+            source_hash,
+            test_hashes,
+            mutant_timeout,
+            optimize_level,
+            rerun_budget=rerun_budget,
+            rerun_settings=rerun_settings,
         )
         result = self._store.get(cache_key)
 
@@ -278,6 +294,7 @@ class IncrementalCache:
         *,
         optimize_level: int = 0,
         rerun_budget: RerunBudget = NO_RERUNS,
+        rerun_settings: str = '',
     ) -> None:
         """Cache a gremlin test result.
 
@@ -293,9 +310,16 @@ class IncrementalCache:
             mutant_timeout: Per-gremlin test timeout in seconds the result was reached under.
             optimize_level: Optimize level of the gremlin subprocess the result was reached under.
             rerun_budget: ``(reruns, reruns_delay)`` the result was reached under.
+            rerun_settings: The other resolved rerun settings the result was reached under.
         """
         cache_key = self._build_cache_key(
-            gremlin_id, source_hash, test_hashes, mutant_timeout, optimize_level, rerun_budget=rerun_budget
+            gremlin_id,
+            source_hash,
+            test_hashes,
+            mutant_timeout,
+            optimize_level,
+            rerun_budget=rerun_budget,
+            rerun_settings=rerun_settings,
         )
         self._store.put(cache_key, result)
 
@@ -309,6 +333,7 @@ class IncrementalCache:
         *,
         optimize_level: int = 0,
         rerun_budget: RerunBudget = NO_RERUNS,
+        rerun_settings: str = '',
     ) -> None:
         """Cache a gremlin test result without committing immediately.
 
@@ -323,9 +348,16 @@ class IncrementalCache:
             mutant_timeout: Per-gremlin test timeout in seconds the result was reached under.
             optimize_level: Optimize level of the gremlin subprocess the result was reached under.
             rerun_budget: ``(reruns, reruns_delay)`` the result was reached under.
+            rerun_settings: The other resolved rerun settings the result was reached under.
         """
         cache_key = self._build_cache_key(
-            gremlin_id, source_hash, test_hashes, mutant_timeout, optimize_level, rerun_budget=rerun_budget
+            gremlin_id,
+            source_hash,
+            test_hashes,
+            mutant_timeout,
+            optimize_level,
+            rerun_budget=rerun_budget,
+            rerun_settings=rerun_settings,
         )
         self._store.put_deferred(cache_key, result)
 

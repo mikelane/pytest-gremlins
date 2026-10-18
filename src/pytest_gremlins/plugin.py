@@ -127,16 +127,17 @@ from pytest_gremlins.reporting.results import (
 )
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.rerun_options import (
+    RerunIniResolution,
     baseline_rerun_warning,
     expand_argument_files,
-    rerun_ini_overrides,
+    rerun_cache_settings,
+    rerun_ini_as_gremlin_runs_read,
     rerun_keys_set_in,
     rerun_options_in,
-    rerun_resets,
+    resolve_rerun_ini,
     scaled_mutant_timeout,
     session_rerun_backoff_factor,
     session_rerun_budget,
-    unforwardable_rerun_keys,
     unforwarded_rerun_key_warning,
 )
 from pytest_gremlins.xdist_options import (
@@ -145,7 +146,10 @@ from pytest_gremlins.xdist_options import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import (
+        Callable,
+        Sequence,
+    )
 
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.operators import GremlinOperator
@@ -376,6 +380,7 @@ class GremlinSession:
     mutant_attempt_timeout: int | None = None
     rerun_budget: RerunBudget = NO_RERUNS
     rerun_backoff_factor: float = 1.0
+    rerun_cache_settings: str = ''
     collection_errors: int = 0
     baseline_aborted: bool = False
     baseline_failed_test_ids: set[str] = field(default_factory=set)
@@ -1100,6 +1105,7 @@ def pytest_configure(config: pytest.Config) -> None:
             mutant_attempt_timeout=mutant_attempt_timeout,
             rerun_budget=_gremlin_run_rerun_budget(config),
             rerun_backoff_factor=_gremlin_run_rerun_backoff_factor(config),
+            rerun_cache_settings=_gremlin_run_rerun_cache_settings(config),
         ),
     )
 
@@ -2915,12 +2921,17 @@ def _rerun_settings_for(config: pytest.Config) -> list[str]:
     command_line_options = _command_line_rerun_options(config)
     if not _rerun_ini_settings_are_forwarded(config):
         return command_line_options
-    option_keys_set = rerun_keys_set_in(config.option)
-    ini_overrides = rerun_ini_overrides(
-        config.getini, overridden_by=command_line_options, option_keys_set=option_keys_set
+    ini_resolution = _rerun_ini_resolution_for(config)
+    return [*ini_resolution.overrides, *ini_resolution.resets, *command_line_options]
+
+
+def _rerun_ini_resolution_for(config: pytest.Config) -> RerunIniResolution:
+    """Return the rerun ini overrides, resets and unforwardable keys gremlin runs get under ``-c``."""
+    return resolve_rerun_ini(
+        config.getini,
+        overridden_by=_command_line_rerun_options(config),
+        option_keys_set=rerun_keys_set_in(config.option),
     )
-    resets = rerun_resets(config.getini, overridden_by=command_line_options, option_keys_set=option_keys_set)
-    return [*ini_overrides, *resets, *command_line_options]
 
 
 def _gremlin_run_rerun_budget(config: pytest.Config) -> RerunBudget:
@@ -2939,6 +2950,19 @@ def _gremlin_run_rerun_backoff_factor(config: pytest.Config) -> float:
     if not _rerunfailures_is_loaded(config):
         return 1.0
     return session_rerun_backoff_factor(config.option, config.getini)
+
+
+def _gremlin_run_rerun_cache_settings(config: pytest.Config) -> str:
+    """Return the rerun settings beyond count and delay that the cache keys verdicts on, or none without the plugin.
+
+    Without pytest-rerunfailures nothing reruns, so a stale ``only_rerun`` ini key must not split the cache (#677).
+    """
+    if not _rerunfailures_is_loaded(config):
+        return ''
+    read_ini: Callable[[str], object] = config.getini
+    if _rerun_ini_settings_are_forwarded(config):
+        read_ini = rerun_ini_as_gremlin_runs_read(read_ini, _rerun_ini_resolution_for(config).resets)
+    return rerun_cache_settings(config.option, read_ini)
 
 
 def _prescan_timeout(gremlin_session: GremlinSession) -> int:
@@ -2996,11 +3020,7 @@ def _rerun_ini_warnings_for(config: pytest.Config) -> list[str]:
     """Return one warning per rerun ini setting that ``-c`` holds and gremlin runs cannot be given."""
     if not _rerunfailures_is_loaded(config) or not _rerun_ini_settings_are_forwarded(config):
         return []
-    command_line_options = _command_line_rerun_options(config)
-    skipped_keys = unforwardable_rerun_keys(
-        config.getini, overridden_by=command_line_options, option_keys_set=rerun_keys_set_in(config.option)
-    )
-    return [unforwarded_rerun_key_warning(key) for key in skipped_keys]
+    return [unforwarded_rerun_key_warning(key) for key in _rerun_ini_resolution_for(config).unforwardable_keys]
 
 
 def _rerunfailures_is_loaded(config: pytest.Config) -> bool:
@@ -3886,6 +3906,7 @@ def _check_cache_for_gremlin(
         mutant_timeout=gremlin_session.mutant_timeout,
         optimize_level=subprocess_optimize_level(os.environ),
         rerun_budget=gremlin_session.rerun_budget,
+        rerun_settings=gremlin_session.rerun_cache_settings,
     )
 
     if cached is None:
@@ -3956,6 +3977,7 @@ def _cache_gremlin_result(
         mutant_timeout=gremlin_session.mutant_timeout,
         optimize_level=subprocess_optimize_level(os.environ),
         rerun_budget=gremlin_session.rerun_budget,
+        rerun_settings=gremlin_session.rerun_cache_settings,
     )
 
 

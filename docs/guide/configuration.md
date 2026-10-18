@@ -489,6 +489,10 @@ The cache is stored in `.gremlins_cache/` in your project root. Cache keys inclu
 - Test file content hash
 - Gremlin ID
 - Effective mutant timeout, the optimize level and the pytest-rerunfailures budget (`reruns` and `reruns_delay`)
+- The other pytest-rerunfailures settings that can change a verdict: `reruns_delay_backoff_factor`, `only_rerun`,
+  `rerun_except`, `--reruns-mode`, `--rerun-exclude-path` and `--max-suite-reruns`. They are keyed by their resolved
+  values, so `--only-rerun X` and the `only_rerun = X` ini key share entries, and the order of the patterns in a filter
+  does not matter. Changing any of them re-judges every gremlin. Without pytest-rerunfailures loaded they are not keyed.
 
 When source or test files change, affected gremlins are re-tested.
 

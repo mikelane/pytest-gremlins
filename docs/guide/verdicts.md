@@ -16,6 +16,7 @@ subprocess's exit code decides the verdict:
 | Exit 1: a selected test failed | `zapped` | a kill |
 | The mutant stopped the suite from loading (a conftest import error, a collection error, a changed parametrize id) | `zapped`, with killing test `<collection>` | a kill |
 | The run went over the per-mutant timeout, and the unmutated tests finish within half of it | `timeout` | a kill |
+| Exit 72: pytest's private assertion-rewrite API changed | `error` | a miss (it stays in the denominator) |
 | Any other exit code, or a timeout that isn't confirmed | `error` | a miss (it stays in the denominator) |
 | An inline `# gremlin: pardon[...]` pragma covers the line | `pardoned` | left out of the score |
 
@@ -36,6 +37,14 @@ pytest-gremlins: the gremlin subprocess crashed outside a test, so pytest did no
 If the subprocess can't find its instrumented sources because `PYTEST_GREMLINS_SOURCES_FILE` is
 not set, it prints `Error: PYTEST_GREMLINS_SOURCES_FILE not set` and exits 4, and the gremlin is
 scored `error` too.
+
+### Exit 72: Assertion Rewriting Is Unavailable
+
+If a pytest release changes the private assertion-rewrite API that pytest-gremlins relies on, the
+gremlin subprocess prints `pytest-gremlins: assertion rewriting is unavailable with pytest ...`
+and exits 72. The gremlin is scored `error`, not `zapped`, because tests running with plain
+asserts would fail on every gremlin and be miscounted as kills. The message names the installed
+pytest version; report it on the issue tracker.
 
 ### Selected Tests Without a Node Id Are Errors (v1.11.1)
 

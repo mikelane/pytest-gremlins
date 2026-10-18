@@ -228,15 +228,17 @@ CI on its own. Watch for this line in the output.
 
 ---
 
-### Error: TOML syntax error in pyproject.toml
+### Warning: malformed TOML in pyproject.toml
 
-**Symptom:**
+**Symptom:** The `[tool.pytest-gremlins]` settings have no effect and pytest-gremlins runs with
+its defaults. It logs this warning and does not stop:
 
 ```text
-tomllib.TOMLDecodeError: Expected '=' after a key in a key/value pair (at line X, column Y)
+Skipping gremlin config: malformed TOML in /path/to/pyproject.toml
 ```
 
-**Cause:** Invalid TOML syntax in your configuration file.
+**Cause:** `pyproject.toml` is not valid TOML. pytest-gremlins skips the whole file's config
+instead of failing.
 
 **Solution:**
 
@@ -816,7 +818,7 @@ Mutation testing works locally but fails in CI with:
 
    ```yaml
    # GitHub Actions
-   - uses: actions/cache@v3
+   - uses: actions/cache@v4
      with:
        path: .gremlins_cache
        key: gremlins-cache-${{ hashFiles('src/**/*.py') }}

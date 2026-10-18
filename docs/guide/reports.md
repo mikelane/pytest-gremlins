@@ -415,7 +415,7 @@ for full source coverage.
 | `status` | string | One of: `zapped`, `survived`, `timeout`, `error`, `pardoned` |
 | `operator` | string | Operator that created this gremlin |
 | `description` | string | Human-readable mutation description |
-| `killing_test` | string | Present only if zapped. The test that caught the mutation when it is known; `unknown` when the gremlin run failed without naming a test. `<collection>` means the mutant stopped the suite from loading, so no test ran. If the unmutated suite cannot load in the gremlin subprocess, such load failures are reported with status `error` instead |
+| `killing_test` | string | Present when a killing test was recorded (normally on zapped gremlins). The test that caught the mutation when it is known; `unknown` when the gremlin run failed without naming a test. `<collection>` means the mutant stopped the suite from loading, so no test ran. If the unmutated suite cannot load in the gremlin subprocess, such load failures are reported with status `error` instead |
 | `error_output` | string | Present only when the run produced error output, usually for status `error`: the captured stderr or error message, such as a timeout that was downgraded or a crash outside a test |
 | `execution_time_ms` | float | Present only when the run was timed: wall-clock milliseconds for this gremlin's test run. `--gremlin-parallel` and `--gremlin-batch` runs record it; sequential runs don't |
 | `selected_tests` | list[string] | Present only when tests were selected: the pytest node ids run against this gremlin |
@@ -798,19 +798,9 @@ jobs:
       - name: Run mutation testing
         run: uv run pytest --gremlins --gremlin-report=json
 
-      - name: Convert to Stryker format
-        run: |
-          python -c "
-          from pytest_gremlins.reporting import MutationScore, StrykerExporter
-          import json
-          from pathlib import Path
-
-          # Load pytest-gremlins output
-          data = json.loads(Path('coverage/gremlins/gremlins.json').read_text())
-
-          # Note: This requires creating MutationScore from the JSON data
-          # In practice, you would save the Stryker format during test execution
-          "
+      # pytest-gremlins has no flag or command that writes the Stryker format. Call
+      # StrykerExporter.write_report(score, Path('mutation.json')) from your own code
+      # (see "Using StrykerExporter" above) and make sure mutation.json exists before the upload.
 
       - name: Upload to Stryker Dashboard
         if: github.ref == 'refs/heads/main'
@@ -908,17 +898,9 @@ jobs:
       - name: Run mutation testing
         run: uv run pytest --gremlins --gremlin-report=json
 
-      - name: Convert to SonarQube format
-        run: |
-          python -c "
-          from pytest_gremlins.reporting import MutationScore, SonarQubeExporter
-          import json
-          from pathlib import Path
-
-          # Note: Full implementation would create MutationScore from results
-          # exporter = SonarQubeExporter(project_root='.')
-          # exporter.write_report(score, Path('mutation-sonar.json'))
-          "
+      # pytest-gremlins has no flag or command that writes the SonarQube format. Call
+      # SonarQubeExporter.write_report(score, Path('mutation-sonar.json')) from your own code
+      # (see "Using SonarQubeExporter" above) and make sure mutation-sonar.json exists before the scan.
 
       - name: SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@master
@@ -1047,11 +1029,9 @@ Generate multiple formats in your CI workflow:
   run: |
     pytest --gremlins --gremlin-report=json,html
 
-    # Generate Stryker format
-    python scripts/export_stryker.py coverage/gremlins/gremlins.json mutation.json
-
-    # Generate SonarQube format
-    python scripts/export_sonarqube.py coverage/gremlins/gremlins.json mutation-sonar.json
+    # pytest-gremlins ships no command that writes the Stryker or SonarQube format.
+    # Your own code calls StrykerExporter and SonarQubeExporter (see above) and
+    # writes mutation.json and mutation-sonar.json before the steps below run.
 
 - name: Upload to Stryker Dashboard
   run: curl -X PUT ... @mutation.json
