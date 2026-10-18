@@ -6,20 +6,32 @@ from collections.abc import (
     Callable,
     Mapping,
 )
+import dataclasses
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 from pytest_gremlins.rerun_options import (
     baseline_rerun_warning,
-    rerun_ini_overrides,
     rerun_keys_set_in,
     rerun_options_in,
-    rerun_resets,
+    resolve_rerun_ini,
     survives_override_ini,
-    unforwardable_rerun_keys,
     unforwarded_rerun_key_warning,
 )
+
+
+def _overrides_of(read_ini: Callable[[str], object], **kwargs: Any) -> list[str]:
+    return list(resolve_rerun_ini(read_ini, **kwargs).overrides)
+
+
+def _resets_of(read_ini: Callable[[str], object], **kwargs: Any) -> list[str]:
+    return list(resolve_rerun_ini(read_ini, **kwargs).resets)
+
+
+def _unforwardable_of(read_ini: Callable[[str], object], **kwargs: Any) -> list[str]:
+    return list(resolve_rerun_ini(read_ini, **kwargs).unforwardable_keys)
 
 
 @pytest.mark.small
@@ -192,27 +204,27 @@ class DescribeUnforwardableRerunKeys:
     def it_names_each_list_key_with_an_item_pytest_would_change(self) -> None:
         values: dict[str, str | list[str]] = {'reruns': '2', 'only_rerun': ['a '], 'rerun_except': ['b ']}
 
-        assert unforwardable_rerun_keys(self._reader(values)) == ['only_rerun', 'rerun_except']
+        assert _unforwardable_of(self._reader(values)) == ['only_rerun', 'rerun_except']
 
     def it_names_nothing_when_every_item_survives(self) -> None:
-        assert unforwardable_rerun_keys(self._reader({'rerun_except': ['a b']})) == []
+        assert _unforwardable_of(self._reader({'rerun_except': ['a b']})) == []
 
     def it_skips_a_key_the_command_line_overrides(self) -> None:
         values: dict[str, str | list[str]] = {'rerun_except': ['a ']}
 
         overridden_by = ['--override-ini=rerun_except=a']
 
-        assert unforwardable_rerun_keys(self._reader(values), overridden_by=overridden_by) == []
+        assert _unforwardable_of(self._reader(values), overridden_by=overridden_by) == []
 
     def it_skips_a_key_a_parsed_option_already_sets(self) -> None:
         values: dict[str, str | list[str]] = {'only_rerun': ['a '], 'rerun_except': ['b ']}
 
-        assert unforwardable_rerun_keys(self._reader(values), option_keys_set={'only_rerun'}) == ['rerun_except']
+        assert _unforwardable_of(self._reader(values), option_keys_set={'only_rerun'}) == ['rerun_except']
 
     def it_leaves_the_offending_list_out_of_the_overrides(self) -> None:
         values: dict[str, str | list[str]] = {'reruns': '2', 'rerun_except': ['a ']}
 
-        assert rerun_ini_overrides(self._reader(values)) == ['--override-ini=reruns=2']
+        assert _overrides_of(self._reader(values)) == ['--override-ini=reruns=2']
 
 
 def _resets(*keys: str) -> list[str]:
@@ -257,16 +269,16 @@ class DescribeRerunResets:
     _reader = staticmethod(_ini_reader)
 
     def it_resets_each_key_that_is_unset(self) -> None:
-        assert rerun_resets(self._reader({'reruns': '2'})) == _resets(
+        assert _resets_of(self._reader({'reruns': '2'})) == _resets(
             'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except'
         )
 
     def it_resets_an_unset_delay_so_the_project_file_cannot_make_gremlin_runs_wait(self) -> None:
-        assert '--override-ini=reruns_delay=' in rerun_resets(self._reader({'reruns': '2'}))
+        assert '--override-ini=reruns_delay=' in _resets_of(self._reader({'reruns': '2'}))
 
     @pytest.mark.parametrize('unset', [None, '', []])
     def it_treats_every_empty_value_as_unset(self, unset: object) -> None:
-        assert rerun_resets(lambda _key: unset) == _resets(*_ALL_RERUN_KEYS)
+        assert _resets_of(lambda _key: unset) == _resets(*_ALL_RERUN_KEYS)
 
     def it_resets_a_list_key_whose_items_pytest_would_change(self) -> None:
         values: dict[str, str | list[str]] = {
@@ -277,7 +289,7 @@ class DescribeRerunResets:
             'rerun_except': ['b '],
         }
 
-        assert rerun_resets(self._reader(values)) == _resets('rerun_except')
+        assert _resets_of(self._reader(values)) == _resets('rerun_except')
 
     def it_leaves_every_key_alone_when_it_is_forwarded(self) -> None:
         values: dict[str, str | list[str]] = {
@@ -288,7 +300,7 @@ class DescribeRerunResets:
             'rerun_except': ['b c'],
         }
 
-        assert rerun_resets(self._reader(values)) == []
+        assert _resets_of(self._reader(values)) == []
 
     @pytest.mark.parametrize(
         ('overridden_by', 'key'),
@@ -303,13 +315,13 @@ class DescribeRerunResets:
         ],
     )
     def it_leaves_alone_a_key_the_command_line_already_overrides(self, overridden_by: list[str], key: str) -> None:
-        resets = rerun_resets(self._reader({}), overridden_by=overridden_by)
+        resets = _resets_of(self._reader({}), overridden_by=overridden_by)
 
         assert resets == _resets(*_all_rerun_keys_except(key))
 
     @pytest.mark.parametrize('key', _ALL_RERUN_KEYS)
     def it_leaves_alone_a_key_a_parsed_option_already_sets(self, key: str) -> None:
-        resets = rerun_resets(self._reader({}), option_keys_set=[key])
+        resets = _resets_of(self._reader({}), option_keys_set=[key])
 
         assert resets == _resets(*_all_rerun_keys_except(key))
 
@@ -317,12 +329,12 @@ class DescribeRerunResets:
         read_ini = _reader_raising({'only_rerun': ValueError('only_rerun')})
 
         expected = _resets('reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'rerun_except')
-        assert rerun_resets(read_ini) == expected
+        assert _resets_of(read_ini) == expected
 
     def it_resets_a_key_pytest_cannot_read_as_a_string_because_the_project_file_could_set_it(self) -> None:
         read_ini = _reader_raising({'reruns_delay': TypeError('reruns_delay')}, {'reruns': '2'})
 
-        assert rerun_resets(read_ini) == _resets(*_all_rerun_keys_except('reruns'))
+        assert _resets_of(read_ini) == _resets(*_all_rerun_keys_except('reruns'))
 
 
 @pytest.mark.small
@@ -357,7 +369,7 @@ class DescribeKeysACommandLineOptionOverrides:
         ],
     )
     def it_keeps_the_ini_key_it_replaces_out_of_the_forwarded_overrides(self, option: str, key: str) -> None:
-        forwarded = rerun_ini_overrides(_ini_reader(_EVERY_RERUN_KEY_SET), overridden_by=[option])
+        forwarded = _overrides_of(_ini_reader(_EVERY_RERUN_KEY_SET), overridden_by=[option])
 
         assert _keys_of(forwarded) == _all_rerun_keys_except(key)
 
@@ -365,7 +377,7 @@ class DescribeKeysACommandLineOptionOverrides:
         values: dict[str, str | list[str]] = {'only_rerun': ['a '], 'rerun_except': ['b ']}
         reader = _ini_reader(values)
 
-        assert unforwardable_rerun_keys(reader, overridden_by=['--only-rerun=a']) == ['rerun_except']
+        assert _unforwardable_of(reader, overridden_by=['--only-rerun=a']) == ['rerun_except']
 
 
 @pytest.mark.small
@@ -386,12 +398,12 @@ class DescribeRerunIniOverrides:
     _reader = staticmethod(_ini_reader)
 
     def it_returns_nothing_when_no_rerun_ini_key_is_set(self) -> None:
-        assert rerun_ini_overrides(self._reader({})) == []
+        assert _overrides_of(self._reader({})) == []
 
     def it_forwards_each_set_key_as_an_ini_override_in_a_fixed_order(self) -> None:
         values: dict[str, str | list[str]] = {'reruns_delay': '0.5', 'reruns': '2', 'reruns_delay_backoff_factor': '2'}
 
-        assert rerun_ini_overrides(self._reader(values)) == [
+        assert _overrides_of(self._reader(values)) == [
             '--override-ini=reruns=2',
             '--override-ini=reruns_delay=0.5',
             '--override-ini=reruns_delay_backoff_factor=2',
@@ -403,7 +415,7 @@ class DescribeRerunIniOverrides:
             'rerun_except': ['X'],
         }
 
-        assert rerun_ini_overrides(self._reader(values)) == [
+        assert _overrides_of(self._reader(values)) == [
             '--override-ini=only_rerun=no such failure\nAssertionError',
             '--override-ini=rerun_except=X',
         ]
@@ -412,20 +424,60 @@ class DescribeRerunIniOverrides:
         unregistered = ValueError('unknown configuration value')
         read_ini = _reader_raising(dict.fromkeys(_all_rerun_keys_except('reruns'), unregistered), {'reruns': '2'})
 
-        assert rerun_ini_overrides(read_ini) == ['--override-ini=reruns=2']
+        assert _overrides_of(read_ini) == ['--override-ini=reruns=2']
 
     def it_skips_a_key_pytest_cannot_read_as_a_string_and_forwards_the_rest(self) -> None:
         read_ini = _reader_raising({'reruns': TypeError("expected str, got int for 'reruns'")}, {'reruns_delay': '0.5'})
 
-        assert rerun_ini_overrides(read_ini) == ['--override-ini=reruns_delay=0.5']
+        assert _overrides_of(read_ini) == ['--override-ini=reruns_delay=0.5']
 
     def it_leaves_out_a_key_a_parsed_option_already_sets(self) -> None:
-        overrides = rerun_ini_overrides(_ini_reader(_EVERY_RERUN_KEY_SET), option_keys_set={'reruns', 'only_rerun'})
+        overrides = _overrides_of(_ini_reader(_EVERY_RERUN_KEY_SET), option_keys_set={'reruns', 'only_rerun'})
 
         assert _keys_of(overrides) == ['reruns_delay', 'reruns_delay_backoff_factor', 'rerun_except']
 
     def it_keeps_a_zero_count_from_a_toml_file_so_it_still_overrides_the_gremlin_runs_own_config(self) -> None:
-        assert rerun_ini_overrides(self._reader({'reruns': 0})) == ['--override-ini=reruns=0']  # type: ignore[dict-item]
+        assert _overrides_of(self._reader({'reruns': 0})) == ['--override-ini=reruns=0']  # type: ignore[dict-item]
 
     def it_converts_a_non_string_value_from_a_toml_file_to_text(self) -> None:
-        assert rerun_ini_overrides(self._reader({'reruns': 2})) == ['--override-ini=reruns=2']  # type: ignore[dict-item]
+        assert _overrides_of(self._reader({'reruns': 2})) == ['--override-ini=reruns=2']  # type: ignore[dict-item]
+
+
+@pytest.mark.small
+class DescribeResolveRerunIni:
+    _reader = staticmethod(_ini_reader)
+
+    def it_resolves_overrides_resets_and_unforwardable_keys_from_one_read(self) -> None:
+        values: dict[str, str | list[str]] = {'reruns': '2', 'only_rerun': ['a'], 'rerun_except': ['b ']}
+
+        resolution = resolve_rerun_ini(self._reader(values))
+
+        assert resolution.overrides == ('--override-ini=reruns=2', '--override-ini=only_rerun=a')
+        assert resolution.resets == tuple(_resets('reruns_delay', 'reruns_delay_backoff_factor', 'rerun_except'))
+        assert resolution.unforwardable_keys == ('rerun_except',)
+
+    def it_reads_each_rerun_ini_key_once(self) -> None:
+        keys_read: list[str] = []
+
+        def read_ini(key: str) -> object:
+            keys_read.append(key)
+            return ''
+
+        resolve_rerun_ini(read_ini)
+
+        assert keys_read == list(_ALL_RERUN_KEYS)
+
+    def it_resolves_nothing_for_keys_the_command_line_or_a_parsed_option_overrides(self) -> None:
+        resolution = resolve_rerun_ini(
+            self._reader(_EVERY_RERUN_KEY_SET), overridden_by=['--reruns=3'], option_keys_set={'only_rerun'}
+        )
+
+        assert _keys_of(list(resolution.overrides)) == ['reruns_delay', 'reruns_delay_backoff_factor', 'rerun_except']
+        assert resolution.resets == ()
+        assert resolution.unforwardable_keys == ()
+
+    def it_is_frozen(self) -> None:
+        resolution = resolve_rerun_ini(self._reader({}))
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            resolution.overrides = ()  # type: ignore[misc]
