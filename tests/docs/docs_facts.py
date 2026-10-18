@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 import tomllib
+from typing import Any
 
 import pytest
 
@@ -21,8 +22,6 @@ from .emitted_messages import MESSAGE_PREFIX
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCS_ROOT = REPO_ROOT / 'docs'
 CONFIGURATION_PAGE = DOCS_ROOT / 'guide' / 'configuration.md'
-
-GROUP_NAME = 'gremlins'
 
 # Options registered with help=argparse.SUPPRESS are exempt from the documentation check. Listing them here keeps
 # every exemption visible; a hidden option that is not listed fails the suite.
@@ -42,27 +41,34 @@ class RegisteredOption:
     hidden: bool
 
 
-def registered_options() -> list[RegisteredOption]:
-    """Return every option the plugin registers, read from the real parser."""
+def _registered_parser_options() -> list[Any]:
+    """Return the option objects of every group after the plugin's hook has run on a fresh parser.
+
+    A fresh parser holds no pytest built-ins, so every option found here is the plugin's own, whether the hook
+    put it in the ``gremlins`` group, another named group or the anonymous group (``parser.addoption``).
+    """
     parser = pytest.Parser(_ispytest=True)
     pytest_addoption(parser)
+    return [option for group in parser._groups for option in group.options]
+
+
+def registered_options() -> list[RegisteredOption]:
+    """Return every option the plugin registers, read from the real parser."""
     return [
         RegisteredOption(
             flag=flag,
             default=option.default,
             hidden=option.attrs().get('help') == argparse.SUPPRESS,
         )
-        for option in parser.getgroup(GROUP_NAME).options
+        for option in _registered_parser_options()
         for flag in option.names()
     ]
 
 
 def registered_help_defaults() -> dict[str, str]:
     """Map each flag whose help text states ``(default: X...)`` to that ``X``."""
-    parser = pytest.Parser(_ispytest=True)
-    pytest_addoption(parser)
     stated: dict[str, str] = {}
-    for option in parser.getgroup(GROUP_NAME).options:
+    for option in _registered_parser_options():
         match = _HELP_DEFAULT.search(option.attrs().get('help') or '')
         if match:
             stated.update(dict.fromkeys(option.names(), match.group(1)))

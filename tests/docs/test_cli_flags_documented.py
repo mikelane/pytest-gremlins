@@ -30,7 +30,9 @@ class DescribeCliFlagDocumentation:
         assert not unlisted, f'Hidden options must be listed in HIDDEN_OPTIONS: {sorted(unlisted)}'
 
     def it_mentions_only_flags_the_plugin_registers(self):
-        invented = {flag: pages for flag, pages in flags_mentioned_in_docs().items() if flag not in registered_flags()}
+        registered = registered_flags()
+
+        invented = {flag: pages for flag, pages in flags_mentioned_in_docs().items() if flag not in registered}
 
         assert not invented, f'Docs mention flags the plugin does not register: {invented}'
 
