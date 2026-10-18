@@ -55,6 +55,12 @@ def _from_cache(output: str) -> int:
     return int(match.group(1)) if match else 0
 
 
+@pytest.fixture(autouse=True)
+def _utf8_child_output(utf8_child_output: None) -> None:
+    """Child pytest processes print non-ASCII; make them write UTF-8 so Pytester decodes them on Windows."""
+    del utf8_child_output
+
+
 @pytest.fixture
 def project(pytester_with_markers: pytest.Pytester) -> pytest.Pytester:
     pytester_with_markers.makepyfile(sample=_SAMPLE)
