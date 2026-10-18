@@ -322,6 +322,8 @@ class GremlinSession:
             ``--import-mode=importlib`` survive (issue #424).  ``''`` clears all addopts.
             xdist options are left intact here; the coverage pre-scan and every per-gremlin
             run strip them (see :func:`pytest_gremlins.xdist_options.addopts_without_xdist`).
+        doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs,
+            passed as top-level arguments because pytest before 9.1 ignores a ``-o`` nested in ``addopts`` (#719).
     """
 
     enabled: bool = False
@@ -371,6 +373,7 @@ class GremlinSession:
     unrunnable_gremlin_ids: set[str] = field(default_factory=set)
     explain_gremlin_id: str | None = None
     preserved_addopts: str = ''
+    doctest_ini_overrides: list[str] = field(default_factory=list)
     rerun_options: list[str] = field(default_factory=list)
     rerun_ini_warnings: list[str] = field(default_factory=list)
     baseline_rerun_test_ids: set[str] = field(default_factory=set)
@@ -1097,6 +1100,7 @@ def pytest_configure(config: pytest.Config) -> None:
             xdist_loaded=config.pluginmanager.hasplugin('xdist'),
             xdist_workers=xdist_worker_int if xdist_active else None,
             preserved_addopts=_addopts_for_gremlin_runs(config),
+            doctest_ini_overrides=_doctest_ini_overrides(config),
             rerun_options=_rerun_options_for(config),
             rerun_ini_warnings=_rerun_ini_warnings_for(config),
             coverage_timeout=_rerun_scaled_timeout(config, coverage_timeout, label='Coverage pre-scan'),
@@ -2214,6 +2218,7 @@ def _unmutated_command_and_env(gremlin_session: GremlinSession, rootdir: Path) -
         instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
     )
     env = env_without_xdist_addopts(os.environ)
@@ -2669,6 +2674,7 @@ def _run_prescan_reporting_problems(
             name_to_node_ids=gremlin_session.test_name_to_node_ids,
             coverage_include=coverage_include,
             preserved_addopts=gremlin_session.preserved_addopts,
+            doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
             rerun_options=gremlin_session.rerun_options,
             timeout=prescan_timeout,
         )
@@ -2899,7 +2905,10 @@ def _doctest_options_in(args: Sequence[str]) -> list[str]:
 
 
 def _doctest_ini_overrides(config: pytest.Config) -> list[str]:
-    """Return ``-o`` overrides carrying the session's resolved doctest ini values (#594).
+    """Return ``-o`` argument pairs carrying the session's resolved doctest ini values (#594).
+
+    They go on the gremlin command line as top-level arguments, never inside the ``-o addopts=<...>`` value:
+    before pytest 9.1 a ``-o`` nested in an addopts value set by ``-o`` is ignored (#719).
 
     Gremlin runs re-read the project config, so a value set by ``-o`` or ``-c`` would be lost and a doctest that
     needs it (``NORMALIZE_WHITESPACE``) would fail in every run, fabricating a kill for every gremlin it covers.
@@ -2914,21 +2923,21 @@ def _doctest_ini_overrides(config: pytest.Config) -> list[str]:
         except ValueError:
             continue
         text = ' '.join(value) if isinstance(value, list) else str(value)
-        overrides.extend(['-o', shlex.quote(f'{key}={text}')])
+        overrides.extend(['-o', f'{key}={text}'])
     return overrides
 
 
 def _addopts_for_gremlin_runs(config: pytest.Config) -> str:
-    """Return the ``addopts`` for gremlin runs: the project's, minus pytest-cov, plus the session's doctest settings.
+    """Return the ``addopts`` for gremlin runs: the project's, minus pytest-cov, plus the session's doctest options.
 
     A doctest node id such as ``sample.py::sample.classify`` only resolves where doctests are collected, and
     ``--doctest-modules`` typed on the command line is otherwise lost, because gremlin runs replace ``addopts``.
-    The doctest ini values are forwarded too (see :func:`_doctest_ini_overrides`).
+    The doctest ini values are not here: they travel as top-level ``-o`` arguments (see :func:`_doctest_ini_overrides`).
     Options inside an ``@argfile`` are not expanded.
     """
     project_addopts = _addopts_without_cov(config.getini('addopts'))
     doctest_options = ' '.join(shlex.quote(option) for option in _doctest_options_in(config.invocation_params.args))
-    return ' '.join(part for part in (project_addopts, doctest_options, *_doctest_ini_overrides(config)) if part)
+    return ' '.join(part for part in (project_addopts, doctest_options) if part)
 
 
 def _command_line_rerun_options(config: pytest.Config) -> list[str]:
@@ -3009,7 +3018,7 @@ def _gremlin_run_rerun_cache_settings(config: pytest.Config) -> str:
     Rerun settings count only with pytest-rerunfailures loaded: otherwise nothing reruns, and a stale ``only_rerun``
     ini key must not split the cache (#677).  The doctest ini settings are always part of it (#594).
     """
-    doctest_settings = ' '.join(_doctest_ini_overrides(config))
+    doctest_settings = ' '.join(shlex.quote(token) for token in _doctest_ini_overrides(config))
     if not _rerunfailures_is_loaded(config):
         return doctest_settings
     read_ini: Callable[[str], object] = config.getini
@@ -3183,6 +3192,7 @@ def _run_tests_with_coverage(
     name_to_node_ids: dict[str, list[str]] | None = None,
     coverage_include: list[str] | None = None,
     preserved_addopts: str = '',
+    doctest_ini_overrides: Sequence[str] = (),
     rerun_options: Sequence[str] = (),
     timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS,
 ) -> dict[str, dict[str, list[int]]]:
@@ -3218,6 +3228,9 @@ def _run_tests_with_coverage(
             and the pre-scan would otherwise record nothing (issue #502).  The xdist
             plugin itself stays loaded: without ``-n`` it runs in-process, so its
             fixtures and hooks still work.
+        doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs
+            (see :func:`_doctest_ini_overrides`), kept outside ``addopts`` because pytest before 9.1 ignores a
+            ``-o`` nested in an ``addopts`` value (issue #719).
         rerun_options: pytest-rerunfailures options from the command line (see
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended so a test that flakes
             before reaching the code under test is rerun, as in the baseline, and still lands in the
@@ -3262,6 +3275,7 @@ def _run_tests_with_coverage(
         'no:gremlins',
         '-o',
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
+        *doctest_ini_overrides,
         '--tb=no',
         '-q',
         *rerun_options,
@@ -3354,6 +3368,7 @@ def _run_batch_mutation_testing(  # pragma: no cover
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
     )
     gremlins = gremlin_session.gremlins
@@ -3472,6 +3487,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
     )
     gremlins = gremlin_session.gremlins
@@ -3809,6 +3825,7 @@ def _run_mutation_testing(
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
     )
 
@@ -4259,6 +4276,7 @@ def _build_test_command(
     preserved_addopts: str = '',
     *,
     xdist_loaded: bool = False,
+    doctest_ini_overrides: Sequence[str] = (),
     rerun_options: Sequence[str] = (),
 ) -> list[str]:
     """Build the command to run tests.
@@ -4285,6 +4303,9 @@ def _build_test_command(
             token stripper does not recognise) can distribute the run.  xdist itself stays
             loaded, so ``worker_id`` still works.  Without xdist the flag would be rejected as
             unrecognized, so it is omitted.
+        doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs
+            (see :func:`_doctest_ini_overrides`), kept outside ``addopts`` because pytest before 9.1 ignores a
+            ``-o`` nested in an ``addopts`` value (issue #719).
         rerun_options: pytest-rerunfailures options typed on the command line (see
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended last so they win over
             ``addopts`` as they do in the baseline run.  A flaky test then has to fail on every
@@ -4304,6 +4325,7 @@ def _build_test_command(
             '-q',
             '-o',
             f'addopts={gremlin_addopts}',
+            *doctest_ini_overrides,
         ]
     else:
         command = [
@@ -4315,6 +4337,7 @@ def _build_test_command(
             '-q',
             '-o',
             f'addopts={gremlin_addopts}',
+            *doctest_ini_overrides,
         ]
 
     if _pytest_cov_available():
