@@ -33,8 +33,9 @@ def _project(pytester: pytest.Pytester) -> None:
     [((), 'Zapped: 2 gremlins*'), (('-c', 'pyproject.toml'), 'Survived: 2 gremlins*')],
 )
 def it_cold_run_reaches_the_verdict_its_gremlin_runs_earn(
-    pytester: pytest.Pytester, config_args: tuple[str, ...], expected: str
+    pytester: pytest.Pytester, config_args: tuple[str, ...], expected: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
     _project(pytester)
 
     result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '--gremlin-clear-cache', *config_args)
@@ -43,7 +44,10 @@ def it_cold_run_reaches_the_verdict_its_gremlin_runs_earn(
 
 
 @pytest.mark.medium
-def it_discovered_config_run_does_not_reuse_survivors_from_a_dash_c_run(pytester: pytest.Pytester) -> None:
+def it_discovered_config_run_does_not_reuse_survivors_from_a_dash_c_run(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
     _project(pytester)
     pytester.runpytest_subprocess(*GREMLIN_ARGS, '-c', 'pyproject.toml')
 
@@ -53,7 +57,10 @@ def it_discovered_config_run_does_not_reuse_survivors_from_a_dash_c_run(pytester
 
 
 @pytest.mark.medium
-def it_dash_c_run_does_not_reuse_zaps_from_a_discovered_config_run(pytester: pytest.Pytester) -> None:
+def it_dash_c_run_does_not_reuse_zaps_from_a_discovered_config_run(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
     _project(pytester)
     pytester.runpytest_subprocess(*GREMLIN_ARGS)
 
