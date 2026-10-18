@@ -134,7 +134,7 @@ class DescribeUnreadableSourceWarning:
 
 @pytest.mark.medium
 class DescribeNonTextCodecCookie:
-    @pytest.mark.parametrize('codec', ['rot13', 'hex', 'base64'])
+    @pytest.mark.parametrize('codec', ['rot13', 'hex', 'base64', 'undefined'])
     def it_exports_empty_source_when_the_cookie_names_a_non_text_codec(self, tmp_path, codec):
         path = tmp_path / 'cookie.py'
         path.write_text(f'# coding: {codec}\nx = 1\n', encoding='ascii')
