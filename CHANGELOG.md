@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.12.1 (2026-10-18)
+
+**Fewer false kills, and caching works under xdist.** Gremlin runs now get the same doctest and
+pytest-rerunfailures settings as your main run. Previously a gremlin could be scored as killed only
+because its run compared doctest output under different rules, or skipped a rerun the main run
+would have made. `--gremlin-cache` now hits under `-n N`. The minimum pytest is now 8.4.2.
+
+### Upgrade notes
+
+- **pytest 8.4.2 or newer is required.** The plugin uses `--disable-plugin-autoload`, which pytest
+  added in 8.4, so pytest 7.x and 8.0–8.3 never worked. The old `pytest>=7.0.0` floor now says so.
+  CI tests 8.4.2, 9.0.0 and the latest pytest. (#687, #720)
+- **The cache is rebuilt once.** Cached verdicts are now keyed on every rerun setting and on the
+  doctest settings the gremlin runs use, so the first run after upgrading re-runs every gremlin.
+  (#713, #717)
+- **Your score may drop if you use doctests or rerun filters.** Gremlins that were zapped only
+  because their run lacked your doctest option flags, or your `--only-rerun` / `--rerun-except`
+  filters, now survive. (#594, #713, #717, #719)
+- **The Stryker export renames `character_column` to `utf16_column`.** Columns are now counted in
+  UTF-16 code units, which is what the mutation-testing-elements viewer uses. This was an
+  undocumented internal field. (#681, #683, #695)
+
+### Fix
+
+- **Gremlins covered only by doctests came back ERROR.** Under `--doctest-modules`, gremlin runs
+  never collected the doctests they were asked to run. Gremlin runs and the coverage pre-scan now
+  get `--doctest-modules`, `--doctest-glob`, and the resolved doctest option flags and encoding,
+  whether those come from the ini file, `-o` or `-c`. On pytest before 9.1, the
+  option flags were dropped; they are now passed as top-level `-o` arguments. (#594, #717, #719,
+  #720)
+- **`--gremlin-cache` never hit under xdist.** The controller hashed sources and tests before the
+  workers had collected anything, so every run missed. Each test is now also bound to its own
+  file's hash, so same-named test files in different directories no longer share one. A test
+  whose file can't be hashed keeps the gremlins it covers out of the cache instead of crashing. (#598,
+  #716)
+- **A cached survivor could be reused after a rerun setting changed.** The cache key now includes
+  the backoff factor, `only_rerun`, `rerun_except`, `--rerun-exclude-path`, `--reruns-mode` and
+  `--max-suite-reruns`, resolved from any source. (#713)
+- **The mutant timeout ignored `--reruns-delay-backoff-factor`.** The rerun-scaled timeout now adds
+  the real backoff sleeps. (#697)
+- **The coverage pre-scan could time out on a flaky suite.** Its timeout now scales with the rerun
+  budget, like the mutant timeout. Timeout messages show the limit that was actually applied, and
+  explain what to change when it hits the 86400 s cap. (#672, #706)
+- **If pytest's private assert-rewrite API changed, every gremlin scored ZAPPED.** Gremlin runs now
+  exit with code 72 and are scored ERROR. (#703)
+- **A huge `PYTHONOPTIMIZE` value crashed the run.** (#643, #709)
+- **Stryker export type names now match the schema.** `StrykerPosition` is `{line, column}` and
+  `StrykerLocation` is `{start, end}`. (#683, #695)
+
+### Documentation
+
+- The guides now document the missing flags, report fields and verdict rules, and fix stale
+  examples, versions and wording. The changelog, architecture and extensibility pages are on the
+  site. (#699, #704, #705, #712)
+
+### Internal
+
+- `tox -e small` and `tox -e lint` pass again, the ruff floor is `>=0.8.0`, and the test session
+  strips more secret-looking environment variables. Rerun ini resolution is consolidated. (#701,
+  #709, #714)
+
 ## v1.12.0 (2026-10-17)
 
 **Flaky tests no longer inflate the score.** If you use pytest-rerunfailures, a flaky test that
