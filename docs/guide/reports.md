@@ -898,17 +898,9 @@ jobs:
       - name: Run mutation testing
         run: uv run pytest --gremlins --gremlin-report=json
 
-      - name: Convert to SonarQube format
-        run: |
-          python -c "
-          from pytest_gremlins.reporting import MutationScore, SonarQubeExporter
-          import json
-          from pathlib import Path
-
-          # Note: Full implementation would create MutationScore from results
-          # exporter = SonarQubeExporter(project_root='.')
-          # exporter.write_report(score, Path('mutation-sonar.json'))
-          "
+      # pytest-gremlins has no flag or command that writes the SonarQube format. Call
+      # SonarQubeExporter.write_report(score, Path('mutation-sonar.json')) from your own code
+      # (see "Using SonarQubeExporter" above) and make sure mutation-sonar.json exists before the scan.
 
       - name: SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@master

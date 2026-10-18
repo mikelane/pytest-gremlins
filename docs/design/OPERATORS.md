@@ -468,7 +468,7 @@ exclude = [
 ```
 
 ```python
-logger.info('started')  # gremlin: pardon[logging only]
+logger.info('started')  # gremlin: pardon[out_of_scope] logging only
 ```
 
 ---
