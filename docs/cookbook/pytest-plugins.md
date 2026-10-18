@@ -31,7 +31,7 @@ version = "1.0.0"
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.1.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest.ini_options]
@@ -200,7 +200,7 @@ an explicit count.
 dev = [
     "pytest>=7.0.0",
     "pytest-xdist>=3.5.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest.ini_options]
@@ -268,7 +268,7 @@ Run mutation testing alongside BDD-style tests written with pytest-bdd.
 dev = [
     "pytest>=7.0.0",
     "pytest-bdd>=7.0.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest.ini_options]
@@ -281,7 +281,6 @@ paths = ["src"]
 # Exclude step definitions from mutation (they're test code)
 exclude = [
     "**/steps/*",
-    "**/conftest.py",
 ]
 ```
 
@@ -443,7 +442,7 @@ Use pytest-mock alongside pytest-gremlins for mocking external dependencies.
 dev = [
     "pytest>=7.0.0",
     "pytest-mock>=3.12.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest-gremlins]
@@ -544,7 +543,7 @@ Run mutation testing on async code with pytest-asyncio.
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.23.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest.ini_options]
@@ -644,7 +643,7 @@ dev = [
     "pytest-xdist>=3.5.0",
     "pytest-asyncio>=0.23.0",
     "pytest-mock>=3.12.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
 ]
 
 [tool.pytest.ini_options]
@@ -663,8 +662,6 @@ fail_under = 80
 paths = ["src"]
 
 exclude = [
-    "**/test_*",
-    "**/conftest.py",
     "**/__pycache__/*",
 ]
 ```
