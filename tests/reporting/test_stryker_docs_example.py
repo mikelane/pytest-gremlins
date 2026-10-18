@@ -11,13 +11,14 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = json.loads((Path(__file__).parent / 'data' / 'mutation-testing-report-schema.json').read_text())
-FORMAT_HEADING = '#### Stryker Dashboard Format (mutation-testing-report-schema)'
+EXAMPLE_MARKER = '<!-- stryker-report-example -->\n```json\n'
 
 
 def _documented_example() -> dict[str, Any]:
     guide = (REPO_ROOT / 'docs' / 'guide' / 'reports.md').read_text(encoding='utf-8')
-    section = guide.split(FORMAT_HEADING, 1)[1]
-    return json.loads(section.split('```json', 1)[1].split('```', 1)[0])
+    assert guide.count(EXAMPLE_MARKER) == 1, 'docs/guide/reports.md must mark exactly one Stryker example block'
+    block = guide.split(EXAMPLE_MARKER, 1)[1]
+    return json.loads(block.split('```', 1)[0])
 
 
 @pytest.mark.medium
@@ -28,4 +29,5 @@ class DescribeStrykerDocsExample:
     def it_shows_the_source_of_each_file(self):
         example = _documented_example()
 
+        assert example['files']
         assert all('source' in entry for entry in example['files'].values())

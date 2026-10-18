@@ -70,7 +70,7 @@ def read_source(file_path: str) -> str:
     try:
         with tokenize.open(file_path) as source_stream:
             return source_stream.read()
-    except (OSError, UnicodeDecodeError, SyntaxError):
+    except (OSError, UnicodeError, SyntaxError, LookupError):
         logger.warning('Could not read %s for the Stryker report; exporting empty source', file_path, exc_info=True)
         return ''
 
