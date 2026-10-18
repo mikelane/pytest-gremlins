@@ -5,9 +5,13 @@ Takes the path to ``action.yml`` (fetched from ``mikelane/pytest-gremlins-action
 cookbook page. The inputs and outputs the cookbook lists must match the action's, with the same names and
 the same defaults.
 
-Exit codes: 0 when they match, 1 on drift (a readable list is printed on stdout), 2 when either file
-cannot be read or parsed (the reason is printed on stderr). Exit 2 is never drift: a cookbook whose tables
-cannot be found fails loudly instead of passing vacuously.
+An action input with no ``default`` has the default ``''`` (that is what GitHub uses), so the cookbook
+documents it as ``''`` in a code span, the same as an input whose default is the empty string.
+
+Exit codes: 0 when they match, 1 on drift (each drift line is printed on stdout with a ``DRIFT:`` prefix),
+2 when either file cannot be read or parsed, or anything unexpected goes wrong (the reason is printed on
+stderr). Exit 2 is never drift: a cookbook whose tables cannot be found fails loudly instead of passing
+vacuously.
 """
 
 from __future__ import annotations
@@ -26,7 +30,10 @@ INPUT_COLUMNS = ('input', 'default')
 OUTPUT_COLUMNS = ('output',)
 ESCAPED_PIPE = '\\|'
 PIPE_PLACEHOLDER = '\x00'
-CODE_SPAN = re.compile(r'`(.*)`')
+CODE_SPAN = re.compile(r'`([^`]*)`')
+SECTION_END = re.compile(r'#{1,2} ')
+FENCE_MARKERS = ('```', '~~~')
+DRIFT_PREFIX = 'DRIFT: '
 
 
 class ParseError(Exception):
@@ -35,9 +42,9 @@ class ParseError(Exception):
 
 @dataclass(frozen=True)
 class ActionSpec:
-    """Inputs (name to default, or None when the action sets none) and output names of an action."""
+    """Inputs (name to default; a missing default is ``''``) and output names of an action."""
 
-    inputs: dict[str, str | None]
+    inputs: dict[str, str]
     outputs: frozenset[str]
 
 
@@ -45,13 +52,13 @@ class ActionSpec:
 class CookbookSpec:
     """Inputs (name to default) and output names that the cookbook documents."""
 
-    inputs: dict[str, str | None]
+    inputs: dict[str, str]
     outputs: frozenset[str]
 
 
-def _default_as_string(value: object) -> str | None:
+def _default_as_string(value: object) -> str:
     if value is None:
-        return None
+        return ''
     if isinstance(value, bool):
         return str(value).lower()
     return str(value)
@@ -66,13 +73,25 @@ def parse_action(text: str) -> ActionSpec:
     if not isinstance(document, dict):
         raise ParseError('action.yml is not a YAML mapping')
     inputs = document.get('inputs')
-    if not isinstance(inputs, dict) or not inputs:
+    if not inputs:
         raise ParseError('action.yml has no inputs section')
     outputs = document.get('outputs') or {}
+    if not isinstance(inputs, dict):
+        raise ParseError('action.yml `inputs` is not a mapping')
+    if not isinstance(outputs, dict):
+        raise ParseError('action.yml `outputs` is not a mapping')
     return ActionSpec(
-        inputs={str(name): _default_as_string((spec or {}).get('default')) for name, spec in inputs.items()},
+        inputs={str(name): _input_default(str(name), spec) for name, spec in inputs.items()},
         outputs=frozenset(str(name) for name in outputs),
     )
+
+
+def _input_default(name: str, spec: object) -> str:
+    if spec is None:
+        return ''
+    if not isinstance(spec, dict):
+        raise ParseError(f'action.yml input `{name}` is not a mapping')
+    return _default_as_string(spec.get('default'))
 
 
 def _section_lines(markdown: str, heading: str) -> list[str]:
@@ -82,10 +101,14 @@ def _section_lines(markdown: str, heading: str) -> list[str]:
     except ValueError:
         raise ParseError(f'cookbook has no "## {heading}" heading') from None
     section: list[str] = []
+    in_fence = False
     for line in lines[start + 1 :]:
-        if line.startswith('#'):
+        if line.startswith(FENCE_MARKERS):
+            in_fence = not in_fence
+        elif not in_fence and SECTION_END.match(line):
             break
-        section.append(line)
+        elif not in_fence:
+            section.append(line)
     return section
 
 
@@ -131,9 +154,13 @@ def parse_cookbook(markdown: str) -> CookbookSpec:
     """Read the documented inputs (with defaults) and outputs from the cookbook markdown."""
     input_rows = _table_body(markdown, INPUTS_HEADING, INPUT_COLUMNS)
     output_rows = _table_body(markdown, OUTPUTS_HEADING, OUTPUT_COLUMNS)
-    inputs: dict[str, str | None] = {}
+    inputs: dict[str, str] = {}
     for row in input_rows:
         name = _code_text(row[0], 'name', INPUTS_HEADING)
+        if len(row) < len(INPUT_COLUMNS):
+            raise ParseError(f'"{INPUTS_HEADING}" row for `{name}` has no default cell')
+        if name in inputs:
+            raise ParseError(f'"{INPUTS_HEADING}" documents input `{name}` twice')
         inputs[name] = _unquote(_code_text(row[1], f'`{name}` default', INPUTS_HEADING))
     outputs = frozenset(_code_text(row[0], 'name', OUTPUTS_HEADING) for row in output_rows)
     return CookbookSpec(inputs=inputs, outputs=outputs)
@@ -175,10 +202,13 @@ def main(argv: list[str] | None = None) -> int:
     except ParseError as error:
         print(f'could not check the cookbook: {error}', file=sys.stderr)
         return 2
+    except Exception as error:  # exit 2 must never be confused with drift (exit 1)
+        print(f'could not check the cookbook: unexpected {type(error).__name__}: {error}', file=sys.stderr)
+        return 2
     if drift:
         print(f'{args.cookbook} has drifted from {args.action_yml}:')
         for line in drift:
-            print(f'  - {line}')
+            print(f'{DRIFT_PREFIX}{line}')
         return 1
     print('The cookbook inputs and outputs match action.yml.')
     return 0

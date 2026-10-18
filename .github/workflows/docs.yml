@@ -24,7 +24,7 @@ on:
     - cron: '17 6 * * 1'
 
 concurrency:
-  group: docs-${{ github.ref }}
+  group: docs-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -181,13 +181,17 @@ jobs:
             "${RUNNER_TEMP}/action.yml" docs/cookbook/github-action.md | tee "${RUNNER_TEMP}/drift.txt"
           status="${PIPESTATUS[0]}"
           echo "status=${status}" >> "$GITHUB_OUTPUT"
+          # Only the script's DRIFT: lines count as drift; an exit 1 from uv or PyPI never prints one.
+          if grep -q '^DRIFT: ' "${RUNNER_TEMP}/drift.txt"; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          fi
           if [[ "$status" == "2" ]]; then
             echo "::error::Could not parse action.yml or the cookbook. This is a parse failure, not docs drift."
           fi
           exit "$status"
 
       - name: Open or update the drift issue
-        if: failure() && steps.compare.outputs.status == '1'
+        if: failure() && steps.compare.outputs.status == '1' && steps.compare.outputs.drift == 'true'
         run: |
           {
             echo "The inputs or outputs in \`docs/cookbook/github-action.md\` no longer match \`action.yml\` on the default branch of ${ACTION_REPO}."
