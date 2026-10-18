@@ -976,8 +976,8 @@ from the score denominator. pytest-gremlins keeps `ERROR` in its denominator, so
 silently excused:
 
 ```text
-pytest-gremlins: (zapped + timeout) / (total - pardoned)
-Stryker:         (killed + timeout) / (total - pardoned - errors)
+pytest-gremlins score: (zapped + timeout) / (total - pardoned)
+Stryker score:         (killed + timeout) / (total - pardoned - errors)
 ```
 
 The two numbers agree when the run has no `ERROR` gremlins and at least one gremlin counts

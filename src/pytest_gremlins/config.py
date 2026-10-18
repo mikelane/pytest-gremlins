@@ -21,6 +21,24 @@ logger = logging.getLogger(__name__)
 
 VALID_REPORT_FORMATS: frozenset[str] = frozenset({'console', 'html', 'json'})
 
+# Every key load_config reads from [tool.pytest-gremlins]. The docs drift tests compare this set with
+# docs/guide/configuration.md, so adding a key to the loader means adding it here and documenting it.
+CONFIG_KEYS: frozenset[str] = frozenset(
+    {
+        'operators',
+        'paths',
+        'exclude',
+        'workers',
+        'cache',
+        'report',
+        'batch_size',
+        'max_pardons',
+        'max-pardons-pct',
+        'coverage_timeout',
+        'mutant_timeout',
+    }
+)
+
 
 # subprocess.run overflows (OverflowError) above ~2.1M seconds; a day is far beyond any sane pre-scan.
 MAX_TIMEOUT_SECONDS = 86_400

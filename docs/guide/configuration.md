@@ -21,7 +21,8 @@ order (see [Troubleshooting](#troubleshooting-configuration) for the full list).
 
 ## Command-Line Options Reference
 
-All command-line options are prefixed with `--gremlin` or `--gremlins`.
+Every command-line option starts with `--gremlin-*` or `--gremlins*`, except `--strict-pardons` and
+`--max-pardons`.
 
 ### Core Options
 

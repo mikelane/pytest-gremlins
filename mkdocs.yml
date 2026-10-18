@@ -22,6 +22,11 @@ exclude_docs: |
 not_in_nav: |
   performance/0.1.1/profiling-report.md
 
+# Fail the strict build when a page under docs/ is neither in nav nor listed above on purpose.
+validation:
+  nav:
+    omitted_files: warn
+
 # Theme Configuration
 theme:
   name: material
