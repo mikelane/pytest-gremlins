@@ -6,6 +6,7 @@ References: #155, #156, #157
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -81,6 +82,12 @@ class DescribeWriteHtmlReportCustomDir:
         assert not (tmp_path / 'coverage' / 'gremlins' / 'index.html').exists()
 
 
+def _argparse_parser(parser: pytest.Parser) -> Any:
+    """Return the argparse parser behind a pytest Parser (``optparser`` on pytest 9, ``_getparser()`` on 8)."""
+    optparser = getattr(parser, 'optparser', None)
+    return optparser if optparser is not None else parser._getparser()
+
+
 @pytest.mark.small
 class DescribeGremlinsHtmlDirOption:
     """--gremlins-html-dir CLI option is registered in pytest_addoption.
@@ -97,7 +104,7 @@ class DescribeGremlinsHtmlDirOption:
             parser = pytest.Parser()
         plugin.pytest_addoption(parser)
 
-        namespace, _ = parser.optparser.parse_known_args(['--gremlins-html-dir', '/project/reports'])
+        namespace, _ = _argparse_parser(parser).parse_known_args(['--gremlins-html-dir', '/project/reports'])
 
         assert namespace.gremlins_html_dir == '/project/reports'
 
@@ -108,6 +115,6 @@ class DescribeGremlinsHtmlDirOption:
             parser = pytest.Parser()
         plugin.pytest_addoption(parser)
 
-        namespace, _ = parser.optparser.parse_known_args([])
+        namespace, _ = _argparse_parser(parser).parse_known_args([])
 
         assert namespace.gremlins_html_dir is None
