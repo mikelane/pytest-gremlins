@@ -19,9 +19,12 @@ on:
       - '.markdownlint.json'
       - 'cspell.json'
   workflow_dispatch:
+  schedule:
+    # Mondays 06:17 UTC. Runs only the action cookbook drift check.
+    - cron: '17 6 * * 1'
 
 concurrency:
-  group: docs-${{ github.ref }}
+  group: docs-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -31,6 +34,7 @@ env:
 jobs:
   build:
     name: Build & Validate
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -59,6 +63,7 @@ jobs:
 
   lint-markdown:
     name: Lint Markdown
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -76,6 +81,7 @@ jobs:
 
   check-links:
     name: Check Links
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     needs: build
     steps:
@@ -100,6 +106,7 @@ jobs:
 
   spell-check:
     name: Spell Check
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -119,7 +126,7 @@ jobs:
     name: All Docs Checks Passed
     runs-on: ubuntu-latest
     needs: [build, lint-markdown, check-links, spell-check]
-    if: always()
+    if: always() && github.event_name != 'schedule'
     steps:
       - name: Verify all jobs succeeded
         env:
@@ -140,3 +147,72 @@ jobs:
             exit 1
           fi
           echo "All documentation checks passed!"
+
+  check-action-cookbook:
+    name: Check Action Cookbook
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      ACTION_REPO: mikelane/pytest-gremlins-action
+      ISSUE_TITLE: 'Docs drift: GitHub Action cookbook does not match pytest-gremlins-action'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Fetch action.yml from the action's default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh api "repos/${ACTION_REPO}/contents/action.yml" \
+              -H 'Accept: application/vnd.github.raw' > "${RUNNER_TEMP}/action.yml"; then
+            echo "::error::Could not fetch action.yml from ${ACTION_REPO}. This is a fetch failure, not docs drift."
+            exit 1
+          fi
+
+      - name: Compare the cookbook with action.yml
+        id: compare
+        run: |
+          set +e
+          uv run --no-project --with pyyaml python scripts/check_action_cookbook.py \
+            "${RUNNER_TEMP}/action.yml" docs/cookbook/github-action.md | tee "${RUNNER_TEMP}/drift.txt"
+          status="${PIPESTATUS[0]}"
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          # Only the script's DRIFT: lines count as drift; an exit 1 from uv or PyPI never prints one.
+          if grep -q '^DRIFT: ' "${RUNNER_TEMP}/drift.txt"; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ "$status" == "2" ]]; then
+            echo "::error::Could not parse action.yml or the cookbook. This is a parse failure, not docs drift."
+          fi
+          exit "$status"
+
+      - name: Open or update the drift issue
+        if: failure() && steps.compare.outputs.status == '1' && steps.compare.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "The inputs or outputs in \`docs/cookbook/github-action.md\` no longer match \`action.yml\` on the default branch of ${ACTION_REPO}."
+            echo
+            echo '```text'
+            cat "${RUNNER_TEMP}/drift.txt"
+            echo '```'
+            echo
+            echo "Found by ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > "${RUNNER_TEMP}/issue-body.md"
+
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --label documentation --state open \
+            --search "\"${ISSUE_TITLE}\" in:title" --json number,title \
+            --jq "map(select(.title == \"${ISSUE_TITLE}\"))[0].number // empty")"
+
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body-file "${RUNNER_TEMP}/issue-body.md"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label documentation \
+              --title "$ISSUE_TITLE" --body-file "${RUNNER_TEMP}/issue-body.md"
+          fi
