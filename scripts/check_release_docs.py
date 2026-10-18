@@ -21,9 +21,13 @@ or missing site; the reason is printed on stderr). Exit 2 is never a pass.
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
+from html.parser import HTMLParser
+from pathlib import Path
 import posixpath
 import re
+import sys
 from typing import Protocol
 
 GATED_SECTIONS = ('Upgrade notes', 'Feature', 'Fix')
@@ -31,6 +35,8 @@ DOCS_URL = re.compile(r'https://pytest-gremlins\.readthedocs\.io/en/latest(?=[/#
 URL_SCHEME = re.compile(r'[a-zA-Z][a-zA-Z0-9+.-]*:')
 BULLET_MARKERS = ('- ', '* ')
 BULLET_LABEL_LENGTH = 70
+PROBLEM_PREFIX = 'PROBLEM: '
+DEFAULT_CHANGELOG = Path(__file__).resolve().parents[1] / 'CHANGELOG.md'
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
 LINK_TARGET = re.compile(r'\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 
@@ -76,6 +82,10 @@ def _gated_bullets(entry: list[tuple[int, str]]) -> list[tuple[str, int, str]]:
             close()
     close()
     return bullets
+
+
+class CannotCheckError(Exception):
+    """Raised when the check cannot run (bad input, missing changelog, missing site). Never a pass."""
 
 
 class Site(Protocol):
@@ -153,3 +163,85 @@ def find_problems(changelog: str, version: str, site: Site) -> list[str]:
         for section, number, text in _gated_bullets(entry)
         for problem in _bullet_problems(section, number, text, site)
     ]
+
+
+class _AnchorCollector(HTMLParser):
+    """Collects every ``id`` and ``name`` attribute value on a page."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.anchors: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:  # noqa: ARG002
+        self.anchors.update(value for name, value in attrs if name in ('id', 'name') and value)
+
+
+class BuiltSite:
+    """A site built by ``mkdocs build``; each page ``a/b`` is the file ``a/b/index.html``."""
+
+    def __init__(self, root: Path) -> None:
+        if not root.is_dir():
+            raise CannotCheckError(f'site directory {root} is not a directory; run `mkdocs build --strict` first')
+        if not (root / 'index.html').is_file():
+            raise CannotCheckError(f'{root} has no index.html, so it is not a built mkdocs site')
+        self._root = root
+        self._cache: dict[str, frozenset[str] | None] = {}
+
+    def anchors_of(self, page: str) -> frozenset[str] | None:
+        """Return the anchors on ``page``, or ``None`` when the site has no such page."""
+        if page not in self._cache:
+            self._cache[page] = self._read_anchors(self._root / page / 'index.html')
+        return self._cache[page]
+
+    @staticmethod
+    def _read_anchors(path: Path) -> frozenset[str] | None:
+        if not path.is_file():
+            return None
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError) as error:
+            raise CannotCheckError(f'cannot read {path}: {error}') from error
+        collector = _AnchorCollector()
+        collector.feed(text)
+        return frozenset(collector.anchors)
+
+
+def _read_changelog(path: Path) -> str:
+    try:
+        return path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as error:
+        raise CannotCheckError(f'cannot read {path}: {error}') from error
+
+
+def _check(version: str, changelog: Path, site_dir: Path) -> list[str]:
+    if not version.removeprefix('v'):
+        raise CannotCheckError('the version is empty')
+    return find_problems(_read_changelog(changelog), version, BuiltSite(site_dir))
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point; returns the process exit code."""
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('version', help='version being released, with or without the leading v (e.g. 1.12.1)')
+    parser.add_argument('--site-dir', type=Path, required=True, help='output directory of `mkdocs build --strict`')
+    parser.add_argument('--changelog', type=Path, default=DEFAULT_CHANGELOG, help='path to CHANGELOG.md')
+    args = parser.parse_args(argv)
+    try:
+        problems = _check(args.version, args.changelog, args.site_dir)
+    except CannotCheckError as error:
+        print(f'could not check the release docs: {error}', file=sys.stderr)
+        return 2
+    except Exception as error:  # exit 2 must never be confused with a failed check (exit 1) or a pass
+        print(f'could not check the release docs: unexpected {type(error).__name__}: {error}', file=sys.stderr)
+        return 2
+    if problems:
+        print(f'{args.changelog} is not ready to release {args.version}:')
+        for problem in problems:
+            print(f'{PROBLEM_PREFIX}{problem}')
+        return 1
+    print(f'Every user-facing change in the {args.version} entry links to docs or has an exemption.')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

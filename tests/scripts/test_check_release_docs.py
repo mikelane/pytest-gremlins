@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
+import re
+import subprocess
 import sys
 from types import ModuleType
 
@@ -217,3 +220,141 @@ class DescribeReferenceResolution:
         bullet = f'- **Fixed it.** (no docs: reason) [b]({DOCS_URL}/guide/gone/)'
 
         assert len(checker.find_problems(_entry(bullet), '2.0.0', SITE)) == 1
+
+
+def _write_site(root: Path) -> Path:
+    site = root / 'site'
+    (site / 'guide' / 'configuration').mkdir(parents=True)
+    (site / 'index.html').write_text('<html><body><h1 id="home">Home</h1></body></html>', encoding='utf-8')
+    (site / 'guide' / 'configuration' / 'index.html').write_text(
+        '<html><body><h2 id="batch-size">Batch size</h2><a name="legacy-anchor"></a></body></html>',
+        encoding='utf-8',
+    )
+    return site
+
+
+@pytest.mark.medium
+class DescribeBuiltSite:
+    def it_reads_the_anchors_of_a_page(self, tmp_path: Path) -> None:
+        checker = _load_checker()
+
+        site = checker.BuiltSite(_write_site(tmp_path))
+
+        assert site.anchors_of('guide/configuration') == {'batch-size', 'legacy-anchor'}
+
+    def it_reads_the_home_page_as_the_empty_page_name(self, tmp_path: Path) -> None:
+        checker = _load_checker()
+
+        assert checker.BuiltSite(_write_site(tmp_path)).anchors_of('') == {'home'}
+
+    def it_returns_none_for_a_page_that_was_not_built(self, tmp_path: Path) -> None:
+        checker = _load_checker()
+
+        assert checker.BuiltSite(_write_site(tmp_path)).anchors_of('guide/missing') is None
+
+    def it_rejects_a_directory_that_is_not_a_built_site(self, tmp_path: Path) -> None:
+        checker = _load_checker()
+
+        with pytest.raises(checker.CannotCheckError, match=r'index\.html'):
+            checker.BuiltSite(tmp_path)
+
+    def it_rejects_a_directory_that_does_not_exist(self, tmp_path: Path) -> None:
+        checker = _load_checker()
+
+        with pytest.raises(checker.CannotCheckError, match='not a directory'):
+            checker.BuiltSite(tmp_path / 'nope')
+
+
+@pytest.mark.medium
+class DescribeCommandLine:
+    @staticmethod
+    def _run(
+        tmp_path: Path, changelog: str, *args: str, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        changelog_path = tmp_path / 'CHANGELOG.md'
+        changelog_path.write_text(changelog, encoding='utf-8')
+        site = _write_site(tmp_path)
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), '--site-dir', str(site), '--changelog', str(changelog_path), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+
+    def it_exits_zero_when_the_entry_passes(self, tmp_path: Path) -> None:
+        bullet = f'- **Fixed it.** [docs]({DOCS_URL}/guide/configuration/#batch-size)'
+
+        result = self._run(tmp_path, _entry(bullet), '2.0.0')
+
+        assert result.returncode == 0, result.stderr
+
+    def it_exits_one_and_names_the_bullet_when_the_check_fails(self, tmp_path: Path) -> None:
+        result = self._run(tmp_path, _entry('- **Changed a thing.** (#3)'), '2.0.0')
+
+        assert result.returncode == 1
+        assert 'PROBLEM: ' in result.stdout
+        assert 'Changed a thing' in result.stdout
+
+    def it_exits_one_and_names_the_link_when_an_anchor_is_missing(self, tmp_path: Path) -> None:
+        bullet = f'- **Fixed it.** [docs]({DOCS_URL}/guide/configuration/#gone)'
+
+        result = self._run(tmp_path, _entry(bullet), '2.0.0')
+
+        assert result.returncode == 1
+        assert f'{DOCS_URL}/guide/configuration/#gone' in result.stdout
+
+    def it_exits_one_when_the_entry_is_missing(self, tmp_path: Path) -> None:
+        result = self._run(tmp_path, _entry('- x [docs](index.md)'), '9.9.9')
+
+        assert result.returncode == 1
+        assert 'v9.9.9' in result.stdout
+
+    def it_exits_two_when_the_site_is_missing(self, tmp_path: Path) -> None:
+        changelog = tmp_path / 'CHANGELOG.md'
+        changelog.write_text(_entry('- x'), encoding='utf-8')
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), '2.0.0', '--site-dir', str(tmp_path / 'nope'), '--changelog', str(changelog)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 2
+        assert 'could not check' in result.stderr
+
+    def it_exits_two_when_the_changelog_is_missing(self, tmp_path: Path) -> None:
+        site = _write_site(tmp_path)
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), '2.0.0', '--site-dir', str(site), '--changelog', str(tmp_path / 'nope.md')],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 2
+        assert 'could not check' in result.stderr
+
+    def it_exits_two_when_the_version_is_empty(self, tmp_path: Path) -> None:
+        result = self._run(tmp_path, _entry('- x'), 'v')
+
+        assert result.returncode == 2
+
+    def it_accepts_only_the_version_and_the_two_input_paths(self) -> None:
+        result = subprocess.run([sys.executable, str(SCRIPT), '--help'], capture_output=True, text=True, check=False)
+
+        assert set(re.findall(r'--[a-z][a-z-]*', result.stdout.split('\n\n')[0])) == {
+            '--help',
+            '--site-dir',
+            '--changelog',
+        }
+
+    @pytest.mark.parametrize('variable', ['SKIP_RELEASE_DOCS_CHECK', 'CI_SKIP_DOCS', 'FORCE', 'SKIP_DOCS_CHECK'])
+    def it_ignores_environment_variables(self, tmp_path: Path, variable: str) -> None:
+        env = {**os.environ, variable: '1'}
+
+        result = self._run(tmp_path, _entry('- **Changed a thing.** (#3)'), '2.0.0', env=env)
+
+        assert result.returncode == 1
