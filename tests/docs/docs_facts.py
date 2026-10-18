@@ -16,6 +16,8 @@ import pytest
 
 from pytest_gremlins.plugin import pytest_addoption
 
+from .emitted_messages import MESSAGE_PREFIX
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCS_ROOT = REPO_ROOT / 'docs'
 CONFIGURATION_PAGE = DOCS_ROOT / 'guide' / 'configuration.md'
@@ -142,3 +144,40 @@ def default_cells(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
 
 
 _DEFAULT_COLUMN = 2
+
+
+@dataclass(frozen=True)
+class QuotedMessage:
+    """A line that starts with ``pytest-gremlins:`` inside a fenced code block of a docs page."""
+
+    page: Path
+    line_number: int
+    text: str
+    continues: bool
+
+    @property
+    def location(self) -> str:
+        """Return ``docs/relative/path.md:LINE``."""
+        return f'docs/{self.page.relative_to(DOCS_ROOT)}:{self.line_number}'
+
+
+def quoted_messages(docs_root: Path = DOCS_ROOT) -> list[QuotedMessage]:
+    """Return every ``pytest-gremlins:`` line quoted inside a fenced code block under ``docs_root``.
+
+    ``continues`` is true when the next line of the block carries on the message, as in a wrapped warning.
+    """
+    quoted: list[QuotedMessage] = []
+    for page in sorted(docs_root.rglob('*.md')):
+        for _, lines in fenced_blocks(page):
+            for index, (number, text) in enumerate(lines):
+                if text.strip().startswith(MESSAGE_PREFIX):
+                    following = lines[index + 1][1].strip() if index + 1 < len(lines) else ''
+                    quoted.append(
+                        QuotedMessage(
+                            page=page,
+                            line_number=number,
+                            text=text.strip(),
+                            continues=bool(following) and not following.startswith(MESSAGE_PREFIX),
+                        )
+                    )
+    return quoted
