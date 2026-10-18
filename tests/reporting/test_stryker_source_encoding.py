@@ -130,3 +130,13 @@ class DescribeUnreadableSourceWarning:
 
         assert source == ''
         assert [(r.levelno, 'pkg/locked.py' in r.getMessage()) for r in caplog.records] == [(logging.WARNING, True)]
+
+
+@pytest.mark.medium
+class DescribeNonTextCodecCookie:
+    @pytest.mark.parametrize('codec', ['rot13', 'hex', 'base64'])
+    def it_exports_empty_source_when_the_cookie_names_a_non_text_codec(self, tmp_path, codec):
+        path = tmp_path / 'cookie.py'
+        path.write_text(f'# coding: {codec}\nx = 1\n', encoding='ascii')
+
+        assert read_source(str(path)) == ''
