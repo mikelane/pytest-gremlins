@@ -130,6 +130,7 @@ from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.rerun_options import (
     baseline_rerun_warning,
     expand_argument_files,
+    rerun_cache_settings,
     rerun_ini_overrides,
     rerun_keys_set_in,
     rerun_options_in,
@@ -377,6 +378,7 @@ class GremlinSession:
     mutant_attempt_timeout: int | None = None
     rerun_budget: RerunBudget = NO_RERUNS
     rerun_backoff_factor: float = 1.0
+    rerun_cache_settings: str = ''
     collection_errors: int = 0
     baseline_aborted: bool = False
     baseline_failed_test_ids: set[str] = field(default_factory=set)
@@ -1101,6 +1103,7 @@ def pytest_configure(config: pytest.Config) -> None:
             mutant_attempt_timeout=mutant_attempt_timeout,
             rerun_budget=_gremlin_run_rerun_budget(config),
             rerun_backoff_factor=_gremlin_run_rerun_backoff_factor(config),
+            rerun_cache_settings=_gremlin_run_rerun_cache_settings(config),
         ),
     )
 
@@ -2928,6 +2931,16 @@ def _gremlin_run_rerun_backoff_factor(config: pytest.Config) -> float:
     return session_rerun_backoff_factor(config.option, config.getini)
 
 
+def _gremlin_run_rerun_cache_settings(config: pytest.Config) -> str:
+    """Return the rerun settings beyond count and delay that the cache keys verdicts on, or none without the plugin.
+
+    Without pytest-rerunfailures nothing reruns, so a stale ``only_rerun`` ini key must not split the cache (#677).
+    """
+    if not _rerunfailures_is_loaded(config):
+        return ''
+    return rerun_cache_settings(config.option, config.getini)
+
+
 def _prescan_timeout(gremlin_session: GremlinSession) -> int:
     """Return the pre-scan limit, paying the rerun delay once for each test the baseline had to rerun (issue #673).
 
@@ -3853,6 +3866,7 @@ def _check_cache_for_gremlin(
         mutant_timeout=gremlin_session.mutant_timeout,
         optimize_level=subprocess_optimize_level(os.environ),
         rerun_budget=gremlin_session.rerun_budget,
+        rerun_settings=gremlin_session.rerun_cache_settings,
     )
 
     if cached is None:
@@ -3920,6 +3934,7 @@ def _cache_gremlin_result(
         mutant_timeout=gremlin_session.mutant_timeout,
         optimize_level=subprocess_optimize_level(os.environ),
         rerun_budget=gremlin_session.rerun_budget,
+        rerun_settings=gremlin_session.rerun_cache_settings,
     )
 
 
