@@ -15,11 +15,16 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pytest_gremlins.parallel.exit_codes import REWRITE_API_BROKEN_EXIT_CODE
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
 LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE = 70
 """Exit code the runner uses to abstain; pytest uses 0-5 and 1 is reserved for a caught mutant."""
+
+REWRITE_API_BROKEN_PREFIX = 'pytest-gremlins: assertion rewriting is unavailable with pytest'
+"""Start of the ``error_output`` of a run aborted because pytest's assertion-rewrite API changed (#617)."""
 
 SAFE_TESTS_FILENAME = 'lightweight_safe_tests.json'
 """Sibling of the runner script listing node IDs the runner can judge faithfully."""
@@ -29,18 +34,28 @@ def describe_runner_error(returncode: int, stderr: bytes | None) -> str:
     """Build the ``error_output`` for a subprocess that exited with an error code.
 
     The runner's abstention code gets an explanatory prefix so the report says
-    the verdict was withheld rather than showing a bare traceback.
+    the verdict was withheld rather than showing a bare traceback, and so does the
+    bootstrap's abort when pytest's assertion-rewrite API changed (#617).
 
     Args:
         returncode: Exit code of the test subprocess.
         stderr: Captured stderr, if any.
 
     Returns:
-        Up to 2000 characters of stderr, prefixed for the runner's abstention code.
+        Up to 2000 characters of stderr, prefixed for those two exit codes.
     """
     detail = stderr.decode(errors='replace')[:2000] if stderr else ''
     if returncode == LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE:
         return f'lightweight runner could not verify the selected tests: {detail}'.rstrip()
+    if returncode == REWRITE_API_BROKEN_EXIT_CODE:
+        # The child exits while pytest may capture its stderr, so its own explanation is often lost.
+        # Imported only here: the pool modules that share this helper stay free of pytest.
+        import pytest  # noqa: PLC0415
+
+        return (
+            f'{REWRITE_API_BROKEN_PREFIX} {pytest.__version__}, which changed '
+            f'the private pytest API pytest-gremlins relies on, so the gremlin run was aborted. {detail}'
+        ).rstrip()
     return detail
 
 

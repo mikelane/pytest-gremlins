@@ -55,10 +55,12 @@ def is_adult(age):
 
 **Why it is faster:**
 
-- Zero file I/O during test execution
-- Zero module reloads between mutations
+- Zero source-file rewrites on disk
 - Single AST parse per file
-- Test process stays "hot" (cached imports, JIT-compiled code)
+- Every gremlin uses the same instrumented code, so workers need no file locks or copies
+
+Each gremlin's tests still run in a fresh pytest subprocess (since v1.10.1), so the test
+process is not reused between gremlins.
 
 **Expected speedup:** 2-5x compared to file-modification approaches
 
@@ -222,6 +224,12 @@ work well as cache keys.
 
 ## Cumulative Speedup Analysis
 
+!!! warning "Projections, not measurements"
+    The tables in this section are design projections that predate v1.10.1. Since v1.10.1 every
+    gremlin runs its selected tests in a fresh pytest subprocess, which adds pytest's startup
+    cost (plugin loading, collection, imports of your code) to every gremlin. The projections
+    leave that cost out, so real runs are slower than they suggest.
+
 Starting from a baseline of naive mutation testing:
 
 | Optimization | This Pillar | Cumulative |
@@ -296,7 +304,8 @@ pytest --gremlins --gremlin-clear-cache
 
 ```toml
 [tool.pytest-gremlins]
-# Number of worker processes (default: CPU count)
+# Number of worker processes. Setting this key turns on parallel execution;
+# when it is not set (the default), gremlins run one at a time.
 workers = 8
 
 # Or use "auto" to match your CPU count

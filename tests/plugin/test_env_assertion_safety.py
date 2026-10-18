@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
-import textwrap
 from pathlib import Path
+import textwrap
 
 import pytest
 
@@ -30,7 +30,7 @@ class DescribeEnvironmentAssertionChecker:
             ("env = {**os.environ}\nassert 'SECRET' not in env", [2]),
             ("env = _prescan_env().copy()\nassert 'SECRET' not in env", [2]),
             ("env = os.environ\nassert env.get('SECRET') is None", [2]),
-            ("env = os.environ\nassert env['SECRET'] == 'ok'", []),
+            ("env = os.environ\nassert env['SECRET'] == 'ok'", []),  # pragma: allowlist secret
         ],
     )
     def it_flags_only_whole_environment_assertions(self, source: str, expected: list[int]) -> None:

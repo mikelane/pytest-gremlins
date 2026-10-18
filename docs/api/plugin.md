@@ -26,9 +26,14 @@ The plugin handles:
 | `--gremlin-cache` | `False` | Enable incremental analysis cache |
 | `--gremlin-clear-cache` | `False` | Clear cache before running |
 | `--gremlin-parallel` | `False` | Enable parallel execution |
-| `--gremlin-workers` | CPU count | Number of parallel workers |
+| `--gremlin-workers` | CPU count | Number of parallel workers, or `auto`; implies `--gremlin-parallel` |
 | `--gremlin-batch` | `False` | Enable batch execution mode |
 | `--gremlin-batch-size` | `10` | Gremlins per batch |
+| `--gremlin-coverage-timeout` | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled |
+| `--gremlin-mutant-timeout` | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before it is reported as a timeout; scaled up for pytest-rerunfailures reruns |
+| `--gremlin-executor` | `auto` | `auto` (same as `subprocess`) or `subprocess`; `fork` and `inprocess` exit with a usage error ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
+| `--gremlin-no-coverage-filter` | `False` | Run every test for every gremlin instead of the coverage-selected ones |
+| `--gremlin-explain` | None | Print a test-selection diagnostic for one gremlin id, then skip the mutation loop |
 | `--gremlins-html-dir` | None | Output directory for HTML reports |
 | `--strict-pardons` | `False` | Treat pardoned gremlins as CI failures (exit non-zero if any exist) |
 | `--gremlin-audit-pardons` | `False` | Audit pardon pragma usage |
@@ -110,6 +115,12 @@ report = ["html", "json"]
 # Gremlins per batch in batch mode
 batch_size = 20
 
+# Seconds the coverage pre-scan may run (default 120)
+coverage_timeout = 300
+
+# Seconds one attempt of a gremlin's test run may take (default 30)
+mutant_timeout = 60
+
 # Pardon budget (percentage and absolute cap)
 max-pardons-pct = 5.0
 max_pardons = 10
@@ -139,6 +150,8 @@ max_pardons = 10
         - batch_size
         - max_pardons_pct
         - max_pardons
+        - coverage_timeout
+        - mutant_timeout
 
 ## Configuration Functions
 

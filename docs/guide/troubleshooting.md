@@ -416,11 +416,13 @@ rm -rf .gremlins_cache/
 
 **Symptom:**
 
-Gremlin results show `TIMEOUT` status, or you see:
+The console summary shows a `Timeout` line (it appears only when the count is above zero):
 
 ```text
-Gremlin X/Y: g001 - TIMEOUT
+Timeout: 5 gremlins (3%)
 ```
+
+In the JSON report these gremlins have `"status": "timeout"`.
 
 **Cause:** A test took longer than the configured timeout (default: 30 seconds) when running with a
 mutation active.
@@ -508,6 +510,21 @@ for large codebases.
 
 ---
 
+### Error: assertion rewriting is unavailable with pytest X.Y
+
+**Symptom:** Gremlins report ERROR, and the error output begins with
+`pytest-gremlins: assertion rewriting is unavailable with pytest X.Y`.
+
+**Cause:** pytest-gremlins reuses pytest's private assertion-rewriting API so that assert messages in
+gremlin runs match those of a normal run. A pytest release changed that API. Running on with plain
+asserts would make tests that match assert messages fail for every gremlin and report false kills,
+so the run stops instead.
+
+**Solution:** Pin pytest to the last version that worked, and
+[report the pytest version](https://github.com/mikelane/pytest-gremlins/issues) so support can be added.
+
+---
+
 ### Error: RuntimeError - WorkerPool is not active
 
 **Symptom:**
@@ -579,40 +596,24 @@ Since v1.5.0, `workers` and `batch_size` are configurable via `pyproject.toml`. 
 
 ## Integration Errors
 
-### Error: Conflict with pytest-cov
+### Using pytest-cov with gremlins
 
-**Symptom:**
+pytest-cov and `--gremlins` work in the same run; you don't need `--no-cov`. For example, this
+prints both the coverage table and the mutation report:
 
-Coverage numbers are incorrect or missing when running mutation testing.
+```bash
+pytest --gremlins --cov=src --cov-report=term
+```
 
-**Cause:** Both pytest-gremlins and pytest-cov try to collect coverage data, which can conflict.
+pytest-gremlins strips the pytest-cov options (`--cov*` and `--no-cov*`) from `addopts` in the
+subprocesses it starts, the coverage pre-scan and the gremlin runs, so pytest-cov can't take over
+the pre-scan's coverage measurement. Your main run keeps its pytest-cov report. A failing
+`--cov-fail-under` doesn't block mutation testing; pytest-gremlins prints a note and goes on,
+and pytest's exit code still reports the coverage failure.
 
-**Solution:**
-
-1. Disable pytest-cov when running mutation testing:
-
-   ```bash
-   pytest --gremlins --no-cov
-   ```
-
-2. Or configure them to not run together:
-
-   ```toml
-   # pytest.ini or pyproject.toml [tool.pytest.ini_options]
-   addopts = --cov=src  # only for regular test runs
-   ```
-
-3. Run them separately:
-
-   ```bash
-   # Regular tests with coverage
-   pytest --cov=src
-
-   # Mutation testing (has its own coverage collection)
-   pytest --gremlins --no-cov
-   ```
-
-**Prevention:** Use separate pytest invocations for coverage and mutation testing.
+If coverage numbers look wrong only in runs with `--gremlins`, please
+[open an issue](https://github.com/mikelane/pytest-gremlins/issues) with the pytest-cov and
+coverage.py versions and your `addopts`.
 
 ---
 
@@ -717,11 +718,17 @@ for details on our coverage configuration.
 
 **Symptom:**
 
+Gremlins that one or two tests should cover run the whole test suite instead. When
+gremlins run one at a time (no `--gremlin-parallel` or `--gremlin-batch`), the progress lines
+show every test selected, for example:
+
 ```text
-pytest-gremlins: 0 tests cover this gremlin, marking as survived
+Gremlin 4/120: utils_1a2b_g004 - running 250/250 tests
 ```
 
-For gremlins that should be covered by tests.
+pytest-gremlins doesn't print a separate warning for this. When coverage maps no test to a
+gremlin's line, it runs all tests for that gremlin rather than marking it survived. The
+verdicts stay correct, but the run is slower.
 
 **Cause:** Coverage collection failed to map tests to source lines. Common causes:
 

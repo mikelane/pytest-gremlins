@@ -10,10 +10,10 @@ Configuration values are resolved in this order (highest priority first):
 1. **Command-line options** -- Flags passed to pytest (e.g., `--gremlin-targets`)
 2. **pyproject.toml** -- `[tool.pytest-gremlins]` section
 
-When the same option is specified at both levels, the CLI value wins. This applies to all nine
-configurable fields (operators, paths, exclude, workers, cache, report, batch_size, max_pardons,
-max-pardons-pct), as well as `coverage_timeout` / `--gremlin-coverage-timeout` and
-`mutant_timeout` / `--gremlin-mutant-timeout`.
+When the same option is specified at both levels, the CLI value wins. This applies to all eleven
+`[tool.pytest-gremlins]` keys: `operators`, `paths`, `exclude`, `workers`, `cache`, `report`,
+`batch_size`, `max_pardons`, `max-pardons-pct`, `coverage_timeout` and `mutant_timeout`. All
+other options are CLI-only.
 
 **Source path auto-discovery** is a separate mechanism that kicks in only when neither
 `--gremlin-targets` nor `[tool.pytest-gremlins] paths` is set. It tries seven strategies in
@@ -40,11 +40,19 @@ All command-line options are prefixed with `--gremlin` or `--gremlins`.
 | `--gremlin-cache` | flag | `false` | Enable incremental analysis cache |
 | `--gremlin-clear-cache` | flag | `false` | Clear cache before running |
 | `--gremlin-parallel` | flag | `false` | Enable parallel mutation execution |
-| `--gremlin-workers` | integer | CPU count | Number of parallel workers (implies `--gremlin-parallel`) |
+| `--gremlin-workers` | integer or `auto` | CPU count | Number of parallel workers (implies `--gremlin-parallel`); `auto` means the CPU count |
 | `--gremlin-batch` | flag | `false` | Enable batch execution mode |
 | `--gremlin-batch-size` | integer | `10` | Number of gremlins per batch |
 | `--gremlin-coverage-timeout` | integer | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled; scaled up like the mutant timeout when pytest-rerunfailures reruns are configured |
 | `--gremlin-mutant-timeout` | integer | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
+| `--gremlin-executor` | `auto` or `subprocess` | `auto` | How each gremlin's tests run. `auto` is the same as `subprocess`. `fork` and `inprocess` are also accepted by the parser but stop the run with a usage error, because they did not run the mutated code ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
+
+### Diagnostic Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--gremlin-explain` | string | none | Explain one gremlin instead of running the mutation loop: print the tests whose coverage includes its line, the tests selected for it, and any difference between the two (see [below](#explaining-a-survivor)) |
+| `--gremlin-no-coverage-filter` | flag | `false` | Turn off coverage-guided test selection, so every gremlin runs the whole test suite. Slow, but rules out selection as the reason a gremlin survived |
 
 ### Output Options
 
@@ -159,6 +167,53 @@ pytest --gremlins --gremlin-audit-pardons
 pytest --gremlins --strict-pardons
 ```
 
+**Rule out test selection as the reason gremlins survive:**
+
+```bash
+pytest --gremlins --gremlin-no-coverage-filter
+```
+
+**Refuse the disabled executors:**
+
+<!-- markdownlint-disable MD013 -->
+```text
+$ pytest --gremlins --gremlin-executor=fork
+ERROR: pytest-gremlins: --gremlin-executor=fork is temporarily disabled because it produced incorrect results (it did not run the mutated code). Use --gremlin-executor=subprocess (the default). Tracking: https://github.com/mikelane/pytest-gremlins/issues/532
+```
+<!-- markdownlint-enable MD013 -->
+
+The run exits with code 4.
+
+#### Explaining a Survivor
+
+`--gremlin-explain=<id>` takes a full gremlin id, such as `calculator_e336_g001`. Ids appear in
+the progress lines (`Gremlin 1/12: calculator_e336_g001 - running 2/8 tests`) and in the
+`gremlin_id` field of the JSON report. The run collects coverage as usual, prints the diagnostic,
+and then skips the mutation loop, so no gremlin runs and no mutation report is printed:
+
+<!-- markdownlint-disable MD013 -->
+```text
+$ pytest --gremlins --gremlin-explain=__init___4a4a_g001
+--gremlin-explain: diagnostic for __init___4a4a_g001
+  file: /home/you/greet/src/greet/__init__.py:2
+  Covering set (1 test):
+    'tests/test_greet.py::test_greet'
+  Selected list (1 test):
+    'tests/test_greet.py::test_greet'
+  Result: selection is consistent with covering set (no drift). If this gremlin still survived, the cause is elsewhere (e.g. a weak assertion in the covering tests).
+```
+<!-- markdownlint-enable MD013 -->
+
+The covering set is the tests whose coverage includes the gremlin's line. The selected list is
+the tests the gremlin runs. When they differ, the output lists the tests that were dropped,
+with close matches among the collected tests. A short id like `g001` doesn't match:
+
+<!-- markdownlint-disable MD013 -->
+```text
+--gremlin-explain: no gremlin with id 'g001' in this session. Run with --gremlins (without --gremlin-explain) to see the full list of gremlin ids in the progress log.
+```
+<!-- markdownlint-enable MD013 -->
+
 **Combine multiple options:**
 
 ```bash
@@ -185,11 +240,10 @@ paths = ["src", "lib"]
 
 # Glob patterns for files to exclude from mutation
 # Default: []
+# Test files (test_*.py, *_test.py, conftest.py) inside a target directory are
+# skipped without being listed here.
 exclude = [
     "**/migrations/*",
-    "**/test_*",
-    "**/__pycache__/*",
-    "**/conftest.py",
 ]
 
 # Operators to enable (in order of priority)
@@ -202,8 +256,10 @@ operators = [
     "return",
 ]
 
-# Number of parallel workers (integer or "auto" for os.cpu_count())
-# Default: 1 (sequential)
+# Number of parallel workers (positive integer, or "auto" for os.cpu_count())
+# Setting this key at all turns on parallel execution, like --gremlin-workers.
+# Default: not set (gremlins run one at a time unless --gremlin-parallel,
+# --gremlin-workers or pytest-xdist's -n N is passed)
 workers = "auto"
 
 # Enable incremental analysis cache
@@ -245,7 +301,7 @@ max-pardons-pct = 5.0
 | `paths` | list[string] | auto-discovered | Directories or files to scan for source code (falls back to `src/`) |
 | `exclude` | list[string] | `[]` | Glob patterns for files to exclude |
 | `operators` | list[string] | all | Operators to enable, in priority order |
-| `workers` | int or `"auto"` | sequential | No parallelism unless `-n` or `--gremlin-parallel` is used; `"auto"` resolves to `os.cpu_count()` |
+| `workers` | int or `"auto"` | not set | Worker count. Any value turns on parallel execution, as `--gremlin-workers` does; `"auto"` resolves to `os.cpu_count()`. When not set, gremlins run one at a time unless `--gremlin-parallel`, `--gremlin-workers` or pytest-xdist's `-n N` is passed |
 | `cache` | boolean | `false` | Enable incremental analysis cache |
 | `report` | string or list | `"console"` | Report format(s): `"html"`, `"json"`, `"console"`, or a list like `["html", "json"]` |
 | `batch_size` | int | `10` | Number of gremlins per batch in batch execution mode |
@@ -303,12 +359,13 @@ Use glob patterns in `pyproject.toml` to exclude files from mutation testing:
 [tool.pytest-gremlins]
 exclude = [
     "**/migrations/*",      # Django migrations
-    "**/test_*",            # Test files
-    "**/conftest.py",       # pytest configuration
-    "**/__pycache__/*",     # Cache directories
     "**/vendor/*",          # Vendored dependencies
 ]
 ```
+
+You don't need to exclude test files. Inside a target directory, files named `test_*.py`,
+`*_test.py` or `conftest.py`, and anything under `__pycache__`, are skipped automatically. They
+are mutated only when you name the file itself in `--gremlin-targets` or `paths`.
 
 ## Inline Pardoning
 
@@ -593,8 +650,9 @@ For example, `--reruns 2 --reruns-delay 20` with the default limit gives `30 * 3
 is capped at 86400 seconds, and a negative delay counts as 0. With
 `--reruns 2 --reruns-delay 1 --reruns-delay-backoff-factor 3` the waits are 1 and 3 seconds, so the total delay is 4
 and the default limit gives `30 * 3 + 4 = 94` seconds. A negative factor counts as 1.0, as in pytest-rerunfailures.
-Nothing is scaled with `--reruns 0`, when no reruns
-are configured, or when pytest-rerunfailures is not loaded in the parent run.
+
+Nothing is scaled with `--reruns 0`, when no reruns are configured, or when pytest-rerunfailures is not loaded in
+the parent run.
 
 When pytest-rerunfailures is not loaded in the session (a command-line `-p no:rerunfailures`,
 `--disable-plugin-autoload`, or the plugin is not installed), gremlins passes `-p no:rerunfailures` on to gremlin
@@ -750,18 +808,18 @@ pytest --gremlins \
 ### GitHub Actions (Recommended)
 
 The [pytest-gremlins-action](https://github.com/marketplace/actions/pytest-gremlins)
-handles installation, parallel execution, caching, and score gating in a single step:
+installs pytest-gremlins, runs it, and gates the score with a ratchet file in a single step.
+Check out your code, set up Python and install your project before it:
 
 ```yaml
 - uses: mikelane/pytest-gremlins-action@v1
   with:
-    threshold: 80
     parallel: 'true'
-    cache: 'true'
+    ratchet-file: '.gremlins-score'
 ```
 
-See the [GitHub Action cookbook](../cookbook/github-action.md) for full configuration
-options, caching details, and advanced usage.
+See the [GitHub Action cookbook](../cookbook/github-action.md) for every input and output,
+how the ratchet works, and a known problem with the action's cache step.
 
 If you need a manual workflow instead (e.g., self-hosted runners without marketplace access):
 
@@ -810,8 +868,6 @@ mutation_testing:
     - pip install uv && uv sync
     - uv run pytest --gremlins --gremlin-cache --gremlin-parallel --gremlin-report=json
   artifacts:
-    reports:
-      junit: coverage/gremlins/gremlins.json
     paths:
       - coverage/gremlins/
 ```
@@ -905,13 +961,25 @@ This shows:
 
 ## Configuration Validation
 
-pytest-gremlins validates configuration at startup and reports errors:
+pytest-gremlins checks `[tool.pytest-gremlins]` and the `--gremlin-*` options at startup.
+Each kind of problem is handled differently:
 
-```text
-pytest-gremlins: Invalid configuration
-  - Unknown operator 'typo' in operators list
-  - Path 'nonexistent/' does not exist
-```
+- **A value of the wrong type or out of range** stops the run with a usage error and exit
+  code 4. For example, `cache = "yes"` prints:
+
+    ```text
+    ERROR: pytest-gremlins: [tool.pytest-gremlins].cache must be a boolean (e.g. cache = true), got 'yes'
+    ```
+
+- **An unknown operator name** in `operators` or `--gremlin-operators` is skipped with a
+  `UserWarning`, and the run goes on with the operators that do exist:
+
+    ```text
+    UserWarning: Unknown operator 'typo' requested, ignoring
+    ```
+
+- **A path in `paths` that doesn't exist** is dropped without a message. If no configured
+  path exists, no gremlins are found.
 
 Use the `--collect-only` flag to validate configuration without running tests:
 

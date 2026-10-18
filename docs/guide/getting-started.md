@@ -152,22 +152,25 @@ pytest-gremlins will:
 
 ### Step 5: Understand the Output
 
-You will see output similar to:
+The mutation report at the end of the run looks like this (from a real run of this example,
+with the project directory shortened to `/home/you/calc`):
 
 ```text
-================== pytest-gremlins mutation report ==================
+======================= pytest-gremlins mutation report ========================
 
-Zapped: 8 gremlins (80%)
-Survived: 2 gremlins (20%)
+Zapped: 9 gremlins (75%)
+Survived: 3 gremlins (25%)
 
 Top surviving gremlins:
-  src/auth.py:42    >= to >     (boundary not tested)
-  src/utils.py:17   + to -      (arithmetic not verified)
-  src/api.py:88     True to False (return value unchecked)
+  /home/you/calc/calculator.py:8 > to >=              (comparison)
+  /home/you/calc/calculator.py:8 boundary shift +/-1  (boundary)
+  /home/you/calc/calculator.py:8 boundary shift +/-1  (boundary)
 
 Run with --gremlin-report=html for detailed report.
-=====================================================================
+=======================================  =======================================
 ```
+
+Each survivor line shows the location, what the gremlin changed, and the operator that made it.
 
 **Understanding the results:**
 
@@ -175,30 +178,28 @@ Run with --gremlin-report=html for detailed report.
 |------|---------|
 | **Zapped** | Your tests caught these mutations - good! |
 | **Survived** | Your tests missed these mutations - these are test gaps |
-| **Mutation Score** | Percentage of gremlins zapped (higher is better) |
+| **Mutation Score** | `(zapped + timeout) / (total - pardoned)`, as a percentage (higher is better). The console doesn't print it; the `Zapped` percentage is `zapped / total`. The JSON report's `summary.percentage` holds the score. |
 
-In this example, two gremlins survived:
+In this example, all three survivors are on line 8, `return n > 0` in `is_positive()`:
 
-1. **`> -> >=` on line 7** - Changing `n > 0` to `n >= 0` in `is_positive()` was not caught.
-   This means we are not testing the boundary case `n = 0`.
+1. **`> to >=`** - Changing `n > 0` to `n >= 0` was not caught, because no test checks `n = 0`.
+2. **`boundary shift +/-1`, twice** - Changing the `0` to `1` (`n > 1`) and to `-1` (`n > -1`)
+   was not caught either. The tests use only `5` and `-5`, which are far from the boundary.
 
-2. **`== -> !=` on line 12** - Changing `b == 0` to `b != 0` in `divide()` was not caught.
-   This is because our test only checks that the exception is raised, not that normal division
-   works correctly in all cases.
+The other nine gremlins, including the ones in `add()` and `divide()`, were zapped.
 
 ### Step 6: Fix the Test Gaps
 
-Add tests to catch the surviving gremlins:
+Add tests at the boundary to catch the surviving gremlins:
 
 ```python
 def test_is_positive_zero():
-    """Zero is not positive - catches the >= mutation."""
+    """Zero is not positive - catches the >= and n > -1 mutations."""
     assert is_positive(0) is False
 
-def test_divide_non_zero_divisor():
-    """Verify division works with non-zero divisor."""
-    result = divide(6, 3)
-    assert result == 2.0
+def test_is_positive_one():
+    """One is positive - catches the n > 1 mutation."""
+    assert is_positive(1) is True
 ```
 
 ### Step 7: Re-run Mutation Testing
@@ -210,12 +211,13 @@ pytest --gremlins --gremlin-targets=calculator.py test_calculator.py
 Now you should see:
 
 ```text
-================== pytest-gremlins mutation report ==================
+======================= pytest-gremlins mutation report ========================
 
-Zapped: 10 gremlins (100%)
+Zapped: 12 gremlins (100%)
 Survived: 0 gremlins (0%)
 
-=====================================================================
+Run with --gremlin-report=html for detailed report.
+=======================================  =======================================
 ```
 
 All gremlins zapped - your tests are now more robust.
