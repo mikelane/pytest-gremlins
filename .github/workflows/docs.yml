@@ -158,7 +158,6 @@ jobs:
     env:
       ACTION_REPO: mikelane/pytest-gremlins-action
       ISSUE_TITLE: 'Docs drift: GitHub Action cookbook does not match pytest-gremlins-action'
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
 
@@ -166,6 +165,8 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Fetch action.yml from the action's default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh api "repos/${ACTION_REPO}/contents/action.yml" \
               -H 'Accept: application/vnd.github.raw' > "${RUNNER_TEMP}/action.yml"; then
@@ -192,6 +193,8 @@ jobs:
 
       - name: Open or update the drift issue
         if: failure() && steps.compare.outputs.status == '1' && steps.compare.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           {
             echo "The inputs or outputs in \`docs/cookbook/github-action.md\` no longer match \`action.yml\` on the default branch of ${ACTION_REPO}."
