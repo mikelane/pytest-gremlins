@@ -272,11 +272,13 @@ loads `sitecustomize`, so a child started with any of them still runs the origin
 
 ### Cached results
 
-The incremental cache key includes a runner fidelity version (`rf17`), so verdicts cached by
+The incremental cache key includes a runner fidelity version (`rf18`), so verdicts cached by
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 So are timeouts cached before they were confirmed against the unmutated tests (#565).
 So are verdicts cached while instrumented modules had no `__file__` (#525), when target code that read it
 failed under every gremlin.
+So are verdicts cached while doctest gremlins errored because `--doctest-modules` typed on the command line
+never reached gremlin runs (#594).
 So are verdicts cached for gremlins in a package `__init__.py` (#591), which were never activated and so
 were all cached as SURVIVED.
 So are verdicts cached while instrumented files were registered under a module name guessed from

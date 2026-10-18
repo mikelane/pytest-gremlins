@@ -1077,7 +1077,7 @@ def pytest_configure(config: pytest.Config) -> None:
             xdist_active=xdist_active,
             xdist_loaded=config.pluginmanager.hasplugin('xdist'),
             xdist_workers=xdist_worker_int if xdist_active else None,
-            preserved_addopts=_addopts_without_cov(config.getini('addopts')),
+            preserved_addopts=_addopts_for_gremlin_runs(config),
             rerun_options=_rerun_options_for(config),
             rerun_ini_warnings=_rerun_ini_warnings_for(config),
             coverage_timeout=coverage_timeout,
@@ -2820,6 +2820,36 @@ def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
     into one namespace.
     """
     return bool(getattr(config.option, 'inifilename', None))
+
+
+_DOCTEST_FLAG = '--doctest-modules'
+_DOCTEST_GLOB = '--doctest-glob'
+
+
+def _doctest_options_in(args: Sequence[str]) -> list[str]:
+    """Return the doctest collection options in ``args``, which decide whether a doctest node id exists (#594)."""
+    options: list[str] = []
+    tokens = iter(args)
+    for token in tokens:
+        if token == _DOCTEST_FLAG or token.startswith(f'{_DOCTEST_GLOB}='):
+            options.append(token)
+        elif token == _DOCTEST_GLOB:
+            glob = next(tokens, None)
+            if glob is not None:
+                options.extend([token, glob])
+    return options
+
+
+def _addopts_for_gremlin_runs(config: pytest.Config) -> str:
+    """Return the ``addopts`` for gremlin runs: the project's, minus pytest-cov, plus command-line doctest options.
+
+    A doctest node id such as ``sample.py::sample.classify`` only resolves where doctests are collected, and
+    ``--doctest-modules`` typed on the command line is otherwise lost, because gremlin runs replace ``addopts``.
+    Options inside an ``@argfile`` are not expanded.
+    """
+    project_addopts = _addopts_without_cov(config.getini('addopts'))
+    doctest_options = ' '.join(shlex.quote(option) for option in _doctest_options_in(config.invocation_params.args))
+    return ' '.join(part for part in (project_addopts, doctest_options) if part)
 
 
 def _command_line_rerun_options(config: pytest.Config) -> list[str]:

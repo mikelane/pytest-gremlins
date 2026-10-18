@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf17'
+RUNNER_FIDELITY_VERSION = 'rf18'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
