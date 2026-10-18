@@ -50,7 +50,7 @@ version = "1.0.0"
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "pytest-gremlins>=1.0.0",
+    "pytest-gremlins>=1.12",
     "pytest-watch>=4.2.0",  # For continuous testing
 ]
 

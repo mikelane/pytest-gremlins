@@ -39,7 +39,6 @@ class JsonReporter:
                 "auth.py": {"total": 5, "zapped": 4, "survived": 1, "percentage": 80.0},
                 "utils.py": {"total": 5, "zapped": 4, "survived": 1, "percentage": 80.0}
             },
-            "skipped_files": {"src/broken.py": "<reason>"},  # omitted when empty
             "results": [
                 {
                     "gremlin_id": "g001",
@@ -51,7 +50,8 @@ class JsonReporter:
                     "killing_test": "test_auth"
                 },
                 ...
-            ]
+            ],
+            "skipped_files": {"src/broken.py": "<reason>"}  # omitted when empty
         }
     """
 

@@ -457,13 +457,18 @@ EQUIVALENT_PATTERNS = [
 
 ### User Suppression
 
+Whole files are excluded with the `exclude` glob list; a single line is pardoned with an inline
+pragma:
+
 ```toml
 [tool.pytest-gremlins]
-# Skip mutations in these patterns
-suppress_patterns = [
-    "logging.*",           # Don't mutate logging calls
-    "*.migrations.*",      # Don't mutate Django migrations
+exclude = [
+    "**/migrations/*",     # Don't mutate Django migrations
 ]
+```
+
+```python
+logger.info('started')  # gremlin: pardon[out_of_scope] logging only
 ```
 
 ---

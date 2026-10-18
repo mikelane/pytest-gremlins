@@ -25,6 +25,8 @@ from collections.abc import (
     Collection,
     Sequence,
 )
+from dataclasses import dataclass
+import json
 import locale
 import math
 from pathlib import Path
@@ -56,10 +58,10 @@ _RERUN_VALUE_OPTIONS = frozenset(
     }
 )
 
-# pytest-rerunfailures also reads these ini keys, so ``-o reruns=2`` is a command-line rerun option too.
-_RERUN_INI_KEYS = frozenset({'reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except'})
 # The order the settings are forwarded in; the list-valued keys are ``linelist`` ini options.
 _FORWARDED_INI_KEYS = ('reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except')
+# pytest-rerunfailures also reads these ini keys, so ``-o reruns=2`` is a command-line rerun option too.
+_RERUN_INI_KEYS = frozenset(_FORWARDED_INI_KEYS)
 # The command-line option pytest-rerunfailures reads before the ini key of the same setting.  Each such
 # option is the ini key spelled as a long option, and its argparse ``dest`` is the ini key itself.
 _OPTION_FOR_INI_KEY = {f'--{key.replace("_", "-")}': key for key in _FORWARDED_INI_KEYS}
@@ -76,6 +78,9 @@ _UNSAFE_ITEM_CHARACTERS = frozenset('\n\r\x00')
 _CARRIED_OPTIONS = _RERUN_VALUE_OPTIONS | _OVERRIDE_INI_OPTIONS
 
 _MAX_NAMED_TESTS = 10
+
+# pytest-rerunfailures' default ``reruns_delay_backoff_factor``: every rerun waits the same delay.
+_NO_BACKOFF = 1.0
 
 
 def _argparse_file_decoding() -> tuple[str, str]:
@@ -241,13 +246,11 @@ def _read_not_overridden(
     read_ini: Callable[[str], object],
     overridden_by: Sequence[str],
     option_keys_set: Collection[str],
-    *,
-    unreadable_as_unset: bool = False,
 ) -> list[tuple[str, object]]:
     """Return each rerun ini key that nothing overrides and the installed plugin registers, with its value.
 
-    A key ``read_ini`` cannot read as a string (``TypeError``) is skipped, or read as None when
-    ``unreadable_as_unset`` is set; a key the plugin does not register (``ValueError``) is always skipped.
+    A key ``read_ini`` cannot read as a string (``TypeError``) reads as None; a key the plugin does not
+    register (``ValueError``) is skipped.
     """
     already_overridden = _keys_overridden_by(overridden_by, option_keys_set)
     unoverridden_settings: list[tuple[str, object]] = []
@@ -257,22 +260,10 @@ def _read_not_overridden(
         try:
             unoverridden_settings.append((key, read_ini(key)))
         except TypeError:
-            if unreadable_as_unset:
-                unoverridden_settings.append((key, None))
+            unoverridden_settings.append((key, None))
         except ValueError:
             continue
     return unoverridden_settings
-
-
-def _resolved_ini_settings(
-    read_ini: Callable[[str], object], overridden_by: Sequence[str], option_keys_set: Collection[str]
-) -> list[tuple[str, object]]:
-    """Return each forwarded rerun ini key that is set and not overridden, with its value."""
-    return [
-        (key, value)
-        for key, value in _read_not_overridden(read_ini, overridden_by, option_keys_set)
-        if value not in (None, '', [])
-    ]
 
 
 def _is_changed_by_override_ini(value: object) -> bool:
@@ -280,107 +271,107 @@ def _is_changed_by_override_ini(value: object) -> bool:
     return isinstance(value, list) and not survives_override_ini(value)
 
 
-def rerun_ini_overrides(
+@dataclass(frozen=True)
+class RerunIniResolution:
+    """What the gremlin runs are given for the rerun ini keys, from :func:`resolve_rerun_ini`.
+
+    Attributes:
+        overrides: ``--override-ini=key=value`` arguments carrying the settings the main session resolved.
+        resets: ``--override-ini=key=`` arguments for each key the gremlin runs must not read from another file.
+        unforwardable_keys: The keys left out of ``overrides`` because ``-o`` would change their items.
+    """
+
+    overrides: tuple[str, ...]
+    resets: tuple[str, ...]
+    unforwardable_keys: tuple[str, ...]
+
+
+def resolve_rerun_ini(
     read_ini: Callable[[str], object], *, overridden_by: Sequence[str] = (), option_keys_set: Collection[str] = ()
-) -> list[str]:
-    r"""Return the pytest-rerunfailures ini settings the main session resolved, as ``--override-ini`` arguments.
+) -> RerunIniResolution:
+    r"""Resolve the pytest-rerunfailures ini settings the main session holds into what gremlin runs are given.
 
     A gremlin run starts its own pytest, which is not given ``-c`` or ``--config-file`` (unless it comes
     through ``PYTEST_ADDOPTS``) and so does not read that file.  Passing the resolved values on the command
-    line gives that run the settings the baseline ran with.  A setting that is unset or empty is left out.
-    So is one the installed pytest-rerunfailures does not register (``config.getini`` raises ``ValueError``
-    for it), and one pytest cannot read as a string (``config.getini`` raises ``TypeError`` for a number in
-    native ``[tool.pytest]`` TOML, which pytest-rerunfailures also skips).
+    line gives that run the settings the baseline ran with.  Each key is read once and lands in exactly one
+    place:
 
-    A ``linelist`` setting (``only_rerun``, ``rerun_except``) is written one pattern per line, which is how
-    pytest splits the value of ``-o``, so a pattern containing a space survives.  A list whose items pytest
-    would change on the way (see :func:`survives_override_ini`) is left out, because a changed pattern
-    reruns fewer failures than the baseline did and so zaps gremlins the tests did not earn; see
-    :func:`unforwardable_rerun_keys` and :func:`rerun_resets`.
+    * ``overrides``: the key is set, and carried as ``--override-ini``.  A setting that is unset or empty is
+      left out.  So is one the installed pytest-rerunfailures does not register (``config.getini`` raises
+      ``ValueError`` for it), and one pytest cannot read as a string (``config.getini`` raises ``TypeError``
+      for a number in native ``[tool.pytest]`` TOML, which pytest-rerunfailures also skips).  A ``linelist``
+      setting (``only_rerun``, ``rerun_except``) is written one pattern per line, which is how pytest splits
+      the value of ``-o``, so a pattern containing a space survives.
+    * ``unforwardable_keys``: the key is a list whose items pytest would change on the way (see
+      :func:`survives_override_ini`).  It is left out of ``overrides`` because a changed pattern reruns fewer
+      failures than the baseline did and so zaps gremlins the tests did not earn.
+    * ``resets``: an empty ``--override-ini`` for each key that is unset, unreadable or unforwardable.  Under
+      ``-c`` a gremlin run finds the project's own config file, which can restrict reruns or add a delay where
+      the baseline had none.  ``--override-ini=key=`` makes pytest-rerunfailures fall back to what the baseline
+      ran with: an empty ``only_rerun`` or ``rerun_except`` list is no filter, an empty ``reruns`` is no reruns
+      (``int('')`` fails and the plugin ignores the error), and an empty ``reruns_delay`` or
+      ``reruns_delay_backoff_factor`` is a delay of 0 and a factor of 1.0 (``float('')`` fails likewise).
+      Every rerun key the plugin registers is then either forwarded or reset.
 
     Args:
         read_ini: Reads an ini key as the main session resolved it, such as ``config.getini``.
         overridden_by: Options from :func:`rerun_options_in`.  A key one of them already overrides, as
-            ``--override-ini`` or as the option of the same name (``--only-rerun``), is left out, so the
-            command line is not contradicted or repeated.
+            ``--override-ini`` or as the option of the same name (``--only-rerun``), is left out of all three
+            results, so the command line is not contradicted or repeated.
         option_keys_set: Keys whose parsed option is set (see :func:`rerun_keys_set_in`), left out for
             the same reason.
 
     Returns:
-        One ``--override-ini=key=value`` argument per set key.
+        The overrides, resets and unforwardable keys, each in the order the settings are forwarded in.
 
     Example:
-        >>> rerun_ini_overrides({'reruns': '2', 'only_rerun': ['Timeout', 'bad gateway']}.get)
-        ['--override-ini=reruns=2', '--override-ini=only_rerun=Timeout\nbad gateway']
-        >>> rerun_ini_overrides({'rerun_except': ['xyz ']}.get)
-        []
+        >>> resolution = resolve_rerun_ini({'reruns': '2', 'only_rerun': ['Timeout', 'bad gateway']}.get)
+        >>> resolution.overrides
+        ('--override-ini=reruns=2', '--override-ini=only_rerun=Timeout\nbad gateway')
+        >>> resolution = resolve_rerun_ini({'reruns': '2', 'rerun_except': ['xyz ']}.get)
+        >>> resolution.unforwardable_keys, resolution.resets[-1]
+        (('rerun_except',), '--override-ini=rerun_except=')
     """
     overrides: list[str] = []
-    for key, value in _resolved_ini_settings(read_ini, overridden_by, option_keys_set):
+    resets: list[str] = []
+    unforwardable_keys: list[str] = []
+    for key, value in _read_not_overridden(read_ini, overridden_by, option_keys_set):
         if _is_changed_by_override_ini(value):
-            continue
-        override_value = '\n'.join(value) if isinstance(value, list) else value
-        overrides.append(f'{_OVERRIDE_INI_ARGUMENT}{key}={override_value}')
-    return overrides
+            unforwardable_keys.append(key)
+            resets.append(f'{_OVERRIDE_INI_ARGUMENT}{key}=')
+        elif value in (None, '', []):
+            resets.append(f'{_OVERRIDE_INI_ARGUMENT}{key}=')
+        else:
+            override_value = '\n'.join(value) if isinstance(value, list) else value
+            overrides.append(f'{_OVERRIDE_INI_ARGUMENT}{key}={override_value}')
+    return RerunIniResolution(tuple(overrides), tuple(resets), tuple(unforwardable_keys))
 
 
-def rerun_resets(
-    read_ini: Callable[[str], object], *, overridden_by: Sequence[str] = (), option_keys_set: Collection[str] = ()
-) -> list[str]:
-    """Return an empty ``--override-ini`` for each rerun key the gremlin runs must not read from another file.
+def rerun_ini_as_gremlin_runs_read(read_ini: Callable[[str], object], resets: Sequence[str]) -> Callable[[str], object]:
+    """Return ``read_ini`` as the gremlin runs see it: a key in ``resets`` reads as empty.
 
-    Under ``-c`` a gremlin run finds the project's own config file.  A key that :func:`rerun_ini_overrides`
-    does not carry, because the ``-c`` file leaves it unset (or pytest cannot read it), or because ``-o``
-    would change the items of a list, would take its value from that file, which can restrict reruns or add
-    a delay where the baseline had none.  ``--override-ini=key=`` makes pytest-rerunfailures fall back to
-    what the baseline ran with: an empty ``only_rerun`` or ``rerun_except`` list is no filter, an empty
-    ``reruns`` is no reruns (``int('')`` fails and the plugin ignores the error), and an empty
-    ``reruns_delay`` or ``reruns_delay_backoff_factor`` is a delay of 0 and a factor of 1.0 (``float('')``
-    fails likewise).  Every rerun key is then either forwarded or reset.
+    A reset (:func:`resolve_rerun_ini`) makes the gremlin runs ignore what the main session resolved for the key, so
+    the incremental cache must key on the empty value, not on the file's (issue #677).
 
     Args:
         read_ini: Reads an ini key as the main session resolved it, such as ``config.getini``.
-        overridden_by: Options from :func:`rerun_options_in`; a key one of them overrides is left alone,
-            because pytest-rerunfailures reads the option before any ini setting.
-        option_keys_set: Keys whose parsed option is set (see :func:`rerun_keys_set_in`), left alone for
-            the same reason.
+        resets: The ``--override-ini=key=`` arguments from :func:`resolve_rerun_ini`.
 
     Returns:
-        One ``--override-ini=key=`` argument per key that is unset or not carried.
+        A reader that gives ``''`` for each reset key and defers to ``read_ini`` for the rest.
 
     Example:
-        >>> rerun_resets({'reruns': '2', 'reruns_delay': '1', 'only_rerun': ['Timeout'], 'rerun_except': ['xyz ']}.get)
-        ['--override-ini=reruns_delay_backoff_factor=', '--override-ini=rerun_except=']
+        >>> ini = {'rerun_except': ['xyz '], 'reruns': '2'}.get
+        >>> read = rerun_ini_as_gremlin_runs_read(ini, ['--override-ini=rerun_except='])
+        >>> read('rerun_except'), read('reruns')
+        ('', '2')
     """
-    return [
-        f'{_OVERRIDE_INI_ARGUMENT}{key}='
-        for key, value in _read_not_overridden(read_ini, overridden_by, option_keys_set, unreadable_as_unset=True)
-        if value in (None, '', []) or _is_changed_by_override_ini(value)
-    ]
+    reset_keys = _keys_overridden_by(resets)
 
+    def read(key: str) -> object:
+        return '' if key in reset_keys else read_ini(key)
 
-def unforwardable_rerun_keys(
-    read_ini: Callable[[str], object], *, overridden_by: Sequence[str] = (), option_keys_set: Collection[str] = ()
-) -> list[str]:
-    """Return the rerun ini keys :func:`rerun_ini_overrides` leaves out because ``-o`` would change their items.
-
-    Args:
-        read_ini: Reads an ini key as the main session resolved it, such as ``config.getini``.
-        overridden_by: Options from :func:`rerun_options_in`; a key one of them overrides is not reported.
-        option_keys_set: Keys whose parsed option is set (see :func:`rerun_keys_set_in`); not reported either.
-
-    Returns:
-        The keys, in the order the settings are forwarded in.
-
-    Example:
-        >>> unforwardable_rerun_keys({'reruns': '2', 'rerun_except': ['xyz ']}.get)
-        ['rerun_except']
-    """
-    return [
-        key
-        for key, value in _resolved_ini_settings(read_ini, overridden_by, option_keys_set)
-        if _is_changed_by_override_ini(value)
-    ]
+    return read
 
 
 def unforwarded_rerun_key_warning(key: str) -> str:
@@ -429,19 +420,32 @@ def baseline_rerun_warning(rerun_test_ids: Collection[str]) -> str | None:
     )
 
 
-def scaled_mutant_timeout(base: int, *, reruns: int, reruns_delay: float) -> int:
-    """Return the per-mutant timeout widened to cover the reruns pytest-rerunfailures may make (issue #655).
+def scaled_mutant_timeout(
+    base: int,
+    *,
+    reruns: int,
+    reruns_delay: float,
+    reruns_delay_backoff_factor: float = _NO_BACKOFF,
+    delayed_tests: int = 1,
+) -> int:
+    """Return the per-mutant timeout widened to cover the reruns pytest-rerunfailures may make (issues #655, #672).
 
     ``base`` is the budget of one attempt.  A killed mutant's covering test fails, is rerun ``reruns`` times
-    and sleeps ``reruns_delay`` seconds before each rerun, so the run may need
-    ``base * (reruns + 1) + ceil(reruns * reruns_delay)`` seconds before the mutant is judged.
-    A negative or NaN delay counts as 0 (pytest-rerunfailures treats a negative one as 0).  No reruns leave
-    ``base`` unchanged.  The result never exceeds ``MAX_TIMEOUT_SECONDS``.
+    and sleeps ``reruns_delay * factor ** (n - 1)`` seconds before rerun ``n``, where ``factor`` is
+    ``reruns_delay_backoff_factor``, so the run may need
+    ``base * (reruns + 1) + ceil(reruns_delay * (1 + factor + ... + factor ** (reruns - 1)))`` seconds before
+    the mutant is judged.  With the default factor of 1 that is ``ceil(reruns * reruns_delay)``.
+    A negative or NaN delay counts as 0 (pytest-rerunfailures treats a negative one as 0), and a negative or NaN
+    factor counts as 1 (it falls back to 1.0 for a negative one).  No reruns leave ``base`` unchanged.  The result
+    never exceeds ``MAX_TIMEOUT_SECONDS``.  A run in which ``delayed_tests`` tests each wait out the delays (the
+    coverage pre-scan, which runs the whole suite) pays that term once per test; ``base`` is not multiplied.
 
     Args:
         base: Seconds one attempt may take.
         reruns: Reruns allowed per test; zero or less means none.
-        reruns_delay: Seconds slept before each rerun.
+        reruns_delay: Seconds slept before the first rerun.
+        reruns_delay_backoff_factor: What the delay is multiplied by after each rerun.
+        delayed_tests: Tests that wait out the delays in the run; zero or less counts as one.
 
     Returns:
         The timeout in whole seconds.
@@ -449,6 +453,8 @@ def scaled_mutant_timeout(base: int, *, reruns: int, reruns_delay: float) -> int
     Example:
         >>> scaled_mutant_timeout(30, reruns=2, reruns_delay=20)
         130
+        >>> scaled_mutant_timeout(30, reruns=2, reruns_delay=1, reruns_delay_backoff_factor=3)
+        94
         >>> scaled_mutant_timeout(30, reruns=0, reruns_delay=20)
         30
     """
@@ -456,11 +462,34 @@ def scaled_mutant_timeout(base: int, *, reruns: int, reruns_delay: float) -> int
         return base
     if reruns >= MAX_TIMEOUT_SECONDS:
         return MAX_TIMEOUT_SECONDS
-    usable_delay = reruns_delay if reruns_delay > 0 else 0.0
-    total_delay = reruns * usable_delay
+    total_delay = _total_rerun_delay(reruns, reruns_delay, reruns_delay_backoff_factor) * max(1, delayed_tests)
     if total_delay >= MAX_TIMEOUT_SECONDS:
         return MAX_TIMEOUT_SECONDS
     return min(base * (reruns + 1) + math.ceil(total_delay), MAX_TIMEOUT_SECONDS)
+
+
+def _total_rerun_delay(reruns: int, reruns_delay: float, reruns_delay_backoff_factor: float) -> float:
+    """Return the seconds pytest-rerunfailures sleeps over ``reruns`` reruns, ``inf`` when a float cannot hold it."""
+    if not reruns_delay > 0:
+        return 0.0
+    factor = _usable_backoff_factor(reruns_delay_backoff_factor)
+    if factor == _NO_BACKOFF:
+        return reruns * reruns_delay
+    # Sum the sleeps one by one: the closed form (factor**reruns - 1) / (factor - 1) cancels for a factor near 1
+    # and can round the total down.  ``reruns`` is below MAX_TIMEOUT_SECONDS here, so the loop is bounded.
+    try:
+        total_delay = math.fsum(reruns_delay * factor**attempt for attempt in range(reruns))
+    except OverflowError:
+        return math.inf
+    # An infinite delay times a zero factor's 0.0 makes NaN; the first rerun alone already sleeps forever.
+    if math.isnan(total_delay):
+        return math.inf
+    return total_delay
+
+
+def _usable_backoff_factor(factor: float) -> float:
+    """Return ``factor``, or 1.0 where pytest-rerunfailures rejects it (negative) or sleeping on it would fail (NaN)."""
+    return factor if factor >= 0 else _NO_BACKOFF
 
 
 def session_rerun_budget(option: object, read_ini: Callable[[str], object]) -> tuple[int, float]:
@@ -489,6 +518,87 @@ def session_rerun_budget(option: object, read_ini: Callable[[str], object]) -> t
     return _session_reruns(option, read_ini), _session_reruns_delay(option, read_ini)
 
 
+def session_rerun_backoff_factor(option: object, read_ini: Callable[[str], object]) -> float:
+    """Return the ``reruns_delay_backoff_factor`` pytest-rerunfailures applies to a test with no ``flaky`` marker.
+
+    The ``--reruns-delay-backoff-factor`` option wins over the ``reruns_delay_backoff_factor`` ini key.  An ini
+    value that is not a number, an ini key the installed plugin does not register, and an unset setting all
+    count as 1.0, and so does a negative factor, which the plugin replaces with 1.0 (and warns about).
+
+    Args:
+        option: The parsed options, such as ``config.option``.
+        read_ini: Reads an ini key as a string, such as ``config.getini``.
+
+    Returns:
+        The factor the delay is multiplied by after each rerun.
+
+    Example:
+        >>> from types import SimpleNamespace
+        >>> session_rerun_backoff_factor(SimpleNamespace(reruns_delay_backoff_factor=2.0), {}.get)
+        2.0
+        >>> session_rerun_backoff_factor(SimpleNamespace(), {}.get)
+        1.0
+    """
+    from_option = getattr(option, 'reruns_delay_backoff_factor', None)
+    if from_option is not None:
+        return _usable_backoff_factor(float(from_option))
+    return _usable_backoff_factor(
+        float(_read_number(read_ini, 'reruns_delay_backoff_factor', float, default=_NO_BACKOFF))
+    )
+
+
+def rerun_cache_settings(option: object, read_ini: Callable[[str], object]) -> str:
+    """Return the rerun settings beyond the count and delay that can change a verdict, as one cache-key string.
+
+    The incremental cache keys a verdict on this (issue #677), because a run with ``--only-rerun ConnectionError``
+    zaps a gremlin that a run without the filter would rerun past.  The settings are read the way
+    pytest-rerunfailures reads them, not as the command line spelled them, so ``--only-rerun X`` and the
+    ``only_rerun = X`` ini key give equal strings: the backoff factor as :func:`session_rerun_backoff_factor`
+    resolves it, ``only_rerun`` and ``rerun_except`` from the option or else the ini key, and the options that
+    have no ini key (``--rerun-exclude-path``, ``--reruns-mode``, ``--max-suite-reruns``) from the option.
+    A filter or an exclusion is a set of patterns, so its order and repeats do not matter.  The count and delay
+    are keyed separately (:func:`session_rerun_budget`).
+
+    Args:
+        option: The parsed options, such as ``config.option``.
+        read_ini: Reads an ini key as the main session resolved it, such as ``config.getini``.
+
+    Returns:
+        A string that is equal for equal settings.
+
+    Example:
+        >>> from types import SimpleNamespace
+        >>> rerun_cache_settings(SimpleNamespace(only_rerun=['B', 'A']), {}.get) == rerun_cache_settings(
+        ...     SimpleNamespace(), {'only_rerun': ['A', 'B']}.get
+        ... )
+        True
+        >>> rerun_cache_settings(SimpleNamespace(), {}.get) == rerun_cache_settings(
+        ...     SimpleNamespace(max_suite_reruns=3), {}.get
+        ... )
+        False
+    """
+    settings = {
+        'backoff': session_rerun_backoff_factor(option, read_ini),
+        'only_rerun': _pattern_set(option, read_ini, 'only_rerun'),
+        'rerun_except': _pattern_set(option, read_ini, 'rerun_except'),
+        'exclude_path': _pattern_set(option, None, 'rerun_exclude_path'),
+        'mode': getattr(option, 'reruns_mode', None),
+        'max_suite_reruns': getattr(option, 'max_suite_reruns', None),
+    }
+    return json.dumps(settings, sort_keys=True)
+
+
+def _pattern_set(option: object, read_ini: Callable[[str], object] | None, name: str) -> list[str]:
+    """Return the sorted distinct patterns of ``name``: the option when it has any, else the ini key."""
+    patterns = getattr(option, name, None)
+    if not patterns and read_ini is not None:
+        try:
+            patterns = read_ini(name)
+        except (TypeError, ValueError):
+            patterns = None
+    return sorted({str(pattern) for pattern in patterns or ()})
+
+
 def _session_reruns(option: object, read_ini: Callable[[str], object]) -> int:
     for from_option in (getattr(option, 'force_reruns', None), getattr(option, 'reruns', None)):
         if from_option is not None:
@@ -503,8 +613,10 @@ def _session_reruns_delay(option: object, read_ini: Callable[[str], object]) -> 
     return float(_read_number(read_ini, 'reruns_delay', float))
 
 
-def _read_number(read_ini: Callable[[str], object], key: str, parse: Callable[[str], float]) -> float:
+def _read_number(
+    read_ini: Callable[[str], object], key: str, parse: Callable[[str], float], *, default: float = 0
+) -> float:
     try:
         return parse(str(read_ini(key)))
     except (TypeError, ValueError):
-        return 0
+        return default

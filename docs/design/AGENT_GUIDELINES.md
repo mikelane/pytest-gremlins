@@ -451,36 +451,50 @@ from pytest_gremlins.operators import ArithmeticOperator, BooleanOperator, Compa
 
 ### Pre-commit
 
+Ruff and mypy run from the uv environment (`uv run --frozen`), so `uv.lock` is the single source of
+truth for their versions. There are no `ruff-pre-commit` or `mirrors-mypy` entries. This is an excerpt;
+the full config is `.pre-commit-config.yaml`.
+
 ```yaml
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        args: [--unsafe]
       - id: check-toml
-      - id: check-added-large-files
-      - id: check-merge-conflict
       - id: debug-statements
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.6
+  - repo: local
     hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
-
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.7.1
-    hooks:
-      - id: mypy
-        additional_dependencies: [pytest]
-        args: [--strict]
+      - id: ruff-check-commit
+        name: ruff check (staged files)
+        entry: uv run --frozen ruff check --force-exclude --fix --exit-non-zero-on-fix
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
+        stages: [pre-commit]
+      - id: ruff-format-commit
+        name: ruff format (staged files)
+        entry: uv run --frozen ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
+        stages: [pre-commit]
+      - id: mypy-commit
+        name: mypy (strict, commit)
+        entry: uv run --frozen mypy src/pytest_gremlins
+        language: system
+        files: ^src/
+        types_or: [python, pyi]
+        pass_filenames: false
+        stages: [pre-commit]
 
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v3.13.0
+    rev: v4.13.7
     hooks:
       - id: commitizen
         stages: [commit-msg]

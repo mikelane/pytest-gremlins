@@ -31,8 +31,11 @@ pytest --gremlins --gremlin-report=console
 
 ### Example Output
 
+The layout below is the plugin's; the counts and paths are illustrative. File paths are printed
+as the plugin resolved them, which is usually absolute. Up to ten survivors are listed.
+
 ```text
-================== pytest-gremlins mutation report ==================
+======================= pytest-gremlins mutation report ========================
 
 Zapped: 142 gremlins (85%)
 Survived: 18 gremlins (11%)
@@ -40,15 +43,22 @@ Timeout: 5 gremlins (3%)
 Error: 2 gremlins (1%)
 
 Top surviving gremlins:
-  src/auth.py:42    >= to >     (boundary not tested)
-  src/utils.py:17   + to -      (arithmetic not verified)
-  src/api.py:88     True to False (return value unchecked)
+  /home/you/project/src/auth.py:42 > to >=              (comparison)
+  /home/you/project/src/utils.py:17 + to -               (arithmetic)
+  /home/you/project/src/api.py:88 return value to None (return)
 
 Run with --gremlin-report=html for detailed report.
-=====================================================================
+=======================================  =======================================
 ```
 
-Timeout, Error, and Pardoned lines only appear when their count is greater than zero.
+Timeout, Error, and Pardoned lines only appear when their count is greater than zero. The
+`Run with --gremlin-report=html` hint is left out when `html` is one of the report formats.
+
+The percentages on these lines are shares of all gremlins (`zapped / total` for the Zapped
+line). They are not the mutation score, which counts timeouts as kills and leaves pardoned
+gremlins out: `(zapped + timeout) / (total - pardoned)`. In this example the mutation score is
+(142 + 5) / 167 = 88%, not 85%. The JSON report's `summary.percentage` holds the mutation
+score; see [Understanding Mutation Score](#understanding-mutation-score).
 
 ### Console Output Sections
 
@@ -56,7 +66,7 @@ Timeout, Error, and Pardoned lines only appear when their count is greater than 
 
 | Field | Description |
 |-------|-------------|
-| Zapped | Number and percentage of gremlins caught by tests |
+| Zapped | Number of gremlins caught by tests, and their share of all gremlins (not the mutation score) |
 | Survived | Number and percentage of gremlins that escaped tests |
 | Timeout | Number and percentage of gremlins that caused test timeouts and whose tests finish in time without the mutant (shown when > 0); these count as kills |
 | Error | Number and percentage of gremlins that caused errors, including timeouts whose unmutated tests do not finish within half the timeout (shown when > 0) |
@@ -68,8 +78,19 @@ Timeout, Error, and Pardoned lines only appear when their count is greater than 
 Shows the most important surviving gremlins to fix. Each line contains:
 
 - **Location** - File path and line number
-- **Mutation** - What changed (e.g., `>= -> >`)
-- **Operator** - Which operator created this gremlin
+- **Mutation** - What changed (e.g., `> to >=`)
+- **Operator** - Which operator created this gremlin, in parentheses
+
+**Errored Gremlins:**
+
+The terminal summary counts errored gremlins on the `Error` line but doesn't list them. To see
+why each one errored, use the HTML report's "Errored Gremlins" table or the `error_output`
+field in the JSON report.
+
+The Python API's `ConsoleReporter` (`pytest_gremlins.reporting.console`) adds a
+`Top errored gremlins:` section that the terminal summary doesn't have. It lists up to ten
+errored gremlins, each with its location and the last line of its error output (up to 120
+characters).
 
 **Cache Statistics (when caching enabled):**
 
@@ -131,6 +152,21 @@ The HTML report includes:
 | Status | `zapped`, `survived`, `timeout`, or `error` |
 | Selected test | The test that killed the gremlin, or every test the coverage-based selector ran, or `—` if none |
 
+**Pardoned Gremlins Table:**
+
+Shown only when at least one gremlin is pardoned. It lists each pardoned gremlin's file, line,
+operator, description and the reason given in its pragma.
+
+**Errored Gremlins Table:**
+
+Shown only when an errored gremlin has error output. It lists each one's file, line and
+operator, with its captured stderr in a collapsed "Show stderr" block.
+
+**Skipped Files:**
+
+Shown only when a source file could not be instrumented, under "Files skipped and not mutation
+tested", with the reason for each file.
+
 **Status Color Coding:**
 
 | Status | Color | Meaning |
@@ -190,7 +226,7 @@ The HTML report includes:
                     <td>src/auth.py</td>
                     <td>42</td>
                     <td>comparison</td>
-                    <td>>= -> ></td>
+                    <td>>= to ></td>
                     <td class="status-survived">survived</td>
                     <td>tests/test_auth.py::test_login_validates_age</td>
                 </tr>
@@ -231,6 +267,11 @@ rebuilds the file.
 
 This is useful for tracking whether your mutation score is trending up or down as your
 project evolves, without needing an external dashboard.
+
+!!! note "Known limitation"
+    History entries record only the score, not skipped files. A run that skipped a file can
+    plot a higher score than it would have with that file included, so check the skipped
+    files list above the charts before reading a rise in the trend as an improvement.
 
 ### Accessibility
 
@@ -294,28 +335,30 @@ The directory is created automatically if it does not exist.
       "percentage": 87.5
     }
   },
-  "skipped_files": {
-    "src/broken.py": "RecursionError: maximum recursion depth exceeded"
-  },
   "results": [
     {
-      "gremlin_id": "g001",
+      "gremlin_id": "auth_1a2b_g001",
       "file_path": "src/auth.py",
       "line_number": 42,
       "status": "survived",
       "operator": "comparison",
-      "description": ">= -> >"
+      "description": ">= to >",
+      "selected_tests": ["tests/test_auth.py::test_login_validates_age"]
     },
     {
-      "gremlin_id": "g002",
+      "gremlin_id": "utils_3c4d_g002",
       "file_path": "src/utils.py",
       "line_number": 17,
       "status": "zapped",
       "operator": "arithmetic",
-      "description": "+ -> -",
-      "killing_test": "test_utils.py::test_calculate"
+      "description": "+ to -",
+      "killing_test": "unknown",
+      "selected_tests": ["tests/test_utils.py::test_calculate"]
     }
-  ]
+  ],
+  "skipped_files": {
+    "src/broken.py": "RecursionError: maximum recursion depth exceeded"
+  }
 }
 ```
 
@@ -372,7 +415,10 @@ for full source coverage.
 | `status` | string | One of: `zapped`, `survived`, `timeout`, `error`, `pardoned` |
 | `operator` | string | Operator that created this gremlin |
 | `description` | string | Human-readable mutation description |
-| `killing_test` | string | Test that caught the mutation (only present if zapped). `<collection>` means the mutant stopped the suite from loading, so no test ran. If the unmutated suite cannot load in the gremlin subprocess, such load failures are reported with status `error` instead |
+| `killing_test` | string | Present when a killing test was recorded (normally on zapped gremlins). The test that caught the mutation when it is known; `unknown` when the gremlin run failed without naming a test. `<collection>` means the mutant stopped the suite from loading, so no test ran. If the unmutated suite cannot load in the gremlin subprocess, such load failures are reported with status `error` instead |
+| `error_output` | string | Present only when the run produced error output, usually for status `error`: the captured stderr or error message, such as a timeout that was downgraded or a crash outside a test |
+| `execution_time_ms` | float | Present only when the run was timed: wall-clock milliseconds for this gremlin's test run. `--gremlin-parallel` and `--gremlin-batch` runs record it; sequential runs don't |
+| `selected_tests` | list[string] | Present only when tests were selected: the pytest node ids run against this gremlin |
 
 ### Processing JSON Reports
 
@@ -490,9 +536,9 @@ Look for patterns in surviving gremlins:
 **Pattern: Many boundary survivors**
 
 ```text
-src/validation.py:12   >= -> >   (comparison)
-src/validation.py:15   <= -> <   (comparison)
-src/validation.py:23   >= -> >   (comparison)
+src/validation.py:12   >= to >   (comparison)
+src/validation.py:15   <= to <   (comparison)
+src/validation.py:23   >= to >   (comparison)
 ```
 
 Action: Add boundary value tests for validation functions.
@@ -500,8 +546,8 @@ Action: Add boundary value tests for validation functions.
 **Pattern: Many return survivors**
 
 ```text
-src/service.py:45   return x -> return None   (return)
-src/service.py:67   return x -> return None   (return)
+src/service.py:45   return value to None   (return)
+src/service.py:67   return value to None   (return)
 ```
 
 Action: Tests are not asserting on return values.
@@ -580,9 +626,9 @@ mutation_testing:
     when: always
     paths:
       - coverage/gremlins/
-    reports:
-      junit: coverage/gremlins/gremlins.json
 ```
+
+`gremlins.json` is not a JUnit XML file, so don't list it under `artifacts:reports:junit`.
 
 ### Jenkins Pipeline
 
@@ -698,8 +744,10 @@ Path('mutation-score.json').write_text(simple_json)
   byte-order mark is dropped and a PEP 263 `coding:` declaration is honored. Line endings are
   normalized to `\n`.
 - **Positions:** mutant `location` positions are 1-based for both line and column, with a required
-  `end`. The Python AST's 0-based UTF-8 byte columns are converted to character columns and shifted
-  by one. A node without end information gets an `end` equal to its `start`.
+  `end`. The Python AST's 0-based UTF-8 byte columns are converted to UTF-16 code unit columns and
+  shifted by one, matching the string indices of the report viewer, so a character outside the Basic
+  Multilingual Plane (such as an emoji) counts as two columns. A node without end information gets an
+  `end` equal to its `start`.
 - **Unreadable files:** a file that cannot be read exports an empty `source`, which the schema
   accepts. Its mutant columns are then the AST's byte columns plus one, because there is no text to
   convert them against.
@@ -750,19 +798,9 @@ jobs:
       - name: Run mutation testing
         run: uv run pytest --gremlins --gremlin-report=json
 
-      - name: Convert to Stryker format
-        run: |
-          python -c "
-          from pytest_gremlins.reporting import MutationScore, StrykerExporter
-          import json
-          from pathlib import Path
-
-          # Load pytest-gremlins output
-          data = json.loads(Path('coverage/gremlins/gremlins.json').read_text())
-
-          # Note: This requires creating MutationScore from the JSON data
-          # In practice, you would save the Stryker format during test execution
-          "
+      # pytest-gremlins has no flag or command that writes the Stryker format. Call
+      # StrykerExporter.write_report(score, Path('mutation.json')) from your own code
+      # (see "Using StrykerExporter" above) and make sure mutation.json exists before the upload.
 
       - name: Upload to Stryker Dashboard
         if: github.ref == 'refs/heads/main'
@@ -860,17 +898,9 @@ jobs:
       - name: Run mutation testing
         run: uv run pytest --gremlins --gremlin-report=json
 
-      - name: Convert to SonarQube format
-        run: |
-          python -c "
-          from pytest_gremlins.reporting import MutationScore, SonarQubeExporter
-          import json
-          from pathlib import Path
-
-          # Note: Full implementation would create MutationScore from results
-          # exporter = SonarQubeExporter(project_root='.')
-          # exporter.write_report(score, Path('mutation-sonar.json'))
-          "
+      # pytest-gremlins has no flag or command that writes the SonarQube format. Call
+      # SonarQubeExporter.write_report(score, Path('mutation-sonar.json')) from your own code
+      # (see "Using SonarQubeExporter" above) and make sure mutation-sonar.json exists before the scan.
 
       - name: SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@master
@@ -999,11 +1029,9 @@ Generate multiple formats in your CI workflow:
   run: |
     pytest --gremlins --gremlin-report=json,html
 
-    # Generate Stryker format
-    python scripts/export_stryker.py coverage/gremlins/gremlins.json mutation.json
-
-    # Generate SonarQube format
-    python scripts/export_sonarqube.py coverage/gremlins/gremlins.json mutation-sonar.json
+    # pytest-gremlins ships no command that writes the Stryker or SonarQube format.
+    # Your own code calls StrykerExporter and SonarQubeExporter (see above) and
+    # writes mutation.json and mutation-sonar.json before the steps below run.
 
 - name: Upload to Stryker Dashboard
   run: curl -X PUT ... @mutation.json

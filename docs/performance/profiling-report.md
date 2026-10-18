@@ -4,20 +4,23 @@
 **Version:** 1.9.0
 **Supersedes:** [`0.1.1/profiling-report.md`](0.1.1/profiling-report.md) (archived)
 
-!!! warning
-    `--gremlin-executor=fork` and `inprocess` are disabled pending
-    [#532](https://github.com/mikelane/pytest-gremlins/issues/532): they did not run the mutated code, so the
-    comparisons below that rely on them do not hold.
+!!! warning "Historical report"
+    This report describes v1.9.0. Since v1.10.1, `--gremlin-executor=fork` and
+    `--gremlin-executor=inprocess` exit with a usage error, pending
+    [#532](https://github.com/mikelane/pytest-gremlins/issues/532): they did not run the mutated
+    code, so their results were wrong. The only working executor is `subprocess` (what `auto`
+    resolves to). Wherever this report mentions the `inprocess` or `fork` executors as a speedup,
+    that speedup was never real and isn't available today. The measurements below are of the
+    `subprocess` executor. v1.10.1 also disabled the lightweight runner, so every gremlin now runs
+    through the full pytest bootstrap; that release's changelog notes that per-mutant runs are
+    slower as a result.
 
 ## Executive Summary
 
 Rerunning the phase-by-phase profiler against the current codebase (52 source files, 1,022
 gremlins, 1,498 tests) shows the same shape of bottleneck as the original v0.1.1 report:
-**coverage collection now dominates runtime**, at over 91% of total time. Per-mutation
-subprocess overhead, once the largest single cost, has shrunk substantially in relative terms
-now that `--gremlin-executor in-process`/`fork` exist as alternatives to the default subprocess
-path — this report profiles the default (`subprocess`) executor for direct comparison with the
-prior report.
+**coverage collection now dominates runtime**, at over 91% of total time. This report profiles
+the default (`subprocess`) executor for direct comparison with the prior report.
 
 ### Key Findings
 
@@ -112,22 +115,19 @@ scales with test suite size, not with mutation count, so it hasn't improved on i
 
 **Assessment:** Roughly 2.4x faster per-subprocess than the v0.1.1 measurement (1,460ms avg),
 likely reflecting general interpreter/pytest startup improvements rather than an architecture
-change — this sample still uses the default `subprocess` executor, not `in-process`/`fork`.
-The in-process executor (`--gremlin-executor in-process`, shipped in #349) bypasses this cost
-entirely for non-import-time mutations and is not represented in this profiling run.
+change. This sample uses the default `subprocess` executor.
 
 ## What Changed Since v0.1.1
 
-1. **In-process and fork executors now exist** (`--gremlin-executor in-process|fork`, #349),
-   directly addressing the v0.1.1 report's "Priority 1" recommendation. This profiling run
-   deliberately measures the default `subprocess` executor to stay comparable with the old
-   report; it does not reflect the speedup available from switching executors.
-2. **Persistent worker pool** (#58) is available for the subprocess/fork paths but not
+1. **In-process and fork executors were added** (#349) to address the v0.1.1 report's
+   "Priority 1" recommendation. They have since been disabled (see the warning above), so they
+   don't change the numbers that matter today.
+2. **Persistent worker pool** (#58) is available for the subprocess path but not
    exercised by this single-process profiling script.
 3. **Coverage collection is now the clear #1 bottleneck** in relative terms, since subprocess
-   overhead has both shrunk per-call and is largely avoidable via `in-process` mode. None of
-   the v0.1.1 report's "Priority 2: Optimize Coverage Collection" recommendations
-   (reuse pytest-cov data, parallel coverage via xdist, sampling) have shipped yet.
+   overhead has shrunk per call. None of the v0.1.1 report's "Priority 2: Optimize Coverage
+   Collection" recommendations (reuse pytest-cov data, parallel coverage via xdist, sampling)
+   had shipped at the time of this report.
 
 ## Recommendations
 
@@ -141,19 +141,17 @@ This is now the largest remaining lever, at 91% of total runtime:
 - **Incremental/cached coverage** keyed by content hash, to skip full re-collection when
   unchanged files dominate.
 
-### Priority 2: Default to a faster executor where safe
+### Priority 2: A faster executor that runs the mutated code
 
-`in-process` is dramatically faster but currently misses ~15% of mutations (import-time
-expressions) per its own docstring caveat. Consider whether the plugin should auto-detect and
-warn when running in `subprocess` mode with no explicit `--gremlin-executor` flag, given
-the size of the gap.
+The `inprocess` and `fork` executors were meant to remove the per-gremlin subprocess cost, but
+they did not run the mutated code and are disabled. A replacement is tracked in
+[#532](https://github.com/mikelane/pytest-gremlins/issues/532).
 
-### Priority 3: Re-profile with `in-process`/`fork` executors
+### Priority 3: Re-profile the current release
 
-This report only characterizes the default subprocess path for continuity with v0.1.1.
-A follow-up run profiling `--gremlin-executor in-process` and `--gremlin-executor fork` end to
-end (not just the 5-sample subprocess microbenchmark) would show current real-world numbers
-for the shipped fix.
+This report predates the v1.10.1 change that runs every gremlin through the full pytest
+bootstrap. A new end-to-end profile of the `subprocess` executor on the current release would
+show today's real numbers.
 
 ## Artifacts
 
@@ -163,9 +161,8 @@ for the shipped fix.
 
 ## Conclusion
 
-The subprocess-spawn bottleneck identified in v0.1.1 has been substantially mitigated by the
-`in-process`/`fork` executors shipped since. What's left, per this profiling run of the default
-subprocess path, is coverage collection: it now accounts for the large majority of runtime and
-scales with test suite size rather than mutation count. None of the coverage-side
-recommendations from the original report have been implemented yet — that's the next
-architectural target for a step change in speed.
+At v1.9.0, per this profiling run of the default subprocess path, coverage collection accounted
+for the large majority of runtime and scaled with test suite size rather than mutation count.
+The `inprocess`/`fork` executors that were expected to cut the subprocess-spawn cost turned out
+not to run the mutated code and are disabled (see the warning at the top). None of the
+coverage-side recommendations from the original report had been implemented at the time.

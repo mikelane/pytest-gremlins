@@ -303,7 +303,7 @@ for result in results:
 
 ## Lightweight Runner (Disabled)
 
-The lightweight runner is disabled in 1.9.1: the runner script is no longer written, so
+The lightweight runner is disabled in v1.10.1: the runner script is no longer written, so
 `build_lightweight_command` always returns `None` and every gremlin runs through the pytest
 bootstrap. The pieces below remain, unused, as groundwork for the redesign tracked in
 [#538](https://github.com/mikelane/pytest-gremlins/issues/538). See

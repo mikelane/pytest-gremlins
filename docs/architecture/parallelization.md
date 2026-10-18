@@ -217,7 +217,7 @@ directly, without starting pytest. That is only faithful for a test that needs n
 pytest, and it fabricated verdicts for async, parametrized and fixture-taking tests, for tests
 that depend on `conftest.py` imports or `pytest_configure` hooks, and for tests that import
 helpers from pytest's `sys.path` (the test file's directory or an ini `pythonpath`). Gating
-which tests it may judge kept leaking cases, so it is off in 1.9.1 and the redesign is tracked in
+which tests it may judge kept leaking cases, so it is off in v1.10.1 and the redesign is tracked in
 [#538](https://github.com/mikelane/pytest-gremlins/issues/538). Plain suites are slower as a
 result (roughly 5x in one measurement), in exchange for verdicts that come from pytest itself.
 
@@ -321,8 +321,13 @@ pytest --gremlins --gremlin-workers=4       # use 4 workers
 
 ### Worker Timeout
 
-Each mutation subprocess has a 30-second timeout. Mutations that exceed it are
-reported as `TIMEOUT` rather than `SURVIVED` or `ERROR`.
+Each gremlin's test run has a per-mutant timeout: 30 seconds by default, set with
+`--gremlin-mutant-timeout` or `mutant_timeout` (1-86400), and scaled up when
+pytest-rerunfailures reruns are configured. A gremlin that exceeds it in the pool is re-run
+alone first, since the timeout may have come from contention with other workers. A timeout
+that repeats counts as `TIMEOUT` (a kill) only when the gremlin's tests, run without the
+mutant, finish within half the timeout. Otherwise the gremlin is reported as `ERROR`. See
+[Error: Test timeout exceeded](../guide/troubleshooting.md#error-test-timeout-exceeded).
 
 ## Performance Characteristics
 
@@ -471,11 +476,14 @@ When debugging, run with a single worker to get sequential output:
 pytest --gremlins --gremlin-workers=1
 ```
 
-### Reproduce Specific Mutation
+### Investigate a Specific Mutation
+
+There is no command that runs one gremlin by hand: `ACTIVE_GREMLIN=<id> pytest ...` without
+`--gremlins` runs the original code. To see which tests a gremlin was given, pass its full id
+to `--gremlin-explain`:
 
 ```bash
-# Run just one mutation in the main process
-ACTIVE_GREMLIN=g0834 pytest tests/test_auth.py -v
+pytest --gremlins --gremlin-explain=auth_1a2b_g034
 ```
 
 ## Trade-offs

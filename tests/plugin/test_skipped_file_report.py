@@ -7,8 +7,8 @@ and the reason, and a run where nothing was instrumented must say so.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
+import json
 
 import pytest
 
