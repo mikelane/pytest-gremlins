@@ -892,10 +892,15 @@ and `### Fix` must end with either a docs reference or an exemption:
 - A docs reference is a link to the page, with the anchor when the change has a section:
   `[docs](https://pytest-gremlins.readthedocs.io/en/latest/<page>/#<anchor>)`. A path relative to `docs/`
   (`guide/configuration.md#<anchor>`) also works. A bullet may carry several. The page and the anchor must exist
-  in the built site.
+  in the built site. A link to the home page (`index.md`, `.`, or the bare `/en/latest/`) does not count.
 - An exemption is `(no docs: <reason>)`, for example a bug fix that only restores documented behavior. The
   reason must not be empty, and it is reviewed in the changelog PR.
 - `### Internal` and `### Documentation` bullets are not gated.
+- Use only these `###` headings: `Upgrade notes`, `Feature`, `Fix`, `Internal` and `Documentation`, spelled
+  exactly like that. Any other heading (`Feat`, `Fixes`, `Upgrade Notes`) fails the check, and so does a bullet
+  that sits under no `###` heading.
+- Every list item is a bullet: `-`, `*`, `+`, `1.` and `1)` markers all count, and a nested sub-bullet needs its
+  own reference or exemption. A reference or exemption inside an HTML comment or a code span does not count.
 
 Put a long link on its own indented line so the bullet still passes markdownlint:
 

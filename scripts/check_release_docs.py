@@ -34,6 +34,7 @@ GATED_SECTIONS = ('Upgrade notes', 'Feature', 'Fix')
 EXEMPT_SECTIONS = ('Internal', 'Documentation')
 KNOWN_SECTIONS = (*GATED_SECTIONS, *EXEMPT_SECTIONS)
 NO_SECTION = ''
+HOME_PAGE = ''
 DOCS_URL = re.compile(r'https://pytest-gremlins\.readthedocs\.io/en/latest(?=[/#?]|$)')
 URL_SCHEME = re.compile(r'[a-zA-Z][a-zA-Z0-9+.-]*:')
 BULLET = re.compile(r'\s*(?:[-*+]|\d{1,9}[.)])(?:\s+(.*)|$)')
@@ -188,7 +189,8 @@ def _bullet_problems(section: str, number: int, text: str, site: Site) -> list[s
     exemptions = EXEMPTION.findall(visible)
     if any(not reason.strip() for reason in exemptions):
         return [f'{label} has an empty "(no docs: )" exemption; give a reason']
-    references = [_parse_reference(target) for target in LINK_TARGET.findall(visible) if _is_docs_reference(target)]
+    parsed = (_parse_reference(target) for target in LINK_TARGET.findall(visible) if _is_docs_reference(target))
+    references = [reference for reference in parsed if reference.page != HOME_PAGE]
     if not references and not exemptions:
         return [f'{label} has no docs reference and no "(no docs: <reason>)" exemption']
     problems = (_reference_problem(reference, site) for reference in references)

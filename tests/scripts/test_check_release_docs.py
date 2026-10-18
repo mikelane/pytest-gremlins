@@ -333,14 +333,32 @@ class DescribeReferenceResolution:
             'guide/configuration.md#caching',
             'guide/configuration/#caching',
             '/guide/configuration/',
-            f'{DOCS_URL}/',
-            'index.md',
         ],
     )
     def it_accepts_a_reference_to_an_existing_page_or_anchor(self, target: str) -> None:
         checker = _load_checker()
 
         assert checker.find_problems(_entry(f'- **Fixed it.** [docs]({target})'), '2.0.0', SITE) == []
+
+    @pytest.mark.parametrize('target', ['.', 'index.md', './index.md', 'index.md#home', '/', DOCS_URL, f'{DOCS_URL}/'])
+    def it_does_not_count_a_link_to_the_home_page_as_a_docs_reference(self, target: str) -> None:
+        checker = _load_checker()
+
+        problems = checker.find_problems(_entry(f'- **Fixed it.** [docs]({target})'), '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'no docs reference' in problems[0]
+
+    def it_accepts_a_home_page_link_beside_a_real_reference(self) -> None:
+        checker = _load_checker()
+        bullet = f'- **Fixed it.** [home](index.md) [docs]({DOCS_URL}/guide/configuration/)'
+
+        assert checker.find_problems(_entry(bullet), '2.0.0', SITE) == []
+
+    def it_accepts_an_exemption_beside_a_home_page_link(self) -> None:
+        checker = _load_checker()
+
+        assert checker.find_problems(_entry('- **Fixed it.** [home](index.md) (no docs: reason)'), '2.0.0', SITE) == []
 
     @pytest.mark.parametrize(
         ('target', 'reason'),
