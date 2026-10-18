@@ -433,7 +433,12 @@ def baseline_rerun_warning(rerun_test_ids: Collection[str]) -> str | None:
 
 
 def scaled_mutant_timeout(
-    base: int, *, reruns: int, reruns_delay: float, reruns_delay_backoff_factor: float = _NO_BACKOFF
+    base: int,
+    *,
+    reruns: int,
+    reruns_delay: float,
+    reruns_delay_backoff_factor: float = _NO_BACKOFF,
+    delayed_tests: int = 1,
 ) -> int:
     """Return the per-mutant timeout widened to cover the reruns pytest-rerunfailures may make (issues #655, #672).
 
@@ -444,13 +449,15 @@ def scaled_mutant_timeout(
     the mutant is judged.  With the default factor of 1 that is ``ceil(reruns * reruns_delay)``.
     A negative or NaN delay counts as 0 (pytest-rerunfailures treats a negative one as 0), and a negative or NaN
     factor counts as 1 (it falls back to 1.0 for a negative one).  No reruns leave ``base`` unchanged.  The result
-    never exceeds ``MAX_TIMEOUT_SECONDS``.
+    never exceeds ``MAX_TIMEOUT_SECONDS``.  A run in which ``delayed_tests`` tests each wait out the delays (the
+    coverage pre-scan, which runs the whole suite) pays that term once per test; ``base`` is not multiplied.
 
     Args:
         base: Seconds one attempt may take.
         reruns: Reruns allowed per test; zero or less means none.
         reruns_delay: Seconds slept before the first rerun.
         reruns_delay_backoff_factor: What the delay is multiplied by after each rerun.
+        delayed_tests: Tests that wait out the delays in the run; zero or less counts as one.
 
     Returns:
         The timeout in whole seconds.
@@ -467,7 +474,7 @@ def scaled_mutant_timeout(
         return base
     if reruns >= MAX_TIMEOUT_SECONDS:
         return MAX_TIMEOUT_SECONDS
-    total_delay = _total_rerun_delay(reruns, reruns_delay, reruns_delay_backoff_factor)
+    total_delay = _total_rerun_delay(reruns, reruns_delay, reruns_delay_backoff_factor) * max(1, delayed_tests)
     if total_delay >= MAX_TIMEOUT_SECONDS:
         return MAX_TIMEOUT_SECONDS
     return min(base * (reruns + 1) + math.ceil(total_delay), MAX_TIMEOUT_SECONDS)

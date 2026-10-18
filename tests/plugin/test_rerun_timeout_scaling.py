@@ -58,6 +58,23 @@ class DescribeScaledMutantTimeout:
     def it_clamps_a_rerun_count_too_large_for_a_float_to_the_maximum_timeout(self, delay: float) -> None:
         assert scaled_mutant_timeout(30, reruns=10**400, reruns_delay=delay) == MAX_TIMEOUT_SECONDS
 
+    @pytest.mark.parametrize(('delayed_tests', 'expected'), [(0, 19), (1, 19), (3, 33)])
+    def it_pays_the_rerun_delay_once_for_each_test_that_waits(self, delayed_tests: int, expected: int) -> None:
+        timeout = scaled_mutant_timeout(6, reruns=1, reruns_delay=7, delayed_tests=delayed_tests)
+
+        assert timeout == expected
+
+    def it_does_not_multiply_the_per_attempt_budget_by_the_waiting_tests(self) -> None:
+        assert scaled_mutant_timeout(30, reruns=2, reruns_delay=20, delayed_tests=2) == 170
+
+    def it_caps_the_timeout_when_many_tests_wait(self) -> None:
+        timeout = scaled_mutant_timeout(30, reruns=2, reruns_delay=20, delayed_tests=10**9)
+
+        assert timeout == MAX_TIMEOUT_SECONDS
+
+    def it_leaves_the_timeout_alone_without_reruns_however_many_tests_wait(self) -> None:
+        assert scaled_mutant_timeout(30, reruns=0, reruns_delay=20, delayed_tests=5) == 30
+
     def it_treats_a_delay_that_is_not_a_number_as_no_delay(self) -> None:
         assert scaled_mutant_timeout(30, reruns=2, reruns_delay=float('nan')) == 90
 
@@ -187,7 +204,7 @@ class DescribeRerunScaledMutantTimeoutLog:
         )
 
         with caplog.at_level(logging.DEBUG, logger=plugin.logger.name):
-            plugin._rerun_scaled_mutant_timeout(config, 30)
+            plugin._rerun_scaled_timeout(config, 30, label='Mutant')
 
         assert '-> 130s' in caplog.text
 
@@ -199,20 +216,28 @@ class DescribeRerunScaledMutantTimeoutLog:
         )
 
         with caplog.at_level(logging.DEBUG, logger=plugin.logger.name):
-            plugin._rerun_scaled_mutant_timeout(config, 30)
+            plugin._rerun_scaled_timeout(config, 30, label='Mutant')
 
         assert 'backoff_factor=3.0' in caplog.text
         assert '-> 94s' in caplog.text
 
 
-def _configured_mutant_timeout(pytester: pytest.Pytester, *args: str, ini: str = '') -> int:
+def _configured_session(pytester: pytest.Pytester, *args: str, ini: str = '') -> plugin.GremlinSession:
     pytester.makepyfile(sample='def one():\n    return 1\n')
     pytester.makeini(f'[pytest]\n{ini}\n')
     pytester.parseconfigure('--gremlins', '--gremlin-targets=sample.py', *args)
     session = plugin._get_session()
     assert session is not None
     assert session.enabled
-    return session.mutant_timeout
+    return session
+
+
+def _configured_mutant_timeout(pytester: pytest.Pytester, *args: str, ini: str = '') -> int:
+    return _configured_session(pytester, *args, ini=ini).mutant_timeout
+
+
+def _configured_coverage_timeout(pytester: pytest.Pytester, *args: str, ini: str = '') -> int:
+    return _configured_session(pytester, *args, ini=ini).coverage_timeout
 
 
 @pytest.mark.medium
@@ -285,6 +310,38 @@ class DescribeMutantTimeoutThroughTheRealEntryPoint:
         timeout = _configured_mutant_timeout(pytester, '-p', 'no:rerunfailures', ini='reruns = 2')
 
         assert timeout == 30
+
+
+@pytest.mark.medium
+class DescribeCoverageTimeoutThroughTheRealEntryPoint:
+    def it_scales_the_default_pre_scan_timeout_by_the_command_line_reruns(self, pytester: pytest.Pytester) -> None:
+        assert _configured_coverage_timeout(pytester, '--reruns', '2', '--reruns-delay', '20') == 400
+
+    def it_scales_an_explicit_pre_scan_timeout_too(self, pytester: pytest.Pytester) -> None:
+        timeout = _configured_coverage_timeout(pytester, '--gremlin-coverage-timeout', '5', '--reruns', '1')
+
+        assert timeout == 10
+
+    def it_scales_by_the_reruns_in_the_ini_file(self, pytester: pytest.Pytester) -> None:
+        assert _configured_coverage_timeout(pytester, ini='reruns = 1\nreruns_delay = 3') == 243
+
+    def it_leaves_the_pre_scan_timeout_alone_when_no_reruns_are_configured(self, pytester: pytest.Pytester) -> None:
+        assert _configured_coverage_timeout(pytester) == 120
+
+    def it_leaves_the_pre_scan_timeout_alone_when_pytest_rerunfailures_is_not_loaded(
+        self, pytester: pytest.Pytester
+    ) -> None:
+        assert _configured_coverage_timeout(pytester, '-p', 'no:rerunfailures', ini='reruns = 2') == 120
+
+    def it_records_the_per_attempt_pre_scan_timeout(self, pytester: pytest.Pytester) -> None:
+        session = _configured_session(pytester, '--gremlin-coverage-timeout', '5', '--reruns', '1')
+
+        assert session.coverage_attempt_timeout == 5
+
+    def it_records_the_per_attempt_mutant_timeout(self, pytester: pytest.Pytester) -> None:
+        session = _configured_session(pytester, '--gremlin-mutant-timeout', '7', '--reruns', '1')
+
+        assert session.mutant_attempt_timeout == 7
 
 
 _ADDITION = """

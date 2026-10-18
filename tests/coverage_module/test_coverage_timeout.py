@@ -180,11 +180,72 @@ class DescribeCollectCoverageTimeoutWarning:
             '(set coverage_timeout / --gremlin-coverage-timeout to raise it)'
         ]
 
+    def it_names_the_per_attempt_and_the_rerun_scaled_limit(self, tmp_path: Path) -> None:
+        session = GremlinSession(enabled=True, coverage_timeout=400, coverage_attempt_timeout=120)
+        with (
+            patch(
+                'pytest_gremlins.plugin._run_tests_with_coverage',
+                autospec=True,
+                side_effect=CoveragePrescanTimeoutError(400),
+            ),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter('always')
+            _collect_coverage(session, tmp_path)
+
+        assert [str(w.message) for w in caught if issubclass(w.category, UserWarning)] == [
+            'pytest-gremlins: coverage pre-scan exceeded 400s (120s per attempt, scaled for the pytest-rerunfailures '
+            'budget); coverage-guided test selection disabled '
+            '(set coverage_timeout / --gremlin-coverage-timeout to raise the per-attempt limit)'
+        ]
+
     def it_does_not_also_emit_the_no_data_warning(self, tmp_path: Path) -> None:
         messages = [str(w.message) for w in self._collect_with_timeout(tmp_path, 45)]
 
         all_text = ' '.join(messages)
         assert 'returned no data' not in all_text
+
+    @staticmethod
+    def _prescan_timeout_for(tmp_path: Path, flaky_test_count: int, *, reruns: int = 1) -> int:
+        session = GremlinSession(
+            enabled=True,
+            coverage_timeout=19,
+            coverage_attempt_timeout=6,
+            rerun_budget=(reruns, 7.0),
+            baseline_rerun_test_ids={f't.py::test_{n}' for n in range(flaky_test_count)},
+        )
+        with patch('pytest_gremlins.plugin._run_tests_with_coverage', autospec=True, return_value={'t': {}}) as run:
+            _collect_coverage(session, tmp_path)
+        timeout: int = run.call_args.kwargs['timeout']
+        return timeout
+
+    @pytest.mark.parametrize(('flaky_test_count', 'expected'), [(0, 19), (1, 19), (3, 33)])
+    def it_pays_the_rerun_delay_for_each_test_the_baseline_reran(
+        self, tmp_path: Path, flaky_test_count: int, expected: int
+    ) -> None:
+        assert self._prescan_timeout_for(tmp_path, flaky_test_count) == expected
+
+    def it_leaves_the_pre_scan_timeout_alone_when_no_reruns_are_configured(self, tmp_path: Path) -> None:
+        assert self._prescan_timeout_for(tmp_path, 3, reruns=0) == 6
+
+    def it_does_not_advise_raising_the_limit_when_it_is_already_at_the_cap(self, tmp_path: Path) -> None:
+        session = GremlinSession(enabled=True, coverage_timeout=86400, coverage_attempt_timeout=30000)
+        with (
+            patch(
+                'pytest_gremlins.plugin._run_tests_with_coverage',
+                autospec=True,
+                side_effect=CoveragePrescanTimeoutError(86400),
+            ),
+            warnings.catch_warnings(record=True) as caught,
+        ):
+            warnings.simplefilter('always')
+            _collect_coverage(session, tmp_path)
+
+        assert [str(w.message) for w in caught if issubclass(w.category, UserWarning)] == [
+            'pytest-gremlins: coverage pre-scan exceeded 86400s (30000s per attempt, scaled for the '
+            'pytest-rerunfailures budget); coverage-guided test selection disabled '
+            '(the limit is capped at 86400s; lower --reruns or --reruns-delay)'
+        ]
 
     def it_forwards_the_session_timeout_to_the_pre_scan(self, tmp_path: Path) -> None:
         session = GremlinSession(enabled=True, coverage_timeout=45)

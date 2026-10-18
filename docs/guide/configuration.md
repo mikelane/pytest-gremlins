@@ -10,10 +10,10 @@ Configuration values are resolved in this order (highest priority first):
 1. **Command-line options** -- Flags passed to pytest (e.g., `--gremlin-targets`)
 2. **pyproject.toml** -- `[tool.pytest-gremlins]` section
 
-When the same option is specified at both levels, the CLI value wins. This applies to all nine
-configurable fields (operators, paths, exclude, workers, cache, report, batch_size, max_pardons,
-max-pardons-pct), as well as `coverage_timeout` / `--gremlin-coverage-timeout` and
-`mutant_timeout` / `--gremlin-mutant-timeout`.
+When the same option is specified at both levels, the CLI value wins. This applies to all eleven
+`[tool.pytest-gremlins]` keys: `operators`, `paths`, `exclude`, `workers`, `cache`, `report`,
+`batch_size`, `max_pardons`, `max-pardons-pct`, `coverage_timeout` and `mutant_timeout`. All
+other options are CLI-only.
 
 **Source path auto-discovery** is a separate mechanism that kicks in only when neither
 `--gremlin-targets` nor `[tool.pytest-gremlins] paths` is set. It tries seven strategies in
@@ -40,11 +40,19 @@ All command-line options are prefixed with `--gremlin` or `--gremlins`.
 | `--gremlin-cache` | flag | `false` | Enable incremental analysis cache |
 | `--gremlin-clear-cache` | flag | `false` | Clear cache before running |
 | `--gremlin-parallel` | flag | `false` | Enable parallel mutation execution |
-| `--gremlin-workers` | integer | CPU count | Number of parallel workers (implies `--gremlin-parallel`) |
+| `--gremlin-workers` | integer or `auto` | CPU count | Number of parallel workers (implies `--gremlin-parallel`); `auto` means the CPU count |
 | `--gremlin-batch` | flag | `false` | Enable batch execution mode |
 | `--gremlin-batch-size` | integer | `10` | Number of gremlins per batch |
-| `--gremlin-coverage-timeout` | integer | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled |
+| `--gremlin-coverage-timeout` | integer | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled; scaled up like the mutant timeout when pytest-rerunfailures reruns are configured |
 | `--gremlin-mutant-timeout` | integer | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
+| `--gremlin-executor` | `auto` or `subprocess` | `auto` | How each gremlin's tests run. `auto` is the same as `subprocess`. `fork` and `inprocess` are also accepted by the parser but stop the run with a usage error, because they did not run the mutated code ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
+
+### Diagnostic Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--gremlin-explain` | string | none | Explain one gremlin instead of running the mutation loop: print the tests whose coverage includes its line, the tests selected for it, and any difference between the two (see [below](#explaining-a-survivor)) |
+| `--gremlin-no-coverage-filter` | flag | `false` | Turn off coverage-guided test selection, so every gremlin runs the whole test suite. Slow, but rules out selection as the reason a gremlin survived |
 
 ### Output Options
 
@@ -159,6 +167,53 @@ pytest --gremlins --gremlin-audit-pardons
 pytest --gremlins --strict-pardons
 ```
 
+**Rule out test selection as the reason gremlins survive:**
+
+```bash
+pytest --gremlins --gremlin-no-coverage-filter
+```
+
+**Refuse the disabled executors:**
+
+<!-- markdownlint-disable MD013 -->
+```text
+$ pytest --gremlins --gremlin-executor=fork
+ERROR: pytest-gremlins: --gremlin-executor=fork is temporarily disabled because it produced incorrect results (it did not run the mutated code). Use --gremlin-executor=subprocess (the default). Tracking: https://github.com/mikelane/pytest-gremlins/issues/532
+```
+<!-- markdownlint-enable MD013 -->
+
+The run exits with code 4.
+
+#### Explaining a Survivor
+
+`--gremlin-explain=<id>` takes a full gremlin id, such as `calculator_e336_g001`. Ids appear in
+the progress lines (`Gremlin 1/12: calculator_e336_g001 - running 2/8 tests`) and in the
+`gremlin_id` field of the JSON report. The run collects coverage as usual, prints the diagnostic,
+and then skips the mutation loop, so no gremlin runs and no mutation report is printed:
+
+<!-- markdownlint-disable MD013 -->
+```text
+$ pytest --gremlins --gremlin-explain=__init___4a4a_g001
+--gremlin-explain: diagnostic for __init___4a4a_g001
+  file: /home/you/greet/src/greet/__init__.py:2
+  Covering set (1 test):
+    'tests/test_greet.py::test_greet'
+  Selected list (1 test):
+    'tests/test_greet.py::test_greet'
+  Result: selection is consistent with covering set (no drift). If this gremlin still survived, the cause is elsewhere (e.g. a weak assertion in the covering tests).
+```
+<!-- markdownlint-enable MD013 -->
+
+The covering set is the tests whose coverage includes the gremlin's line. The selected list is
+the tests the gremlin runs. When they differ, the output lists the tests that were dropped,
+with close matches among the collected tests. A short id like `g001` doesn't match:
+
+<!-- markdownlint-disable MD013 -->
+```text
+--gremlin-explain: no gremlin with id 'g001' in this session. Run with --gremlins (without --gremlin-explain) to see the full list of gremlin ids in the progress log.
+```
+<!-- markdownlint-enable MD013 -->
+
 **Combine multiple options:**
 
 ```bash
@@ -185,11 +240,10 @@ paths = ["src", "lib"]
 
 # Glob patterns for files to exclude from mutation
 # Default: []
+# Test files (test_*.py, *_test.py, conftest.py) inside a target directory are
+# skipped without being listed here.
 exclude = [
     "**/migrations/*",
-    "**/test_*",
-    "**/__pycache__/*",
-    "**/conftest.py",
 ]
 
 # Operators to enable (in order of priority)
@@ -202,8 +256,10 @@ operators = [
     "return",
 ]
 
-# Number of parallel workers (integer or "auto" for os.cpu_count())
-# Default: 1 (sequential)
+# Number of parallel workers (positive integer, or "auto" for os.cpu_count())
+# Setting this key at all turns on parallel execution, like --gremlin-workers.
+# Default: not set (gremlins run one at a time unless --gremlin-parallel,
+# --gremlin-workers or pytest-xdist's -n N is passed)
 workers = "auto"
 
 # Enable incremental analysis cache
@@ -245,11 +301,11 @@ max-pardons-pct = 5.0
 | `paths` | list[string] | auto-discovered | Directories or files to scan for source code (falls back to `src/`) |
 | `exclude` | list[string] | `[]` | Glob patterns for files to exclude |
 | `operators` | list[string] | all | Operators to enable, in priority order |
-| `workers` | int or `"auto"` | sequential | No parallelism unless `-n` or `--gremlin-parallel` is used; `"auto"` resolves to `os.cpu_count()` |
+| `workers` | int or `"auto"` | not set | Worker count. Any value turns on parallel execution, as `--gremlin-workers` does; `"auto"` resolves to `os.cpu_count()`. When not set, gremlins run one at a time unless `--gremlin-parallel`, `--gremlin-workers` or pytest-xdist's `-n N` is passed |
 | `cache` | boolean | `false` | Enable incremental analysis cache |
 | `report` | string or list | `"console"` | Report format(s): `"html"`, `"json"`, `"console"`, or a list like `["html", "json"]` |
 | `batch_size` | int | `10` | Number of gremlins per batch in batch execution mode |
-| `coverage_timeout` | int | `120` | Seconds (1-86400) the coverage pre-scan may run; on expiry gremlins warns and runs every test per gremlin |
+| `coverage_timeout` | int | `120` | Seconds (1-86400) the coverage pre-scan may run; on expiry gremlins warns and runs every test per gremlin; scaled by the rerun budget like `mutant_timeout` |
 | `mutant_timeout` | int | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
 | `max_pardons` | int | no limit | Absolute ceiling on pardoned gremlins |
 | `max-pardons-pct` | float | no limit | Maximum percentage of pardoned gremlins (0-100) |
@@ -303,12 +359,13 @@ Use glob patterns in `pyproject.toml` to exclude files from mutation testing:
 [tool.pytest-gremlins]
 exclude = [
     "**/migrations/*",      # Django migrations
-    "**/test_*",            # Test files
-    "**/conftest.py",       # pytest configuration
-    "**/__pycache__/*",     # Cache directories
     "**/vendor/*",          # Vendored dependencies
 ]
 ```
+
+You don't need to exclude test files. Inside a target directory, files named `test_*.py`,
+`*_test.py` or `conftest.py`, and anything under `__pycache__`, are skipped automatically. They
+are mutated only when you name the file itself in `--gremlin-targets` or `paths`.
 
 ## Inline Pardoning
 
@@ -593,8 +650,9 @@ For example, `--reruns 2 --reruns-delay 20` with the default limit gives `30 * 3
 is capped at 86400 seconds, and a negative delay counts as 0. With
 `--reruns 2 --reruns-delay 1 --reruns-delay-backoff-factor 3` the waits are 1 and 3 seconds, so the total delay is 4
 and the default limit gives `30 * 3 + 4 = 94` seconds. A negative factor counts as 1.0, as in pytest-rerunfailures.
-Nothing is scaled with `--reruns 0`, when no reruns
-are configured, or when pytest-rerunfailures is not loaded in the parent run.
+
+Nothing is scaled with `--reruns 0`, when no reruns are configured, or when pytest-rerunfailures is not loaded in
+the parent run.
 
 When pytest-rerunfailures is not loaded in the session (a command-line `-p no:rerunfailures`,
 `--disable-plugin-autoload`, or the plugin is not installed), gremlins passes `-p no:rerunfailures` on to gremlin
@@ -614,7 +672,18 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
   the parsed session.
 - The scaled value is the timeout everywhere: the timeout warning, the `mutant_timeout` field of the JSON report
   and the timeout-downgrade message show it, not the configured limit. The half-the-limit check for
-  confirming a timeout kill uses it too.
+  confirming a timeout kill uses it too. When the limit was scaled, the downgrade message also names the
+  per-attempt limit, for example `did not finish in 130s (30s per attempt, scaled for the pytest-rerunfailures
+  budget)`, and says to raise the per-attempt limit: the value you set is scaled again.
+- The coverage pre-scan timeout (`--gremlin-coverage-timeout`) is scaled by the same formula, because the
+  pre-scan runs with the same rerun options and a flaky test there waits out `--reruns-delay` too. For example,
+  `--reruns 2 --reruns-delay 20` with the default pre-scan limit of 120 gives `120 * 3 + 40 = 400` seconds.
+  The pre-scan runs the whole suite, so every flaky test waits out the delays. The delay term is therefore
+  multiplied by the number of tests that needed a rerun in the baseline run (at least one), while the per-attempt
+  limit is not. With three such tests the example gives `120 * 3 + 40 * 3 = 480` seconds. A pre-scan timeout
+  only turns coverage-guided test selection off, so every gremlin runs the full suite; it never changes a verdict.
+- When rerun scaling has already pushed a limit to the 86400-second cap, the timeout messages say to lower
+  `--reruns` or `--reruns-delay` instead of advising a higher per-attempt limit, which could not help.
 - The incremental cache keys each verdict on the effective timeout and on the rerun budget itself (the rerun count,
   including `--force-reruns`, and the delay), so cached verdicts are judged again when either changes. Two settings
   that scale to the same timeout still do not share verdicts. For example, `--gremlin-mutant-timeout 60` with no
@@ -641,6 +710,14 @@ The pre-scan is limited to 120 seconds by default. If it runs longer, gremlins e
 ```text
 pytest-gremlins: coverage pre-scan exceeded 120s; coverage-guided test selection disabled
 (set coverage_timeout / --gremlin-coverage-timeout to raise it)
+```
+
+When pytest-rerunfailures is loaded with reruns configured, the limit is scaled by the rerun budget (see
+[Flaky tests and pytest-rerunfailures](#flaky-tests-and-pytest-rerunfailures)), and the warning names both limits:
+
+```text
+pytest-gremlins: coverage pre-scan exceeded 400s (120s per attempt, scaled for the pytest-rerunfailures budget);
+coverage-guided test selection disabled (set coverage_timeout / --gremlin-coverage-timeout to raise the per-attempt limit)
 ```
 
 and falls back to running every test for every gremlin. Raise the limit with the CLI or TOML:

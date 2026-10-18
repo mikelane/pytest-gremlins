@@ -21,8 +21,11 @@ if TYPE_CHECKING:
     from pytest_gremlins.reporting.results import GremlinResult
 
 from pytest_gremlins.reporting.results import (
+    CAPPED_LIMIT_ADVICE,
     TIMEOUT_NOT_CONFIRMED_PREFIX,
     GremlinResultStatus,
+    limit_is_capped,
+    scaled_limit_note,
 )
 
 
@@ -41,6 +44,8 @@ class MutationScore:
         results: The underlying list of results.
         mutant_timeout: Per-gremlin timeout in seconds the run used, named in the timeout warning;
             ``None`` when unknown.
+        mutant_attempt_timeout: The configured limit before rerun scaling, named alongside the scaled one;
+            ``None`` when unknown.
     """
 
     total: int
@@ -51,14 +56,21 @@ class MutationScore:
     pardoned: int
     results: tuple[GremlinResult, ...]
     mutant_timeout: int | None = None
+    mutant_attempt_timeout: int | None = None
 
     @classmethod
-    def from_results(cls, results: Sequence[GremlinResult], mutant_timeout: int | None = None) -> MutationScore:
+    def from_results(
+        cls,
+        results: Sequence[GremlinResult],
+        mutant_timeout: int | None = None,
+        mutant_attempt_timeout: int | None = None,
+    ) -> MutationScore:
         """Create a MutationScore from a sequence of GremlinResults.
 
         Args:
             results: Sequence of GremlinResult objects to aggregate.
             mutant_timeout: Per-gremlin timeout in seconds the run used, named in the timeout warning.
+            mutant_attempt_timeout: The limit before rerun scaling, named alongside it when they differ.
 
         Returns:
             MutationScore with counts for each status.
@@ -78,6 +90,7 @@ class MutationScore:
             pardoned=pardoned,
             results=tuple(results),
             mutant_timeout=mutant_timeout,
+            mutant_attempt_timeout=mutant_attempt_timeout,
         )
 
     @property
@@ -100,14 +113,24 @@ class MutationScore:
         if not downgraded_count:
             return None
         timeout_label = f'{self.mutant_timeout}s timeout' if self.mutant_timeout is not None else 'mutant timeout'
+        scaled_note = (
+            scaled_limit_note(self.mutant_attempt_timeout, self.mutant_timeout)
+            if self.mutant_timeout is not None
+            else ''
+        )
+        raised_limit = 'the per-attempt limit' if scaled_note else 'the timeout'
+        is_capped = bool(scaled_note) and self.mutant_timeout is not None and limit_is_capped(self.mutant_timeout)
+        advice = (
+            f'{CAPPED_LIMIT_ADVICE[0].upper()}{CAPPED_LIMIT_ADVICE[1:]}'
+            if is_capped
+            else f'Raise {raised_limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout'
+        )
         if downgraded_count == 1:
             subject = '1 timeout counted as an error, not a kill: without the mutant, its tests'
         else:
             subject = f'{downgraded_count} timeouts counted as errors, not kills: without the mutant, their tests'
         return (
-            f'{subject} do not finish within half the {timeout_label}. '
-            'Raise the timeout with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout, '
-            'or speed up those tests.'
+            f'{subject} do not finish within half the {timeout_label}{scaled_note}. {advice}, or speed up those tests.'
         )
 
     @property
@@ -139,7 +162,9 @@ class MutationScore:
             results_by_file[result.gremlin.file_path].append(result)
 
         return {
-            file_path: MutationScore.from_results(file_results, mutant_timeout=self.mutant_timeout)
+            file_path: MutationScore.from_results(
+                file_results, mutant_timeout=self.mutant_timeout, mutant_attempt_timeout=self.mutant_attempt_timeout
+            )
             for file_path, file_results in results_by_file.items()
         }
 

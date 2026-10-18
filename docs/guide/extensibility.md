@@ -682,9 +682,13 @@ the run's registry doesn't have your operator:
 
 ### Mutations Aren't Being Generated
 
-1. Add logging to `can_mutate()` to verify it's being called
-2. Check that your AST pattern matching is correct with `ast.dump()`
-3. Ensure `mutate()` returns a non-empty list
+1. Check that your operator matches one of the
+   [node types an operator is offered](#which-nodes-an-operator-is-offered). An operator that
+   matches any other node type, such as `ast.Call`, never produces a gremlin
+   ([#698](https://github.com/mikelane/pytest-gremlins/issues/698)).
+2. Add logging to `can_mutate()` to verify it's being called
+3. Check that your AST pattern matching is correct with `ast.dump()`
+4. Ensure `mutate()` returns a non-empty list
 
 ### Original Code Is Being Modified
 
@@ -692,7 +696,7 @@ Always use `copy.deepcopy()` before modifying nodes. AST nodes are mutable and s
 
 ### Performance Is Slow
 
-1. Optimize `can_mutate()` - it's called for every node
+1. Optimize `can_mutate()` - it's called for every node of an offered type in the code under test
 2. Use `isinstance()` checks before more expensive operations
 3. Consider caching expensive computations
 

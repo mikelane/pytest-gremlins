@@ -596,40 +596,24 @@ Since v1.5.0, `workers` and `batch_size` are configurable via `pyproject.toml`. 
 
 ## Integration Errors
 
-### Error: Conflict with pytest-cov
+### Using pytest-cov with gremlins
 
-**Symptom:**
+pytest-cov and `--gremlins` work in the same run; you don't need `--no-cov`. For example, this
+prints both the coverage table and the mutation report:
 
-Coverage numbers are incorrect or missing when running mutation testing.
+```bash
+pytest --gremlins --cov=src --cov-report=term
+```
 
-**Cause:** Both pytest-gremlins and pytest-cov try to collect coverage data, which can conflict.
+pytest-gremlins strips the pytest-cov options (`--cov*` and `--no-cov*`) from `addopts` in the
+subprocesses it starts, the coverage pre-scan and the gremlin runs, so pytest-cov can't take over
+the pre-scan's coverage measurement. Your main run keeps its pytest-cov report. A failing
+`--cov-fail-under` doesn't block mutation testing; pytest-gremlins prints a note and goes on,
+and pytest's exit code still reports the coverage failure.
 
-**Solution:**
-
-1. Disable pytest-cov when running mutation testing:
-
-   ```bash
-   pytest --gremlins --no-cov
-   ```
-
-2. Or configure them to not run together:
-
-   ```toml
-   # pytest.ini or pyproject.toml [tool.pytest.ini_options]
-   addopts = --cov=src  # only for regular test runs
-   ```
-
-3. Run them separately:
-
-   ```bash
-   # Regular tests with coverage
-   pytest --cov=src
-
-   # Mutation testing (has its own coverage collection)
-   pytest --gremlins --no-cov
-   ```
-
-**Prevention:** Use separate pytest invocations for coverage and mutation testing.
+If coverage numbers look wrong only in runs with `--gremlins`, please
+[open an issue](https://github.com/mikelane/pytest-gremlins/issues) with the pytest-cov and
+coverage.py versions and your `addopts`.
 
 ---
 

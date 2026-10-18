@@ -100,6 +100,34 @@ class DescribeConfirmTimeoutKill:
         assert 'speed up these tests' in message
         assert message.startswith('timeout not counted as a kill: ')
 
+    def it_names_the_per_attempt_and_the_rerun_scaled_limit(
+        self, tmp_path: Path, fake_unmutated_run: MagicMock
+    ) -> None:
+        fake_unmutated_run.return_value = HANGS
+        scaled_session = GremlinSession(
+            enabled=True, instrumented_dir=tmp_path, mutant_timeout=130, mutant_attempt_timeout=30
+        )
+
+        message = _confirm_timeout_kill(_timeout(), ['t.py::test_a'], scaled_session, tmp_path).error_output
+
+        assert message is not None
+        assert 'did not finish in 130s (30s per attempt, scaled for the pytest-rerunfailures budget)' in message
+        assert 'Raise the per-attempt limit with --gremlin-mutant-timeout' in message
+
+    def it_does_not_advise_raising_the_limit_when_it_is_already_at_the_cap(
+        self, tmp_path: Path, fake_unmutated_run: MagicMock
+    ) -> None:
+        fake_unmutated_run.return_value = HANGS
+        capped_session = GremlinSession(
+            enabled=True, instrumented_dir=tmp_path, mutant_timeout=86400, mutant_attempt_timeout=30000
+        )
+
+        message = _confirm_timeout_kill(_timeout(), ['t.py::test_a'], capped_session, tmp_path).error_output
+
+        assert message is not None
+        assert 'The limit is capped at 86400s; lower --reruns or --reruns-delay, or speed up these tests.' in message
+        assert 'Raise' not in message
+
     def it_runs_the_exact_node_ids_under_the_session_timeout(
         self, session: GremlinSession, fake_unmutated_run: MagicMock, tmp_path: Path
     ) -> None:

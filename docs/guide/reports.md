@@ -31,8 +31,11 @@ pytest --gremlins --gremlin-report=console
 
 ### Example Output
 
+The layout below is the plugin's; the counts and paths are illustrative. File paths are printed
+as the plugin resolved them, which is usually absolute. Up to ten survivors are listed.
+
 ```text
-================== pytest-gremlins mutation report ==================
+======================= pytest-gremlins mutation report ========================
 
 Zapped: 142 gremlins (85%)
 Survived: 18 gremlins (11%)
@@ -40,15 +43,16 @@ Timeout: 5 gremlins (3%)
 Error: 2 gremlins (1%)
 
 Top surviving gremlins:
-  src/auth.py:42    >= to >     (boundary not tested)
-  src/utils.py:17   + to -      (arithmetic not verified)
-  src/api.py:88     True to False (return value unchecked)
+  /home/you/project/src/auth.py:42 > to >=              (comparison)
+  /home/you/project/src/utils.py:17 + to -               (arithmetic)
+  /home/you/project/src/api.py:88 return value to None (return)
 
 Run with --gremlin-report=html for detailed report.
-=====================================================================
+=======================================  =======================================
 ```
 
-Timeout, Error, and Pardoned lines only appear when their count is greater than zero.
+Timeout, Error, and Pardoned lines only appear when their count is greater than zero. The
+`Run with --gremlin-report=html` hint is left out when `html` is one of the report formats.
 
 The percentages on these lines are shares of all gremlins (`zapped / total` for the Zapped
 line). They are not the mutation score, which counts timeouts as kills and leaves pardoned
@@ -74,8 +78,19 @@ score; see [Understanding Mutation Score](#understanding-mutation-score).
 Shows the most important surviving gremlins to fix. Each line contains:
 
 - **Location** - File path and line number
-- **Mutation** - What changed (e.g., `>= -> >`)
-- **Operator** - Which operator created this gremlin
+- **Mutation** - What changed (e.g., `> to >=`)
+- **Operator** - Which operator created this gremlin, in parentheses
+
+**Errored Gremlins:**
+
+The terminal summary counts errored gremlins on the `Error` line but doesn't list them. To see
+why each one errored, use the HTML report's "Errored Gremlins" table or the `error_output`
+field in the JSON report.
+
+The Python API's `ConsoleReporter` (`pytest_gremlins.reporting.console`) adds a
+`Top errored gremlins:` section that the terminal summary doesn't have. It lists up to ten
+errored gremlins, each with its location and the last line of its error output (up to 120
+characters).
 
 **Cache Statistics (when caching enabled):**
 
@@ -137,6 +152,21 @@ The HTML report includes:
 | Status | `zapped`, `survived`, `timeout`, or `error` |
 | Selected test | The test that killed the gremlin, or every test the coverage-based selector ran, or `—` if none |
 
+**Pardoned Gremlins Table:**
+
+Shown only when at least one gremlin is pardoned. It lists each pardoned gremlin's file, line,
+operator, description and the reason given in its pragma.
+
+**Errored Gremlins Table:**
+
+Shown only when an errored gremlin has error output. It lists each one's file, line and
+operator, with its captured stderr in a collapsed "Show stderr" block.
+
+**Skipped Files:**
+
+Shown only when a source file could not be instrumented, under "Files skipped and not mutation
+tested", with the reason for each file.
+
 **Status Color Coding:**
 
 | Status | Color | Meaning |
@@ -196,7 +226,7 @@ The HTML report includes:
                     <td>src/auth.py</td>
                     <td>42</td>
                     <td>comparison</td>
-                    <td>>= -> ></td>
+                    <td>>= to ></td>
                     <td class="status-survived">survived</td>
                     <td>tests/test_auth.py::test_login_validates_age</td>
                 </tr>
@@ -307,21 +337,23 @@ The directory is created automatically if it does not exist.
   },
   "results": [
     {
-      "gremlin_id": "g001",
+      "gremlin_id": "auth_1a2b_g001",
       "file_path": "src/auth.py",
       "line_number": 42,
       "status": "survived",
       "operator": "comparison",
-      "description": ">= -> >"
+      "description": ">= to >",
+      "selected_tests": ["tests/test_auth.py::test_login_validates_age"]
     },
     {
-      "gremlin_id": "g002",
+      "gremlin_id": "utils_3c4d_g002",
       "file_path": "src/utils.py",
       "line_number": 17,
       "status": "zapped",
       "operator": "arithmetic",
-      "description": "+ -> -",
-      "killing_test": "test_utils.py::test_calculate"
+      "description": "+ to -",
+      "killing_test": "unknown",
+      "selected_tests": ["tests/test_utils.py::test_calculate"]
     }
   ],
   "skipped_files": {
@@ -383,7 +415,10 @@ for full source coverage.
 | `status` | string | One of: `zapped`, `survived`, `timeout`, `error`, `pardoned` |
 | `operator` | string | Operator that created this gremlin |
 | `description` | string | Human-readable mutation description |
-| `killing_test` | string | Test that caught the mutation (only present if zapped). `<collection>` means the mutant stopped the suite from loading, so no test ran. If the unmutated suite cannot load in the gremlin subprocess, such load failures are reported with status `error` instead |
+| `killing_test` | string | Present only if zapped. The test that caught the mutation when it is known; `unknown` when the gremlin run failed without naming a test. `<collection>` means the mutant stopped the suite from loading, so no test ran. If the unmutated suite cannot load in the gremlin subprocess, such load failures are reported with status `error` instead |
+| `error_output` | string | Present only when the run produced error output, usually for status `error`: the captured stderr or error message, such as a timeout that was downgraded or a crash outside a test |
+| `execution_time_ms` | float | Present only when the run was timed: wall-clock milliseconds for this gremlin's test run. `--gremlin-parallel` and `--gremlin-batch` runs record it; sequential runs don't |
+| `selected_tests` | list[string] | Present only when tests were selected: the pytest node ids run against this gremlin |
 
 ### Processing JSON Reports
 
@@ -501,9 +536,9 @@ Look for patterns in surviving gremlins:
 **Pattern: Many boundary survivors**
 
 ```text
-src/validation.py:12   >= -> >   (comparison)
-src/validation.py:15   <= -> <   (comparison)
-src/validation.py:23   >= -> >   (comparison)
+src/validation.py:12   >= to >   (comparison)
+src/validation.py:15   <= to <   (comparison)
+src/validation.py:23   >= to >   (comparison)
 ```
 
 Action: Add boundary value tests for validation functions.
@@ -511,8 +546,8 @@ Action: Add boundary value tests for validation functions.
 **Pattern: Many return survivors**
 
 ```text
-src/service.py:45   return x -> return None   (return)
-src/service.py:67   return x -> return None   (return)
+src/service.py:45   return value to None   (return)
+src/service.py:67   return value to None   (return)
 ```
 
 Action: Tests are not asserting on return values.
