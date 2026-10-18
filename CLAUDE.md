@@ -194,6 +194,10 @@ The PR fails CI until the entry passes the release docs gate.
   first `###` heading.
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
   heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
+- An entry runs to the next `## vX.Y.Z` heading, as in the release notes. Any other `##` line inside it
+  (`## Highlights`, or one inside a `<details>` block) fails the check, and so does a heading hidden behind a
+  same-line comment (`<!-- x --> ### Fix`). Under the three gated headings, U+2028, U+2029, U+0085 and the form
+  feed, vertical tab and `\x1c`-`\x1e` characters fail it too: Markdown does not break lines at them.
 - A `###` heading may have up to 3 leading spaces, a tab after the `###` and a closing `###`
   (`### Internal ###`). It is read like any other heading, so it must be one of the five names above.
 

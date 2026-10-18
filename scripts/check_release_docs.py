@@ -58,6 +58,9 @@ COMMENT_OPEN = '<!--'
 COMMENT_CLOSE = '-->'
 CODE_SPAN = re.compile(r'(`+).+?(?<!`)\1(?!`)', re.DOTALL)
 NEWEST_HEADING = re.compile(r'## v?(\d\S*)')
+LINE_BREAK = re.compile(r'\r\n|\r|\n')
+VERSION_HEADING_START = re.compile(r'## v?\d')
+NON_MARKDOWN_BREAK = re.compile('[\u2028\u2029\x85\x0c\x0b\x1c\x1d\x1e]')
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
 LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 SECTION_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
@@ -72,10 +75,15 @@ UNSUPPORTED_SHAPES = (
 
 @dataclass(frozen=True)
 class _Line:
-    """A changelog line as a reader sees it: ``text`` has HTML comments removed; fenced code is not a line."""
+    """A changelog line as a reader sees it: ``text`` has HTML comments removed; fenced code is not a line.
+
+    ``heading`` is the raw line when it starts outside a comment, else empty. Headings are read from it, not from
+    ``text``, because ``<!-- x --> ### Fix`` is one HTML block in Markdown, not a heading.
+    """
 
     number: int
     text: str
+    heading: str = ''
     opens_fence: bool = False
     opens_comment: bool = False
 
@@ -165,10 +173,11 @@ class _Scanner:
             self.open_region = None
 
     def _feed_text(self, number: int, text: str) -> None:
+        heading = '' if self._in_comment else text
         visible, opened, still_open = _strip_comments(
             text, self._in_comment, allow_open=number not in self._neutralized
         )
-        self.lines.append(_Line(number, visible, opens_comment=opened or COMMENT_OPEN in visible))
+        self.lines.append(_Line(number, visible, heading, opens_comment=opened or COMMENT_OPEN in visible))
         if not still_open:
             self.open_region = None
         elif opened:
@@ -188,7 +197,7 @@ def _scan(changelog: str) -> _Scan:
 
     Reading it as plain text keeps it from hiding the rest of the file, so later sections are still checked.
     """
-    raw = changelog.splitlines()
+    raw = LINE_BREAK.split(changelog)
     neutralized: set[int] = set()
     unclosed: list[_Region] = []
     while True:
@@ -211,15 +220,11 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
     """Return the lines of the ``## vX.Y.Z`` entry and the problems with its fences and comments, or ``None``."""
     scan = _scan(changelog)
     heading = re.compile(rf'## v?{re.escape(version.removeprefix("v"))}(\s|$)')
-    start = next((i for i, line in enumerate(scan.lines) if heading.match(line.text)), None)
+    start = next((i for i, line in enumerate(scan.lines) if heading.match(line.heading)), None)
     if start is None:
         return None
     end = next(
-        (
-            i
-            for i in range(start + 1, len(scan.lines))
-            if _structural_title(scan.lines[i].text, ENTRY_LEVEL) is not None
-        ),
+        (i for i in range(start + 1, len(scan.lines)) if VERSION_HEADING_START.match(scan.lines[i].heading)),
         len(scan.lines),
     )
     first = scan.lines[start].number
@@ -233,7 +238,18 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
         for region, number in scan.hidden_headings
         if first <= number < last
     ]
-    return _Entry(scan.lines[start + 1 : end], problems)
+    lines = scan.lines[start + 1 : end]
+    return _Entry(lines, problems + _stray_heading_problems(lines))
+
+
+def _stray_heading_problems(lines: list[_Line]) -> list[str]:
+    """Report ``##`` headings inside an entry, which the release notes extraction would not stop at."""
+    return [
+        f'"##" heading at line {line.number} ({_shorten(line.heading.strip())}) is inside the entry but is not a '
+        f'version heading; the release notes would publish what follows it as part of this entry'
+        for line in lines
+        if _structural_title(line.heading, ENTRY_LEVEL) is not None
+    ]
 
 
 def _unsupported_shape(text: str) -> str | None:
@@ -261,7 +277,7 @@ class _EntryReader:
             self._read_line(line)
 
     def _read_line(self, line: _Line) -> None:
-        title = _structural_title(line.text, SECTION_LEVEL)
+        title = _structural_title(line.heading, SECTION_LEVEL)
         if title is not None:
             self._start_section(line.number, title)
         elif self.section in GATED_SECTIONS:
@@ -284,6 +300,12 @@ class _EntryReader:
             self.problems.append(f'bullet at line {line.number} ({text}) is under no "###" section heading')
 
     def _read_gated_line(self, line: _Line) -> None:
+        separator = NON_MARKDOWN_BREAK.search(line.text)
+        if separator:
+            self.problems.append(
+                f'U+{ord(separator.group()):04X} at line {line.number} under "### {self.section}" is not a Markdown '
+                'line break; remove it'
+            )
         if line.opens_comment:
             self.problems.append(f'HTML comment at line {line.number} under "### {self.section}"; remove it')
         reason = 'a code fence' if line.opens_fence else _unsupported_shape(line.text)

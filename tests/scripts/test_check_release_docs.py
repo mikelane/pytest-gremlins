@@ -930,3 +930,106 @@ class DescribePullRequestWorkflowGate:
 
         assert '--newest' in step['run']
         assert 'sed' not in step['run']
+
+
+LINKED_BULLET = '- **Fixed A.** [docs](guide/configuration.md#batch-size)'
+UNLINKED_BULLET = '- **Fixed a crash on Windows.** (#5)'
+LS = chr(0x2028)
+PS = chr(0x2029)
+OLDER_ENTRY = '\n## v1.0.0 (2026-01-01)\n\n### Fix\n\n- ok (no docs: r)\n'
+
+
+def _v2_problems(entry_body: str) -> list[str]:
+    checker = _load_checker()
+    changelog = f'# Changelog\n\n## v2.0.0 (2026-11-01)\n\n{entry_body}\n{OLDER_ENTRY}'
+
+    return checker.find_problems(changelog, '2.0.0', SITE)
+
+
+@pytest.mark.small
+class DescribeNonVersionLevelTwoHeadingInsideAnEntry:
+    def it_reports_an_h2_that_would_hide_later_bullets_from_the_check(self) -> None:
+        entry = f'## Highlights\n\n{LINKED_BULLET}\n\n### Fix\n\n{UNLINKED_BULLET}\n'
+
+        problems = _v2_problems(entry)
+
+        assert any('line 5' in problem and 'Highlights' in problem for problem in problems)
+
+    def it_still_checks_the_bullets_that_follow_the_h2(self) -> None:
+        entry = f'## Highlights\n\n### Fix\n\n{UNLINKED_BULLET}\n'
+
+        problems = _v2_problems(entry)
+
+        assert any('Fixed a crash on Windows' in problem for problem in problems)
+
+    def it_reports_an_h2_inside_a_details_block(self) -> None:
+        entry = (
+            f'### Internal\n\n- Bumped. (#1)\n\n<details>\n## Full list\n</details>\n\n### Fix\n\n{UNLINKED_BULLET}\n'
+        )
+
+        problems = _v2_problems(entry)
+
+        assert any('Full list' in problem for problem in problems)
+
+    def it_reports_an_indented_version_heading_that_the_release_notes_do_not_stop_at(self) -> None:
+        entry = f'### Fix\n\n{LINKED_BULLET}\n\n ## v1.9.9\n\n{UNLINKED_BULLET}\n'
+
+        problems = _v2_problems(entry)
+
+        assert any('v1.9.9' in problem for problem in problems)
+
+    def it_ends_the_entry_at_the_next_version_heading(self) -> None:
+        assert _v2_problems(f'### Fix\n\n{LINKED_BULLET}\n') == []
+
+
+@pytest.mark.small
+class DescribeUnicodeLineSeparators:
+    @pytest.mark.parametrize(
+        'separator', [LS, PS, '\x85', '\x0c', '\x0b', '\x1c', '\x1d', '\x1e'], ids=lambda c: f'U+{ord(c):04X}'
+    )
+    def it_does_not_see_a_section_heading_after_a_non_markdown_line_separator(self, separator: str) -> None:
+        entry = f'### Fix\n\n{LINKED_BULLET}{separator}### Internal\n{UNLINKED_BULLET}\n'
+
+        problems = _v2_problems(entry)
+
+        assert any(f'U+{ord(separator):04X}' in problem and 'line 7' in problem for problem in problems)
+
+    def it_still_gates_the_bullet_that_follows_the_separator(self) -> None:
+        entry = f'### Fix\n\n{LINKED_BULLET}{LS}### Internal\n{UNLINKED_BULLET}\n'
+
+        problems = _v2_problems(entry)
+
+        assert any('Fixed a crash on Windows' in problem for problem in problems)
+
+    @pytest.mark.parametrize('line_break', ['\r\n', '\r'])
+    def it_keeps_line_numbers_correct_across_crlf_and_cr_line_endings(self, line_break: str) -> None:
+        entry = f'### Fix{line_break}{line_break}{UNLINKED_BULLET}{line_break}'
+
+        problems = _v2_problems(entry)
+
+        assert any('line 7' in problem for problem in problems)
+
+    def it_accepts_a_separator_in_an_exempt_section(self) -> None:
+        entry = f'### Internal\n\n- Bumped{LS}a dependency. (#1)\n\n### Fix\n\n{LINKED_BULLET}\n'
+
+        assert _v2_problems(entry) == []
+
+
+@pytest.mark.small
+class DescribeOneLineCommentBeforeAHeading:
+    @pytest.mark.parametrize('line', ['<!-- old --> ### Internal', '<!-- old -->### Internal'])
+    def it_reports_the_comment_and_does_not_switch_section(self, line: str) -> None:
+        entry = f'### Fix\n\n{LINKED_BULLET}\n\n{line}\n\n{UNLINKED_BULLET}\n'
+
+        problems = _v2_problems(entry)
+
+        assert any('HTML comment at line 9' in problem for problem in problems)
+        assert any('Fixed a crash on Windows' in problem for problem in problems)
+
+    def it_does_not_end_the_entry_at_a_commented_version_heading(self) -> None:
+        entry = f'### Fix\n\n{LINKED_BULLET}\n<!-- old --> ## v1.9.9\n{UNLINKED_BULLET}\n'
+
+        problems = _v2_problems(entry)
+
+        assert any('HTML comment at line 8' in problem for problem in problems)
+        assert any('Fixed a crash on Windows' in problem for problem in problems)
