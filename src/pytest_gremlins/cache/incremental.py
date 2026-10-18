@@ -80,8 +80,9 @@ by a command-line ``-p`` while autoload was disabled for them, by ``PYTEST_DISAB
 ``only_rerun``, ``rerun_except``, ``--reruns-mode``, ``--rerun-exclude-path``, ``--max-suite-reruns``; #677).
 
 It also retires verdicts cached while doctest gremlins errored, because ``--doctest-modules`` typed on the command
-line never reached gremlin runs, and verdicts cached as ZAPPED while ``doctest_optionflags`` or ``doctest_encoding``
-set by ``-o`` or ``-c`` never reached them, so a doctest that needed them failed under every gremlin (#594).
+line never reached gremlin runs, and verdicts cached as ZAPPED while ``doctest_optionflags`` or
+``doctest_encoding`` set by ``-o`` or ``-c`` never reached them, so a doctest that needed them failed under every
+gremlin (#594).  The resolved doctest settings also key the cache, so changing them is a miss (#594).
 """
 
 

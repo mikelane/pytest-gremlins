@@ -14,7 +14,7 @@ from pytest_gremlins.cache.incremental import RUNNER_FIDELITY_VERSION
 def _session(
     args: tuple[str, ...], addopts: list[str] | None = None, ini: dict[str, object] | None = None
 ) -> SimpleNamespace:
-    values: dict[str, object] = {'addopts': addopts or [], 'doctest_optionflags': [], 'doctest_encoding': 'utf-8'}
+    values: dict[str, object] = {'addopts': addopts or []}
     values.update(ini or {})
 
     def getini(name: str) -> object:
@@ -22,7 +22,11 @@ def _session(
             raise ValueError(name)
         return values[name]
 
-    return SimpleNamespace(invocation_params=SimpleNamespace(args=args, dir=Path.cwd()), getini=getini)
+    return SimpleNamespace(
+        invocation_params=SimpleNamespace(args=args, dir=Path.cwd()),
+        getini=getini,
+        pluginmanager=SimpleNamespace(hasplugin=lambda _name: False),
+    )
 
 
 def _unknown_ini(name: str) -> object:
@@ -79,6 +83,20 @@ class DescribeDoctestIniValuesInGremlinRunAddopts:
         config = _session((), ini={'doctest_encoding': 'latin-1'})
 
         assert plugin._addopts_for_gremlin_runs(config) == '-o doctest_encoding=latin-1'  # type: ignore[arg-type]
+
+    def it_forwards_an_explicitly_empty_optionflags_value(self) -> None:
+        config = _session((), ini={'doctest_optionflags': []})
+
+        assert plugin._addopts_for_gremlin_runs(config) == '-o doctest_optionflags='  # type: ignore[arg-type]
+
+    def it_keys_the_cache_on_the_resolved_doctest_settings(self) -> None:
+        config = _session((), ini={'doctest_optionflags': ['ELLIPSIS'], 'doctest_encoding': 'utf-8'})
+        loose = _session((), ini={'doctest_optionflags': ['NORMALIZE_WHITESPACE'], 'doctest_encoding': 'utf-8'})
+
+        strict_key = plugin._gremlin_run_rerun_cache_settings(config)  # type: ignore[arg-type]
+        loose_key = plugin._gremlin_run_rerun_cache_settings(loose)  # type: ignore[arg-type]
+
+        assert strict_key != loose_key
 
     def it_skips_settings_the_session_does_not_know(self) -> None:
         config = SimpleNamespace(getini=_unknown_ini)

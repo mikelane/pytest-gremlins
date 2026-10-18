@@ -279,7 +279,7 @@ So are verdicts cached while instrumented modules had no `__file__` (#525), when
 failed under every gremlin.
 So are verdicts cached while doctest gremlins errored because `--doctest-modules` typed on the command line
 never reached gremlin runs, and while doctest ini settings set by `-o` or `-c` never
-reached them, which cached every gremlin as ZAPPED (#594).
+reached them, which cached every gremlin as ZAPPED (#594). Those settings now key the cache too.
 So are verdicts cached for gremlins in a package `__init__.py` (#591), which were never activated and so
 were all cached as SURVIVED.
 So are verdicts cached while instrumented files were registered under a module name guessed from

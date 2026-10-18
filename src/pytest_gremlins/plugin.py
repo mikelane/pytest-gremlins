@@ -2903,17 +2903,18 @@ def _doctest_ini_overrides(config: pytest.Config) -> list[str]:
 
     Gremlin runs re-read the project config, so a value set by ``-o`` or ``-c`` would be lost and a doctest that
     needs it (``NORMALIZE_WHITESPACE``) would fail in every run, fabricating a kill for every gremlin it covers.
-    Resolving through ``getini`` covers ``-o``, ``-c`` and the project file alike.
+    Resolving through ``getini`` covers ``-o``, ``-c`` and the project file alike.  The resolved value is always
+    forwarded, even an empty one, because a bare gremlin run would otherwise fall back to pytest's default
+    (``ELLIPSIS``).  The same values key the cache, since they decide whether a doctest passes.
     """
     overrides: list[str] = []
-    for key, default in (('doctest_optionflags', []), ('doctest_encoding', 'utf-8')):
+    for key in ('doctest_optionflags', 'doctest_encoding'):
         try:
             value = config.getini(key)
         except ValueError:
             continue
-        if value and value != default:
-            text = ' '.join(value) if isinstance(value, list) else str(value)
-            overrides.extend(['-o', shlex.quote(f'{key}={text}')])
+        text = ' '.join(value) if isinstance(value, list) else str(value)
+        overrides.extend(['-o', shlex.quote(f'{key}={text}')])
     return overrides
 
 
@@ -3003,16 +3004,18 @@ def _gremlin_run_rerun_backoff_factor(config: pytest.Config) -> float:
 
 
 def _gremlin_run_rerun_cache_settings(config: pytest.Config) -> str:
-    """Return the rerun settings beyond count and delay that the cache keys verdicts on, or none without the plugin.
+    """Return the settings beyond rerun count and delay that the cache keys verdicts on.
 
-    Without pytest-rerunfailures nothing reruns, so a stale ``only_rerun`` ini key must not split the cache (#677).
+    Rerun settings count only with pytest-rerunfailures loaded: otherwise nothing reruns, and a stale ``only_rerun``
+    ini key must not split the cache (#677).  The doctest ini settings are always part of it (#594).
     """
+    doctest_settings = ' '.join(_doctest_ini_overrides(config))
     if not _rerunfailures_is_loaded(config):
-        return ''
+        return doctest_settings
     read_ini: Callable[[str], object] = config.getini
     if _rerun_ini_settings_are_forwarded(config):
         read_ini = rerun_ini_as_gremlin_runs_read(read_ini, _rerun_ini_resolution_for(config).resets)
-    return rerun_cache_settings(config.option, read_ini)
+    return f'{rerun_cache_settings(config.option, read_ini)} {doctest_settings}'.strip()
 
 
 def _prescan_timeout(gremlin_session: GremlinSession) -> int:

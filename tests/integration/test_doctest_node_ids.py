@@ -108,3 +108,48 @@ class DescribeDoctestIniSettingsInGremlinRuns:
         counts = verdicts(result.stdout.str())
         assert counts['Zapped'] == 0
         assert counts['Survived'] > 0
+
+
+GAP_DOCTEST_SAMPLE = '''
+def gap(n):
+    """
+    >>> print(gap(3))
+    a b
+    """
+    if n > 2:
+        return 'a b'
+    return 'a  b'
+'''
+
+LENIENT_FLAGS = ('-o', 'doctest_optionflags=NORMALIZE_WHITESPACE')  # pragma: allowlist secret
+
+
+def run_cached_counts(pytester: pytest.Pytester, *extra_args: str) -> dict[str, int]:
+    result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '--gremlin-cache', '--doctest-modules', *extra_args)
+    return verdicts(result.stdout.str())
+
+
+@pytest.mark.medium
+class DescribeDoctestIniSettingsInTheCacheKey:
+    def it_misses_the_cache_when_the_optionflags_change(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester_with_markers.makepyfile(sample=GAP_DOCTEST_SAMPLE)
+        run_cached_counts(pytester_with_markers)
+        uncached = verdicts(
+            pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '--doctest-modules', *LENIENT_FLAGS).stdout.str()
+        )
+
+        cached = run_cached_counts(pytester_with_markers, *LENIENT_FLAGS)
+
+        assert cached == uncached
+
+    def it_hits_the_cache_when_the_optionflags_are_unchanged(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester_with_markers.makepyfile(sample=GAP_DOCTEST_SAMPLE)
+        first = run_cached_counts(pytester_with_markers, *LENIENT_FLAGS)
+
+        second = pytester_with_markers.runpytest_subprocess(
+            *GREMLIN_ARGS, '--gremlin-cache', '--doctest-modules', *LENIENT_FLAGS
+        )
+
+        assert verdicts(second.stdout.str()) == first
+        assert ' misses (' in second.stdout.str()
+        assert ' 0 misses (' in second.stdout.str()
