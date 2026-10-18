@@ -42,14 +42,14 @@ would have made. `--gremlin-cache` now hits under `-n N`. The minimum pytest is 
   #716)
 - **A cached survivor could be reused after a rerun setting changed.** The cache key now includes
   the backoff factor, `only_rerun`, `rerun_except`, `--rerun-exclude-path`, `--reruns-mode` and
-  `--max-suite-reruns`, resolved from any source. (#713)
+  `--max-suite-reruns`, resolved from any source. (#677, #713)
 - **The mutant timeout ignored `--reruns-delay-backoff-factor`.** The rerun-scaled timeout now adds
-  the real backoff sleeps. (#697)
+  the real backoff sleeps. (#672, #697)
 - **The coverage pre-scan could time out on a flaky suite.** Its timeout now scales with the rerun
   budget, like the mutant timeout. Timeout messages show the limit that was actually applied, and
-  explain what to change when it hits the 86400 s cap. (#672, #706)
+  explain what to change when it hits the 86400 s cap. (#673, #706)
 - **If pytest's private assert-rewrite API changed, every gremlin scored ZAPPED.** Gremlin runs now
-  exit with code 72 and are scored ERROR. (#703)
+  exit with code 72 and are scored ERROR. (#617, #703)
 - **A huge `PYTHONOPTIMIZE` value crashed the run.** (#643, #709)
 - **Stryker export type names now match the schema.** `StrykerPosition` is `{line, column}` and
   `StrykerLocation` is `{start, end}`. (#683, #695)
