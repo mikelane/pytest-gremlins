@@ -216,7 +216,8 @@ directory (`uv run mkdocs build --strict --site-dir site`, then
 the entry is missing, a bullet has neither a reference nor a non-empty exemption, or a reference points to a page
 or anchor that is not in the site. It exits 2 when it could not run. It runs in three places:
 
-1. `ci.yml`, whenever a PR changes `CHANGELOG.md`, against the topmost entry, so the changelog PR fails first.
+1. `ci.yml`, whenever a PR changes `CHANGELOG.md`, against the topmost entry, so the changelog PR fails
+   first. `--newest` picks that entry by the same heading rule the check uses, where the `v` is optional.
 2. `cut-release.yml`, before the tag is created, against the version `cz bump --get-next` reports.
 3. The `verify-tag` job of `release.yml`, against the tagged commit. Every other job in that workflow depends on
    `verify-tag`, so a failing check blocks the publish however the release was started.

@@ -511,15 +511,61 @@ class DescribeCommandLine:
         assert result.returncode == 2
         assert 'could not check' in result.stderr
 
+    NO_V_CHANGELOG = (
+        '# Changelog\n\n## 2.0.0 (2026-11-01)\n\n### Fix\n\n{bullet}\n\n## v1.9.0 (2026-10-01)\n\n### Fix\n\n- x\n'
+    )
+
+    def it_checks_the_topmost_entry_in_newest_mode_even_without_a_v_prefix(self, tmp_path: Path) -> None:
+        changelog = self.NO_V_CHANGELOG.format(bullet='- **Changed a thing.** (#3)')
+
+        result = self._run(tmp_path, changelog, '--newest')
+
+        assert result.returncode == 1
+        assert 'Changed a thing' in result.stdout
+
+    def it_passes_in_newest_mode_when_the_topmost_entry_passes(self, tmp_path: Path) -> None:
+        changelog = self.NO_V_CHANGELOG.format(bullet=f'- **Fixed it.** [docs]({DOCS_URL}/guide/configuration/)')
+
+        result = self._run(tmp_path, changelog, '--newest')
+
+        assert result.returncode == 0, result.stderr
+        assert '2.0.0' in result.stdout
+
+    def it_ignores_a_version_heading_inside_a_fence_in_newest_mode(self, tmp_path: Path) -> None:
+        changelog = '# Changelog\n\n```markdown\n## v9.9.9\n```\n\n' + self.NO_V_CHANGELOG.format(bullet='- x (#3)')
+
+        result = self._run(tmp_path, changelog, '--newest')
+
+        assert 'Changed' not in result.stdout
+        assert 'v9.9.9' not in result.stdout
+        assert 'x (#3)' in result.stdout
+
+    def it_exits_two_in_newest_mode_when_the_changelog_has_no_version_entry(self, tmp_path: Path) -> None:
+        result = self._run(tmp_path, '# Changelog\n\n## Unreleased\n', '--newest')
+
+        assert result.returncode == 2
+        assert 'no "## vX.Y.Z" entry' in result.stderr
+
+    @pytest.mark.parametrize('args', [['--newest', '2.0.0'], []])
+    def it_exits_two_unless_exactly_one_of_the_version_and_newest_mode_is_given(
+        self, tmp_path: Path, args: list[str]
+    ) -> None:
+        result = self._run(tmp_path, _entry('- x'), *args)
+
+        assert result.returncode == 2
+        assert 'exactly one' in result.stderr
+
     def it_exits_two_when_the_version_is_empty(self, tmp_path: Path) -> None:
         result = self._run(tmp_path, _entry('- x'), 'v')
 
         assert result.returncode == 2
 
-    def it_accepts_only_the_version_and_the_two_input_paths(self) -> None:
+    def it_accepts_only_the_version_the_newest_mode_and_the_two_input_paths(self) -> None:
         result = subprocess.run([sys.executable, str(SCRIPT), '--help'], capture_output=True, text=True, check=False)
 
-        assert set(re.findall(r'--[a-z][a-z-]*', result.stdout.split('\n\n')[0])) == {'--site-dir', '--changelog'}
+        flags = set(re.findall(r'--[a-z][a-z-]*', result.stdout.split('\n\n')[0]))
+
+        assert flags == {'--site-dir', '--changelog', '--newest'}
 
     @pytest.mark.parametrize('variable', ['SKIP_RELEASE_DOCS_CHECK', 'CI_SKIP_DOCS', 'FORCE', 'SKIP_DOCS_CHECK'])
     def it_ignores_environment_variables(self, tmp_path: Path, variable: str) -> None:
@@ -632,3 +678,9 @@ class DescribePullRequestWorkflowGate:
         step = _steps('ci.yml', 'docs')[_step_index('ci.yml', 'docs', GATE_COMMAND)]
 
         assert 'continue-on-error' not in step
+
+    def it_selects_the_version_with_the_newest_mode_not_with_shell_text_processing(self) -> None:
+        step = _steps('ci.yml', 'docs')[_step_index('ci.yml', 'docs', GATE_COMMAND)]
+
+        assert '--newest' in step['run']
+        assert 'sed' not in step['run']

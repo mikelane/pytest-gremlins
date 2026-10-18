@@ -215,13 +215,7 @@ jobs:
       # The topmost entry is the one being prepared for release. The release itself runs the same check.
       - name: Check the newest changelog entry links to the docs
         if: needs.changes.outputs.changelog == 'true'
-        run: |
-          newest=$(sed -n 's/^## v\([^ ]*\).*/\1/p' CHANGELOG.md | head -n 1)
-          if [[ -z "$newest" ]]; then
-            echo "::error::CHANGELOG.md has no '## vX.Y.Z' entry."
-            exit 1
-          fi
-          uv run python scripts/check_release_docs.py "$newest" --site-dir site
+        run: uv run python scripts/check_release_docs.py --newest --site-dir site
 
   security:
     name: Security Audit

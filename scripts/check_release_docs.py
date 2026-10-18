@@ -14,6 +14,8 @@ Takes the version being released. In that version's ``## vX.Y.Z`` entry of ``CHA
 
 Nothing skips this check: it has no flag, environment variable or input that turns it off.
 
+``--newest`` checks the topmost ``## [v]X.Y.Z`` entry instead of a named version; it selects, never skips.
+
 Exit codes: 0 when the entry passes, 1 when the check fails (each problem is printed on stdout with a
 ``PROBLEM:`` prefix, naming the bullet or link), 2 when the check could not run (bad input, missing changelog
 or missing site; the reason is printed on stderr). Exit 2 is never a pass.
@@ -44,6 +46,7 @@ DEFAULT_CHANGELOG = Path(__file__).resolve().parents[1] / 'CHANGELOG.md'
 FENCE = re.compile(r' {0,3}(`{3,}|~{3,})(.*)')
 HTML_COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
 CODE_SPAN = re.compile(r'(`+).+?(?<!`)\1(?!`)', re.DOTALL)
+NEWEST_HEADING = re.compile(r'## v?(\d\S*)')
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
 LINK_TARGET = re.compile(r'\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 
@@ -119,6 +122,22 @@ def _gated_bullets(entry: list[tuple[int, str]]) -> list[tuple[str, int, str]]:
             close()
     close()
     return bullets
+
+
+def newest_version(changelog: str) -> str | None:
+    """Return the version of the topmost ``## [v]X.Y.Z`` entry, or ``None`` when there is none.
+
+    Args:
+        changelog: The text of ``CHANGELOG.md``.
+
+    Returns:
+        The version without its leading ``v``.
+    """
+    for _, line in _without_html_comments(_outside_fences(changelog)):
+        heading = NEWEST_HEADING.match(line)
+        if heading:
+            return heading.group(1)
+    return None
 
 
 class CannotCheckError(Exception):
@@ -198,7 +217,17 @@ def _bullet_problems(section: str, number: int, text: str, site: Site) -> list[s
 
 
 def find_problems(changelog: str, version: str, site: Site) -> list[str]:
-    """Return one readable line per problem in the entry for ``version``; empty when the entry passes."""
+    """Return one readable line per problem in the entry for ``version``; empty when the entry passes.
+
+    Args:
+        changelog: The text of ``CHANGELOG.md``.
+        version: The release version, with or without the leading ``v``.
+        site: The built docs site that references are resolved against.
+
+    Returns:
+        One line per problem: an unknown ``###`` heading, a bullet under no heading, a gated bullet with no
+        reference or exemption, or a reference that does not resolve.
+    """
     entry = _entry_lines(changelog, version)
     if entry is None:
         return [f'CHANGELOG.md has no "## v{version.removeprefix("v")}" entry']
@@ -263,21 +292,42 @@ def _read_changelog(path: Path) -> str:
         raise CannotCheckError(f'cannot read {path}: {error}') from error
 
 
-def _check(version: str, changelog: Path, site_dir: Path) -> list[str]:
+def _check(args: argparse.Namespace) -> tuple[str, list[str]]:
+    changelog = _read_changelog(args.changelog)
+    version = newest_version(changelog) if args.newest else args.version
+    if version is None:
+        raise CannotCheckError('CHANGELOG.md has no "## vX.Y.Z" entry')
     if not version.removeprefix('v'):
         raise CannotCheckError('the version is empty')
-    return find_problems(_read_changelog(changelog), version, BuiltSite(site_dir))
+    return version, find_problems(changelog, version, BuiltSite(args.site_dir))
 
 
-def main(argv: list[str] | None = None) -> int:
-    """CLI entry point; returns the process exit code."""
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('version', help='version being released, with or without the leading v (e.g. 1.12.1)')
+    parser.add_argument(
+        'version', nargs='?', help='version being released, with or without the leading v (e.g. 1.12.1)'
+    )
+    parser.add_argument('--newest', action='store_true', help='check the topmost entry of the changelog instead')
     parser.add_argument('--site-dir', type=Path, required=True, help='output directory of `mkdocs build --strict`')
     parser.add_argument('--changelog', type=Path, default=DEFAULT_CHANGELOG, help='path to CHANGELOG.md')
     args = parser.parse_args(argv)
+    if args.newest == (args.version is not None):
+        parser.error('give exactly one of the version and --newest')
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point.
+
+    Args:
+        argv: The command-line arguments; ``sys.argv[1:]`` when ``None``.
+
+    Returns:
+        The process exit code: 0 when the entry passes, 1 when it has problems, 2 when the check could not run.
+    """
+    args = _parse_args(argv)
     try:
-        problems = _check(args.version, args.changelog, args.site_dir)
+        version, problems = _check(args)
     except CannotCheckError as error:
         print(f'could not check the release docs: {error}', file=sys.stderr)
         return 2
@@ -285,11 +335,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f'could not check the release docs: unexpected {type(error).__name__}: {error}', file=sys.stderr)
         return 2
     if problems:
-        print(f'{args.changelog} is not ready to release {args.version}:')
+        print(f'{args.changelog} is not ready to release {version}:')
         for problem in problems:
             print(f'{PROBLEM_PREFIX}{problem}')
         return 1
-    print(f'Every user-facing change in the {args.version} entry links to docs or has an exemption.')
+    print(f'Every user-facing change in the {version} entry links to docs or has an exemption.')
     return 0
 
 
