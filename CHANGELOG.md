@@ -17,15 +17,19 @@ would have made. `--gremlin-cache` now hits under `-n N`. The minimum pytest is 
 - **pytest 8.4.2 or newer is required.** The plugin uses `--disable-plugin-autoload`, which pytest
   added in 8.4, so pytest 7.x and 8.0–8.3 never worked. The old `pytest>=7.0.0` floor now says so.
   CI tests 8.4.2, 9.0.0 and the latest pytest. (#687, #720)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/getting-started/#requirements)
 - **The cache is rebuilt once.** Cached verdicts are now keyed on every rerun setting and on the
   doctest settings the gremlin runs use, so the first run after upgrading re-runs every gremlin.
   (#713, #717)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#incremental-caching)
 - **Your score may drop if you use doctests or rerun filters.** Gremlins that were zapped only
   because their run lacked your doctest option flags, or your `--only-rerun` / `--rerun-except`
   filters, now survive. (#594, #713, #717, #719)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/verdicts/#how-a-gremlin-is-scored)
 - **The Stryker export renames `character_column` to `utf16_column`.** Columns are now counted in
   UTF-16 code units, which is what the mutation-testing-elements viewer uses. This was an
   undocumented internal field. (#681, #683, #695)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/reports/#export-format-reference)
 
 ### Fix
 
@@ -35,24 +39,32 @@ would have made. `--gremlin-cache` now hits under `-n N`. The minimum pytest is 
   whether those come from the ini file, `-o` or `-c`. On pytest before 9.1, the
   option flags were dropped; they are now passed as top-level `-o` arguments. (#594, #717, #719,
   #720)
+  (no docs: gremlin runs now use the main run's doctest settings, and the guides do not describe doctest handling)
 - **`--gremlin-cache` never hit under xdist.** The controller hashed sources and tests before the
   workers had collected anything, so every run missed. Each test is now also bound to its own
   file's hash, so same-named test files in different directories no longer share one. A test
   whose file can't be hashed keeps the gremlins it covers out of the cache instead of crashing. (#598,
   #716)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#incremental-caching)
 - **A cached survivor could be reused after a rerun setting changed.** The cache key now includes
   the backoff factor, `only_rerun`, `rerun_except`, `--rerun-exclude-path`, `--reruns-mode` and
   `--max-suite-reruns`, resolved from any source. (#677, #713)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#incremental-caching)
 - **The mutant timeout ignored `--reruns-delay-backoff-factor`.** The rerun-scaled timeout now adds
   the real backoff sleeps. (#672, #697)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
 - **The coverage pre-scan could time out on a flaky suite.** Its timeout now scales with the rerun
   budget, like the mutant timeout. Timeout messages show the limit that was actually applied, and
   explain what to change when it hits the 86400 s cap. (#673, #706)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#coverage-pre-scan-timeout)
 - **If pytest's private assert-rewrite API changed, every gremlin scored ZAPPED.** Gremlin runs now
   exit with code 72 and are scored ERROR. (#617, #703)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/verdicts/#exit-72-assertion-rewriting-is-unavailable)
 - **A huge `PYTHONOPTIMIZE` value crashed the run.** (#643, #709)
+  (no docs: fixes a crash on an oversized `PYTHONOPTIMIZE` value; no documented behavior changes)
 - **Stryker export type names now match the schema.** `StrykerPosition` is `{line, column}` and
   `StrykerLocation` is `{start, end}`. (#683, #695)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/reports/#export-format-reference)
 
 ### Documentation
 
@@ -81,17 +93,22 @@ score may drop after upgrading.
   a flaky test failed once, with no rerun, are now SURVIVED. Gremlin runs that crashed at startup
   are now ERROR instead of ZAPPED. In the other direction, a killed gremlin whose test waited out
   `--reruns-delay` and used to time out is now ZAPPED. (#659, #663, #674, #680, #689)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/verdicts/#crashes-before-any-test-runs-are-errors-v1120)
 - **Gremlin runs take longer when reruns are on.** A killed gremlin can run its killing test up to
   `reruns + 1` times. The per-gremlin timeout is now
   `limit × (reruns + 1) + ceil(reruns × reruns_delay)`, capped at 86400 s. An explicit
   `--gremlin-mutant-timeout` or `mutant_timeout` is the limit for one attempt, and is scaled too.
   (#659, #674)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
 - **The cache is rebuilt once.** Cached verdicts are now keyed on the rerun budget (`reruns` and
   `reruns_delay`), and the verdict changes above retire older entries, so the first run after
   upgrading re-runs every gremlin. (#663, #678, #680, #689)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#incremental-caching)
 - **Stryker reports now contain your source code.** Each file entry in a `StrykerExporter` report
   carries the full text of the mutated file, as the schema requires. Uploading the report to the
   Stryker Dashboard, or sharing it as a CI artifact, shares that code. (#592, #682)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/reports/#stryker-dashboard-export)
 
 ### Feature
 
@@ -103,6 +120,7 @@ score may drop after upgrading.
   such as one with leading or trailing whitespace, is reset to no filter and named in a warning.
   When a test needed a rerun in the unmutated baseline, one warning names it. (#546, #658, #659,
   #662)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
 
 ### Fix
 
@@ -111,29 +129,35 @@ score may drop after upgrading.
   is pluggy's `Plugin already registered under a different name` at startup. Such a crash now
   exits 3 and is reported as ERROR, and a missing `PYTEST_GREMLINS_SOURCES_FILE` exits 4. A run
   where a test fails and a teardown hook then raises is also ERROR now. (#656, #663)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/verdicts/#crashes-before-any-test-runs-are-errors-v1120)
 - **A killed gremlin could time out when its test waited out `--reruns-delay`.** The timeout did
   not include rerun delays, so the gremlin scored TIMEOUT or ERROR instead of ZAPPED. See the
   upgrade notes for the new timeout. (#655, #674)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
 - **Two rerun settings with the same timeout shared cached verdicts.** For example,
   `--gremlin-mutant-timeout 60` with no reruns and `--gremlin-mutant-timeout 30 --reruns 1` both
   give a 60 s timeout. A kill cached by the run without reruns could be reused by the run with
   reruns, which is a false kill. The cache key now includes the rerun budget. (#671, #678)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#incremental-caching)
 - **Gremlin runs reran failing tests when the main run did not load pytest-rerunfailures.** With
   `-p no:rerunfailures`, `--disable-plugin-autoload`, or the plugin not installed, gremlin runs
   still loaded it and reran tests from the ini settings. Their timeout was not scaled for the
   reruns, and the cache recorded them as having none. Gremlin runs, the coverage pre-scan and
   confirmation runs now get `-p no:rerunfailures`. (#670, #680)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
 - **With plugin autoload off, gremlin runs never reran failing tests.** When the session loaded
   pytest-rerunfailures with `-p` and gremlin runs started with autoload off, the session reran
   flaky tests and gremlin runs did not, which caused false kills. Autoload is off in gremlin runs
   when `PYTEST_DISABLE_PLUGIN_AUTOLOAD` is set, or when `--disable-plugin-autoload` comes from ini
   `addopts` or `PYTEST_ADDOPTS`, including `@file` argument files read relative to the rootdir.
   Gremlin runs now load the plugin under the name the session registered it under. (#679, #689)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
 - **The Stryker export did not validate against the official report schema.** Each file entry now
   carries `source`, positions are 1-based with a required `end`, and columns count characters
   instead of UTF-8 bytes. Files with a byte-order mark or a PEP 263 `coding:` declaration are
   located correctly. A file that cannot be read exports an empty `source` and logs a warning.
   (#592, #682)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/reports/#stryker-dashboard-export)
 
 ### Internal
 
