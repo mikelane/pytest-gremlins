@@ -38,6 +38,7 @@ or missing site; the reason is printed on stderr). Exit 2 is never a pass.
 from __future__ import annotations
 
 import argparse
+import io
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -603,6 +604,13 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return args
 
 
+def _write_output_as_utf8() -> None:
+    # Windows consoles default to a legacy code page (cp1252) that cannot encode every changelog character.
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding='utf-8')
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point.
 
@@ -612,6 +620,7 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         The process exit code: 0 when the entry passes, 1 when it has problems, 2 when the check could not run.
     """
+    _write_output_as_utf8()
     args = _parse_args(argv)
     try:
         version, problems = _check(args)

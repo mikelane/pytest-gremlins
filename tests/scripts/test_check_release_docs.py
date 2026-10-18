@@ -1051,7 +1051,9 @@ NON_ASCII_DIGIT_HEADINGS = {
 }
 
 
-def _run_gate_on_bytes(tmp_path: Path, changelog: bytes, *args: str) -> subprocess.CompletedProcess[str]:
+def _run_gate_on_bytes(
+    tmp_path: Path, changelog: bytes, *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     changelog_path = tmp_path / 'CHANGELOG.md'
     changelog_path.write_bytes(changelog)
     site = _write_site(tmp_path)
@@ -1060,6 +1062,7 @@ def _run_gate_on_bytes(tmp_path: Path, changelog: bytes, *args: str) -> subproce
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
 
 
@@ -1153,6 +1156,16 @@ class DescribeInputsThatMadeTheReleaseNotesDifferFromTheCheckedEntry:
 
         assert result.returncode == 1
         assert 'line 9' in result.stdout
+
+    def it_prints_a_problem_with_non_ascii_text_when_stdout_is_cp1252(self, tmp_path: Path) -> None:
+        heading = NON_ASCII_DIGIT_HEADINGS['arabic-indic']
+        changelog = f'# Changelog\n\n{ENTRY_V2}\n{heading}\n\n### Fix\n\n{UNLINKED}\n{OLDER}'
+        env = {**os.environ, 'PYTHONIOENCODING': 'cp1252'}
+
+        result = _run_gate_on_bytes(tmp_path, changelog.encode(), '2.0.0', env=env)
+
+        assert result.returncode == 1, result.stderr
+        assert 'PROBLEM: ' in result.stdout
 
 
 @pytest.mark.small
