@@ -707,6 +707,14 @@ Every PR touching code must address documentation:
 - [ ] README updated if needed
 - [ ] Changelog entry (via conventional commit)
 
+### Docs Freshness (Review Rule)
+
+A PR whose diff changes user-facing behavior and touches nothing under `docs/` is a review finding of
+**MEDIUM** severity, unless the PR description says why no docs change is needed. User-facing behavior means:
+options or defaults, verdicts, exit codes, console, report or warning output, or what gets mutated. The PR
+template asks the author to state which case applies in its required Docs section. Reviewers, including
+pr-reviewer agents, check that section against the diff.
+
 ---
 
 ## CI/CD Pipeline
@@ -873,6 +881,59 @@ Read and write** must be stored as the `RELEASE_PAT` repository secret. Set a 90
 expiry and renew before it lapses. Without this secret, the workflow will fail at the
 push step because the default `GITHUB_TOKEN` cannot push commits that trigger other
 workflows.
+
+### Changelog Format and the Docs Gate
+
+The changelog is written by hand in the CHANGELOG PR that precedes the release.
+
+Every release entry in `CHANGELOG.md` is gated. Each bullet under `### Upgrade notes`, `### Feature`
+and `### Fix` must end with either a docs reference or an exemption:
+
+- A docs reference is a link to the page, with the anchor when the change has a section:
+  `[docs](https://pytest-gremlins.readthedocs.io/en/latest/<page>/#<anchor>)`. A path relative to `docs/`
+  (`guide/configuration.md#<anchor>`) also works. A bullet may carry several. The page and the anchor must exist
+  in the built site.
+- An exemption is `(no docs: <reason>)`, for example a bug fix that only restores documented behavior. The
+  reason must not be empty, and it is reviewed in the changelog PR.
+- `### Internal` and `### Documentation` bullets are not gated.
+
+Put a long link on its own indented line so the bullet still passes markdownlint:
+
+```markdown
+## vX.Y.Z (YYYY-MM-DD)
+
+**One sentence on what changes for users.**
+
+### Upgrade notes
+
+- **The default batch size is now 10.** Runs with many small tests get faster. Pass `--gremlin-batch-size 1` to
+  keep the old behavior. (#701)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#batch-execution)
+
+### Fix
+
+- **A crash on an oversized `PYTHONOPTIMIZE` value.** (#709)
+  (no docs: fixes a crash and changes no documented behavior)
+
+### Internal
+
+- Bumped a dev dependency. (#715)
+```
+
+`scripts/check_release_docs.py` enforces this. It takes the version and a `mkdocs build --strict` output
+directory (`uv run mkdocs build --strict --site-dir site`, then
+`uv run python scripts/check_release_docs.py X.Y.Z --site-dir site`). It exits 1 and names the bullet or link when
+the entry is missing, a bullet has neither a reference nor a non-empty exemption, or a reference points to a page
+or anchor that is not in the site. It exits 2 when it could not run. It runs in three places:
+
+1. `ci.yml`, whenever a PR changes `CHANGELOG.md`, against the topmost entry, so the changelog PR fails first.
+2. `cut-release.yml`, before the tag is created, against the version `cz bump --get-next` reports.
+3. The `verify-tag` job of `release.yml`, against the tagged commit. Every other job in that workflow depends on
+   `verify-tag`, so a failing check blocks the publish however the release was started.
+
+**There is no bypass.** No workflow input, environment variable or flag skips the check, and `skip_test_pypi` does
+not affect it. To ship a change without docs, write a `(no docs: <reason>)` exemption in the changelog PR, where the
+reason is public and gets reviewed.
 
 ### When to Release
 
