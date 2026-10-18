@@ -11,7 +11,6 @@ import ast
 import base64
 import collections.abc
 from concurrent.futures import as_completed
-import contextlib
 from dataclasses import (
     dataclass,
     field,
@@ -271,7 +270,7 @@ class GremlinSession:
         cache_enabled: Whether incremental caching is enabled.
         cache: The incremental cache instance (if caching is enabled).
         source_hashes: Content hashes for source files.
-        test_hashes: Content hashes for test files.
+        test_hashes: Content hashes for test files, keyed by the file part of their normalized node ids.
         cache_hits: Number of cache hits in this session.
         cache_misses: Number of cache misses in this session.
         parallel_enabled: Whether parallel execution is enabled.
@@ -1097,7 +1096,7 @@ def pytest_configure(config: pytest.Config) -> None:
             xdist_active=xdist_active,
             xdist_loaded=config.pluginmanager.hasplugin('xdist'),
             xdist_workers=xdist_worker_int if xdist_active else None,
-            preserved_addopts=_addopts_without_cov(config.getini('addopts')),
+            preserved_addopts=_addopts_for_gremlin_runs(config),
             rerun_options=_rerun_options_for(config),
             rerun_ini_warnings=_rerun_ini_warnings_for(config),
             coverage_timeout=_rerun_scaled_timeout(config, coverage_timeout, label='Coverage pre-scan'),
@@ -1299,14 +1298,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
 
-    # Compute content hashes for source and test files (for caching)
-    if gremlin_session.cache_enabled:
-        hasher = ContentHasher()
-        for file_path, source in source_files.items():
-            gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
-        for test_file in gremlin_session.test_files:
-            with contextlib.suppress(FileNotFoundError):
-                gremlin_session.test_hashes[str(test_file)] = hasher.hash_file(test_file)
+    _hash_sources_and_tests_for_cache(gremlin_session, source_files, rootdir)
 
     if gremlin_session.xdist_active and not session.items:
         logger.debug(
@@ -1316,6 +1308,26 @@ def pytest_collection_finish(session: pytest.Session) -> None:
         return
 
     _generate_gremlins(gremlin_session, source_files, rootdir)
+
+
+def _hash_sources_and_tests_for_cache(
+    gremlin_session: GremlinSession, source_files: dict[str, str], rootdir: Path
+) -> None:
+    """Record content hashes of the source and test files that key the incremental cache.
+
+    Without these hashes the cache can neither store nor replay a verdict, so every gremlin runs again.
+    Test hashes are keyed by the file part of the normalized node ids, so a test binds to its own file's
+    hash by exact lookup and the keys are the same with or without xdist.
+    """
+    if not gremlin_session.cache_enabled:
+        return
+    hasher = ContentHasher()
+    for file_path, source in source_files.items():
+        gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
+    for test_file in {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}:
+        # A file part pytest left empty (a test outside rootdir) cannot say which file the test lives in.
+        if test_file and (rootdir / test_file).is_file():
+            gremlin_session.test_hashes[test_file] = hasher.hash_file(rootdir / test_file)
 
 
 def _generate_gremlins(
@@ -2452,6 +2464,7 @@ def _rebuild_state_from_xdist_workers(
     logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
+    _hash_sources_and_tests_for_cache(gremlin_session, source_files, rootdir)
     logger.debug('pytest_sessionfinish: xdist Phase 2 discovered %d source files', len(source_files))
     _generate_gremlins(gremlin_session, source_files, rootdir)
     logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
@@ -2867,6 +2880,57 @@ def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
     return bool(getattr(config.option, 'inifilename', None))
 
 
+_DOCTEST_FLAG = '--doctest-modules'
+_DOCTEST_GLOB = '--doctest-glob'
+
+
+def _doctest_options_in(args: Sequence[str]) -> list[str]:
+    """Return the doctest collection options in ``args``, which decide whether a doctest node id exists (#594)."""
+    options: list[str] = []
+    tokens = iter(args)
+    for token in tokens:
+        if token == _DOCTEST_FLAG or token.startswith(f'{_DOCTEST_GLOB}='):
+            options.append(token)
+        elif token == _DOCTEST_GLOB:
+            glob = next(tokens, None)
+            if glob is not None:
+                options.extend([token, glob])
+    return options
+
+
+def _doctest_ini_overrides(config: pytest.Config) -> list[str]:
+    """Return ``-o`` overrides carrying the session's resolved doctest ini values (#594).
+
+    Gremlin runs re-read the project config, so a value set by ``-o`` or ``-c`` would be lost and a doctest that
+    needs it (``NORMALIZE_WHITESPACE``) would fail in every run, fabricating a kill for every gremlin it covers.
+    Resolving through ``getini`` covers ``-o``, ``-c`` and the project file alike.  The resolved value is always
+    forwarded, even an empty one, because a bare gremlin run would otherwise fall back to pytest's default
+    (``ELLIPSIS``).  The same values key the cache, since they decide whether a doctest passes.
+    """
+    overrides: list[str] = []
+    for key in ('doctest_optionflags', 'doctest_encoding'):
+        try:
+            value = config.getini(key)
+        except ValueError:
+            continue
+        text = ' '.join(value) if isinstance(value, list) else str(value)
+        overrides.extend(['-o', shlex.quote(f'{key}={text}')])
+    return overrides
+
+
+def _addopts_for_gremlin_runs(config: pytest.Config) -> str:
+    """Return the ``addopts`` for gremlin runs: the project's, minus pytest-cov, plus the session's doctest settings.
+
+    A doctest node id such as ``sample.py::sample.classify`` only resolves where doctests are collected, and
+    ``--doctest-modules`` typed on the command line is otherwise lost, because gremlin runs replace ``addopts``.
+    The doctest ini values are forwarded too (see :func:`_doctest_ini_overrides`).
+    Options inside an ``@argfile`` are not expanded.
+    """
+    project_addopts = _addopts_without_cov(config.getini('addopts'))
+    doctest_options = ' '.join(shlex.quote(option) for option in _doctest_options_in(config.invocation_params.args))
+    return ' '.join(part for part in (project_addopts, doctest_options, *_doctest_ini_overrides(config)) if part)
+
+
 def _command_line_rerun_options(config: pytest.Config) -> list[str]:
     """Return the rerun options in the session's invocation arguments, ``@file`` arguments expanded."""
     return rerun_options_in(config.invocation_params.args, base_dir=config.invocation_params.dir)
@@ -2940,16 +3004,18 @@ def _gremlin_run_rerun_backoff_factor(config: pytest.Config) -> float:
 
 
 def _gremlin_run_rerun_cache_settings(config: pytest.Config) -> str:
-    """Return the rerun settings beyond count and delay that the cache keys verdicts on, or none without the plugin.
+    """Return the settings beyond rerun count and delay that the cache keys verdicts on.
 
-    Without pytest-rerunfailures nothing reruns, so a stale ``only_rerun`` ini key must not split the cache (#677).
+    Rerun settings count only with pytest-rerunfailures loaded: otherwise nothing reruns, and a stale ``only_rerun``
+    ini key must not split the cache (#677).  The doctest ini settings are always part of it (#594).
     """
+    doctest_settings = ' '.join(_doctest_ini_overrides(config))
     if not _rerunfailures_is_loaded(config):
-        return ''
+        return doctest_settings
     read_ini: Callable[[str], object] = config.getini
     if _rerun_ini_settings_are_forwarded(config):
         read_ini = rerun_ini_as_gremlin_runs_read(read_ini, _rerun_ini_resolution_for(config).resets)
-    return rerun_cache_settings(config.option, read_ini)
+    return f'{rerun_cache_settings(config.option, read_ini)} {doctest_settings}'.strip()
 
 
 def _prescan_timeout(gremlin_session: GremlinSession) -> int:
@@ -3799,15 +3865,35 @@ def _run_mutation_testing(
     return results
 
 
+def _node_id_for_test(test_name: str, gremlin_session: GremlinSession) -> str:
+    """Resolve a selected test name to its node id, or '' when it has none.
+
+    Test names can be in different formats (simple function, module.function, TestClass.method), so this
+    tries variations to find the corresponding node ID.
+    """
+    node_id = gremlin_session.test_node_ids.get(test_name, '')
+    if not node_id:
+        simple_name = test_name.rsplit('.', maxsplit=1)[-1]
+        node_id = gremlin_session.test_node_ids.get(simple_name, '')
+    if not node_id:
+        # Coverage map may use bare function names (old-format dynamic_context)
+        # while test_node_ids is keyed by full node ID.  Use the reverse index
+        # for O(1) lookup instead of O(n) linear suffix scan.
+        candidates = gremlin_session.test_name_to_node_ids.get(test_name, [])
+        if not candidates:
+            candidates = gremlin_session.test_name_to_node_ids.get(test_name.rsplit('.', maxsplit=1)[-1], [])
+        if candidates:
+            node_id = candidates[0]
+    return node_id
+
+
 def _build_test_hashes_for_gremlin(
     selected_tests: Sequence[str],
     gremlin_session: GremlinSession,
 ) -> dict[str, str]:
     """Build test hashes for the tests that cover a gremlin.
 
-    Maps test names to their file content hashes. Test names can be in different
-    formats (simple function, module.function, TestClass.method), so this function
-    tries variations to find the corresponding node ID and file hash.
+    Maps test names to their file content hashes.
 
     Args:
         selected_tests: Sequence of test names that cover the gremlin.
@@ -3818,28 +3904,25 @@ def _build_test_hashes_for_gremlin(
     """
     test_hashes: dict[str, str] = {}
     for test_name in selected_tests:
-        node_id = gremlin_session.test_node_ids.get(test_name, '')
-        if not node_id:
-            simple_name = test_name.split('.')[-1]
-            node_id = gremlin_session.test_node_ids.get(simple_name, '')
-        if not node_id:
-            # Coverage map may use bare function names (old-format dynamic_context)
-            # while test_node_ids is keyed by full node ID.  Use the reverse index
-            # for O(1) lookup instead of O(n) linear suffix scan.
-            candidates = gremlin_session.test_name_to_node_ids.get(test_name, [])
-            if not candidates:
-                candidates = gremlin_session.test_name_to_node_ids.get(test_name.split('.')[-1], [])
-            if candidates:
-                node_id = candidates[0]
-
+        node_id = _node_id_for_test(test_name, gremlin_session)
         if '::' in node_id:
-            test_file = node_id.split('::')[0]
-            for file_path, file_hash in gremlin_session.test_hashes.items():
-                if file_path.endswith(test_file) or test_file in file_path:
-                    test_hashes[test_name] = file_hash
-                    break
+            file_hash = gremlin_session.test_hashes.get(node_id.split('::')[0])
+            if file_hash is not None:
+                test_hashes[test_name] = file_hash
 
     return test_hashes
+
+
+def _selection_has_unhashed_test_file(selected_tests: Sequence[str], gremlin_session: GremlinSession) -> bool:
+    """Whether a selected test lives in a file that could not be hashed (for example, outside rootdir).
+
+    A cache key built without that file's hash would replay a verdict after the test changed.
+    """
+    for test_name in selected_tests:
+        node_id = _node_id_for_test(test_name, gremlin_session)
+        if '::' in node_id and node_id.split('::')[0] not in gremlin_session.test_hashes:
+            return True
+    return False
 
 
 def _check_cache_for_gremlin(
@@ -3862,6 +3945,9 @@ def _check_cache_for_gremlin(
 
     source_hash = gremlin_session.source_hashes.get(gremlin.file_path, '')
     if not source_hash:
+        return None
+
+    if _selection_has_unhashed_test_file(selected_tests, gremlin_session):
         return None
 
     test_hashes = _build_test_hashes_for_gremlin(selected_tests, gremlin_session)
@@ -3923,6 +4009,9 @@ def _cache_gremlin_result(
 
     source_hash = gremlin_session.source_hashes.get(gremlin.file_path, '')
     if not source_hash:
+        return
+
+    if _selection_has_unhashed_test_file(selected_tests, gremlin_session):
         return
 
     test_hashes = _build_test_hashes_for_gremlin(selected_tests, gremlin_session)

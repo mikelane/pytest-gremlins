@@ -132,7 +132,7 @@ class DescribeRerunCacheSettingsThroughTheRealEntryPoint:
 
         assert from_ini == from_flag
 
-    def it_is_empty_when_pytest_rerunfailures_is_not_loaded(self, pytester: pytest.Pytester) -> None:
+    def it_leaves_rerun_settings_out_when_pytest_rerunfailures_is_not_loaded(self, pytester: pytest.Pytester) -> None:
         pytester.makeini('[pytest]\nonly_rerun = ConnectionError\n')
 
-        assert self._recorded(pytester, '-p', 'no:rerunfailures') == ''
+        assert 'ConnectionError' not in self._recorded(pytester, '-p', 'no:rerunfailures')
