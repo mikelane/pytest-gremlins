@@ -88,7 +88,7 @@ class DescribeEntryLookup:
 
         problems = checker.find_problems('## v2.0.01 (2026-01-01)\n\n### Fix\n\n- x\n', '2.0.0', SITE)
 
-        assert len(problems) == 1
+        assert problems == ['CHANGELOG.md has no "## v2.0.0" entry']
 
     def it_only_checks_the_requested_entry(self) -> None:
         checker = _load_checker()
@@ -144,6 +144,8 @@ class DescribeGatedBullets:
         problems = checker.find_problems(_entry(bullet), '2.0.0', SITE)
 
         assert len(problems) == 1
+        assert 'has an empty "(no docs: )" exemption' in problems[0]
+        assert 'Fixed it' in problems[0]
 
     def it_reads_a_reference_on_a_continuation_line(self) -> None:
         checker = _load_checker()
@@ -155,13 +157,21 @@ class DescribeGatedBullets:
         checker = _load_checker()
         bullet = '- **Fixed it.** [issue](https://github.com/mikelane/pytest-gremlins/issues/3)'
 
-        assert len(checker.find_problems(_entry(bullet), '2.0.0', SITE)) == 1
+        problems = checker.find_problems(_entry(bullet), '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'has no docs reference' in problems[0]
+        assert 'Fixed it' in problems[0]
 
     def it_treats_a_non_latest_docs_url_as_no_reference(self) -> None:
         checker = _load_checker()
         bullet = '- **Fixed it.** [docs](https://pytest-gremlins.readthedocs.io/en/stable/guide/configuration/)'
 
-        assert len(checker.find_problems(_entry(bullet), '2.0.0', SITE)) == 1
+        problems = checker.find_problems(_entry(bullet), '2.0.0', SITE)
+
+        assert len(problems) == 1
+        assert 'has no docs reference' in problems[0]
+        assert 'Fixed it' in problems[0]
 
     def it_reports_every_failing_bullet(self) -> None:
         checker = _load_checker()
@@ -559,6 +569,7 @@ class DescribeCommandLine:
         result = self._run(tmp_path, _entry('- x'), 'v')
 
         assert result.returncode == 2
+        assert 'the version is empty' in result.stderr
 
     def it_accepts_only_the_version_the_newest_mode_and_the_two_input_paths(self) -> None:
         result = subprocess.run([sys.executable, str(SCRIPT), '--help'], capture_output=True, text=True, check=False)
