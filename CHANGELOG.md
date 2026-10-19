@@ -10,8 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **The Stryker export no longer crashes on an unusual `# coding:` line, and the docs gain a page on how a gremlin run
 executes.**
 
-<!-- cspell:ignore Dodothereal -->
-
 ### Fix
 
 - **The Stryker export crashed on a non-text codec in a `# coding:` cookie.** A cookie such as `rot13`, `hex`,
