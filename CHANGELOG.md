@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.12.2 (2026-10-18)
+
+**The Stryker export no longer crashes on an unusual `# coding:` line, and the docs gain a page on how a gremlin run
+executes.**
+
+<!-- cspell:ignore Dodothereal -->
+
+### Fix
+
+- **The Stryker export crashed on a non-text codec in a `# coding:` cookie.** A cookie such as `rot13`, `hex`,
+  `base64` or `undefined` passed the encoding check but then failed when the file was read. The file is now exported
+  with an empty source and a warning, like any other unreadable file. This affects the Python API only, because the
+  CLI has no Stryker format. (#681, #724)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/reports/#stryker-dashboard-export)
+
+### Internal
+
+- Tests now fail CI when the docs drift from the CLI flags, config keys, defaults and messages. (#725)
+- A weekly check compares the action cookbook against `action.yml`. (#727)
+- A release is now blocked if its changelog entry does not link to the docs. (#731)
+
+### Documentation
+
+- **New architecture page on the gremlin execution loop.** It walks through what runs once per run and what runs for
+  each gremlin. The mutation-switching page's flow diagram now shows one bootstrap subprocess per gremlin, which is
+  what the engine does. Thanks to @Dodothereal, whose #487 this page builds on. (#467, #734)
+
 ## v1.12.1 (2026-10-18)
 
 **Fewer false kills, and caching works under xdist.** Gremlin runs now get the same doctest and
