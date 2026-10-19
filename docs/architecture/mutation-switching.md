@@ -89,21 +89,23 @@ no instrumented code is loaded.
 ```mermaid
 sequenceDiagram
     participant Tool
-    participant Python
+    participant Subprocess as Bootstrap subprocess
     participant Tests
 
     Note over Tool: Instrument code once (at startup)
-    Tool->>Python: Import instrumented module
-    Python-->>Tool: Module loaded
 
     loop For each mutation
-        Tool->>Tool: Set ACTIVE_GREMLIN=gXXX
-        Tool->>Tests: Run targeted tests
-        Tests-->>Tool: Results
+        Tool->>Subprocess: Spawn with ACTIVE_GREMLIN=gXXX
+        Subprocess->>Subprocess: Import hook serves the instrumented module
+        Subprocess->>Tests: Run targeted tests
+        Tests-->>Tool: Exit code
     end
 ```
 
-The module is loaded exactly once. Each mutation is tested by changing an environment variable - a microsecond operation.
+The source is instrumented once. Each mutation is then tested by starting a subprocess with a
+different `ACTIVE_GREMLIN` value, so no source file is rewritten and no mutated copy of the
+module has to be built. The full per-gremlin sequence, including test selection and the cache,
+is in [The Gremlin Execution Loop](gremlin-execution-loop.md).
 
 ## Why This Is Faster
 

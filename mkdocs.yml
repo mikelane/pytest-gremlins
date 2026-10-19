@@ -256,6 +256,7 @@ nav:
       - Overview: architecture/index.md
       - The Four Pillars of Speed: architecture/speed.md
       - Mutation Switching: architecture/mutation-switching.md
+      - Gremlin Execution Loop: architecture/gremlin-execution-loop.md
       - Coverage Guidance: architecture/coverage-guidance.md
       - Incremental Analysis: architecture/incremental-analysis.md
       - Parallel Execution: architecture/parallelization.md
