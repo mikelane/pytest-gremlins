@@ -1330,6 +1330,20 @@ class DescribeWriteReportHistoryPersistence:
         assert len(entries) == 1
         assert entries[0]['score'] == 100.0
 
+    def it_does_not_append_an_empty_score_to_existing_history(self, make_result, tmp_path: Path):
+        output_path = tmp_path / 'index.html'
+        reporter = HtmlReporter()
+        reporter.write_report(MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)]), output_path)
+        history_path = tmp_path / 'history.json'
+        original = json.loads(history_path.read_text())
+
+        reporter.write_report(
+            MutationScore.from_results([]), output_path, skipped_files={'src/demo/chain.py': 'RecursionError'}
+        )
+
+        assert json.loads(history_path.read_text()) == original
+        assert 'chain.py' in output_path.read_text()
+
     def it_still_writes_html_when_history_raises(self, make_result, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)

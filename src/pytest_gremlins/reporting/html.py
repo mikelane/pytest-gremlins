@@ -154,7 +154,8 @@ class HtmlReporter:
         """Write mutation report to an HTML file and persist history.
 
         Creates any missing parent directories before writing.  History is
-        appended to ``history.json`` in the same directory as the report.
+        appended to ``history.json`` in the same directory as the report when
+        at least one gremlin was tested. Empty runs leave history unchanged.
         If history persistence fails, a warning is logged and the HTML report
         is still written.
 
@@ -165,14 +166,15 @@ class HtmlReporter:
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
         history_path = output_path.parent / 'history.json'
-        try:
-            append_history_entry(
-                rootdir=output_path.parent,
-                score=score,
-                history_path=history_path,
-            )
-        except Exception:
-            logger.warning('Failed to persist history for report at %s', output_path, exc_info=True)
+        if score.total > 0:
+            try:
+                append_history_entry(
+                    rootdir=output_path.parent,
+                    score=score,
+                    history_path=history_path,
+                )
+            except Exception:
+                logger.warning('Failed to persist history for report at %s', output_path, exc_info=True)
         history = load_history(history_path)
         output_path.write_text(self.to_html(score, history=history, skipped_files=skipped_files), encoding='utf-8')
         logger.info('HTML report written to %s', output_path)
