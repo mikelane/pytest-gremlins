@@ -113,13 +113,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.11', '3.12', '3.13', '3.14']
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -137,14 +137,20 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Verify interpreter matches the matrix
+      - name: Verify the matrix Python
         shell: bash
+        env:
+          EXPECTED_PYTHON: ${{ matrix.python-version }}
         run: |
-          actual=$(uv run python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-          if [ "$actual" != "${{ matrix.python-version }}" ]; then
-            echo "::error::Job asked for Python ${{ matrix.python-version }} but the venv runs $actual"
-            exit 1
-          fi
+          uv run python - "$EXPECTED_PYTHON" <<'PY'
+          import sys
+
+          actual = f'{sys.version_info.major}.{sys.version_info.minor}'
+          expected = sys.argv[1]
+          print(f'uv run selected Python {actual}')
+          if actual != expected:
+              raise SystemExit(f'Expected Python {expected}, selected Python {actual}')
+          PY
 
       - name: Run tests with coverage
         shell: bash
