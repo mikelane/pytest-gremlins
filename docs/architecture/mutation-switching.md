@@ -146,7 +146,8 @@ The coverage pre-scan runs the test suite with a context per test and builds a m
 lines to tests. For each gremlin, the plugin selects the tests that executed its line. If no test
 covers the line, or a pre-scan problem disables coverage selection, it runs the whole suite.
 Selected tests are ordered by specificity, so pytest's exit-first option can stop at the first
-failure. Batch mode uses the union of the selected tests for the gremlins it hands to a worker.
+failure. Batch mode uses one union of selected tests across all gremlins awaiting a run, and
+passes that same test command to every batch.
 
 This can reduce the test work inside each subprocess, but the reduction depends on the project's
 test coverage and structure. When enabled, the incremental cache can replace a subprocess with a
@@ -372,7 +373,7 @@ Mutation switching is the foundation that makes everything else possible:
   gremlin's test run. A gremlin that runs still pays for a fresh process, imports, and I/O.
 - **Parallelization:** Workers assign gremlin ids and spawn independent bootstrap processes.
 - **Simplicity:** Original source files are never rewritten. The bootstrap and `sources.json`
-  live in a temporary directory that pytest-gremlins removes after the run.
+  live in a temporary directory cleaned up during normal pytest teardown.
 - **Stability:** Original files are never modified.
 
 Combined with coverage guidance, incremental analysis, and parallel execution, mutation
