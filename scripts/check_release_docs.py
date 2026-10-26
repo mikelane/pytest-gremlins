@@ -19,6 +19,26 @@ is any ``###`` heading that is not one of the known sections. A fence or HTML co
 sections (``Internal``, ``Documentation``) and before the first heading, but it must be closed and must not hide a
 ``###`` heading. The check fails closed: whatever it does not understand is reported, never skipped.
 
+Three line rules cover the whole selected entry, in the preamble, the exempt sections and the gated sections alike:
+
+* Only the exact ``### <section>`` headings (up to 3 leading spaces, optional tab after the hashes, optional
+  closing hashes) and the ``## [v]X.Y.Z`` version headings are accepted. Any other line that starts with ``#`` is an
+  unsupported heading, whether or not a renderer would make one of it: ``#Feature``, ``####Detail``, ``###Feature``,
+  ``#Feature ###``, ``##v2.0.0`` and ``#<TAB>Feature`` all fail. The one exception is an issue-number continuation
+  such as ``  #720)``, which is a wrapped reference inside a bullet.
+* Every thematic break or setext-underline shape is rejected, in every section and with no attempt to guess the
+  previous line: a run of ``=``, a run of one or two ``-``, and ``***``, ``---``, ``___``, ``* * *`` and ``- - -``.
+  This also rejects a delimiter under a pipe or inline-HTML line, so ``A | B`` + ``---`` and
+  ``<em>Feature</em>`` + ``---`` cannot hide a rendered heading.
+* Both rules apply again after the list-marker and block-quote prefixes are stripped, so ``> #Feature``,
+  ``- #### Detail``, ``> <em>Feature</em>`` + ``> ---`` and ``- ---`` fail too. A code fence has to start at the
+  outer level (up to the leading spaces the scanner already accepts); a fence opener inside a block quote or after
+  a list marker is reported as unsupported instead of being read as code.
+
+A second visible copy of the selected version heading is a problem wherever it sits, including the no-space
+(``##v2.0.0``), indented and quoted or listed variants, because ``--notes-out`` publishes only the first copy while
+readers see both.
+
 Nothing skips this check: it has no flag, environment variable or input that turns it off.
 
 ``--newest`` checks the topmost ``## [v]X.Y.Z`` entry instead of a named version; it selects, never skips. When
@@ -74,10 +94,11 @@ EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
 LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 SECTION_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
 HEADING_CLOSER = re.compile(r'(?:^|[ \t]+)#+[ \t]*$')
+CONTAINER_PREFIX = re.compile(r'(?: {0,3}>[ \t]?|[ \t]*(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+|(?=[ \t]*$)))')
+ISSUE_CONTINUATION = re.compile(r'[ \t]+#[0-9]+(?:[ \t]*,[ \t]*#[0-9]+)*[ \t]*\)[ \t]*$')
+THEMATIC_OR_SETEXT = re.compile(r'[ \t]*(?:(?:=[ \t]*)+|-{1,2}|(?:[-*_][ \t]*){3,})[ \t]*$')
 UNSUPPORTED_SHAPES = (
     (re.compile(r'\s*>'), 'a blockquote'),
-    (re.compile(r'\s*#{1,6}(?:[ \t]|$)'), 'a heading other than a "###" section heading'),
-    (re.compile(r'\s*(?:=+|-{2,}|(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$'), 'a thematic break or setext underline'),
     (re.compile(r'\s*[\u2022\u2023\u25e6\u25aa\u25cf]'), 'a pseudo-bullet; write "-"'),
 )
 
@@ -111,6 +132,36 @@ def _structural_title(text: str, level: int) -> str | None:
     if match is None or len(match.group(1)) != level:
         return None
     return HEADING_CLOSER.sub('', match.group(2) or '').strip()
+
+
+def _container_content(text: str) -> str:
+    """Strip the block-quote and list markers of ``text`` so the content inside them can be read on its own."""
+    content = text
+    while (match := CONTAINER_PREFIX.match(content)) is not None:
+        content = content[match.end() :]
+    return content
+
+
+def _line_shape_problem(text: str) -> str | None:
+    """Describe a heading or delimiter shape the accepted changelog format rejects, or return ``None``.
+
+    The format is strict on purpose: a visible line is allowed only if it is one of the known ``###`` section
+    headings, a version heading, ordinary prose or a list line. Anything that starts with ``#`` in another shape is
+    reported, whether or not a renderer would make a heading of it, and every thematic-break or setext-underline
+    shape is reported without looking at the line above it. Both readings repeat inside list and block-quote
+    markers, which is how ``> #Feature`` and ``- ---`` are caught.
+    """
+    if not text.strip() or ISSUE_CONTINUATION.match(text):
+        return None
+    content = _container_content(text)
+    if content.lstrip(' \t').startswith('#'):
+        accepted = content == text and (
+            _structural_title(content, SECTION_LEVEL) is not None or _structural_title(content, ENTRY_LEVEL) is not None
+        )
+        return None if accepted else 'a heading that is not a known "###" section heading or version heading'
+    if THEMATIC_OR_SETEXT.match(text) or THEMATIC_OR_SETEXT.match(content):
+        return 'a thematic break or setext underline'
+    return None
 
 
 def _fence_marker(text: str) -> str | None:
@@ -204,15 +255,45 @@ class _Scan:
     hidden_headings: list[tuple[_Region, int]]
     hidden_version_headings: list[tuple[_Region, int, str]]
     raw_lines: list[str]
+    container_fence_openers: frozenset[int] = frozenset()
+
+
+def _container_fence_lines(raw: list[str]) -> tuple[set[int], set[int]]:
+    """Return the lines of every fence inside a list item or block quote, and the lines that open one.
+
+    Such a fence is not supported by the accepted format. Its lines are read as plain text so they cannot hide what
+    follows, and each opener is reported instead of the body being classified as a heading or code.
+    """
+    lines: set[int] = set()
+    openers: set[int] = set()
+    marker = ''
+    for number, text in enumerate(raw, start=1):
+        content = _container_content(text)
+        if marker:
+            lines.add(number)
+            if _closes_fence(content, marker):
+                marker = ''
+            continue
+        if content == text:
+            continue
+        candidate = _fence_marker(content)
+        if candidate:
+            marker = candidate
+            lines.add(number)
+            openers.add(number)
+    return lines, openers
 
 
 def _scan(changelog: str) -> _Scan:
     """Scan ``changelog``; a fence or comment that is never closed is reported, then read as plain text.
 
-    Reading it as plain text keeps it from hiding the rest of the file, so later sections are still checked.
+    Reading it as plain text keeps it from hiding the rest of the file, so later sections are still checked. A fence
+    marker inside a list item or block quote is never read as code either: such a line is reported as unsupported, so
+    it must not open a region that would hide the lines after it.
     """
     raw = LINE_BREAK.split(changelog)
-    neutralized: set[int] = set()
+    container_lines, container_openers = _container_fence_lines(raw)
+    neutralized: set[int] = set(container_lines)
     unclosed: list[_Region] = []
     while True:
         scanner = _Scanner(frozenset(neutralized))
@@ -225,6 +306,7 @@ def _scan(changelog: str) -> _Scan:
                 scanner.hidden_headings,
                 scanner.hidden_version_headings,
                 LINE_WITH_BREAK.findall(changelog),
+                frozenset(container_openers),
             )
         unclosed.append(scanner.open_region)
         neutralized.add(scanner.open_region.number)
@@ -267,9 +349,12 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
         if heading.match(text)
     ]
     lines = scan.lines[start + 1 : end]
+    shapes = _entry_shape_problems(lines) + _container_fence_problems(scan, first, last)
     text = ''.join(scan.raw_lines[first - 1 : last - 1])
     return _Entry(
-        lines, problems + _stray_heading_problems(lines), text if text.endswith(('\n', '\r')) else f'{text}\n'
+        lines,
+        problems + shapes + _stray_heading_problems(lines) + _copy_problems(scan.lines[start + 1 :], bare_version),
+        text if text.endswith(('\n', '\r')) else f'{text}\n',
     )
 
 
@@ -280,6 +365,43 @@ def _stray_heading_problems(lines: list[_Line]) -> list[str]:
         f'version heading; the release notes would publish what follows it as part of this entry'
         for line in lines
         if _structural_title(line.heading, ENTRY_LEVEL) is not None
+    ]
+
+
+def _copy_problems(later_lines: list[_Line], bare_version: str) -> list[str]:
+    """Report a second visible copy of the selected version heading anywhere after the first one."""
+    copy = re.compile(rf'v?{re.escape(bare_version)}(?=$|[ \t(?#\[])')
+    return [
+        f'a second visible copy of the entry version heading is at line {line.number} '
+        f'({_shorten(line.heading.strip())}); remove it so the entry is published once'
+        for line in later_lines
+        if _is_version_copy(line.heading, copy)
+    ]
+
+
+def _is_version_copy(text: str, copy: re.Pattern[str]) -> bool:
+    """Return whether ``text`` is a visible ``##`` heading for the selected version, in any accepted shape."""
+    content = _container_content(text).lstrip(' \t')
+    is_level_two = content.startswith('##') and not content.startswith('###')
+    return is_level_two and copy.match(content[2:].lstrip(' \t')) is not None
+
+
+def _entry_shape_problems(lines: list[_Line]) -> list[str]:
+    """Report unsupported heading and delimiter shapes on the visible lines of the entry."""
+    return [
+        f'{reason} at line {line.number} ({_shorten(line.text.strip())})'
+        for line in lines
+        if (reason := _line_shape_problem(line.text)) is not None
+    ]
+
+
+def _container_fence_problems(scan: _Scan, first: int, last: int) -> list[str]:
+    """Report a code fence opened inside a list item or block quote: only outer-level fences are supported."""
+    return [
+        f'a code fence opened inside a list item or block quote at line {number} is unsupported; start the fence at '
+        'the outer level'
+        for number in sorted(scan.container_fence_openers)
+        if first <= number < last
     ]
 
 
