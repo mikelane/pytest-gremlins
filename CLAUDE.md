@@ -207,10 +207,14 @@ The PR fails CI until the entry passes the release docs gate.
   `### Documentation` and the gated sections alike). It is not a Markdown renderer, so a line outside a closed
   outer code fence or HTML comment must be prose, a list line, a version heading or one of the five `###` headings.
   Every other line that starts with `#` fails, including `#Feature`, `####Detail`, `###Feature`, `#Feature ###`,
-  `#\tFeature` and `##v2.0.0`; an issue-number continuation such as `  #720)` is the one exception, because it wraps
-  a reference inside a bullet.
-- Every thematic-break and setext-underline line fails anywhere in the entry: `=`, `===`, `-`, `--`, `---`, `***`,
-  `___`, `* * *` and `- - -`. The check does not guess from the previous line; a delimiter under `A | B` or
+  `#\tFeature` and `##v2.0.0`; an issue-number continuation is the one exception, because it wraps a reference
+  inside a bullet. It is a `#720)` line indented by two spaces, and it counts only while a list item is open
+  directly above it: a standalone `#720)` indented by four spaces renders as a heading and fails.
+- A raw `<h1>`-`<h6>` tag fails wherever it is visible, in any case and with attributes (`<H2 class="x">`), including
+  inside a block quote or a list item, because the renderer makes a real heading of it. A tag written as a code span
+  (`<h1>` in backticks) stays literal text.
+- Every thematic-break and underline-style heading line fails anywhere in the entry: `=`, `===`, `-`, `--`, `---`,
+  `***`, `___`, `* * *` and `- - -`. The check does not guess from the previous line; a delimiter under `A | B` or
   `<em>Feature</em>` fails for being a delimiter. The same heading and delimiter rules apply after list and `>`
   prefixes are stripped, so `> #Feature`, `- #### Detail`, `> <em>Feature</em>` + `> ---` and `- ---` fail too.
 - A code fence must open at the outer level (up to the indentation the scanner already allows). A fence inside a

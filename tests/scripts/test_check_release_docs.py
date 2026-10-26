@@ -1153,6 +1153,75 @@ class DescribeStrictEntryFormat:
         assert 'is unsupported' in problems
 
     @pytest.mark.parametrize(
+        'literal',
+        [
+            '````markdown\n> ```\n> example\n> ```\n````',
+            '````markdown\n> ```\n````',
+            '~~~markdown\n- ```\n  example\n  ```\n~~~',
+            '<!--\n> ```\n> text\n> ```\n-->',
+            '<!--\n> ```\n-->',
+            '```\n<!--\n> ```\n-->\n```',
+        ],
+    )
+    def it_keeps_literal_container_fence_text_inside_an_outer_fence_or_comment(self, literal: str) -> None:
+        assert _problems_of(f'### Internal\n\n{literal}\n\n### Fix\n\n{LINKED_BULLET}\n') == ''
+
+    def it_still_reports_a_container_fence_after_an_outer_fence_closes(self) -> None:
+        body = f'### Internal\n\n````\n> ```\n````\n\n> ```\n> code\n> ```\n\n### Fix\n\n{LINKED_BULLET}\n'
+
+        assert _problems_of(body) == (
+            'a code fence opened inside a list item or block quote at line 11 is unsupported; start the fence at the '
+            'outer level'
+        )
+
+    def it_still_reports_a_container_fence_after_an_outer_comment_closes(self) -> None:
+        body = f'### Internal\n\n<!--\n> ```\n-->\n\n- ```\n  code\n  ```\n\n### Fix\n\n{LINKED_BULLET}\n'
+
+        assert _problems_of(body) == (
+            'a code fence opened inside a list item or block quote at line 11 is unsupported; start the fence at the '
+            'outer level'
+        )
+
+    @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
+    @pytest.mark.parametrize(
+        'line',
+        [
+            '<h1>Feature</h1>',
+            '<h6>Detail</h6>',
+            '<H2 class="x">Feature</H2>',
+            '<h3 id="anchor">Feature</h3>',
+            '> <h1>Feature</h1>',
+            '- <h4>Detail</h4>',
+            '1. <h5>Detail</h5>',
+        ],
+    )
+    def it_rejects_a_raw_html_heading_in_every_section(self, section: str, line: str) -> None:
+        problems = _problems_of(_section_body(section, line, before='- **Bumped.** (no docs: x)'))
+
+        assert 'raw HTML heading' in problems
+
+    def it_keeps_a_raw_html_tag_that_is_a_code_span(self) -> None:
+        assert _problems_of('### Internal\n\n- Wrote `<h1>Feature</h1>` in a docstring. (#1)\n') == ''
+
+    @pytest.mark.parametrize('line', ['    #720)', '  #720)', '\t#720)', '      #709, #714)'])
+    def it_rejects_a_standalone_issue_number_line(self, line: str) -> None:
+        problems = _problems_of(f'### Internal\n\nParagraph before it.\n\n{line}\n')
+
+        assert 'heading' in problems
+
+    def it_does_not_read_an_issue_number_as_a_continuation_after_a_blank_line(self) -> None:
+        problems = _problems_of('### Internal\n\n- **Bumped.** (no docs: x)\n\n  #716)\n')
+
+        assert 'heading' in problems
+
+    @pytest.mark.parametrize(
+        'continuation',
+        ['- **A.** (#598,\n  #716)', '- **A.** (#701,\n  #709, #714)', '  - **Nested.** (#1,\n    #2)'],
+    )
+    def it_keeps_a_wrapped_bullet_reference(self, continuation: str) -> None:
+        assert _problems_of(f'### Internal\n\n{continuation}\n') == ''
+
+    @pytest.mark.parametrize(
         'content',
         [
             'Plain prose about the release.',
@@ -1412,8 +1481,10 @@ class DescribeRendererOracle:
 
     MARKDOWN_EXTENSIONS = (
         'abbr',
+        'admonition',
         'attr_list',
         'def_list',
+        'fenced_code',
         'footnotes',
         'md_in_html',
         'tables',
@@ -1429,7 +1500,9 @@ class DescribeRendererOracle:
         'pymdownx.keys',
         'pymdownx.magiclink',
         'pymdownx.mark',
+        'pymdownx.progressbar',
         'pymdownx.smartsymbols',
+        'pymdownx.snippets',
         'pymdownx.superfences',
         'pymdownx.tabbed',
         'pymdownx.tasklist',
@@ -1439,8 +1512,11 @@ class DescribeRendererOracle:
     @classmethod
     def _render(cls, text: str) -> str:
         markdown = pytest.importorskip('markdown', reason='the docs group renders the oracle samples')
-        return markdown.markdown(
-            text, extensions=list(cls.MARKDOWN_EXTENSIONS), extension_configs={'toc': {'toc_depth': 3}}
+        return cast(
+            'str',
+            markdown.markdown(
+                text, extensions=list(cls.MARKDOWN_EXTENSIONS), extension_configs={'toc': {'toc_depth': 3}}
+            ),
         )
 
     @pytest.mark.parametrize(
@@ -1461,9 +1537,27 @@ class DescribeRendererOracle:
         ],
     )
     def it_renders_a_heading_for_each_rejected_shape(self, text: str, tag: str) -> None:
-        assert tag in self._render(text)
+        assert tag in self._render(text).lower()
 
-    @pytest.mark.parametrize('text', ['- **A.** (#598,\n  #716)\n', 'Plain prose.\n'])
+    @pytest.mark.parametrize(
+        ('text', 'tag'),
+        [
+            ('<h1>Feature</h1>\n', '<h1'),
+            ('<h6>Detail</h6>\n', '<h6'),
+            ('<H2 class="x">Feature</H2>\n', '<h2'),
+            ('<h3 id="anchor">Feature</h3>\n', '<h3'),
+            ('> <h1>Feature</h1>\n', '<h1'),
+            ('- <h4>Detail</h4>\n', '<h4'),
+            ('- item\n\n    #720)\n', '<h1'),
+        ],
+    )
+    def it_renders_a_heading_for_html_and_standalone_issue_numbers(self, text: str, tag: str) -> None:
+        assert tag in self._render(text).lower()
+
+    @pytest.mark.parametrize(
+        'text',
+        ['- **A.** (#598,\n  #716)\n', 'Plain prose.\n', 'Use `<h1>` in prose.\n', '````markdown\n> ```\n````\n'],
+    )
     def it_renders_no_heading_for_accepted_plain_content(self, text: str) -> None:
         assert '<h' not in self._render(text)
 
