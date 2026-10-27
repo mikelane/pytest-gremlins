@@ -152,16 +152,16 @@ def _normalize_keys(tool_config: dict[str, object], on_warning: Callable[[str], 
     spelled_as: dict[str, str] = {}
     for key, value in tool_config.items():
         underscored = key.replace('-', '_')
+        if underscored not in _NORMALIZED_KEYS:
+            on_warning(_unknown_key_message(key, underscored))
+            continue
         if underscored in spelled_as:
             raise ValueError(
                 f'[tool.pytest-gremlins] sets both {spelled_as[underscored]!r} and {key!r}, which are '
                 f'the same key. Use only one.'
             )
         spelled_as[underscored] = key
-        if underscored in _NORMALIZED_KEYS:
-            settings[underscored] = value
-        else:
-            on_warning(_unknown_key_message(key, underscored))
+        settings[underscored] = value
     return settings
 
 
@@ -169,9 +169,9 @@ def _unknown_key_message(key: str, underscored: str) -> str:
     closest = difflib.get_close_matches(underscored, sorted(_NORMALIZED_KEYS), n=1)
     if closest:
         return (
-            f"[tool.pytest-gremlins] has unknown key '{key}' (ignored); did you mean '{_NORMALIZED_KEYS[closest[0]]}'?"
+            f"[tool.pytest-gremlins] has unknown key {key!r} (ignored); did you mean '{_NORMALIZED_KEYS[closest[0]]}'?"
         )
-    return f"[tool.pytest-gremlins] has unknown key '{key}' (ignored); valid keys: {', '.join(sorted(CONFIG_KEYS))}"
+    return f'[tool.pytest-gremlins] has unknown key {key!r} (ignored); valid keys: {", ".join(sorted(CONFIG_KEYS))}'
 
 
 def _read_string_list(settings: dict[str, object], key: str, example: str) -> list[str] | None:
@@ -205,7 +205,7 @@ def _check_operator_names(names: list[str]) -> None:
     for name in names:
         if name not in valid:
             raise ValueError(
-                f"[tool.pytest-gremlins].operators has unknown operator '{name}'. Valid operators: {', '.join(valid)}"
+                f'[tool.pytest-gremlins].operators has unknown operator {name!r}. Valid operators: {", ".join(valid)}'
             )
 
 

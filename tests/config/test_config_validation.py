@@ -134,6 +134,30 @@ class DescribeUnknownKeys:
 
         assert load_config(tmp_path, on_warning=lambda _message: None).batch_size == 7
 
+    def it_warns_rather_than_rejects_an_unknown_key_given_in_both_spellings(self, tmp_path: Path):
+        _write(tmp_path, 'future-key = 1\nfuture_key = 2')
+        warned: list[str] = []
+
+        load_config(tmp_path, on_warning=warned.append)
+
+        assert warned
+
+    def it_escapes_control_characters_in_an_unknown_key_name(self, tmp_path: Path):
+        (tmp_path / 'pyproject.toml').write_text('[tool.pytest-gremlins]\n"x\\npytest-gremlins: forged" = 1\n')
+        warned: list[str] = []
+
+        load_config(tmp_path, on_warning=warned.append)
+
+        assert '\n' not in warned[0]
+
+    def it_escapes_control_characters_in_an_unknown_operator_name(self, tmp_path: Path):
+        (tmp_path / 'pyproject.toml').write_text('[tool.pytest-gremlins]\noperators = ["x\\nforged"]\n')
+
+        with pytest.raises(ValueError, match='unknown operator') as raised:
+            load_config(tmp_path)
+
+        assert '\n' not in str(raised.value).split('Valid operators')[0]
+
     def it_does_not_warn_for_a_valid_config(self, tmp_path: Path):
         _write(tmp_path, 'batch-size = 7\nmax_pardons_pct = 1.0')
         warned: list[str] = []

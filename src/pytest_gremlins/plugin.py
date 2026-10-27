@@ -941,7 +941,7 @@ _NON_RUNNING_MODE_FLAGS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
+def _maybe_short_circuit_for_inactive_run(config: pytest.Config, config_warnings: list[str] | None = None) -> bool:
     """Disable the session for pytest modes that execute no tests, after configuration is validated.
 
     ``--collect-only``, ``--setup-plan``, ``--setup-only``, ``--fixtures`` and
@@ -953,6 +953,7 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
 
     Args:
         config: The pytest config object.
+        config_warnings: Configuration warnings to print to stderr, since no terminal summary will carry them.
 
     Returns:
         True if the session was disabled and configuration should stop.
@@ -962,6 +963,8 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
         return False
     _install_session(config, GremlinSession(enabled=False))
     if not _is_xdist_worker(config):
+        for warning in config_warnings or []:
+            print(f'pytest-gremlins: warning: {warning}', file=sys.stderr)
         print(f'pytest-gremlins: {mode_flag} detected, skipping mutation testing', file=sys.stderr)
     return True
 
@@ -1058,7 +1061,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     target_paths = _resolve_target_paths(rootdir, merged_config)
 
-    if _maybe_short_circuit_for_inactive_run(config):
+    if _maybe_short_circuit_for_inactive_run(config, config_warnings):
         return
 
     (
@@ -2554,6 +2557,8 @@ def _skip_mutation_unless_baseline_is_green(gremlin_session: GremlinSession, exi
             print(rerun_warning, file=sys.stderr)
         return False
     reason = _baseline_skip_reason(gremlin_session, exitstatus)
+    for notice in gremlin_session.terminal_notices:
+        print(notice, file=sys.stderr)
     print(f'pytest-gremlins: skipping mutation testing because {reason}', file=sys.stderr)
     gremlin_session.enabled = False
     return True

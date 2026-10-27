@@ -6,6 +6,7 @@ import pytest
 
 _TARGET = 'def add(a, b):\n    return a + b\n'
 _TEST = 'from target import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n'
+_FAILING_TEST = 'from target import add\n\n\ndef test_add():\n    assert add(1, 2) == 4\n'
 
 
 @pytest.mark.medium
@@ -65,3 +66,26 @@ class DescribeUnknownTomlKey:
 
         assert result.ret == pytest.ExitCode.USAGE_ERROR
         result.stderr.fnmatch_lines(['*max-pardons-pct must be between 0 and 100*'])
+
+
+@pytest.mark.medium
+class DescribeUnknownTomlKeyWhenNothingIsMutated:
+    """The unknown-key warning still reaches the user when the run skips mutation testing."""
+
+    def it_warns_under_collect_only(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester_with_markers.makepyprojecttoml('[tool.pytest-gremlins]\nmax_pardon_pct = 5\n')
+        pytester_with_markers.makepyfile(target=_TARGET, test_target=_TEST)
+
+        result = pytester_with_markers.runpytest_subprocess('--gremlins', '--collect-only')
+
+        output = result.stdout.str() + result.stderr.str()
+        assert "unknown key 'max_pardon_pct'" in output
+
+    def it_warns_when_the_baseline_is_red(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester_with_markers.makepyprojecttoml('[tool.pytest-gremlins]\nmax_pardon_pct = 5\n')
+        pytester_with_markers.makepyfile(target=_TARGET, test_target=_FAILING_TEST)
+
+        result = pytester_with_markers.runpytest_subprocess('--gremlins', '--gremlin-targets=target.py')
+
+        output = result.stdout.str() + result.stderr.str()
+        assert "unknown key 'max_pardon_pct'" in output
