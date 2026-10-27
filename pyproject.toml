@@ -68,6 +68,7 @@ dev = [
     "ruff>=0.8.0",
     "tox>=4.61.5",
     "tox-uv>=1.36.0",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [project.urls]
