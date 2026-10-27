@@ -2877,9 +2877,16 @@ def _command_line_loads_module(config: pytest.Config) -> bool:
 
 
 def _plugins_declared_by(module: object) -> set[str]:
-    """Return the names a module lists in its ``pytest_plugins`` (a string or a sequence of strings)."""
-    declared = getattr(module, 'pytest_plugins', ())
-    return {declared} if isinstance(declared, str) else {name for name in declared if isinstance(name, str)}
+    """Return the names a module lists in its ``pytest_plugins``, read the way pytest reads it.
+
+    Pytest treats ``None`` (or any non-iterable) as empty and splits a string on commas.
+    """
+    declared = getattr(module, 'pytest_plugins', None)
+    if isinstance(declared, str):
+        return {name.strip() for name in declared.split(',')}
+    if isinstance(declared, (list, tuple, set, frozenset)):
+        return {name for name in declared if isinstance(name, str)}
+    return set()
 
 
 def _with_plugins_they_load(names: set[str]) -> set[str]:
