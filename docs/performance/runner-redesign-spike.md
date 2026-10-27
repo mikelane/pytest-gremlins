@@ -85,14 +85,17 @@ leaked state, or is killed only because of it, would produce a wrong verdict.
 
 The prototype is wired into the gremlin command path on the throwaway branch only (never merged). With
 `GREMLINS_PROTO_PERSISTENT=1`, `_test_gremlin` keeps one pytest session per distinct test command, sends it the
-active gremlin id, and reads back pass or fail, after collecting once. Both suites ran to completion:
-13 of 13 pass. The run created 17 sessions and reused a session 17 times, so the reuse path was exercised.
+active gremlin id, and reads back pass or fail, after collecting once. Both suites ran to completion
+and all 13 cases pass, but only 11 of the 13 cases went through the prototype. The `[parallel]` and `[batch]`
+cases never reach it: `_test_gremlin` is called only from `plugin.py`, the code in `parallel/` has no prototype
+hook, and the worker log shows 0 spawns and 0 reuses for both. They passed through the bootstrap. For the 11 cases
+that did, the run created 17 sessions and reused a session 17 times, so the reuse path was exercised.
 
 | Suite | Test | Result |
 | --- | --- | --- |
 | `test_runner_fidelity.py` | `it_zaps_every_mutant_whatever_the_test_style[default]` | pass |
-| `test_runner_fidelity.py` | `it_zaps_every_mutant_whatever_the_test_style[parallel]` | pass |
-| `test_runner_fidelity.py` | `it_zaps_every_mutant_whatever_the_test_style[batch]` | pass |
+| `test_runner_fidelity.py` | `it_zaps_every_mutant_whatever_the_test_style[parallel]` | pass (bootstrap, not the prototype) |
+| `test_runner_fidelity.py` | `it_zaps_every_mutant_whatever_the_test_style[batch]` | pass (bootstrap, not the prototype) |
 | `test_runner_fidelity.py` | `it_runs_every_style_of_test_body_against_a_mutant` | pass |
 | `test_runner_fidelity.py` | `it_leaves_every_mutant_survived[fixture]` | pass |
 | `test_runner_fidelity.py` | `it_leaves_every_mutant_survived[parametrized]` | pass |
@@ -103,6 +106,11 @@ active gremlin id, and reads back pass or fail, after collecting once. Both suit
 | `test_runner_conftest_and_path_fidelity.py` | `it_does_not_count_a_failed_lazy_helper_import_as_a_kill` | pass |
 | `test_runner_conftest_and_path_fidelity.py` | `it_zaps_with_a_test_that_imports_a_sibling_helper` | pass |
 | `test_runner_conftest_and_path_fidelity.py` | `it_zaps_with_a_test_whose_helper_is_on_the_pytest_ini_pythonpath` | pass |
+
+The suites also cannot tell whether a reused worker switches to the new gremlin: with the per-round toggle removed,
+a reused worker stays on the first gremlin it was spawned with and the prototype still passes `[default]`, the
+`survived[fixture]` case, conftest `module_level` and the sibling-helper case. A control that always reports 0 does
+fail, so the worker's verdict is used. #803 must close this gap too.
 
 This does not show that design 1 is safe. The two suites do not cover cross-gremlin state leakage: each of their
 suites has few gremlins and no test that fails when it is run a second time in the same session, while the

@@ -11,6 +11,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 DOC = ROOT / 'docs' / 'performance' / 'runner-redesign-spike.md'
 FOLLOW_UP_ISSUES = ('#802', '#803', '#804')
+BOOTSTRAP_ONLY_TEST_IDS = (
+    'it_zaps_every_mutant_whatever_the_test_style[parallel]',
+    'it_zaps_every_mutant_whatever_the_test_style[batch]',
+)
 FIDELITY_TEST_IDS = (
     'it_zaps_every_mutant_whatever_the_test_style[default]',
     'it_zaps_every_mutant_whatever_the_test_style[parallel]',
@@ -75,7 +79,22 @@ class DescribeRunnerRedesignSpikeReport:
         rows = [line for line in DOC.read_text().splitlines() if test_id in line]
 
         assert len(rows) == 1
-        assert '| pass |' in rows[0]
+        assert '| pass' in rows[0]
+
+    @pytest.mark.parametrize('test_id', BOOTSTRAP_ONLY_TEST_IDS)
+    def it_marks_the_fidelity_cases_that_never_reach_the_prototype(self, test_id: str) -> None:
+        row = next(line for line in DOC.read_text().splitlines() if test_id in line)
+
+        assert '| pass (bootstrap, not the prototype) |' in row
+
+    def it_does_not_claim_all_thirteen_cases_ran_through_the_prototype(self) -> None:
+        text = ' '.join(DOC.read_text().split())
+
+        assert '13 of 13 pass' not in text
+        assert '11 of the 13 cases' in text
+
+    def it_says_the_suites_cannot_tell_whether_a_reused_worker_switches_gremlin(self) -> None:
+        assert 'cannot tell whether a reused worker switches to the new gremlin' in ' '.join(DOC.read_text().split())
 
     def it_does_not_claim_the_fidelity_suites_were_skipped(self) -> None:
         assert 'were not run against the prototype' not in DOC.read_text()
