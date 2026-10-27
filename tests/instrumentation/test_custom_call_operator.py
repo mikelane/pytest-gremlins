@@ -28,6 +28,24 @@ class _FilterToExcludeOperator:
         return 'filter -> exclude'
 
 
+_FILTER_SOURCE = 'def f(qs):\n    return qs.filter(a=1)\n'
+
+
+class _QuerySet:
+    def filter(self, **_kw: int) -> str:
+        return 'filter'
+
+    def exclude(self, **_kw: int) -> str:
+        return 'exclude'
+
+
+def _run_f(tree: ast.Module, active: str | None) -> object:
+    ast.fix_missing_locations(tree)
+    namespace: dict[str, object] = {'__gremlin_active__': active}
+    exec(compile(tree, 'm.py', 'exec'), namespace)  # noqa: S102
+    return namespace['f'](_QuerySet())  # type: ignore[operator]
+
+
 @pytest.mark.small
 class DescribeCustomOperatorOnCallNodes:
     def it_produces_a_gremlin_for_a_matching_call(self) -> None:
@@ -51,25 +69,15 @@ class DescribeCustomOperatorOnCallNodes:
 
         assert len(gremlins) == 1
 
-    def it_switches_the_call_when_the_gremlin_is_active(self) -> None:
-        source = 'def f(qs):\n    return qs.filter(a=1)\n'
-        gremlins, tree = transform_source(source, 'm.py', operators=[_FilterToExcludeOperator()])
-        ast.fix_missing_locations(tree)
+    def it_calls_the_original_method_when_no_gremlin_is_active(self) -> None:
+        _gremlins, tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_FilterToExcludeOperator()])
 
-        class _Qs:
-            def filter(self, **_kw: int) -> str:
-                return 'filter'
+        assert _run_f(tree, active=None) == 'filter'
 
-            def exclude(self, **_kw: int) -> str:
-                return 'exclude'
+    def it_calls_the_mutated_method_when_the_gremlin_is_active(self) -> None:
+        gremlins, tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_FilterToExcludeOperator()])
 
-        results = []
-        for active in (None, gremlins[0].gremlin_id):
-            namespace: dict[str, object] = {'__gremlin_active__': active}
-            exec(compile(tree, 'm.py', 'exec'), namespace)  # noqa: S102
-            results.append(namespace['f'](_Qs()))  # type: ignore[operator]
-
-        assert results == ['filter', 'exclude']
+        assert _run_f(tree, active=gremlins[0].gremlin_id) == 'exclude'
 
 
 class _CountingFilterOperator(_FilterToExcludeOperator):
