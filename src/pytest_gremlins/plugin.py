@@ -131,6 +131,7 @@ from pytest_gremlins.rerun_options import (
     RerunIniResolution,
     baseline_rerun_warning,
     expand_argument_files,
+    mutant_timeout_for_items,
     rerun_cache_settings,
     rerun_ini_as_gremlin_runs_read,
     rerun_keys_set_in,
@@ -1302,6 +1303,12 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     gremlin_session.test_files = list(set(test_files))
 
     gremlin_session.total_tests = len(session.items)
+    if session.items and _rerunfailures_is_loaded(session.config):
+        gremlin_session.mutant_timeout = mutant_timeout_for_items(
+            gremlin_session.mutant_attempt_timeout or gremlin_session.mutant_timeout,
+            gremlin_session.mutant_timeout,
+            session.items,
+        )
 
     # Normalize node IDs for subprocess execution.
     # In some contexts (e.g. pytester) node IDs can include absolute paths, and
