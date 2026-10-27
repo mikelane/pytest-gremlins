@@ -144,6 +144,7 @@ from pytest_gremlins.rerun_options import (
 )
 from pytest_gremlins.xdist_options import (
     addopts_without_xdist,
+    env_with_stripped_addopts,
     env_without_xdist_addopts,
 )
 
@@ -3181,13 +3182,10 @@ def _prescan_env() -> dict[str, str]:
     Both are stripped from it, as are ``--cov*`` options, which would make pytest-cov fight the pre-scan's
     own collection (issue #669).  The variable is dropped if empty.
     """
-    env = env_without_xdist_addopts(
-        {key: value for key, value in os.environ.items() if key not in _PRESCAN_OVERRIDING_ENV_VARS}
+    return env_with_stripped_addopts(
+        {key: value for key, value in os.environ.items() if key not in _PRESCAN_OVERRIDING_ENV_VARS},
+        lambda addopts: _addopts_without_cov(shlex.split(addopts_without_gremlins(addopts_without_xdist(addopts)))),
     )
-    remaining = _addopts_without_cov(shlex.split(addopts_without_gremlins(env.pop('PYTEST_ADDOPTS', ''))))
-    if remaining:
-        env['PYTEST_ADDOPTS'] = remaining
-    return env
 
 
 def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, timeout: int) -> None:

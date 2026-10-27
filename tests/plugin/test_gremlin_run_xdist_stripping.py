@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 
 from pytest_gremlins.plugin import _build_test_command
-from pytest_gremlins.xdist_options import env_without_xdist_addopts
+from pytest_gremlins.xdist_options import (
+    addopts_without_xdist,
+    env_with_stripped_addopts,
+    env_without_xdist_addopts,
+)
 
 
 @pytest.mark.small
@@ -85,3 +89,29 @@ class DescribeBuildTestCommandForcingSingleProcess:
 
     def it_omits_n_zero_by_default(self) -> None:
         assert '-n' not in _build_test_command(None)
+
+
+@pytest.mark.small
+class DescribeAddoptsWithoutXdistEndOfOptions:
+    def it_keeps_every_token_after_the_end_of_options_marker(self) -> None:
+        assert addopts_without_xdist('-n 2 -- -n 3 --dist=load') == '-- -n 3 --dist=load'
+
+
+@pytest.mark.small
+class DescribeEnvWithStrippedAddopts:
+    def it_replaces_pytest_addopts_with_the_stripped_value(self) -> None:
+        env = env_with_stripped_addopts(
+            {'PYTEST_ADDOPTS': '-x -v', 'HOME': '/h'}, lambda addopts: addopts.replace('-x ', '')
+        )
+
+        assert env == {'HOME': '/h', 'PYTEST_ADDOPTS': '-v'}
+
+    def it_drops_pytest_addopts_when_nothing_remains(self) -> None:
+        assert env_with_stripped_addopts({'PYTEST_ADDOPTS': '-x', 'HOME': '/h'}, lambda _addopts: '') == {'HOME': '/h'}
+
+    def it_does_not_modify_the_given_environment(self) -> None:
+        original = {'PYTEST_ADDOPTS': '-x'}
+
+        env_with_stripped_addopts(original, lambda _addopts: '')
+
+        assert original == {'PYTEST_ADDOPTS': '-x'}

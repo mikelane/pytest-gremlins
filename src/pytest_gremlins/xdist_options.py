@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import (
+    Callable,
+    Mapping,
+)
 import shlex
 
 # pytest-xdist options that take a value.  Written either inline (``--dist=load``) or
@@ -64,6 +67,9 @@ def addopts_without_xdist(addopts: str) -> str:
     while index < len(args):
         arg = args[index]
         index += 1
+        if arg == '--':
+            kept.extend(args[index - 1 :])
+            break
         name = arg.split('=', 1)[0]
         takes_separate_value = (name in _XDIST_VALUE_OPTS and '=' not in arg) or arg == '-n'
         if takes_separate_value:
@@ -94,8 +100,22 @@ def env_without_xdist_addopts(env: Mapping[str, str]) -> dict[str, str]:
         >>> env_without_xdist_addopts({'PYTEST_ADDOPTS': '-n auto'})
         {}
     """
+    return env_with_stripped_addopts(env, addopts_without_xdist)
+
+
+def env_with_stripped_addopts(env: Mapping[str, str], strip: Callable[[str], str]) -> dict[str, str]:
+    """Return a copy of ``env`` whose ``PYTEST_ADDOPTS`` went through ``strip``; dropped if nothing remains.
+
+    Args:
+        env: The environment to copy; it is not modified.
+        strip: Maps an ``addopts`` string to the string to keep.
+
+    Example:
+        >>> env_with_stripped_addopts({'PYTEST_ADDOPTS': '-x -v'}, lambda addopts: addopts.replace('-x ', ''))
+        {'PYTEST_ADDOPTS': '-v'}
+    """
     sanitized = dict(env)
-    remaining = addopts_without_xdist(sanitized.pop('PYTEST_ADDOPTS', ''))
+    remaining = strip(sanitized.pop('PYTEST_ADDOPTS', ''))
     if remaining:
         sanitized['PYTEST_ADDOPTS'] = remaining
     return sanitized
