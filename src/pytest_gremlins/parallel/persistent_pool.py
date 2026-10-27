@@ -1,13 +1,13 @@
-"""Persistent worker pool for reduced subprocess overhead.
+"""Persistent worker pool that keeps worker processes alive across gremlin tasks.
 
 This module implements a persistent worker pool that keeps worker processes
 alive across multiple gremlin tests. This addresses the primary performance
 bottleneck identified in profiling: subprocess spawning overhead of 500-700ms
 per gremlin.
 
-By keeping workers warm (already started, modules imported), we pay the
-startup cost once per worker instead of once per gremlin. For 100 gremlins
-with 4 workers, this reduces 100 * 600ms = 60s of overhead to 4 * 600ms = 2.4s.
+Workers are created once and reused, so the pool itself is not rebuilt per
+task. Each gremlin's tests still run in their own subprocess, including
+gremlins submitted together through ``submit_batch``.
 
 Architecture:
 - Main process creates N persistent worker processes
@@ -221,9 +221,9 @@ def _run_gremlin_test(  # pragma: no cover
 class PersistentWorkerPool:
     """Manages a pool of persistent worker processes for mutation testing.
 
-    Unlike the standard WorkerPool which spawns a new subprocess per gremlin,
-    this pool keeps worker processes alive and reuses them. Workers import
-    modules once and stay warm, dramatically reducing startup overhead.
+    This pool keeps worker processes alive and reuses them across tasks.
+    It does not reduce the number of test subprocesses: each gremlin still
+    runs in its own subprocess.
 
     Supports configurable process start method and worker warmup via PoolConfig.
 
