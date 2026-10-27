@@ -33,6 +33,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import tokenize
 from typing import (
     TYPE_CHECKING,
@@ -47,6 +48,7 @@ import pytest
 from pytest_gremlins import node_id_args
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import (
+    MILLISECONDS_PER_SECOND,
     NO_RERUNS,
     IncrementalCache,
     RerunBudget,
@@ -4383,6 +4385,34 @@ def _immediate_result_if_pardoned(gremlin: Gremlin) -> GremlinResult | None:
 
 
 def _test_gremlin(
+    gremlin: Gremlin,
+    test_command: list[str],
+    rootdir: Path,
+    instrumented_dir: Path | None,
+    *,
+    timeout: int,
+) -> GremlinResult:
+    """Test a single gremlin and record how long the run took.
+
+    The elapsed time lets the incremental cache reuse the verdict under a different mutant timeout (#567).
+
+    Args:
+        gremlin: The gremlin to test.
+        test_command: Command to run tests.
+        rootdir: Root directory of the project.
+        instrumented_dir: Directory containing bootstrap infrastructure.
+        timeout: Seconds the test run may take before the gremlin is reported as a timeout.
+
+    Returns:
+        Result of testing the gremlin, with ``execution_time_ms`` set.
+    """
+    started = time.monotonic()
+    result = _run_gremlin_subprocess(gremlin, test_command, rootdir, instrumented_dir, timeout=timeout)
+    elapsed_ms = (time.monotonic() - started) * MILLISECONDS_PER_SECOND
+    return dataclass_replace(result, execution_time_ms=elapsed_ms)
+
+
+def _run_gremlin_subprocess(
     gremlin: Gremlin,
     test_command: list[str],
     rootdir: Path,
