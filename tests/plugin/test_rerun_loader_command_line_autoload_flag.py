@@ -118,3 +118,63 @@ class DescribeModuleNameLoadOnTheCommandLineAndInherited:
         result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, *SESSION_ARGS, '-p', 'pytest_rerunfailures')
 
         assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+
+ENTRY_POINT_FIXTURE_TEST = """
+from sample import classify
+
+
+def test_big(no_cover):
+    assert classify(11) == 'big'
+"""
+NO_ERRORS = {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+
+@pytest.mark.medium
+class DescribeModuleNameLoadOnTheCommandLineOnly:
+    """Nothing inherited names the module, so gremlin runs keep autoload and load it once through the entry point."""
+
+    def it_keeps_entry_point_fixtures_of_other_command_line_plugins(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', raising=False)
+        monkeypatch.delenv('PYTEST_ADDOPTS', raising=False)
+        monkeypatch.delenv('PYTEST_PLUGINS', raising=False)
+        pytester_with_markers.makepyfile(sample=SAMPLE)
+        pytester_with_markers.makepyfile(test_sample=ENTRY_POINT_FIXTURE_TEST)
+        pytester_with_markers.makeini('[pytest]\nreruns = 2\n')
+
+        result = pytester_with_markers.runpytest_subprocess(
+            *GREMLIN_ARGS, *SESSION_ARGS, '-p', 'pytest_rerunfailures', '-p', 'pytest_cov'
+        )
+
+        assert verdicts(result.stdout.str()) == NO_ERRORS
+
+    def it_has_no_errors_when_xdist_is_also_loaded_on_the_command_line(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', raising=False)
+        monkeypatch.delenv('PYTEST_ADDOPTS', raising=False)
+        monkeypatch.delenv('PYTEST_PLUGINS', raising=False)
+        _write_flaky_project(pytester_with_markers, '[pytest]\nreruns = 2\n')
+
+        result = pytester_with_markers.runpytest_subprocess(
+            *GREMLIN_ARGS, *SESSION_ARGS, '-p', 'pytest_rerunfailures', '-p', 'xdist'
+        )
+
+        assert verdicts(result.stdout.str()) == NO_ERRORS
+
+
+@pytest.mark.medium
+class DescribeCovLoadedThroughPytestAddopts:
+    def it_does_not_let_the_coverage_gate_fail_gremlin_runs(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', raising=False)
+        monkeypatch.delenv('PYTEST_PLUGINS', raising=False)
+        monkeypatch.setenv('PYTEST_ADDOPTS', '-p pytest_cov --cov=sample --cov-fail-under=100')
+        _write_flaky_project(pytester_with_markers, '[pytest]\nreruns = 2\n', conftest=CONFTEST_LOADING_RERUNFAILURES)
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, *SESSION_ARGS)
+
+        assert verdicts(result.stdout.str()) == NO_ERRORS

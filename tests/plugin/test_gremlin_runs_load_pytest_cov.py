@@ -28,3 +28,8 @@ class DescribeGremlinRunsLoadPytestCov:
 
     def it_is_false_for_an_unrelated_loader(self) -> None:
         assert _gremlin_runs_load_pytest_cov('-p pytest_rerunfailures', SKIPS_AUTOLOAD) is False
+
+    def it_is_true_when_pytest_addopts_loads_it(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '-q -p pytest_cov --cov=sample')
+
+        assert _gremlin_runs_load_pytest_cov('', SKIPS_AUTOLOAD) is True
