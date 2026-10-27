@@ -99,6 +99,15 @@ tests = get_tests_for_mutation("src/auth.py", 42)
 
 Instead of running 500 tests, we run 2.
 
+#### Order and early exit
+
+Every test that covers the mutated line is selected. They are passed to pytest in priority
+order, with the most specific tests first (tests that cover fewer lines rank higher). Each
+gremlin's run uses `-x`, so pytest stops at the first failing test. That failure is the kill.
+A gremlin that survives ran every covering test and none of them failed. The selection is
+not cut down to a single priority test. To rule out selection as the cause of a survivor, see
+`--gremlin-no-coverage-filter` and `--gremlin-explain` under [Configuration](#configuration).
+
 ### The Math
 
 | Scenario | Test Runs |
