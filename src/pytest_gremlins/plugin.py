@@ -2830,6 +2830,7 @@ _RERUNFAILURES_MODULE_NAME = 'pytest_rerunfailures'
 _RERUNFAILURES_PLUGIN_NAMES = (_RERUNFAILURES_ENTRY_POINT_NAME, _RERUNFAILURES_MODULE_NAME)
 # Blocking by the entry-point name also blocks the plugin when it is loaded by module name.
 _BLOCK_RERUNFAILURES_OPTION = ('-p', 'no:rerunfailures')
+_CONFTEST_FILE_NAME = 'conftest.py'  # pytest registers a conftest under its file path
 _DISABLE_PLUGIN_AUTOLOAD_ENV_VAR = 'PYTEST_DISABLE_PLUGIN_AUTOLOAD'
 _DISABLE_PLUGIN_AUTOLOAD_FLAG = '--disable-plugin-autoload'
 
@@ -2876,10 +2877,15 @@ def _command_line_loads_module(config: pytest.Config) -> bool:
 
 
 def _inherited_source_loads_module(config: pytest.Config) -> bool:
-    """Return whether ``addopts``, ``PYTEST_ADDOPTS``, ``PYTEST_PLUGINS`` or a conftest loads the module by name."""
+    """Return whether ``addopts``, ``PYTEST_ADDOPTS``, ``PYTEST_PLUGINS`` or a conftest loads the module by name.
+
+    Only conftests count: a plugin loaded on the command line is not inherited, whatever it declares.
+    """
     names = _plugin_names_loaded_by(_arguments_gremlin_runs_inherit(config))
     names |= {name.strip() for name in os.environ.get('PYTEST_PLUGINS', '').split(',')}
-    for plugin in config.pluginmanager.get_plugins():
+    for name, plugin in config.pluginmanager.list_name_plugin():
+        if not name.endswith(_CONFTEST_FILE_NAME):
+            continue
         declared = getattr(plugin, 'pytest_plugins', ())
         names |= {declared} if isinstance(declared, str) else {name for name in declared if isinstance(name, str)}
     return _RERUNFAILURES_MODULE_NAME in names

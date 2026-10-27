@@ -164,6 +164,24 @@ class DescribeModuleNameLoadOnTheCommandLineOnly:
 
         assert verdicts(result.stdout.str()) == NO_ERRORS
 
+    def it_ignores_pytest_plugins_declared_by_a_command_line_only_plugin(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', raising=False)
+        monkeypatch.delenv('PYTEST_ADDOPTS', raising=False)
+        monkeypatch.delenv('PYTEST_PLUGINS', raising=False)
+        pytester_with_markers.makepyfile(sample=SAMPLE)
+        pytester_with_markers.makepyfile(test_sample=ENTRY_POINT_FIXTURE_TEST)
+        pytester_with_markers.makepyfile(localplug="pytest_plugins = ['pytest_rerunfailures']\n")
+        pytester_with_markers.makeini('[pytest]\nreruns = 2\n')
+        monkeypatch.setenv('PYTHONPATH', str(pytester_with_markers.path))
+
+        result = pytester_with_markers.runpytest_subprocess(
+            *GREMLIN_ARGS, *SESSION_ARGS, '-p', 'pytest_rerunfailures', '-p', 'localplug', '-p', 'pytest_cov'
+        )
+
+        assert verdicts(result.stdout.str()) == NO_ERRORS
+
 
 @pytest.mark.medium
 class DescribeCovLoadedThroughPytestAddopts:
