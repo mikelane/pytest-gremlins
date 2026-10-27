@@ -164,6 +164,7 @@ class DescribeHermeticityGate:
         result = pytester.runpytest_subprocess('-p', 'no:cacheprovider', '-p', 'hermeticity_gate')
 
         assert result.ret != 0
+        result.assert_outcomes(failed=1)
 
     def it_fails_a_non_strict_xpass_that_swallows_a_violation(
         self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
@@ -175,6 +176,7 @@ class DescribeHermeticityGate:
         result = pytester.runpytest_subprocess('-p', 'no:cacheprovider', '-p', 'hermeticity_gate')
 
         assert result.ret != 0
+        result.assert_outcomes(failed=1)
 
 
 @pytest.mark.medium
