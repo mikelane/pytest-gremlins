@@ -125,7 +125,7 @@ class DescribeGremlinRecordsAreIndependentOfTheTree:
         gremlins, tree = transform_source(_construct_sources()[construct], 'm.py')
         tree_node_ids = {id(node) for node in ast.walk(tree)}
 
-        assert gremlins
+        assert len(gremlins) > 0
         assert not [g for g in gremlins if id(g.original_node) in tree_node_ids]
         assert not [g for g in gremlins if id(g.mutated_node) in tree_node_ids]
 
