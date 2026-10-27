@@ -78,28 +78,28 @@ class DescribeGitattributesLineEndings:
         assert crlf_file.read_bytes() == COMMITTED_SOURCE
 
 
+@pytest.fixture
+def troubleshooting_section() -> str:
+    text = (REPO_ROOT / 'docs' / 'guide' / 'troubleshooting.md').read_text(encoding='utf-8')
+    return text.split('### Cache never warms across checkouts on Windows')[1].split('\n---\n')[0]
+
+
 @pytest.mark.medium
 class DescribeTroubleshootingRecheckoutAdvice:
-    def it_tells_users_to_recheckout_before_listing_either_remedy(self) -> None:
-        text = (REPO_ROOT / 'docs' / 'guide' / 'troubleshooting.md').read_text(encoding='utf-8')
-        section = text.split('### Cache never warms across checkouts on Windows')[1].split('\n---\n')[0]
-        solution = section.split('**Solution:**')[1]
+    def it_tells_users_to_recheckout_before_listing_either_remedy(self, troubleshooting_section: str) -> None:
+        solution = troubleshooting_section.split('**Solution:**')[1]
         first_remedy = solution.index('core.autocrlf=input')
         recheckout = solution.index('re-checkout')
 
         assert recheckout < first_remedy
 
-    def it_sets_autocrlf_globally_so_a_fresh_clone_inherits_it(self) -> None:
-        text = (REPO_ROOT / 'docs' / 'guide' / 'troubleshooting.md').read_text(encoding='utf-8')
-        section = text.split('### Cache never warms across checkouts on Windows')[1].split('\n---\n')[0]
+    def it_sets_autocrlf_globally_so_a_fresh_clone_inherits_it(self, troubleshooting_section: str) -> None:
+        assert 'git config --global core.autocrlf input' in troubleshooting_section
 
-        assert 'git config --global core.autocrlf input' in section
-
-    def it_never_offers_a_repo_local_autocrlf_setting_that_a_fresh_clone_would_lose(self) -> None:
-        text = (REPO_ROOT / 'docs' / 'guide' / 'troubleshooting.md').read_text(encoding='utf-8')
-        section = text.split('### Cache never warms across checkouts on Windows')[1].split('\n---\n')[0]
-
-        assert 'git config core.autocrlf' not in section
+    def it_never_offers_a_repo_local_autocrlf_setting_that_a_fresh_clone_would_lose(
+        self, troubleshooting_section: str
+    ) -> None:
+        assert 'git config core.autocrlf' not in troubleshooting_section
 
 
 @pytest.mark.medium
