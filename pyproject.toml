@@ -269,6 +269,7 @@ testpaths = ["tests"]
 python_classes = ["Describe"]
 python_functions = ["it_"]
 test_categories_enforcement = "strict"
+junit_family = "xunit1"
 addopts = [
     "-ra",
     "--strict-markers",

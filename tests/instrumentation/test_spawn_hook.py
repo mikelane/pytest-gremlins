@@ -12,6 +12,7 @@ from pathlib import Path
 import pickle
 import subprocess
 import sys
+import zlib
 
 import pytest
 
@@ -36,7 +37,7 @@ RunChild = Callable[..., subprocess.CompletedProcess[str]]
 
 
 def _sources_for(origin: Path, source: str = INSTRUMENTED) -> dict[str, dict[str, object]]:
-    tree = base64.b64encode(pickle.dumps(ast.parse(source))).decode('ascii')
+    tree = base64.b64encode(zlib.compress(pickle.dumps(ast.parse(source)))).decode('ascii')
     return {normalize_origin(str(origin)): {'tree': tree, 'source': source, 'origin': str(origin)}}
 
 
