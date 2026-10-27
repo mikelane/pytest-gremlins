@@ -128,6 +128,16 @@ class DescribeGremlinLoaderSpecializesSwitchedAsserts:
 
         assert module.check(0) == 0
 
+    def it_still_fails_the_active_gremlins_assert_when_specializing_it_overflows_the_stack(
+        self, pytestconfig: pytest.Config
+    ) -> None:
+        module = _load(
+            _switched_assert_nested_deeper_than_the_stack(), pytestconfig, name='overflow_guard_mod', active='g001'
+        )
+
+        with pytest.raises(AssertionError):
+            module.check(-1)
+
 
 @pytest.mark.small
 class DescribeGremlinLoaderResolvesEverySwitchAnAssertHolds:
@@ -186,7 +196,6 @@ class DescribeGremlinLoaderResolvesEverySwitchAnAssertHolds:
             pytest.param('flag', 'g001', id='plain-ternary'),
             pytest.param("other == 'g001'", 'g001', id='other-name'),
             pytest.param("__gremlin_active__ != 'g001'", 'g001', id='not-equal'),
-            pytest.param("__gremlin_active__ == 'g001' == wanted", 'g002', id='chained-compare'),
         ],
     )
     def it_takes_the_else_branch_of_a_ternary_that_is_not_a_gremlin_switch(
@@ -196,6 +205,19 @@ class DescribeGremlinLoaderResolvesEverySwitchAnAssertHolds:
 
         with pytest.raises(AssertionError):
             module.check(False, 'x', 'g001')
+
+    def it_evaluates_the_whole_chain_of_a_chained_compare_that_names_a_gremlin(
+        self, pytestconfig: pytest.Config
+    ) -> None:
+        module = _load(
+            _lookalike_assert("__gremlin_active__ == 'g001' == wanted"),
+            pytestconfig,
+            name='chained_compare_mod',
+            active='g001',
+        )
+
+        with pytest.raises(AssertionError):
+            module.check(False, 'x', 'g002')
 
     @pytest.mark.parametrize(
         ('condition', 'active'),
