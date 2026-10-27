@@ -130,6 +130,7 @@ from pytest_gremlins.rerun_options import (
     RerunIniResolution,
     baseline_rerun_warning,
     expand_argument_files,
+    mutant_timeout_with_flaky_markers,
     rerun_cache_settings,
     rerun_ini_as_gremlin_runs_read,
     rerun_keys_set_in,
@@ -1296,6 +1297,12 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     gremlin_session.test_files = list(set(test_files))
 
     gremlin_session.total_tests = len(session.items)
+    if _rerunfailures_is_loaded(session.config):
+        gremlin_session.mutant_timeout = _mutant_timeout_for_items(
+            gremlin_session.mutant_attempt_timeout or gremlin_session.mutant_timeout,
+            gremlin_session.mutant_timeout,
+            session.items,
+        )
 
     # Normalize node IDs for subprocess execution.
     # In some contexts (e.g. pytester) node IDs can include absolute paths, and
@@ -3089,6 +3096,17 @@ def _rerun_scaled_timeout(config: pytest.Config, per_run_timeout: int, *, label:
         scaled_timeout,
     )
     return scaled_timeout
+
+
+def _mutant_timeout_for_items(attempt_timeout: int, session_timeout: int, items: Sequence[pytest.Item]) -> int:
+    """Return ``session_timeout`` widened to the largest ``@pytest.mark.flaky`` budget among ``items`` (issue #696).
+
+    The closest marker wins, as it does for pytest-rerunfailures: one on a function replaces one on its class.
+    The widest budget of any collected test applies to every gremlin, because a mutant's covering tests are
+    not known when the timeout is fixed, and a larger timeout is safe where a false timeout is not.
+    """
+    markers = [marker for item in items if (marker := item.get_closest_marker('flaky')) is not None]
+    return mutant_timeout_with_flaky_markers(attempt_timeout, session_timeout=session_timeout, markers=markers)
 
 
 def _rerun_ini_warnings_for(config: pytest.Config) -> list[str]:

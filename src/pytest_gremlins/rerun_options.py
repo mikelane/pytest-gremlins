@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import (
     Callable,
     Collection,
+    Iterable,
     Sequence,
 )
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ import math
 from pathlib import Path
 import re
 import sys
+from typing import cast
 
 from pytest_gremlins.config import MAX_TIMEOUT_SECONDS
 
@@ -466,6 +468,71 @@ def scaled_mutant_timeout(
     if total_delay >= MAX_TIMEOUT_SECONDS:
         return MAX_TIMEOUT_SECONDS
     return min(base * (reruns + 1) + math.ceil(total_delay), MAX_TIMEOUT_SECONDS)
+
+
+def flaky_marker_rerun_budget(marker: object) -> tuple[int, float, float]:
+    """Return the ``(reruns, reruns_delay, backoff_factor)`` a ``flaky`` marker gives its test (issue #696).
+
+    This mirrors pytest-rerunfailures: a keyword argument wins over the positional one, and a marker replaces
+    the session budget outright, so a delay or factor it leaves out is 0 or 1.0, not the session's.  A bare
+    ``@pytest.mark.flaky`` means one rerun.
+
+    Args:
+        marker: A ``pytest.Mark`` of the ``flaky`` marker, or anything with ``args`` and ``kwargs``.
+
+    Returns:
+        The rerun count, the delay in seconds before the first rerun and the factor the delay is multiplied by.
+
+    Example:
+        >>> from types import SimpleNamespace
+        >>> flaky_marker_rerun_budget(SimpleNamespace(args=(3,), kwargs={'reruns_delay': 2}))
+        (3, 2.0, 1.0)
+    """
+    args: tuple[object, ...] = getattr(marker, 'args', ())
+    kwargs: dict[str, object] = getattr(marker, 'kwargs', {})
+    reruns = _marker_argument(args, kwargs, 'reruns', 0, default=1)
+    delay = _marker_argument(args, kwargs, 'reruns_delay', 1, default=0)
+    factor = _marker_argument(args, kwargs, 'reruns_delay_backoff_factor', 2, default=_NO_BACKOFF)
+    return int(reruns), float(delay), float(factor)
+
+
+def _marker_argument(
+    args: tuple[object, ...], kwargs: dict[str, object], name: str, position: int, *, default: float
+) -> float:
+    if name in kwargs:
+        return cast('float', kwargs[name])
+    return cast('float', args[position]) if len(args) > position else default
+
+
+def mutant_timeout_with_flaky_markers(base: int, *, session_timeout: int, markers: Iterable[object]) -> int:
+    """Return ``session_timeout`` widened to the largest rerun budget any of ``markers`` asks for (issue #696).
+
+    Each marker is scaled like :func:`scaled_mutant_timeout` scales the session budget, and the largest result
+    wins.  A larger timeout is safe and a false timeout is not, so a marker smaller than the session budget
+    changes nothing.
+
+    Args:
+        base: Seconds one attempt may take.
+        session_timeout: The timeout already scaled for the session budget.
+        markers: The ``flaky`` markers of the tests a run may execute.
+
+    Returns:
+        The timeout in whole seconds.
+
+    Example:
+        >>> from types import SimpleNamespace
+        >>> marker = SimpleNamespace(args=(), kwargs={'reruns': 2, 'reruns_delay': 20})
+        >>> mutant_timeout_with_flaky_markers(30, session_timeout=30, markers=[marker])
+        130
+    """
+    timeout = session_timeout
+    for marker in markers:
+        reruns, reruns_delay, factor = flaky_marker_rerun_budget(marker)
+        timeout = max(
+            timeout,
+            scaled_mutant_timeout(base, reruns=reruns, reruns_delay=reruns_delay, reruns_delay_backoff_factor=factor),
+        )
+    return timeout
 
 
 def _total_rerun_delay(reruns: int, reruns_delay: float, reruns_delay_backoff_factor: float) -> float:
