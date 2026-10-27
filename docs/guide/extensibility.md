@@ -12,9 +12,8 @@ The built-in operators cover common mutation patterns, but your domain may have 
 - **Data validation**: Remove required field checks, alter regex patterns
 
 Custom operators let you catch bugs specific to your codebase that generic operators miss.
-Today a custom operator can only mutate six kinds of node (comparisons, binary and boolean
-operations, unary operations, literals and `return` statements), so ideas that change method
-calls, like the Django ORM swaps above, don't work yet. See
+A custom operator can mutate seven kinds of node (comparisons, binary and boolean operations,
+unary operations, literals, calls and `return` statements). See
 [Which Nodes an Operator Is Offered](#which-nodes-an-operator-is-offered).
 
 ## Prerequisites
@@ -69,7 +68,7 @@ class GremlinOperator(Protocol):
 ### Which Nodes an Operator Is Offered
 
 pytest-gremlins doesn't pass every AST node to your operator. The instrumentation step calls
-`can_mutate()` only for these six node types:
+`can_mutate()` only for these seven node types:
 
 | Node type | Python code it covers |
 |-----------|-----------------------|
@@ -78,14 +77,15 @@ pytest-gremlins doesn't pass every AST node to your operator. The instrumentatio
 | `ast.BoolOp` | `and` / `or` |
 | `ast.UnaryOp` | `not x`, `-x` |
 | `ast.Constant` | Literals: `'text'`, `42`, `True` |
+| `ast.Call` | Function and method calls: `f(x)`, `qs.filter(a=1)` |
 | `ast.Return` | `return` statements |
 
-An operator that matches any other node type, such as `ast.Call`, `ast.Attribute` or
-`ast.Subscript`, never produces a gremlin. Its `can_mutate()` is never called for those nodes,
-and a run reports no gremlins for it. Supporting more node types needs a code change, tracked in
+An operator that matches any other node type, such as `ast.Attribute` or `ast.Subscript`, never
+produces a gremlin. Its `can_mutate()` is never called for those nodes, and a run reports no
+gremlins for it. Supporting more node types needs a code change, tracked in
 [#698](https://github.com/mikelane/pytest-gremlins/issues/698).
 
-For the five expression types, `mutate()` must return expression nodes. For `ast.Return`, it
+For the six expression types, `mutate()` must return expression nodes. For `ast.Return`, it
 must return `ast.Return` statements.
 
 ## Creating Your First Operator
@@ -326,11 +326,6 @@ def mutate(self, node: ast.AST) -> list[ast.AST]:
 
 ### Pattern 3: Function Call Modification
 
-!!! warning "Doesn't work yet"
-    This pattern and Pattern 4 match `ast.Call`, which pytest-gremlins doesn't offer to custom
-    operators (see [Which Nodes an Operator Is Offered](#which-nodes-an-operator-is-offered)
-    and [#698](https://github.com/mikelane/pytest-gremlins/issues/698)).
-
 Swap method names or arguments:
 
 ```python
@@ -465,12 +460,6 @@ class MyOperator:
 ```
 
 ## Complete Example: Django QuerySet Operator
-
-!!! warning "Doesn't produce gremlins yet"
-    This operator matches `ast.Call` nodes, which pytest-gremlins doesn't offer to custom
-    operators today, so a run with it reports no gremlins. It is kept as a design example until
-    [#698](https://github.com/mikelane/pytest-gremlins/issues/698) lands. For an operator that
-    works now, see [Creating Your First Operator](#creating-your-first-operator).
 
 Here's a complete example for Django ORM mutations:
 
@@ -684,8 +673,7 @@ the run's registry doesn't have your operator:
 
 1. Check that your operator matches one of the
    [node types an operator is offered](#which-nodes-an-operator-is-offered). An operator that
-   matches any other node type, such as `ast.Call`, never produces a gremlin
-   ([#698](https://github.com/mikelane/pytest-gremlins/issues/698)).
+   matches any other node type, such as `ast.Attribute`, never produces a gremlin.
 2. Add logging to `can_mutate()` to verify it's being called
 3. Check that your AST pattern matching is correct with `ast.dump()`
 4. Ensure `mutate()` returns a non-empty list

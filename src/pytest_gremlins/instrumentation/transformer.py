@@ -457,6 +457,13 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
         """Replace unary operation nodes (including 'not') with mutation switching."""
         return self._switch_expression_with_pristine_mutations(node)
 
+    def visit_Call(self, node: ast.Call) -> ast.expr:
+        """Offer call nodes to operators; skip the pristine copy when no operator matches."""
+        if not self._get_operators_for_node(node):
+            self.generic_visit(node)
+            return node
+        return self._switch_expression_with_pristine_mutations(node)
+
     def visit_Constant(self, node: ast.Constant) -> ast.expr:
         """Replace boolean constants with mutation switching expressions."""
         gremlins = self._create_gremlins_for_node(node)
