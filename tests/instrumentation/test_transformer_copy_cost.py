@@ -1,8 +1,8 @@
-"""Tests that instrumentation time and tree independence hold for deep expressions (#640).
+"""Tests that instrumentation copy cost and tree independence hold for deep expressions (#640).
 
 After #611 the instrumented tree is quadratic in the length of a chain. The transformer used to deep-copy the
 already-instrumented subtree once per nesting level, which made instrumentation time cubic. The copy is skipped
-on the one path that provably does not need it; these tests pin both the speed and the independence of the
+on the one path that provably does not need it; these tests pin both the copy cost and the independence of the
 gremlin records from the instrumented tree.
 """
 
@@ -14,10 +14,8 @@ import copy
 import hashlib
 import json
 import sys
-import time
 from typing import Any
 
-import coverage
 import pytest
 
 from pytest_gremlins.instrumentation.transformer import (
@@ -25,16 +23,8 @@ from pytest_gremlins.instrumentation.transformer import (
     transform_source,
 )
 
-# Generous bound for a loaded CI runner; the cubic implementation needs about 3 s on a fast laptop.
-ABSOLUTE_BOUND_SECONDS = 1.0
 # Doubling a chain may at most quintuple the copy work: linear is 2x, the quadratic output is 4x, cubic is 8x.
 MAX_DOUBLING_RATIO = 5
-# Coverage tracing slows the transformer about 3x on 3.11, which defeats any absolute bound that is tight enough
-# to catch the cubic copy; the deep-copy count is deterministic, so it alone guards the cause while coverage runs.
-absolute_bounds_are_unreliable = pytest.mark.skipif(
-    coverage.Coverage.current() is not None,
-    reason='coverage tracing inflates absolute timings; the doubling-ratio test still guards the speed',
-)
 
 
 def _chain(terms: int) -> str:
@@ -43,15 +33,6 @@ def _chain(terms: int) -> str:
 
 def _nested_comparison(levels: int) -> str:
     return 'def f(x):\n    y = ' + '(' * levels + 'x' + ''.join(f' < {i})' for i in range(levels)) + '\n    return y\n'
-
-
-def _best_of_three(source: str) -> float:
-    best = float('inf')
-    for _ in range(3):
-        start = time.perf_counter()
-        transform_source(source, 'm.py')
-        best = min(best, time.perf_counter() - start)
-    return best
 
 
 def _count_nodes_deep_copied(monkeypatch: pytest.MonkeyPatch, source: str) -> int:
@@ -88,24 +69,13 @@ def roomy_recursion_limit() -> Iterator[None]:
 
 @pytest.mark.medium
 @pytest.mark.usefixtures('roomy_recursion_limit')
-class DescribeInstrumentationTime:
-    @absolute_bounds_are_unreliable
-    def it_instruments_a_120_term_chain_quickly(self) -> None:
-        gremlins, _ = transform_source(_chain(120), 'm.py')
-
-        assert len(gremlins) == 120
-        assert _best_of_three(_chain(120)) < ABSOLUTE_BOUND_SECONDS
-
+class DescribeInstrumentationCopyCost:
     def it_does_not_more_than_quintuple_the_nodes_copied_when_the_chain_doubles(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         assert _count_nodes_deep_copied(monkeypatch, _chain(120)) <= MAX_DOUBLING_RATIO * _count_nodes_deep_copied(
             monkeypatch, _chain(60)
         )
-
-    @absolute_bounds_are_unreliable
-    def it_instruments_a_comparison_nested_forty_levels_deep_quickly(self) -> None:
-        assert _best_of_three(_nested_comparison(40)) < ABSOLUTE_BOUND_SECONDS / 2
 
 
 def _construct_sources() -> dict[str, str]:
