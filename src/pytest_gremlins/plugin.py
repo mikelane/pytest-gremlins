@@ -3567,7 +3567,7 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
 
     The function is side-effect heavy on purpose: it emits diagnostic text to
     stdout, then sets ``gremlin_session.enabled = False`` so the per-gremlin
-    loops driven by :func:`pytest_runtestloop` turn into no-ops. It does
+    loops driven by the test run turn into no-ops. It does
     **not** call :func:`sys.exit` or :func:`pytest.exit` — letting pytest
     finish its own session cleanly preserves the user's regular test results
     without masking them behind an early exit code.
