@@ -70,10 +70,11 @@ class DescribeFilesystemRootAsRootdir:
     def it_finishes_hashing_when_rootdir_is_the_filesystem_root(self, tmp_path: Path) -> None:
         test_file = tmp_path / 'test_a.py'
         test_file.write_text('def test_a(): pass\n')
-        relative = test_file.relative_to(Path('/')).as_posix()
+        filesystem_root = Path(tmp_path.anchor)
+        relative = test_file.relative_to(filesystem_root).as_posix()
         worker = threading.Thread(
             target=plugin._hash_test_file_with_conftests,
-            args=(ContentHasher(), Path('/'), relative),
+            args=(ContentHasher(), filesystem_root, relative),
             daemon=True,
         )
 
