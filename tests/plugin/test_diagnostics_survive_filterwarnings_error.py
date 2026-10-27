@@ -12,7 +12,8 @@ FAST_TEST = (
 SLOW_UNDER_COVERAGE_TEST = (
     'import sys\nimport time\n\nimport pytest\nfrom target import add\n\n\n'
     '@pytest.mark.small\ndef test_add():\n'
-    "    if 'pytest_gremlins.coverage.prescan_main' in sys.modules:\n        time.sleep(30)\n"
+    "    spec = getattr(sys.modules['__main__'], '__spec__', None)\n"
+    "    if getattr(spec, 'name', None) == 'pytest_gremlins.coverage.prescan_main':\n        time.sleep(30)\n"
     '    assert add(1, 2) == 3\n'
 )
 EMPTY_COVERAGE_CONFTEST = (
