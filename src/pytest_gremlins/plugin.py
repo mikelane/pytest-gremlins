@@ -40,7 +40,6 @@ from typing import (
 )
 import warnings
 
-import coverage
 from coverage.exceptions import CoverageException
 import pytest
 
@@ -150,6 +149,8 @@ if TYPE_CHECKING:
         Callable,
         Sequence,
     )
+
+    import coverage
 
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.operators import GremlinOperator
@@ -290,9 +291,7 @@ class GremlinSession:
             collection finishes.  ``None`` until the hook fires; ``[]`` if the
             worker collected nothing.
         coverage_mode: Whether to reuse pytest-cov's coverage (PIGGYBACK) or
-            manage an inline coverage instance (PRIVATE).
-        private_coverage: The inline ``coverage.Coverage`` instance used in
-            PRIVATE mode.  ``None`` in PIGGYBACK mode or before session start.
+            rely on the coverage pre-scan subprocess (PRIVATE).
         gremlins_tmpdir: Path (as a string) to the shared temporary directory
             where xdist workers write their per-worker coverage data files in
             PRIVATE mode.  ``None`` when xdist is not active.
@@ -360,7 +359,6 @@ class GremlinSession:
     xdist_loaded: bool = False
     xdist_workers: int | None = None
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
-    private_coverage: coverage.Coverage | None = None
     gremlins_tmpdir: str | None = None
     exclude_patterns: list[str] = field(default_factory=list)
     strict_pardons: bool = False
@@ -1123,8 +1121,7 @@ if _XDIST_AVAILABLE:
         """Inject gremlins tmpdir into xdist worker input for PRIVATE coverage mode.
 
         Called on the controller for each xdist worker node before it starts.
-        Injects ``gremlins_tmpdir`` so workers can write their coverage data to a
-        shared directory that the controller combines in ``pytest_sessionfinish``.
+        Injects ``gremlins_tmpdir`` into the worker input when the session has one.
 
         Only active in PRIVATE mode; PIGGYBACK mode relies on pytest-cov's own
         xdist integration for coverage combining.
@@ -1179,9 +1176,8 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     to the pytest-cov coverage instance so that every test phase is tagged
     with ``{nodeid}|{when}`` in the coverage database.
 
-    In PRIVATE mode, creates a fresh ``coverage.Coverage`` instance, stores it
-    on the session, and registers a ``GremlinContextPlugin`` on it.  The
-    coverage instance is started/stopped in ``pytest_runtestloop``.
+    In PRIVATE mode nothing is registered: the pre-scan subprocess collects the
+    coverage that gremlins reads, so no inline instance is needed.
 
     Args:
         session: The pytest session object.
@@ -1199,12 +1195,6 @@ def pytest_sessionstart(session: pytest.Session) -> None:
             logger.debug('pytest-cov coverage runs on sysmon; skipping per-test context switching')
             return
         context_plugin = GremlinContextPlugin(cov_instance)
-        session.config.pluginmanager.register(context_plugin)
-    else:
-        private_cov = coverage.Coverage(data_suffix=True)
-        private_cov.set_option('run:core', 'ctrace')
-        gremlin_session.private_coverage = private_cov
-        context_plugin = GremlinContextPlugin(private_cov)
         session.config.pluginmanager.register(context_plugin)
 
 
@@ -1237,34 +1227,6 @@ if _XDIST_AVAILABLE:
             )
         else:
             logger.debug('pytest_xdist_node_collection_finished: captured %d item IDs from first worker', len(ids))
-
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtestloop(session: pytest.Session) -> collections.abc.Generator[None, None, None]:  # noqa: ARG001
-    """Start and stop private coverage around the full test loop.
-
-    In PRIVATE mode, wraps the entire test run so coverage is active for all
-    tests.  After the test loop finishes, stops and saves the coverage data for
-    later reading in ``pytest_sessionfinish``.
-
-    In PIGGYBACK mode or when gremlins is disabled, this hook is transparent.
-
-    Args:
-        session: The pytest session (unused; coverage instance is on GremlinSession).
-
-    Yields:
-        Control to the next hook implementation (the actual test runner).
-    """
-    gremlin_session = _get_session()
-    if gremlin_session is None or not gremlin_session.enabled or gremlin_session.private_coverage is None:
-        yield
-        return
-
-    private_cov = gremlin_session.private_coverage
-    private_cov.start()
-    yield
-    private_cov.stop()
-    private_cov.save()
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
