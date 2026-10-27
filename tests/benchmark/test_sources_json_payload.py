@@ -90,15 +90,15 @@ def _baseline() -> dict[str, dict[str, float]]:
 class DescribeSourcesJsonPayload:
     @pytest.mark.parametrize('module_name', FIXTURE_MODULES)
     def it_ships_each_module_at_most_half_the_size_of_the_uncompressed_pickle_format(self, tmp_path, module_name):
-        path, _tree = _instrumented_tree(module_name)
+        path, tree = _instrumented_tree(module_name)
         entry = _written_entries(tmp_path)[str(Path(path).absolute())]
-        assert len(json.dumps(entry)) * 2 <= _legacy_entry_size(entry, _instrumented_tree(module_name)[1])
+        assert len(json.dumps(entry)) * 2 <= _legacy_entry_size(entry, tree)
 
     @pytest.mark.parametrize('module_name', FIXTURE_MODULES)
     def it_does_not_grow_more_than_20_percent_over_the_baseline_size_ratio(self, tmp_path, module_name):
-        path, _ = _instrumented_tree(module_name)
+        path, tree = _instrumented_tree(module_name)
         entry = _written_entries(tmp_path)[str(Path(path).absolute())]
-        ratio = len(json.dumps(entry)) / _legacy_entry_size(entry, _instrumented_tree(module_name)[1])
+        ratio = len(json.dumps(entry)) / _legacy_entry_size(entry, tree)
         assert ratio <= _baseline()[module_name]['size_ratio'] * ALLOWED_REGRESSION
 
     @pytest.mark.parametrize('module_name', FIXTURE_MODULES)
