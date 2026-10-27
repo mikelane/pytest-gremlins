@@ -425,7 +425,12 @@ git writes files committed with LF as CRLF, so the same test file hashes differe
 Linux/macOS checkout. This costs cache hits only. Results stay correct, because a different hash
 causes a cache miss and never serves a wrong result.
 
-**Solution:** Make line endings deterministic, either way:
+**Solution:** Make line endings deterministic, then re-checkout the files so existing CRLF files are
+rewritten. Changing the setting alone does not touch files already on disk. The simplest way to re-checkout
+is a fresh clone. To do it in place, commit or stash your changes first, because
+`git rm --cached -r . && git reset --hard` discards uncommitted work.
+
+Pick either remedy:
 
 - Set `core.autocrlf=input` so git does not convert to CRLF on checkout:
 
@@ -438,10 +443,6 @@ causes a cache miss and never serves a wrong result.
   ```text
   *.py text eol=lf
   ```
-
-  Re-checkout the files afterwards so existing CRLF files are rewritten. The simplest way is a fresh clone.
-  To do it in place, commit or stash your changes first, because `git rm --cached -r . && git reset --hard`
-  discards uncommitted work.
 
 ---
 

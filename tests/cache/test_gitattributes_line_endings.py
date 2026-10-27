@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import subprocess
+import tomllib
 
 import pytest
 
@@ -75,3 +76,24 @@ class DescribeGitattributesLineEndings:
         crlf_file = _checkout_with_autocrlf(origin_repo, tmp_path / 'crlf', 'true')
 
         assert crlf_file.read_bytes() == COMMITTED_SOURCE
+
+
+@pytest.mark.medium
+class DescribeTroubleshootingRecheckoutAdvice:
+    def it_tells_users_to_recheckout_before_listing_either_remedy(self) -> None:
+        text = (REPO_ROOT / 'docs' / 'guide' / 'troubleshooting.md').read_text(encoding='utf-8')
+        section = text.split('### Cache never warms across checkouts on Windows')[1].split('\n---\n')[0]
+        solution = section.split('**Solution:**')[1]
+        first_remedy = solution.index('core.autocrlf=input')
+        recheckout = solution.index('re-checkout')
+
+        assert recheckout < first_remedy
+
+
+@pytest.mark.medium
+class DescribeSdistIncludesGitattributes:
+    def it_lists_gitattributes_in_the_sdist_include_paths(self) -> None:
+        pyproject = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
+        includes = pyproject['tool']['hatch']['build']['targets']['sdist']['include']
+
+        assert '/.gitattributes' in includes
