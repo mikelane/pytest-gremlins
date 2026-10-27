@@ -6,20 +6,21 @@ import pytest
 
 from pytest_gremlins.cache.incremental import IncrementalCache
 
-from .commit_counter import count_commits
+from .commit_counter import record_commits
 
 
 @pytest.mark.medium
 class DescribeIncrementalCacheBatchOperations:
     """Tests for batch cache write support."""
 
-    def it_batches_writes_in_deferred_cache_results(self, tmp_path: Path) -> None:
+    def it_batches_writes_in_deferred_cache_results(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """cache_result_deferred defers every write to a single commit on flush."""
         cache_dir = tmp_path / '.gremlins_cache'
         num_gremlins = 100
 
+        commits = record_commits(monkeypatch)
         with IncrementalCache(cache_dir) as cache:
-            commits = count_commits(cache._store._conn)
+            commits.clear()
             for i in range(num_gremlins):
                 cache.cache_result_deferred(
                     f'gremlin_{i}',
