@@ -88,7 +88,7 @@ class DescribeSqliteCommitOverhead:
 class DescribeCacheKeyComputationOverhead:
     """Tests for cache key computation overhead."""
 
-    def it_repeated_hash_combined_calls(self, tmp_path: Path) -> None:
+    def it_repeated_hash_combined_calls(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Count hash operations needed to build keys for many gremlins.
 
         For each gremlin, we build a cache key from the test hashes.
@@ -112,7 +112,7 @@ class DescribeCacheKeyComputationOverhead:
                 hash_calls += 1
                 return real_hash_string(content)
 
-            cache._hasher.hash_string = counting_hash_string  # type: ignore[method-assign]
+            monkeypatch.setattr(cache._hasher, 'hash_string', counting_hash_string)
             keys = {cache._build_cache_key(f'gremlin_{i}', 'source_hash', test_hashes) for i in range(num_gremlins)}
 
         assert hash_calls == num_gremlins, (
