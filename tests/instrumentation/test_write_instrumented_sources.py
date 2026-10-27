@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import base64
 import json
 from pathlib import Path
 import pickle
@@ -12,6 +11,7 @@ import types
 import pytest
 
 from pytest_gremlins.instrumentation.origin_finder import (
+    GremlinLoader,
     InstrumentedSources,
     file_identity,
     normalize_origin,
@@ -34,7 +34,8 @@ def _written_code(tmp_path: Path, source: str, name: str = 'mymod.py') -> tuple[
     original_path = str(tmp_path / name)
     result_dir = _write_instrumented_sources({original_path: ast.parse(source)}, tmp_path)
     entry = json.loads((result_dir / 'sources.json').read_text())[normalize_origin(original_path)]
-    tree = pickle.loads(base64.b64decode(entry['tree']))  # noqa: S301
+    tree = GremlinLoader._unpickle_tree(entry['tree'])
+    assert tree is not None
     return entry['origin'], compile(tree, entry['origin'], 'exec', dont_inherit=True)
 
 
