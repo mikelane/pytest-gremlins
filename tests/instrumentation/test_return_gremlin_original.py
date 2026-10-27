@@ -23,7 +23,6 @@ class DescribeReturnGremlinOriginal:
     def it_keeps_the_statement_as_written(self, statement):
         gremlins = _return_gremlins(statement)
 
-        assert gremlins
         assert {ast.unparse(g.original_node) for g in gremlins} == {ast.unparse(ast.parse(statement))}
 
 
