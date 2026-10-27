@@ -1257,6 +1257,20 @@ if _XDIST_AVAILABLE:
 
 
 @pytest.hookimpl(hookwrapper=True)
+def pytest_load_initial_conftests() -> collections.abc.Generator[None, None, None]:
+    """Keep an installed gremlin finder ahead of the assertion-rewrite hook this session just installed.
+
+    An in-process pytester session (``runpytest()``, ``inline_run()``) runs ``pytest.main`` inside a gremlin
+    subprocess; its rewrite hook lands at the front of ``sys.meta_path`` and would serve, uninstrumented, every
+    target it claims that is first imported in that session (#615).
+    """
+    for finder in [finder for finder in sys.meta_path if getattr(finder, 'is_gremlin_finder', False)]:
+        sys.meta_path.remove(finder)
+        sys.meta_path.insert(0, finder)
+    yield
+
+
+@pytest.hookimpl(hookwrapper=True)
 def pytest_runtestloop(session: pytest.Session) -> collections.abc.Generator[None, None, None]:  # noqa: ARG001
     """Start and stop private coverage around the full test loop.
 
