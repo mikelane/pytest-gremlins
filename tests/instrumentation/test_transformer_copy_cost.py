@@ -15,6 +15,7 @@ import json
 import sys
 import time
 
+import coverage
 import pytest
 
 from pytest_gremlins.instrumentation.transformer import (
@@ -25,6 +26,12 @@ from pytest_gremlins.instrumentation.transformer import (
 # Generous bound for a loaded CI runner; the cubic implementation needs about 3 s on a fast laptop.
 ABSOLUTE_BOUND_SECONDS = 1.0
 MAX_DOUBLING_RATIO = 5
+# Coverage tracing slows the transformer about 3x on 3.11, which defeats any absolute bound that is tight enough
+# to catch the cubic copy; the doubling ratio is unaffected, so it alone guards the speed while coverage runs.
+absolute_bounds_are_unreliable = pytest.mark.skipif(
+    coverage.Coverage.current() is not None,
+    reason='coverage tracing inflates absolute timings; the doubling-ratio test still guards the speed',
+)
 
 
 def _chain(terms: int) -> str:
@@ -56,6 +63,7 @@ def roomy_recursion_limit() -> Iterator[None]:
 @pytest.mark.medium
 @pytest.mark.usefixtures('roomy_recursion_limit')
 class DescribeInstrumentationTime:
+    @absolute_bounds_are_unreliable
     def it_instruments_a_120_term_chain_quickly(self) -> None:
         gremlins, _ = transform_source(_chain(120), 'm.py')
 
@@ -65,6 +73,7 @@ class DescribeInstrumentationTime:
     def it_does_not_more_than_quintuple_the_time_when_the_chain_doubles(self) -> None:
         assert _best_of_three(_chain(120)) <= MAX_DOUBLING_RATIO * _best_of_three(_chain(60))
 
+    @absolute_bounds_are_unreliable
     def it_instruments_a_comparison_nested_forty_levels_deep_quickly(self) -> None:
         assert _best_of_three(_nested_comparison(40)) < ABSOLUTE_BOUND_SECONDS / 2
 
