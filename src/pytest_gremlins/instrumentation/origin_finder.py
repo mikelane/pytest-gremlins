@@ -61,17 +61,6 @@ def _end_run_because_assert_rewriting_broke(error: BaseException) -> None:
     os._exit(REWRITE_API_BROKEN_EXIT_CODE)
 
 
-_PICKLE_PROTOCOL_MARKER = b'\x80'
-
-
-def _decompress_pickle(payload: bytes) -> bytes:
-    """Return the pickle in ``payload``, which is zlib compressed or, in the format of PR #610, a bare pickle.
-
-    A pickle of protocol 2 or later starts with the byte 0x80, and a zlib stream never does.
-    """
-    return payload if payload.startswith(_PICKLE_PROTOCOL_MARKER) else zlib.decompress(payload)
-
-
 def normalize_origin(path: str) -> str:
     """Return the one spelling of ``path`` that both sides of ``sources.json`` agree on."""
     return os.path.normcase(os.path.realpath(path))
@@ -290,7 +279,7 @@ class GremlinLoader(importlib.abc.Loader):
         try:
             # The parent wrote this tree into its own temp directory from our own transformation of the user's
             # file; it is not untrusted input.
-            tree: ast.Module = pickle.loads(_decompress_pickle(base64.b64decode(encoded_tree)))  # noqa: S301  # nosec B301
+            tree: ast.Module = pickle.loads(zlib.decompress(base64.b64decode(encoded_tree)))  # noqa: S301  # nosec B301
         except Exception:
             return None
         return tree

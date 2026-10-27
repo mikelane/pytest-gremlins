@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import importlib.machinery
 import json
 from pathlib import Path
 import pickle
@@ -30,14 +31,26 @@ def _injected_body(source: str) -> list[ast.stmt]:
     return _inject_gremlin_active(ast.parse(source)).body
 
 
-def _written_code(tmp_path: Path, source: str, name: str = 'mymod.py') -> tuple[str, types.CodeType]:
-    """Instrument ``source`` as ``name`` and return its origin and the shipped tree compiled as the child does."""
+def _shipped_entry(tmp_path: Path, source: str, name: str = 'mymod.py') -> dict[str, object]:
+    """Instrument ``source`` as ``name`` and return the ``sources.json`` entry the parent ships for it."""
     original_path = str(tmp_path / name)
     result_dir = _write_instrumented_sources({original_path: ast.parse(source)}, tmp_path)
-    entry = json.loads((result_dir / 'sources.json').read_text())[normalize_origin(original_path)]
-    tree = GremlinLoader._unpickle_tree(entry['tree'])
-    assert tree is not None
-    return entry['origin'], compile(tree, entry['origin'], 'exec', dont_inherit=True)
+    return json.loads((result_dir / 'sources.json').read_text())[normalize_origin(original_path)]  # type: ignore[no-any-return]
+
+
+def _import_shipped(entry: dict[str, object], *, source: str = '') -> types.ModuleType:
+    """Run ``entry`` through the loader's public ``exec_module`` as a child process imports it."""
+    origin = str(entry['origin'])
+    loader = GremlinLoader(entry['tree'], source=source)  # type: ignore[arg-type]
+    module = types.ModuleType('mymod')
+    module.__spec__ = importlib.machinery.ModuleSpec('mymod', loader, origin=origin)
+    loader.exec_module(module)
+    return module
+
+
+def _written_module(tmp_path: Path, source: str, name: str = 'mymod.py') -> types.ModuleType:
+    """Instrument ``source`` as ``name`` and return it imported from the shipped tree, as the child does."""
+    return _import_shipped(_shipped_entry(tmp_path, source, name))
 
 
 def _node_names(nodes: list[ast.stmt]) -> list[str]:
@@ -142,17 +155,14 @@ class DescribeWriteInstrumentedSources:
         # The core regression: prepending before a future import is a SyntaxError, raised when the tree compiles.
         source = 'from __future__ import annotations\n\ndef foo(x: int) -> str:\n    return str(x)\n'
 
-        _written_code(tmp_path, source)
+        _written_module(tmp_path, source)
 
         assert _node_names(_injected_body(source))[0] == 'future_import'
 
     def it_includes_gremlin_active_variable_in_output(self, tmp_path: Path) -> None:
-        _, code = _written_code(tmp_path, 'from __future__ import annotations\nx = 1\n')
-        namespace: dict[str, object] = {}
+        module = _written_module(tmp_path, 'from __future__ import annotations\nx = 1\n')
 
-        exec(code, namespace)  # noqa: S102
-
-        assert '__gremlin_active__' in namespace
+        assert '__gremlin_active__' in vars(module)
 
     def it_records_the_source_path_without_following_symlinks_as_the_origin(self, tmp_path: Path) -> None:
         real = tmp_path / 'real.py'
@@ -252,18 +262,15 @@ class DescribeWriteInstrumentedSourceKeys:
         assert sorted(next(iter(entries.values()))) == ['file_names', 'identity', 'origin', 'source', 'tree']
 
     def it_ships_a_tree_that_compiles_under_the_origin_path(self, tmp_path: Path) -> None:
-        origin, code = _written_code(tmp_path, 'x = 1\n')
+        module = _written_module(tmp_path, 'def f():\n    return 1\n')
 
-        assert code.co_filename == origin == str(tmp_path / 'mymod.py')
+        assert module.f.__code__.co_filename == str(tmp_path / 'mymod.py')
 
     def it_keeps_the_line_numbers_of_the_original_file(self, tmp_path: Path) -> None:
         padded = '# padding\n' * 30 + 'def f(x):\n    return x > 0\n'
-        _, code = _written_code(tmp_path, padded)
-        namespace: dict[str, object] = {}
+        module = _written_module(tmp_path, padded)
 
-        exec(code, namespace)  # noqa: S102
-
-        assert namespace['f'].__code__.co_firstlineno == 31  # type: ignore[attr-defined]
+        assert module.f.__code__.co_firstlineno == 31
 
     def it_records_the_device_and_inode_of_the_file(self, tmp_path: Path) -> None:
         tmp_path.joinpath('real_mod.py').write_text('x = 1\n')
@@ -340,19 +347,14 @@ class DescribeSpawnHookIsWritten:
         assert (result_dir / SPAWN_HOOK_DIRNAME / 'sitecustomize.py').is_file()
 
 
-@pytest.mark.small
-class DescribeUnpicklingATree:
-    """The loader reads both the compressed tree and the bare pickle of PR #610."""
+@pytest.mark.medium
+class DescribeImportingAShippedTree:
+    """The loader runs the shipped tree, and the shipped source when the tree is unusable."""
 
-    def it_reads_a_bare_pickle(self) -> None:
-        encoded = base64.b64encode(pickle.dumps(ast.parse('x = 1'))).decode('ascii')
+    def it_falls_back_to_the_shipped_source_for_a_corrupt_compressed_payload(self, tmp_path: Path) -> None:
+        entry = _shipped_entry(tmp_path, 'x = 1\n')
+        entry['tree'] = base64.b64encode(b'\x78\x9cnot a zlib stream').decode('ascii')
 
-        tree = GremlinLoader._unpickle_tree(encoded)
+        module = _import_shipped(entry, source='y = 2\n')
 
-        assert tree is not None
-        assert ast.dump(tree) == ast.dump(ast.parse('x = 1'))
-
-    def it_returns_none_for_a_corrupt_compressed_payload(self) -> None:
-        encoded = base64.b64encode(b'\x78\x9cnot a zlib stream').decode('ascii')
-
-        assert GremlinLoader._unpickle_tree(encoded) is None
+        assert (vars(module).get('x'), module.y) == (None, 2)
