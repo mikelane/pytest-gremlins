@@ -19,6 +19,11 @@ EMPTY_COVERAGE_CONFTEST = (
     'import pytest_gremlins.plugin as gremlins_plugin\n\n'
     'gremlins_plugin._run_tests_with_coverage = lambda *args, **kwargs: {}\n'
 )
+PARTIAL_COVERAGE_CONFTEST = (
+    'import pytest_gremlins.plugin as gremlins_plugin\n\n'
+    'PARTIAL = {"unrelated.py": {"1": ["test_target.py::test_add"]}}\n'
+    'gremlins_plugin._run_tests_with_coverage = lambda *args, **kwargs: PARTIAL\n'
+)
 TRACEBACK_MARKER = 'Traceback (most recent call last)'
 
 
@@ -34,6 +39,7 @@ class DescribeDiagnosticsUnderFilterwarningsError:
         result = pytester.runpytest_subprocess('--gremlins', '--gremlin-targets=target.py')
 
         output = result.stdout.str() + result.stderr.str()
+        assert result.ret == 0
         assert TRACEBACK_MARKER not in output
         assert 'Coverage collection returned no data' in output
 
@@ -46,5 +52,16 @@ class DescribeDiagnosticsUnderFilterwarningsError:
         )
 
         output = result.stdout.str() + result.stderr.str()
+        assert result.ret == 0
         assert TRACEBACK_MARKER not in output
         assert 'coverage pre-scan exceeded 1s' in output
+
+    def it_survives_a_partial_coverage_map_without_crashing(self, pytester: pytest.Pytester) -> None:
+        pytester.makeini(PYTEST_INI_WITH_ESCALATED_WARNINGS)
+        pytester.makeconftest(PARTIAL_COVERAGE_CONFTEST)
+        pytester.makepyfile(target=TARGET, test_target=FAST_TEST)
+
+        result = pytester.runpytest_subprocess('--gremlins', '--gremlin-targets=target.py')
+
+        assert result.ret == 0
+        assert TRACEBACK_MARKER not in result.stdout.str() + result.stderr.str()

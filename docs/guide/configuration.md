@@ -306,7 +306,7 @@ max-pardons-pct = 5.0
 | `cache` | boolean | `false` | Enable incremental analysis cache |
 | `report` | string or list | `"console"` | Report format(s): `"html"`, `"json"`, `"console"`, or a list like `["html", "json"]` |
 | `batch_size` | int | `10` | Number of gremlins per batch in batch execution mode |
-| `coverage_timeout` | int | `120` | Seconds (1-86400) the coverage pre-scan may run; on expiry gremlins warns and runs every test per gremlin; scaled by the rerun budget like `mutant_timeout` |
+| `coverage_timeout` | int | `120` | Seconds (1-86400) the coverage pre-scan may run; on expiry gremlins prints a notice to stderr and runs every test per gremlin; scaled by the rerun budget like `mutant_timeout` |
 | `mutant_timeout` | int | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
 | `max_pardons` | int | no limit | Absolute ceiling on pardoned gremlins |
 | `max-pardons-pct` | float | no limit | Maximum percentage of pardoned gremlins (0-100) |
