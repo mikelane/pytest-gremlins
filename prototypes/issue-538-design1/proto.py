@@ -1,5 +1,7 @@
+# ruff: noqa
 """Throwaway design-1 prototype: collect once, re-run the same items N times in one pytest session."""
 
+import os
 import sys
 import time
 
@@ -14,7 +16,8 @@ class Loop:
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtestloop(self, session) -> bool:
-        for _ in range(ROUNDS):
+        for round_number in range(1, ROUNDS + 1):
+            os.environ['ACTIVE_GREMLIN'] = f'round{round_number}'
             start = time.perf_counter()
             outcomes = []
             for i, item in enumerate(session.items):
@@ -33,3 +36,5 @@ loop = Loop()
 pytest.main(['-q', '-p', 'no:cacheprovider', '-p', 'no:gremlins', sys.argv[1]], plugins=[loop])
 print('VERDICTS', loop.verdicts)
 print('ROUND_MS', [f'{t:.1f}' for t in loop.timings])
+seen = sys.modules['conftest'].STATE.get('seen', [])
+print('TOGGLE_SEEN', seen, 'matches', seen == [f'round{n}' for n in range(1, ROUNDS + 1)])

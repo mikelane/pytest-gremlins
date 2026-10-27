@@ -1,3 +1,4 @@
+# ruff: noqa
 from conftest import STATE
 
 MODULE_COUNTER = {'n': 0}
@@ -22,7 +23,7 @@ def test_conftest_state_is_fresh() -> None:
     assert STATE['session_fixture_built'] <= 1
 
 
-def test_env_toggle_is_read_per_run(monkeypatch) -> None:
+def test_env_toggle_is_read_per_run() -> None:
     import os
 
-    assert os.environ.get('ACTIVE_GREMLIN') is None
+    STATE.setdefault('seen', []).append(os.environ.get('ACTIVE_GREMLIN'))

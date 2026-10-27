@@ -34,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import tokenize
+import typing
 from typing import (
     TYPE_CHECKING,
     Protocol,
@@ -1826,6 +1827,37 @@ def main():
                 sys.meta_path.insert(0, finder)
             yield
 
+    class ProtoLoop:
+        # THROWAWAY design-1 prototype: collect once, then run the same items once per request line.
+        def __init__(self, pytest_module):
+            self.pytest = pytest_module
+            self.failed = False
+
+        def pytest_runtest_logreport(self, report):
+            if report.failed:
+                self.failed = True
+
+        @pytest.hookimpl(tryfirst=True)
+        def pytest_runtestloop(self, session):
+            req = os.fdopen(int(os.environ['GREMLINS_PROTO_REQ_FD']), 'r')
+            resp = os.fdopen(int(os.environ['GREMLINS_PROTO_RESP_FD']), 'w')
+            toggle = os.environ.get('GREMLINS_ACTIVE_VAR', 'ACTIVE_GREMLIN')
+            for line in req:
+                gremlin_id = line.strip()
+                os.environ[toggle] = gremlin_id
+                for module in list(sys.modules.values()):
+                    if module is not None and '__gremlin_active__' in getattr(module, '__dict__', {}):
+                        module.__dict__['__gremlin_active__'] = gremlin_id
+                self.failed = False
+                for i, item in enumerate(session.items):
+                    nextitem = session.items[i + 1] if i + 1 < len(session.items) else None
+                    item.ihook.pytest_runtest_protocol(item=item, nextitem=nextitem)
+                    if self.failed:
+                        break
+                resp.write('1\\n' if self.failed else '0\\n')
+                resp.flush()
+            return True
+
     class SuiteLoadRecorder:
         # Records, in-process, that the suite could not be loaded. pytest reports an
         # unloadable suite with exit code 2 or 4, and our own bad arguments with 4 too,
@@ -1868,7 +1900,10 @@ def main():
         sys.exit(int(pytest.ExitCode.USAGE_ERROR))
 
     recorder = SuiteLoadRecorder()
-    exit_code = pytest.main(pytest_args, plugins=[FinderFronter(), recorder])
+    extra_plugins = []
+    if os.environ.get('GREMLINS_PROTO_REQ_FD'):
+        extra_plugins.append(ProtoLoop(pytest))
+    exit_code = pytest.main(pytest_args, plugins=[FinderFronter(), recorder, *extra_plugins])
     load_failure_exit = exit_code in (pytest.ExitCode.USAGE_ERROR, pytest.ExitCode.INTERRUPTED)
     if can_attribute_load_failures and recorder.suite_failed_to_load and load_failure_exit:
         exit_code = __COLLECTION_FAILED_EXIT_CODE__
@@ -4389,7 +4424,69 @@ def _immediate_result_if_pardoned(gremlin: Gremlin) -> GremlinResult | None:
     return None
 
 
-def _test_gremlin(
+_PROTO_WORKERS: dict[tuple[str, ...], tuple[subprocess.Popen[bytes], typing.Any, typing.Any]] = {}
+
+
+def _proto_worker_key(test_command: list[str]) -> tuple[str, ...]:
+    """THROWAWAY: key a persistent worker by the command, with each node ids file replaced by its content."""
+    key = []
+    for token in test_command:
+        path = Path(token)
+        key.append(path.read_text(encoding='utf-8') if token.endswith('.json') and path.is_file() else token)
+    return tuple(key)
+
+
+def _proto_persistent_result(
+    gremlin: Gremlin, test_command: list[str], rootdir: Path, env: dict[str, str], timeout: int
+) -> GremlinResult | None:
+    """THROWAWAY design-1 prototype: reuse one pytest session per distinct command; None means use the bootstrap."""
+    import select  # noqa: PLC0415
+
+    key = _proto_worker_key(test_command)
+    entry = _PROTO_WORKERS.get(key)
+    with open(os.environ.get('GREMLINS_PROTO_LOG', os.devnull), 'a') as log:  # noqa: PTH123
+        log.write('reuse\n' if entry else 'spawn\n')
+    if entry is None:
+        req_r, req_w = os.pipe()
+        resp_r, resp_w = os.pipe()
+        worker_env = dict(env)
+        worker_env['GREMLINS_PROTO_REQ_FD'] = str(req_r)
+        worker_env['GREMLINS_PROTO_RESP_FD'] = str(resp_w)
+        worker_env['GREMLINS_ACTIVE_VAR'] = ACTIVE_GREMLIN_ENV_VAR
+        proc = subprocess.Popen(
+            test_command,
+            cwd=str(rootdir),
+            env=worker_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            pass_fds=(req_r, resp_w),
+        )
+        os.close(req_r)
+        os.close(resp_w)
+        entry = (proc, os.fdopen(req_w, 'w'), os.fdopen(resp_r, 'r'))
+        _PROTO_WORKERS[key] = entry
+    proc, req, resp = entry
+    try:
+        req.write(gremlin.gremlin_id + '\n')
+        req.flush()
+    except OSError:
+        return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ERROR, error_output='proto worker died')
+    ready, _, _ = select.select([resp], [], [], timeout)
+    if not ready:
+        proc.kill()
+        return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.TIMEOUT)
+    answer = resp.readline().strip()
+    if answer == '0':
+        return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.SURVIVED)
+    if answer == '1':
+        return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED, killing_test='unknown')
+    code = proc.wait()
+    if code == GREMLIN_COLLECTION_FAILED_EXIT_CODE:
+        return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED, killing_test=COLLECTION_KILLING_TEST)
+    return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ERROR, error_output=f'proto worker exit {code}')
+
+
+def _test_gremlin(  # noqa: PLR0911
     gremlin: Gremlin,
     test_command: list[str],
     rootdir: Path,
@@ -4426,6 +4523,11 @@ def _test_gremlin(
     # disabled (#538), so every gremlin runs through the pytest bootstrap.
     lightweight_cmd = build_lightweight_command(test_command, env)
     effective_command = lightweight_cmd if lightweight_cmd is not None else test_command
+
+    if os.environ.get('GREMLINS_PROTO_PERSISTENT') == '1':
+        proto_result = _proto_persistent_result(gremlin, test_command, rootdir, env, timeout)
+        if proto_result is not None:
+            return proto_result
 
     try:
         subprocess_outcome = subprocess.run(  # Intentional: runs pytest test commands

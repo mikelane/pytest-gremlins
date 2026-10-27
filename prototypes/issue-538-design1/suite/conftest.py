@@ -1,3 +1,4 @@
+# ruff: noqa
 import pytest
 
 STATE = {'configured': 0, 'session_fixture_built': 0}
