@@ -9,42 +9,19 @@ from __future__ import annotations
 from collections.abc import (
     Callable,
     Generator,
-    MutableMapping,
 )
 import os
 from pathlib import Path
-import re
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from secret_env_scrub import scrub_secret_env
 
 from pytest_gremlins.plugin import _set_session
 
 # Enable pytester fixture for plugin testing
 pytest_plugins = ['pytester']
-
-_SECRET_ENV_NAME = re.compile(
-    r'^(PYPI|TWINE)_|_PWD$|(^|_)(TOKEN|PAT|SECRETS?|PASSWORD|PASSWD|PASS|PASSPHRASE|CREDENTIALS?|KEY|APIKEY|KEY_ID)$'
-)
-
-
-def _is_secret_env_name(name: str) -> bool:
-    return _SECRET_ENV_NAME.search(name.upper()) is not None
-
-
-def _scrub_secret_env(environ: MutableMapping[str, str]) -> dict[str, str]:
-    """Remove secret-shaped variables from ``environ`` and return what was removed.
-
-    Pytest's ``-l`` and assertion rewriting print locals such as ``dict(os.environ)``
-    on failure, which would leak CI secrets into logs. Scrubbing before any test runs keeps
-    pytester and subprocess children, xdist workers included, from inheriting them too.
-    """
-    removed = {name: value for name, value in environ.items() if _is_secret_env_name(name)}
-    for name in removed:
-        del environ[name]
-    return removed
-
 
 _SCRUBBED_SECRET_ENV: dict[str, str] = {}
 
@@ -60,7 +37,7 @@ def pytest_unconfigure() -> None:
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """Scrub secret-shaped variables and register custom markers for test categorization."""
-    _SCRUBBED_SECRET_ENV.update(_scrub_secret_env(os.environ))
+    _SCRUBBED_SECRET_ENV.update(scrub_secret_env(os.environ))
     config.addinivalue_line('markers', 'small: Fast, isolated unit tests (< 100ms)')
     config.addinivalue_line('markers', 'medium: Integration tests with real resources (< 10s)')
     config.addinivalue_line('markers', 'large: End-to-end system tests (< 60s)')

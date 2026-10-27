@@ -9,6 +9,11 @@ Session-wide secret scrubbing (#649) is the real defense. Shapes the guard accep
 - an alias formatted into the assert message (``assert ok, f'bad {env}'``)
 - ``os.environ | {...}``, ``os.environ.pop(...)`` and ``patch.dict(os.environ, ...) as env``
 - an alias reassigned inside a branch, which drops the alias for later asserts
+
+Each gap above is accepted (#710), not closed. Closing one means tracking values through attributes, calls,
+branches and format strings, which turns a cheap lint into a data-flow analysis, and every such assertion
+still hits the session scrub, which removes secret-shaped variables before any test runs. Accepting the gaps
+costs only a possible non-secret variable in a failure message; the scrub's own gaps are tracked in #707.
 """
 
 from __future__ import annotations
