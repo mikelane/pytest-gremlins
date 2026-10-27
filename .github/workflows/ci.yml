@@ -35,7 +35,7 @@ jobs:
               - 'pyproject.toml'
               - 'tox.ini'
               - 'uv.lock'
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/**'
             docs:
               - 'docs/**'
               - 'mkdocs.yml'
