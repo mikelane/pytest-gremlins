@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from typing import Any
 
 import pytest
@@ -96,6 +97,20 @@ class DescribeOptionTablesFrom:
 
         assert (value_opts, flag_opts) == ({'--brand-new-value'}, {'--brand-new'})
 
+    def it_tables_the_negated_spelling_of_a_boolean_optional_action_as_a_flag(self) -> None:
+        value_opts, flag_opts = option_tables_from(
+            lambda p: p.addoption('--toggle', action=argparse.BooleanOptionalAction)
+        )
+
+        assert (value_opts, flag_opts) == (set(), {'--toggle', '--no-toggle'})
+
+    def it_ignores_ini_registrations_made_by_pytest_addoption(self) -> None:
+        def register(parser: Any) -> None:
+            parser.addini('gremlin_thing', 'help')
+            parser.getgroup('g').addoption('--new-flag', action='store_true')
+
+        assert option_tables_from(register) == (set(), {'--new-flag'})
+
 
 @pytest.mark.small
 class DescribeOptionTakesValue:
@@ -109,6 +124,19 @@ class DescribeOptionTakesValue:
 
     def it_treats_nargs_zero_as_a_flag(self) -> None:
         assert not option_takes_value({'action': 'store', 'nargs': 0})
+
+    def it_treats_boolean_optional_action_as_a_flag(self) -> None:
+        assert not option_takes_value({'action': argparse.BooleanOptionalAction})
+
+    def it_treats_a_custom_action_class_with_nargs_zero_as_a_flag(self) -> None:
+        class Toggle(argparse.Action):
+            def __init__(self, option_strings: Any, dest: Any, **kwargs: Any) -> None:
+                super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+        assert not option_takes_value({'action': Toggle})
+
+    def it_treats_a_custom_action_class_without_nargs_zero_as_taking_a_value(self) -> None:
+        assert option_takes_value({'action': argparse.Action})
 
     def it_keeps_a_store_false_flag_from_eating_the_next_token(self) -> None:
         value_opts, flag_opts = option_tables_from(lambda p: p.addoption('--off', action='store_false'))

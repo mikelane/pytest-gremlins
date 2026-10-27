@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from collections.abc import (
     Callable,
     Mapping,
@@ -25,9 +26,28 @@ class _OptionRecorder:
     def getgroup(self, *_args: object, **_kwargs: object) -> _OptionRecorder:
         return self
 
+    def addini(self, *_args: object, **_kwargs: object) -> None:
+        """Ini keys are not command-line options, so they are not recorded."""
+
     def addoption(self, *names: str, **kwargs: object) -> None:
-        for name in names:
+        for name in _spellings_argparse_registers(names, kwargs):
             self.options[name] = kwargs
+
+
+def _instantiate_action_class(names: tuple[str, ...], kwargs: Mapping[str, object]) -> argparse.Action | None:
+    action = kwargs.get('action')
+    if not (isinstance(action, type) and issubclass(action, argparse.Action)):
+        return None
+    try:
+        return action(option_strings=list(names), dest='option')
+    except TypeError:
+        return None
+
+
+def _spellings_argparse_registers(names: tuple[str, ...], kwargs: Mapping[str, object]) -> list[str]:
+    """Return ``names`` plus any extra spelling the action class registers, such as ``--no-foo``."""
+    instance = _instantiate_action_class(names, kwargs)
+    return list(instance.option_strings) if instance is not None else list(names)
 
 
 def option_takes_value(addoption_kwargs: Mapping[str, object]) -> bool:
@@ -41,6 +61,9 @@ def option_takes_value(addoption_kwargs: Mapping[str, object]) -> bool:
     """
     if addoption_kwargs.get('nargs') == 0:
         return False
+    instance = _instantiate_action_class(('--option',), addoption_kwargs)
+    if instance is not None:
+        return instance.nargs != 0
     return addoption_kwargs.get('action', 'store') not in _VALUE_LESS_ACTIONS
 
 
