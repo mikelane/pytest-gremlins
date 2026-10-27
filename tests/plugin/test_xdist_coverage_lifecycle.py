@@ -7,8 +7,8 @@ disabled, when no session exists, or in PIGGYBACK mode (pytest-cov handles its
 own xdist coverage there).
 
 Workers do not create their own coverage instances from ``workerinput``; the
-private ``Coverage`` object is created in ``pytest_sessionstart`` without a
-worker-specific data suffix.
+private ``Coverage`` object is created in ``pytest_sessionstart`` with
+``data_suffix=True``, so coverage assigns each process its own data file.
 """
 
 from __future__ import annotations
