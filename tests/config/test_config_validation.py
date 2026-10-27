@@ -140,7 +140,9 @@ class DescribeUnknownKeys:
 
         load_config(tmp_path, on_warning=warned.append)
 
-        assert warned
+        assert len(warned) == 2
+        assert "unknown key 'future-key'" in warned[0]
+        assert "unknown key 'future_key'" in warned[1]
 
     def it_escapes_control_characters_in_an_unknown_key_name(self, tmp_path: Path):
         (tmp_path / 'pyproject.toml').write_text('[tool.pytest-gremlins]\n"x\\npytest-gremlins: forged" = 1\n')
@@ -148,7 +150,9 @@ class DescribeUnknownKeys:
 
         load_config(tmp_path, on_warning=warned.append)
 
+        assert len(warned) == 1
         assert '\n' not in warned[0]
+        assert 'x\\npytest-gremlins: forged' in warned[0]
 
     def it_escapes_control_characters_in_an_unknown_operator_name(self, tmp_path: Path):
         (tmp_path / 'pyproject.toml').write_text('[tool.pytest-gremlins]\noperators = ["x\\nforged"]\n')
