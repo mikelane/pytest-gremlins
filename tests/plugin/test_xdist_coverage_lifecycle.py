@@ -1,19 +1,14 @@
-"""Tests for PRIVATE + xdist coverage lifecycle.
+"""Tests for the controller-side xdist hook and the GremlinSession tmpdir field.
 
-When running with xdist in PRIVATE mode:
+When running with xdist in PRIVATE mode, the controller's ``pytest_configure_node``
+hook copies ``GremlinSession.gremlins_tmpdir`` into ``node.workerinput`` so each
+worker can see the shared directory. The hook does nothing when gremlins is
+disabled, when no session exists, or in PIGGYBACK mode (pytest-cov handles its
+own xdist coverage there).
 
-Controller side:
-- pytest_configure_node: injects gremlins_tmpdir and gremlins_source_paths
-  into node.workerinput so workers can create their own Coverage instances.
-
-Worker side:
-- pytest_sessionstart: reads workerinput, creates Coverage with unique
-  data_suffix=worker_id, stores on GremlinSession.private_coverage.
-- pytest_runtestloop: starts/stops private coverage (same as non-xdist PRIVATE).
-
-Controller pytest_sessionfinish:
-- Combines all worker .coverage files from the shared tmpdir before reading
-  coverage data.
+Workers do not create their own coverage instances from ``workerinput``; the
+private ``Coverage`` object is created in ``pytest_sessionstart`` without a
+worker-specific data suffix.
 """
 
 from __future__ import annotations
