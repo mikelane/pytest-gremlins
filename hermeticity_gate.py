@@ -29,12 +29,17 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
 
+def _enforcement_is_strict(config: pytest.Config) -> bool:
+    cli_value = config.getoption('--test-categories-enforcement', default=None)
+    return (cli_value or config.getini('test_categories_enforcement')) == 'strict'
+
+
 def _violating_nodeids(config: pytest.Config) -> set[str]:
     if ViolationTracker is None or ViolationType is None:
         return set()
     state = getattr(config, '_test_categories_state', None)
     tracker = getattr(state, 'violation_tracker', None)
-    if not isinstance(tracker, ViolationTracker):
+    if not isinstance(tracker, ViolationTracker) or not _enforcement_is_strict(config):
         return set()
     return {nodeid for kind in ViolationType for nodeid in tracker.get_test_nodeids_by_type(kind)}
 

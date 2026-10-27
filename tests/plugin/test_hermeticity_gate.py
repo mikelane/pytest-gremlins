@@ -67,3 +67,10 @@ class DescribeHermeticityGate:
         result = pytester.runpytest_subprocess('-p', 'no:cacheprovider', '-p', 'hermeticity_gate')
 
         assert result.ret == 0
+
+    def it_leaves_warn_mode_violations_as_warnings(self, violating_project: pytest.Pytester) -> None:
+        result = violating_project.runpytest_subprocess(
+            '-p', 'no:cacheprovider', '-p', 'hermeticity_gate', '--test-categories-enforcement=warn'
+        )
+
+        assert result.ret == 0
