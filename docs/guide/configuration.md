@@ -617,6 +617,12 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
   With autoload on for gremlin runs, nothing is added: they load the plugin through its entry point.
   A `--disable-plugin-autoload` typed on the command line is not inherited, so gremlin runs of a session started
   with it and a `-p` loader still autoload the plugin and rerun.
+  The exception is a session that was started with `--disable-plugin-autoload` and got the plugin by module name
+  from a source gremlin runs inherit (a conftest `pytest_plugins`, `PYTEST_PLUGINS`, or `-p pytest_rerunfailures`
+  in `addopts`). Their autoload would register the plugin twice, and every gremlin would error, so gremlins
+  hands them `--disable-plugin-autoload` and `-p pytest_rerunfailures` instead. They then load the plugin once and
+  rerun like the session. Their other plugins are not loaded automatically, as in the session, so load pytest-cov through
+  `addopts` too.
   Other plugins loaded only by a command-line `-p` with autoload disabled, such as pytest-cov, are still not
   carried over (see [#654](https://github.com/mikelane/pytest-gremlins/issues/654)).
 

@@ -21,6 +21,7 @@ from enum import Enum
 import functools
 import importlib.util
 import inspect
+from itertools import pairwise
 import json
 import logging
 import os
@@ -2824,7 +2825,9 @@ def _is_cov_addopt(token: str) -> bool:
 # Registered as ``rerunfailures`` when found through its entry point (autoload, or ``-p rerunfailures``, which
 # pytest resolves even with autoload disabled), as ``pytest_rerunfailures`` when loaded by module name
 # (``-p pytest_rerunfailures``, ``pytest_plugins`` or ``PYTEST_PLUGINS``).
-_RERUNFAILURES_PLUGIN_NAMES = ('rerunfailures', 'pytest_rerunfailures')
+_RERUNFAILURES_ENTRY_POINT_NAME = 'rerunfailures'
+_RERUNFAILURES_MODULE_NAME = 'pytest_rerunfailures'
+_RERUNFAILURES_PLUGIN_NAMES = (_RERUNFAILURES_ENTRY_POINT_NAME, _RERUNFAILURES_MODULE_NAME)
 # Blocking by the entry-point name also blocks the plugin when it is loaded by module name.
 _BLOCK_RERUNFAILURES_OPTION = ('-p', 'no:rerunfailures')
 _DISABLE_PLUGIN_AUTOLOAD_ENV_VAR = 'PYTEST_DISABLE_PLUGIN_AUTOLOAD'
@@ -2857,6 +2860,34 @@ def _gremlin_runs_have_autoload_disabled(config: pytest.Config) -> bool:
     return bool(os.environ.get(_DISABLE_PLUGIN_AUTOLOAD_ENV_VAR)) or (
         _DISABLE_PLUGIN_AUTOLOAD_FLAG in _arguments_gremlin_runs_inherit(config)
     )
+
+
+def _gremlin_runs_would_load_the_module_twice(config: pytest.Config) -> bool:
+    """Return whether gremlin runs would register pytest-rerunfailures under both of its names (issue #684).
+
+    The session turned autoload off on its command line only, which gremlin runs never see, and loaded the
+    plugin by module name through a source they inherit (conftest ``pytest_plugins``, ``PYTEST_PLUGINS`` or ini
+    ``addopts``).  A gremlin run that autoloads would register the ``rerunfailures`` entry point and then load
+    the module again as ``pytest_rerunfailures``, which pluggy rejects.  A module-name ``-p`` on the session's
+    command line is not inherited, so it does not count.  Blocking ``rerunfailures`` is no
+    answer: pytest then blocks the module name too and nothing reruns.
+    """
+    return (
+        bool(getattr(config.option, 'disable_plugin_autoload', False))
+        and not _gremlin_runs_have_autoload_disabled(config)
+        and config.pluginmanager.hasplugin(_RERUNFAILURES_MODULE_NAME)
+        and not config.pluginmanager.hasplugin(_RERUNFAILURES_ENTRY_POINT_NAME)
+        and not _command_line_loads_module(config.invocation_params.args, _RERUNFAILURES_MODULE_NAME)
+    )
+
+
+def _command_line_loads_module(args: Sequence[str], module_name: str) -> bool:
+    """Return whether ``args`` hold a ``-p <module_name>`` (or ``-p<module_name>``) loader.
+
+    Gremlin runs are not given the session's command line, so a module loaded only by it is not loaded twice
+    there: with autoload on they register the entry point once.
+    """
+    return f'-p{module_name}' in args or any(flag == '-p' and value == module_name for flag, value in pairwise(args))
 
 
 def _loader_options_for_gremlin_runs(config: pytest.Config, plugin_names: tuple[str, ...]) -> list[str]:
@@ -2971,10 +3002,15 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     runs start with autoload disabled, by the environment or by a flag in ``addopts`` or ``PYTEST_ADDOPTS``
     (see :func:`_loader_options_for_gremlin_runs`): without it they would not load a plugin the session got from its
     command line, and would not rerun while the budget assumes they do (issue #679).
+    When the session disabled autoload on its command line only and registered the plugin under its module name,
+    gremlin runs get ``--disable-plugin-autoload`` and the module loader instead, so an inherited module-name
+    load registers it once (issue #684).
     """
     if not _rerunfailures_is_loaded(config):
         return list(_BLOCK_RERUNFAILURES_OPTION)
     loader_options = _loader_options_for_gremlin_runs(config, _RERUNFAILURES_PLUGIN_NAMES)
+    if _gremlin_runs_would_load_the_module_twice(config):
+        loader_options = [_DISABLE_PLUGIN_AUTOLOAD_FLAG, '-p', _RERUNFAILURES_MODULE_NAME]
     return [*loader_options, *_rerun_settings_for(config)]
 
 
