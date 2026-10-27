@@ -211,10 +211,11 @@ class DescribeUnattributableMarkerWriteFailure:
             ),
         )
 
-        def refuse_write(_self: Path, *_a: object, **_kw: object) -> int:
-            raise OSError(28, DISK_FULL)
-
-        monkeypatch.setattr(Path, 'write_text', refuse_write)
+        marker = create_autospec(Path, instance=True)
+        marker.write_text.side_effect = OSError(28, DISK_FULL)
+        full_disk_dir = create_autospec(Path, instance=True)
+        full_disk_dir.__truediv__.return_value = marker
+        session.instrumented_dir = full_disk_dir
 
         _verify_suite_loads_unmutated(SimpleNamespace(config=None), session)  # type: ignore[arg-type]
 
