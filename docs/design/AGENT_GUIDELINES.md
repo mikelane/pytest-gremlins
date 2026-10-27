@@ -312,7 +312,6 @@ pytest-gremlins/
 │       │   ├── transformer.py  # AST transformation
 │       │   ├── switcher.py     # Mutation switching logic
 │       │   ├── finder.py       # Mutation point finder
-│       │   ├── import_hooks.py # Import interception
 │       │   └── pragma.py       # Pardon pragma parsing
 │       ├── coverage/
 │       │   ├── __init__.py
