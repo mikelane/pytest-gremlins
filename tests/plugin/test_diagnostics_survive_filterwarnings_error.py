@@ -65,3 +65,4 @@ class DescribeDiagnosticsUnderFilterwarningsError:
 
         assert result.ret == 0
         assert TRACEBACK_MARKER not in result.stdout.str() + result.stderr.str()
+        assert 'Zapped: 2 gremlins (100%)' in result.stdout.str()

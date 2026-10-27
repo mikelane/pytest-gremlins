@@ -85,10 +85,10 @@ class DescribeCoverageSubprocessClearsAddopts:
 
 @pytest.mark.small
 class DescribeEmptyCoverageWarning:
-    """Verify a warning is emitted when coverage collection returns empty data."""
+    """Verify a stderr diagnostic is written when coverage collection returns empty data."""
 
     def it_warns_when_coverage_data_is_empty(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """A warning fires when _run_tests_with_coverage returns an empty dict."""
+        """The no-data diagnostic reaches stderr when _run_tests_with_coverage returns an empty dict."""
         session = GremlinSession(
             enabled=True,
             gremlins=[],
@@ -107,7 +107,7 @@ class DescribeEmptyCoverageWarning:
     def it_emits_no_warning_when_coverage_data_is_present(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """No warning fires when coverage data contains entries."""
+        """Nothing is written to stderr when coverage data contains entries."""
         session = GremlinSession(
             enabled=True,
             gremlins=[],
