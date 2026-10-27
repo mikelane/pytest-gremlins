@@ -324,3 +324,16 @@ class DescribeReleaseWorkflowInstallChecks:
 
         assert 'WHEEL_VERSION=' in verify_step['run']
         assert 'VERSION=' not in verify_step['run'].replace('WHEEL_VERSION=', '')
+
+
+@pytest.mark.medium
+class DescribeReleaseWorkflowLargeTierGate:
+    """The large test tier is skipped on pull requests, so a release must run it and wait for it (issue #576)."""
+
+    def it_makes_the_build_job_wait_for_the_large_tests_job(self) -> None:
+        assert 'large-tests' in _needs(_jobs()['build'])
+
+    def it_runs_the_large_marker_in_the_large_tests_job(self) -> None:
+        commands = [step.get('run', '') for step in _steps('large-tests')]
+
+        assert 'uv run pytest tests -m large -v' in commands

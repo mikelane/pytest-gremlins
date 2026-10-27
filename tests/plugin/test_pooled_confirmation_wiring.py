@@ -6,6 +6,7 @@ medium test. These tests drive a real tiny run in each mode and spy on the confi
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -14,6 +15,7 @@ from typing import (
 import pytest
 
 from pytest_gremlins import plugin
+from pytest_gremlins.node_id_file import NODE_IDS_FILE_OPTION
 
 if TYPE_CHECKING:
     from pytest_gremlins.plugin import GremlinSession
@@ -44,6 +46,15 @@ _MODES = {
 }
 
 
+def _tests_the_command_runs(test_command: list[str]) -> str:
+    """Return the command line plus the contents of any node-id file it names."""
+    option_prefix = f'{NODE_IDS_FILE_OPTION}='
+    node_id_files = [
+        Path(argument[len(option_prefix) :]) for argument in test_command if argument.startswith(option_prefix)
+    ]
+    return '\n'.join([*test_command, *(path.read_text() for path in node_id_files)])
+
+
 @pytest.fixture
 def confirmation_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """Record every call to ``_confirm_pooled_result`` while still running the real confirmation."""
@@ -60,6 +71,7 @@ def confirmation_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         calls.append(
             {
                 'selected_tests': list(result.selected_tests),
+                'command_tests': _tests_the_command_runs(test_command),
                 'node_ids': list(node_ids),
                 'mutant_timeout': gremlin_session.mutant_timeout,
             }
@@ -99,3 +111,26 @@ class DescribePooledRunsConfirmTheirResults:
         assert {call['mutant_timeout'] for call in confirmation_calls} == {MUTANT_TIMEOUT_SECONDS}
         assert all(call['node_ids'] == ['test_sample.py::test_add'] for call in confirmation_calls)
         assert all(call['selected_tests'] == ['test_sample.py::test_add'] for call in confirmation_calls)
+
+    def it_confirms_with_a_command_that_runs_only_the_gremlins_selection(
+        self,
+        pytester_with_markers: pytest.Pytester,
+        confirmation_calls: list[dict[str, Any]],
+        mode: str,
+    ) -> None:
+        pytester_with_markers.makepyfile(sample=_SAMPLE)
+        pytester_with_markers.makepyfile(test_sample=_COVERING_TEST)
+        pytester_with_markers.makepyfile(test_unrelated=_UNRELATED_TEST)
+
+        pytester_with_markers.runpytest(
+            '--gremlins',
+            '--gremlin-targets=sample.py',
+            '--gremlin-operators=arithmetic',
+            '-p',
+            'no:cacheprovider',
+            *_MODES[mode],
+        )
+
+        assert confirmation_calls
+        assert all('test_sample.py::test_add' in call['command_tests'] for call in confirmation_calls)
+        assert all('test_unrelated' not in call['command_tests'] for call in confirmation_calls)
