@@ -710,7 +710,8 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
 
 ### Coverage Pre-Scan Timeout
 
-The pre-scan is limited to 120 seconds by default. If it runs longer, gremlins emits this warning (wrapped here for width)
+The pre-scan is limited to 120 seconds by default. If it runs longer, gremlins prints this notice to stderr
+(wrapped here for width)
 
 ```text
 pytest-gremlins: coverage pre-scan exceeded 120s; coverage-guided test selection disabled
@@ -718,14 +719,17 @@ pytest-gremlins: coverage pre-scan exceeded 120s; coverage-guided test selection
 ```
 
 When pytest-rerunfailures is loaded with reruns configured, the limit is scaled by the rerun budget (see
-[Flaky tests and pytest-rerunfailures](#flaky-tests-and-pytest-rerunfailures)), and the warning names both limits:
+[Flaky tests and pytest-rerunfailures](#flaky-tests-and-pytest-rerunfailures)), and the notice names both limits:
 
 ```text
 pytest-gremlins: coverage pre-scan exceeded 400s (120s per attempt, scaled for the pytest-rerunfailures budget);
 coverage-guided test selection disabled (set coverage_timeout / --gremlin-coverage-timeout to raise the per-attempt limit)
 ```
 
-and falls back to running every test for every gremlin. Raise the limit with the CLI or TOML:
+and falls back to running every test for every gremlin. The notice is plain terminal output, not a Python
+warning, so `filterwarnings = error` in your pytest config cannot turn it into a crash. The same holds for the
+"coverage pre-scan could not start" and "Coverage collection returned no data" notices.
+Raise the limit with the CLI or TOML:
 
 ```bash
 pytest --gremlins --gremlin-coverage-timeout=600

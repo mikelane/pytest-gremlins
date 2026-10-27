@@ -38,7 +38,6 @@ from typing import (
     TYPE_CHECKING,
     Protocol,
 )
-import warnings
 
 import coverage
 from coverage.exceptions import CoverageException
@@ -2623,6 +2622,15 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     return relative_node_ids
 
 
+def _report_diagnostic(message: str) -> None:
+    """Write a run-time diagnostic to stderr.
+
+    Not ``warnings.warn``: these run inside ``pytest_sessionfinish``, where a user's
+    ``filterwarnings = error`` would escalate them into a crash (issue #543).
+    """
+    print(message, file=sys.stderr)
+
+
 def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> None:
     """Warn that the pre-scan timed out, which is a different cause from "no data" (issues #503, #673)."""
     scaled_note = scaled_limit_note(attempt_timeout, seconds)
@@ -2632,31 +2640,28 @@ def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> N
         if scaled_note and limit_is_capped(seconds)
         else f'set coverage_timeout / --gremlin-coverage-timeout to raise {raised_limit}'
     )
-    warnings.warn(
+    _report_diagnostic(
         f'pytest-gremlins: coverage pre-scan exceeded {seconds}s{scaled_note}; '
         'coverage-guided test selection disabled '
-        f'({advice})',
-        stacklevel=1,
+        f'({advice})'
     )
 
 
 def _warn_prescan_launch_failure(launch_error: CoveragePrescanLaunchError) -> None:
     """Warn that the pre-scan could not be run, naming the cause (issue #485)."""
-    warnings.warn(
+    _report_diagnostic(
         f'pytest-gremlins: coverage pre-scan could not start ({launch_error.cause}); '
-        'coverage-guided test selection disabled, so every gremlin runs the full test suite',
-        stacklevel=1,
+        'coverage-guided test selection disabled, so every gremlin runs the full test suite'
     )
 
 
 def _warn_no_coverage_data() -> None:
     """Warn that the pre-scan finished but recorded nothing (issue #113)."""
-    warnings.warn(
+    _report_diagnostic(
         'Coverage collection returned no data. '
         'If you have --cov in pytest addopts, this may interfere with '
         "gremlins' coverage-guided test selection. "
-        'See https://github.com/mikelane/pytest-gremlins/issues/113',
-        stacklevel=1,
+        'See https://github.com/mikelane/pytest-gremlins/issues/113'
     )
 
 
