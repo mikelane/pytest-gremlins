@@ -35,9 +35,11 @@ class DescribeIncrementalCacheBatchOperations:
         assert commits_after_flush == 1
 
         with IncrementalCache(cache_dir) as cache:
-            for i in range(num_gremlins):
-                result = cache.get_cached_result(f'gremlin_{i}', 'source_hash', {'test': 'hash'})
-                assert result == {'status': 'zapped'}
+            results = [
+                cache.get_cached_result(f'gremlin_{i}', 'source_hash', {'test': 'hash'}) for i in range(num_gremlins)
+            ]
+
+        assert results == [{'status': 'zapped'}] * num_gremlins
 
     def it_close_flushes_deferred_writes(self, tmp_path: Path) -> None:
         """Closing the cache flushes any pending deferred writes."""
