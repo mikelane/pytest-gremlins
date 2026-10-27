@@ -6,7 +6,9 @@ swallows the resulting exception the test still passes and pytest exits 0 (#474)
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import sys
 import tomllib
 
 import pytest
@@ -30,6 +32,24 @@ def test_swallows_the_violation():
 @pytest.mark.small
 def test_is_hermetic():
     assert 1 + 1 == 2
+"""
+
+
+SLOW_PROCESS_SHIM = """#!/bin/sh
+sleep 1.5
+exec "$REAL_PYTHON" "$@"
+"""
+
+SWALLOWED_FILESYSTEM_READ_TEST = """
+import pytest
+
+
+@pytest.mark.small
+def test_reads_the_filesystem():
+    try:
+        open(__file__).close()
+    except Exception:
+        pass
 """
 
 
@@ -103,8 +123,32 @@ class DescribeHermeticityGate:
 
         assert result.ret == 0
 
-    def it_leaves_warn_mode_violations_as_warnings(self, violating_project: pytest.Pytester) -> None:
-        result = violating_project.runpytest_subprocess(
+    def it_leaves_warn_mode_violations_as_warnings(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('PYTHONPATH', str(REPO_ROOT))
+        pytester.makeini('[pytest]\ntest_categories_enforcement = strict\nmarkers = small: fast\n')
+        pytester.makepyfile(test_sample=SWALLOWED_FILESYSTEM_READ_TEST)
+
+        result = pytester.runpytest_subprocess(
+            '-p', 'no:cacheprovider', '-p', 'hermeticity_gate', '--test-categories-enforcement=warn'
+        )
+
+        assert result.ret == 0
+
+    def it_keeps_warn_mode_green_when_spawned_processes_are_slow(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        pytester.makeini('[pytest]\ntest_categories_enforcement = strict\nmarkers = small: fast\n')
+        pytester.makepyfile(test_sample=SWALLOWED_FILESYSTEM_READ_TEST)
+        monkeypatch.setenv('PYTHONPATH', str(REPO_ROOT))
+        shim = tmp_path / 'python'
+        shim.write_text(SLOW_PROCESS_SHIM, encoding='utf-8')
+        shim.chmod(0o755)
+        monkeypatch.setenv('REAL_PYTHON', sys.executable)
+        monkeypatch.setenv('PATH', f'{tmp_path}{os.pathsep}{os.environ["PATH"]}')
+
+        result = pytester.runpytest_subprocess(
             '-p', 'no:cacheprovider', '-p', 'hermeticity_gate', '--test-categories-enforcement=warn'
         )
 
