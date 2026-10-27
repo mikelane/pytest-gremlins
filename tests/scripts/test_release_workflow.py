@@ -183,6 +183,7 @@ class DescribeReleaseWorkflowCheckout:
             'test',
             'benchmark',
             'attrs-compat',
+            'large-tests',
             'build',
             'github-release',
         }
