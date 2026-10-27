@@ -2209,7 +2209,14 @@ def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: Grem
     if outcome.loads_cleanly:
         return
     gremlin_session.load_failures_attributable = False
-    (instrumented_dir / UNATTRIBUTABLE_MARKER).write_text('', encoding='utf-8')
+    try:
+        (instrumented_dir / UNATTRIBUTABLE_MARKER).write_text('', encoding='utf-8')
+    except OSError as write_error:
+        print(
+            f'pytest-gremlins: could not write the load-failure marker ({write_error}); '
+            'load failures under a mutant may be scored as kills.',
+            file=sys.stderr,
+        )
     print(build_diagnostic(outcome.output), file=sys.stderr)
 
 
@@ -3413,11 +3420,23 @@ def _run_batch_mutation_testing(  # pragma: no cover
                 seen_tests.add(test)
                 all_covering_tests.append(test)
 
-    test_command = _build_filtered_test_command(
-        base_test_command,
-        all_covering_tests,
-        gremlin_session,
-    )
+    try:
+        test_command = _build_filtered_test_command(
+            base_test_command,
+            all_covering_tests,
+            gremlin_session,
+        )
+    except OSError as write_error:
+        logger.warning('Cannot launch the gremlin batch: %s', write_error)
+        return cached_results + [
+            GremlinResult(
+                gremlin=gremlin,
+                status=GremlinResultStatus.ERROR,
+                error_output=_node_ids_write_failure_output(write_error),
+                selected_tests=gremlin_tests[gremlin.gremlin_id],
+            )
+            for gremlin in uncached_gremlins
+        ]
 
     # Execute batches
     executor = BatchExecutor(
@@ -3516,6 +3535,8 @@ def _run_parallel_mutation_testing(  # pragma: no cover
 
     print(f'\npytest-gremlins: Starting parallel execution with {gremlin_session.parallel_workers or "auto"} workers')
 
+    test_commands: dict[str, list[str]] = {}
+    launch_failed_ids: set[str] = set()
     with WorkerPool(
         max_workers=gremlin_session.parallel_workers,
         timeout=gremlin_session.mutant_timeout,
@@ -3525,11 +3546,18 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         for gremlin in uncached_gremlins:
             selected_tests = gremlin_tests[gremlin.gremlin_id]
 
-            test_command = _build_filtered_test_command(
-                base_test_command,
-                selected_tests,
-                gremlin_session,
-            )
+            try:
+                test_command = _build_filtered_test_command(
+                    base_test_command,
+                    selected_tests,
+                    gremlin_session,
+                )
+            except OSError as write_error:
+                logger.warning('Cannot launch gremlin %s: %s', gremlin.gremlin_id, write_error)
+                aggregator.add_error(gremlin.gremlin_id, OSError(_node_ids_write_failure_output(write_error)))
+                launch_failed_ids.add(gremlin.gremlin_id)
+                continue
+            test_commands[gremlin.gremlin_id] = test_command
 
             future = pool.submit(
                 gremlin_id=gremlin.gremlin_id,
@@ -3572,9 +3600,12 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             error_output=worker_result.error_output,
             selected_tests=selected_tests,
         )
+        if gremlin_id in launch_failed_ids:
+            results.append(gremlin_result)
+            continue
         gremlin_result = _confirm_pooled_result(
             gremlin_result,
-            _build_filtered_test_command(base_test_command, selected_tests, gremlin_session),
+            test_commands[gremlin_id],
             _node_ids_for_tests(selected_tests, gremlin_session),
             gremlin_session,
             rootdir,
@@ -3858,11 +3889,23 @@ def _run_mutation_testing(
 
         _report_gremlin_progress(i, len(gremlin_session.gremlins), gremlin, test_count, total)
 
-        test_command = _build_filtered_test_command(
-            base_test_command,
-            selected_tests,
-            gremlin_session,
-        )
+        try:
+            test_command = _build_filtered_test_command(
+                base_test_command,
+                selected_tests,
+                gremlin_session,
+            )
+        except OSError as write_error:
+            logger.warning('Cannot launch gremlin %s: %s', gremlin.gremlin_id, write_error)
+            results.append(
+                GremlinResult(
+                    gremlin=gremlin,
+                    status=GremlinResultStatus.ERROR,
+                    error_output=_node_ids_write_failure_output(write_error),
+                    selected_tests=selected_tests,
+                )
+            )
+            continue
         gremlin_result = _test_gremlin(
             gremlin,
             test_command,
@@ -4226,6 +4269,11 @@ def _report_gremlin_progress(
     """
     prefix = f'Gremlin {index}/{total_gremlins}: {gremlin.gremlin_id}'
     print(f'{prefix} - running {test_count}/{total_tests} tests')
+
+
+def _node_ids_write_failure_output(error: OSError) -> str:
+    """Describe a failed write of the node-ids file for a gremlin's ``error_output``."""
+    return f'Could not write the node ids file for the gremlin test command: {error}'[:2000]
 
 
 def _build_filtered_test_command(
