@@ -409,10 +409,17 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
         """Get all operators that can mutate the given node."""
         return [op for op in self._operators if op.can_mutate(node)]
 
-    def _create_gremlins_for_node(self, node: ast.expr | ast.stmt) -> list[Gremlin]:
-        """Create gremlins for any node using all applicable operators."""
+    def _create_gremlins_for_node(
+        self,
+        node: ast.expr | ast.stmt,
+        operators: list[GremlinOperator] | None = None,
+    ) -> list[Gremlin]:
+        """Create gremlins for any node using all applicable operators.
+
+        Pass ``operators`` when the applicable operators are already known, to avoid asking each one again.
+        """
         all_gremlins: list[Gremlin] = []
-        for operator in self._get_operators_for_node(node):
+        for operator in self._get_operators_for_node(node) if operators is None else operators:
             gremlins = create_gremlins_for_node(
                 node,
                 operator,
@@ -422,7 +429,11 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
             all_gremlins.extend(gremlins)
         return all_gremlins
 
-    def _switch_expression_with_pristine_mutations(self, node: ast.expr) -> ast.expr:
+    def _switch_expression_with_pristine_mutations(
+        self,
+        node: ast.expr,
+        operators: list[GremlinOperator] | None = None,
+    ) -> ast.expr:
         """Instrument ``node``'s operands, then switch ``node`` itself between its mutations.
 
         Only one gremlin is active at a time, so while a mutation of ``node`` is active none of the gremlins
@@ -434,7 +445,7 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
         pristine = copy.deepcopy(node)
         self.generic_visit(node)
 
-        gremlins = self._create_gremlins_for_node(pristine)
+        gremlins = self._create_gremlins_for_node(pristine, operators)
         if not gremlins:
             return node
 
@@ -459,10 +470,11 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
 
     def visit_Call(self, node: ast.Call) -> ast.expr:
         """Offer call nodes to operators; skip the pristine copy when no operator matches."""
-        if not self._get_operators_for_node(node):
+        operators = self._get_operators_for_node(node)
+        if not operators:
             self.generic_visit(node)
             return node
-        return self._switch_expression_with_pristine_mutations(node)
+        return self._switch_expression_with_pristine_mutations(node, operators)
 
     def visit_Constant(self, node: ast.Constant) -> ast.expr:
         """Replace boolean constants with mutation switching expressions."""

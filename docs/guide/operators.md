@@ -518,11 +518,9 @@ class StringEmptyOperator:
 A registered operator runs with the built-in operators. Its name also works in the
 `operators` list and in `--gremlin-operators`, for example `--gremlin-operators=string-empty`.
 
-A custom operator is offered only comparisons, binary and boolean operations, unary operations,
-literals and `return` statements. An operator that matches anything else, such as a method call
-like Django's `.filter()`, produces no gremlins today
-([#698](https://github.com/mikelane/pytest-gremlins/issues/698)). See
-[Which Nodes an Operator Is Offered](extensibility.md#which-nodes-an-operator-is-offered).
+A custom operator is offered comparisons, binary and boolean operations, unary operations,
+calls, literals and `return` statements. That includes method calls such as Django's `.filter()`.
+See [Which Nodes an Operator Is Offered](extensibility.md#which-nodes-an-operator-is-offered).
 
 ## Summary
 

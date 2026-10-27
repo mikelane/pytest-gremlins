@@ -70,3 +70,23 @@ class DescribeCustomOperatorOnCallNodes:
             results.append(namespace['f'](_Qs()))  # type: ignore[operator]
 
         assert results == ['filter', 'exclude']
+
+
+class _CountingFilterOperator(_FilterToExcludeOperator):
+    def __init__(self) -> None:
+        self.call_node_checks = 0
+
+    def can_mutate(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Call):
+            self.call_node_checks += 1
+        return super().can_mutate(node)
+
+
+@pytest.mark.small
+class DescribeCanMutateCostOnCallNodes:
+    def it_asks_can_mutate_at_most_twice_per_matching_call(self) -> None:
+        operator = _CountingFilterOperator()
+
+        transform_source('def f(qs):\n    return qs.filter(a=1)\n', 'm.py', operators=[operator])
+
+        assert operator.call_node_checks <= 2

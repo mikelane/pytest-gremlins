@@ -379,7 +379,7 @@ def mutate(self, node: ast.AST) -> list[ast.AST]:
 
 ### Keep can_mutate() Fast
 
-`can_mutate()` is called for every offered node (every comparison, operation, literal and
+`can_mutate()` is called for every offered node (every comparison, operation, call, literal and
 `return`) in the code under test. Keep it simple:
 
 ```python
