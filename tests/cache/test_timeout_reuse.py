@@ -44,7 +44,7 @@ class DescribeNonTimeoutReuse:
     def it_hits_at_a_lower_limit_that_still_exceeds_the_elapsed_time(self, cache: IncrementalCache) -> None:
         cache.cache_result('g1', 'src', TESTS, _result('zapped', 5.0), mutant_timeout=30)
 
-        assert cache.get_cached_result('g1', 'src', TESTS, mutant_timeout=6) is not None
+        assert cache.get_cached_result('g1', 'src', TESTS, mutant_timeout=6) == _result('zapped', 5.0)
 
     @pytest.mark.parametrize('new_limit', [5, 4, 1])
     def it_misses_when_elapsed_time_reaches_the_new_limit(self, cache: IncrementalCache, new_limit: int) -> None:
@@ -62,11 +62,11 @@ class DescribeNonTimeoutReuse:
 
         assert cache.get_cached_result('g1', 'src', TESTS, mutant_timeout=30) == _result('zapped', None)
 
-    def it_works_for_deferred_writes(self, cache: IncrementalCache) -> None:
+    def it_hits_for_a_deferred_write_once_flushed(self, cache: IncrementalCache) -> None:
         cache.cache_result_deferred('g1', 'src', TESTS, _result('zapped', 5.0), mutant_timeout=30)
         cache.flush()
 
-        assert cache.get_cached_result('g1', 'src', TESTS, mutant_timeout=31) is not None
+        assert cache.get_cached_result('g1', 'src', TESTS, mutant_timeout=31) == _result('zapped', 5.0)
 
     def it_returns_the_result_without_bookkeeping_fields(self, cache: IncrementalCache) -> None:
         cache.cache_result('g1', 'src', TESTS, {'status': 'zapped'}, mutant_timeout=30)
