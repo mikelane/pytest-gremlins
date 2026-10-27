@@ -2876,19 +2876,37 @@ def _command_line_loads_module(config: pytest.Config) -> bool:
     return _RERUNFAILURES_MODULE_NAME in _plugin_names_loaded_by(arguments)
 
 
+def _plugins_declared_by(module: object) -> set[str]:
+    """Return the names a module lists in its ``pytest_plugins`` (a string or a sequence of strings)."""
+    declared = getattr(module, 'pytest_plugins', ())
+    return {declared} if isinstance(declared, str) else {name for name in declared if isinstance(name, str)}
+
+
+def _with_plugins_they_load(names: set[str]) -> set[str]:
+    """Return ``names`` plus every plugin that those already imported modules load through ``pytest_plugins``."""
+    pending = list(names)
+    reached = set(names)
+    while pending:
+        for declared in _plugins_declared_by(sys.modules.get(pending.pop())):
+            if declared not in reached:
+                reached.add(declared)
+                pending.append(declared)
+    return reached
+
+
 def _inherited_source_loads_module(config: pytest.Config) -> bool:
     """Return whether ``addopts``, ``PYTEST_ADDOPTS``, ``PYTEST_PLUGINS`` or a conftest loads the module by name.
 
-    Only conftests count: a plugin loaded on the command line is not inherited, whatever it declares.
+    The load may be indirect: a plugin such as one of these names can itself list the module in its own
+    ``pytest_plugins``.  Only conftests count: a plugin loaded on the command line is not inherited, whatever
+    it declares.
     """
     names = _plugin_names_loaded_by(_arguments_gremlin_runs_inherit(config))
     names |= {name.strip() for name in os.environ.get('PYTEST_PLUGINS', '').split(',')}
     for name, plugin in config.pluginmanager.list_name_plugin():
-        if not name.endswith(_CONFTEST_FILE_NAME):
-            continue
-        declared = getattr(plugin, 'pytest_plugins', ())
-        names |= {declared} if isinstance(declared, str) else {name for name in declared if isinstance(name, str)}
-    return _RERUNFAILURES_MODULE_NAME in names
+        if name.endswith(_CONFTEST_FILE_NAME):
+            names |= _plugins_declared_by(plugin)
+    return _RERUNFAILURES_MODULE_NAME in _with_plugins_they_load(names)
 
 
 def _gremlin_runs_would_load_the_module_twice(config: pytest.Config) -> bool:
