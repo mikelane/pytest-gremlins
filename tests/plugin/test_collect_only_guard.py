@@ -127,6 +127,11 @@ class DescribeCollectOnlyConfigValidation:
 
 
 _NON_RUNNING_MODES = ['--setup-plan', '--setup-only', '--fixtures', '--fixtures-per-test']
+# pytest's fixture-listing modes report exit status 0 after a configure-time pytest.exit
+# with USAGE_ERROR; the error message still prints. Strict, so a fix flips this to a failure.
+_FIXTURE_LISTING_EXIT_STATUS_XFAIL = pytest.mark.xfail(
+    strict=True, reason='--fixtures/--fixtures-per-test exit 0 on a configure-time usage error'
+)
 
 
 @pytest.mark.medium
@@ -149,8 +154,30 @@ class DescribeNonRunningModeGuard:
         assert not (collect_only_project.path / '.gremlins_cache').exists()
 
     @pytest.mark.parametrize('mode', _NON_RUNNING_MODES)
+    def it_exits_with_the_normal_status_for_the_mode(self, collect_only_project: pytest.Pytester, mode: str) -> None:
+        result = collect_only_project.runpytest_subprocess('--gremlins', mode, *_NO_CATEGORIES)
+        assert result.ret == pytest.ExitCode.OK
+
+    @pytest.mark.parametrize('mode', _NON_RUNNING_MODES)
     def it_still_rejects_invalid_configuration(self, collect_only_project: pytest.Pytester, mode: str) -> None:
         result = collect_only_project.runpytest_subprocess(
             '--gremlins', mode, '--gremlin-max-pardons-pct=150', *_NO_CATEGORIES
         )
         assert '--gremlin-max-pardons-pct must be between 0 and 100' in result.stdout.str() + result.stderr.str()
+
+    @pytest.mark.parametrize(
+        'mode',
+        [
+            '--setup-plan',
+            '--setup-only',
+            pytest.param('--fixtures', marks=_FIXTURE_LISTING_EXIT_STATUS_XFAIL),
+            pytest.param('--fixtures-per-test', marks=_FIXTURE_LISTING_EXIT_STATUS_XFAIL),
+        ],
+    )
+    def it_exits_with_a_usage_error_for_invalid_configuration(
+        self, collect_only_project: pytest.Pytester, mode: str
+    ) -> None:
+        result = collect_only_project.runpytest_subprocess(
+            '--gremlins', mode, '--gremlin-max-pardons-pct=150', *_NO_CATEGORIES
+        )
+        assert result.ret == pytest.ExitCode.USAGE_ERROR

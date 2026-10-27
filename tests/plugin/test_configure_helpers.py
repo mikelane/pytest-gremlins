@@ -174,7 +174,12 @@ class DescribeMaybeShortCircuitForInactiveRun:
         config = _inactive_run_config(collectonly=False)
         setattr(config.option, dest, True)
         assert plugin._maybe_short_circuit_for_inactive_run(config) is True
-        assert capsys.readouterr().err == f'pytest-gremlins: {flag} detected, skipping mutation testing\n'
+        session = plugin._get_session()
+        assert session is not None
+        assert session.enabled is False
+        captured = capsys.readouterr()
+        assert captured.err == f'pytest-gremlins: {flag} detected, skipping mutation testing\n'
+        assert captured.out == ''
 
     def it_stays_silent_on_xdist_workers(self, capsys: pytest.CaptureFixture[str]) -> None:
         assert plugin._maybe_short_circuit_for_inactive_run(_inactive_run_config(collectonly=True, worker=True)) is True
