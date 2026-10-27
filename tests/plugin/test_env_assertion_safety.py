@@ -7,13 +7,16 @@ Session-wide secret scrubbing (#649) is the real defense. Shapes the guard accep
 - aliases bound by ``for`` targets, ``match`` or ``async with`` bodies
 - the environment passed into a call inside the assertion (``assert check(os.environ)``)
 - an alias formatted into the assert message (``assert ok, f'bad {env}'``)
-- ``os.environ | {...}``, ``os.environ.pop(...)`` and ``patch.dict(os.environ, ...) as env``
+- ``patch.dict(os.environ, ...) as env``
 - an alias reassigned inside a branch, which drops the alias for later asserts
 
 Each gap above is accepted (#710), not closed. Closing one means tracking values through attributes, calls,
-branches and format strings, which turns a cheap lint into a data-flow analysis, and every such assertion
-still hits the session scrub, which removes secret-shaped variables before any test runs. Accepting the gaps
-costs only a possible non-secret variable in a failure message; the scrub's own gaps are tracked in #707.
+branches, context managers and format strings, which turns a cheap lint into a data-flow analysis. Every such
+assertion still hits the session scrub, which removes secret-shaped variables before any test runs, so a gap
+exposes at most a variable the scrub's name rules miss; those gaps are tracked in #707. That includes a
+credential embedded in a value such as ``DATABASE_URL``, which the guard cannot see and the scrub may not remove.
+``os.environ.pop(...)`` and ``os.environ | {...}`` are direct expressions like ``.get()`` and ``.copy()``, so the
+guard flags them.
 """
 
 from __future__ import annotations
@@ -42,6 +45,12 @@ class DescribeEnvironmentAssertionChecker:
             ('assert os.environ.values() == []', [1]),
             ('assert os.environ.items() == []', [1]),
             ('assert os.environ.copy() == {}', [1]),
+            ("assert os.environ.pop('SECRET', None) is None", [1]),
+            ("env = os.environ\nassert env.pop('SECRET', None) is None", [2]),
+            ("assert (os.environ | {'A': '1'}) == {}", [1]),
+            ("env = os.environ | {'A': '1'}\nassert 'SECRET' not in env", [2]),
+            ("env = {'A': '1'} | os.environ\nassert 'SECRET' not in env", [2]),
+            ("env = {'A': '1'} | {'B': '2'}\nassert 'SECRET' not in env", []),
             ("env = os.environ.copy()\nassert 'SECRET' not in env", [2]),
             ("env = {**os.environ}\nassert 'SECRET' not in env", [2]),
             ("env = _prescan_env().copy()\nassert 'SECRET' not in env", [2]),
@@ -87,6 +96,9 @@ class DescribeEnvironmentAssertionChecker:
         assert _unsafe_assertions_in_source(source) == [4]
 
 
+_MAPPING_READ_METHODS = frozenset({'get', 'keys', 'values', 'items', 'copy', 'pop'})
+
+
 def _is_named(node: ast.expr, name: str) -> bool:
     return (isinstance(node, ast.Name) and node.id == name) or (isinstance(node, ast.Attribute) and node.attr == name)
 
@@ -100,7 +112,11 @@ def _is_positional_call_kwargs(node: ast.expr) -> bool:
     )
 
 
-def _mapping_draws_on_environment(node: ast.Dict | ast.DictComp, names: set[str]) -> bool:
+def _mapping_draws_on_environment(node: ast.Dict | ast.DictComp | ast.BinOp, names: set[str]) -> bool:
+    if isinstance(node, ast.BinOp):
+        return isinstance(node.op, ast.BitOr) and (
+            _is_environment_source(node.left, names) or _is_environment_source(node.right, names)
+        )
     if isinstance(node, ast.DictComp):
         return any(_is_environment_source(generator.iter, names) for generator in node.generators)
     return any(
@@ -121,21 +137,25 @@ def _is_environment_source(node: ast.expr, names: set[str]) -> bool:
             and node.slice.value == 'env'
             and (_is_named(node.value, 'kwargs') or _is_positional_call_kwargs(node.value))
         )
-    if isinstance(node, (ast.Dict, ast.DictComp)):
+    if isinstance(node, (ast.Dict, ast.DictComp, ast.BinOp)):
         return _mapping_draws_on_environment(node, names)
     if isinstance(node, ast.Call):
-        return (
-            isinstance(node.func, ast.Attribute)
-            and node.func.attr in {'get', 'keys', 'values', 'items', 'copy'}
-            and _is_environment_source(node.func.value, names)
-        ) or (
-            isinstance(node.func, ast.Name)
-            and (
-                (node.func.id == 'dict' and len(node.args) == 1 and _is_environment_source(node.args[0], names))
-                or node.func.id == '_prescan_env'
-            )
-        )
+        return _is_environment_call(node, names)
     return False
+
+
+def _is_environment_call(node: ast.Call, names: set[str]) -> bool:
+    return (
+        isinstance(node.func, ast.Attribute)
+        and node.func.attr in _MAPPING_READ_METHODS
+        and _is_environment_source(node.func.value, names)
+    ) or (
+        isinstance(node.func, ast.Name)
+        and (
+            (node.func.id == 'dict' and len(node.args) == 1 and _is_environment_source(node.args[0], names))
+            or node.func.id == '_prescan_env'
+        )
+    )
 
 
 def _is_environment_alias(node: ast.expr, names: set[str]) -> bool:
@@ -154,7 +174,7 @@ def _assertion_operands(expression: ast.expr) -> list[ast.expr]:
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id == 'len':
                 operands.extend(node.args)
-            elif isinstance(node.func, ast.Attribute) and node.func.attr in {'get', 'keys', 'values', 'items', 'copy'}:
+            elif isinstance(node.func, ast.Attribute) and node.func.attr in _MAPPING_READ_METHODS:
                 operands.append(node)
     if isinstance(expression, (ast.Name, ast.Attribute, ast.Subscript)):
         operands.append(expression)

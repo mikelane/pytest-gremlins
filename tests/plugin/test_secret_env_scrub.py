@@ -194,3 +194,28 @@ class DescribeSessionScrub:
         )
 
         assert result.stdout.splitlines()[-1:] == ['True']
+
+    def it_loads_the_test_conftest_under_importlib_import_mode(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            [
+                sys.executable,
+                '-m',
+                'pytest',
+                '--import-mode=importlib',
+                '--collect-only',
+                '-q',
+                '-p',
+                'no:cacheprovider',
+                'tests/plugin/test_env_assertion_safety.py',
+            ],
+            capture_output=True,
+            encoding='utf-8',
+            errors='replace',
+            env=_child_environment(),
+            cwd=repo_root,
+            check=False,
+            timeout=_CHILD_TIMEOUT_SECONDS,
+        )
+
+        assert (result.returncode, 'ModuleNotFoundError' in result.stdout + result.stderr) == (0, False)
