@@ -20,13 +20,13 @@ class DescribeCustomOperatorNodeDocumentation:
     def it_lists_calls_among_the_nodes_offered_in_the_operators_guide(self) -> None:
         text = (GUIDE_DIR / 'operators.md').read_text()
         paragraph = text[text.index('A custom operator is offered') :]
-        paragraph = paragraph[: paragraph.index('\n\n')]
+        first_sentence = paragraph[: paragraph.index('. ')]
 
-        assert 'call' in paragraph
+        assert re.search(r'\bcalls\b', first_sentence) is not None
 
     def it_lists_calls_among_the_nodes_offered_in_the_keep_can_mutate_fast_section(self) -> None:
         text = (GUIDE_DIR / 'extensibility.md').read_text()
         section = text[text.index('### Keep can_mutate() Fast') : text.index('### Always Deep Copy')]
 
         assert re.search(r'\(every comparison, operation, literal and\s+`return`\)', section) is None
-        assert 'call' in section.split('```')[0]
+        assert re.search(r'\bcalls?\b', section.split('```')[0]) is not None

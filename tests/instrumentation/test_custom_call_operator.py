@@ -49,9 +49,7 @@ def _run_f(tree: ast.Module, active: str | None) -> object:
 @pytest.mark.small
 class DescribeCustomOperatorOnCallNodes:
     def it_produces_a_gremlin_for_a_matching_call(self) -> None:
-        source = 'def f(qs):\n    return qs.filter(a=1)\n'
-
-        gremlins, _tree = transform_source(source, 'm.py', operators=[_FilterToExcludeOperator()])
+        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_FilterToExcludeOperator()])
 
         assert [g.operator_name for g in gremlins] == ['call_swap']
 
@@ -60,14 +58,14 @@ class DescribeCustomOperatorOnCallNodes:
 
         gremlins, _tree = transform_source(source, 'm.py', operators=[_FilterToExcludeOperator()])
 
-        assert len(gremlins) == 2
+        assert [g.operator_name for g in gremlins] == ['call_swap', 'call_swap']
 
     def it_finds_matching_calls_nested_inside_other_calls(self) -> None:
         source = 'def f(qs):\n    return list(qs.filter(a=1))\n'
 
         gremlins, _tree = transform_source(source, 'm.py', operators=[_FilterToExcludeOperator()])
 
-        assert len(gremlins) == 1
+        assert [g.operator_name for g in gremlins] == ['call_swap']
 
     def it_calls_the_original_method_when_no_gremlin_is_active(self) -> None:
         _gremlins, tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_FilterToExcludeOperator()])
