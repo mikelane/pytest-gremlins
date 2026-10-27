@@ -2161,7 +2161,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             _print_terminal_notices(gremlin_session)
             cause = (
                 'Files were skipped (see above).'
-                if gremlin_session.terminal_notices
+                if gremlin_session.skipped_files
                 else 'Check your `paths`/`--gremlin-targets` configuration.'
             )
             print(f'--gremlin-explain: no gremlins were generated in this session (nothing to explain). {cause}')
@@ -3644,7 +3644,7 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
     )
 
     if target_gremlin is None:
-        skipped_hint = ' Files were skipped (see above).' if gremlin_session.terminal_notices else ''
+        skipped_hint = ' Files were skipped (see above).' if gremlin_session.skipped_files else ''
         print(
             f'--gremlin-explain: no gremlin with id {target_id!r} in this session. '
             f'Run with --gremlins (without --gremlin-explain) to see the full list of '
