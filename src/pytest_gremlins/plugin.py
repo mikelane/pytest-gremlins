@@ -932,14 +932,24 @@ def _resolve_target_paths(rootdir: Path, merged_config: object) -> list[Path]:
     return [rootdir]
 
 
-def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
-    """Disable the session for ``--collect-only`` runs, after configuration is validated.
+_NON_RUNNING_MODE_FLAGS: tuple[tuple[str, str], ...] = (
+    ('collectonly', '--collect-only'),
+    ('setupplan', '--setup-plan'),
+    ('setuponly', '--setup-only'),
+    ('showfixtures', '--fixtures'),
+    ('show_fixtures_per_test', '--fixtures-per-test'),
+)
 
-    Collection-only runs execute no tests, so there is no coverage to pre-scan and
+
+def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
+    """Disable the session for pytest modes that execute no tests, after configuration is validated.
+
+    ``--collect-only``, ``--setup-plan``, ``--setup-only``, ``--fixtures`` and
+    ``--fixtures-per-test`` run no tests, so there is no coverage to pre-scan and
     nothing to mutate against. Config loading and validation still run first so that
     ``pytest --gremlins --collect-only`` reports configuration errors. The skip notice
-    goes to stderr so ``--collect-only -q`` node-id output on stdout stays
-    machine-parseable; it is printed once, by the controller.
+    names the triggering mode and goes to stderr so ``--collect-only -q`` node-id output
+    on stdout stays machine-parseable; it is printed once, by the controller.
 
     Args:
         config: The pytest config object.
@@ -947,11 +957,12 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
     Returns:
         True if the session was disabled and configuration should stop.
     """
-    if not getattr(config.option, 'collectonly', False):
+    mode_flag = next((flag for dest, flag in _NON_RUNNING_MODE_FLAGS if getattr(config.option, dest, False)), None)
+    if mode_flag is None:
         return False
     _install_session(config, GremlinSession(enabled=False))
     if not _is_xdist_worker(config):
-        print('pytest-gremlins: --collect-only detected, skipping mutation testing', file=sys.stderr)
+        print(f'pytest-gremlins: {mode_flag} detected, skipping mutation testing', file=sys.stderr)
     return True
 
 
@@ -3150,12 +3161,13 @@ def _prescan_env() -> dict[str, str]:
     afterwards, so both are removed.  pytest appends ``PYTEST_ADDOPTS`` to every invocation,
     so ``-n 2`` there would distribute the pre-scan just like ``-n 2`` in ``addopts``
     (issue #502), and a gremlins option there is unrecognized under ``-p no:gremlins``.
-    Both are stripped from it and the variable is dropped if empty.
+    Both are stripped from it, as are ``--cov*`` options, which would make pytest-cov fight the pre-scan's
+    own collection (issue #669).  The variable is dropped if empty.
     """
     env = env_without_xdist_addopts(
         {key: value for key, value in os.environ.items() if key not in _PRESCAN_OVERRIDING_ENV_VARS}
     )
-    remaining = addopts_without_gremlins(env.pop('PYTEST_ADDOPTS', ''))
+    remaining = _addopts_without_cov(shlex.split(addopts_without_gremlins(env.pop('PYTEST_ADDOPTS', ''))))
     if remaining:
         env['PYTEST_ADDOPTS'] = remaining
     return env
