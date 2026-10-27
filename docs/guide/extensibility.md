@@ -82,8 +82,7 @@ pytest-gremlins doesn't pass every AST node to your operator. The instrumentatio
 
 An operator that matches any other node type, such as `ast.Attribute` or `ast.Subscript`, never
 produces a gremlin. Its `can_mutate()` is never called for those nodes, and a run reports no
-gremlins for it. Supporting more node types needs a code change, tracked in
-[#698](https://github.com/mikelane/pytest-gremlins/issues/698).
+gremlins for it. Supporting more node types needs a code change.
 
 For the six expression types, `mutate()` must return expression nodes. For `ast.Return`, it
 must return `ast.Return` statements.
