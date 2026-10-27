@@ -10,7 +10,10 @@ import argparse
 import ast
 import base64
 import collections.abc
-from concurrent.futures import as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+)
 from dataclasses import (
     dataclass,
     field,
@@ -2293,6 +2296,40 @@ def _confirm_collection_kill(
     )
 
 
+def _prefill_collection_kill_confirmations(
+    pending: Sequence[tuple[GremlinResult, Sequence[str]]],
+    gremlin_session: GremlinSession,
+    rootdir: Path,
+) -> None:
+    """Fill the unmutated-load memo for every collection kill in ``pending``, running distinct selections concurrently.
+
+    Collection confirmations measure no time, so they can overlap; timeout confirmations compare
+    durations and must stay solo, so they are not touched here. Worker threads only run the
+    subprocess; the memo is written from the calling thread, so it needs no lock. Concurrency is
+    bounded by the configured worker count. :func:`_confirm_collection_kill` then reads the warm memo
+    and decides each verdict exactly as before.
+
+    Args:
+        pending: Each result paired with the node ids its subprocess was asked to run.
+        gremlin_session: The current gremlin session, holding the memo and the worker count.
+        rootdir: Root directory of the project.
+    """
+    selections = {
+        tuple(node_ids): node_ids
+        for result, node_ids in pending
+        if result.status == GremlinResultStatus.ZAPPED and result.killing_test == COLLECTION_KILLING_TEST
+    }
+    unchecked = [selection for selection in selections if selection not in gremlin_session.unmutated_load_checks]
+    if not unchecked:
+        return
+    worker_count = min(len(unchecked), gremlin_session.parallel_workers or os.cpu_count() or 4)
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        outcomes = executor.map(
+            lambda selection: _collect_unmutated(gremlin_session, rootdir, selections[selection]), unchecked
+        )
+        gremlin_session.unmutated_load_checks.update(zip(unchecked, outcomes, strict=True))
+
+
 def _confirm_kill(
     result: GremlinResult,
     node_ids: Sequence[str],
@@ -3449,33 +3486,34 @@ def _run_batch_mutation_testing(  # pragma: no cover
     # Convert WorkerResults to GremlinResults
     results: list[GremlinResult] = list(cached_results)
 
+    batch_node_ids = _node_ids_for_tests(all_covering_tests, gremlin_session)
+    unconfirmed: list[GremlinResult] = []
     for worker_result in worker_results:
         gremlin_id = worker_result.gremlin_id
         if gremlin_id not in gremlin_by_id:
             continue
 
-        gremlin = gremlin_by_id[gremlin_id]
-        selected_tests = gremlin_tests[gremlin_id]
-        gremlin_result = GremlinResult(
-            gremlin=gremlin,
-            status=worker_result.status,
-            killing_test=worker_result.killing_test,
-            execution_time_ms=worker_result.execution_time_ms,
-            error_output=worker_result.error_output,
-            selected_tests=selected_tests,
+        unconfirmed.append(
+            GremlinResult(
+                gremlin=gremlin_by_id[gremlin_id],
+                status=worker_result.status,
+                killing_test=worker_result.killing_test,
+                execution_time_ms=worker_result.execution_time_ms,
+                error_output=worker_result.error_output,
+                selected_tests=gremlin_tests[gremlin_id],
+            )
         )
-        # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
+
+    # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
+    _prefill_collection_kill_confirmations([(r, batch_node_ids) for r in unconfirmed], gremlin_session, rootdir)
+    for unconfirmed_result in unconfirmed:
         gremlin_result = _confirm_pooled_result(
-            gremlin_result,
-            test_command,
-            _node_ids_for_tests(all_covering_tests, gremlin_session),
-            gremlin_session,
-            rootdir,
+            unconfirmed_result, test_command, batch_node_ids, gremlin_session, rootdir
         )
         results.append(gremlin_result)
-
-        # Cache the result
-        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
+        _cache_gremlin_result(
+            unconfirmed_result.gremlin, unconfirmed_result.selected_tests, gremlin_result, gremlin_session
+        )
 
     return results
 
@@ -3569,32 +3607,38 @@ def _run_parallel_mutation_testing(  # pragma: no cover
 
     # Convert WorkerResults to GremlinResults and cache them
     results: list[GremlinResult] = list(cached_results)
+    unconfirmed: list[GremlinResult] = []
     for worker_result in aggregator.get_results():
         gremlin_id = worker_result.gremlin_id
         if gremlin_id not in gremlin_by_id:
             continue
 
-        gremlin = gremlin_by_id[gremlin_id]
-        selected_tests = gremlin_tests[gremlin_id]
-        gremlin_result = GremlinResult(
-            gremlin=gremlin,
-            status=worker_result.status,
-            killing_test=worker_result.killing_test,
-            execution_time_ms=worker_result.execution_time_ms,
-            error_output=worker_result.error_output,
-            selected_tests=selected_tests,
+        unconfirmed.append(
+            GremlinResult(
+                gremlin=gremlin_by_id[gremlin_id],
+                status=worker_result.status,
+                killing_test=worker_result.killing_test,
+                execution_time_ms=worker_result.execution_time_ms,
+                error_output=worker_result.error_output,
+                selected_tests=gremlin_tests[gremlin_id],
+            )
         )
+
+    _prefill_collection_kill_confirmations(
+        [(r, _node_ids_for_tests(r.selected_tests, gremlin_session)) for r in unconfirmed], gremlin_session, rootdir
+    )
+    for unconfirmed_result in unconfirmed:
         gremlin_result = _confirm_pooled_result(
-            gremlin_result,
-            _build_filtered_test_command(base_test_command, selected_tests, gremlin_session),
-            _node_ids_for_tests(selected_tests, gremlin_session),
+            unconfirmed_result,
+            _build_filtered_test_command(base_test_command, unconfirmed_result.selected_tests, gremlin_session),
+            _node_ids_for_tests(unconfirmed_result.selected_tests, gremlin_session),
             gremlin_session,
             rootdir,
         )
         results.append(gremlin_result)
-
-        # Cache the result
-        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
+        _cache_gremlin_result(
+            unconfirmed_result.gremlin, unconfirmed_result.selected_tests, gremlin_result, gremlin_session
+        )
 
     return results
 
