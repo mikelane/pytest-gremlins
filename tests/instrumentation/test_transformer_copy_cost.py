@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterator
+import copy
 import hashlib
 import json
 import sys
 import time
+from typing import Any
 
 import coverage
 import pytest
@@ -25,9 +27,10 @@ from pytest_gremlins.instrumentation.transformer import (
 
 # Generous bound for a loaded CI runner; the cubic implementation needs about 3 s on a fast laptop.
 ABSOLUTE_BOUND_SECONDS = 1.0
+# Doubling a chain may at most quintuple the copy work: linear is 2x, the quadratic output is 4x, cubic is 8x.
 MAX_DOUBLING_RATIO = 5
 # Coverage tracing slows the transformer about 3x on 3.11, which defeats any absolute bound that is tight enough
-# to catch the cubic copy; the doubling ratio is unaffected, so it alone guards the speed while coverage runs.
+# to catch the cubic copy; the deep-copy count is deterministic, so it alone guards the cause while coverage runs.
 absolute_bounds_are_unreliable = pytest.mark.skipif(
     coverage.Coverage.current() is not None,
     reason='coverage tracing inflates absolute timings; the doubling-ratio test still guards the speed',
@@ -51,6 +54,29 @@ def _best_of_three(source: str) -> float:
     return best
 
 
+def _count_nodes_deep_copied(monkeypatch: pytest.MonkeyPatch, source: str) -> int:
+    """Count the AST nodes ``copy.deepcopy`` is asked to copy while instrumenting ``source``."""
+    nodes_copied = 0
+    copying = False
+    real_deepcopy = copy.deepcopy
+
+    def counting_deepcopy(node: Any, *args: Any) -> Any:
+        nonlocal nodes_copied, copying
+        if copying or not isinstance(node, ast.AST):
+            return real_deepcopy(node, *args)
+        nodes_copied += sum(1 for _ in ast.walk(node))
+        copying = True
+        try:
+            return real_deepcopy(node, *args)
+        finally:
+            copying = False
+
+    with monkeypatch.context() as patch:
+        patch.setattr(copy, 'deepcopy', counting_deepcopy)
+        transform_source(source, 'm.py')
+    return nodes_copied
+
+
 @pytest.fixture
 def roomy_recursion_limit() -> Iterator[None]:
     """A 120-term chain is deeper than pytest's frames leave room for; the RecursionError ceiling is out of scope."""
@@ -70,8 +96,12 @@ class DescribeInstrumentationTime:
         assert len(gremlins) == 120
         assert _best_of_three(_chain(120)) < ABSOLUTE_BOUND_SECONDS
 
-    def it_does_not_more_than_quintuple_the_time_when_the_chain_doubles(self) -> None:
-        assert _best_of_three(_chain(120)) <= MAX_DOUBLING_RATIO * _best_of_three(_chain(60))
+    def it_does_not_more_than_quintuple_the_nodes_copied_when_the_chain_doubles(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        assert _count_nodes_deep_copied(monkeypatch, _chain(120)) <= MAX_DOUBLING_RATIO * _count_nodes_deep_copied(
+            monkeypatch, _chain(60)
+        )
 
     @absolute_bounds_are_unreliable
     def it_instruments_a_comparison_nested_forty_levels_deep_quickly(self) -> None:
