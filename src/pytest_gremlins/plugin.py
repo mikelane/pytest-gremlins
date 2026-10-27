@@ -39,6 +39,7 @@ from typing import (
     Protocol,
 )
 import warnings
+import zlib
 
 import coverage
 from coverage.exceptions import CoverageException
@@ -130,6 +131,7 @@ from pytest_gremlins.rerun_options import (
     RerunIniResolution,
     baseline_rerun_warning,
     expand_argument_files,
+    mutant_timeout_for_items,
     rerun_cache_settings,
     rerun_ini_as_gremlin_runs_read,
     rerun_keys_set_in,
@@ -932,26 +934,40 @@ def _resolve_target_paths(rootdir: Path, merged_config: object) -> list[Path]:
     return [rootdir]
 
 
-def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
-    """Disable the session for ``--collect-only`` runs, after configuration is validated.
+_NON_RUNNING_MODE_FLAGS: tuple[tuple[str, str], ...] = (
+    ('collectonly', '--collect-only'),
+    ('setupplan', '--setup-plan'),
+    ('setuponly', '--setup-only'),
+    ('showfixtures', '--fixtures'),
+    ('show_fixtures_per_test', '--fixtures-per-test'),
+)
 
-    Collection-only runs execute no tests, so there is no coverage to pre-scan and
+
+def _maybe_short_circuit_for_inactive_run(config: pytest.Config, config_warnings: list[str] | None = None) -> bool:
+    """Disable the session for pytest modes that execute no tests, after configuration is validated.
+
+    ``--collect-only``, ``--setup-plan``, ``--setup-only``, ``--fixtures`` and
+    ``--fixtures-per-test`` run no tests, so there is no coverage to pre-scan and
     nothing to mutate against. Config loading and validation still run first so that
     ``pytest --gremlins --collect-only`` reports configuration errors. The skip notice
-    goes to stderr so ``--collect-only -q`` node-id output on stdout stays
-    machine-parseable; it is printed once, by the controller.
+    names the triggering mode and goes to stderr so ``--collect-only -q`` node-id output
+    on stdout stays machine-parseable; it is printed once, by the controller.
 
     Args:
         config: The pytest config object.
+        config_warnings: Configuration warnings to print to stderr, since no terminal summary will carry them.
 
     Returns:
         True if the session was disabled and configuration should stop.
     """
-    if not getattr(config.option, 'collectonly', False):
+    mode_flag = next((flag for dest, flag in _NON_RUNNING_MODE_FLAGS if getattr(config.option, dest, False)), None)
+    if mode_flag is None:
         return False
     _install_session(config, GremlinSession(enabled=False))
     if not _is_xdist_worker(config):
-        print('pytest-gremlins: --collect-only detected, skipping mutation testing', file=sys.stderr)
+        for warning in config_warnings or []:
+            print(f'pytest-gremlins: warning: {warning}', file=sys.stderr)
+        print(f'pytest-gremlins: {mode_flag} detected, skipping mutation testing', file=sys.stderr)
     return True
 
 
@@ -1021,9 +1037,10 @@ def pytest_configure(config: pytest.Config) -> None:
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
     # Load config from pyproject.toml and merge with CLI args
+    config_warnings: list[str] = []
     try:
         merged_config = merge_configs(
-            load_config(rootdir),
+            load_config(rootdir, on_warning=config_warnings.append),
             cli_operators=config.option.gremlin_operators,
             cli_targets=config.option.gremlin_targets,
             cli_exclude=config.option.gremlin_exclude,
@@ -1046,7 +1063,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     target_paths = _resolve_target_paths(rootdir, merged_config)
 
-    if _maybe_short_circuit_for_inactive_run(config):
+    if _maybe_short_circuit_for_inactive_run(config, config_warnings):
         return
 
     (
@@ -1081,6 +1098,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config,
         GremlinSession(
             enabled=True,
+            terminal_notices=[f'pytest-gremlins: warning: {warning}' for warning in config_warnings],
             operators=operators,
             report_formats=report_formats,
             target_paths=target_paths,
@@ -1285,6 +1303,12 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     gremlin_session.test_files = list(set(test_files))
 
     gremlin_session.total_tests = len(session.items)
+    if session.items and _rerunfailures_is_loaded(session.config):
+        gremlin_session.mutant_timeout = mutant_timeout_for_items(
+            gremlin_session.mutant_attempt_timeout or gremlin_session.mutant_timeout,
+            gremlin_session.mutant_timeout,
+            session.items,
+        )
 
     # Normalize node IDs for subprocess execution.
     # In some contexts (e.g. pytester) node IDs can include absolute paths, and
@@ -1634,8 +1658,8 @@ def _write_instrumented_sources(
 
     Creates a temporary directory containing:
     1. A JSON file mapping the normalized real path of each instrumented file to its
-       instrumented tree (``tree``: the instrumented AST, pickled and base64 encoded for the subprocess to
-       compile under the real file path; absent when the tree is too deep to pickle), its unparsed text
+       instrumented tree (``tree``: the instrumented AST, pickled, zlib compressed and base64 encoded for the subprocess
+       to compile under the real file path; absent when the tree is too deep to pickle), its unparsed text
        (``source``: always present, what the subprocess compiles when the tree is absent or too deep), the
        path it came from, the file's device and inode (``identity``, for spellings the path key misses) and
        the lowercased file names it may be imported as (``names``, so the finder skips every other import
@@ -1703,7 +1727,7 @@ del _gremlin_os
 
 
 def _encode_tree(instrumented_tree: ast.Module) -> str | None:
-    """Return ``instrumented_tree`` pickled and base64 encoded for sources.json, or ``None`` if nested too deeply.
+    """Return ``instrumented_tree`` pickled, zlib compressed and base64 encoded, or ``None`` if nested too deeply.
 
     The subprocess compiles the tree itself, under the real file path, so the original line numbers survive and
     the subprocess's own optimize level and warning filters apply. Pickling recurses once per level of nesting,
@@ -1713,7 +1737,9 @@ def _encode_tree(instrumented_tree: ast.Module) -> str | None:
     releases before #563.
     """
     try:
-        return base64.b64encode(pickle.dumps(ast.fix_missing_locations(instrumented_tree))).decode('ascii')
+        return base64.b64encode(zlib.compress(pickle.dumps(ast.fix_missing_locations(instrumented_tree)))).decode(
+            'ascii'
+        )
     except RecursionError:
         return None
 
@@ -2162,7 +2188,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             _print_terminal_notices(gremlin_session)
             cause = (
                 'Files were skipped (see above).'
-                if gremlin_session.terminal_notices
+                if gremlin_session.skipped_files
                 else 'Check your `paths`/`--gremlin-targets` configuration.'
             )
             print(f'--gremlin-explain: no gremlins were generated in this session (nothing to explain). {cause}')
@@ -2558,6 +2584,8 @@ def _skip_mutation_unless_baseline_is_green(gremlin_session: GremlinSession, exi
             print(rerun_warning, file=sys.stderr)
         return False
     reason = _baseline_skip_reason(gremlin_session, exitstatus)
+    for notice in gremlin_session.terminal_notices:
+        print(notice, file=sys.stderr)
     print(f'pytest-gremlins: skipping mutation testing because {reason}', file=sys.stderr)
     gremlin_session.enabled = False
     return True
@@ -3167,12 +3195,13 @@ def _prescan_env() -> dict[str, str]:
     afterwards, so both are removed.  pytest appends ``PYTEST_ADDOPTS`` to every invocation,
     so ``-n 2`` there would distribute the pre-scan just like ``-n 2`` in ``addopts``
     (issue #502), and a gremlins option there is unrecognized under ``-p no:gremlins``.
-    Both are stripped from it and the variable is dropped if empty.
+    Both are stripped from it, as are ``--cov*`` options, which would make pytest-cov fight the pre-scan's
+    own collection (issue #669).  The variable is dropped if empty.
     """
     env = env_without_xdist_addopts(
         {key: value for key, value in os.environ.items() if key not in _PRESCAN_OVERRIDING_ENV_VARS}
     )
-    remaining = addopts_without_gremlins(env.pop('PYTEST_ADDOPTS', ''))
+    remaining = _addopts_without_cov(shlex.split(addopts_without_gremlins(env.pop('PYTEST_ADDOPTS', ''))))
     if remaining:
         env['PYTEST_ADDOPTS'] = remaining
     return env
@@ -3642,7 +3671,7 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
     )
 
     if target_gremlin is None:
-        skipped_hint = ' Files were skipped (see above).' if gremlin_session.terminal_notices else ''
+        skipped_hint = ' Files were skipped (see above).' if gremlin_session.skipped_files else ''
         print(
             f'--gremlin-explain: no gremlin with id {target_id!r} in this session. '
             f'Run with --gremlins (without --gremlin-explain) to see the full list of '

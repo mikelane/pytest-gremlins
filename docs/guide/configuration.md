@@ -311,6 +311,27 @@ max-pardons-pct = 5.0
 | `max_pardons` | int | no limit | Absolute ceiling on pardoned gremlins |
 | `max-pardons-pct` | float | no limit | Maximum percentage of pardoned gremlins (0-100) |
 
+### Key Spelling, Validation and Unknown Keys
+
+Every key accepts both spellings: hyphens or underscores. `max-pardons-pct` and `max_pardons_pct` are the same key,
+as are `batch-size` and `batch_size`. Setting one known key in both spellings is an error.
+
+pytest-gremlins checks every value when it loads the section. A wrong-typed value stops the run with exit code 4 and
+a message that names the key and the value. A bare string for `exclude` gives:
+
+```text
+[tool.pytest-gremlins].exclude must be a list of strings (e.g. exclude = ["tests/*"]);
+use a list, not a bare string, got 'tests/*'
+```
+
+- `operators`, `paths` and `exclude` must be lists of strings. A bare string is rejected, because it would otherwise
+  be read one character at a time.
+- Each name in `operators` must be a registered operator. The error lists the valid names.
+- A key pytest-gremlins does not know does not stop the run. A warning names the key and the closest valid key
+  (`did you mean 'max-pardons-pct'?`), and the key is ignored. The warning also appears when the run skips mutation
+  testing (`--collect-only`, a failing baseline). Key names are shown quoted, with control characters escaped. An
+  unknown key given in both spellings warns; only known keys reject the double spelling.
+
 ### Example Configurations
 
 **Minimal configuration:**
@@ -698,9 +719,15 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
 - **A large delay makes runs slower, not wrong.** A kill is only finished after every rerun, so each killed
   gremlin costs about `reruns * reruns_delay` seconds of waiting on top of the test time. Lower
   `--reruns-delay` if your mutation runs become too slow.
-- `@pytest.mark.flaky(reruns=..., reruns_delay=...)` markers are not visible at session level and are not
-  counted. A test whose marker sets a long delay can still exceed the timeout. If it does, raise
-  `--gremlin-mutant-timeout` yourself.
+- `@pytest.mark.flaky(reruns=..., reruns_delay=..., reruns_delay_backoff_factor=...)` markers on collected tests
+  are counted. A marker replaces the session budget for its test, as it does in pytest-rerunfailures, and a marker
+  on a function wins over one on its class. Each marker is scaled by the same formula, and the timeout is the
+  largest of the session value and every marker's value, so a marker smaller than the session budget changes
+  nothing. The widest marker applies to every gremlin, because the covering tests are not known when the timeout
+  is fixed. One test with a long `reruns_delay` therefore raises the timeout of all gremlins, and a hung
+  mutant takes that long to be reported. The effective timeout is part of the cache key, so changing a marker
+  judges the affected gremlins again. Under `pytest-xdist` the controller collects no tests, so markers are not
+  counted there.
 - The formula assumes one failing test. `--reruns-mode append` (which adds the global count to a marker's count)
   and a selection with several failing tests, each rerun in turn, can need more time than the formula allows. A
   gremlin that runs out of time this way is still reported as a timeout and counted as a kill when its
@@ -996,3 +1023,7 @@ pytest --gremlins --collect-only
 so invalid values are rejected as usual. It then skips mutation testing entirely (no
 instrumentation, coverage pre-scan, cache setup, or gremlin execution) and prints a one-line
 notice to stderr, which keeps `--collect-only -q` node-id output on stdout clean.
+
+The same applies to the other pytest modes that run no tests: `--setup-plan`, `--setup-only`,
+`--fixtures` and `--fixtures-per-test`. The notice names the mode, for example
+`pytest-gremlins: --setup-plan detected, skipping mutation testing`.

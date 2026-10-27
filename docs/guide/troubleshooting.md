@@ -284,7 +284,8 @@ gremlin it covers, and tests that never ran back no verdict at all. Any baseline
 `--continue-on-collection-errors`), the session was interrupted, pytest reported a usage error such as an
 unknown node id, no tests were collected, or `pytest.exit(...)` stopped the run (with any return code,
 including 0) therefore skips the whole mutation run, with or without pytest-xdist. pytest-gremlins keeps
-pytest's own exit status. With `--collect-only` it prints its own `--collect-only detected` notice instead.
+pytest's own exit status. With `--collect-only`, `--setup-plan`, `--setup-only`, `--fixtures` or
+`--fixtures-per-test` it prints its own notice instead, naming the mode (for example `--collect-only detected`).
 
 Failing non-test checks do not block mutation testing. If every test passed but pytest still exited 1
 (for example `--cov-fail-under` was not met), pytest-gremlins prints one note and continues:
