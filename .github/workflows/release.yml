@@ -461,6 +461,10 @@ jobs:
             exit 1
           fi
 
+      - name: Classify release tag
+        id: classify
+        run: uv run --no-project --python 3.12 python scripts/classify_release_tag.py "$RELEASE_TAG"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -471,4 +475,4 @@ jobs:
             benchmark-results/**/*
           generate_release_notes: true
           draft: false
-          prerelease: ${{ contains(env.RELEASE_TAG, 'alpha') || contains(env.RELEASE_TAG, 'beta') || contains(env.RELEASE_TAG, 'rc') }}
+          prerelease: ${{ steps.classify.outputs.prerelease }}
