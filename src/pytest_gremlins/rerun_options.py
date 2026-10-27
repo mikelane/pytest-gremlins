@@ -33,9 +33,15 @@ import math
 from pathlib import Path
 import re
 import sys
-from typing import cast
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 
 from pytest_gremlins.config import MAX_TIMEOUT_SECONDS
+
+if TYPE_CHECKING:
+    import pytest
 
 _ARGUMENT_FILE_PREFIX = '@'
 
@@ -542,6 +548,17 @@ def mutant_timeout_with_flaky_markers(base: int, *, session_timeout: int, marker
             scaled_mutant_timeout(base, reruns=reruns, reruns_delay=reruns_delay, reruns_delay_backoff_factor=factor),
         )
     return timeout
+
+
+def mutant_timeout_for_items(attempt_timeout: int, session_timeout: int, items: Iterable[pytest.Item]) -> int:
+    """Return ``session_timeout`` widened to the largest ``@pytest.mark.flaky`` budget among ``items`` (issue #696).
+
+    The closest marker wins, as it does for pytest-rerunfailures: one on a function replaces one on its class.
+    The widest budget of any collected test applies to every gremlin, because a mutant's covering tests are
+    not known when the timeout is fixed, and a larger timeout is safe where a false timeout is not.
+    """
+    markers = [marker for item in items if (marker := item.get_closest_marker('flaky')) is not None]
+    return mutant_timeout_with_flaky_markers(attempt_timeout, session_timeout=session_timeout, markers=markers)
 
 
 def _total_rerun_delay(reruns: int, reruns_delay: float, reruns_delay_backoff_factor: float) -> float:

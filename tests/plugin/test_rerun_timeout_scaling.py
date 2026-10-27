@@ -12,6 +12,7 @@ from pytest_gremlins import plugin
 from pytest_gremlins.config import MAX_TIMEOUT_SECONDS
 from pytest_gremlins.rerun_options import (
     flaky_marker_rerun_budget,
+    mutant_timeout_for_items,
     mutant_timeout_with_flaky_markers,
     scaled_mutant_timeout,
     session_rerun_backoff_factor,
@@ -496,22 +497,22 @@ class DescribeMutantTimeoutWidenedByCollectedFlakyMarkers:
     def it_covers_a_marker_on_a_function(self, pytester: pytest.Pytester) -> None:
         items = [item for item in _marked_items(pytester) if item.name == 'test_on_a_function']
 
-        assert plugin._mutant_timeout_for_items(30, 30, items) == 130
+        assert mutant_timeout_for_items(30, 30, items) == 130
 
     def it_covers_a_marker_on_a_class(self, pytester: pytest.Pytester) -> None:
         items = [item for item in _marked_items(pytester) if item.name == 'test_method']
 
-        assert plugin._mutant_timeout_for_items(30, 30, items) == 110
+        assert mutant_timeout_for_items(30, 30, items) == 110
 
     def it_keeps_the_session_timeout_for_unmarked_tests(self, pytester: pytest.Pytester) -> None:
         items = [item for item in _marked_items(pytester) if item.name == 'test_unmarked']
 
-        assert plugin._mutant_timeout_for_items(30, 90, items) == 90
+        assert mutant_timeout_for_items(30, 90, items) == 90
 
     def it_keeps_the_session_timeout_when_the_marker_is_smaller(self, pytester: pytest.Pytester) -> None:
         items = [item for item in _marked_items(pytester) if item.name == 'test_on_a_function']
 
-        assert plugin._mutant_timeout_for_items(30, 500, items) == 500
+        assert mutant_timeout_for_items(30, 500, items) == 500
 
 
 _TEST_WITH_A_FLAKY_MARKER = _TEST_THAT_KILLS_THE_MUTANT.replace(
