@@ -311,6 +311,27 @@ max-pardons-pct = 5.0
 | `max_pardons` | int | no limit | Absolute ceiling on pardoned gremlins |
 | `max-pardons-pct` | float | no limit | Maximum percentage of pardoned gremlins (0-100) |
 
+### Key Spelling, Validation and Unknown Keys
+
+Every key accepts both spellings: hyphens or underscores. `max-pardons-pct` and `max_pardons_pct` are the same key,
+as are `batch-size` and `batch_size`. Setting one known key in both spellings is an error.
+
+pytest-gremlins checks every value when it loads the section. A wrong-typed value stops the run with exit code 4 and
+a message that names the key and the value. A bare string for `exclude` gives:
+
+```text
+[tool.pytest-gremlins].exclude must be a list of strings (e.g. exclude = ["tests/*"]);
+use a list, not a bare string, got 'tests/*'
+```
+
+- `operators`, `paths` and `exclude` must be lists of strings. A bare string is rejected, because it would otherwise
+  be read one character at a time.
+- Each name in `operators` must be a registered operator. The error lists the valid names.
+- A key pytest-gremlins does not know does not stop the run. A warning names the key and the closest valid key
+  (`did you mean 'max-pardons-pct'?`), and the key is ignored. The warning also appears when the run skips mutation
+  testing (`--collect-only`, a failing baseline). Key names are shown quoted, with control characters escaped. An
+  unknown key given in both spellings warns; only known keys reject the double spelling.
+
 ### Example Configurations
 
 **Minimal configuration:**
