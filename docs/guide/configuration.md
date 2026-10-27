@@ -1002,3 +1002,7 @@ pytest --gremlins --collect-only
 so invalid values are rejected as usual. It then skips mutation testing entirely (no
 instrumentation, coverage pre-scan, cache setup, or gremlin execution) and prints a one-line
 notice to stderr, which keeps `--collect-only -q` node-id output on stdout clean.
+
+The same applies to the other pytest modes that run no tests: `--setup-plan`, `--setup-only`,
+`--fixtures` and `--fixtures-per-test`. The notice names the mode, for example
+`pytest-gremlins: --setup-plan detected, skipping mutation testing`.

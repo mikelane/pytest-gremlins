@@ -127,7 +127,7 @@ class DescribeResolveTargetPaths:
         assert 'No source paths discovered' in caplog.text
 
 
-def _collect_only_config(*, collectonly: bool, worker: bool = False) -> pytest.Config:
+def _inactive_run_config(*, collectonly: bool, worker: bool = False) -> pytest.Config:
     option = _FakeOption()
     option.collectonly = collectonly  # type: ignore[attr-defined]
     extra = {'workerinput': {}} if worker else {}
@@ -144,14 +144,14 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.usefixtures('isolated_session')
 class DescribeMaybeShortCircuitForInactiveRun:
     def it_leaves_the_session_alone_without_collect_only(self, capsys: pytest.CaptureFixture[str]) -> None:
-        assert plugin._maybe_short_circuit_for_inactive_run(_collect_only_config(collectonly=False)) is False
+        assert plugin._maybe_short_circuit_for_inactive_run(_inactive_run_config(collectonly=False)) is False
         assert plugin._get_session() is None
         assert capsys.readouterr().err == ''
 
     def it_disables_the_session_and_prints_one_stderr_notice_under_collect_only(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        assert plugin._maybe_short_circuit_for_inactive_run(_collect_only_config(collectonly=True)) is True
+        assert plugin._maybe_short_circuit_for_inactive_run(_inactive_run_config(collectonly=True)) is True
         session = plugin._get_session()
         assert session is not None
         assert session.enabled is False
@@ -159,8 +159,30 @@ class DescribeMaybeShortCircuitForInactiveRun:
         assert captured.err == 'pytest-gremlins: --collect-only detected, skipping mutation testing\n'
         assert captured.out == ''
 
+    @pytest.mark.parametrize(
+        ('dest', 'flag'),
+        [
+            ('setupplan', '--setup-plan'),
+            ('setuponly', '--setup-only'),
+            ('showfixtures', '--fixtures'),
+            ('show_fixtures_per_test', '--fixtures-per-test'),
+        ],
+    )
+    def it_names_the_triggering_mode_in_the_notice(
+        self, capsys: pytest.CaptureFixture[str], dest: str, flag: str
+    ) -> None:
+        config = _inactive_run_config(collectonly=False)
+        setattr(config.option, dest, True)
+        assert plugin._maybe_short_circuit_for_inactive_run(config) is True
+        session = plugin._get_session()
+        assert session is not None
+        assert session.enabled is False
+        captured = capsys.readouterr()
+        assert captured.err == f'pytest-gremlins: {flag} detected, skipping mutation testing\n'
+        assert captured.out == ''
+
     def it_stays_silent_on_xdist_workers(self, capsys: pytest.CaptureFixture[str]) -> None:
-        assert plugin._maybe_short_circuit_for_inactive_run(_collect_only_config(collectonly=True, worker=True)) is True
+        assert plugin._maybe_short_circuit_for_inactive_run(_inactive_run_config(collectonly=True, worker=True)) is True
         assert capsys.readouterr().err == ''
 
 

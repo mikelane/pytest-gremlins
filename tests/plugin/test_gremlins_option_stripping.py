@@ -82,6 +82,19 @@ class DescribePrescanEnv:
 
         assert _prescan_env()['PYTEST_ADDOPTS'] == '--import-mode=importlib'
 
+    def it_strips_cov_options_from_pytest_addopts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '--cov=target --cov-report term --import-mode=importlib')
+
+        assert _prescan_env()['PYTEST_ADDOPTS'] == '--import-mode=importlib'
+
+    def it_drops_pytest_addopts_when_only_cov_options_were_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '--cov --cov-fail-under=50')
+
+        env = _prescan_env()
+        has_addopts = 'PYTEST_ADDOPTS' in env
+        del env  # --showlocals must not display the subprocess environment.
+        assert not has_addopts
+
     def it_drops_pytest_addopts_when_only_gremlins_options_were_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv('PYTEST_ADDOPTS', '--gremlin-report=json --gremlin-workers 4')
 
