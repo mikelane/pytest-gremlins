@@ -63,7 +63,9 @@ def _produced_target(operator_class: type, source: str) -> str:
     assert operator.can_mutate(call) is True, source
     mutants = operator.mutate(call)
     assert mutants, source
-    return mutants[0].func.attr
+    target = mutants[0].func.attr
+    assert isinstance(target, str), source
+    return target
 
 
 def _swaps_not_produced(operator_class: type, promised: list[tuple[str, str]]) -> list[tuple[str, str]]:
