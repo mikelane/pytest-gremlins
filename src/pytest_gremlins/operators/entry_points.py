@@ -7,6 +7,7 @@ registry; only if it succeeds are its operators merged into the target registry.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from importlib.metadata import (
     EntryPoint,
     entry_points,
@@ -21,11 +22,15 @@ if TYPE_CHECKING:
 
 ENTRY_POINT_GROUP = 'pytest_gremlins.operators'
 
-_registered_by_loader: dict[str, type[GremlinOperator]] = {}
+_registered_by_loader: dict[str, tuple[type[GremlinOperator], str]] = {}
 
 
 class GremlinEntryPointWarning(UserWarning):
     """A third-party operator entry point failed to load or collided with an existing operator."""
+
+
+def discard_warning(_message: str) -> None:
+    """Drop a warning message; pass as ``warn`` to load operators silently."""
 
 
 def _describe(entry_point: EntryPoint) -> str:
@@ -33,26 +38,39 @@ def _describe(entry_point: EntryPoint) -> str:
     return f"entry point '{entry_point.name}' from '{distribution}'"
 
 
-def _warn(message: str, *, emit_warnings: bool) -> None:
-    if emit_warnings:
-        warnings.warn(message, GremlinEntryPointWarning, stacklevel=3)
+WarnCallback = Callable[[str], None]
 
 
-def _run_into_scratch(entry_point: EntryPoint, *, emit_warnings: bool) -> OperatorRegistry | None:
+def warn_with_python_warnings(message: str) -> None:
+    """Emit ``message`` as a ``GremlinEntryPointWarning`` attributed to the caller of the loader."""
+    warnings.warn(message, GremlinEntryPointWarning, stacklevel=4)
+
+
+def _run_into_scratch(entry_point: EntryPoint, *, warn: WarnCallback) -> OperatorRegistry | None:
     scratch = OperatorRegistry()
     try:
         register = entry_point.load()
         if not callable(register):
-            _warn(f'{_describe(entry_point)} is not callable, ignoring', emit_warnings=emit_warnings)
+            warn(f'{_describe(entry_point)} is not callable, ignoring')
             return None
         register(scratch)
     except Exception as failure:
-        _warn(
-            f'{_describe(entry_point)} failed to load, ignoring: {failure}',
-            emit_warnings=emit_warnings,
-        )
+        warn(f'{_describe(entry_point)} failed to load, ignoring: {failure}')
         return None
     return scratch
+
+
+def _source_of(entry_point: EntryPoint) -> str:
+    return _describe(entry_point) + f' -> {entry_point.value}'
+
+
+def _is_own_earlier_registration(
+    name: str, entry_point: EntryPoint, target: OperatorRegistry, claimed_this_load: set[str]
+) -> bool:
+    if name in claimed_this_load or name not in _registered_by_loader:
+        return False
+    registered_class, registered_source = _registered_by_loader[name]
+    return registered_source == _source_of(entry_point) and target.get_class(name) is registered_class
 
 
 def _merge(
@@ -61,32 +79,30 @@ def _merge(
     entry_point: EntryPoint,
     *,
     claimed_this_load: set[str],
-    emit_warnings: bool,
+    warn: WarnCallback,
 ) -> None:
     for name in scratch.available():
         operator_class = scratch.get_class(name)
         if name in target.available():
-            if name not in claimed_this_load and _registered_by_loader.get(name) is target.get_class(name):
+            if _is_own_earlier_registration(name, entry_point, target, claimed_this_load):
+                claimed_this_load.add(name)
                 continue
-            _warn(
-                f"operator '{name}' from {_describe(entry_point)} is already registered, keeping the existing one",
-                emit_warnings=emit_warnings,
-            )
+            warn(f"operator '{name}' from {_describe(entry_point)} is already registered, keeping the existing one")
             continue
         target.register(operator_class, name=name)
-        _registered_by_loader[name] = operator_class
+        _registered_by_loader[name] = (operator_class, _source_of(entry_point))
         claimed_this_load.add(name)
 
 
-def load_entry_point_operators(registry: OperatorRegistry, *, emit_warnings: bool = True) -> None:
+def load_entry_point_operators(registry: OperatorRegistry, *, warn: WarnCallback = warn_with_python_warnings) -> None:
     """Register operators declared by installed packages into ``registry``.
 
     Args:
         registry: The registry to merge discovered operators into.
-        emit_warnings: When False, broken entry points and name collisions are skipped silently.
+        warn: Called with a message for each broken entry point or name collision.
     """
     claimed_this_load: set[str] = set()
     for entry_point in entry_points(group=ENTRY_POINT_GROUP):
-        scratch = _run_into_scratch(entry_point, emit_warnings=emit_warnings)
+        scratch = _run_into_scratch(entry_point, warn=warn)
         if scratch is not None:
-            _merge(scratch, registry, entry_point, claimed_this_load=claimed_this_load, emit_warnings=emit_warnings)
+            _merge(scratch, registry, entry_point, claimed_this_load=claimed_this_load, warn=warn)

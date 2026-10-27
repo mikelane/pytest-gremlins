@@ -10,11 +10,8 @@ from collections.abc import Callable
 import json
 from pathlib import Path
 import textwrap
-import warnings
 
 import pytest
-
-from pytest_gremlins.operators import GremlinEntryPointWarning
 
 Installer = Callable[..., Path]
 
@@ -167,6 +164,7 @@ class DescribeInstalledOperatorPackage:
 
         assert {line for _, line in _operators_in_report(pytester)} == {6}
         assert _count(result, 'GremlinEntryPointWarning') >= 1
+        assert "entry point 'ep'" in _output(result)
 
     def it_does_not_load_entry_points_without_gremlins(
         self, install_entry_point_dist: Installer, pytester: pytest.Pytester, tmp_path: Path
@@ -215,6 +213,28 @@ class DescribeBrokenEntryPoints:
         assert detail is None or detail in output
         assert _operators_in_report(pytester)
 
+    def it_hides_the_warning_when_the_category_is_ignored(
+        self, install_entry_point_dist: Installer, pytester: pytest.Pytester
+    ) -> None:
+        install_entry_point_dist({'broken-ep': 'broken_ops:register'}, {'broken_ops': 'register = 42\n'})
+        _write_project(pytester)
+
+        result = _run(pytester, '-W', 'ignore::pytest_gremlins.operators.GremlinEntryPointWarning')
+
+        assert 'GremlinEntryPointWarning' not in _output(result)
+        assert _operators_in_report(pytester)
+
+    def it_stops_the_run_when_warnings_are_errors(
+        self, install_entry_point_dist: Installer, pytester: pytest.Pytester
+    ) -> None:
+        install_entry_point_dist({'broken-ep': 'broken_ops:register'}, {'broken_ops': 'register = 42\n'})
+        _write_project(pytester, pyproject='[tool.pytest.ini_options]\nfilterwarnings = ["error"]\n')
+
+        result = _run(pytester)
+
+        assert result.ret != 0
+        assert 'GremlinEntryPointWarning' in _output(result)
+
     def it_warns_once_under_xdist(self, install_entry_point_dist: Installer, pytester: pytest.Pytester) -> None:
         pytest.importorskip('xdist')
         install_entry_point_dist(
@@ -262,12 +282,10 @@ class DescribeRepeatedConfigureInOneProcess:
     def it_does_not_warn_about_its_own_operators_on_a_second_run(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester)
 
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter('always')
-            _run(pytester, in_process=True)
-            _run(pytester, in_process=True)
+        _run(pytester, in_process=True)
+        second = _run(pytester, in_process=True)
 
-        assert [w for w in caught if issubclass(w.category, GremlinEntryPointWarning)] == []
+        assert 'GremlinEntryPointWarning' not in _output(second)
         assert 'ep-constant' in {name for name, _ in _operators_in_report(pytester)}
 
     def it_reports_a_later_runs_conftest_shadow(self, pytester: pytest.Pytester) -> None:
@@ -275,9 +293,7 @@ class DescribeRepeatedConfigureInOneProcess:
         _run(pytester, in_process=True)
         pytester.makeconftest(MARKERS_CONFTEST + CONFTEST_SHADOW)
 
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter('always')
-            _run(pytester, '--gremlin-operators=ep-constant', in_process=True)
+        result = _run(pytester, '--gremlin-operators=ep-constant', in_process=True)
 
-        assert any(issubclass(w.category, GremlinEntryPointWarning) for w in caught)
+        assert "entry point 'ep'" in _output(result)
         assert {line for _, line in _operators_in_report(pytester)} == {6}

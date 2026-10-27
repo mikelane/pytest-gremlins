@@ -13,7 +13,10 @@ from pytest_gremlins.operators import (
     GremlinEntryPointWarning,
     OperatorRegistry,
 )
-from pytest_gremlins.operators.entry_points import load_entry_point_operators
+from pytest_gremlins.operators.entry_points import (
+    discard_warning,
+    load_entry_point_operators,
+)
 
 CONSTANT_OPERATOR_MODULE = """
 import ast
@@ -37,10 +40,13 @@ def register(registry):
 Installer = Callable[..., Path]
 
 
-def _load(registry: OperatorRegistry, *, emit_warnings: bool = True) -> list[warnings.WarningMessage]:
+def _load(registry: OperatorRegistry, *, silent: bool = False) -> list[warnings.WarningMessage]:
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
-        load_entry_point_operators(registry, emit_warnings=emit_warnings)
+        if silent:
+            load_entry_point_operators(registry, warn=discard_warning)
+        else:
+            load_entry_point_operators(registry)
     return [w for w in caught if issubclass(w.category, GremlinEntryPointWarning)]
 
 
@@ -161,4 +167,29 @@ class DescribeLoadEntryPointOperators:
     def it_emits_no_warnings_when_told_not_to(self, install_entry_point_dist: Installer) -> None:
         install_entry_point_dist({'plain': 'plain_mod:register'}, {'plain_mod': 'register = 42\n'})
 
-        assert _load(OperatorRegistry(), emit_warnings=False) == []
+        assert _load(OperatorRegistry(), silent=True) == []
+
+    def it_still_warns_about_the_losing_distribution_when_loading_again(
+        self, install_entry_point_dist: Installer
+    ) -> None:
+        second = CONSTANT_OPERATOR_MODULE.replace('EpConstantOperator', 'Other')
+        install_entry_point_dist(
+            {'first': 'ep_mod:register', 'second': 'ep_mod2:register'},
+            {'ep_mod': CONSTANT_OPERATOR_MODULE, 'ep_mod2': second},
+        )
+        registry = OperatorRegistry()
+        _load(registry)
+
+        caught = _load(registry)
+
+        assert len(caught) == 1
+        assert 'second' in str(caught[0].message)
+
+    def it_sends_warnings_to_the_given_callback(self, install_entry_point_dist: Installer) -> None:
+        install_entry_point_dist({'plain': 'plain_mod:register'}, {'plain_mod': 'register = 42\n'})
+        messages: list[str] = []
+
+        load_entry_point_operators(OperatorRegistry(), warn=messages.append)
+
+        assert len(messages) == 1
+        assert "entry point 'plain'" in messages[0]

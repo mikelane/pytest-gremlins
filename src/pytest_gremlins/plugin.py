@@ -99,7 +99,11 @@ from pytest_gremlins.instrumentation.transformer import (
     transform_source,
 )
 from pytest_gremlins.node_id_file import command_with_node_ids_file
-from pytest_gremlins.operators.entry_points import load_entry_point_operators
+from pytest_gremlins.operators.entry_points import (
+    GremlinEntryPointWarning,
+    discard_warning,
+    load_entry_point_operators,
+)
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.exit_codes import (
@@ -441,6 +445,16 @@ def _extract_test_name_from_context(context: str) -> str:
     if '|' in context:
         return context.rsplit('|', maxsplit=1)[0]
     return context
+
+
+def _entry_point_warner(config: pytest.Config) -> collections.abc.Callable[[str], None]:
+    """Return a warning sink for operator entry points that honours pytest's warning filters.
+
+    Workers stay silent so a broken entry point is reported once, by the controller.
+    """
+    if _is_xdist_worker(config):
+        return discard_warning
+    return lambda message: config.issue_config_time_warning(GremlinEntryPointWarning(message), stacklevel=2)
 
 
 def _is_xdist_worker(config: pytest.Config) -> bool:
@@ -1052,7 +1066,7 @@ def pytest_configure(config: pytest.Config) -> None:
         raise pytest.UsageError(f'pytest-gremlins: {invalid}') from invalid
 
     registry = get_default_registry()
-    load_entry_point_operators(registry, emit_warnings=not _is_xdist_worker(config))
+    load_entry_point_operators(registry, warn=_entry_point_warner(config))
 
     # Use merged operators or all if none specified
     operators = registry.get_all(enabled=merged_config.operators) if merged_config.operators else registry.get_all()

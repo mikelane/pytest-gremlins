@@ -328,7 +328,8 @@ subdirectory loads later, at collection, and overwrites as it always has.
 naming the entry point and its distribution (with the exception message, or "is not callable"), drops
 anything that callable registered before it failed, and carries on with the next entry point.
 
-Under xdist, warnings appear once, from the controller. To ignore them, filter the category
+Under xdist, warnings appear once, from the controller. They go through pytest's warning filters, so `-W` and
+`filterwarnings` apply. To ignore them, filter the category
 `pytest_gremlins.operators.GremlinEntryPointWarning`. With `filterwarnings = error`, a broken entry point
 stops the run at startup.
 
