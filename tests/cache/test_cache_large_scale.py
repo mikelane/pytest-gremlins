@@ -26,15 +26,16 @@ _GREMLIN_ARGS = (
     '--gremlin-cache',
     '--gremlin-report=json',
 )
-_FLIPPED_STATUS = {'zapped': 'survived', 'survived': 'zapped'}
+_REPORT_RELATIVE_PATH = ('coverage', 'gremlins', 'gremlins.json')
 
 
-def _flip_one_cached_verdict(db_path: Path) -> None:
+def _overwrite_cached_statuses(db_path: Path, *, only_status: str, new_status: str) -> None:
     with closing(sqlite3.connect(db_path)) as conn:
-        cache_key, result_json = conn.execute('SELECT cache_key, result_json FROM results LIMIT 1').fetchone()
-        entry = json.loads(result_json)
-        entry['status'] = _FLIPPED_STATUS[entry['status']]
-        conn.execute('UPDATE results SET result_json = ? WHERE cache_key = ?', (json.dumps(entry), cache_key))
+        for cache_key, result_json in conn.execute('SELECT cache_key, result_json FROM results').fetchall():
+            entry = json.loads(result_json)
+            if entry['status'] == only_status:
+                entry['status'] = new_status
+                conn.execute('UPDATE results SET result_json = ? WHERE cache_key = ?', (json.dumps(entry), cache_key))
         conn.commit()
 
 
@@ -44,7 +45,7 @@ class DescribeCacheLargeScale:
 
     @pytest.fixture
     def large_project(self, pytester_with_markers: pytest.Pytester) -> pytest.Pytester:
-        """Write a project whose validator.py yields about a dozen comparison gremlins over 25 tests.
+        """Write a project whose validator.py yields about a dozen comparison gremlins over 26 tests.
 
         Every gremlin runs through a full pytest bootstrap, so the workload is kept small enough for
         the medium time limit.
@@ -92,6 +93,9 @@ def is_negative(n):
 
 def is_zero(n):
     return n == 0
+
+def is_small(n):
+    return n < 1000
             """,
         )
 
@@ -154,7 +158,7 @@ class TestPower:
         pytester_with_markers.makepyfile(
             test_validator="""
 import pytest
-from validator import is_adult, is_valid_percentage, is_positive, is_negative, is_zero
+from validator import is_adult, is_valid_percentage, is_positive, is_negative, is_zero, is_small
 
 @pytest.mark.medium
 class TestIsAdult:
@@ -204,14 +208,21 @@ class TestIsZero:
 
     def test_positive(self):
         assert is_zero(1) is False
+
+@pytest.mark.medium
+class TestIsSmall:
+    def test_far_below_the_limit(self):
+        assert is_small(5) is True
             """,
         )
 
         return pytester_with_markers
 
     def _run_with_json_report(self, pytester: pytest.Pytester) -> tuple[pytest.RunResult, list[dict[str, Any]]]:
+        report_path = pytester.path.joinpath(*_REPORT_RELATIVE_PATH)
+        report_path.unlink(missing_ok=True)
         result = pytester.runpytest(*_GREMLIN_ARGS)
-        report = json.loads((pytester.path / 'coverage' / 'gremlins' / 'gremlins.json').read_text())
+        report = json.loads(report_path.read_text())
         verdicts = sorted(report['results'], key=lambda entry: entry['gremlin_id'])
         return result, [{key: entry.get(key) for key in ('gremlin_id', 'status', 'killing_test')} for entry in verdicts]
 
@@ -224,19 +235,51 @@ class TestIsZero:
 
         warm_result, warm_verdicts = self._run_with_json_report(large_project)
 
-        warm_result.assert_outcomes(passed=25)
+        warm_result.assert_outcomes(passed=26)
         assert len(cold_verdicts) > 0
         assert warm_verdicts == cold_verdicts
         warm_result.stdout.fnmatch_lines([f'Cache: {len(cold_verdicts)} hits, 0 misses (100% hit rate)'])
 
-    def it_detects_a_corrupted_cached_verdict_on_warm_rerun(
+    def it_reports_both_zapped_and_survived_verdicts_in_the_cold_run(
         self,
         large_project: pytest.Pytester,
     ) -> None:
-        """Flipping one stored verdict changes the warm verdicts, so the identity assertion would fail."""
+        """The workload has survivors and kills, so a cache fabricating either kind changes the verdicts."""
         _, cold_verdicts = self._run_with_json_report(large_project)
-        _flip_one_cached_verdict(large_project.path / '.gremlins_cache' / 'results.db')
+
+        assert {verdict['status'] for verdict in cold_verdicts} == {'zapped', 'survived'}
+
+    @pytest.mark.parametrize(
+        ('original_status', 'fabricated_status'),
+        [('survived', 'zapped'), ('zapped', 'survived')],
+    )
+    def it_detects_a_cache_that_fabricates_verdicts_of_one_kind(
+        self,
+        large_project: pytest.Pytester,
+        original_status: str,
+        fabricated_status: str,
+    ) -> None:
+        """Rewriting every cached verdict of one kind changes the warm verdicts."""
+        _, cold_verdicts = self._run_with_json_report(large_project)
+        _overwrite_cached_statuses(
+            large_project.path / '.gremlins_cache' / 'results.db',
+            only_status=original_status,
+            new_status=fabricated_status,
+        )
 
         _, warm_verdicts = self._run_with_json_report(large_project)
 
         assert warm_verdicts != cold_verdicts
+
+    def it_fails_loudly_when_the_warm_run_writes_no_report(
+        self,
+        large_project: pytest.Pytester,
+    ) -> None:
+        """A stale report from the cold run is never read as the warm run's report."""
+        self._run_with_json_report(large_project)
+        report_path = large_project.path.joinpath(*_REPORT_RELATIVE_PATH)
+        report_path.unlink()
+        report_path.mkdir()
+
+        with pytest.raises((OSError, json.JSONDecodeError)):
+            self._run_with_json_report(large_project)
