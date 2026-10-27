@@ -422,6 +422,14 @@ class DescribeFlakyMarkerRerunBudget:
     def it_treats_reruns_none_as_no_reruns(self) -> None:
         assert flaky_marker_rerun_budget(_marker(reruns=None)) == (0, 0.0, 1.0)
 
+    def it_caps_infinite_reruns_at_the_maximum_timeout(self) -> None:
+        reruns, _, _ = flaky_marker_rerun_budget(_marker(reruns=float('inf')))
+
+        assert reruns == MAX_TIMEOUT_SECONDS
+
+    def it_treats_nan_reruns_as_no_reruns(self) -> None:
+        assert flaky_marker_rerun_budget(_marker(reruns=float('nan'))) == (0, 0.0, 1.0)
+
     def it_treats_a_positional_reruns_none_as_no_reruns(self) -> None:
         assert flaky_marker_rerun_budget(_marker(None)) == (0, 0.0, 1.0)
 

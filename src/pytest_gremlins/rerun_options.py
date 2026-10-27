@@ -493,7 +493,16 @@ def flaky_marker_rerun_budget(marker: object) -> tuple[int, float, float]:
     reruns = _marker_argument(args, kwargs, 'reruns', 0, default=1)
     delay = _marker_argument(args, kwargs, 'reruns_delay', 1, default=0)
     factor = _marker_argument(args, kwargs, 'reruns_delay_backoff_factor', 2, default=_NO_BACKOFF)
-    return int(reruns or 0), float(delay or 0), _NO_BACKOFF if factor is None else float(factor)
+    return _finite_rerun_count(reruns or 0), float(delay or 0), _NO_BACKOFF if factor is None else float(factor)
+
+
+def _finite_rerun_count(reruns: float) -> int:
+    """Return ``reruns`` as an int: infinity is the timeout cap and NaN is no reruns, which ``int()`` rejects."""
+    if math.isnan(reruns):
+        return 0
+    if math.isinf(reruns):
+        return MAX_TIMEOUT_SECONDS if reruns > 0 else 0
+    return int(reruns)
 
 
 def _marker_argument(
