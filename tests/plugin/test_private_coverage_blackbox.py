@@ -34,8 +34,14 @@ def _make_project(root: Path, *, warnings_are_errors: bool = False) -> None:
     (root / 'pyproject.toml').write_text(_PYPROJECT.format(filterwarnings=filterwarnings))
 
 
+def _child_env(root: Path, extra_env: dict[str, str] | None = None) -> dict[str, str]:
+    # Windows needs SYSTEMROOT to initialise Winsock; without it any socket() call fails with WinError 10106.
+    inherited = {name: os.environ[name] for name in ('SYSTEMROOT',) if name in os.environ}
+    return {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(root), **inherited, **(extra_env or {})}
+
+
 def _run_gremlins(root: Path, *args: str, extra_env: dict[str, str] | None = None) -> str:
-    env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(root), **(extra_env or {})}
+    env = _child_env(root, extra_env)
     result = subprocess.run(
         [sys.executable, '-m', 'pytest', '--gremlins', '-p', 'no:cacheprovider', '-p', 'no:test_categories', *args],
         cwd=root,
@@ -92,3 +98,16 @@ class DescribeRunLeavesNoCoverageDataFiles:
 
         assert sorted(p.name for p in data_dir.iterdir()) == []
         assert _stray_coverage_files(project) == []
+
+
+@pytest.mark.small
+class DescribeChildEnv:
+    def it_forwards_systemroot_so_winsock_can_initialise(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('SYSTEMROOT', 'C:\\Windows')
+
+        assert _child_env(tmp_path)['SYSTEMROOT'] == 'C:\\Windows'
+
+    def it_omits_systemroot_when_the_parent_has_none(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv('SYSTEMROOT', raising=False)
+
+        assert 'SYSTEMROOT' not in _child_env(tmp_path)
