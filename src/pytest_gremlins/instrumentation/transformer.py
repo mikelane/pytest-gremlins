@@ -486,10 +486,15 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
         return build_switching_expression(node, gremlins)
 
     def visit_Return(self, node: ast.Return) -> ast.stmt:
-        """Replace return statements with mutation switching."""
+        """Replace return statements with mutation switching.
+
+        Gremlins are built from a copy taken before the returned expression is instrumented, so their
+        original source is the line as the user wrote it.
+        """
+        pristine = copy.deepcopy(node)
         self.generic_visit(node)
 
-        gremlins = self._create_gremlins_for_node(node)
+        gremlins = self._create_gremlins_for_node(pristine)
         if not gremlins:
             return node
 
