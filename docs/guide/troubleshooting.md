@@ -693,11 +693,17 @@ when the inner session loads the gremlins plugin, which covers the default setup
 
 **Solution:**
 
-Leave the gremlins plugin enabled in the inner session. Two inner-session settings defeat the fix, so a
+Leave the gremlins plugin enabled in the inner session. Four inner-session settings defeat the fix, so a
 target first imported there is not instrumented:
 
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`
 - `-p no:gremlins`
+- loading the target itself as a plugin with `-p package.module`
+- loading the target itself as a plugin through `PYTEST_PLUGINS=package.module`
+
+pytest imports `-p` and `PYTEST_PLUGINS` modules while it parses its configuration, before the point where
+pytest-gremlins puts its finder back in front. A target loaded from the inner `conftest.py` through
+`pytest_plugins` is fine.
 
 In those cases, import the target in the outer test before the inner session starts, or avoid claiming it
 through `python_files`.

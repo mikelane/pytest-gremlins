@@ -1256,6 +1256,14 @@ if _XDIST_AVAILABLE:
             logger.debug('pytest_xdist_node_collection_finished: captured %d item IDs from first worker', len(ids))
 
 
+def _is_gremlin_finder(finder: object) -> bool:
+    """Report whether a ``sys.meta_path`` entry is a gremlin finder; a hostile ``__getattr__`` counts as no."""
+    try:
+        return bool(getattr(finder, 'is_gremlin_finder', False))
+    except Exception:
+        return False
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_load_initial_conftests() -> collections.abc.Generator[None, None, None]:
     """Keep an installed gremlin finder ahead of the assertion-rewrite hook this session just installed.
@@ -1264,7 +1272,7 @@ def pytest_load_initial_conftests() -> collections.abc.Generator[None, None, Non
     subprocess; its rewrite hook lands at the front of ``sys.meta_path`` and would serve, uninstrumented, every
     target it claims that is first imported in that session (#615).
     """
-    for finder in [finder for finder in sys.meta_path if getattr(finder, 'is_gremlin_finder', False)]:
+    for finder in [finder for finder in sys.meta_path if _is_gremlin_finder(finder)]:
         sys.meta_path.remove(finder)
         sys.meta_path.insert(0, finder)
     yield

@@ -82,6 +82,14 @@ _GREMLINS_BLOCKED_TESTS = _outer_tests(
     _PYTHON_FILES_INI,
     "pytester.runpytest_inprocess('-p', 'no:cacheprovider', '-p', 'no:gremlins').assert_outcomes(passed=1)",
 )
+_PLUGIN_ARG_TESTS = _outer_tests(
+    'pass',
+    "pytester.runpytest_inprocess('-p', 'no:cacheprovider', '-p', 'mypkg.core_impl').assert_outcomes(passed=1)",
+)
+_PYTEST_PLUGINS_ENV_TESTS = _outer_tests(
+    "monkeypatch.setenv('PYTEST_PLUGINS', 'mypkg.core_impl')",
+    "pytester.runpytest_inprocess('-p', 'no:cacheprovider').assert_outcomes(passed=1)",
+)
 
 
 def _count(output: str, label: str) -> int:
@@ -126,6 +134,8 @@ class DescribeInProcessPytesterRewriteHook:
         [
             pytest.param(_AUTOLOAD_DISABLED_TESTS, id='plugin-autoload-disabled'),
             pytest.param(_GREMLINS_BLOCKED_TESTS, id='gremlins-plugin-blocked'),
+            pytest.param(_PLUGIN_ARG_TESTS, id='target-loaded-with-dash-p'),
+            pytest.param(_PYTEST_PLUGINS_ENV_TESTS, id='target-loaded-through-PYTEST_PLUGINS'),
         ],
     )
     def it_reports_survivors_when_the_inner_session_does_not_load_the_gremlins_plugin(
