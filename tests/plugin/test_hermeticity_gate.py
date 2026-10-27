@@ -7,6 +7,7 @@ swallows the resulting exception the test still passes and pytest exits 0 (#474)
 from __future__ import annotations
 
 from pathlib import Path
+import tomllib
 
 import pytest
 
@@ -32,6 +33,37 @@ def test_is_hermetic():
 """
 
 
+SWALLOWED_THEN_SKIPPED_TEST = """
+import subprocess
+
+import pytest
+
+
+@pytest.mark.small
+def test_swallows_then_skips():
+    try:
+        subprocess.run(['python', '-c', 'pass'], check=False)
+    except Exception:
+        pass
+    pytest.skip('environment not ready')
+"""
+
+SWALLOWED_NON_STRICT_XPASS_TEST = """
+import subprocess
+
+import pytest
+
+
+@pytest.mark.small
+@pytest.mark.xfail(reason='known')
+def test_swallows_and_xpasses():
+    try:
+        subprocess.run(['python', '-c', 'pass'], check=False)
+    except Exception:
+        pass
+"""
+
+
 @pytest.fixture
 def violating_project(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> pytest.Pytester:
     monkeypatch.setenv('PYTHONPATH', str(REPO_ROOT))
@@ -43,8 +75,11 @@ def violating_project(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 @pytest.mark.medium
 class DescribeHermeticityGate:
     def it_leaves_exit_status_zero_without_the_gate(self, violating_project: pytest.Pytester) -> None:
+        """Canary for the upstream bug: skips itself once pytest-test-categories fixes #267."""
         result = violating_project.runpytest_subprocess('-p', 'no:cacheprovider')
 
+        if result.ret != 0:
+            pytest.skip('pytest-test-categories now fails swallowed violations; remove hermeticity_gate.py')
         assert result.ret == 0
 
     def it_fails_the_violating_test_with_the_gate(self, violating_project: pytest.Pytester) -> None:
@@ -74,3 +109,34 @@ class DescribeHermeticityGate:
         )
 
         assert result.ret == 0
+
+    def it_fails_a_test_that_swallows_a_violation_then_skips(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('PYTHONPATH', str(REPO_ROOT))
+        pytester.makeini('[pytest]\ntest_categories_enforcement = strict\nmarkers = small: fast\n')
+        pytester.makepyfile(test_sample=SWALLOWED_THEN_SKIPPED_TEST)
+
+        result = pytester.runpytest_subprocess('-p', 'no:cacheprovider', '-p', 'hermeticity_gate')
+
+        assert result.ret != 0
+
+    def it_fails_a_non_strict_xpass_that_swallows_a_violation(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('PYTHONPATH', str(REPO_ROOT))
+        pytester.makeini('[pytest]\ntest_categories_enforcement = strict\nmarkers = small: fast\n')
+        pytester.makepyfile(test_sample=SWALLOWED_NON_STRICT_XPASS_TEST)
+
+        result = pytester.runpytest_subprocess('-p', 'no:cacheprovider', '-p', 'hermeticity_gate')
+
+        assert result.ret != 0
+
+
+@pytest.mark.medium
+def it_ships_the_gate_module_in_the_sdist_alongside_its_tests() -> None:
+    pyproject = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
+
+    sdist_includes = pyproject['tool']['hatch']['build']['targets']['sdist']['include']
+
+    assert '/hermeticity_gate.py' in sdist_includes

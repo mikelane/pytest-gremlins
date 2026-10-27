@@ -48,9 +48,11 @@ def _violating_nodeids(config: pytest.Config) -> set[str]:
 def pytest_runtest_makereport(
     item: pytest.Item, call: pytest.CallInfo[None]
 ) -> Generator[None, pytest.TestReport, pytest.TestReport]:
-    """Turn a passing call phase into a failure when its test was flagged for a violation."""
+    """Turn a passing or skipped call phase into a failure when its test was flagged for a violation."""
     report = yield
-    if call.when == 'call' and report.passed and item.nodeid in _violating_nodeids(item.config):
+    if call.when == 'call' and not report.failed and item.nodeid in _violating_nodeids(item.config):
         report.outcome = 'failed'
+        if hasattr(report, 'wasxfail'):
+            del report.wasxfail  # pytest does not count a report carrying wasxfail toward the exit status
         report.longrepr = 'Hermeticity violation recorded by pytest-test-categories (enforcement: strict).'
     return report
