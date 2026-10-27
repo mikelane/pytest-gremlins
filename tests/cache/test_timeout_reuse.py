@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from pytest_gremlins.cache import incremental
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.types import CachedGremlinResult
 
@@ -100,16 +101,19 @@ class DescribeTimeoutReuse:
 
 @pytest.mark.medium
 class DescribeOldFormatEntries:
-    """Entries written under the previous key format are discarded, not served."""
+    """Entries written by an older cache version are discarded, not served."""
 
-    def it_prunes_entries_from_other_cache_versions_on_open(self, tmp_path: Path) -> None:
-        first = IncrementalCache(tmp_path / 'cache')
-        first.cache_result('g1', 'src', TESTS, _result('zapped', 1.0), mutant_timeout=30)
-        first._store.put('g1:src:hash:timeout=30:opt=0:reruns=0x0.0:rr=:rf18', _result('zapped', 1.0))
-        first.close()
+    def it_prunes_entries_from_other_cache_versions_on_open(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with monkeypatch.context() as older:
+            older.setattr(incremental, 'RUNNER_FIDELITY_VERSION', 'rf18')
+            previous = IncrementalCache(tmp_path / 'cache')
+            previous.cache_result('g1', 'src', TESTS, _result('zapped', 1.0), mutant_timeout=30)
+            previous.close()
 
         reopened = IncrementalCache(tmp_path / 'cache')
         try:
-            assert reopened.get_stats()['total_entries'] == 1
+            assert reopened.get_stats()['total_entries'] == 0
         finally:
             reopened.close()
