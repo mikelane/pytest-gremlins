@@ -439,8 +439,9 @@ causes a cache miss and never serves a wrong result.
   *.py text eol=lf
   ```
 
-  Re-checkout the files afterwards (`git rm --cached -r . && git reset --hard`, or a fresh clone) so
-  existing CRLF files are rewritten.
+  Re-checkout the files afterwards so existing CRLF files are rewritten. The simplest way is a fresh clone.
+  To do it in place, commit or stash your changes first, because `git rm --cached -r . && git reset --hard`
+  discards uncommitted work.
 
 ---
 
