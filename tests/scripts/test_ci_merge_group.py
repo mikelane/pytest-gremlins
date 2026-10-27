@@ -51,10 +51,11 @@ class DescribeCiMergeGroupTrigger:
     def it_reports_the_aggregate_job_under_its_required_check_name(self) -> None:
         assert _workflow()['jobs'][AGGREGATE_JOB]['name'] == AGGREGATE_JOB_NAME
 
-    def it_does_not_read_pull_request_only_contexts(self) -> None:
+    @pytest.mark.parametrize('context', PR_ONLY_CONTEXTS)
+    def it_does_not_read_pull_request_only_contexts(self, context: str) -> None:
         text = CI_WORKFLOW.read_text(encoding='utf-8')
 
-        assert [context for context in PR_ONLY_CONTEXTS if context in text] == []
+        assert context not in text
 
     def it_isolates_the_concurrency_group_per_ref(self) -> None:
         # Each merge group runs on its own gh-readonly-queue ref, so a ref-keyed group never cancels another.
