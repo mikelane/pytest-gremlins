@@ -9,6 +9,10 @@ from __future__ import annotations
 import importlib.machinery
 from pathlib import Path
 from types import ModuleType
+from typing import (
+    Protocol,
+    cast,
+)
 
 from _pytest.assertion.rewrite import AssertionRewritingHook
 import pytest
@@ -16,6 +20,15 @@ import pytest
 from pytest_gremlins.instrumentation.origin_finder import GremlinLoader
 
 _ORIGIN = '/project/src/served_mod.py'
+
+
+class _ResourceReaderSource(Protocol):
+    def get_resource_reader(self, fullname: str) -> object: ...
+
+
+class _PathReader(Protocol):
+    path: Path
+
 
 _SWITCHED_ASSERT = (
     "def check(n):\n    assert (n >= 0 if __gremlin_active__ == 'g001' else n > 0), 'bad'\n    return n\n"
@@ -266,7 +279,8 @@ class DescribeGremlinLoaderRewritesSourceForPytestsHook:
 
         loader.exec_module(module)
 
-        assert loader.get_resource_reader('recorded_mod').path == Path(_ORIGIN).parent  # type: ignore[attr-defined]
+        reader = cast('_PathReader', cast('_ResourceReaderSource', loader).get_resource_reader('recorded_mod'))
+        assert reader.path == Path(_ORIGIN).parent
 
     def it_runs_plain_asserts_when_rewriting_overflows_the_stack(
         self, pytestconfig: pytest.Config, monkeypatch: pytest.MonkeyPatch
