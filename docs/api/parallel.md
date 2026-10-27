@@ -239,7 +239,8 @@ with pool:
 
 ## BatchExecutor
 
-Coordinates batch execution of gremlin tests for reduced subprocess overhead.
+Coordinates batch execution of gremlin tests: gremlins are grouped into batches,
+each handed to a worker as one task.
 
 ::: pytest_gremlins.parallel.batch_executor.BatchExecutor
     options:
@@ -256,21 +257,14 @@ Coordinates batch execution of gremlin tests for reduced subprocess overhead.
 
 ### Why Batch Execution?
 
-Standard approach (1 subprocess call per gremlin):
+Batching groups gremlins into worker tasks. It does not reduce subprocesses: the plugin's batch path
+still starts one bootstrap subprocess per gremlin. Making a batch share one subprocess is tracked in
+[#538](https://github.com/mikelane/pytest-gremlins/issues/538).
 
 ```text
-100 gremlins = 100 subprocess calls
-100 x 600ms overhead = 60 seconds
+100 gremlins, batch_size=10 = 10 worker tasks
+100 gremlins = still 100 subprocesses
 ```
-
-Batch execution (batch_size=10):
-
-```text
-100 gremlins / 10 = 10 subprocess calls
-10 x 600ms overhead = 6 seconds
-```
-
-**10x reduction** in subprocess overhead.
 
 ### Usage Example
 

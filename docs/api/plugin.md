@@ -74,7 +74,7 @@ pytest --gremlins --gremlin-parallel
 # Specify worker count
 pytest --gremlins --gremlin-parallel --gremlin-workers=8
 
-# Use batch mode for reduced subprocess overhead
+# Group gremlins into worker tasks (does not reduce subprocesses)
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
 ```
 

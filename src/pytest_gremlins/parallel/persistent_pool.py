@@ -429,10 +429,10 @@ class PersistentWorkerPool:
         instrumented_dir: str | None,
         env_vars: dict[str, str],
     ) -> Future[list[WorkerResult]]:
-        """Submit a batch of gremlin tests for execution in a single subprocess.
+        """Submit a batch of gremlin tests as one worker task.
 
-        Batch execution reduces subprocess overhead by testing multiple gremlins
-        in one subprocess call. Tests all gremlins in the batch independently.
+        Batching groups gremlins into a single task for a worker. It does not
+        reduce subprocesses. Tests all gremlins in the batch independently.
 
         Args:
             gremlin_ids: List of gremlin IDs to test.
