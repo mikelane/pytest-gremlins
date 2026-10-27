@@ -124,3 +124,33 @@ class DescribeCollectOnlyConfigValidation:
 
     def it_still_skips_mutation_for_a_valid_config(self, collect_only_run: pytest.RunResult) -> None:
         assert 'mutation report' not in collect_only_run.stdout.str()
+
+
+_NON_RUNNING_MODES = ['--setup-plan', '--setup-only', '--fixtures', '--fixtures-per-test']
+
+
+@pytest.mark.medium
+class DescribeNonRunningModeGuard:
+    @pytest.mark.parametrize('mode', _NON_RUNNING_MODES)
+    def it_names_the_mode_in_the_stderr_notice(self, collect_only_project: pytest.Pytester, mode: str) -> None:
+        result = collect_only_project.runpytest_subprocess('--gremlins', mode, *_NO_CATEGORIES)
+        result.stderr.fnmatch_lines([f'pytest-gremlins: {mode} detected, skipping mutation testing'])
+        assert 'detected, skipping' not in result.stdout.str()
+
+    @pytest.mark.parametrize('mode', _NON_RUNNING_MODES)
+    def it_skips_the_mutation_report_and_gremlin_execution(
+        self, collect_only_project: pytest.Pytester, mode: str
+    ) -> None:
+        result = collect_only_project.runpytest_subprocess('--gremlins', mode, *_NO_CATEGORIES)
+        output = result.stdout.str()
+        assert 'mutation report' not in output
+        assert 'Gremlin 1/' not in output
+        assert 'pytest-gremlins: Starting' not in output
+        assert not (collect_only_project.path / '.gremlins_cache').exists()
+
+    @pytest.mark.parametrize('mode', _NON_RUNNING_MODES)
+    def it_still_rejects_invalid_configuration(self, collect_only_project: pytest.Pytester, mode: str) -> None:
+        result = collect_only_project.runpytest_subprocess(
+            '--gremlins', mode, '--gremlin-max-pardons-pct=150', *_NO_CATEGORIES
+        )
+        assert '--gremlin-max-pardons-pct must be between 0 and 100' in result.stdout.str() + result.stderr.str()
