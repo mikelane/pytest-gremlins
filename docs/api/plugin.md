@@ -208,7 +208,6 @@ The `GremlinSession` dataclass maintains state throughout a mutation testing run
 | `xdist_active` | `bool` | Whether xdist is active |
 | `xdist_workers` | `int \| None` | Number of xdist workers |
 | `coverage_mode` | `CoverageMode` | PIGGYBACK (reuse pytest-cov) or PRIVATE |
-| `gremlins_tmpdir` | `str \| None` | Shared temp dir for xdist worker coverage data |
 | `exclude_patterns` | `list[str]` | Glob patterns to skip during source discovery |
 | `strict_pardons` | `bool` | Treat pardoned gremlins as CI failures (exit non-zero if any exist) |
 | `audit_pardons` | `bool` | Whether to audit pardon pragma usage |
@@ -233,8 +232,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 ### pytest_configure
 
 Initializes the gremlin session based on command-line options and pyproject.toml.
-When xdist is available, also registers `pytest_configure_node` and
-`pytest_xdist_node_collection_finished` hooks.
+When xdist is available, also registers the `pytest_xdist_node_collection_finished` hook.
 
 ```python
 def pytest_configure(config: pytest.Config) -> None:
@@ -258,15 +256,6 @@ After test collection completes, discovers source files and generates gremlins.
 ```python
 def pytest_collection_finish(session: pytest.Session) -> None:
     """After test collection, discover source files and generate gremlins."""
-```
-
-### pytest_configure_node (xdist only)
-
-Passes gremlin temp directory path to xdist workers via `node.workerinput`.
-
-```python
-def pytest_configure_node(node: _XdistWorkerNode) -> None:
-    """Pass gremlins config to xdist worker nodes."""
 ```
 
 ### pytest_xdist_node_collection_finished (xdist only)

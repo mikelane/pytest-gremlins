@@ -59,3 +59,9 @@ class DescribePrivateCoverageRemoval:
 
     def it_has_no_runtestloop_hook(self) -> None:
         assert not hasattr(plugin_module, 'pytest_runtestloop')
+
+    def it_has_no_tmpdir_field_for_worker_coverage_data_on_the_session(self) -> None:
+        assert 'gremlins_tmpdir' not in {f.name for f in dataclasses.fields(GremlinSession)}
+
+    def it_has_no_worker_input_injection_for_worker_coverage_data(self) -> None:
+        assert not hasattr(plugin_module, '_XdistWorkerNode')

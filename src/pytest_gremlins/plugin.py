@@ -36,7 +36,6 @@ import tempfile
 import tokenize
 from typing import (
     TYPE_CHECKING,
-    Protocol,
 )
 import warnings
 
@@ -157,12 +156,6 @@ if TYPE_CHECKING:
 
 
 _XDIST_AVAILABLE = importlib.util.find_spec('xdist') is not None
-
-
-class _XdistWorkerNode(Protocol):
-    """Structural type for an xdist worker node that exposes ``workerinput``."""
-
-    workerinput: dict[str, object]
 
 
 logger = logging.getLogger(__name__)
@@ -292,9 +285,6 @@ class GremlinSession:
             worker collected nothing.
         coverage_mode: Whether to reuse pytest-cov's coverage (PIGGYBACK) or
             rely on the coverage pre-scan subprocess (PRIVATE).
-        gremlins_tmpdir: Path (as a string) to the shared temporary directory
-            where xdist workers write their per-worker coverage data files in
-            PRIVATE mode.  ``None`` when xdist is not active.
         exclude_patterns: Glob patterns from ``[tool.pytest-gremlins] exclude``
             used to skip matching files during source discovery.
         test_name_to_node_ids: Reverse index mapping bare function names to
@@ -359,7 +349,6 @@ class GremlinSession:
     xdist_loaded: bool = False
     xdist_workers: int | None = None
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
-    gremlins_tmpdir: str | None = None
     exclude_patterns: list[str] = field(default_factory=list)
     strict_pardons: bool = False
     audit_pardons: bool = False
@@ -1112,39 +1101,6 @@ def pytest_configure(config: pytest.Config) -> None:
             rerun_cache_settings=_gremlin_run_rerun_cache_settings(config),
         ),
     )
-
-
-if _XDIST_AVAILABLE:
-
-    @pytest.hookimpl(optionalhook=True)
-    def pytest_configure_node(node: _XdistWorkerNode) -> None:
-        """Inject gremlins tmpdir into xdist worker input for PRIVATE coverage mode.
-
-        Called on the controller for each xdist worker node before it starts.
-        Injects ``gremlins_tmpdir`` into the worker input when the session has one.
-
-        Only active in PRIVATE mode; PIGGYBACK mode relies on pytest-cov's own
-        xdist integration for coverage combining.
-
-        Args:
-            node: The xdist worker node object.  Must have a ``workerinput`` dict.
-        """
-        gremlin_session = _get_session()
-        if gremlin_session is None or not gremlin_session.enabled:
-            return
-
-        if gremlin_session.coverage_mode != CoverageMode.PRIVATE:
-            return
-
-        if gremlin_session.gremlins_tmpdir is None:  # pragma: no cover
-            logger.warning(
-                'pytest_configure_node: gremlins_tmpdir is None in PRIVATE mode; '
-                'worker coverage data will not be combined'
-            )
-            return
-
-        node.workerinput['gremlins_tmpdir'] = gremlin_session.gremlins_tmpdir
-        logger.debug('pytest_configure_node: injected gremlins_tmpdir=%s', gremlin_session.gremlins_tmpdir)
 
 
 def _is_running_on_sysmon(cov: coverage.Coverage) -> bool:
