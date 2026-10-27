@@ -419,6 +419,17 @@ class DescribeFlakyMarkerRerunBudget:
     def it_does_not_inherit_the_session_delay(self) -> None:
         assert flaky_marker_rerun_budget(_marker(reruns=2)) == (2, 0.0, 1.0)
 
+    def it_treats_reruns_none_as_no_reruns(self) -> None:
+        assert flaky_marker_rerun_budget(_marker(reruns=None)) == (0, 0.0, 1.0)
+
+    def it_treats_a_positional_reruns_none_as_no_reruns(self) -> None:
+        assert flaky_marker_rerun_budget(_marker(None)) == (0, 0.0, 1.0)
+
+    def it_treats_delay_and_factor_none_as_unset(self) -> None:
+        marker = _marker(reruns=2, reruns_delay=None, reruns_delay_backoff_factor=None)
+
+        assert flaky_marker_rerun_budget(marker) == (2, 0.0, 1.0)
+
 
 @pytest.mark.small
 class DescribeMutantTimeoutWithFlakyMarkers:

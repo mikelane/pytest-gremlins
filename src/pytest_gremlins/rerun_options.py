@@ -493,7 +493,7 @@ def flaky_marker_rerun_budget(marker: object) -> tuple[int, float, float]:
     reruns = _marker_argument(args, kwargs, 'reruns', 0, default=1)
     delay = _marker_argument(args, kwargs, 'reruns_delay', 1, default=0)
     factor = _marker_argument(args, kwargs, 'reruns_delay_backoff_factor', 2, default=_NO_BACKOFF)
-    return int(reruns), float(delay), float(factor)
+    return int(reruns or 0), float(delay or 0), _NO_BACKOFF if factor is None else float(factor)
 
 
 def _marker_argument(
