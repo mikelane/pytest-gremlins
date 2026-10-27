@@ -942,7 +942,7 @@ _NON_RUNNING_MODE_FLAGS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
+def _maybe_short_circuit_for_inactive_run(config: pytest.Config, config_warnings: list[str] | None = None) -> bool:
     """Disable the session for pytest modes that execute no tests, after configuration is validated.
 
     ``--collect-only``, ``--setup-plan``, ``--setup-only``, ``--fixtures`` and
@@ -954,6 +954,7 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
 
     Args:
         config: The pytest config object.
+        config_warnings: Configuration warnings to print to stderr, since no terminal summary will carry them.
 
     Returns:
         True if the session was disabled and configuration should stop.
@@ -963,6 +964,8 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
         return False
     _install_session(config, GremlinSession(enabled=False))
     if not _is_xdist_worker(config):
+        for warning in config_warnings or []:
+            print(f'pytest-gremlins: warning: {warning}', file=sys.stderr)
         print(f'pytest-gremlins: {mode_flag} detected, skipping mutation testing', file=sys.stderr)
     return True
 
@@ -1033,9 +1036,10 @@ def pytest_configure(config: pytest.Config) -> None:
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
     # Load config from pyproject.toml and merge with CLI args
+    config_warnings: list[str] = []
     try:
         merged_config = merge_configs(
-            load_config(rootdir),
+            load_config(rootdir, on_warning=config_warnings.append),
             cli_operators=config.option.gremlin_operators,
             cli_targets=config.option.gremlin_targets,
             cli_exclude=config.option.gremlin_exclude,
@@ -1058,7 +1062,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     target_paths = _resolve_target_paths(rootdir, merged_config)
 
-    if _maybe_short_circuit_for_inactive_run(config):
+    if _maybe_short_circuit_for_inactive_run(config, config_warnings):
         return
 
     (
@@ -1093,6 +1097,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config,
         GremlinSession(
             enabled=True,
+            terminal_notices=[f'pytest-gremlins: warning: {warning}' for warning in config_warnings],
             operators=operators,
             report_formats=report_formats,
             target_paths=target_paths,
@@ -2163,7 +2168,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             _print_terminal_notices(gremlin_session)
             cause = (
                 'Files were skipped (see above).'
-                if gremlin_session.terminal_notices
+                if gremlin_session.skipped_files
                 else 'Check your `paths`/`--gremlin-targets` configuration.'
             )
             print(f'--gremlin-explain: no gremlins were generated in this session (nothing to explain). {cause}')
@@ -2559,6 +2564,8 @@ def _skip_mutation_unless_baseline_is_green(gremlin_session: GremlinSession, exi
             print(rerun_warning, file=sys.stderr)
         return False
     reason = _baseline_skip_reason(gremlin_session, exitstatus)
+    for notice in gremlin_session.terminal_notices:
+        print(notice, file=sys.stderr)
     print(f'pytest-gremlins: skipping mutation testing because {reason}', file=sys.stderr)
     gremlin_session.enabled = False
     return True
@@ -3644,7 +3651,7 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
     )
 
     if target_gremlin is None:
-        skipped_hint = ' Files were skipped (see above).' if gremlin_session.terminal_notices else ''
+        skipped_hint = ' Files were skipped (see above).' if gremlin_session.skipped_files else ''
         print(
             f'--gremlin-explain: no gremlin with id {target_id!r} in this session. '
             f'Run with --gremlins (without --gremlin-explain) to see the full list of '
