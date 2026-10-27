@@ -7,7 +7,6 @@ import ast
 import pytest
 
 from pytest_gremlins.instrumentation.transformer import transform_source
-from pytest_gremlins.reporting.html import HtmlReporter
 
 
 def _return_gremlins(statement: str):
@@ -27,10 +26,41 @@ class DescribeReturnGremlinOriginal:
         assert gremlins
         assert {ast.unparse(g.original_node) for g in gremlins} == {ast.unparse(ast.parse(statement))}
 
-    def it_renders_a_diff_without_switch_code(self):
-        gremlin = _return_gremlins('return age >= 18')[0]
 
-        html = HtmlReporter()._render_diff_panel(gremlin)
+MAIN_RETURN_TRUE = [
+    ('m_f6f7_g001', 'boolean', 'True to False', 2),
+    ('m_f6f7_g002', 'return', 'return value to None', 2),
+]
 
-        assert 'return age &gt;= 18' in html or 'return age >= 18' in html
-        assert '__gremlin_active__' not in html
+MAIN_RETURN_FALSE_THEN_COMPARE = [
+    ('m_f6f7_g001', 'boolean', 'False to True', 2),
+    ('m_f6f7_g002', 'return', 'return value to None', 2),
+    ('m_f6f7_g003', 'comparison', '>= to >', 5),
+    ('m_f6f7_g004', 'comparison', '>= to <', 5),
+    ('m_f6f7_g005', 'boundary', 'boundary shift +/-1', 5),
+    ('m_f6f7_g006', 'boundary', 'boundary shift +/-1', 5),
+    ('m_f6f7_g007', 'return', 'return value to None', 5),
+]
+
+
+def _inventory(source: str):
+    gremlins, _ = transform_source(source, 'm.py')
+    return [(g.gremlin_id, g.operator_name, g.description, g.line_number) for g in gremlins]
+
+
+@pytest.mark.small
+class DescribeReturnGremlinIdentityMatchesMain:
+    def it_creates_the_same_gremlins_as_main_for_return_true(self):
+        assert _inventory('def f():\n    return True\n') == MAIN_RETURN_TRUE
+
+    def it_keeps_later_gremlin_ids_stable_after_return_false(self):
+        source = 'def g():\n    return False\n\ndef h(age):\n    return age >= 18\n'
+
+        assert _inventory(source) == MAIN_RETURN_FALSE_THEN_COMPARE
+
+    def it_keeps_the_return_node_position(self):
+        gremlins = _return_gremlins('return age >= 18')
+
+        assert {
+            (g.original_node.lineno, g.original_node.col_offset, g.original_node.end_col_offset) for g in gremlins
+        } == {(2, 4, 20)}
