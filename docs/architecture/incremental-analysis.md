@@ -322,6 +322,13 @@ If cache invalidation has bugs, results could be stale. Mitigations:
 The cache uses disk space. For most projects, this is negligible (< 10 MB). The
 `.gremlins_cache/` directory can be deleted at any time to reclaim space.
 
+### Line Endings
+
+Test files are hashed byte for byte, so CRLF and LF copies of one file hash differently. On Windows with
+`core.autocrlf=true` the cache can miss after every checkout and never warm across platforms. Correctness is
+unaffected (a miss only re-runs work). See
+[Cache never warms across checkouts on Windows](../guide/troubleshooting.md#cache-never-warms-across-checkouts-on-windows).
+
 ### Cache Warming
 
 The first run (or after cache clear) is slow. For CI, consider running a full

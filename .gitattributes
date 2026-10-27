@@ -1,0 +1,4 @@
+# Pin Python files to LF on every platform. ContentHasher.hash_file hashes raw bytes, so a
+# CRLF checkout (Windows core.autocrlf=true) would otherwise never share a warm
+# .gremlins_cache with an LF checkout (issue #482).
+*.py text eol=lf
