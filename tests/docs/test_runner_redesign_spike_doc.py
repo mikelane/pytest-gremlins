@@ -11,6 +11,21 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 DOC = ROOT / 'docs' / 'performance' / 'runner-redesign-spike.md'
 FOLLOW_UP_ISSUES = ('#802', '#803', '#804')
+FIDELITY_TEST_IDS = (
+    'it_zaps_every_mutant_whatever_the_test_style[default]',
+    'it_zaps_every_mutant_whatever_the_test_style[parallel]',
+    'it_zaps_every_mutant_whatever_the_test_style[batch]',
+    'it_runs_every_style_of_test_body_against_a_mutant',
+    'it_leaves_every_mutant_survived[fixture]',
+    'it_leaves_every_mutant_survived[parametrized]',
+    'it_still_zaps_with_a_fixture_taking_test_that_covers_the_target',
+    'it_does_not_count_a_hook_dependent_test_as_a_kill',
+    'it_does_not_count_a_conftest_dependent_test_as_a_kill[module_level]',
+    'it_does_not_count_a_conftest_dependent_test_as_a_kill[pytest_configure]',
+    'it_does_not_count_a_failed_lazy_helper_import_as_a_kill',
+    'it_zaps_with_a_test_that_imports_a_sibling_helper',
+    'it_zaps_with_a_test_whose_helper_is_on_the_pytest_ini_pythonpath',
+)
 
 
 @pytest.mark.medium
@@ -55,11 +70,35 @@ class DescribeRunnerRedesignSpikeReport:
         assert 'about 230ms' not in text
         assert '1052' not in text
 
-    def it_says_the_fidelity_suites_were_not_run_against_the_prototype(self) -> None:
+    @pytest.mark.parametrize('test_id', FIDELITY_TEST_IDS)
+    def it_records_a_per_test_result_for_each_fidelity_case(self, test_id: str) -> None:
+        rows = [line for line in DOC.read_text().splitlines() if test_id in line]
+
+        assert len(rows) == 1
+        assert '| pass |' in rows[0]
+
+    def it_does_not_claim_the_fidelity_suites_were_skipped(self) -> None:
+        assert 'were not run against the prototype' not in DOC.read_text()
+
+    def it_says_what_the_fidelity_suites_do_not_cover(self) -> None:
+        assert 'do not cover cross-gremlin state leakage' in ' '.join(DOC.read_text().split())
+
+    def it_changes_the_toggle_each_round_in_the_prototype_case(self) -> None:
+        assert 'changes the active-gremlin toggle each round' in ' '.join(DOC.read_text().split())
+
+    def it_gives_measured_per_round_costs_not_a_range_for_all_later_rounds(self) -> None:
         text = DOC.read_text()
 
-        assert 'were not run against the prototype' in text
-        assert 'time limit' in text
+        assert 'Per-round cost after the first: 2 to 4ms' not in text
+        assert 'Round 2' in text
+        assert 'Round 3 and later' in text
+
+    def it_lists_the_maintainer_decisions_as_open_questions(self) -> None:
+        text = DOC.read_text()
+
+        assert re.search(r'^## Open questions for the maintainer$', text, re.MULTILINE) is not None
+        assert 'fork-after-collect' in text
+        assert 'disables plugin autoload' in text
 
     def it_gives_one_recommendation_without_hedging_between_designs(self) -> None:
         text = DOC.read_text()

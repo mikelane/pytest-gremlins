@@ -54,12 +54,12 @@ rows alone; `-X importtime` would be needed to split them.
 
 ## Design 1 prototype results
 
-A throwaway harness (not merged, not wired into the plugin) collects once and re-runs the collected items in
-one pytest session, three rounds, through `pytest_runtest_protocol`. Its source is on the
-`issue-538-design1-prototype` branch under `prototypes/issue-538-design1/`; run `python proto.py suite 3`. It
-checks five cases that the fidelity suites cover as classes of difference from the bootstrap. Verdict compared
-with a fresh bootstrap run of the same
-suite, where all five pass.
+A throwaway harness (not merged) collects once and re-runs the collected items in one pytest session, three
+rounds, through `pytest_runtest_protocol`. Its source is on the `issue-538-design1-prototype` branch under
+`prototypes/issue-538-design1/`; run `python proto.py suite 3` from a directory outside the repository. It checks
+five cases that the fidelity suites cover as classes of difference from the bootstrap. Verdict compared with a
+fresh bootstrap run of the same suite, where all five pass. The environment toggle case
+changes the active-gremlin toggle each round (`round1`, `round2`, `round3`) and records the value each test sees.
 
 | Case | Round 1 | Rounds 2 and 3 | Matches bootstrap |
 | --- | --- | --- | --- |
@@ -67,26 +67,55 @@ suite, where all five pass.
 | Module-level state (counter in the test module) | pass | fail | no |
 | Session-scoped fixture used once per gremlin | pass | pass (rebuilt each round) | yes, but setup cost repeats |
 | Conftest counters (`pytest_configure` runs once, session fixture rebuilt each round) | pass | fail | no |
-| Environment toggle read per run | pass | pass | yes |
+| Environment toggle read per run | pass | pass (saw `round1`, `round2`, `round3`) | yes |
 
-Per-round cost after the first: 2 to 4ms for five tests, against about 415 to 500ms for a bootstrap. The speedup
-is real, and it is the upper bound the issue quotes. Two of five cases give a different verdict from the bootstrap.
-A mutation that survives only because a second run sees leaked state, or is killed only because of it, would
-produce a wrong verdict.
+Measured per-round cost for five tests, over three runs of five rounds on a busy machine:
 
-Not done: the two fidelity suites (`tests/integration/test_runner_fidelity.py` and
-`tests/integration/test_runner_conftest_and_path_fidelity.py`) were not run against the prototype, because
-they drive the real CLI and the prototype is not wired into the gremlin command path. This leaves the third
-acceptance criterion only partly met. Wiring the prototype in is a production-path change, which the spike's
-time limit and its no-production-code rule do not allow, so the spike stops here and #803 carries it. The table
-above is the pass/fail list the spike can honestly give.
+| Round | Cost |
+| --- | --- |
+| Round 1 | about 2ms |
+| Round 2 | about 26 to 30ms (the first failing reports are built here) |
+| Round 3 and later | about 3 to 4ms |
+
+A bootstrap costs about 415 to 500ms. The speedup is real, and it is the upper bound the issue quotes. Two of
+five cases give a different verdict from the bootstrap. A mutation that survives only because a second run sees
+leaked state, or is killed only because of it, would produce a wrong verdict.
+
+### Fidelity suites against the prototype
+
+The prototype is wired into the gremlin command path on the throwaway branch only (never merged). With
+`GREMLINS_PROTO_PERSISTENT=1`, `_test_gremlin` keeps one pytest session per distinct test command, sends it the
+active gremlin id, and reads back pass or fail, after collecting once. Both suites ran to completion:
+13 of 13 pass. The run created 17 sessions and reused a session 17 times, so the reuse path was exercised.
+
+| Suite | Test | Result |
+| --- | --- | --- |
+| `test_runner_fidelity.py` | `it_zaps_every_mutant_whatever_the_test_style[default]` | pass |
+| `test_runner_fidelity.py` | `it_zaps_every_mutant_whatever_the_test_style[parallel]` | pass |
+| `test_runner_fidelity.py` | `it_zaps_every_mutant_whatever_the_test_style[batch]` | pass |
+| `test_runner_fidelity.py` | `it_runs_every_style_of_test_body_against_a_mutant` | pass |
+| `test_runner_fidelity.py` | `it_leaves_every_mutant_survived[fixture]` | pass |
+| `test_runner_fidelity.py` | `it_leaves_every_mutant_survived[parametrized]` | pass |
+| `test_runner_fidelity.py` | `it_still_zaps_with_a_fixture_taking_test_that_covers_the_target` | pass |
+| `test_runner_fidelity.py` | `it_does_not_count_a_hook_dependent_test_as_a_kill` | pass |
+| `test_runner_conftest_and_path_fidelity.py` | `it_does_not_count_a_conftest_dependent_test_as_a_kill[module_level]` | pass |
+| `test_runner_conftest_and_path_fidelity.py` | `it_does_not_count_a_conftest_dependent_test_as_a_kill[pytest_configure]` | pass |
+| `test_runner_conftest_and_path_fidelity.py` | `it_does_not_count_a_failed_lazy_helper_import_as_a_kill` | pass |
+| `test_runner_conftest_and_path_fidelity.py` | `it_zaps_with_a_test_that_imports_a_sibling_helper` | pass |
+| `test_runner_conftest_and_path_fidelity.py` | `it_zaps_with_a_test_whose_helper_is_on_the_pytest_ini_pythonpath` | pass |
+
+This does not show that design 1 is safe. The two suites do not cover cross-gremlin state leakage: each of their
+suites has few gremlins and no test that fails when it is run a second time in the same session, while the
+harness above shows module-level and conftest state failing on round 2. The suites check that a run reports the
+same verdict as the bootstrap for one pass over each test. #803 must add a leakage case to the fidelity suites
+before a persistent worker can claim to pass them.
 
 ## Design comparison
 
 | Design | Fidelity cases it can guarantee | Estimated speedup | Risk |
 | --- | --- | --- | --- |
 | 3. Cheaper bootstrap | All. Same pytest, same hooks. Autoload and `-p no:` changes alter which plugins run, so they must not be applied silently. | Up to about 2.5x only if plugin autoload is disabled, which changes behavior for suites that need those plugins. | Disabling plugins is a semantic change. Cannot be a default without a decision. |
-| 1. Persistent pytest worker | Measured: plain tests, env toggles; session fixtures are rebuilt. Not guaranteed: module-level state, `pytest_configure` side effects and import caches persist between gremlins. | Removes the bootstrap per gremlin: 2 to 4ms per round against about 415 to 500ms. | High until isolation exists. This class of difference produced fabricated verdicts in #486. |
+| 1. Persistent pytest worker | Measured: plain tests, env toggles that change each round; session fixtures are rebuilt. Not guaranteed: module-level state, `pytest_configure` side effects and import caches persist between gremlins. | Removes the bootstrap per gremlin: about 3 to 4ms per round from round 3 (about 26 to 30ms in round 2) against about 415 to 500ms. | High until isolation exists. This class of difference produced fabricated verdicts in #486. |
 | 2. Fork after collect (paper only) | Child gets copy-on-write copies of the collected session, so state does not leak back to the parent. | Similar to design 1. | Unix only. Threads, open sockets and C-extension state at fork time. Windows needs the bootstrap fallback. Needs maintainer approval (see issue). |
 
 ## One subprocess per batch (scope addition from #733)
@@ -117,3 +146,14 @@ Any default that disables plugins, or any new option, is a user-facing decision 
 - #803: persistent pytest worker behind an experimental flag, run against both fidelity suites. Blocked on the
   maintainer decision about the flag.
 - #804: one subprocess per `--gremlin-batch` batch. Blocked by #803.
+
+## Open questions for the maintainer
+
+These are decisions, not work for the spike. They are also listed on #803.
+
+- Is a Unix-only fork-after-collect (design 2) acceptable, given that Windows is a supported platform? Without a
+  yes, design 2 stays on paper.
+- Is an option that disables plugin autoload (`PYTEST_DISABLE_PLUGIN_AUTOLOAD`) or unloads individual plugins
+  acceptable, given that it changes which plugins a suite runs under? It is the largest design 3 gain (about
+  2.5x) and a semantic change.
+- What is the experimental flag for the persistent worker (#803), and may it ship as opt-in?
