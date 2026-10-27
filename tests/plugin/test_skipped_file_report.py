@@ -22,7 +22,14 @@ AGE_SOURCE = 'def is_adult(age):\n    return age >= 18\n'
 CHAIN_TEST = 'from demo.chain import big\n\n\ndef test_big():\n    assert big(1) == 130\n'
 AGE_TEST = 'from demo.age import is_adult\n\n\ndef test_is_adult():\n    assert is_adult(20)\n'
 PYPROJECT = '[tool.pytest.ini_options]\npythonpath = ["src"]\n'
-WARNINGS_AS_ERRORS_PYPROJECT = PYPROJECT + 'filterwarnings = ["error"]\n'
+# A non-editable install (tox) imports ``pytest_gremlins`` before pytest can mark it for assertion rewriting, so
+# the pre-scan child warns "Module already imported" and, under ``error``, dies before recording coverage.
+# That is a separate defect from the one under test here, so this project tolerates exactly that warning.
+WARNINGS_AS_ERRORS_PYPROJECT = (
+    PYPROJECT
+    + 'filterwarnings = ["error", "ignore:Module already imported so cannot be rewritten:'
+    + 'pytest.PytestAssertRewriteWarning"]\n'
+)
 SKIP_LINE = 'pytest-gremlins: skipped *chain.py: could not instrument (RecursionError: *)'
 TESTS_CONFTEST = (
     'import pytest\n'
