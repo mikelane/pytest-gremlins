@@ -2868,26 +2868,17 @@ def _gremlin_runs_would_load_the_module_twice(config: pytest.Config) -> bool:
     The session turned autoload off on its command line only, which gremlin runs never see, and loaded the
     plugin by module name through a source they inherit (conftest ``pytest_plugins``, ``PYTEST_PLUGINS`` or ini
     ``addopts``).  A gremlin run that autoloads would register the ``rerunfailures`` entry point and then load
-    the module again as ``pytest_rerunfailures``, which pluggy rejects.  A module-name ``-p`` on the session's
-    command line is not inherited, so it does not count.  Blocking ``rerunfailures`` is no
-    answer: pytest then blocks the module name too and nothing reruns.
+    the module again as ``pytest_rerunfailures``, which pluggy rejects.  Whether the command line also names the
+    module does not matter: it cannot be told apart from an inherited source, and the loader registers the module
+    once either way.  Blocking ``rerunfailures`` is no answer: pytest then blocks the module name too and nothing
+    reruns.
     """
     return (
         bool(getattr(config.option, 'disable_plugin_autoload', False))
         and not _gremlin_runs_have_autoload_disabled(config)
         and config.pluginmanager.hasplugin(_RERUNFAILURES_MODULE_NAME)
         and not config.pluginmanager.hasplugin(_RERUNFAILURES_ENTRY_POINT_NAME)
-        and not _command_line_loads_module(config.invocation_params.args, _RERUNFAILURES_MODULE_NAME)
     )
-
-
-def _command_line_loads_module(args: Sequence[str], module_name: str) -> bool:
-    """Return whether ``args`` hold a ``-p <module_name>`` (or ``-p<module_name>``) loader.
-
-    Gremlin runs are not given the session's command line, so a module loaded only by it is not loaded twice
-    there: with autoload on they register the entry point once.
-    """
-    return f'-p{module_name}' in args or any(flag == '-p' and value == module_name for flag, value in pairwise(args))
 
 
 def _loader_options_for_gremlin_runs(config: pytest.Config, plugin_names: tuple[str, ...]) -> list[str]:
@@ -4309,6 +4300,22 @@ def _pytest_cov_available() -> bool:
         return True
 
 
+def _gremlin_runs_load_pytest_cov(gremlin_addopts: str, rerun_options: Sequence[str]) -> bool:
+    """Return whether gremlin runs have pytest-cov loaded, so that they know ``--no-cov``.
+
+    Gremlin runs that get ``--disable-plugin-autoload`` from the rerun options (issue #684) do not autoload it, and
+    the session's own command line is not passed on, so only a ``-p`` loader in their ``addopts`` or
+    ``PYTEST_PLUGINS`` loads it.  Other gremlin runs autoload it as before.
+    """
+    if _DISABLE_PLUGIN_AUTOLOAD_FLAG not in rerun_options:
+        return True
+    tokens = shlex.split(gremlin_addopts)
+    loaded = [value for flag, value in pairwise(tokens) if flag == '-p']
+    loaded += [token.removeprefix('-p') for token in tokens if token.startswith('-p')]
+    loaded += os.environ.get('PYTEST_PLUGINS', '').split(',')
+    return any(name.strip().startswith('pytest_cov') for name in loaded)
+
+
 def _build_test_command(
     instrumented_dir: Path | None,
     preserved_addopts: str = '',
@@ -4378,7 +4385,7 @@ def _build_test_command(
             *doctest_ini_overrides,
         ]
 
-    if _pytest_cov_available():
+    if _pytest_cov_available() and _gremlin_runs_load_pytest_cov(gremlin_addopts, rerun_options):
         command.append('--no-cov')
 
     if xdist_loaded:

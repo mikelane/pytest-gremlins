@@ -80,3 +80,41 @@ class DescribeModuleNameLoadWithAutoloadDisabledOnlyOnTheCommandLine:
         result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, *SESSION_ARGS)
 
         assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+
+CONFTEST_LOADING_RERUNFAILURES = "pytest_plugins = ['pytest_rerunfailures']\n"
+
+
+@pytest.mark.medium
+class DescribeGremlinRunsThatSkipAutoloadWithoutAnInheritedCovLoader:
+    """Gremlin runs given ``--disable-plugin-autoload`` do not load pytest-cov, so ``--no-cov`` is unknown to them."""
+
+    @pytest.mark.parametrize('extra_args', [(), ('-p', 'pytest_cov')])
+    def it_has_no_errors_without_an_inherited_cov_loader(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, extra_args: tuple[str, ...]
+    ) -> None:
+        monkeypatch.delenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', raising=False)
+        monkeypatch.delenv('PYTEST_ADDOPTS', raising=False)
+        _write_flaky_project(pytester_with_markers, '[pytest]\nreruns = 2\n', conftest=CONFTEST_LOADING_RERUNFAILURES)
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, *SESSION_ARGS, *extra_args)
+
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
+
+
+@pytest.mark.medium
+class DescribeModuleNameLoadOnTheCommandLineAndInherited:
+    def it_reruns_when_the_command_line_and_a_conftest_both_load_the_plugin(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', raising=False)
+        monkeypatch.delenv('PYTEST_ADDOPTS', raising=False)
+        _write_flaky_project(
+            pytester_with_markers,
+            f'[pytest]\nreruns = 2\naddopts = {COV_ADDOPTS}\n',
+            conftest=CONFTEST_LOADING_RERUNFAILURES,
+        )
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, *SESSION_ARGS, '-p', 'pytest_rerunfailures')
+
+        assert verdicts(result.stdout.str()) == {'Zapped': 1, 'Survived': 1, 'Error': 0}
