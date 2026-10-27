@@ -1347,6 +1347,8 @@ def _hash_test_file_with_conftests(hasher: ContentHasher, rootdir: Path, test_fi
         conftest = directory / 'conftest.py'
         if conftest.is_file():
             parts.append(f'{conftest.relative_to(rootdir).as_posix()}:{hasher.hash_file(conftest)}')
+        if directory == rootdir:
+            break
         directory = directory.parent
     return hasher.hash_string('|'.join(parts)) if len(parts) > 1 else parts[0]
 

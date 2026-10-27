@@ -1,10 +1,12 @@
 """Cache keys must change when a conftest.py above a covering test changes (#702)."""
 
 from pathlib import Path
+import threading
 
 import pytest
 
 from pytest_gremlins import plugin
+from pytest_gremlins.cache.hasher import ContentHasher
 
 
 def _session_for(rootdir: Path, node_ids: list[str]) -> plugin.GremlinSession:
@@ -61,3 +63,21 @@ class DescribeUnmatchedSelectedTestIsNotCached:
         session = _session_for(tmp_path, ['tests/sub/test_a.py::test_a'])
 
         assert plugin._selection_has_unhashed_test_file(['test_a'], session) is False
+
+
+@pytest.mark.medium
+class DescribeFilesystemRootAsRootdir:
+    def it_finishes_hashing_when_rootdir_is_the_filesystem_root(self, tmp_path: Path) -> None:
+        test_file = tmp_path / 'test_a.py'
+        test_file.write_text('def test_a(): pass\n')
+        relative = test_file.relative_to(Path('/')).as_posix()
+        worker = threading.Thread(
+            target=plugin._hash_test_file_with_conftests,
+            args=(ContentHasher(), Path('/'), relative),
+            daemon=True,
+        )
+
+        worker.start()
+        worker.join(timeout=5)
+
+        assert not worker.is_alive()
