@@ -43,6 +43,24 @@ class DescribeRunnerRedesignSpikeReport:
         assert 'collect-only' in text
         assert 'Load average' in text
 
+    def it_links_the_design_1_prototype_branch(self) -> None:
+        assert 'issue-538-design1-prototype' in DOC.read_text()
+
+    def it_does_not_label_pytest_version_as_plugin_load(self) -> None:
+        assert '(plugin load, no collection)' not in DOC.read_text()
+
+    def it_does_not_claim_the_inflated_plugin_cost_from_a_busy_machine(self) -> None:
+        text = DOC.read_text()
+
+        assert 'about 230ms' not in text
+        assert '1052' not in text
+
+    def it_says_the_fidelity_suites_were_not_run_against_the_prototype(self) -> None:
+        text = DOC.read_text()
+
+        assert 'were not run against the prototype' in text
+        assert 'time limit' in text
+
     def it_gives_one_recommendation_without_hedging_between_designs(self) -> None:
         text = DOC.read_text()
 
