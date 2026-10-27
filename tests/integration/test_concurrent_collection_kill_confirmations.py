@@ -83,3 +83,113 @@ class DescribePooledVerdictsMatchSerialConfirmation:
 
         outcomes = {(status, killer) for _, status, killer in _verdicts(pytester_with_markers)}
         assert outcomes == {('zapped', '<collection>')}
+
+
+_SIBLING_TARGET = """
+def first(a, b):
+    return a + b
+
+
+def second(a, b):
+    return a - b
+
+
+def third(a, b):
+    return a * b
+"""
+
+_TEST_A = """
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'helpers'))
+
+import sample
+
+
+def test_first():
+    assert sample.first(0, 0) in (0, None)
+"""
+
+_TEST_NEEDING_SIBLING = """
+import helperlib  # importable only after test_a extended sys.path in the same session
+import sample
+
+
+def test_{name}():
+    assert sample.{name}(0, 0) in (0, None)
+"""
+
+_SPY_PLUGIN = """
+import json
+import os
+
+import pytest_gremlins.plugin as gremlin_plugin
+
+_original = gremlin_plugin._prefill_collection_kill_confirmations
+
+
+def _spy(pending, gremlin_session, rootdir):
+    distinct = {tuple(node_ids) for _, node_ids in pending}
+    with open(os.environ['PREFILL_LOG'], 'a') as log:
+        log.write(json.dumps(len(distinct)) + '\\n')
+    return _original(pending, gremlin_session, rootdir)
+
+
+gremlin_plugin._prefill_collection_kill_confirmations = _spy
+"""
+
+_SIBLING_ARGS = (
+    '--gremlins',
+    '--gremlin-targets=sample.py',
+    '--gremlin-operators=arithmetic',
+    '--gremlin-report=json',
+    '-p',
+    'no:cacheprovider',
+)
+
+
+def _write_sibling_project(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(sample=_SIBLING_TARGET)
+    pytester.mkdir('helpers')
+    Path(pytester.path, 'helpers', 'helperlib.py').write_text('VALUE = 1\n')
+    pytester.makepyfile(test_a=_TEST_A)
+    pytester.makepyfile(test_b=_TEST_NEEDING_SIBLING.format(name='second'))
+    pytester.makepyfile(test_c=_TEST_NEEDING_SIBLING.format(name='third'))
+
+
+def _results(pytester: pytest.Pytester) -> list[tuple[str, str, str | None]]:
+    report = json.loads(Path(pytester.path, 'coverage', 'gremlins', 'gremlins.json').read_text())
+    return sorted((entry['description'], entry['status'], entry.get('killing_test')) for entry in report['results'])
+
+
+@pytest.mark.medium
+class DescribeSeveralDistinctSelectionsConfirmedConcurrently:
+    """Two selections that cannot load unmutated are confirmed together and downgraded like serial ones."""
+
+    def it_downgrades_every_unloadable_selection_exactly_as_the_sequential_mode_does(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        _write_sibling_project(pytester_with_markers)
+        pytester_with_markers.runpytest_subprocess(*_SIBLING_ARGS)
+        serial_results = _results(pytester_with_markers)
+
+        pytester_with_markers.runpytest_subprocess(*_SIBLING_ARGS, '--gremlin-parallel', '--gremlin-workers=2')
+
+        assert _results(pytester_with_markers) == serial_results
+        assert [status for _, status, _ in serial_results].count('error') == 2
+
+    def it_confirms_more_than_one_distinct_selection_in_one_prefill(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_sibling_project(pytester_with_markers)
+        pytester_with_markers.makepyfile(spy_plugin=_SPY_PLUGIN)
+        log = Path(pytester_with_markers.path, 'prefill.log')
+        monkeypatch.setenv('PREFILL_LOG', str(log))
+        monkeypatch.setenv('PYTHONPATH', str(pytester_with_markers.path))
+
+        pytester_with_markers.runpytest_subprocess(
+            *_SIBLING_ARGS, '-p', 'spy_plugin', '--gremlin-parallel', '--gremlin-workers=2'
+        )
+
+        assert max(int(line) for line in log.read_text().split()) > 1

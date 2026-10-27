@@ -155,3 +155,17 @@ class DescribePrefillCollectionKillConfirmations:
 
         assert [(r.status, r.killing_test) for r in prefilled] == [(r.status, r.killing_test) for r in serial]
         assert [r.status for r in prefilled].count(GremlinResultStatus.ERROR) == 2
+
+
+@pytest.mark.medium
+class DescribePrefillInterruption:
+    @pytest.mark.parametrize('error', [KeyboardInterrupt, RuntimeError])
+    def it_starts_no_further_confirmations_once_one_is_interrupted_or_fails(
+        self, fake_control: MagicMock, tmp_path: Path, error: type[BaseException]
+    ) -> None:
+        fake_control.side_effect = error('stop')
+
+        with pytest.raises(error):
+            _prefill_collection_kill_confirmations(_pending(6), _session(tmp_path, workers=1), tmp_path)
+
+        assert fake_control.call_count == 1
