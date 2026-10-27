@@ -39,6 +39,7 @@ from typing import (
     Protocol,
 )
 import warnings
+import zlib
 
 import coverage
 from coverage.exceptions import CoverageException
@@ -1640,8 +1641,8 @@ def _write_instrumented_sources(
 
     Creates a temporary directory containing:
     1. A JSON file mapping the normalized real path of each instrumented file to its
-       instrumented tree (``tree``: the instrumented AST, pickled and base64 encoded for the subprocess to
-       compile under the real file path; absent when the tree is too deep to pickle), its unparsed text
+       instrumented tree (``tree``: the instrumented AST, pickled, zlib compressed and base64 encoded for the subprocess
+       to compile under the real file path; absent when the tree is too deep to pickle), its unparsed text
        (``source``: always present, what the subprocess compiles when the tree is absent or too deep), the
        path it came from, the file's device and inode (``identity``, for spellings the path key misses) and
        the lowercased file names it may be imported as (``names``, so the finder skips every other import
@@ -1709,7 +1710,7 @@ del _gremlin_os
 
 
 def _encode_tree(instrumented_tree: ast.Module) -> str | None:
-    """Return ``instrumented_tree`` pickled and base64 encoded for sources.json, or ``None`` if nested too deeply.
+    """Return ``instrumented_tree`` pickled, zlib compressed and base64 encoded, or ``None`` if nested too deeply.
 
     The subprocess compiles the tree itself, under the real file path, so the original line numbers survive and
     the subprocess's own optimize level and warning filters apply. Pickling recurses once per level of nesting,
@@ -1719,7 +1720,9 @@ def _encode_tree(instrumented_tree: ast.Module) -> str | None:
     releases before #563.
     """
     try:
-        return base64.b64encode(pickle.dumps(ast.fix_missing_locations(instrumented_tree))).decode('ascii')
+        return base64.b64encode(zlib.compress(pickle.dumps(ast.fix_missing_locations(instrumented_tree)))).decode(
+            'ascii'
+        )
     except RecursionError:
         return None
 
