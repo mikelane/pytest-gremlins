@@ -1297,7 +1297,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     gremlin_session.test_files = list(set(test_files))
 
     gremlin_session.total_tests = len(session.items)
-    if _rerunfailures_is_loaded(session.config):
+    if session.items and _rerunfailures_is_loaded(session.config):
         gremlin_session.mutant_timeout = _mutant_timeout_for_items(
             gremlin_session.mutant_attempt_timeout or gremlin_session.mutant_timeout,
             gremlin_session.mutant_timeout,
