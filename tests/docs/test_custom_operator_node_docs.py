@@ -44,15 +44,47 @@ def _django_operator_example() -> type:
     return operator_class
 
 
+PROMISE_BULLET = re.compile(r'^\s+- (?P<line>.+)$', flags=re.MULTILINE)
+PROMISE_SHAPE = re.compile(r'^(?P<source>\w+)\(\) -> (?P<target>\w+)\(\)$')
+
+
+def _promised_swaps(docstring: str) -> list[tuple[str, str]]:
+    swaps = []
+    for bullet in PROMISE_BULLET.finditer(docstring):
+        shape = PROMISE_SHAPE.match(bullet.group('line'))
+        assert shape is not None, f'unparseable promise: {bullet.group("line")!r}'
+        swaps.append((shape.group('source'), shape.group('target')))
+    return swaps
+
+
+def _produced_target(operator_class: type, source: str) -> str:
+    call = ast.parse(f'queryset.{source}()', mode='eval').body
+    operator = operator_class()
+    assert operator.can_mutate(call) is True, source
+    mutants = operator.mutate(call)
+    assert mutants, source
+    return mutants[0].func.attr
+
+
+def _swaps_not_produced(operator_class: type, promised: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    return [(source, target) for source, target in promised if _produced_target(operator_class, source) != target]
+
+
 @pytest.mark.medium
 class DescribeDjangoOperatorDocExample:
     def it_docs_django_operator_produces_the_mutations_its_docstring_promises(self) -> None:
         operator_class = _django_operator_example()
-        promised_methods = re.findall(r'^\s+- (\w+)\(', operator_class.__doc__ or '', flags=re.MULTILINE)
-        assert promised_methods
+        promised = _promised_swaps(operator_class.__doc__ or '')
+        assert promised
 
-        for method in promised_methods:
-            call = ast.parse(f'queryset.{method}()', mode='eval').body
-            operator = operator_class()
-            assert operator.can_mutate(call) is True, method
-            assert operator.mutate(call), method
+        assert _swaps_not_produced(operator_class, promised) == []
+
+    def it_rejects_a_promise_whose_target_the_code_does_not_produce(self) -> None:
+        operator_class = _django_operator_example()
+        wrong = _promised_swaps('    - filter() -> first()')
+
+        assert _swaps_not_produced(operator_class, wrong) == [('filter', 'first')]
+
+    def it_rejects_a_promise_written_in_a_shape_it_cannot_parse(self) -> None:
+        with pytest.raises(AssertionError, match='unparseable promise'):
+            _promised_swaps('    - `exists()` -> (removed)')
