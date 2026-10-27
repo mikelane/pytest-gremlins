@@ -284,13 +284,53 @@ class MyOperator:
     # ... rest of implementation
 ```
 
-### Entry Points (Not Implemented)
+### Method 3: Entry Points
 
-!!! warning "Not yet implemented"
-    pytest-gremlins doesn't load operators from entry points. A
-    `[project.entry-points."pytest_gremlins.operators"]` table in a package's `pyproject.toml`
-    has no effect. To use an operator from a package, import it in your project's root
-    `conftest.py` and register it as in Method 1.
+A package can ship operators that pytest-gremlins picks up with no `conftest.py` registration. Declare an
+entry point in the `pytest_gremlins.operators` group, in the package's `pyproject.toml`:
+
+```toml
+[project.entry-points."pytest_gremlins.operators"]
+my-package = "my_package.gremlins:register"
+```
+
+The entry point loads a function that receives an `OperatorRegistry` and registers each operator it ships:
+
+```python
+# my_package/gremlins.py
+from pytest_gremlins.operators import OperatorRegistry
+
+from my_package.operators import StringEmptyOperator
+
+
+def register(registry: OperatorRegistry) -> None:
+    registry.register(StringEmptyOperator)
+```
+
+Install the package and run `pytest --gremlins`. The operator's name comes from `registry.register`, so
+`string-empty` works in the `operators` list and in `--gremlin-operators`. The entry-point name
+(`my-package` above) only identifies the entry point in warnings. A callable can register several
+operators, or none, for example when an optional dependency isn't installed.
+
+!!! warning "Trust boundary"
+    With `--gremlins`, pytest-gremlins imports every installed package that declares the
+    `pytest_gremlins.operators` group, and runs its callable. A plain `pytest` run imports none of them.
+    `pytest --gremlins --collect-only` does import them. Install only packages you trust.
+
+**Precedence.** Operators resolve in this order: built-in operators, registrations in the root
+`conftest.py`, then entry points in the order `importlib.metadata` lists them. An entry point never
+replaces an operator that is already registered; the first registration wins and pytest-gremlins emits a
+`GremlinEntryPointWarning` naming the operator and the entry point that lost. A `conftest.py` in a
+subdirectory loads later, at collection, and overwrites as it always has.
+
+**Failures.** Each entry point is loaded on its own. If the import fails, the callable raises an
+`Exception`, or the loaded object isn't callable, pytest-gremlins emits a `GremlinEntryPointWarning`
+naming the entry point and its distribution (with the exception message, or "is not callable"), drops
+anything that callable registered before it failed, and carries on with the next entry point.
+
+Under xdist, warnings appear once, from the controller. To ignore them, filter the category
+`pytest_gremlins.operators.GremlinEntryPointWarning`. With `filterwarnings = error`, a broken entry point
+stops the run at startup.
 
 ## AST Manipulation Patterns
 

@@ -99,6 +99,7 @@ from pytest_gremlins.instrumentation.transformer import (
     transform_source,
 )
 from pytest_gremlins.node_id_file import command_with_node_ids_file
+from pytest_gremlins.operators.entry_points import load_entry_point_operators
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.exit_codes import (
@@ -1051,6 +1052,7 @@ def pytest_configure(config: pytest.Config) -> None:
         raise pytest.UsageError(f'pytest-gremlins: {invalid}') from invalid
 
     registry = get_default_registry()
+    load_entry_point_operators(registry, emit_warnings=not _is_xdist_worker(config))
 
     # Use merged operators or all if none specified
     operators = registry.get_all(enabled=merged_config.operators) if merged_config.operators else registry.get_all()
