@@ -1,9 +1,7 @@
 """Persistent worker pool that keeps worker processes alive across gremlin tasks.
 
 This module implements a persistent worker pool that keeps worker processes
-alive across multiple gremlin tests. This addresses the primary performance
-bottleneck identified in profiling: subprocess spawning overhead of 500-700ms
-per gremlin.
+alive across multiple gremlin tests.
 
 Workers are created once and reused, so the pool itself is not rebuilt per
 task. Each gremlin's tests still run in their own subprocess, including

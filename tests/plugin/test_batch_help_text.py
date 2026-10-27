@@ -46,3 +46,6 @@ class DescribeBatchOptionHelpText:
 
     def it_describes_batch_size_as_gremlins_per_worker_task(self) -> None:
         assert 'worker task' in _help_texts()['--gremlin-batch-size']
+
+    def it_names_no_option_inside_the_help_text_where_argparse_could_wrap_it(self) -> None:
+        assert '--gremlin' not in _help_texts()['--gremlin-batch']

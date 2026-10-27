@@ -713,7 +713,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action='store_true',
         default=False,
         dest='gremlin_batch',
-        help='Group gremlins into worker tasks of --gremlin-batch-size; does not reduce subprocesses (one per gremlin)',
+        help='Group gremlins into worker tasks; does not reduce subprocesses (one per gremlin)',
     )
     group.addoption(
         '--gremlin-batch-size',

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import pytest
 
@@ -39,3 +40,27 @@ class DescribePersistentPoolDocstrings:
 
     def it_does_not_claim_the_pool_avoids_a_subprocess_per_gremlin(self) -> None:
         assert 'spawns a new subprocess per gremlin' not in (persistent_pool.PersistentWorkerPool.__doc__ or '')
+
+
+OVERHEAD_OR_SPAWNING = re.compile(r'overhead|spawning', re.IGNORECASE)
+
+
+@pytest.mark.small
+class DescribePersistentPoolModuleDocstring:
+    def it_does_not_attribute_a_per_gremlin_spawning_cost_to_the_pool(self) -> None:
+        assert 'spawning overhead' not in (persistent_pool.__doc__ or '')
+
+    def it_does_not_mention_subprocess_spawning_overhead_at_all(self) -> None:
+        assert not OVERHEAD_OR_SPAWNING.search(persistent_pool.__doc__ or '')
+
+
+@pytest.mark.small
+class DescribeParallelDocBestPractices:
+    def it_does_not_tune_batch_size_for_overhead(self) -> None:
+        tune_lines = [line for line in PARALLEL_DOC.splitlines() if 'Tune batch size' in line]
+        assert tune_lines
+        assert not any(OVERHEAD_OR_SPAWNING.search(line) for line in tune_lines)
+
+    def it_ties_no_batch_line_to_overhead(self) -> None:
+        batch_lines = [line for line in PARALLEL_DOC.splitlines() if re.search(r'batch', line, re.IGNORECASE)]
+        assert not [line for line in batch_lines if re.search(r'balance between overhead', line, re.IGNORECASE)]

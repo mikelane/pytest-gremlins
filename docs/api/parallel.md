@@ -471,6 +471,6 @@ parallel workers.
 
 1. **Use forkserver on Unix** - Fastest subprocess creation
 2. **Enable warmup** - Reduces latency on first batch
-3. **Tune batch size** - Balance between overhead and early termination
+3. **Tune batch size** - Balance worker task size against early termination
 4. **Match workers to cores** - No benefit beyond physical cores
 5. **Monitor timeouts** - Increase if legitimate tests are timing out
