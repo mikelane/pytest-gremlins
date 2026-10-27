@@ -29,30 +29,59 @@ def pytest_configure(config):
     config.addinivalue_line('markers', 'medium: medium test')
 """
 
-_OUTER_TESTS = """
-import pathlib
-
-import pytest
-
-SRC = pathlib.Path(__file__).resolve().parent.parent / 'src'
-
-
-@pytest.mark.medium
-def test_inner_session_catches_a_broken_positive(pytester):
-    pytester.syspathinsert(SRC)
-    pytester.makeini('[pytest]\\npython_files = test_*.py *_impl.py\\n')
-    pytester.makepyfile(
-        test_inner='''
+_INNER_TEST = """
         from mypkg.core_impl import positive
 
         def test_positive():
             assert positive(1)
             assert not positive(0)
-        '''
-    )
-    result = pytester.runpytest_inprocess('-p', 'no:cacheprovider')
-    result.assert_outcomes(passed=1)
 """
+
+_OUTER_HEADER = """
+import pathlib
+
+import pytest
+
+SRC = pathlib.Path(__file__).resolve().parent.parent / 'src'
+REGISTER_CONFTEST = 'import pytest\\npytest.register_assert_rewrite("mypkg.core_impl")\\n'
+"""
+
+_PYTHON_FILES_INI = "pytester.makeini('[pytest]\\npython_files = test_*.py *_impl.py\\n')"
+
+
+def _outer_tests(setup: str, run: str) -> str:
+    return (
+        _OUTER_HEADER
+        + f"""
+
+@pytest.mark.medium
+def test_inner_session_catches_a_broken_positive(pytester, monkeypatch):
+    pytester.syspathinsert(SRC)
+    {setup}
+    pytester.makepyfile(test_inner=\'\'\'{_INNER_TEST}\'\'\')
+    {run}
+"""
+    )
+
+
+_OUTER_TESTS = _outer_tests(
+    _PYTHON_FILES_INI, "pytester.runpytest_inprocess('-p', 'no:cacheprovider').assert_outcomes(passed=1)"
+)
+_INLINE_RUN_TESTS = _outer_tests(
+    _PYTHON_FILES_INI, "pytester.inline_run('-p', 'no:cacheprovider').assertoutcome(passed=1)"
+)
+_REGISTER_ASSERT_REWRITE_TESTS = _outer_tests(
+    'pytester.makeconftest(REGISTER_CONFTEST)',
+    "pytester.runpytest_inprocess('-p', 'no:cacheprovider').assert_outcomes(passed=1)",
+)
+_AUTOLOAD_DISABLED_TESTS = _outer_tests(
+    _PYTHON_FILES_INI + "\n    monkeypatch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')",
+    "pytester.runpytest_inprocess('-p', 'no:cacheprovider').assert_outcomes(passed=1)",
+)
+_GREMLINS_BLOCKED_TESTS = _outer_tests(
+    _PYTHON_FILES_INI,
+    "pytester.runpytest_inprocess('-p', 'no:cacheprovider', '-p', 'no:gremlins').assert_outcomes(passed=1)",
+)
 
 
 def _count(output: str, label: str) -> int:
@@ -65,18 +94,42 @@ def _count(output: str, label: str) -> int:
 class DescribeInProcessPytesterRewriteHook:
     """A gremlin a test catches inside an in-process pytester run is zapped, not reported as a survivor."""
 
-    def it_zaps_a_python_files_target_first_imported_in_the_inner_session(
-        self, pytester_with_markers: pytest.Pytester
-    ) -> None:
-        pytester_with_markers.makeconftest(_OUTER_CONFTEST)
-        pytester_with_markers.makeini('[pytest]\npythonpath = src\n')
-        package = pytester_with_markers.path / 'src' / 'mypkg'
+    def _outcome(self, pytester: pytest.Pytester, outer_tests: str) -> tuple[int, int]:
+        pytester.makeconftest(_OUTER_CONFTEST)
+        pytester.makeini('[pytest]\npythonpath = src\n')
+        package = pytester.path / 'src' / 'mypkg'
         package.mkdir(parents=True)
         package.joinpath('__init__.py').write_text('')
         package.joinpath('core_impl.py').write_text(_POSITIVE)
-        pytester_with_markers.mkdir('tests').joinpath('test_outer.py').write_text(_OUTER_TESTS)
+        pytester.mkdir('tests').joinpath('test_outer.py').write_text(outer_tests)
 
-        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
+        result = pytester.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
 
         output = result.stdout.str()
-        assert (_count(output, 'Zapped'), _count(output, 'Survived')) == (2, 0)
+        return _count(output, 'Zapped'), _count(output, 'Survived')
+
+    @pytest.mark.parametrize(
+        'outer_tests',
+        [
+            pytest.param(_OUTER_TESTS, id='python_files-target'),
+            pytest.param(_INLINE_RUN_TESTS, id='python_files-target-inline_run'),
+            pytest.param(_REGISTER_ASSERT_REWRITE_TESTS, id='register_assert_rewrite-target'),
+        ],
+    )
+    def it_zaps_a_target_first_imported_in_the_inner_session(
+        self, pytester_with_markers: pytest.Pytester, outer_tests: str
+    ) -> None:
+        assert self._outcome(pytester_with_markers, outer_tests) == (2, 0)
+
+    @pytest.mark.parametrize(
+        'outer_tests',
+        [
+            pytest.param(_AUTOLOAD_DISABLED_TESTS, id='plugin-autoload-disabled'),
+            pytest.param(_GREMLINS_BLOCKED_TESTS, id='gremlins-plugin-blocked'),
+        ],
+    )
+    def it_reports_survivors_when_the_inner_session_does_not_load_the_gremlins_plugin(
+        self, pytester_with_markers: pytest.Pytester, outer_tests: str
+    ) -> None:
+        """Documented limitation (docs/guide/troubleshooting.md): the finder cannot be re-fronted."""
+        assert self._outcome(pytester_with_markers, outer_tests) == (0, 2)

@@ -679,6 +679,31 @@ pip install --upgrade pytest-gremlins
 
 ---
 
+### Survivors in a target first imported inside an in-process pytester run
+
+**Symptom:**
+
+Your tests call `pytester.runpytest()`, `runpytest_inprocess()` or `inline_run()`. The module under test is
+first imported by that inner session, and gremlins that your tests do catch are reported as survivors.
+
+**Cause:** The inner session installs its own assertion-rewrite hook at the front of `sys.meta_path`. For a
+target that hook claims (a `python_files` match, a `conftest.py`, or a `pytest.register_assert_rewrite`
+name), it serves the module before pytest-gremlins can instrument it. pytest-gremlins re-fronts its finder
+when the inner session loads the gremlins plugin, which covers the default setup.
+
+**Solution:**
+
+Leave the gremlins plugin enabled in the inner session. Two inner-session settings defeat the fix, so a
+target first imported there is not instrumented:
+
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`
+- `-p no:gremlins`
+
+In those cases, import the target in the outer test before the inner session starts, or avoid claiming it
+through `python_files`.
+
+---
+
 ### Low code coverage numbers for pytest-gremlins itself
 
 **Symptom:**
