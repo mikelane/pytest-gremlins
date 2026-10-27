@@ -184,7 +184,7 @@ class DescribeInstalledOperatorPackage:
 
 
 BROKEN_MODULES = {
-    'import-fails': ('missing_module_xyz:register', {}, None),
+    'import-fails': ('missing_module_xyz:register', {}, 'missing_module_xyz'),
     'callable-raises': (
         'broken_ops:register',
         {'broken_ops': 'def register(registry):\n    raise RuntimeError("kaput")\n'},
@@ -210,7 +210,7 @@ class DescribeBrokenEntryPoints:
         assert 'GremlinEntryPointWarning' in output
         assert 'broken-ep' in output
         assert 'gremlin_ep_dist' in output
-        assert detail is None or detail in output
+        assert detail in output
         assert _operators_in_report(pytester)
 
     def it_hides_the_warning_when_the_category_is_ignored(
