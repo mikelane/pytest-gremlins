@@ -432,10 +432,12 @@ is a fresh clone. To do it in place, commit or stash your changes first, because
 
 Pick either remedy:
 
-- Set `core.autocrlf=input` so git does not convert to CRLF on checkout:
+- Set `core.autocrlf=input` globally so git does not convert to CRLF on checkout. Use `--global`, not a
+  repo-local setting: a fresh clone does not keep repo-local config, so it would be checked out with CRLF
+  again:
 
   ```bash
-  git config core.autocrlf input
+  git config --global core.autocrlf input
   ```
 
 - Or commit a `.gitattributes` that pins Python files to LF:

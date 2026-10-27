@@ -89,6 +89,18 @@ class DescribeTroubleshootingRecheckoutAdvice:
 
         assert recheckout < first_remedy
 
+    def it_sets_autocrlf_globally_so_a_fresh_clone_inherits_it(self) -> None:
+        text = (REPO_ROOT / 'docs' / 'guide' / 'troubleshooting.md').read_text(encoding='utf-8')
+        section = text.split('### Cache never warms across checkouts on Windows')[1].split('\n---\n')[0]
+
+        assert 'git config --global core.autocrlf input' in section
+
+    def it_never_offers_a_repo_local_autocrlf_setting_that_a_fresh_clone_would_lose(self) -> None:
+        text = (REPO_ROOT / 'docs' / 'guide' / 'troubleshooting.md').read_text(encoding='utf-8')
+        section = text.split('### Cache never warms across checkouts on Windows')[1].split('\n---\n')[0]
+
+        assert 'git config core.autocrlf' not in section
+
 
 @pytest.mark.medium
 class DescribeSdistIncludesGitattributes:
