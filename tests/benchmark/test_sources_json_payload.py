@@ -13,6 +13,8 @@ import inspect
 import json
 from pathlib import Path
 import pickle
+import subprocess
+import sys
 import time
 from types import SimpleNamespace
 import zlib
@@ -109,6 +111,28 @@ class DescribeSourcesJsonPayload:
         ratio = _loader_to_reference_time_ratio(entry['tree'], path)  # type: ignore[arg-type]
         record_property('decode_compile_ratio', ratio)
         assert ratio <= _baseline()[module_name]['decode_compile_ratio'] * ALLOWED_REGRESSION
+
+    def it_records_the_per_module_numbers_in_a_junit_xml_report(self, tmp_path):
+        report = tmp_path / 'report.xml'
+        result = subprocess.run(
+            [
+                sys.executable,
+                '-m',
+                'pytest',
+                f'{Path(__file__)}::DescribeSourcesJsonPayload',
+                '-k',
+                'does_not_slow_decode_and_compile',
+                '-p',
+                'no:cacheprovider',
+                f'--junitxml={report}',
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+        assert result.returncode == 0, result.stdout[-2000:]
+        assert report.read_text().count('decode_compile_ratio') == len(FIXTURE_MODULES)
 
     def it_detects_a_loader_decode_compile_that_became_3x_slower(self, tmp_path, monkeypatch):
         path, _ = _instrumented_tree('textwrap')
