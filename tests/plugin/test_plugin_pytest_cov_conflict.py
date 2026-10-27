@@ -97,6 +97,7 @@ class DescribeEmptyCoverageWarning:
 
         with patch(
             'pytest_gremlins.plugin._run_tests_with_coverage',
+            autospec=True,
             return_value={},
         ):
             _collect_coverage(session, tmp_path)
@@ -121,6 +122,7 @@ class DescribeEmptyCoverageWarning:
 
         with patch(
             'pytest_gremlins.plugin._run_tests_with_coverage',
+            autospec=True,
             return_value=coverage_data,
         ):
             _collect_coverage(session, tmp_path)

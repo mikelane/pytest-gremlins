@@ -2627,6 +2627,9 @@ def _report_diagnostic(message: str) -> None:
 
     Not ``warnings.warn``: these run inside ``pytest_sessionfinish``, where a user's
     ``filterwarnings = error`` would escalate them into a crash (issue #543).
+
+    Args:
+        message: The diagnostic text, written as a single line to stderr.
     """
     print(message, file=sys.stderr)
 
