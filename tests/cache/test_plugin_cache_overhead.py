@@ -89,10 +89,12 @@ class DescribeCacheKeyComputationOverhead:
     """Tests for cache key computation overhead."""
 
     def it_repeated_hash_combined_calls(self, tmp_path: Path) -> None:
-        """Measure overhead of computing combined test hashes repeatedly.
+        """Count hash operations needed to build keys for many gremlins.
 
-        For each gremlin, we call hash_combined with the test hashes.
-        With 100 gremlins and 10 tests each, that's 100 hash operations.
+        For each gremlin, we build a cache key from the test hashes.
+        With 100 gremlins and 10 tests each, that must cost exactly one
+        hash operation per key. Counting operations is deterministic, unlike
+        wall-clock time on shared CI runners.
         """
         cache_dir = tmp_path / '.gremlins_cache'
         num_gremlins = 100
@@ -102,17 +104,22 @@ class DescribeCacheKeyComputationOverhead:
         test_hashes = {f'test_{i}': f'hash_{i}' * 10 for i in range(num_tests)}
 
         with IncrementalCache(cache_dir) as cache:
-            # Measure time to build 100 cache keys
-            start = time.perf_counter()
-            for i in range(num_gremlins):
-                cache._build_cache_key(f'gremlin_{i}', 'source_hash', test_hashes)
-            key_time = time.perf_counter() - start
+            hash_calls = 0
+            real_hash_string = cache._hasher.hash_string
 
-        # 100 key computations should be under 10ms
-        assert key_time < 0.01, (
-            f'Cache key computation took {key_time * 1000:.1f}ms for {num_gremlins} gremlins. '
-            'This happens for both cache reads AND writes.'
+            def counting_hash_string(content: str) -> str:
+                nonlocal hash_calls
+                hash_calls += 1
+                return real_hash_string(content)
+
+            cache._hasher.hash_string = counting_hash_string  # type: ignore[method-assign]
+            keys = {cache._build_cache_key(f'gremlin_{i}', 'source_hash', test_hashes) for i in range(num_gremlins)}
+
+        assert hash_calls == num_gremlins, (
+            f'Cache key computation made {hash_calls} hash calls for {num_gremlins} gremlins. '
+            'This happens for both cache reads AND writes, so it must stay at one per key.'
         )
+        assert len(keys) == num_gremlins
 
 
 @pytest.mark.medium
