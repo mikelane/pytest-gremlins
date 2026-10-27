@@ -6,9 +6,11 @@ override never matched and mypy reported ``unused section(s): module = ['tests.*
 
 from __future__ import annotations
 
+import configparser
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
 import pytest
 
@@ -56,3 +58,27 @@ class DescribeMypyGuardAssertion:
 class DescribeMypyTestsOverride:
     def it_is_applied_to_test_modules_instead_of_reported_unused(self) -> None:
         assert_mypy_checked_without_unused_override(run_mypy_on_test_module())
+
+
+@pytest.mark.medium
+class DescribeMypyConfigIsApplied:
+    def it_relaxes_untyped_defs_for_tests_in_the_override(self) -> None:
+        config = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text())['tool']['mypy']
+        override = next(o for o in config['overrides'] if o['module'] == 'tests.*')
+
+        assert override['disallow_untyped_defs'] is False
+
+    def it_resolves_src_modules_under_their_package_name(self) -> None:
+        config = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text())['tool']['mypy']
+
+        assert '$MYPY_CONFIG_FILE_DIR/src' in config['mypy_path']
+
+
+@pytest.mark.medium
+class DescribeToxProvidesMypy:
+    def it_lists_mypy_in_the_default_test_environment_deps(self) -> None:
+        parser = configparser.ConfigParser(interpolation=None)
+        parser.read(REPO_ROOT / 'tox.ini')
+        deps = parser['testenv']['deps'].splitlines()
+
+        assert any(line.strip().startswith('mypy') for line in deps)
