@@ -6,8 +6,10 @@ section and provides sensible defaults when configuration is absent.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import configparser
 from dataclasses import dataclass
+import difflib
 import importlib.metadata
 import importlib.util
 import logging
@@ -16,6 +18,7 @@ from pathlib import Path
 import re
 import tomllib
 from tomllib import TOMLDecodeError
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +136,80 @@ def _read_timeout_seconds(tool_config: dict[str, object], key: str, example: int
     return raw
 
 
-def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
+_NORMALIZED_KEYS: dict[str, str] = {key.replace('-', '_'): key for key in CONFIG_KEYS}
+
+
+def _normalize_keys(tool_config: dict[str, object], on_warning: Callable[[str], None]) -> dict[str, Any]:
+    """Return the section keyed by underscore spelling, warning about unknown keys.
+
+    Every key is accepted with hyphens or underscores. An unknown key is reported through
+    ``on_warning`` with the closest valid key, and left out of the result.
+
+    Raises:
+        ValueError: If one key is given in both spellings.
+    """
+    settings: dict[str, Any] = {}
+    spelled_as: dict[str, str] = {}
+    for key, value in tool_config.items():
+        underscored = key.replace('-', '_')
+        if underscored in spelled_as:
+            raise ValueError(
+                f'[tool.pytest-gremlins] sets both {spelled_as[underscored]!r} and {key!r}, which are '
+                f'the same key. Use only one.'
+            )
+        spelled_as[underscored] = key
+        if underscored in _NORMALIZED_KEYS:
+            settings[underscored] = value
+        else:
+            on_warning(_unknown_key_message(key, underscored))
+    return settings
+
+
+def _unknown_key_message(key: str, underscored: str) -> str:
+    closest = difflib.get_close_matches(underscored, sorted(_NORMALIZED_KEYS), n=1)
+    if closest:
+        return (
+            f"[tool.pytest-gremlins] has unknown key '{key}' (ignored); did you mean '{_NORMALIZED_KEYS[closest[0]]}'?"
+        )
+    return f"[tool.pytest-gremlins] has unknown key '{key}' (ignored); valid keys: {', '.join(sorted(CONFIG_KEYS))}"
+
+
+def _read_string_list(settings: dict[str, object], key: str, example: str) -> list[str] | None:
+    """Return ``settings[key]`` as a list of non-empty strings, or None when the key is absent.
+
+    Raises:
+        ValueError: If the value is not a list of non-empty strings, naming the key and the value.
+    """
+    raw = settings.get(key)
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        raise ValueError(  # noqa: TRY004 — config validation uses ValueError consistently
+            f'[tool.pytest-gremlins].{key} must be a list of strings (e.g. {key} = {example}); '
+            f'use a list, not a bare string, got {raw!r}'
+        )
+    if not isinstance(raw, list) or not all(isinstance(item, str) and item for item in raw):
+        raise ValueError(
+            f'[tool.pytest-gremlins].{key} must be a list of strings (e.g. {key} = {example}), got {raw!r}'
+        )
+    return list(raw)
+
+
+def _check_operator_names(names: list[str]) -> None:
+    """Raise ValueError naming the first operator that is not registered, listing the valid ones."""
+    from pytest_gremlins.instrumentation.transformer import (  # noqa: PLC0415 — avoids an import cycle
+        get_default_registry,
+    )
+
+    valid = sorted(get_default_registry().available())
+    for name in names:
+        if name not in valid:
+            raise ValueError(
+                f"[tool.pytest-gremlins].operators has unknown operator '{name}'. Valid operators: {', '.join(valid)}"
+            )
+
+
+def load_config(rootdir: Path, on_warning: Callable[[str], None] | None = None) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
     """Load configuration from pyproject.toml.
 
     Reads the [tool.pytest-gremlins] section from pyproject.toml in the
@@ -142,9 +218,13 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
 
     Args:
         rootdir: Directory containing pyproject.toml.
+        on_warning: Receives one message per unknown key. Defaults to ``logging``.
 
     Returns:
         GremlinConfig with values from pyproject.toml or defaults.
+
+    Raises:
+        ValueError: If a value has the wrong type or shape, or a key is given in both spellings.
     """
     pyproject_path = rootdir / 'pyproject.toml'
 
@@ -158,7 +238,10 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
         logger.warning('Skipping gremlin config: malformed TOML in %s', pyproject_path)
         return GremlinConfig()
 
-    tool_config = pyproject_content.get('tool', {}).get('pytest-gremlins', {})
+    section = pyproject_content.get('tool', {}).get('pytest-gremlins', {})
+    if not isinstance(section, dict):
+        raise ValueError(f'[tool.pytest-gremlins] must be a table of settings, got {section!r}')  # noqa: TRY004
+    tool_config = _normalize_keys(section, on_warning or logger.warning)
 
     workers_raw = tool_config.get('workers')
     try:
@@ -226,7 +309,7 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
                 f'Unknown report format(s): {sorted(invalid)}. Valid formats: {sorted(VALID_REPORT_FORMATS)}'
             )
 
-    max_pardons_pct_raw = tool_config.get('max-pardons-pct')
+    max_pardons_pct_raw = tool_config.get('max_pardons_pct')
     if max_pardons_pct_raw is not None:
         if isinstance(max_pardons_pct_raw, bool) or not isinstance(max_pardons_pct_raw, (int, float)):
             logger.warning(
@@ -271,10 +354,16 @@ def load_config(rootdir: Path) -> GremlinConfig:  # noqa: C901, PLR0912, PLR0915
                 f'[tool.pytest-gremlins].max_pardons must be >= 0 (e.g. max_pardons = 5), got {max_pardons_raw!r}'
             )
 
+    operators = _read_string_list(tool_config, 'operators', '["comparison", "boundary"]')
+    if operators is not None:
+        _check_operator_names(operators)
+    paths = _read_string_list(tool_config, 'paths', '["src"]')
+    exclude = _read_string_list(tool_config, 'exclude', '["tests/*"]')
+
     return GremlinConfig(
-        operators=tool_config.get('operators'),
-        paths=tool_config.get('paths'),
-        exclude=tool_config.get('exclude'),
+        operators=operators,
+        paths=paths,
+        exclude=exclude,
         workers=workers_raw,
         cache=cache_raw,
         report=report_raw,

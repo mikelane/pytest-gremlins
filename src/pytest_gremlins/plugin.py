@@ -1032,9 +1032,10 @@ def pytest_configure(config: pytest.Config) -> None:
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
     # Load config from pyproject.toml and merge with CLI args
+    config_warnings: list[str] = []
     try:
         merged_config = merge_configs(
-            load_config(rootdir),
+            load_config(rootdir, on_warning=config_warnings.append),
             cli_operators=config.option.gremlin_operators,
             cli_targets=config.option.gremlin_targets,
             cli_exclude=config.option.gremlin_exclude,
@@ -1092,6 +1093,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config,
         GremlinSession(
             enabled=True,
+            terminal_notices=[f'pytest-gremlins: warning: {warning}' for warning in config_warnings],
             operators=operators,
             report_formats=report_formats,
             target_paths=target_paths,
