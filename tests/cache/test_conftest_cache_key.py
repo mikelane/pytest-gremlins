@@ -49,6 +49,15 @@ class DescribeConftestFoldedIntoTestHash:
 
         assert _session_for(tmp_path, [node_id]).test_hashes['tests/sub/test_a.py'] == before
 
+    def it_keeps_the_bare_file_hash_when_no_conftest_is_on_the_path(self, tmp_path: Path) -> None:
+        (tmp_path / 'tests').mkdir()
+        test_file = tmp_path / 'tests' / 'test_a.py'
+        test_file.write_text('def test_a(): pass\n')
+
+        session = _session_for(tmp_path, ['tests/test_a.py::test_a'])
+
+        assert session.test_hashes['tests/test_a.py'] == ContentHasher().hash_file(test_file)
+
 
 @pytest.mark.medium
 class DescribeUnmatchedSelectedTestIsNotCached:
@@ -72,13 +81,15 @@ class DescribeFilesystemRootAsRootdir:
         test_file.write_text('def test_a(): pass\n')
         filesystem_root = Path(tmp_path.anchor)
         relative = test_file.relative_to(filesystem_root).as_posix()
+        hashes: list[str] = []
         worker = threading.Thread(
-            target=plugin._hash_test_file_with_conftests,
-            args=(ContentHasher(), filesystem_root, relative),
+            target=lambda: hashes.append(
+                plugin._hash_test_file_with_conftests(ContentHasher(), filesystem_root, relative)
+            ),
             daemon=True,
         )
 
         worker.start()
         worker.join(timeout=5)
 
-        assert not worker.is_alive()
+        assert hashes == [ContentHasher().hash_file(test_file)]
