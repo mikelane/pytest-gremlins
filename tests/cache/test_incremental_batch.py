@@ -1,11 +1,12 @@
 """Tests for batch operations in IncrementalCache."""
 
 from pathlib import Path
-import time
 
 import pytest
 
 from pytest_gremlins.cache.incremental import IncrementalCache
+
+from .commit_counter import count_commits
 
 
 @pytest.mark.medium
@@ -13,13 +14,12 @@ class DescribeIncrementalCacheBatchOperations:
     """Tests for batch cache write support."""
 
     def it_batches_writes_in_deferred_cache_results(self, tmp_path: Path) -> None:
-        """cache_result_deferred batches writes for better performance."""
+        """cache_result_deferred defers every write to a single commit on flush."""
         cache_dir = tmp_path / '.gremlins_cache'
         num_gremlins = 100
 
         with IncrementalCache(cache_dir) as cache:
-            # Time deferred writes
-            start = time.perf_counter()
+            commits = count_commits(cache._store._conn)
             for i in range(num_gremlins):
                 cache.cache_result_deferred(
                     f'gremlin_{i}',
@@ -27,18 +27,17 @@ class DescribeIncrementalCacheBatchOperations:
                     {'test': 'hash'},
                     {'status': 'zapped'},
                 )
+            commits_before_flush = len(commits)
             cache.flush()
-            deferred_time = time.perf_counter() - start
+            commits_after_flush = len(commits)
 
-        # Verify all writes persisted
+        assert commits_before_flush == 0
+        assert commits_after_flush == 1
+
         with IncrementalCache(cache_dir) as cache:
             for i in range(num_gremlins):
                 result = cache.get_cached_result(f'gremlin_{i}', 'source_hash', {'test': 'hash'})
                 assert result == {'status': 'zapped'}
-
-        # Deferred writes should be fast (< 500ms for 100 entries)
-        # Note: Windows CI (especially Python 3.14) can be significantly slower
-        assert deferred_time < 0.5, f'Deferred writes took {deferred_time * 1000:.1f}ms for {num_gremlins} entries'
 
     def it_close_flushes_deferred_writes(self, tmp_path: Path) -> None:
         """Closing the cache flushes any pending deferred writes."""
