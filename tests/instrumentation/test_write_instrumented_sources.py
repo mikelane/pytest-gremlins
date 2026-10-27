@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import base64
 import json
 from pathlib import Path
 import pickle
@@ -337,3 +338,21 @@ class DescribeSpawnHookIsWritten:
         result_dir = _write_instrumented_sources({str(tmp_path / 'mymod.py'): ast.parse('x = 1')}, tmp_path)
 
         assert (result_dir / SPAWN_HOOK_DIRNAME / 'sitecustomize.py').is_file()
+
+
+@pytest.mark.small
+class DescribeUnpicklingATree:
+    """The loader reads both the compressed tree and the bare pickle of PR #610."""
+
+    def it_reads_a_bare_pickle(self) -> None:
+        encoded = base64.b64encode(pickle.dumps(ast.parse('x = 1'))).decode('ascii')
+
+        tree = GremlinLoader._unpickle_tree(encoded)
+
+        assert tree is not None
+        assert ast.dump(tree) == ast.dump(ast.parse('x = 1'))
+
+    def it_returns_none_for_a_corrupt_compressed_payload(self) -> None:
+        encoded = base64.b64encode(b'\x78\x9cnot a zlib stream').decode('ascii')
+
+        assert GremlinLoader._unpickle_tree(encoded) is None
