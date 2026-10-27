@@ -32,7 +32,10 @@ TRACEBACK_MARKER = 'Traceback (most recent call last)'
 class DescribeDiagnosticsUnderFilterwarningsError:
     """A user's ``filterwarnings = error`` cannot turn the plugin's own diagnostics into a crash."""
 
-    def it_reports_empty_coverage_data_without_crashing(self, pytester: pytest.Pytester) -> None:
+    def it_reports_empty_coverage_data_without_crashing(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
         pytester.makeini(PYTEST_INI_WITH_ESCALATED_WARNINGS)
         pytester.makeconftest(EMPTY_COVERAGE_CONFTEST)
         pytester.makepyfile(target=TARGET, test_target=FAST_TEST)
@@ -44,7 +47,10 @@ class DescribeDiagnosticsUnderFilterwarningsError:
         assert TRACEBACK_MARKER not in output
         assert 'Coverage collection returned no data' in output
 
-    def it_reports_a_pre_scan_timeout_without_crashing(self, pytester: pytest.Pytester) -> None:
+    def it_reports_a_pre_scan_timeout_without_crashing(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
         pytester.makeini(PYTEST_INI_WITH_ESCALATED_WARNINGS)
         pytester.makepyfile(target=TARGET, test_target=SLOW_UNDER_COVERAGE_TEST)
 
@@ -57,7 +63,10 @@ class DescribeDiagnosticsUnderFilterwarningsError:
         assert TRACEBACK_MARKER not in output
         assert 'coverage pre-scan exceeded 1s' in output
 
-    def it_survives_a_partial_coverage_map_without_crashing(self, pytester: pytest.Pytester) -> None:
+    def it_survives_a_partial_coverage_map_without_crashing(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
         pytester.makeini(PYTEST_INI_WITH_ESCALATED_WARNINGS)
         pytester.makeconftest(PARTIAL_COVERAGE_CONFTEST)
         pytester.makepyfile(target=TARGET, test_target=FAST_TEST)
