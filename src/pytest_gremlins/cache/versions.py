@@ -9,11 +9,10 @@ from importlib.metadata import (
 
 from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 
-# Raise this on any change that could alter a verdict for the same source and tests: operators,
-# instrumentation, or how verdicts are decided. tests/cache/test_cache_version_guard.py fails until you do.
-# CACHE_VERSION covers what gets mutated (operators/, instrumentation/); RUNNER_FIDELITY_VERSION in
-# incremental.py covers test execution and outcome-to-verdict mapping (parallel/, control_run.py and the
-# gremlin subprocess command-line code: node_id_args.py, node_id_file.py, rerun_options.py, xdist_options.py).
+# Raise this on any change that could alter a verdict, or which gremlins exist, for the same source and tests.
+# tests/cache/test_cache_version_guard.py fails until you decide. It guards every .py file in the package except a
+# reviewed exclusion list, so a new file is covered without editing a list. CACHE_VERSION covers what gets mutated;
+# RUNNER_FIDELITY_VERSION in incremental.py covers test execution and outcome-to-verdict mapping.
 CACHE_VERSION = 1
 
 
