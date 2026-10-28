@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf18'
+RUNNER_FIDELITY_VERSION = 'rf19'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
@@ -78,6 +78,9 @@ by a command-line ``-p`` while autoload was disabled for them, by ``PYTEST_DISAB
 
 ``rf18`` retires verdicts cached under a key that ignored the rerun settings beyond count and delay (backoff factor,
 ``only_rerun``, ``rerun_except``, ``--reruns-mode``, ``--rerun-exclude-path``, ``--max-suite-reruns``; #677).
+
+``rf19`` retires verdicts cached under a key that ignored ``conftest.py`` files above the covering tests, and
+verdicts cached for a gremlin whose selected test had no node id (#702).
 
 It also retires verdicts cached while doctest gremlins errored, because ``--doctest-modules`` typed on the command
 line never reached gremlin runs, and verdicts cached as ZAPPED while ``doctest_optionflags`` or
