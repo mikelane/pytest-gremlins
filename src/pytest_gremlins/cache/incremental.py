@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf19'
+RUNNER_FIDELITY_VERSION = 'rf20'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 This marker covers test execution and outcome-to-verdict mapping (``parallel/``, ``control_run.py``);
@@ -85,9 +85,11 @@ by a command-line ``-p`` while autoload was disabled for them, by ``PYTEST_DISAB
 ``only_rerun``, ``rerun_except``, ``--reruns-mode``, ``--rerun-exclude-path``, ``--max-suite-reruns``; #677).
 
 ``rf19`` retires verdicts cached under a key that ignored ``conftest.py`` files above the covering tests, and
-verdicts cached for a gremlin whose selected test had no node id (#702). It also retires every verdict cached under
-a key that carried the mutant timeout (#567). The timeout now lives in the stored value, so a verdict can be reused
-at a different limit when it would not change; old entries are pruned when the cache opens.
+verdicts cached for a gremlin whose selected test had no node id (#702).
+
+``rf20`` retires verdicts cached under a key that included the mutant timeout (#567). The timeout now lives in the
+stored value, so a verdict can be reused at a different limit when it would not change; old entries are pruned when
+the cache opens.
 
 It also retires verdicts cached while doctest gremlins errored, because ``--doctest-modules`` typed on the command
 line never reached gremlin runs, and verdicts cached as ZAPPED while ``doctest_optionflags`` or
