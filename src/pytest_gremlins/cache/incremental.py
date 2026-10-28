@@ -14,6 +14,7 @@ from typing import (
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore
+from pytest_gremlins.cache.versions import installed_versions_fingerprint
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -22,8 +23,11 @@ if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
 
-RUNNER_FIDELITY_VERSION = 'rf18'
+RUNNER_FIDELITY_VERSION = 'rf19'
 """Bump when a change to how tests are executed can alter cached verdicts.
+
+This marker covers test execution and outcome-to-verdict mapping (``parallel/``, ``control_run.py``);
+``CACHE_VERSION`` in ``versions.py`` covers what gets mutated (``operators/``, ``instrumentation/``).
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
 lightweight runner. That runner could fabricate verdicts (async, parametrized, fixture-taking tests,
@@ -78,6 +82,9 @@ by a command-line ``-p`` while autoload was disabled for them, by ``PYTEST_DISAB
 
 ``rf18`` retires verdicts cached under a key that ignored the rerun settings beyond count and delay (backoff factor,
 ``only_rerun``, ``rerun_except``, ``--reruns-mode``, ``--rerun-exclude-path``, ``--max-suite-reruns``; #677).
+
+``rf19`` retires verdicts cached under a key that ignored ``conftest.py`` files above the covering tests, and
+verdicts cached for a gremlin whose selected test had no node id (#702).
 
 It also retires verdicts cached while doctest gremlins errored, because ``--doctest-modules`` typed on the command
 line never reached gremlin runs, and verdicts cached as ZAPPED while ``doctest_optionflags`` or
@@ -169,6 +176,7 @@ class IncrementalCache:
     - optimize_level: the optimize level the gremlin subprocess compiled under
     - rerun_budget: the ``(reruns, reruns_delay)`` the gremlin runs were allowed
     - rerun_settings: the other resolved rerun settings (backoff factor, filters, mode, exclusions, suite cap)
+    - versions: ``CACHE_VERSION`` and operator-package versions (any change retires the whole cache)
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
 
@@ -190,6 +198,7 @@ class IncrementalCache:
         self._cache_dir = cache_dir
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
+        self._versions_hash = self._hasher.hash_string(installed_versions_fingerprint())
         self._hits = 0
         self._misses = 0
 
@@ -237,7 +246,8 @@ class IncrementalCache:
         reruns, reruns_delay = _effective_rerun_budget(rerun_budget)
         return (
             f'{gremlin_id}:{source_hash}:{combined_test_hash}:timeout={mutant_timeout}'
-            f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}:{RUNNER_FIDELITY_VERSION}'
+            f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}'
+            f':v={self._versions_hash}:{RUNNER_FIDELITY_VERSION}'
         )
 
     def get_cached_result(
