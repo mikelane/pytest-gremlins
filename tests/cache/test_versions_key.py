@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from typing import TYPE_CHECKING
 
 import pytest
@@ -95,11 +96,8 @@ class DescribeInstalledVersionsFingerprint:
         _install_operator_dist(operator_site, 'gremlin_ep_dist', '1.0')
         before = installed_versions_fingerprint()
 
+        shutil.rmtree(operator_site / 'gremlin_ep_dist-1.0.dist-info')
         _install_operator_dist(operator_site, 'gremlin_ep_dist', '2.0')
-        # both dist-infos now exist; remove the old one to model an upgrade
-        for old in operator_site.glob('gremlin_ep_dist-1.0.dist-info/*'):
-            old.unlink()
-        (operator_site / 'gremlin_ep_dist-1.0.dist-info').rmdir()
 
         assert installed_versions_fingerprint() != before
 

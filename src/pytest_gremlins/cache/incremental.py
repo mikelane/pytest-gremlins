@@ -173,7 +173,7 @@ class IncrementalCache:
     - optimize_level: the optimize level the gremlin subprocess compiled under
     - rerun_budget: the ``(reruns, reruns_delay)`` the gremlin runs were allowed
     - rerun_settings: the other resolved rerun settings (backoff factor, filters, mode, exclusions, suite cap)
-    - versions: pytest-gremlins and operator-package versions (any change retires the whole cache)
+    - versions: ``CACHE_VERSION`` and operator-package versions (any change retires the whole cache)
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
 
