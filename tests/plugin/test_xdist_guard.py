@@ -45,19 +45,15 @@ class DescribeXdistHookGuard:
     the source (and pytest's cached bytecode) from the installed package directory.
     """
 
-    def it_defines_pytest_configure_node_when_xdist_available(self) -> None:
-        """With xdist installed (our dev env), the hook exists."""
-        mod = _load_plugin_fresh(block_xdist=False)
-        assert hasattr(mod, 'pytest_configure_node')
-
     def it_defines_pytest_xdist_node_collection_finished_when_xdist_available(self) -> None:
         """With xdist installed (our dev env), the hook exists."""
         mod = _load_plugin_fresh(block_xdist=False)
         assert hasattr(mod, 'pytest_xdist_node_collection_finished')
 
-    def it_omits_pytest_configure_node_when_xdist_unavailable(self) -> None:
-        """Without xdist, pytest_configure_node is not defined on the module."""
-        mod = _load_plugin_fresh(block_xdist=True)
+    @pytest.mark.parametrize('block_xdist', [False, True], ids=['xdist-available', 'xdist-unavailable'])
+    def it_never_defines_pytest_configure_node(self, block_xdist: bool) -> None:
+        """No worker input is injected: workers need nothing from the controller (#533)."""
+        mod = _load_plugin_fresh(block_xdist=block_xdist)
         assert not hasattr(mod, 'pytest_configure_node')
 
     def it_omits_pytest_xdist_node_collection_finished_when_xdist_unavailable(self) -> None:

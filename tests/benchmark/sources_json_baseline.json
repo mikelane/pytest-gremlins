@@ -1,0 +1,5 @@
+{
+  "argparse": {"size_ratio": 0.28, "decode_compile_ratio": 1.0},
+  "textwrap": {"size_ratio": 0.32, "decode_compile_ratio": 1.0},
+  "shlex": {"size_ratio": 0.29, "decode_compile_ratio": 1.0}
+}
