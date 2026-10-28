@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from pytest_gremlins import __version__
 from pytest_gremlins.cache import incremental
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.versions import installed_versions_fingerprint
@@ -13,7 +14,10 @@ from pytest_gremlins.cache.versions import installed_versions_fingerprint
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from pytest_gremlins.cache.types import CachedGremlinResult
+
 TEST_HASHES = {'tests/test_x.py::test_a': 'hash_a'}
+ZAPPED: CachedGremlinResult = {'status': 'zapped', 'killing_test': 'tests/test_x.py::test_a', 'execution_time_ms': 1.0}
 
 
 def _install_operator_dist(site: Path, dist_name: str, version: str) -> None:
@@ -35,33 +39,41 @@ def operator_site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 class DescribeVersionsInCacheKey:
     """Upgrading pytest-gremlins or an operator package retires cached verdicts."""
 
-    def it_misses_after_pytest_gremlins_changes_version(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize(
+        ('cached_under', 'read_under'),
+        [
+            pytest.param('1.0.0', '1.0.1', id='upgrade'),
+            pytest.param('1.0.1', '1.0.0', id='downgrade'),
+        ],
+    )
+    def it_misses_after_pytest_gremlins_changes_version(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cached_under: str, read_under: str
+    ) -> None:
         cache_dir = tmp_path / '.gremlins_cache'
-        monkeypatch.setattr('pytest_gremlins.cache.versions.__version__', '1.0.0')
+        monkeypatch.setattr('pytest_gremlins.cache.versions.__version__', cached_under)
         with IncrementalCache(cache_dir) as cache:
-            cache.cache_result('g001', 'src_hash', TEST_HASHES, {'status': 'zapped'})  # type: ignore[arg-type]
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
 
-        monkeypatch.setattr('pytest_gremlins.cache.versions.__version__', '1.0.1')
+        monkeypatch.setattr('pytest_gremlins.cache.versions.__version__', read_under)
         with IncrementalCache(cache_dir) as cache:
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
-    def it_misses_after_pytest_gremlins_is_downgraded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_misses_after_an_operator_package_is_installed(self, tmp_path: Path, operator_site: Path) -> None:
         cache_dir = tmp_path / '.gremlins_cache'
-        monkeypatch.setattr('pytest_gremlins.cache.versions.__version__', '1.0.1')
         with IncrementalCache(cache_dir) as cache:
-            cache.cache_result('g001', 'src_hash', TEST_HASHES, {'status': 'zapped'})  # type: ignore[arg-type]
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
 
-        monkeypatch.setattr('pytest_gremlins.cache.versions.__version__', '1.0.0')
+        _install_operator_dist(operator_site, 'gremlin_ep_dist', '1.0')
         with IncrementalCache(cache_dir) as cache:
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
     def it_hits_when_no_version_changed(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / '.gremlins_cache'
         with IncrementalCache(cache_dir) as cache:
-            cache.cache_result('g001', 'src_hash', TEST_HASHES, {'status': 'zapped'})  # type: ignore[arg-type]
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
 
         with IncrementalCache(cache_dir) as cache:
-            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == {'status': 'zapped'}
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == ZAPPED
 
     def it_ends_the_key_with_the_runner_fidelity_version(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
@@ -92,6 +104,14 @@ class DescribeInstalledVersionsFingerprint:
         _install_operator_dist(operator_site, 'gremlin_ep_dist', '1.0')
 
         assert installed_versions_fingerprint() != before
+
+    def it_names_pytest_gremlins_and_each_operator_distribution_with_its_version(self, operator_site: Path) -> None:
+        _install_operator_dist(operator_site, 'gremlin_ep_dist', '1.0')
+
+        fingerprint = installed_versions_fingerprint()
+
+        assert fingerprint.split('|')[0] == f'pytest-gremlins=={__version__}'
+        assert 'gremlin_ep_dist==1.0' in fingerprint.split('|')
 
     def it_is_stable_when_nothing_changed(self, operator_site: Path) -> None:
         _install_operator_dist(operator_site, 'gremlin_ep_dist', '1.0')
