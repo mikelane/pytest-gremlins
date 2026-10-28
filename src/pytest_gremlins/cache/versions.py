@@ -28,8 +28,10 @@ if TYPE_CHECKING:
 _OWN_DISTRIBUTION = 'pytest-gremlins'
 
 # A distribution with unreadable or malformed metadata is skipped; it must never break pytest_configure.
-# UnicodeDecodeError is a ValueError.
-_UNREADABLE_METADATA = (OSError, ValueError, KeyError, TypeError, AttributeError)
+# UnicodeDecodeError and json.JSONDecodeError are ValueErrors; importlib.metadata raises TypeError for a RECORD row
+# with too many fields. Shape problems in direct_url.json are checked
+# explicitly in _editable_project_directory, so a bad editable marker never costs a distribution its label.
+_UNREADABLE_METADATA = (OSError, ValueError, TypeError)
 
 # Raise this on any change that could alter a verdict, or which gremlins exist, for the same source and tests.
 # tests/cache/test_cache_version_guard.py fails until you decide. It guards every .py file in the package except a
@@ -89,14 +91,23 @@ def _module_location(top_level_module: str) -> Path | None:
 
 
 def _editable_project_directory(dist: Distribution) -> Path | None:
-    """Return the project directory of a PEP 610 editable install (``direct_url.json``), if it is one."""
-    raw = dist.read_text('direct_url.json')
-    if raw is None:
+    """Return the project directory of a PEP 610 editable install (``direct_url.json``), if it is one.
+
+    PEP 610 makes ``dir_info.editable`` default to false, so a local directory install without the key, a VCS
+    install and an archive install are all non-editable. A malformed file is treated as non-editable too.
+    """
+    try:
+        raw = dist.read_text('direct_url.json')
+        direct_url = json.loads(raw) if raw is not None else None
+    except _UNREADABLE_METADATA:
         return None
-    direct_url = json.loads(raw)
-    if not direct_url['dir_info']['editable']:
+    if not isinstance(direct_url, dict):
         return None
-    return Path(url2pathname(urlparse(direct_url['url']).path)).resolve()
+    dir_info = direct_url.get('dir_info')
+    url = direct_url.get('url')
+    if not isinstance(dir_info, dict) or dir_info.get('editable') is not True or not isinstance(url, str):
+        return None
+    return Path(url2pathname(urlparse(url).path)).resolve()
 
 
 @dataclass(frozen=True)
@@ -159,7 +170,7 @@ def _operator_owner_labels(operators: Iterable[GremlinOperator], project_root: P
     candidates = {
         type(operator).__module__.partition('.')[0]
         for operator in operators
-        if not type(operator).__module__.startswith('pytest_gremlins.')
+        if type(operator).__module__.partition('.')[0] != 'pytest_gremlins'
     }
     locations = {module: _module_location(module) for module in candidates}
     wanted = {

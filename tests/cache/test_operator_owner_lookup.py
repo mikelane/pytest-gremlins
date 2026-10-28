@@ -29,6 +29,7 @@ MODULES = (
     'qa_cost_a',
     'qa_cost_b',
     'qa_cost_c',
+    'direct_url_ops',
 )
 
 
@@ -159,7 +160,7 @@ class DescribeOperatorOwnerLookupGaps:
 
         assert 'qa_badurl_dist' not in fingerprint
 
-    def it_reads_each_distribution_record_at_most_once_for_several_project_local_operators(
+    def it_reads_each_distribution_record_at_most_once_for_several_operators_no_distribution_owns(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         local = tmp_path / 'local'
@@ -175,34 +176,78 @@ class DescribeOperatorOwnerLookupGaps:
 
         def counting_read_text(self: PathDistribution, filename: str) -> str | None:
             if filename == 'RECORD':
-                reads[str(self._path)] += 1  # type: ignore[attr-defined]
+                reads[str(self._path)] += 1
             return original(self, filename)
 
         monkeypatch.setattr(PathDistribution, 'read_text', counting_read_text)
 
         installed_versions_fingerprint(operators)
 
-        assert max(reads.values()) <= 1
+        assert max(reads.values(), default=0) <= 1
 
 
-META = 'Metadata-Version: 2.1\nName: brokenpkg\nVersion: 1.0\n'
-BROKEN_DIST_INFO_FILES = {
+def _install_owner(site: Path, direct_url: dict[str, object] | None) -> None:
+    """Lay out an installed owner of ``direct_url_ops`` the way pip/uv do (RECORD, no top_level.txt)."""
+    package = site / 'direct_url_ops'
+    package.mkdir()
+    (package / '__init__.py').write_text(OPERATOR_SOURCE)
+    dist_info = _dist_info(
+        site, 'direct-url-dist', 'direct_url_ops/__init__.py,,\ndirect_url_dist-1.0.dist-info/RECORD,,\n'
+    )
+    if direct_url is not None:
+        (dist_info / 'direct_url.json').write_text(json.dumps(direct_url))
+    importlib.invalidate_caches()
+
+
+NON_EDITABLE_DIRECT_URLS: dict[str, dict[str, object]] = {
+    'local_directory': {'url': 'file:///somewhere/direct-url-dist', 'dir_info': {}},
+    'explicit_not_editable': {'url': 'file:///somewhere/direct-url-dist', 'dir_info': {'editable': False}},
+    'vcs': {'url': 'https://example.com/direct-url-dist.git', 'vcs_info': {'vcs': 'git', 'commit_id': 'a' * 40}},
+    'archive': {'url': 'file:///somewhere/direct_url_dist-1.0-py3-none-any.whl', 'archive_info': {}},
+}
+
+
+@pytest.mark.medium
+class DescribeOwnersInstalledFromADirectUrl:
+    @pytest.mark.parametrize('shape', sorted(NON_EDITABLE_DIRECT_URLS))
+    def it_labels_the_owner_of_a_non_editable_direct_url_install(self, shape: str, site: Path) -> None:
+        _install_owner(site, NON_EDITABLE_DIRECT_URLS[shape])
+
+        fingerprint = installed_versions_fingerprint([_operator_from('direct_url_ops')])
+
+        assert 'direct-url-dist==1.0' in fingerprint
+
+    def it_labels_the_owner_of_an_index_install_without_a_direct_url(self, site: Path) -> None:
+        _install_owner(site, None)
+
+        fingerprint = installed_versions_fingerprint([_operator_from('direct_url_ops')])
+
+        assert 'direct-url-dist==1.0' in fingerprint
+
+
+META = b'Metadata-Version: 2.1\nName: brokenpkg\nVersion: 1.0\n'
+BROKEN_DIST_INFO_FILES: dict[str, dict[str, bytes]] = {
     'no_metadata': {},
-    'record_with_four_fields': {'METADATA': META, 'RECORD': 'a.py,,,extra\n'},
-    'record_with_non_integer_size': {'METADATA': META, 'RECORD': 'a.py,,notint\n'},
+    'record_with_four_fields': {'METADATA': META, 'RECORD': b'a.py,,,extra\n'},
+    'record_with_non_integer_size': {'METADATA': META, 'RECORD': b'a.py,,notint\n'},
     'top_level_not_utf8': {'METADATA': META, 'top_level.txt': b'\xff\xfe\x00bad'},
     'metadata_not_utf8': {'METADATA': b'Name: \xff\n'},
     'direct_url_not_utf8': {'METADATA': META, 'direct_url.json': b'\xff{}'},
-    'direct_url_not_an_object': {'METADATA': META, 'direct_url.json': '[1]'},
+    'direct_url_not_an_object': {'METADATA': META, 'direct_url.json': b'[1]'},
     'direct_url_dir_info_not_an_object': {
         'METADATA': META,
-        'direct_url.json': json.dumps({'url': 'file:///x', 'dir_info': 'str'}),
+        'direct_url.json': json.dumps({'url': 'file:///x', 'dir_info': 'str'}).encode(),
     },
     'direct_url_url_not_a_string': {
         'METADATA': META,
-        'direct_url.json': json.dumps({'url': 5, 'dir_info': {'editable': True}}),
+        'direct_url.json': json.dumps({'url': 5, 'dir_info': {'editable': True}}).encode(),
     },
 }
+
+
+def _write_files(directory: Path, files: dict[str, bytes]) -> None:
+    for filename, content in files.items():
+        (directory / filename).write_bytes(content)
 
 
 @pytest.mark.medium
@@ -218,8 +263,7 @@ class DescribeBrokenDistributionMetadata:
         monkeypatch.syspath_prepend(str(local))
         dist_info = site / 'brokenpkg-1.0.dist-info'
         dist_info.mkdir()
-        for filename, content in BROKEN_DIST_INFO_FILES[shape].items():
-            (dist_info / filename).write_bytes(content if isinstance(content, bytes) else content.encode())
+        _write_files(dist_info, BROKEN_DIST_INFO_FILES[shape])
         importlib.invalidate_caches()
 
         fingerprint = installed_versions_fingerprint([_operator_from('broken_dist_ops')])

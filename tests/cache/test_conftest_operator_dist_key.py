@@ -5,10 +5,7 @@ from __future__ import annotations
 import importlib
 import shutil
 import sys
-from typing import (
-    TYPE_CHECKING,
-    Any,
-)
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -20,10 +17,12 @@ from pytest_gremlins.cache.versions import (
 from pytest_gremlins.operators import ComparisonOperator
 
 if TYPE_CHECKING:
+    import ast
     from collections.abc import Iterator
     from pathlib import Path
 
     from pytest_gremlins.cache.types import CachedGremlinResult
+    from pytest_gremlins.operators.protocol import GremlinOperator
 
 TEST_HASHES = {'tests/test_x.py::test_a': 'hash_a'}
 ZAPPED: CachedGremlinResult = {'status': 'zapped', 'killing_test': 'tests/test_x.py::test_a', 'execution_time_ms': 1.0}
@@ -44,8 +43,9 @@ def _uninstall_package(site: Path, dist_name: str, version: str) -> None:
     importlib.invalidate_caches()
 
 
-def _supplied_operator() -> Any:
-    return importlib.import_module('supplied_ops').SuppliedOperator()
+def _supplied_operator() -> GremlinOperator:
+    operator: GremlinOperator = importlib.import_module('supplied_ops').SuppliedOperator()
+    return operator
 
 
 @pytest.fixture
@@ -59,6 +59,13 @@ def site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 
 class LocalOperator:
     name = 'local'
+    description = 'Operator defined in the test module itself'
+
+    def can_mutate(self, _node: ast.AST) -> bool:
+        return False
+
+    def mutate(self, _node: ast.AST) -> list[ast.AST]:
+        return []
 
 
 @pytest.mark.medium
