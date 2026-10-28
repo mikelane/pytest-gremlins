@@ -54,94 +54,48 @@ class GremlinOperator(Protocol):
 
 ### The Registry
 
-```python
-from typing import Callable
+The registry is an instance. `get_default_registry()` returns the one a run reads.
 
+```python
 class OperatorRegistry:
     """Central registry for gremlin operators."""
 
-    _operators: dict[str, type[GremlinOperator]] = {}
-
-    @classmethod
-    def register(cls, name: str | None = None) -> Callable:
-        """Decorator to register an operator class.
-
-        Usage:
-            @OperatorRegistry.register("comparison")
-            class ComparisonOperator(GremlinOperator):
-                ...
-
-            # Or use the class's name property
-            @OperatorRegistry.register()
-            class ArithmeticOperator(GremlinOperator):
-                name = "arithmetic"
-                ...
-        """
-        def decorator(op_class: type[GremlinOperator]) -> type[GremlinOperator]:
-            key = name or op_class.name
-            cls._operators[key] = op_class
-            return op_class
-        return decorator
-
-    @classmethod
-    def get(cls, name: str) -> GremlinOperator:
-        """Get a single operator by name."""
-        return cls._operators[name]()
-
-    @classmethod
-    def get_all(cls, enabled: list[str] | None = None) -> list[GremlinOperator]:
-        """Get operator instances.
-
-        Args:
-            enabled: If provided, only return these operators (in order).
-                     If None, return all registered operators.
-        """
-        if enabled is None:
-            return [op() for op in cls._operators.values()]
-        return [
-            cls._operators[name]()
-            for name in enabled
-            if name in cls._operators
-        ]
-
-    @classmethod
-    def available(cls) -> list[str]:
-        """List all registered operator names."""
-        return list(cls._operators.keys())
+    def register(self, operator_class: type[GremlinOperator], name: str | None = None) -> None: ...
+    def register_decorator(self, name: str | None = None) -> Callable: ...
+    def get(self, name: str) -> GremlinOperator: ...
+    def get_class(self, name: str) -> type[GremlinOperator]: ...
+    def get_all(self, enabled: list[str] | None = None) -> list[GremlinOperator]: ...
+    def available(self) -> list[str]: ...
 ```
 
 ### Entry Points for Third-Party Operators
 
-External packages can register operators via Python entry points:
+External packages register operators through the `pytest_gremlins.operators` entry-point group. The entry
+point loads a callable that receives an `OperatorRegistry`:
 
 ```toml
 # In third-party package's pyproject.toml
 [project.entry-points."pytest_gremlins.operators"]
-django = "pytest_gremlins_django:register_operators"
+django = "pytest_gremlins_django:register"
 ```
 
 ```python
 # In pytest_gremlins_django/__init__.py
-from pytest_gremlins import OperatorRegistry
+from pytest_gremlins.operators import OperatorRegistry
 
-def register_operators():
+
+def register(registry: OperatorRegistry) -> None:
     """Called by pytest-gremlins to register our operators."""
-    from .operators import DjangoQuerySetOperator, DjangoModelOperator
-    OperatorRegistry.register("django-queryset")(DjangoQuerySetOperator)
-    OperatorRegistry.register("django-model")(DjangoModelOperator)
+    from .operators import DjangoModelOperator, DjangoQuerySetOperator
+
+    registry.register(DjangoQuerySetOperator, name="django-queryset")
+    registry.register(DjangoModelOperator, name="django-model")
 ```
 
-Auto-discovery at startup:
-
-```python
-from importlib.metadata import entry_points
-
-def discover_operators():
-    """Load operators from entry points."""
-    for ep in entry_points(group="pytest_gremlins.operators"):
-        register_fn = ep.load()
-        register_fn()
-```
+With `--gremlins`, `pytest_configure` calls `load_entry_point_operators` (in
+`pytest_gremlins.operators.entry_points`) just before it reads operators from the default registry. Each
+callable gets a scratch registry that is merged only if the callable succeeds. A name that is already
+registered is never replaced. See the [extensibility guide](../guide/extensibility.md#method-3-entry-points).
 
 ---
 

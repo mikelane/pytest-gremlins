@@ -291,6 +291,7 @@ jobs:
     steps:
       - name: Verify all jobs succeeded
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           SRC_CHANGED: ${{ needs.changes.outputs.src }}
           DOCS_CHANGED: ${{ needs.changes.outputs.docs }}
           LINT_RESULT: ${{ needs.lint.result }}
@@ -301,6 +302,12 @@ jobs:
           SECURITY_RESULT: ${{ needs.security.result }}
           ATTRS_SMOKE_RESULT: ${{ needs.attrs-smoke.result }}
         run: |
+          # Without a successful Detect Changes the outputs below are empty, so every gated check would look skipped
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Detect Changes did not succeed: $CHANGES_RESULT"
+            exit 1
+          fi
+
           # For docs-only changes, skip src-related checks
           if [[ "$SRC_CHANGED" == "true" ]]; then
             if [[ "$LINT_RESULT" != "success" ]] || \
