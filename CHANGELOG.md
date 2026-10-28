@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.13.0 (2026-10-28)
+
+**Operator packages can now register themselves through entry points, the cache now notices when pytest-gremlins or
+an operator package changes, and a batch of crash and false-kill fixes lands.** The first run after upgrading starts
+from an empty cache.
+
+### Upgrade notes
+
+- **The first run after upgrading to 1.13.0 starts from an empty cache, once.** Cached verdicts are now keyed on a
+  cache version and on the exact version of every installed package that provides a `pytest_gremlins.operators` entry
+  point, and test files are now hashed together with every `conftest.py` above them. Later patch upgrades keep the
+  cache unless the release raises the cache version. Installing, removing or upgrading an operator package
+  invalidates it. Operators registered from `conftest.py` are not tracked yet (#873): after changing them, run with
+  `--gremlin-clear-cache`. (#702, #758, #867, #874)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/architecture/incremental-analysis/#version-compatibility)
+- **pytest 9.2 rejects an integer `reruns` value in the ini or TOML config.** pytest-rerunfailures declares `reruns`
+  as a string option, and pytest 9.2 now enforces that before pytest-gremlins starts. Write `reruns = "2"`, not
+  `reruns = 2`. (#862, #863)
+  (no docs: this is a pytest 9.2 change, not a pytest-gremlins one)
+
+### Feature
+
+- **Operator packages are discovered through entry points.** A package that declares a `pytest_gremlins.operators`
+  entry point has its operators registered as soon as it is installed, with no `conftest.py` needed. A broken entry
+  point emits a `GremlinEntryPointWarning` and the others still load. (#742, #788)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/extensibility/#method-3-entry-points)
+
+### Fix
+
+- **Custom operators that match function or method calls produced no gremlins.** `ast.Call` nodes are now offered to
+  operators, so the documented Django QuerySet example works. (#698, #757)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/extensibility/#which-nodes-an-operator-is-offered)
+- **Editing a `conftest.py` did not invalidate cached verdicts.** A cached ZAPPED or SURVIVED verdict could be
+  replayed after a fixture change. A gremlin whose selected test has no matching node id is no longer cached.
+  (#702, #758)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/architecture/parallelization/#cached-results)
+- **Wrong-typed `[tool.pytest-gremlins]` values raised INTERNALERROR.** They now exit 4 with a clear message. Unknown
+  keys warn and name the closest valid key, and every hyphenated key also accepts its underscore spelling. (#566,
+  #787)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#key-spelling-validation-and-unknown-keys)
+- **`filterwarnings = error` could crash a green run.** The "Coverage collection returned no data", pre-scan timeout
+  and pre-scan launch failure notices now go to stderr instead of through `warnings`, so a warning filter can't turn
+  them into exceptions. (#543, #759)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#coverage-pre-scan-timeout)
+- **On pytest 9.2, `filterwarnings = error` aborted the coverage pre-scan.** The run crashed or, under narrower
+  filters, every gremlin ran every test. The pre-scan now ignores pytest's assert-rewrite warning for the plugin
+  itself. (#862, #863)
+  (no docs: restores the documented coverage pre-scan behavior on pytest 9.2)
+- **A per-test `flaky(reruns=N)` marker could time a mutant out as a false kill.** The rerun-scaled mutant timeout
+  now covers the widest per-test rerun count, not only the global `--reruns`. (#696, #791)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
+- **`--setup-plan`, `--setup-only`, `--fixtures` and `--fixtures-per-test` still ran the mutation phase.** They now
+  skip it like `--collect-only`, with a stderr notice that names the mode. (#528, #756)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#configuration-validation)
+- **`--cov` in `PYTEST_ADDOPTS` silently disabled coverage-guided test selection.** The coverage pre-scan now strips
+  it, so gremlins run only their covering tests again. (#669, #770)
+  (no docs: restores documented coverage-guided selection and adds no option or output)
+- **An INTERNALERROR when the coverage C tracer was unavailable and warnings were errors.** An unused coverage instance
+  caused it and has been removed. (#533, #768)
+  (no docs: fixes a crash; the removed hook and fixture were internal)
+- **A failed node-ids file write aborted the whole session.** The affected gremlin is now scored ERROR with a
+  diagnostic, and the rest of the run and the report complete. (#625, #763)
+  (no docs: turns a crash into the existing ERROR verdict)
+- **Reports for return gremlins showed the instrumented switch expression.** Diffs and reports now show the line you
+  wrote. (#639, #851)
+  (no docs: restores the documented report output)
+
+### Internal
+
+- The pickled AST in `sources.json` is zlib-compressed, which shrinks the payload each gremlin run loads to roughly a
+  third on the benchmark modules. A benchmark guards its size and decode time. (#612, #805)
+- GitHub Releases for PEP 440 alpha, beta and rc tags are now marked as prereleases. (#772)
+- CI: actions are pinned to commit SHAs, required checks run on `merge_group`, and `All Checks Passed` fails when
+  change detection does not succeed. (#775, #843, #861)
+- Tests: warm-cache verdicts are checked against a cold run, and timing-sensitive cache and chain-growth tests count
+  calls instead of measuring wall-clock time. (#558, #642, #769, #812, #822, #832, #846)
+- Dependencies: bumped commitizen, coverage, playwright, pre-commit, ruff, tox, tox-uv and `astral-sh/setup-uv`,
+  added `types-PyYAML` to the dev group, and bumped msgpack, pillow, virtualenv, filelock, uv and certifi to clear
+  pip-audit advisories. (#737, #738, #739, #740, #741, #744, #749, #750, #751, #776, #854, #855, #859, #860)
+
 ## v1.12.2 (2026-10-18)
 
 **The Stryker export no longer crashes on an unusual `# coding:` line, and the docs gain a page on how a gremlin run
