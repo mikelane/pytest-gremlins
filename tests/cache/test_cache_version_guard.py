@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import re
 import shutil
 
 import pytest
@@ -32,6 +33,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[2] / 'src' / 'pytest_gremlins'
 # the parallel executors and plugin.py import only reporting/results.py (GremlinResultStatus), and
 # reporting/score.py, reporting/types.py and reporting/__init__.py stay guarded.
 EXCLUDED_FROM_GUARD: dict[str, str] = {
+    '__init__.py': 'Holds only __version__, which cz bump rewrites each release; decides no verdict.',
     'reporting/console.py': 'Formats finished results for the terminal; decides no verdict.',
     'reporting/diff.py': 'Renders the original-versus-mutated diff shown in reports; decides no verdict.',
     'reporting/history.py': 'Persists per-run scores for trend charts after the run; decides no verdict.',
@@ -43,7 +45,7 @@ EXCLUDED_FROM_GUARD: dict[str, str] = {
 
 RECORDED_CACHE_VERSION = 1
 RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
-RECORDED_DIGEST = 'f9370298add66f4a658e80c8a926981be859d556128e443a3a1e5217375e009a'  # pragma: allowlist secret
+RECORDED_DIGEST = '9907ef145361ecd009c7fd561f29a6dfff4a92cbeeeda42918b6daac8eb5d456'  # pragma: allowlist secret
 
 
 def _is_excluded(relative_path: str) -> bool:
@@ -152,6 +154,17 @@ class DescribeCacheVersionGuard:
 
         target = package_copy / excluded_file
         target.write_text(target.read_text() + '\n_CHANGED = True\n')
+
+        assert _guarded_digest() == before
+
+    def it_keeps_the_digest_when_a_release_bump_rewrites_only_the_package_version(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        package_copy = _copy_package(tmp_path, monkeypatch)
+        before = _guarded_digest()
+
+        init_file = package_copy / '__init__.py'
+        init_file.write_text(re.sub(r"__version__ = '[^']*'", "__version__ = '999.0.0'", init_file.read_text()))
 
         assert _guarded_digest() == before
 
