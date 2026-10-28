@@ -710,8 +710,9 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
   only turns coverage-guided test selection off, so every gremlin runs the full suite; it never changes a verdict.
 - When rerun scaling has already pushed a limit to the 86400-second cap, the timeout messages say to lower
   `--reruns` or `--reruns-delay` instead of advising a higher per-attempt limit, which could not help.
-- The incremental cache keys each verdict on the effective timeout and on the rerun budget itself (the rerun count,
-  including `--force-reruns`, and the delay), so cached verdicts are judged again when either changes. Two settings
+- The incremental cache keys each verdict on the rerun budget itself (the rerun count, including `--force-reruns`,
+  and the delay), so cached verdicts are judged again when it changes. A changed effective timeout judges again only
+  the verdicts it could change (see the timeout option above). Two settings
   that scale to the same timeout still do not share verdicts. For example, `--gremlin-mutant-timeout 60` with no
   reruns and `--gremlin-mutant-timeout 30 --reruns 1` both give 60 seconds, but each is judged on its own. The same
   holds for two settings that both reach the 86400 cap. A kill from a flaky test that failed without reruns must
@@ -787,8 +788,14 @@ mutant_timeout = 120
 ```
 
 The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
-the TOML key. The incremental cache keys each verdict on the timeout it was reached under, so a changed
-timeout judges every gremlin again. So does a changed rerun count or delay.
+the TOML key. A changed rerun count or delay judges every gremlin again.
+
+The incremental cache stores the timeout each verdict was reached under and reuses a verdict at a different timeout
+only when the new limit cannot change it. A zapped, survived or error verdict is reused when the gremlin's run took
+strictly less than the new limit; a run that took exactly the new limit, or whose time is unknown, is judged
+again. A timeout verdict is reused only at the limit it was confirmed under, because it counts only when the
+unmutated run fits in half the limit, which is not known for another limit. Verdicts are identical to a cold run at
+the new timeout.
 
 With pytest-rerunfailures configured, the limit is the budget of one attempt and the effective timeout is
 larger; see [Flaky Tests and pytest-rerunfailures](#flaky-tests-and-pytest-rerunfailures).
