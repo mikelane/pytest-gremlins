@@ -3304,6 +3304,8 @@ def _run_tests_with_coverage(
         'pytest_gremlins.coverage.subprocess_bootstrap',
         '-p',
         'no:gremlins',
+        '-W',
+        'ignore::pytest.PytestAssertRewriteWarning',
         '-o',
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
         *doctest_ini_overrides,
