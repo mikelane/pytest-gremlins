@@ -12,12 +12,15 @@ from collections.abc import (
 )
 import os
 from pathlib import Path
+import sys
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from secret_env_scrub import scrub_secret_env
 
+from pytest_gremlins.instrumentation.transformer import get_default_registry
+from pytest_gremlins.operators import entry_points as loader
 from pytest_gremlins.plugin import _set_session
 
 # Enable pytester fixture for plugin testing
@@ -195,3 +198,50 @@ def pytest_collection_modifyitems(items):
 """,
     )
     return pytester
+
+
+@pytest.fixture
+def install_entry_point_dist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[Callable[..., Path], None, None]:
+    """Install a real ``.dist-info`` distribution that declares operator entry points.
+
+    The distribution lands on ``sys.path`` and ``PYTHONPATH`` so in-process and
+    child-process pytest runs both discover it through ``importlib.metadata``.
+    The default operator registry and the entry-point loader's record of what it
+    registered are restored at teardown, because both are process-global.
+    """
+    registry = get_default_registry()
+    saved_operators = dict(registry._operators)
+    saved_loader_record = dict(loader._registered_by_loader)
+    site = tmp_path / 'ep_site'
+    site.mkdir()
+    installed_modules: list[str] = []
+
+    def _install(
+        entry_points: dict[str, str],
+        modules: dict[str, str],
+        dist_name: str = 'gremlin_ep_dist',
+    ) -> Path:
+        dist_info = site / f'{dist_name}-1.0.dist-info'
+        dist_info.mkdir(exist_ok=True)
+        (dist_info / 'METADATA').write_text(f'Metadata-Version: 2.1\nName: {dist_name}\nVersion: 1.0\n')
+        lines = ['[pytest_gremlins.operators]', *(f'{name} = {target}' for name, target in entry_points.items())]
+        (dist_info / 'entry_points.txt').write_text('\n'.join(lines) + '\n')
+        for module_name, source in modules.items():
+            (site / f'{module_name}.py').write_text(source)
+            installed_modules.append(module_name)
+        return site
+
+    monkeypatch.syspath_prepend(str(site))
+    monkeypatch.setenv('PYTHONPATH', os.pathsep.join(filter(None, [str(site), os.environ.get('PYTHONPATH', '')])))
+    try:
+        yield _install
+    finally:
+        for module_name in installed_modules:
+            sys.modules.pop(module_name, None)
+        registry._operators.clear()
+        registry._operators.update(saved_operators)
+        loader._registered_by_loader.clear()
+        loader._registered_by_loader.update(saved_loader_record)

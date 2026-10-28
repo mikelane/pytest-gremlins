@@ -69,4 +69,4 @@ def test_it_does_not_time_out_the_pre_scan_when_three_flaky_tests_wait_out_the_r
         timeout=600,
     )
 
-    assert 'coverage pre-scan exceeded' not in result.stdout.str()
+    assert 'coverage pre-scan exceeded' not in result.stdout.str() + result.stderr.str()
