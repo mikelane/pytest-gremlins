@@ -1,7 +1,15 @@
-"""Changing verdict-affecting source forces a decision about ``CACHE_VERSION`` (#867).
+"""Changing verdict-affecting source forces a decision about the cache markers (#867).
 
 The recorded digest below covers the code that decides what a cached verdict means. When it no longer
 matches, the author decides whether the change can alter a verdict for the same source and tests.
+
+Two markers share the digest, each owning part of the hashed paths:
+
+- ``RUNNER_FIDELITY_VERSION`` owns test execution and the mapping from test outcome to verdict:
+  ``parallel/`` and ``control_run.py``.
+- ``CACHE_VERSION`` owns what gets mutated: ``operators/`` and ``instrumentation/``.
+
+``plugin.py`` wires both, so a change there raises whichever marker matches what it changed.
 """
 
 from __future__ import annotations
@@ -11,14 +19,16 @@ from pathlib import Path
 
 import pytest
 
+from pytest_gremlins.cache.incremental import RUNNER_FIDELITY_VERSION
 from pytest_gremlins.cache.versions import CACHE_VERSION
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2] / 'src' / 'pytest_gremlins'
-VERDICT_AFFECTING_DIRECTORIES = ('operators', 'instrumentation')
-VERDICT_AFFECTING_FILES = ('plugin.py', 'control_run.py', 'rerun_options.py')
+VERDICT_AFFECTING_DIRECTORIES = ('operators', 'instrumentation', 'parallel')
+VERDICT_AFFECTING_FILES = ('plugin.py', 'control_run.py')
 
 RECORDED_CACHE_VERSION = 1
-RECORDED_DIGEST = '083c982e9c7dc5e9cfc50b5a382a9261b0da5ef913a01e3b19a58da5b37fc7f9'  # pragma: allowlist secret
+RECORDED_RUNNER_FIDELITY_VERSION = 'rf19'
+RECORDED_DIGEST = '249d5403fda96844f56baf0678a47a433360fe706480d54906e42217845073fc'  # pragma: allowlist secret
 
 
 def _verdict_affecting_sources() -> list[Path]:
@@ -51,13 +61,21 @@ class DescribeCacheVersionGuard:
 
         assert current == RECORDED_DIGEST, (
             'Verdict-affecting source changed. Decide whether the change can alter a verdict for the same '
-            'source and tests (operators, instrumentation, how verdicts are decided). If it can, raise '
-            'CACHE_VERSION in src/pytest_gremlins/cache/versions.py. Either way, update RECORDED_DIGEST in '
-            f"this file to '{current}' (and RECORDED_CACHE_VERSION if you raised the version)."
+            'source and tests. If it can, raise CACHE_VERSION in src/pytest_gremlins/cache/versions.py, or '
+            'RUNNER_FIDELITY_VERSION in src/pytest_gremlins/cache/incremental.py if the change is in test '
+            'execution. Then record the new digest: update RECORDED_DIGEST in this file to '
+            f"'{current}' (and RECORDED_CACHE_VERSION or RECORDED_RUNNER_FIDELITY_VERSION for the marker you raised)."
         )
 
     def it_records_the_current_cache_version(self) -> None:
         assert RECORDED_CACHE_VERSION == CACHE_VERSION, (
             f'CACHE_VERSION is {CACHE_VERSION} but the guard recorded {RECORDED_CACHE_VERSION}. '
             'Update RECORDED_CACHE_VERSION and RECORDED_DIGEST together.'
+        )
+
+    def it_records_the_current_runner_fidelity_version(self) -> None:
+        assert RECORDED_RUNNER_FIDELITY_VERSION == RUNNER_FIDELITY_VERSION, (
+            f'RUNNER_FIDELITY_VERSION is {RUNNER_FIDELITY_VERSION!r} but the guard recorded '
+            f'{RECORDED_RUNNER_FIDELITY_VERSION!r}. '
+            'Update RECORDED_RUNNER_FIDELITY_VERSION and RECORDED_DIGEST together.'
         )

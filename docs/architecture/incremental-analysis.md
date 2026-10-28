@@ -51,7 +51,8 @@ cache_key = hash(
     source_file_content +      # The code being mutated
     mutation_definition +      # What mutation is applied
     test_file_contents +       # Tests that cover this mutation
-    pytest_gremlins_version    # Tool version (for format changes)
+    cache_version +            # Raised when a change can alter a verdict
+    operator_dist_versions     # Versions of packages that supply operators
 )
 ```
 
@@ -65,9 +66,9 @@ key = hash(
     file_hash("src/auth.py"),           # abc123
     "comparison:>=:>:line42:col8",       # mutation details
     file_hash("tests/test_auth.py"),     # def456
-    "0.1.0"                               # version
+    "cache-version=1"                    # cache version and operator package versions
 )
-# Result: "abc123_def456_comparison_42_8_gt_0.1.0"
+# Result: a single key string built from all four parts
 ```
 
 ## Cache Invalidation Rules

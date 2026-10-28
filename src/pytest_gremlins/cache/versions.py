@@ -8,6 +8,8 @@ from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 
 # Raise this on any change that could alter a verdict for the same source and tests: operators,
 # instrumentation, or how verdicts are decided. tests/cache/test_cache_version_guard.py fails until you do.
+# CACHE_VERSION covers what gets mutated (operators/, instrumentation/); RUNNER_FIDELITY_VERSION in
+# incremental.py covers test execution and outcome-to-verdict mapping (parallel/, control_run.py).
 CACHE_VERSION = 1
 
 

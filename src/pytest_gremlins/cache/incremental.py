@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 RUNNER_FIDELITY_VERSION = 'rf19'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
+This marker covers test execution and outcome-to-verdict mapping (``parallel/``, ``control_run.py``);
+``CACHE_VERSION`` in ``versions.py`` covers what gets mutated (``operators/``, ``instrumentation/``).
+
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
 lightweight runner. That runner could fabricate verdicts (async, parametrized, fixture-taking tests,
 conftest state, sys.path), so those results must never be reused.
