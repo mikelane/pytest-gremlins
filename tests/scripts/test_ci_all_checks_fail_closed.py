@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -15,6 +16,10 @@ import yaml
 
 CI_WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'ci.yml'
 AGGREGATE_JOB = 'all-checks'
+POSIX_ONLY = pytest.mark.skipif(
+    sys.platform == 'win32',
+    reason='the step runs in bash on ubuntu-latest; Windows bash (WSL/Git Bash) does not get the minimal env',
+)
 CHECK_RESULT_VARIABLES = (
     'LINT_RESULT',
     'TYPECHECK_RESULT',
@@ -50,6 +55,7 @@ def _run_verify_script(*, changes_result: str, src: str, docs: str, check_result
 
 
 @pytest.mark.medium
+@POSIX_ONLY
 class DescribeAllChecksFailClosed:
     def it_passes_the_changes_result_to_the_script(self) -> None:
         assert _verify_step()['env']['CHANGES_RESULT'] == '${{ needs.changes.result }}'
