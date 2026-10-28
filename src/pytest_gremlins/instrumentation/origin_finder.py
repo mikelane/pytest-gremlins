@@ -26,6 +26,7 @@ from types import (
     ModuleType,
 )
 from typing import Any
+import zlib
 
 # Entries are decoded from sources.json and mix str, str | None and list[str] values.
 InstrumentedEntry = dict[str, Any]
@@ -278,7 +279,7 @@ class GremlinLoader(importlib.abc.Loader):
         try:
             # The parent wrote this tree into its own temp directory from our own transformation of the user's
             # file; it is not untrusted input.
-            tree: ast.Module = pickle.loads(base64.b64decode(encoded_tree))  # noqa: S301  # nosec B301
+            tree: ast.Module = pickle.loads(zlib.decompress(base64.b64decode(encoded_tree)))  # noqa: S301  # nosec B301
         except Exception:
             return None
         return tree
