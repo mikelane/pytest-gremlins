@@ -228,8 +228,8 @@ until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 | Test deleted | Miss for gremlins that test was zapping |
 | pytest-gremlins upgraded | Hit, unless the release raised the cache version (then a miss for every gremlin) |
 | Distribution providing a `pytest_gremlins.operators` entry point installed, removed or changed version | Miss for every gremlin (old entries stop matching) |
-| Installed package that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
-| Project-local operator defined in your own code (no installed distribution) | No effect on the key; the source and conftest hashes cover it |
+| Installed package (including a `.pth` or PEP 610 editable install) that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
+| Project-local operator no installed distribution owns, or an editable install using a setuptools import finder | No effect on the key; the source and conftest hashes cover it |
 | Nothing changed | Hit (return cached result) |
 
 ### Usage Example

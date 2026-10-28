@@ -73,22 +73,22 @@ class DescribeFingerprintNamesOperatorOwners:
     def it_changes_when_the_owning_distribution_is_upgraded(self, site: Path) -> None:
         _install_package(site, 'supplied_dist', '1.0', 'supplied_ops')
         operator = _supplied_operator()
-        before = installed_versions_fingerprint([operator])
+        assert installed_versions_fingerprint([operator]) == f'cache-version={CACHE_VERSION}|supplied_dist==1.0'
 
         _uninstall_package(site, 'supplied_dist', '1.0')
         _install_package(site, 'supplied_dist', '2.0', 'supplied_ops')
 
-        assert installed_versions_fingerprint([operator]) != before
+        assert installed_versions_fingerprint([operator]) == f'cache-version={CACHE_VERSION}|supplied_dist==2.0'
 
     def it_changes_when_the_owning_distribution_is_downgraded(self, site: Path) -> None:
         _install_package(site, 'supplied_dist', '2.0', 'supplied_ops')
         operator = _supplied_operator()
-        before = installed_versions_fingerprint([operator])
+        assert installed_versions_fingerprint([operator]) == f'cache-version={CACHE_VERSION}|supplied_dist==2.0'
 
         _uninstall_package(site, 'supplied_dist', '2.0')
         _install_package(site, 'supplied_dist', '1.0', 'supplied_ops')
 
-        assert installed_versions_fingerprint([operator]) != before
+        assert installed_versions_fingerprint([operator]) == f'cache-version={CACHE_VERSION}|supplied_dist==1.0'
 
     def it_ignores_an_operator_defined_in_no_installed_distribution(self) -> None:
         assert installed_versions_fingerprint([LocalOperator()]) == installed_versions_fingerprint()

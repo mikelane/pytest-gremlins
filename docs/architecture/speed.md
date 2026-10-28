@@ -138,8 +138,11 @@ else:
 | Operator package (one providing a `pytest_gremlins.operators` entry point, or owning a registered operator's module) installed, removed or changed version, or a pytest-gremlins release that raised the cache version | Every mutation |
 | Nothing changed | Return cached results instantly |
 
-Operators registered from `conftest.py` are not tracked. After upgrading a package that supplies such operators,
-run with `--gremlin-clear-cache`.
+An operator registered from `conftest.py` counts too when its module comes from an installed package, including an
+editable install recorded through a `.pth` file or a PEP 610 `direct_url.json`. A project-local operator that no
+installed distribution owns adds nothing to the key; the source and conftest hashes cover it. Editable installs
+that map modules through a setuptools import finder are not recognized: run with `--gremlin-clear-cache` after
+changing such a package.
 
 **Why it works:**
 

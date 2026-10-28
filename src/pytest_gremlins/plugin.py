@@ -824,7 +824,7 @@ def _init_cache(
     rootdir: Path,
     cache_enabled: bool,
     clear_cache: bool,
-    operators: list[GremlinOperator],
+    operators: Sequence[GremlinOperator],
 ) -> IncrementalCache | None:
     """Initialise the incremental cache when enabled, optionally clearing it first.
 

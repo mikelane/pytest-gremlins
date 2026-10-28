@@ -77,7 +77,8 @@ def project(pytester: pytest.Pytester, tmp_path: Path, monkeypatch: pytest.Monke
 class DescribeConftestOperatorDistributionInCacheKey:
     @pytest.mark.usefixtures('project')
     def it_hits_the_cache_on_a_warm_run_with_nothing_changed(self, pytester: pytest.Pytester) -> None:
-        pytester.runpytest_subprocess(*GREMLIN_ARGS)
+        cold = pytester.runpytest_subprocess(*GREMLIN_ARGS)
+        cold.stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])
 
         warm = pytester.runpytest_subprocess(*GREMLIN_ARGS)
 
@@ -86,7 +87,8 @@ class DescribeConftestOperatorDistributionInCacheKey:
     def it_misses_the_cache_after_the_operator_package_is_upgraded(
         self, pytester: pytest.Pytester, project: Path
     ) -> None:
-        pytester.runpytest_subprocess(*GREMLIN_ARGS)
+        cold = pytester.runpytest_subprocess(*GREMLIN_ARGS)
+        cold.stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])
         shutil.rmtree(project / 'conftest_ops_dist-1.0.dist-info')
         _install_dist(project, '2.0')
 
