@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.config import load_config
-from pytest_gremlins.instrumentation.transformer import get_default_registry
+from pytest_gremlins.instrumentation import transformer
 from pytest_gremlins.operators.comparison import ComparisonOperator
+from pytest_gremlins.operators.registry import OperatorRegistry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -55,7 +56,9 @@ class DescribeListKeyValidation:
         assert '[tool.pytest-gremlins].operators' in str(caught.value)
 
     def it_accepts_a_registered_operator_that_is_not_built_in(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setitem(get_default_registry()._operators, 'third-party', ComparisonOperator)
+        registry = OperatorRegistry()
+        registry.register(ComparisonOperator, name='third-party')
+        monkeypatch.setattr(transformer, 'get_default_registry', lambda: registry)
         _write(tmp_path, 'operators = ["third-party"]')
 
         assert load_config(tmp_path).operators == ['third-party']
