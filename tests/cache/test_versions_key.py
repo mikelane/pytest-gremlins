@@ -1,4 +1,4 @@
-"""A cached verdict is only valid for the pytest-gremlins and operator-package versions that produced it."""
+"""A cached verdict is only valid for the cache version and operator-package versions that produced it."""
 
 from __future__ import annotations
 
@@ -6,10 +6,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pytest_gremlins import __version__
-from pytest_gremlins.cache import incremental
 from pytest_gremlins.cache.incremental import IncrementalCache
-from pytest_gremlins.cache.versions import installed_versions_fingerprint
+from pytest_gremlins.cache.versions import (
+    CACHE_VERSION,
+    installed_versions_fingerprint,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -37,7 +38,7 @@ def operator_site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.mark.medium
 class DescribeVersionsInCacheKey:
-    """Upgrading pytest-gremlins or an operator package retires cached verdicts."""
+    """Raising the cache version or changing an operator package retires cached verdicts."""
 
     @pytest.mark.parametrize(
         ('cached_under', 'read_under'),
@@ -46,15 +47,25 @@ class DescribeVersionsInCacheKey:
             pytest.param('1.0.1', '1.0.0', id='downgrade'),
         ],
     )
-    def it_misses_after_pytest_gremlins_changes_version(
+    def it_hits_after_pytest_gremlins_changes_version(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cached_under: str, read_under: str
     ) -> None:
         cache_dir = tmp_path / '.gremlins_cache'
-        monkeypatch.setattr('pytest_gremlins.cache.versions.__version__', cached_under)
+        monkeypatch.setattr('pytest_gremlins.__version__', cached_under)
         with IncrementalCache(cache_dir) as cache:
             cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
 
-        monkeypatch.setattr('pytest_gremlins.cache.versions.__version__', read_under)
+        monkeypatch.setattr('pytest_gremlins.__version__', read_under)
+        with IncrementalCache(cache_dir) as cache:
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == ZAPPED
+
+    def it_misses_after_the_cache_version_changes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        cache_dir = tmp_path / '.gremlins_cache'
+        monkeypatch.setattr('pytest_gremlins.cache.versions.CACHE_VERSION', 1)
+        with IncrementalCache(cache_dir) as cache:
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
+
+        monkeypatch.setattr('pytest_gremlins.cache.versions.CACHE_VERSION', 2)
         with IncrementalCache(cache_dir) as cache:
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
@@ -75,16 +86,10 @@ class DescribeVersionsInCacheKey:
         with IncrementalCache(cache_dir) as cache:
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == ZAPPED
 
-    def it_ends_the_key_with_the_runner_fidelity_version(self, tmp_path: Path) -> None:
-        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
-            key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
-
-        assert key.endswith(f':{incremental.RUNNER_FIDELITY_VERSION}')
-
 
 @pytest.mark.medium
 class DescribeInstalledVersionsFingerprint:
-    """The fingerprint covers pytest-gremlins and every distribution that supplies an operator."""
+    """The fingerprint covers the cache version and every distribution that supplies an operator."""
 
     def it_changes_when_an_operator_package_changes_version(self, operator_site: Path) -> None:
         _install_operator_dist(operator_site, 'gremlin_ep_dist', '1.0')
@@ -105,12 +110,12 @@ class DescribeInstalledVersionsFingerprint:
 
         assert installed_versions_fingerprint() != before
 
-    def it_names_pytest_gremlins_and_each_operator_distribution_with_its_version(self, operator_site: Path) -> None:
+    def it_names_the_cache_version_and_each_operator_distribution_with_its_version(self, operator_site: Path) -> None:
         _install_operator_dist(operator_site, 'gremlin_ep_dist', '1.0')
 
         fingerprint = installed_versions_fingerprint()
 
-        assert fingerprint.split('|')[0] == f'pytest-gremlins=={__version__}'
+        assert fingerprint.split('|')[0] == f'cache-version={CACHE_VERSION}'
         assert 'gremlin_ep_dist==1.0' in fingerprint.split('|')
 
     def it_is_stable_when_nothing_changed(self, operator_site: Path) -> None:
