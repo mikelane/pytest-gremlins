@@ -131,3 +131,12 @@ class DescribeInstalledVersionsFingerprint:
         _install_operator_dist(operator_site, 'alpha_ops', '1.0', entry_point_names=('first', 'second'))
 
         assert installed_versions_fingerprint() == f'cache-version={CACHE_VERSION}|alpha_ops==1.0'
+
+    def it_fingerprints_an_operator_dist_whose_metadata_lacks_name_and_version(self, operator_site: Path) -> None:
+        dist_info = operator_site / 'broken_ops-1.0.dist-info'
+        dist_info.mkdir()
+        (dist_info / 'METADATA').write_text('Metadata-Version: 2.1\n')
+        (dist_info / 'entry_points.txt').write_text('[pytest_gremlins.operators]\nep = ep_mod:ep\n')
+        importlib.invalidate_caches()
+
+        assert 'broken_ops' in installed_versions_fingerprint()

@@ -2,15 +2,29 @@
 
 from __future__ import annotations
 
-from importlib.metadata import entry_points
+from importlib.metadata import (
+    Distribution,
+    entry_points,
+)
 
 from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 
 # Raise this on any change that could alter a verdict for the same source and tests: operators,
 # instrumentation, or how verdicts are decided. tests/cache/test_cache_version_guard.py fails until you do.
 # CACHE_VERSION covers what gets mutated (operators/, instrumentation/); RUNNER_FIDELITY_VERSION in
-# incremental.py covers test execution and outcome-to-verdict mapping (parallel/, control_run.py).
+# incremental.py covers test execution and outcome-to-verdict mapping (parallel/, control_run.py and the
+# gremlin subprocess command-line code: node_id_args.py, node_id_file.py, xdist_options.py).
 CACHE_VERSION = 1
+
+
+def _distribution_label(dist: Distribution) -> str:
+    """Name a distribution without touching ``dist.name``, which warns on metadata lacking a Name field."""
+    location = getattr(dist, '_path', None)
+    names = dist.metadata.get_all('Name')
+    versions = dist.metadata.get_all('Version')
+    name = names[0] if names else (location.name if location is not None else '<unknown>')
+    version = versions[0] if versions else '<unknown>'
+    return f'{name}=={version}'
 
 
 def installed_versions_fingerprint() -> str:
@@ -27,7 +41,7 @@ def installed_versions_fingerprint() -> str:
         A deterministic fingerprint, independent of entry-point discovery order.
     """
     suppliers = {
-        f'{entry_point.dist.name}=={entry_point.dist.version}'
+        _distribution_label(entry_point.dist)
         for entry_point in entry_points(group=ENTRY_POINT_GROUP)
         if entry_point.dist is not None
     }

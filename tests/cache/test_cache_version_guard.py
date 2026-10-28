@@ -6,7 +6,9 @@ matches, the author decides whether the change can alter a verdict for the same 
 Two markers share the digest, each owning part of the hashed paths:
 
 - ``RUNNER_FIDELITY_VERSION`` owns test execution and the mapping from test outcome to verdict:
-  ``parallel/`` and ``control_run.py``.
+  ``parallel/``, ``control_run.py`` and the code that shapes the gremlin subprocess command line
+  (``node_id_args.py``, which ``plugin.py`` pastes into the gremlin bootstrap, ``node_id_file.py`` and
+  ``xdist_options.py``).
 - ``CACHE_VERSION`` owns what gets mutated: ``operators/`` and ``instrumentation/``.
 
 ``plugin.py`` wires both, so a change there raises whichever marker matches what it changed.
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -24,11 +27,17 @@ from pytest_gremlins.cache.versions import CACHE_VERSION
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2] / 'src' / 'pytest_gremlins'
 VERDICT_AFFECTING_DIRECTORIES = ('operators', 'instrumentation', 'parallel')
-VERDICT_AFFECTING_FILES = ('plugin.py', 'control_run.py')
+VERDICT_AFFECTING_FILES = (
+    'plugin.py',
+    'control_run.py',
+    'node_id_args.py',
+    'node_id_file.py',
+    'xdist_options.py',
+)
 
 RECORDED_CACHE_VERSION = 1
 RECORDED_RUNNER_FIDELITY_VERSION = 'rf19'
-RECORDED_DIGEST = '249d5403fda96844f56baf0678a47a433360fe706480d54906e42217845073fc'  # pragma: allowlist secret
+RECORDED_DIGEST = '50a27994c56c42891a464ee90670b26fe59faf8a3791e0bac66279d135a8465c'  # pragma: allowlist secret
 
 
 def _verdict_affecting_sources() -> list[Path]:
@@ -79,3 +88,16 @@ class DescribeCacheVersionGuard:
             f'{RECORDED_RUNNER_FIDELITY_VERSION!r}. '
             'Update RECORDED_RUNNER_FIDELITY_VERSION and RECORDED_DIGEST together.'
         )
+
+    def it_changes_the_digest_when_the_embedded_node_id_args_source_changes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        package_copy = tmp_path / 'pytest_gremlins'
+        shutil.copytree(PACKAGE_ROOT, package_copy, ignore=shutil.ignore_patterns('__pycache__'))
+        monkeypatch.setitem(globals(), 'PACKAGE_ROOT', package_copy)
+        before = _verdict_affecting_digest()
+
+        node_id_args = package_copy / 'node_id_args.py'
+        node_id_args.write_text(node_id_args.read_text() + '\nNODE_IDS_FILE_OPTION = "--changed"\n')
+
+        assert _verdict_affecting_digest() != before
