@@ -99,15 +99,15 @@ def _editable_project_directory(dist: Distribution) -> Path | None:
     try:
         raw = dist.read_text('direct_url.json')
         direct_url = json.loads(raw) if raw is not None else None
-    except _UNREADABLE_METADATA:
+        if not isinstance(direct_url, dict):
+            return None
+        dir_info = direct_url.get('dir_info')
+        url = direct_url.get('url')
+        if not isinstance(dir_info, dict) or dir_info.get('editable') is not True or not isinstance(url, str):
+            return None
+        return Path(url2pathname(urlparse(url).path)).resolve()
+    except (*_UNREADABLE_METADATA, RecursionError):
         return None
-    if not isinstance(direct_url, dict):
-        return None
-    dir_info = direct_url.get('dir_info')
-    url = direct_url.get('url')
-    if not isinstance(dir_info, dict) or dir_info.get('editable') is not True or not isinstance(url, str):
-        return None
-    return Path(url2pathname(urlparse(url).path)).resolve()
 
 
 @dataclass(frozen=True)

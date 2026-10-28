@@ -183,10 +183,11 @@ class DescribeOperatorOwnerLookupGaps:
 
         installed_versions_fingerprint(operators)
 
-        assert max(reads.values(), default=0) <= 1
+        assert reads
+        assert max(reads.values()) <= 1
 
 
-def _install_owner(site: Path, direct_url: dict[str, object] | None) -> None:
+def _install_owner_with_raw_direct_url(site: Path, direct_url: bytes | None) -> None:
     """Lay out an installed owner of ``direct_url_ops`` the way pip/uv do (RECORD, no top_level.txt)."""
     package = site / 'direct_url_ops'
     package.mkdir()
@@ -195,8 +196,13 @@ def _install_owner(site: Path, direct_url: dict[str, object] | None) -> None:
         site, 'direct-url-dist', 'direct_url_ops/__init__.py,,\ndirect_url_dist-1.0.dist-info/RECORD,,\n'
     )
     if direct_url is not None:
-        (dist_info / 'direct_url.json').write_text(json.dumps(direct_url))
+        (dist_info / 'direct_url.json').write_bytes(direct_url)
     importlib.invalidate_caches()
+
+
+def _install_owner(site: Path, direct_url: dict[str, object] | None) -> None:
+    raw = None if direct_url is None else json.dumps(direct_url).encode()
+    _install_owner_with_raw_direct_url(site, raw)
 
 
 NON_EDITABLE_DIRECT_URLS: dict[str, dict[str, object]] = {
@@ -225,6 +231,28 @@ class DescribeOwnersInstalledFromADirectUrl:
         assert 'direct-url-dist==1.0' in fingerprint
 
 
+MALFORMED_DIRECT_URLS: dict[str, bytes] = {
+    'not-utf8': b'\xff{}',
+    'not-an-object': b'[1]',
+    'dir-info-not-an-object': json.dumps({'url': 'file:///x', 'dir_info': 'str'}).encode(),
+    'url-not-a-string': json.dumps({'url': 5, 'dir_info': {'editable': True}}).encode(),
+    'unbalanced-ipv6-host': b'{"url": "file://[::1/x", "dir_info": {"editable": true}}',
+    'nul-byte-path': b'{"url": "file:///tmp/a\\u0000b", "dir_info": {"editable": true}}',
+    'deeply-nested': b'[' * 100_000 + b']' * 100_000,
+}
+
+
+@pytest.mark.medium
+class DescribeOwnersWithAMalformedDirectUrl:
+    @pytest.mark.parametrize('shape', sorted(MALFORMED_DIRECT_URLS))
+    def it_labels_the_owner_despite_a_malformed_direct_url(self, shape: str, site: Path) -> None:
+        _install_owner_with_raw_direct_url(site, MALFORMED_DIRECT_URLS[shape])
+
+        fingerprint = installed_versions_fingerprint([_operator_from('direct_url_ops')])
+
+        assert 'direct-url-dist==1.0' in fingerprint
+
+
 META = b'Metadata-Version: 2.1\nName: brokenpkg\nVersion: 1.0\n'
 BROKEN_DIST_INFO_FILES: dict[str, dict[str, bytes]] = {
     'no_metadata': {},
@@ -232,16 +260,6 @@ BROKEN_DIST_INFO_FILES: dict[str, dict[str, bytes]] = {
     'record_with_non_integer_size': {'METADATA': META, 'RECORD': b'a.py,,notint\n'},
     'top_level_not_utf8': {'METADATA': META, 'top_level.txt': b'\xff\xfe\x00bad'},
     'metadata_not_utf8': {'METADATA': b'Name: \xff\n'},
-    'direct_url_not_utf8': {'METADATA': META, 'direct_url.json': b'\xff{}'},
-    'direct_url_not_an_object': {'METADATA': META, 'direct_url.json': b'[1]'},
-    'direct_url_dir_info_not_an_object': {
-        'METADATA': META,
-        'direct_url.json': json.dumps({'url': 'file:///x', 'dir_info': 'str'}).encode(),
-    },
-    'direct_url_url_not_a_string': {
-        'METADATA': META,
-        'direct_url.json': json.dumps({'url': 5, 'dir_info': {'editable': True}}).encode(),
-    },
 }
 
 
