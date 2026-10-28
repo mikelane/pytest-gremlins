@@ -841,7 +841,7 @@ def _init_cache(
     if not cache_enabled:
         return None
     cache_dir = rootdir / '.gremlins_cache'
-    cache = IncrementalCache(cache_dir, operators)
+    cache = IncrementalCache(cache_dir, operators, project_root=rootdir)
     if clear_cache:
         cache.clear()
         print('pytest-gremlins: cache cleared')

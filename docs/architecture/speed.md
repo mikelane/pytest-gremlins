@@ -139,10 +139,11 @@ else:
 | Nothing changed | Return cached results instantly |
 
 An operator registered from `conftest.py` counts too when its module comes from an installed package, including an
-editable install recorded through a `.pth` file or a PEP 610 `direct_url.json`. A project-local operator that no
-installed distribution owns adds nothing to the key; the source and conftest hashes cover it. Editable installs
-that map modules through a setuptools import finder are not recognized: run with `--gremlin-clear-cache` after
-changing such a package.
+editable install marked by a PEP 610 `direct_url.json`. An operator whose module is under the pytest rootdir is
+project code and adds nothing to the key, even when the project under test is itself installed editable; the source
+and conftest hashes cover it. The same holds for an operator no installed distribution owns. Editable installs
+recorded only through a `.pth` file, or that map modules through a setuptools import finder, are not recognized: run
+with `--gremlin-clear-cache` after changing such a package.
 
 **Why it works:**
 
