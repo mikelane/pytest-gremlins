@@ -16,12 +16,18 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 _CALC = 'def add(a, b):\n    return a + b\n\n\ndef gt(a, b):\n    return a > b\n'
+# Size markers keep pytest-test-categories (loaded from the dev venv in the gremlin subprocesses) from warning
+# "Test has no size marker", which filterwarnings=error would otherwise turn into an INTERNALERROR.
 _TESTS = (
-    'import sys\nsys.path.insert(0, "src")\nfrom calc import add, gt\n\n\n'
-    'def test_add():\n    assert add(2, 3) == 5\n\n\n'
-    'def test_gt():\n    assert gt(3, 2) is True\n    assert gt(2, 3) is False\n'
+    'import sys\nimport pytest\nsys.path.insert(0, "src")\nfrom calc import add, gt\n\n\n'
+    '@pytest.mark.small\ndef test_add():\n    assert add(2, 3) == 5\n\n\n'
+    '@pytest.mark.small\ndef test_gt():\n    assert gt(3, 2) is True\n    assert gt(2, 3) is False\n'
 )
-_PYPROJECT = '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n{filterwarnings}\n[tool.gremlins]\npaths = ["src"]\n'
+# The ``small`` marker must be registered: with filterwarnings = error an unknown-mark warning fails collection.
+_PYPROJECT = (
+    '[tool.pytest.ini_options]\ntestpaths = ["tests"]\nmarkers = ["small: fast unit test"]\n{filterwarnings}\n'
+    '[tool.gremlins]\npaths = ["src"]\n'
+)
 _HIDE_CTRACER = "import sys\nsys.modules['coverage.tracer'] = None\n"
 
 
@@ -40,7 +46,7 @@ def _child_env(root: Path, extra_env: dict[str, str] | None = None) -> dict[str,
     return {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': str(root), **inherited, **(extra_env or {})}
 
 
-def _run_gremlins(root: Path, *args: str, extra_env: dict[str, str] | None = None) -> str:
+def _run_gremlins(root: Path, *args: str, extra_env: dict[str, str] | None = None) -> tuple[int, str]:
     env = _child_env(root, extra_env)
     result = subprocess.run(
         [sys.executable, '-m', 'pytest', '--gremlins', '-p', 'no:cacheprovider', '-p', 'no:test_categories', *args],
@@ -51,7 +57,7 @@ def _run_gremlins(root: Path, *args: str, extra_env: dict[str, str] | None = Non
         timeout=300,
         check=False,
     )
-    return result.stdout + result.stderr
+    return result.returncode, result.stdout + result.stderr
 
 
 def _stray_coverage_files(root: Path) -> list[str]:
@@ -69,9 +75,10 @@ class DescribeRunWithoutCoverageTracer:
         hide_dir.mkdir()
         (hide_dir / 'sitecustomize.py').write_text(_HIDE_CTRACER)
 
-        output = _run_gremlins(tmp_path, *worker_args, extra_env={'PYTHONPATH': str(hide_dir)})
+        returncode, output = _run_gremlins(tmp_path, *worker_args, extra_env={'PYTHONPATH': str(hide_dir)})
 
         assert 'INTERNALERROR' not in output, output[-3000:]
+        assert returncode == 0, output[-3000:]
 
 
 @pytest.mark.medium
@@ -82,7 +89,7 @@ class DescribeRunLeavesNoCoverageDataFiles:
     def it_leaves_no_stray_files_in_the_rootdir(self, tmp_path: Path, worker_args: list[str]) -> None:
         _make_project(tmp_path)
 
-        output = _run_gremlins(tmp_path, *worker_args)
+        _, output = _run_gremlins(tmp_path, *worker_args)
 
         assert 'INTERNALERROR' not in output, output[-3000:]
         assert _stray_coverage_files(tmp_path) == [], output[-3000:]
