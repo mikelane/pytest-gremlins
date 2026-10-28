@@ -17,6 +17,7 @@ for the same source and tests:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
@@ -197,17 +198,18 @@ def guarded_sources() -> list[Path]:
     return [source for source, relative in sorted(candidates, key=lambda pair: pair[1]) if not _is_excluded(relative)]
 
 
+def _normalized_sha256(source: Path) -> str:
+    return hashlib.sha256(source.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
+
+
 def _guarded_digests() -> dict[str, str]:
-    return {
-        source.relative_to(PACKAGE_ROOT).as_posix(): hashlib.sha256(
-            source.read_bytes().replace(b'\r\n', b'\n')
-        ).hexdigest()
-        for source in guarded_sources()
-    }
+    return {source.relative_to(PACKAGE_ROOT).as_posix(): _normalized_sha256(source) for source in guarded_sources()}
 
 
 @dataclass(frozen=True)
 class DigestDiff:
+    """Guarded paths that differ between the recorded and the current digests, each tuple sorted."""
+
     added: tuple[str, ...]
     removed: tuple[str, ...]
     changed: tuple[str, ...]
@@ -217,7 +219,7 @@ class DigestDiff:
         return not (self.added or self.removed or self.changed)
 
 
-def _compare_digests(recorded: dict[str, str], current: dict[str, str]) -> DigestDiff:
+def _compare_digests(recorded: Mapping[str, str], current: Mapping[str, str]) -> DigestDiff:
     return DigestDiff(
         added=tuple(sorted(current.keys() - recorded.keys())),
         removed=tuple(sorted(recorded.keys() - current.keys())),
@@ -230,13 +232,14 @@ def _format_entry(path: str, digest: str) -> str:
     return f'{line}  {NOQA_E501}' if len(line) > MAX_LINE_LENGTH else line
 
 
-def _format_entries(digests: dict[str, str]) -> str:
+def _format_entries(digests: Mapping[str, str]) -> str:
     entries = [_format_entry(path, digest) for path, digest in sorted(digests.items())]
-    return ''.join(f'{line}\n' for line in _interleave(entries, ENTRY_SEPARATOR))
+    return ''.join(f'{line}\n' for line in _join_with_separator(entries, ENTRY_SEPARATOR))
 
 
-def _interleave(lines: list[str], separator: str) -> list[str]:
-    return [piece for index, line in enumerate(lines) for piece in ((separator, line) if index else (line,))]
+def _join_with_separator(lines: list[str], separator: str) -> list[str]:
+    separated = [line for entry in lines for line in (separator, entry)]
+    return separated[1:]
 
 
 def _mismatch_message(diff: DigestDiff) -> str:
@@ -342,7 +345,7 @@ class DescribeCacheVersionGuard:
         )
 
     def it_records_the_block_in_exactly_the_layout_it_prints(self) -> None:
-        source = Path(__file__).read_text()
+        source = Path(__file__).read_text(encoding='utf-8')
 
         assert f'RECORDED_DIGESTS: dict[str, str] = {{\n{_format_entries(RECORDED_DIGESTS)}}}\n' in source
 
