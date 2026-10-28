@@ -262,7 +262,19 @@ class DescribeDigestComparison:
     """Per-file digests let independent edits to different files merge into a passing guard."""
 
     def it_reports_nothing_when_recorded_and_current_match(self) -> None:
-        assert _compare_digests({'a.py': 'h1'}, {'a.py': 'h1'}).is_empty
+        assert _compare_digests({'a.py': 'h1'}, {'a.py': 'h1'}).is_empty is True
+
+    @pytest.mark.parametrize(
+        'diff',
+        [
+            DigestDiff(added=('a.py',), removed=(), changed=()),
+            DigestDiff(added=(), removed=('a.py',), changed=()),
+            DigestDiff(added=(), removed=(), changed=('a.py',)),
+        ],
+        ids=['added', 'removed', 'changed'],
+    )
+    def it_reports_a_difference_when_any_category_names_a_path(self, diff: DigestDiff) -> None:
+        assert diff.is_empty is False
 
     def it_names_an_added_file(self) -> None:
         diff = _compare_digests({'a.py': 'h1'}, {'a.py': 'h1', 'b.py': 'h2'})
@@ -294,13 +306,19 @@ class DescribeDigestComparison:
     def it_marks_every_printed_digest_line_with_the_allowlist_pragma(self) -> None:
         printed = _format_entries({'a.py': 'h1', 'b.py': 'h2', 'c.py': 'h3'})
 
-        assert printed.count(ALLOWLIST_PRAGMA) == printed.count("': '")
+        assert printed.count(ALLOWLIST_PRAGMA) == 3
 
-    def it_adds_noqa_e501_exactly_to_the_lines_that_pass_the_line_limit(self) -> None:
-        short_path, long_path = 'a.py', 'x' * 40 + '.py'
-        printed_lines = _format_entries({short_path: 'a' * 64, long_path: 'b' * 64}).splitlines()
+    @pytest.mark.parametrize(
+        ('line_length', 'expected'),
+        [(MAX_LINE_LENGTH, False), (MAX_LINE_LENGTH + 1, True)],
+        ids=['at-limit', 'over-limit'],
+    )
+    def it_adds_noqa_e501_only_when_the_entry_passes_the_line_limit(self, line_length: int, expected: bool) -> None:
+        digest = 'a' * 64
+        overhead = len(f"    '': '{digest}',  {ALLOWLIST_PRAGMA}")
+        printed = _format_entries({'p' * (line_length - overhead): digest})
 
-        assert (printed_lines[0].endswith(NOQA_E501), printed_lines[2].endswith(NOQA_E501)) == (False, True)
+        assert printed.rstrip('\n').endswith(NOQA_E501) == expected
 
 
 @pytest.mark.medium
@@ -321,7 +339,8 @@ class DescribeRecordMerge:
             check=False,
         )
 
-        assert result.returncode == 0, result.stdout
+        merged = {**base, 'cache/hasher.py': 'd' * 64, 'cache/incremental.py': 'e' * 64}
+        assert (result.returncode, result.stdout) == (0, _format_entries(merged))
 
 
 @pytest.mark.medium
