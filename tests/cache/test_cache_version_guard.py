@@ -18,7 +18,7 @@ VERDICT_AFFECTING_DIRECTORIES = ('operators', 'instrumentation')
 VERDICT_AFFECTING_FILES = ('plugin.py', 'control_run.py', 'rerun_options.py')
 
 RECORDED_CACHE_VERSION = 1
-RECORDED_DIGEST = 'placeholder'
+RECORDED_DIGEST = '083c982e9c7dc5e9cfc50b5a382a9261b0da5ef913a01e3b19a58da5b37fc7f9'  # pragma: allowlist secret
 
 
 def _verdict_affecting_sources() -> list[Path]:
