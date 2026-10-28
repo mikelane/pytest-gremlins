@@ -14,6 +14,7 @@ from typing import (
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore
+from pytest_gremlins.cache.versions import installed_versions_fingerprint
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -172,6 +173,7 @@ class IncrementalCache:
     - optimize_level: the optimize level the gremlin subprocess compiled under
     - rerun_budget: the ``(reruns, reruns_delay)`` the gremlin runs were allowed
     - rerun_settings: the other resolved rerun settings (backoff factor, filters, mode, exclusions, suite cap)
+    - versions: pytest-gremlins and operator-package versions (any change retires the whole cache)
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
 
@@ -193,6 +195,7 @@ class IncrementalCache:
         self._cache_dir = cache_dir
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
+        self._versions_hash = self._hasher.hash_string(installed_versions_fingerprint())
         self._hits = 0
         self._misses = 0
 
@@ -240,7 +243,8 @@ class IncrementalCache:
         reruns, reruns_delay = _effective_rerun_budget(rerun_budget)
         return (
             f'{gremlin_id}:{source_hash}:{combined_test_hash}:timeout={mutant_timeout}'
-            f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}:{RUNNER_FIDELITY_VERSION}'
+            f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}'
+            f':v={self._versions_hash}:{RUNNER_FIDELITY_VERSION}'
         )
 
     def get_cached_result(
