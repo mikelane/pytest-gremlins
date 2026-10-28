@@ -22,12 +22,18 @@ import hashlib
 from pathlib import Path
 import re
 import shutil
+import subprocess
 
 import pytest
 
 from pytest_gremlins.cache.incremental import RUNNER_FIDELITY_VERSION
 from pytest_gremlins.cache.versions import CACHE_VERSION
 
+ALLOWLIST_PRAGMA = '# pragma: allowlist secret'
+NOQA_E501 = '# noqa: E501'
+ENTRY_SEPARATOR = '    # --'
+MAX_LINE_LENGTH = 120
+GIT = shutil.which('git') or 'git'
 PACKAGE_ROOT = Path(__file__).resolve().parents[2] / 'src' / 'pytest_gremlins'
 
 # Keys are package-relative POSIX paths: a file, or a directory prefix ending in "/".
@@ -47,65 +53,123 @@ EXCLUDED_FROM_GUARD: dict[str, str] = {
 
 RECORDED_CACHE_VERSION = 1
 RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
-# One entry per guarded file, sorted, one per line: git merges edits to different files without a conflict.
+# One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
+# between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
 RECORDED_DIGESTS: dict[str, str] = {
     'cache/__init__.py': '62df21d4f76d4423b6066843acd9402dc17a026cadba50937fa4efe3841ae428',  # pragma: allowlist secret
+    # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
+    # --
     'cache/incremental.py': '733e9132feb50d0f063089a2b2e355dcca9ecb0cd04e77b126062d86244aa6ac',  # pragma: allowlist secret  # noqa: E501
+    # --
     'cache/store.py': '967c632516b6ae126921f43f1c72b753de59c0cac9679557793c2082e0003cc1',  # pragma: allowlist secret
+    # --
     'cache/types.py': 'e8f2a82731cb4bfaec2a4803fe312826f3a85511224868322aa7eb127339085a',  # pragma: allowlist secret
+    # --
     'cache/versions.py': '93038d187735de48ba3a7901b4ff88c413964fe3b4526a4c3fcd8927357336ac',  # pragma: allowlist secret
+    # --
     'config.py': 'c505aee0edbe35832d21e600138b9ce95832d4c99094185f908f9ca9f534338a',  # pragma: allowlist secret
+    # --
     'control_run.py': '95174e647a5cea01a3bfb54a0498df39c92f7c57168bf2dbaea3ddcbc0584270',  # pragma: allowlist secret
+    # --
     'coverage/__init__.py': 'aafaa74217e1e3936ede3a3506ba602f27eb43416b0b4b2ebbcadd1817d35854',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/collector.py': '75f0086e3b1721ccb25793192722a28c340eff07ccdbd0b3a1e10345edcdda8d',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/context_plugin.py': 'c90a4a707246f294bf45b6c82ace9605d1db8daceef5b94999fbd3a5b3022905',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/mapper.py': '57aa2eab82fe4b361033d9812754c0aa99f5214ceaba112810bc5f0ce0f63dc4',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/nodeid_markers.py': '5e7ce08b10b29d8cf56667342381d30b113ddf76d316ea3c346f0141d0a7e78f',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/prescan_main.py': '7ffea6a07f3b2216aa493ebc36b5bae3d5c90a52413a2c6be72dc7cf6161c28b',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/prioritized_selector.py': '60c4b6fd3e094aa0627428c75fb5693a9d7de28f1f1943baf12abe7b4bc5cdc2',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/selector.py': 'b35af2f065bb47abe40ba63c83d0dc95cacc12de744e261f65aba879f149707b',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/subprocess_bootstrap.py': 'c0eeeb6ae0d1ee099c901d2a76432502d05309897111be48b9eb616ab37c1463',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/types.py': '6300b3a3c2f3a3ccd433e43fb172f367243f4f3eb10cd588306790ae415453ae',  # pragma: allowlist secret
+    # --
     'gremlins_options.py': 'd6aca18098f0c89d14ba54ee4d46b398a9331100c8d25398cb66fca8fac47959',  # pragma: allowlist secret  # noqa: E501
+    # --
     'instrumentation/__init__.py': '22aab29f2f7b08257f748738722eff5fede51bc1c5d90010a588fc38c92d42aa',  # pragma: allowlist secret  # noqa: E501
+    # --
     'instrumentation/finder.py': '66c4a9f9e100fbf0fed6bdbed6fbb38758c91c2b5d42bd0eb793ef2ced7ed2f8',  # pragma: allowlist secret  # noqa: E501
+    # --
     'instrumentation/gremlin.py': 'e395cdccebf405d826b8e699db383c1b876ade684afcd03c86cf202ccd99ad89',  # pragma: allowlist secret  # noqa: E501
+    # --
     'instrumentation/import_hooks.py': '5348b28e3dcba8108f857e4d3d341f1264a57afa05bbbd503ea71eab743538af',  # pragma: allowlist secret  # noqa: E501
+    # --
     'instrumentation/origin_finder.py': 'e9788fa40047ae794896f7b8b2eb91c66119fefa4241efbcab3e3f13ee73d22e',  # pragma: allowlist secret  # noqa: E501
+    # --
     'instrumentation/pragma.py': 'c62fc42dce8d590bd58fa84e35183957ac428019b1c7227ea15ef2c4fbcf5597',  # pragma: allowlist secret  # noqa: E501
+    # --
     'instrumentation/spawn_hook.py': '160a3d6b0bd717a1739e2d7a300067a8a2aaba6f3dcbdd343bed67d65ce57922',  # pragma: allowlist secret  # noqa: E501
+    # --
     'instrumentation/switcher.py': '602bef0ec33b9e4f0edbb24db1497f2d9fbf57952662a5f11ec51dee262cff0e',  # pragma: allowlist secret  # noqa: E501
+    # --
     'instrumentation/transformer.py': '4ae5263c706731e471a1d65e65aa0c39e54a3bcf0b53c1c030c8b8af37cad646',  # pragma: allowlist secret  # noqa: E501
+    # --
     'node_id_args.py': 'd8a6f83045811ffe0c9513e74a15278966c62071db6f3722b1ebc5359c073bb9',  # pragma: allowlist secret
+    # --
     'node_id_file.py': '0dc413771fb6c5cff0719deec2e44a7d61581867e567fa7a7dad1f8d6b8cafc6',  # pragma: allowlist secret
+    # --
     'operators/__init__.py': '95127c7b9b0e9bf0a142c29b7715bce2ea44da38864a26961e6e37855b6f7598',  # pragma: allowlist secret  # noqa: E501
+    # --
     'operators/arithmetic.py': '222d4c8b864303e7d883407e0996bac191d03054a197c046fb8ac1d80669cd5a',  # pragma: allowlist secret  # noqa: E501
+    # --
     'operators/boolean.py': 'a7db9c8a221f21021450c126890125b384bba56b6351ddb26f419009fdcab7be',  # pragma: allowlist secret  # noqa: E501
+    # --
     'operators/boundary.py': '15d660650c565532be8e39a1a4d09cc58cf50dc53a3890bad69656419d565c49',  # pragma: allowlist secret  # noqa: E501
+    # --
     'operators/comparison.py': 'c17be7152001c60806e524c37cffd6f6994af35cd658e598a24cc77570805a73',  # pragma: allowlist secret  # noqa: E501
+    # --
     'operators/entry_points.py': 'a573e99cb07764a845d95341d53b67748e5113d0679b26c86821943347e4c4ed',  # pragma: allowlist secret  # noqa: E501
+    # --
     'operators/protocol.py': '999044b8fd477412888e1febfbc756cc8928e8f1afd0fc4ec11cca4c28437be2',  # pragma: allowlist secret  # noqa: E501
+    # --
     'operators/registry.py': 'd080086690b1d631cbf8d7c8b0c3a98f0c9e48309778c98bf148df9d0b897625',  # pragma: allowlist secret  # noqa: E501
+    # --
     'operators/return_value.py': 'c38d8601fa6a360995fa0fde826316f89084a518bd1829ab57c3e7f65bf97070',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/__init__.py': 'e8924a340f82b43586372f919c082e74931c371cc38298db53113ae38093a69b',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/aggregator.py': '1edf168a66e9a95fed83e875eeee1a5a04682312b53b17284311f4148f0796ed',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/batch_executor.py': '92c4a89b02951d9ec3a0da1dfc1b368c6b771fbb8f065a08a6109123d4f41392',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/distribution.py': '547985ecbe111d9640a41ccbc477e1a275053b864ccf988a9402f47fc57498be',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/exit_codes.py': '4b0c1b2aa2d80c2483e7b2294960f2dc59e13438a1837b48056888ad6527da14',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/fork_executor.py': 'a8553843606b1f21c192849e79207d71a61e8f4fc089a0ef9891337eccd9dcc3',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/inprocess_executor.py': '250373b1553a8d52b9e437f2d65eea6d5fc2e977440f3e82f94a77020090bc67',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/lightweight.py': '72dd62804a24be6334d38305fdd058fe70c537e445a73329d1e11c81f22482db',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/persistent_pool.py': '6ba2581453b79eeb92da9ae6ec2e87efc4dee093557d4bdb39e921d3a4d534dc',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/pool.py': 'dd1e32efef562fe73506be11431bcc516d87b064bbd0edc5f1ff73711989344a',  # pragma: allowlist secret
+    # --
     'parallel/pool_config.py': 'a16b38e1dc699fd2813edb5f31bd704c114f25c4172228624253bef37f1a8466',  # pragma: allowlist secret  # noqa: E501
+    # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
+    # --
     'plugin.py': '7ff2872a0702dce3e4c69cec624b022fabddc20a2c8e4a0b9e35933352cc4faa',  # pragma: allowlist secret
+    # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
+    # --
     'reporting/results.py': '82505d9a8978c5193f13e2f53876a963d10ed1a314a22117dd8a286b21530fd6',  # pragma: allowlist secret  # noqa: E501
+    # --
     'reporting/score.py': 'e13c00b47d0451a30d4354240d10b2d2224ffdcd3ca87b658f648a3e6cfc61d3',  # pragma: allowlist secret  # noqa: E501
+    # --
     'reporting/types.py': 'f732c4d57c6173836ac0244f4176fded3e86da043c768d9b55386f42a57d0492',  # pragma: allowlist secret  # noqa: E501
+    # --
     'rerun_options.py': '988743f054ce69cdeec2be71ffc4e906cb5b0fb9f362046fcbbfdb78513ec415',  # pragma: allowlist secret
+    # --
     'xdist_options.py': '90005fa9699bae11a9d1d7693817864e7fe0fcf593fab68abb7c0fb48dfa4536',  # pragma: allowlist secret
 }
 
@@ -161,8 +225,18 @@ def _compare_digests(recorded: dict[str, str], current: dict[str, str]) -> Diges
     )
 
 
+def _format_entry(path: str, digest: str) -> str:
+    line = f"    '{path}': '{digest}',  {ALLOWLIST_PRAGMA}"
+    return f'{line}  {NOQA_E501}' if len(line) > MAX_LINE_LENGTH else line
+
+
 def _format_entries(digests: dict[str, str]) -> str:
-    return ''.join(f"    '{path}': '{digest}',\n" for path, digest in sorted(digests.items()))
+    entries = [_format_entry(path, digest) for path, digest in sorted(digests.items())]
+    return ''.join(f'{line}\n' for line in _interleave(entries, ENTRY_SEPARATOR))
+
+
+def _interleave(lines: list[str], separator: str) -> list[str]:
+    return [piece for index, line in enumerate(lines) for piece in ((separator, line) if index else (line,))]
 
 
 def _mismatch_message(diff: DigestDiff) -> str:
@@ -202,25 +276,54 @@ class DescribeDigestComparison:
 
         assert (diff.added, diff.removed, diff.changed) == ((), (), ('b.py',))
 
-    def it_passes_when_two_branches_each_record_an_edit_to_a_different_file(self) -> None:
-        # Each branch changed exactly one line of the record, so git merges the two lines cleanly.
-        record_after_both_merges = {'a.py': 'a1', 'b.py': 'b1'}
-        merged_tree = {'a.py': 'a1', 'b.py': 'b1'}
-
-        assert _compare_digests(record_after_both_merges, merged_tree).is_empty
-
     def it_fails_a_stale_record_naming_every_differing_path_in_the_message(self) -> None:
         message = _mismatch_message(_compare_digests({'a.py': 'h1', 'b.py': 'h2'}, {'a.py': 'h9', 'c.py': 'h3'}))
 
-        assert all(text in message for text in ('added: c.py', 'removed: b.py', 'changed: a.py'))
+        assert message == 'added: c.py\nremoved: b.py\nchanged: a.py'
 
-    def it_prints_replacement_entries_one_per_line_sorted_ready_to_paste(self) -> None:
-        assert _format_entries({'b.py': 'h2', 'a.py': 'h1'}) == "    'a.py': 'h1',\n    'b.py': 'h2',\n"
+    def it_prints_replacement_entries_sorted_with_a_separator_line_between_them(self) -> None:
+        printed = _format_entries({'b.py': 'h2', 'a.py': 'h1'})
+
+        assert printed == (
+            f"    'a.py': 'h1',  {ALLOWLIST_PRAGMA}\n{ENTRY_SEPARATOR}\n    'b.py': 'h2',  {ALLOWLIST_PRAGMA}\n"
+        )
+
+    def it_marks_every_printed_digest_line_with_the_allowlist_pragma(self) -> None:
+        printed = _format_entries({'a.py': 'h1', 'b.py': 'h2', 'c.py': 'h3'})
+
+        assert printed.count(ALLOWLIST_PRAGMA) == printed.count("': '")
+
+    def it_adds_noqa_e501_exactly_to_the_lines_that_pass_the_line_limit(self) -> None:
+        short_path, long_path = 'a.py', 'x' * 40 + '.py'
+        printed_lines = _format_entries({short_path: 'a' * 64, long_path: 'b' * 64}).splitlines()
+
+        assert (printed_lines[0].endswith(NOQA_E501), printed_lines[2].endswith(NOQA_E501)) == (False, True)
+
+
+@pytest.mark.medium
+class DescribeRecordMerge:
+    """Two branches that re-record neighbouring files merge without a git conflict."""
+
+    def it_merges_re_records_of_adjacent_entries_without_a_conflict(self, tmp_path: Path) -> None:
+        base = {'cache/hasher.py': 'a' * 64, 'cache/incremental.py': 'b' * 64, 'cache/store.py': 'c' * 64}
+        (tmp_path / 'base.py').write_text(_format_entries(base))
+        (tmp_path / 'ours.py').write_text(_format_entries({**base, 'cache/hasher.py': 'd' * 64}))
+        (tmp_path / 'theirs.py').write_text(_format_entries({**base, 'cache/incremental.py': 'e' * 64}))
+
+        result = subprocess.run(
+            [GIT, 'merge-file', '-p', 'ours.py', 'base.py', 'theirs.py'],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stdout
 
 
 @pytest.mark.medium
 class DescribeCacheVersionGuard:
-    """The recorded digest and ``CACHE_VERSION`` move together with the verdict-affecting source."""
+    """The recorded digests and the cache markers move together with the verdict-affecting source."""
 
     def it_matches_the_recorded_digests_of_guarded_source(self) -> None:
         current = _guarded_digests()
@@ -237,6 +340,11 @@ class DescribeCacheVersionGuard:
             f'{_mismatch_message(diff)}\n'
             f'RECORDED_DIGESTS: dict[str, str] = {{\n{_format_entries(current)}}}'
         )
+
+    def it_records_the_block_in_exactly_the_layout_it_prints(self) -> None:
+        source = Path(__file__).read_text()
+
+        assert f'RECORDED_DIGESTS: dict[str, str] = {{\n{_format_entries(RECORDED_DIGESTS)}}}\n' in source
 
     def it_records_the_current_cache_version(self) -> None:
         assert RECORDED_CACHE_VERSION == CACHE_VERSION, (
