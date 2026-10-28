@@ -13,7 +13,7 @@ from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 # instrumentation, or how verdicts are decided. tests/cache/test_cache_version_guard.py fails until you do.
 # CACHE_VERSION covers what gets mutated (operators/, instrumentation/); RUNNER_FIDELITY_VERSION in
 # incremental.py covers test execution and outcome-to-verdict mapping (parallel/, control_run.py and the
-# gremlin subprocess command-line code: node_id_args.py, node_id_file.py, xdist_options.py).
+# gremlin subprocess command-line code: node_id_args.py, node_id_file.py, rerun_options.py, xdist_options.py).
 CACHE_VERSION = 1
 
 

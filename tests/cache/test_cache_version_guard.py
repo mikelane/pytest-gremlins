@@ -7,8 +7,8 @@ Two markers share the digest, each owning part of the hashed paths:
 
 - ``RUNNER_FIDELITY_VERSION`` owns test execution and the mapping from test outcome to verdict:
   ``parallel/``, ``control_run.py`` and the code that shapes the gremlin subprocess command line
-  (``node_id_args.py``, which ``plugin.py`` pastes into the gremlin bootstrap, ``node_id_file.py`` and
-  ``xdist_options.py``).
+  (``node_id_args.py``, which ``plugin.py`` pastes into the gremlin bootstrap, ``node_id_file.py``,
+  ``rerun_options.py`` and ``xdist_options.py``).
 - ``CACHE_VERSION`` owns what gets mutated: ``operators/`` and ``instrumentation/``.
 
 ``plugin.py`` wires both, so a change there raises whichever marker matches what it changed.
@@ -32,12 +32,13 @@ VERDICT_AFFECTING_FILES = (
     'control_run.py',
     'node_id_args.py',
     'node_id_file.py',
+    'rerun_options.py',
     'xdist_options.py',
 )
 
 RECORDED_CACHE_VERSION = 1
 RECORDED_RUNNER_FIDELITY_VERSION = 'rf19'
-RECORDED_DIGEST = '50a27994c56c42891a464ee90670b26fe59faf8a3791e0bac66279d135a8465c'  # pragma: allowlist secret
+RECORDED_DIGEST = '8827edbcc7cdf74a559951c61de6be36475e856d09017a850f8240382789ce3e'  # pragma: allowlist secret
 
 
 def _verdict_affecting_sources() -> list[Path]:
@@ -99,5 +100,18 @@ class DescribeCacheVersionGuard:
 
         node_id_args = package_copy / 'node_id_args.py'
         node_id_args.write_text(node_id_args.read_text() + '\nNODE_IDS_FILE_OPTION = "--changed"\n')
+
+        assert _verdict_affecting_digest() != before
+
+    def it_changes_the_digest_when_the_carried_rerun_options_source_changes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        package_copy = tmp_path / 'pytest_gremlins'
+        shutil.copytree(PACKAGE_ROOT, package_copy, ignore=shutil.ignore_patterns('__pycache__'))
+        monkeypatch.setitem(globals(), 'PACKAGE_ROOT', package_copy)
+        before = _verdict_affecting_digest()
+
+        rerun_options = package_copy / 'rerun_options.py'
+        rerun_options.write_text(rerun_options.read_text() + '\n_CARRIED_OPTIONS = frozenset()\n')
 
         assert _verdict_affecting_digest() != before
