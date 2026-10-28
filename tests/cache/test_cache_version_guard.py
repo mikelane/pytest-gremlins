@@ -44,8 +44,8 @@ EXCLUDED_FROM_GUARD: dict[str, str] = {
 }
 
 RECORDED_CACHE_VERSION = 1
-RECORDED_RUNNER_FIDELITY_VERSION = 'rf19'
-RECORDED_DIGEST = 'cf2687790fbd6bb56db2efa12648de32096e80335543e75186c28af35dd0c524'  # pragma: allowlist secret
+RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
+RECORDED_DIGEST = '145d5f12899c0d39bd29a8af2467eee6eb85a7cc907edd90713377f4fb4d1a57'  # pragma: allowlist secret
 
 
 def _is_excluded(relative_path: str) -> bool:
