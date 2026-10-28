@@ -112,7 +112,7 @@ class DescribeCollectOnlyConfigValidation:
     def it_rejects_an_invalid_toml_value(self, collect_only_project: pytest.Pytester) -> None:
         collect_only_project.makepyprojecttoml('[tool.pytest-gremlins]\ncache = "yes"\n')
         result = collect_only_project.runpytest_subprocess('--gremlins', '--collect-only', *_NO_CATEGORIES)
-        assert result.ret != pytest.ExitCode.OK
+        assert result.ret == pytest.ExitCode.USAGE_ERROR
         assert 'must be a boolean' in result.stdout.str() + result.stderr.str()
 
     def it_rejects_an_out_of_range_max_pardons_pct(self, collect_only_project: pytest.Pytester) -> None:

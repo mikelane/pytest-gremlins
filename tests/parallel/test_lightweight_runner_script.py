@@ -15,6 +15,7 @@ import pickle
 import subprocess
 import sys
 import textwrap
+import zlib
 
 import pytest
 
@@ -160,7 +161,7 @@ class DescribeLightweightRunnerInstrumentedModules:
         origin = tmp_path / 'target.py'
         origin.write_text('VALUE = 0\n', encoding='utf-8')
         sources = tmp_path / 'sources.json'
-        tree = base64.b64encode(pickle.dumps(ast.parse('VALUE = 1\n'))).decode('ascii')
+        tree = base64.b64encode(zlib.compress(pickle.dumps(ast.parse('VALUE = 1\n')))).decode('ascii')
         entry = {'tree': tree, 'source': 'VALUE = 1\n', 'origin': str(origin)}
         sources.write_text(json.dumps({normalize_origin(str(origin)): entry}), encoding='utf-8')
         test_source = f"""
