@@ -81,8 +81,8 @@ The cache is smart about what needs re-analysis. An operator package is any dist
 | Test file modified | Mutations covered by those tests |
 | New test added | Mutations the new test covers |
 | Test deleted | Mutations that test was covering |
-| pytest-gremlins version changed | Everything (version mismatch) |
-| Operator package installed, removed or changed version | Everything (version mismatch) |
+| pytest-gremlins upgraded | Nothing, unless the release raised the cache version (then everything) |
+| Operator package installed, removed or changed version | Everything (old entries stop matching) |
 | Nothing changed | Nothing (instant results) |
 
 ### Source File Changed
@@ -166,7 +166,7 @@ cache = true
 
 ### Clearing Cache
 
-To discard all cached results and start fresh:
+To start fresh, ignoring all cached results:
 
 ```bash
 pytest --gremlins --gremlin-clear-cache
@@ -287,17 +287,15 @@ if sha256(entry["data"]) != entry["checksum"]:
 
 ### Version Compatibility
 
-Cache entries include the pytest-gremlins version:
+Cache keys include an internal cache version. Upgrading pytest-gremlins, including a minor or patch bump, keeps the
+cache. A release that changes how verdicts are computed (operators, instrumentation, verdict decisions) raises the cache
+version, so the first run after that upgrade is cold: old entries stop matching.
 
-```python
-if entry["version"] != current_version:
-    log.info("Version mismatch, invalidating cache")
-    clear_cache()
-```
-
-Any change to the pytest-gremlins version, including a patch bump (0.1.0 -> 0.1.1), clears the cache.
 The same holds when a package providing a `pytest_gremlins.operators` entry point is installed, removed or
 changes version.
+
+Entries that stop matching remain in `results.db` until pruning
+([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 
 ## Debugging Cache Behavior
 
