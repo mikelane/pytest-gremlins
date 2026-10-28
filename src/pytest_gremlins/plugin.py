@@ -37,7 +37,6 @@ import tokenize
 from typing import (
     TYPE_CHECKING,
 )
-import warnings
 import zlib
 
 from coverage.exceptions import CoverageException
@@ -98,6 +97,11 @@ from pytest_gremlins.instrumentation.transformer import (
     transform_source,
 )
 from pytest_gremlins.node_id_file import command_with_node_ids_file
+from pytest_gremlins.operators.entry_points import (
+    GremlinEntryPointWarning,
+    discard_warning,
+    load_entry_point_operators,
+)
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.exit_codes import (
@@ -429,6 +433,16 @@ def _extract_test_name_from_context(context: str) -> str:
     if '|' in context:
         return context.rsplit('|', maxsplit=1)[0]
     return context
+
+
+def _entry_point_warner(config: pytest.Config) -> collections.abc.Callable[[str], None]:
+    """Return a warning sink for operator entry points that honours pytest's warning filters.
+
+    Workers stay silent so a broken entry point is reported once, by the controller.
+    """
+    if _is_xdist_worker(config):
+        return discard_warning
+    return lambda message: config.issue_config_time_warning(GremlinEntryPointWarning(message), stacklevel=2)
 
 
 def _is_xdist_worker(config: pytest.Config) -> bool:
@@ -1023,6 +1037,10 @@ def pytest_configure(config: pytest.Config) -> None:
 
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
+    # Entry-point operators must be registered before load_config validates operator names.
+    registry = get_default_registry()
+    load_entry_point_operators(registry, warn=_entry_point_warner(config))
+
     # Load config from pyproject.toml and merge with CLI args
     config_warnings: list[str] = []
     try:
@@ -1042,8 +1060,6 @@ def pytest_configure(config: pytest.Config) -> None:
         )
     except ValueError as invalid:
         raise pytest.UsageError(f'pytest-gremlins: {invalid}') from invalid
-
-    registry = get_default_registry()
 
     # Use merged operators or all if none specified
     operators = registry.get_all(enabled=merged_config.operators) if merged_config.operators else registry.get_all()
@@ -2593,6 +2609,18 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     return relative_node_ids
 
 
+def _report_diagnostic(message: str) -> None:
+    """Write a run-time diagnostic to stderr.
+
+    Not ``warnings.warn``: these run inside ``pytest_sessionfinish``, where a user's
+    ``filterwarnings = error`` would escalate them into a crash (issue #543).
+
+    Args:
+        message: The diagnostic text, written as a single line to stderr.
+    """
+    print(message, file=sys.stderr)
+
+
 def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> None:
     """Warn that the pre-scan timed out, which is a different cause from "no data" (issues #503, #673)."""
     scaled_note = scaled_limit_note(attempt_timeout, seconds)
@@ -2602,31 +2630,28 @@ def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> N
         if scaled_note and limit_is_capped(seconds)
         else f'set coverage_timeout / --gremlin-coverage-timeout to raise {raised_limit}'
     )
-    warnings.warn(
+    _report_diagnostic(
         f'pytest-gremlins: coverage pre-scan exceeded {seconds}s{scaled_note}; '
         'coverage-guided test selection disabled '
-        f'({advice})',
-        stacklevel=1,
+        f'({advice})'
     )
 
 
 def _warn_prescan_launch_failure(launch_error: CoveragePrescanLaunchError) -> None:
     """Warn that the pre-scan could not be run, naming the cause (issue #485)."""
-    warnings.warn(
+    _report_diagnostic(
         f'pytest-gremlins: coverage pre-scan could not start ({launch_error.cause}); '
-        'coverage-guided test selection disabled, so every gremlin runs the full test suite',
-        stacklevel=1,
+        'coverage-guided test selection disabled, so every gremlin runs the full test suite'
     )
 
 
 def _warn_no_coverage_data() -> None:
     """Warn that the pre-scan finished but recorded nothing (issue #113)."""
-    warnings.warn(
+    _report_diagnostic(
         'Coverage collection returned no data. '
         'If you have --cov in pytest addopts, this may interfere with '
         "gremlins' coverage-guided test selection. "
-        'See https://github.com/mikelane/pytest-gremlins/issues/113',
-        stacklevel=1,
+        'See https://github.com/mikelane/pytest-gremlins/issues/113'
     )
 
 

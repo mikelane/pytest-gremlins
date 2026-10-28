@@ -85,30 +85,29 @@ class DescribeCoverageSubprocessClearsAddopts:
 
 @pytest.mark.small
 class DescribeEmptyCoverageWarning:
-    """Verify a warning is emitted when coverage collection returns empty data."""
+    """Verify a stderr diagnostic is written when coverage collection returns empty data."""
 
-    def it_warns_when_coverage_data_is_empty(self, tmp_path: Path) -> None:
-        """A warning fires when _run_tests_with_coverage returns an empty dict."""
+    def it_warns_when_coverage_data_is_empty(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """The no-data diagnostic reaches stderr when _run_tests_with_coverage returns an empty dict."""
         session = GremlinSession(
             enabled=True,
             gremlins=[],
             test_node_ids={},
         )
 
-        with (
-            patch(
-                'pytest_gremlins.plugin._run_tests_with_coverage',
-                return_value={},
-            ),
-            pytest.warns(
-                UserWarning,
-                match='Coverage collection returned no data',
-            ),
+        with patch(
+            'pytest_gremlins.plugin._run_tests_with_coverage',
+            autospec=True,
+            return_value={},
         ):
             _collect_coverage(session, tmp_path)
 
-    def it_emits_no_warning_when_coverage_data_is_present(self, tmp_path: Path) -> None:
-        """No warning fires when coverage data contains entries."""
+        assert 'Coverage collection returned no data' in capsys.readouterr().err
+
+    def it_emits_no_warning_when_coverage_data_is_present(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Nothing is written to stderr when coverage data contains entries."""
         session = GremlinSession(
             enabled=True,
             gremlins=[],
@@ -121,18 +120,14 @@ class DescribeEmptyCoverageWarning:
             },
         }
 
-        with (
-            patch(
-                'pytest_gremlins.plugin._run_tests_with_coverage',
-                return_value=coverage_data,
-            ),
-            warnings.catch_warnings(record=True) as caught,
+        with patch(
+            'pytest_gremlins.plugin._run_tests_with_coverage',
+            autospec=True,
+            return_value=coverage_data,
         ):
-            warnings.simplefilter('always')
             _collect_coverage(session, tmp_path)
 
-        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
-        assert len(user_warnings) == 0
+        assert capsys.readouterr().err == ''
 
 
 def _make_session_finish_mocks(
