@@ -1275,7 +1275,24 @@ def _hash_sources_and_tests_for_cache(
     for test_file in {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}:
         # A file part pytest left empty (a test outside rootdir) cannot say which file the test lives in.
         if test_file and (rootdir / test_file).is_file():
-            gremlin_session.test_hashes[test_file] = hasher.hash_file(rootdir / test_file)
+            gremlin_session.test_hashes[test_file] = _hash_test_file_with_conftests(hasher, rootdir, test_file)
+
+
+def _hash_test_file_with_conftests(hasher: ContentHasher, rootdir: Path, test_file: str) -> str:
+    """Hash a test file together with every ``conftest.py`` from rootdir down to its directory.
+
+    A fixture edited in a conftest changes what the test does, so it must change the key (#702).
+    """
+    parts = [hasher.hash_file(rootdir / test_file)]
+    directory = (rootdir / test_file).parent
+    while directory == rootdir or rootdir in directory.parents:
+        conftest = directory / 'conftest.py'
+        if conftest.is_file():
+            parts.append(f'{conftest.relative_to(rootdir).as_posix()}:{hasher.hash_file(conftest)}')
+        if directory == rootdir:
+            break
+        directory = directory.parent
+    return hasher.hash_string('|'.join(parts)) if len(parts) > 1 else parts[0]
 
 
 def _generate_gremlins(
@@ -3925,13 +3942,13 @@ def _build_test_hashes_for_gremlin(
 
 
 def _selection_has_unhashed_test_file(selected_tests: Sequence[str], gremlin_session: GremlinSession) -> bool:
-    """Whether a selected test lives in a file that could not be hashed (for example, outside rootdir).
+    """Whether a selected test has no node id, or lives in a file that could not be hashed (outside rootdir).
 
     A cache key built without that file's hash would replay a verdict after the test changed.
     """
     for test_name in selected_tests:
         node_id = _node_id_for_test(test_name, gremlin_session)
-        if '::' in node_id and node_id.split('::')[0] not in gremlin_session.test_hashes:
+        if '::' not in node_id or node_id.split('::')[0] not in gremlin_session.test_hashes:
             return True
     return False
 

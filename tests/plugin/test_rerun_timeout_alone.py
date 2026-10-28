@@ -166,6 +166,8 @@ class DescribeCachingOfSoloRerunResults:
         session.cache_enabled = True
         session.cache = cache
         session.source_hashes = {'/path/to/source.py': 'hash'}
+        session.test_node_ids = {'t.py::test_a': 't.py::test_a'}
+        session.test_hashes = {'t.py': 'test_hash'}
         return cache
 
     @pytest.mark.parametrize(
