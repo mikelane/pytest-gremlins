@@ -72,7 +72,8 @@ key = hash(
 
 ## Cache Invalidation Rules
 
-The cache is smart about what needs re-analysis:
+The cache is smart about what needs re-analysis. An operator package is any distribution that provides a
+`pytest_gremlins.operators` entry point.
 
 | What Changed | What Gets Invalidated |
 |--------------|----------------------|
@@ -80,7 +81,8 @@ The cache is smart about what needs re-analysis:
 | Test file modified | Mutations covered by those tests |
 | New test added | Mutations the new test covers |
 | Test deleted | Mutations that test was covering |
-| pytest-gremlins upgraded | Everything (version mismatch) |
+| pytest-gremlins version changed | Everything (version mismatch) |
+| Operator package installed, removed or changed version | Everything (version mismatch) |
 | Nothing changed | Nothing (instant results) |
 
 ### Source File Changed
@@ -293,7 +295,9 @@ if entry["version"] != current_version:
     clear_cache()
 ```
 
-Minor version bumps (0.1.0 -> 0.1.1) preserve cache compatibility. Major changes (0.1.0 -> 0.2.0) clear the cache.
+Any change to the pytest-gremlins version, including a patch bump (0.1.0 -> 0.1.1), clears the cache.
+The same holds when a package providing a `pytest_gremlins.operators` entry point is installed, removed or
+changes version.
 
 ## Debugging Cache Behavior
 

@@ -135,7 +135,11 @@ else:
 | Test file modified | Mutations covered by those tests |
 | New test added | Mutations the new test covers |
 | Test deleted | Mutations that test was zapping |
+| pytest-gremlins or an operator package (one providing a `pytest_gremlins.operators` entry point) installed, removed or changed version | Every mutation |
 | Nothing changed | Return cached results instantly |
+
+Operators registered from `conftest.py` are not tracked. After upgrading a package that supplies such operators,
+run with `--gremlin-clear-cache`.
 
 **Why it works:**
 

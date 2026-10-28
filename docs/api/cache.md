@@ -211,6 +211,10 @@ Cache keys incorporate three components:
 | `source_hash` | Source file content changes |
 | `combined_test_hash` | Any covering test file changes |
 
+The cache also records which versions of the code produced its verdicts: the pytest-gremlins version, and every
+distribution that provides a `pytest_gremlins.operators` entry point. If that set changes, the whole cache is
+discarded on the next run.
+
 ### Invalidation Rules
 
 | Change | Cache Effect |
@@ -219,7 +223,12 @@ Cache keys incorporate three components:
 | Test file modified | Miss for gremlins covered by that test |
 | New test added | Miss for gremlins the new test covers |
 | Test deleted | Miss for gremlins that test was zapping |
+| pytest-gremlins version changed | Miss for every gremlin (whole cache invalidated) |
+| Distribution providing a `pytest_gremlins.operators` entry point installed, removed or changed version | Miss for every gremlin (whole cache invalidated) |
 | Nothing changed | Hit (return cached result) |
+
+Operators registered from `conftest.py` are not tracked. After upgrading a package that supplies such operators,
+run with `--gremlin-clear-cache`.
 
 ### Usage Example
 
