@@ -18,10 +18,14 @@ from pytest_gremlins.cache.store import ResultStore
 from pytest_gremlins.cache.versions import installed_versions_fingerprint
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import (
+        Iterable,
+        Mapping,
+    )
     from pathlib import Path
 
     from pytest_gremlins.cache.types import CachedGremlinResult
+    from pytest_gremlins.operators.protocol import GremlinOperator
 
 
 RUNNER_FIDELITY_VERSION = 'rf20'
@@ -242,17 +246,19 @@ class IncrementalCache:
         >>> cache.close()
     """
 
-    def __init__(self, cache_dir: Path) -> None:
+    def __init__(self, cache_dir: Path, operators: Iterable[GremlinOperator] = ()) -> None:
         """Initialize the incremental cache.
 
         Args:
             cache_dir: Directory to store cache files.
+            operators: The operators registered for this run; the installed distributions that own them are
+                part of the cache key, so upgrading a package that supplies one retires its verdicts.
         """
         self._cache_dir = cache_dir
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
         self._store.delete_keys_not_ending_with(f':{RUNNER_FIDELITY_VERSION}')
-        self._versions_hash = self._hasher.hash_string(installed_versions_fingerprint())
+        self._versions_hash = self._hasher.hash_string(installed_versions_fingerprint(operators))
         self._hits = 0
         self._misses = 0
 

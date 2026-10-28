@@ -824,6 +824,7 @@ def _init_cache(
     rootdir: Path,
     cache_enabled: bool,
     clear_cache: bool,
+    operators: list[GremlinOperator],
 ) -> IncrementalCache | None:
     """Initialise the incremental cache when enabled, optionally clearing it first.
 
@@ -831,6 +832,8 @@ def _init_cache(
         rootdir: Project root directory where the cache directory is created.
         cache_enabled: Whether to create a cache instance at all.
         clear_cache: Whether to wipe the cache before use.
+        operators: The operators registered for the run, after conftest registration; their owning
+            distributions are part of the cache key.
 
     Returns:
         An open IncrementalCache, or None when caching is disabled.
@@ -838,7 +841,7 @@ def _init_cache(
     if not cache_enabled:
         return None
     cache_dir = rootdir / '.gremlins_cache'
-    cache = IncrementalCache(cache_dir)
+    cache = IncrementalCache(cache_dir, operators)
     if clear_cache:
         cache.clear()
         print('pytest-gremlins: cache cleared')
@@ -1082,7 +1085,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # Cache: merge_configs already resolved CLI-beats-TOML; default False
     cache_enabled: bool = bool(toml_cache)
-    cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache)
+    cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache, operators)
 
     xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
     xdist_workers_for_parallel = xdist_worker_int if xdist_active else None
