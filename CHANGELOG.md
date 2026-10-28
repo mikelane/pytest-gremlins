@@ -7,15 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v1.13.0 (2026-10-28)
 
-**Operator packages can now register themselves through entry points, the cache now notices when pytest-gremlins or
-an operator package changes, and a batch of crash and false-kill fixes lands.** The first run after upgrading starts
-from an empty cache.
+**Operator packages can now register themselves through entry points, the cache now notices when an operator package
+changes or a release raises the cache version, and a batch of crash and false-kill fixes lands.** The first run after
+upgrading starts from an empty cache.
 
 ### Upgrade notes
 
 - **The first run after upgrading to 1.13.0 starts from an empty cache, once.** Cached verdicts are now keyed on a
   cache version and on the exact version of every installed package that provides a `pytest_gremlins.operators` entry
-  point, and test files are now hashed together with every `conftest.py` above them. Later patch upgrades keep the
+  point, and test files are now hashed together with every `conftest.py` above them. Later upgrades keep the
   cache unless the release raises the cache version. Installing, removing or upgrading an operator package
   invalidates it. Operators registered from `conftest.py` are not tracked yet (#873): after changing them, run with
   `--gremlin-clear-cache`. (#702, #758, #867, #874)
