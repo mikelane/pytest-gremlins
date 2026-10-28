@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.config import load_config
+from pytest_gremlins.instrumentation.transformer import get_default_registry
+from pytest_gremlins.operators.comparison import ComparisonOperator
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -51,6 +53,12 @@ class DescribeListKeyValidation:
             load_config(tmp_path)
 
         assert '[tool.pytest-gremlins].operators' in str(caught.value)
+
+    def it_accepts_a_registered_operator_that_is_not_built_in(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setitem(get_default_registry()._operators, 'third-party', ComparisonOperator)
+        _write(tmp_path, 'operators = ["third-party"]')
+
+        assert load_config(tmp_path).operators == ['third-party']
 
     def it_loads_valid_lists(self, tmp_path: Path):
         _write(tmp_path, 'operators = ["comparison", "boundary"]\npaths = ["src"]\nexclude = ["tests/*"]')

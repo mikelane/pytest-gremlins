@@ -1051,6 +1051,10 @@ def pytest_configure(config: pytest.Config) -> None:
 
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
+    # Entry-point operators must be registered before load_config validates operator names.
+    registry = get_default_registry()
+    load_entry_point_operators(registry, warn=_entry_point_warner(config))
+
     # Load config from pyproject.toml and merge with CLI args
     config_warnings: list[str] = []
     try:
@@ -1070,9 +1074,6 @@ def pytest_configure(config: pytest.Config) -> None:
         )
     except ValueError as invalid:
         raise pytest.UsageError(f'pytest-gremlins: {invalid}') from invalid
-
-    registry = get_default_registry()
-    load_entry_point_operators(registry, warn=_entry_point_warner(config))
 
     # Use merged operators or all if none specified
     operators = registry.get_all(enabled=merged_config.operators) if merged_config.operators else registry.get_all()
