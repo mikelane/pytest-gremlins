@@ -38,6 +38,7 @@ from typing import (
     TYPE_CHECKING,
 )
 import warnings
+import zlib
 
 from coverage.exceptions import CoverageException
 import pytest
@@ -128,6 +129,7 @@ from pytest_gremlins.rerun_options import (
     RerunIniResolution,
     baseline_rerun_warning,
     expand_argument_files,
+    mutant_timeout_for_items,
     rerun_cache_settings,
     rerun_ini_as_gremlin_runs_read,
     rerun_keys_set_in,
@@ -928,7 +930,7 @@ _NON_RUNNING_MODE_FLAGS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
+def _maybe_short_circuit_for_inactive_run(config: pytest.Config, config_warnings: list[str] | None = None) -> bool:
     """Disable the session for pytest modes that execute no tests, after configuration is validated.
 
     ``--collect-only``, ``--setup-plan``, ``--setup-only``, ``--fixtures`` and
@@ -940,6 +942,7 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
 
     Args:
         config: The pytest config object.
+        config_warnings: Configuration warnings to print to stderr, since no terminal summary will carry them.
 
     Returns:
         True if the session was disabled and configuration should stop.
@@ -949,6 +952,8 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config) -> bool:
         return False
     _install_session(config, GremlinSession(enabled=False))
     if not _is_xdist_worker(config):
+        for warning in config_warnings or []:
+            print(f'pytest-gremlins: warning: {warning}', file=sys.stderr)
         print(f'pytest-gremlins: {mode_flag} detected, skipping mutation testing', file=sys.stderr)
     return True
 
@@ -1019,9 +1024,10 @@ def pytest_configure(config: pytest.Config) -> None:
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
     # Load config from pyproject.toml and merge with CLI args
+    config_warnings: list[str] = []
     try:
         merged_config = merge_configs(
-            load_config(rootdir),
+            load_config(rootdir, on_warning=config_warnings.append),
             cli_operators=config.option.gremlin_operators,
             cli_targets=config.option.gremlin_targets,
             cli_exclude=config.option.gremlin_exclude,
@@ -1044,7 +1050,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     target_paths = _resolve_target_paths(rootdir, merged_config)
 
-    if _maybe_short_circuit_for_inactive_run(config):
+    if _maybe_short_circuit_for_inactive_run(config, config_warnings):
         return
 
     (
@@ -1079,6 +1085,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config,
         GremlinSession(
             enabled=True,
+            terminal_notices=[f'pytest-gremlins: warning: {warning}' for warning in config_warnings],
             operators=operators,
             report_formats=report_formats,
             target_paths=target_paths,
@@ -1214,6 +1221,12 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     gremlin_session.test_files = list(set(test_files))
 
     gremlin_session.total_tests = len(session.items)
+    if session.items and _rerunfailures_is_loaded(session.config):
+        gremlin_session.mutant_timeout = mutant_timeout_for_items(
+            gremlin_session.mutant_attempt_timeout or gremlin_session.mutant_timeout,
+            gremlin_session.mutant_timeout,
+            session.items,
+        )
 
     # Normalize node IDs for subprocess execution.
     # In some contexts (e.g. pytester) node IDs can include absolute paths, and
@@ -1546,8 +1559,8 @@ def _write_instrumented_sources(
 
     Creates a temporary directory containing:
     1. A JSON file mapping the normalized real path of each instrumented file to its
-       instrumented tree (``tree``: the instrumented AST, pickled and base64 encoded for the subprocess to
-       compile under the real file path; absent when the tree is too deep to pickle), its unparsed text
+       instrumented tree (``tree``: the instrumented AST, pickled, zlib compressed and base64 encoded for the subprocess
+       to compile under the real file path; absent when the tree is too deep to pickle), its unparsed text
        (``source``: always present, what the subprocess compiles when the tree is absent or too deep), the
        path it came from, the file's device and inode (``identity``, for spellings the path key misses) and
        the lowercased file names it may be imported as (``names``, so the finder skips every other import
@@ -1615,7 +1628,7 @@ del _gremlin_os
 
 
 def _encode_tree(instrumented_tree: ast.Module) -> str | None:
-    """Return ``instrumented_tree`` pickled and base64 encoded for sources.json, or ``None`` if nested too deeply.
+    """Return ``instrumented_tree`` pickled, zlib compressed and base64 encoded, or ``None`` if nested too deeply.
 
     The subprocess compiles the tree itself, under the real file path, so the original line numbers survive and
     the subprocess's own optimize level and warning filters apply. Pickling recurses once per level of nesting,
@@ -1625,7 +1638,9 @@ def _encode_tree(instrumented_tree: ast.Module) -> str | None:
     releases before #563.
     """
     try:
-        return base64.b64encode(pickle.dumps(ast.fix_missing_locations(instrumented_tree))).decode('ascii')
+        return base64.b64encode(zlib.compress(pickle.dumps(ast.fix_missing_locations(instrumented_tree)))).decode(
+            'ascii'
+        )
     except RecursionError:
         return None
 
@@ -2074,7 +2089,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             _print_terminal_notices(gremlin_session)
             cause = (
                 'Files were skipped (see above).'
-                if gremlin_session.terminal_notices
+                if gremlin_session.skipped_files
                 else 'Check your `paths`/`--gremlin-targets` configuration.'
             )
             print(f'--gremlin-explain: no gremlins were generated in this session (nothing to explain). {cause}')
@@ -2138,7 +2153,14 @@ def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: Grem
     if outcome.loads_cleanly:
         return
     gremlin_session.load_failures_attributable = False
-    (instrumented_dir / UNATTRIBUTABLE_MARKER).write_text('', encoding='utf-8')
+    try:
+        (instrumented_dir / UNATTRIBUTABLE_MARKER).write_text('', encoding='utf-8')
+    except OSError as write_error:
+        print(
+            f'pytest-gremlins: could not write the load-failure marker ({write_error}); '
+            'load failures under a mutant may be scored as kills.',
+            file=sys.stderr,
+        )
     print(build_diagnostic(outcome.output), file=sys.stderr)
 
 
@@ -2470,6 +2492,8 @@ def _skip_mutation_unless_baseline_is_green(gremlin_session: GremlinSession, exi
             print(rerun_warning, file=sys.stderr)
         return False
     reason = _baseline_skip_reason(gremlin_session, exitstatus)
+    for notice in gremlin_session.terminal_notices:
+        print(notice, file=sys.stderr)
     print(f'pytest-gremlins: skipping mutation testing because {reason}', file=sys.stderr)
     gremlin_session.enabled = False
     return True
@@ -3205,6 +3229,8 @@ def _run_tests_with_coverage(
         'pytest_gremlins.coverage.subprocess_bootstrap',
         '-p',
         'no:gremlins',
+        '-W',
+        'ignore::pytest.PytestAssertRewriteWarning',
         '-o',
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
         *doctest_ini_overrides,
@@ -3343,11 +3369,23 @@ def _run_batch_mutation_testing(  # pragma: no cover
                 seen_tests.add(test)
                 all_covering_tests.append(test)
 
-    test_command = _build_filtered_test_command(
-        base_test_command,
-        all_covering_tests,
-        gremlin_session,
-    )
+    try:
+        test_command = _build_filtered_test_command(
+            base_test_command,
+            all_covering_tests,
+            gremlin_session,
+        )
+    except OSError as write_error:
+        logger.warning('Cannot launch the gremlin batch: %s', write_error)
+        return cached_results + [
+            GremlinResult(
+                gremlin=gremlin,
+                status=GremlinResultStatus.ERROR,
+                error_output=_node_ids_write_failure_output(write_error),
+                selected_tests=gremlin_tests[gremlin.gremlin_id],
+            )
+            for gremlin in uncached_gremlins
+        ]
 
     # Execute batches
     executor = BatchExecutor(
@@ -3446,6 +3484,8 @@ def _run_parallel_mutation_testing(  # pragma: no cover
 
     print(f'\npytest-gremlins: Starting parallel execution with {gremlin_session.parallel_workers or "auto"} workers')
 
+    test_commands: dict[str, list[str]] = {}
+    launch_failed_ids: set[str] = set()
     with WorkerPool(
         max_workers=gremlin_session.parallel_workers,
         timeout=gremlin_session.mutant_timeout,
@@ -3455,11 +3495,18 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         for gremlin in uncached_gremlins:
             selected_tests = gremlin_tests[gremlin.gremlin_id]
 
-            test_command = _build_filtered_test_command(
-                base_test_command,
-                selected_tests,
-                gremlin_session,
-            )
+            try:
+                test_command = _build_filtered_test_command(
+                    base_test_command,
+                    selected_tests,
+                    gremlin_session,
+                )
+            except OSError as write_error:
+                logger.warning('Cannot launch gremlin %s: %s', gremlin.gremlin_id, write_error)
+                aggregator.add_error(gremlin.gremlin_id, OSError(_node_ids_write_failure_output(write_error)))
+                launch_failed_ids.add(gremlin.gremlin_id)
+                continue
+            test_commands[gremlin.gremlin_id] = test_command
 
             future = pool.submit(
                 gremlin_id=gremlin.gremlin_id,
@@ -3502,9 +3549,12 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             error_output=worker_result.error_output,
             selected_tests=selected_tests,
         )
+        if gremlin_id in launch_failed_ids:
+            results.append(gremlin_result)
+            continue
         gremlin_result = _confirm_pooled_result(
             gremlin_result,
-            _build_filtered_test_command(base_test_command, selected_tests, gremlin_session),
+            test_commands[gremlin_id],
             _node_ids_for_tests(selected_tests, gremlin_session),
             gremlin_session,
             rootdir,
@@ -3555,7 +3605,7 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
     )
 
     if target_gremlin is None:
-        skipped_hint = ' Files were skipped (see above).' if gremlin_session.terminal_notices else ''
+        skipped_hint = ' Files were skipped (see above).' if gremlin_session.skipped_files else ''
         print(
             f'--gremlin-explain: no gremlin with id {target_id!r} in this session. '
             f'Run with --gremlins (without --gremlin-explain) to see the full list of '
@@ -3788,11 +3838,23 @@ def _run_mutation_testing(
 
         _report_gremlin_progress(i, len(gremlin_session.gremlins), gremlin, test_count, total)
 
-        test_command = _build_filtered_test_command(
-            base_test_command,
-            selected_tests,
-            gremlin_session,
-        )
+        try:
+            test_command = _build_filtered_test_command(
+                base_test_command,
+                selected_tests,
+                gremlin_session,
+            )
+        except OSError as write_error:
+            logger.warning('Cannot launch gremlin %s: %s', gremlin.gremlin_id, write_error)
+            results.append(
+                GremlinResult(
+                    gremlin=gremlin,
+                    status=GremlinResultStatus.ERROR,
+                    error_output=_node_ids_write_failure_output(write_error),
+                    selected_tests=selected_tests,
+                )
+            )
+            continue
         gremlin_result = _test_gremlin(
             gremlin,
             test_command,
@@ -4156,6 +4218,11 @@ def _report_gremlin_progress(
     """
     prefix = f'Gremlin {index}/{total_gremlins}: {gremlin.gremlin_id}'
     print(f'{prefix} - running {test_count}/{total_tests} tests')
+
+
+def _node_ids_write_failure_output(error: OSError) -> str:
+    """Describe a failed write of the node-ids file for a gremlin's ``error_output``."""
+    return f'Could not write the node ids file for the gremlin test command: {error}'[:2000]
 
 
 def _build_filtered_test_command(
