@@ -144,10 +144,17 @@ installed package owns the module's file, including an editable install marked b
 `dir_info.editable` set to true. Non-editable installs from a local directory, a VCS URL or an archive count. Such an
 operator keys on its distribution's version. Every other operator misses the cache on every run: project-local
 helper modules, modules loaded by file path, modules that share a name with an installed or standard-library module,
-namespace packages, classes defined inside functions, and editable installs recorded only through a `.pth` file or a
-setuptools import finder. The key carries a fresh random token, so the run is slower but never serves a stale
-verdict. Operators defined in `conftest.py` are the exception: the source and conftest hashes cover them. Restoring
-cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887).
+namespace-package modules (unless an installed distribution in that namespace sits at the same top-level name),
+classes defined inside functions, and editable installs recorded only through a `.pth` file or a setuptools import
+finder. The key carries a fresh random token, so the run is slower but never serves a stale verdict. Operators defined
+in a `conftest.py` on the hashed chain are the exception: the source and conftest hashes cover them. Restoring cache
+hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887).
+
+Some cases still keep a stable key when the operator's code has changed, tracked in
+[#890](https://github.com/mikelane/pytest-gremlins/issues/890): a leftover `<pkg>.egg-info` beside a source checkout on
+`sys.path`, a file in a shared namespace package that no `RECORD` lists, a file under a PEP 610 editable project
+directory outside the distribution's package, and a `conftest.py` outside the hashed chain. After editing code in one
+of these, run with `--gremlin-clear-cache`.
 
 **Why it works:**
 

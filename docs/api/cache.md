@@ -229,9 +229,21 @@ until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 | pytest-gremlins upgraded | Hit, unless the release raised the cache version (then a miss for every gremlin) |
 | Distribution providing a `pytest_gremlins.operators` entry point installed, removed or changed version | Miss for every gremlin (old entries stop matching) |
 | Installed package (including a PEP 610 editable install) that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
-| Operator defined in `conftest.py` under the pytest rootdir (project-local, even if the project is installed editable) | No effect on the key; the source and conftest hashes cover it |
-| Operator that does not come from an installed distribution: a project-local helper module, a module loaded by file path or sharing a name with another module, a namespace package, a class defined inside a function, a module with no file, or an editable install recorded only through a `.pth` file or a setuptools import finder | Every run misses the cache for every gremlin: the key carries a fresh random token, so the run is slower but never serves a stale verdict. An operator keeps hits only when it is importable by its qualified name and an installed package owns its module. Restoring cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator from an installed distribution still keys on that distribution's version |
+| Operator defined in a `conftest.py` on the hashed chain (from the pytest rootdir down to each test file, even if the project is installed editable) | No effect on the key; the source and conftest hashes cover it |
+| Operator that does not come from an installed distribution: a project-local helper module, a module loaded by file path or sharing a name with another module, a namespace-package module (unless an installed distribution in that namespace sits at the same top-level name), a class defined inside a function, a module with no file, or an editable install recorded only through a `.pth` file or a setuptools import finder | Every run misses the cache for every gremlin: the key carries a fresh random token, so the run is slower but never serves a stale verdict. An operator keeps hits only when it is importable by its qualified name and an installed package owns its module. Restoring cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator from an installed distribution still keys on that distribution's version |
 | Nothing changed | Hit (return cached result) |
+
+Some cases still keep a stable key when the operator's code has changed. These are not tracked by the key yet
+([#890](https://github.com/mikelane/pytest-gremlins/issues/890)):
+
+- A source checkout on `sys.path` with a leftover `<pkg>.egg-info` keys on that egg-info's name and version.
+- A file in a shared namespace package that no `RECORD` lists takes the label of a sibling distribution that owns
+  another part of the namespace.
+- A file under a PEP 610 editable project directory that is not part of the distribution's package (for example a
+  monorepo `tools/` helper) takes the editable distribution's label.
+- A `conftest.py` outside the hashed conftest chain keeps a stable key.
+
+After editing code in one of these, run with `--gremlin-clear-cache`.
 
 ### Usage Example
 

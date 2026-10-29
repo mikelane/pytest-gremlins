@@ -30,7 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module that a `conftest.py` imports now makes every run miss the cache (slower, never stale; hits are tracked in
   #887). Still not tracked (#882): operators no installed distribution owns, and editable installs recorded only
   through a `.pth` file or a setuptools import finder. After changing one of those, run with
-  `--gremlin-clear-cache`. (#873, #884)
+  `--gremlin-clear-cache`. Also still open ([#890](https://github.com/mikelane/pytest-gremlins/issues/890)): a
+  leftover `<pkg>.egg-info` beside a source checkout, a file in a shared namespace package that no `RECORD` lists, a
+  file under a PEP 610 editable project directory outside its distribution's package, and a `conftest.py` outside the
+  hashed chain. (#873, #884)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/architecture/speed/#pillar-3-incremental-analysis)
 
