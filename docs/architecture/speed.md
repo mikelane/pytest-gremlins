@@ -143,10 +143,11 @@ editable install marked by a PEP 610 `direct_url.json` with `dir_info.editable` 
 from a local directory, a VCS URL or an archive are ordinary installed packages and count. An operator whose module
 is under the pytest rootdir is project code and adds nothing to the key, even when the project under test is itself
 installed editable. If the operator class is defined in `conftest.py`, the source and conftest hashes cover it. If it
-is defined in a project-local helper module that a conftest imports, no hash covers it yet
-([#882](https://github.com/mikelane/pytest-gremlins/issues/882)): run with `--gremlin-clear-cache` after changing
-that module. The same holds for an operator no installed distribution owns. Editable installs recorded only through
-a `.pth` file, or that map modules through a setuptools import finder, are not recognized: run with
+is defined in a project-local helper module that a conftest imports, the helper file's content hash joins the key, so
+editing it misses the cache for every gremlin. Only that file is hashed, not the modules it imports. A helper module
+whose file cannot be found or read always misses the cache. An operator no installed distribution owns adds nothing to
+the key. Editable installs recorded only through a `.pth` file, or that map modules through a setuptools import
+finder, are not recognized: run with
 `--gremlin-clear-cache` after changing such a package.
 
 **Why it works:**
