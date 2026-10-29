@@ -197,6 +197,19 @@ def _operator_owner_labels(operators: Iterable[GremlinOperator], project_root: P
     return labels
 
 
+def _class_source_file(operator_class: type) -> str | None:
+    """Return the file of a class's first plain method, for a module that is not in ``sys.modules``.
+
+    A conftest that loads its helper with ``spec_from_file_location`` never registers it, and ``inspect`` can
+    only find a class's file through ``sys.modules``. A method's code object always records its file.
+    """
+    for member in vars(operator_class).values():
+        code = getattr(member, '__code__', None)
+        if code is not None:
+            return str(code.co_filename)
+    return None
+
+
 def _local_helper_file(operator: GremlinOperator, project_root: Path | None) -> Path | None:
     """Return the file of a project-local helper module that defines ``operator``, or None if it needs no hash.
 
@@ -207,7 +220,7 @@ def _local_helper_file(operator: GremlinOperator, project_root: Path | None) -> 
     module_name = type(operator).__module__
     if module_name.partition('.')[0] == 'pytest_gremlins':
         return None
-    origin = getattr(sys.modules.get(module_name), '__file__', None)
+    origin = getattr(sys.modules.get(module_name), '__file__', None) or _class_source_file(type(operator))
     if origin is None:
         return Path(f'<no-file:{module_name}>')
     location = Path(origin).resolve()

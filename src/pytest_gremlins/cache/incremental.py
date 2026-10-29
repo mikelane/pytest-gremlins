@@ -262,7 +262,8 @@ class IncrementalCache:
             cache_dir: Directory to store cache files.
             operators: The operators registered for this run; the installed distributions that own them are
                 part of the cache key, so upgrading a package that supplies one retires its verdicts.
-            project_root: The pytest rootdir; operator modules under it are project code and add nothing.
+            project_root: The pytest rootdir; an operator module under it is project code, so no distribution
+                label is added. Its helper file's content hash joins the key instead, unless it is a conftest.
         """
         self._cache_dir = cache_dir
         self._hasher = ContentHasher()
