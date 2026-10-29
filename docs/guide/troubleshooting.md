@@ -708,9 +708,9 @@ pytest-gremlins puts its finder back in front. A target loaded from the inner `c
 In those cases, import the target in the outer test before the inner session starts, or avoid claiming it
 through `python_files`.
 
-**Cache:** Verdicts cached for this bug are retired only in projects that load the pytester plugin (`-p pytester`,
-`pytest_plugins` in any `conftest.py`, or `addopts`). Their first run after upgrading is a cache miss. Projects that
-never load pytester keep their cache.
+**Cache:** Verdicts cached for this bug are retired only in projects that load the pytester plugin (`-p pytester`
+or `-p _pytest.pytester`, `pytest_plugins` in any `conftest.py`, or `addopts`). Their first run after upgrading is
+a cache miss. Projects that never load pytester keep their cache.
 
 ---
 

@@ -1015,6 +1015,16 @@ def _reject_disabled_executor(executor: str) -> None:
         )
 
 
+# pytester registers under its entry-point name when loaded by name, and under its module path when loaded
+# with ``-p _pytest.pytester`` or ``pytest_plugins = ['_pytest.pytester']`` (#891).
+PYTESTER_PLUGIN_NAMES = ('pytester', '_pytest.pytester')
+
+
+def _pytester_loaded(config: pytest.Config) -> bool:
+    """Report whether the session loads the pytester plugin under any registration name (#891)."""
+    return any(config.pluginmanager.has_plugin(name) for name in PYTESTER_PLUGIN_NAMES)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
@@ -1096,7 +1106,7 @@ def pytest_configure(config: pytest.Config) -> None:
         cache_enabled,
         config.option.gremlin_clear_cache,
         operators,
-        pytester_loaded=lambda: config.pluginmanager.has_plugin('pytester'),
+        pytester_loaded=lambda: _pytester_loaded(config),
     )
 
     xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
