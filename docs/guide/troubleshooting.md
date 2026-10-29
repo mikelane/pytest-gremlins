@@ -215,7 +215,8 @@ pytest-gremlins: skipped src/demo/chain.py: could not instrument (RecursionError
 ```
 
 If every target was skipped, the mutation report says `1 file(s) skipped and not mutation tested`
-and lists the files instead of `No gremlins found`.
+and lists the files instead of `No gremlins found`. The HTML and JSON reports are still written, with a total of 0
+and the skipped files listed.
 
 **Cause:** Instrumenting the file raised an exception. A very long operator chain (about 120 `+` terms or
 about 245 `|` terms) exceeds Python's recursion limit. Any other exception from instrumentation is
