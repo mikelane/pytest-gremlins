@@ -156,6 +156,11 @@ class DescribeGremlinRunsWithAutoloadDisabled:
 
         assert_gremlins_ran_cleanly(result)
 
+    @pytest.mark.skipif(
+        pytest.version_tuple >= (9, 2),
+        reason='pytest 9.2 rejects PYTEST_PLUGINS naming pytest_cov alongside `-p pytest_cov.plugin` before '
+        'pytest-gremlins starts, so no session on pytest 9.2 or later can reach this combination.',
+    )
     def it_registers_pytest_cov_once_when_pytest_plugins_also_names_the_bare_package(
         self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
     ) -> None:
