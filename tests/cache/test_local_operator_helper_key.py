@@ -6,17 +6,16 @@ Restoring hits is tracked in #887.
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
+from pathlib import Path
 import sys
-from typing import TYPE_CHECKING
 
+import pluggy
 import pytest
 
 from pytest_gremlins.cache.versions import installed_versions_fingerprint
 from pytest_gremlins.operators.comparison import ComparisonOperator
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 OPERATOR_SOURCE = 'class HelperOperator:\n    name = "helper"\n    description = "x"\n    delta = {delta}\n'
 
@@ -107,3 +106,66 @@ class DescribeLocalOperatorHelperInFingerprint:
         second = installed_versions_fingerprint([operator], tmp_path)
 
         assert first != second
+
+
+def _always_misses(operator: object, root: Path) -> bool:
+    return installed_versions_fingerprint([operator], root) != installed_versions_fingerprint([operator], root)
+
+
+@pytest.mark.medium
+class DescribeHelperClassification:
+    """A class keeps a stable key only if it is importable by qualified name AND an installed distribution owns it."""
+
+    def it_misses_for_a_path_loaded_helper_whose_spec_name_is_a_stdlib_module(self, tmp_path: Path) -> None:
+        root = tmp_path / 'project'
+        root.mkdir()
+        operator = _load_operator_unregistered(root / 'gremlin_ops.py', module_name='json')
+
+        assert _always_misses(operator, root)
+
+    def it_misses_for_a_path_loaded_helper_whose_spec_name_is_an_installed_dist_module(self, tmp_path: Path) -> None:
+        root = tmp_path / 'project'
+        root.mkdir()
+        operator = _load_operator_unregistered(root / 'gremlin_ops.py', module_name='pluggy')
+
+        assert _always_misses(operator, root)
+
+    def it_misses_for_an_importable_helper_outside_the_rootdir_that_no_distribution_installs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path / 'project'
+        shared = tmp_path / 'shared'
+        root.mkdir()
+        shared.mkdir()
+        (shared / 'shared_ops.py').write_text(OPERATOR_SOURCE.format(delta=1))
+        monkeypatch.syspath_prepend(str(shared))
+        monkeypatch.delitem(sys.modules, 'shared_ops', raising=False)
+        operator = importlib.import_module('shared_ops').HelperOperator()
+
+        assert _always_misses(operator, root)
+
+    def it_misses_for_a_namespace_package_module(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        root = tmp_path / 'project'
+        (root / 'ns_pkg').mkdir(parents=True)
+        monkeypatch.syspath_prepend(str(root))
+        monkeypatch.delitem(sys.modules, 'ns_pkg', raising=False)
+        importlib.import_module('ns_pkg')
+        operator = type('HelperOperator', (), {'__module__': 'ns_pkg'})()
+
+        assert _always_misses(operator, root)
+
+    def it_keeps_a_stable_key_for_an_installed_distribution_under_a_venv_in_the_rootdir(self) -> None:
+        venv_root = Path(pluggy.__file__).resolve().parents[5]
+        operator = pluggy.HookimplMarker('project')
+
+        assert not _always_misses(operator, venv_root)
+
+
+def _load_operator_unregistered(path: Path, module_name: str) -> object:
+    path.write_text(OPERATOR_SOURCE.format(delta=1))
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.HelperOperator()
