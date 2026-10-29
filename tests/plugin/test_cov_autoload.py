@@ -79,9 +79,11 @@ class DescribeBuildTestCommandPytestCovOptions:
 @pytest.mark.small
 @pytest.mark.usefixtures('autoload_enabled')
 class DescribePytestCovOptionsWithAutoloadOn:
-    @pytest.mark.parametrize('name', ['pytest_cov', 'pytest_cov.plugin'])
-    def it_forwards_no_cov_when_the_session_has_the_option(self, name: str) -> None:
-        assert _pytest_cov_options_for(_config(loaded=(name,)), []) == ['--no-cov']
+    def it_loads_the_entry_point_name_so_an_inherited_block_cannot_hide_the_option(self) -> None:
+        assert _pytest_cov_options_for(_config(loaded=('pytest_cov',)), []) == ['-p', 'pytest_cov', '--no-cov']
+
+    def it_forwards_only_no_cov_for_the_module_name_which_would_register_twice(self) -> None:
+        assert _pytest_cov_options_for(_config(loaded=('pytest_cov.plugin',)), []) == ['--no-cov']
 
     def it_forwards_nothing_when_the_session_lacks_the_option(self) -> None:
         assert _pytest_cov_options_for(_config(option_names=()), []) == []
