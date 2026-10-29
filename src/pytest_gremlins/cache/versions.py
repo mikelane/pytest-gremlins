@@ -197,28 +197,22 @@ def _operator_owner_labels(operators: Iterable[GremlinOperator], project_root: P
     return labels
 
 
-def _class_source_file(operator_class: type) -> str | None:
-    """Return the file that defines a class, for a module that is not in ``sys.modules``.
+def _importable_module_file(operator_class: type) -> str | None:
+    """Return the file of the module that holds ``operator_class``, or None when ``sys.modules`` cannot prove it.
 
-    A conftest that loads its helper with ``spec_from_file_location`` never registers it, and ``inspect`` can
-    only find a class's file through ``sys.modules``. A method's code object records its file, but only a member
-    whose ``co_qualname`` is ``<Class>.<name>`` was written in the class body: ``functools.wraps`` copies
-    ``__qualname__`` but not ``co_qualname``, and generated dataclass methods carry another qualname. Returns None
-    when no member proves it, so the caller keys the class on the always-miss token instead of hashing a wrong file.
+    A conftest that loads its helper with ``spec_from_file_location`` need not register it, and the class's methods
+    cannot say which file defined it (decorators, generated methods and copied methods carry other files' code). The
+    module counts only when walking the class's ``__qualname__`` from it finds this very class: a path-loaded helper
+    whose spec name matches an unrelated imported module, or a class built inside a function, finds nothing.
     """
-    for name, member in vars(operator_class).items():
-        code = getattr(_unwrap_descriptor(member), '__code__', None)
-        if code is not None and code.co_qualname == f'{operator_class.__qualname__}.{name}':
-            return str(code.co_filename)
-    return None
-
-
-def _unwrap_descriptor(member: object) -> object:
-    if isinstance(member, (classmethod, staticmethod)):
-        return member.__func__
-    if isinstance(member, property):
-        return member.fget
-    return member
+    if '<locals>' in operator_class.__qualname__:
+        return None
+    holder: object = sys.modules.get(operator_class.__module__)
+    for part in operator_class.__qualname__.split('.'):
+        holder = getattr(holder, part, None)
+    if holder is not operator_class:
+        return None
+    return getattr(sys.modules[operator_class.__module__], '__file__', None)
 
 
 def _local_helper_file(operator: GremlinOperator, project_root: Path | None) -> Path | None:
@@ -231,7 +225,7 @@ def _local_helper_file(operator: GremlinOperator, project_root: Path | None) -> 
     module_name = type(operator).__module__
     if module_name.partition('.')[0] == 'pytest_gremlins':
         return None
-    origin = getattr(sys.modules.get(module_name), '__file__', None) or _class_source_file(type(operator))
+    origin = _importable_module_file(type(operator))
     if origin is None:
         return Path(f'<no-file:{module_name}>')
     location = Path(origin).resolve()

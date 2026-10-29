@@ -52,6 +52,15 @@ GREMLIN_ARGS = ('--gremlins', '--gremlin-targets=target.py', '--gremlin-operator
 
 @pytest.mark.medium
 class DescribeProjectLocalOperatorHelperModule:
+    def it_hits_the_cache_when_the_helper_module_is_unchanged(self, pytester: pytest.Pytester) -> None:
+        pytester.makeconftest(CONFTEST)
+        pytester.makepyfile(target=TARGET, test_target=TARGET_TEST, gremlin_ops=OPERATOR_TEMPLATE.format(delta=1))
+        pytester.runpytest_subprocess(*GREMLIN_ARGS).stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])
+
+        warm = pytester.runpytest_subprocess(*GREMLIN_ARGS)
+
+        warm.stdout.fnmatch_lines(['Cache: 1 hits, 0 misses (100% hit rate)'])
+
     def it_misses_the_cache_after_the_helper_module_changes(self, pytester: pytest.Pytester) -> None:
         pytester.makeconftest(CONFTEST)
         pytester.makepyfile(target=TARGET, test_target=TARGET_TEST, gremlin_ops=OPERATOR_TEMPLATE.format(delta=1))
@@ -92,7 +101,9 @@ PATH_LOADED_CONFTEST = textwrap.dedent(
 
 @pytest.mark.medium
 class DescribePathLoadedOperatorHelperModule:
-    def it_hits_the_cache_when_the_helper_module_is_unchanged(self, pytester: pytest.Pytester) -> None:
+    def it_misses_the_cache_on_every_run_because_a_path_loaded_helper_cannot_be_keyed(
+        self, pytester: pytest.Pytester
+    ) -> None:
         pytester.makeconftest(PATH_LOADED_CONFTEST)
         pytester.makepyfile(target=TARGET, test_target=TARGET_TEST, gremlin_ops=OPERATOR_TEMPLATE.format(delta=1))
         cold = pytester.runpytest_subprocess(*GREMLIN_ARGS)
@@ -100,7 +111,7 @@ class DescribePathLoadedOperatorHelperModule:
 
         warm = pytester.runpytest_subprocess(*GREMLIN_ARGS)
 
-        warm.stdout.fnmatch_lines(['Cache: 1 hits, 0 misses (100% hit rate)'])
+        warm.stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])
 
     def it_misses_the_cache_after_the_helper_module_changes(self, pytester: pytest.Pytester) -> None:
         pytester.makeconftest(PATH_LOADED_CONFTEST)

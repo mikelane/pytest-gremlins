@@ -230,7 +230,7 @@ until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 | Distribution providing a `pytest_gremlins.operators` entry point installed, removed or changed version | Miss for every gremlin (old entries stop matching) |
 | Installed package (including a PEP 610 editable install) that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
 | Operator defined in `conftest.py` under the pytest rootdir (project-local, even if the project is installed editable) | No effect on the key; the source and conftest hashes cover it |
-| Operator defined in a project-local helper module a conftest imports (not itself a `conftest.py`), or a file-less or unreadable module | The helper file's content hash joins the key: editing it is a miss for every gremlin. A module whose file cannot be found or read always misses. Modules the helper imports are not hashed |
+| Operator defined in a project-local helper module a conftest imports (not itself a `conftest.py`), or a file-less or unreadable module | The helper file's content hash joins the key: editing it is a miss for every gremlin. A module whose file cannot be found or read always misses, and so does a helper loaded by file path and not importable (`sys.modules` cannot prove its file): make it an importable module to keep caching. Modules the helper imports are not hashed |
 | An operator no installed distribution owns, or an editable install recorded only through a `.pth` file or a setuptools import finder | No effect on the key: run with `--gremlin-clear-cache` after changing it |
 | Nothing changed | Hit (return cached result) |
 

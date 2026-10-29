@@ -145,7 +145,10 @@ is under the pytest rootdir is project code and adds no installed-distribution l
 project under test is itself installed editable. If the operator class is defined in `conftest.py`, the source and
 conftest hashes cover it. If it is defined in a project-local helper module that a conftest imports, the helper
 file's content hash joins the key, so editing it misses the cache for every gremlin. Only that file is hashed, not
-the modules it imports. A helper module whose file cannot be found or read always misses the cache. An operator no
+the modules it imports. A helper module whose file cannot be found or read always misses the cache. So does a
+helper loaded by file path (`importlib.util.spec_from_file_location` without registering it in `sys.modules`), because
+its file cannot be proven: every run recomputes its verdicts. To keep caching, make the helper an importable module
+(a plain `import` from `conftest.py`). An operator no
 installed distribution owns adds nothing to the key. Editable installs recorded only through a `.pth` file, or that
 map modules through a setuptools import finder, are not recognized: run with
 `--gremlin-clear-cache` after changing such a package.
