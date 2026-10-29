@@ -226,9 +226,7 @@ class DescribeMutantTimeoutEndToEnd:
         assert verdicts['Timeout'] == 0
         assert verdicts['Zapped'] > 0
 
-    def it_does_not_reuse_a_verdict_cached_under_a_different_timeout(
-        self, pytester_with_markers: pytest.Pytester
-    ) -> None:
+    def it_reuses_a_verdict_that_finished_inside_the_new_timeout(self, pytester_with_markers: pytest.Pytester) -> None:
         first = _run(
             pytester_with_markers,
             '--gremlin-cache',
@@ -249,7 +247,8 @@ class DescribeMutantTimeoutEndToEnd:
         )
 
         assert _verdicts(first.stdout.str())['Zapped'] == 2
-        assert 'cache hit' not in second.stdout.str()
+        assert second.stdout.str().count('cache hit (skipping)') == 2
+        assert _verdicts(second.stdout.str()) == _verdicts(first.stdout.str())
         assert third.stdout.str().count('cache hit (skipping)') == 2
 
     @pytest.mark.parametrize('value', ['0', '-3', '86401', '99999999999'])

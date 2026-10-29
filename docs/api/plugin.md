@@ -208,8 +208,6 @@ The `GremlinSession` dataclass maintains state throughout a mutation testing run
 | `xdist_active` | `bool` | Whether xdist is active |
 | `xdist_workers` | `int \| None` | Number of xdist workers |
 | `coverage_mode` | `CoverageMode` | PIGGYBACK (reuse pytest-cov) or PRIVATE |
-| `private_coverage` | `coverage.Coverage \| None` | Inline coverage instance (PRIVATE mode) |
-| `gremlins_tmpdir` | `str \| None` | Shared temp dir for xdist worker coverage data |
 | `exclude_patterns` | `list[str]` | Glob patterns to skip during source discovery |
 | `strict_pardons` | `bool` | Treat pardoned gremlins as CI failures (exit non-zero if any exist) |
 | `audit_pardons` | `bool` | Whether to audit pardon pragma usage |
@@ -234,8 +232,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 ### pytest_configure
 
 Initializes the gremlin session based on command-line options and pyproject.toml.
-When xdist is available, also registers `pytest_configure_node` and
-`pytest_xdist_node_collection_finished` hooks.
+When xdist is available, also registers the `pytest_xdist_node_collection_finished` hook.
 
 ```python
 def pytest_configure(config: pytest.Config) -> None:
@@ -244,20 +241,12 @@ def pytest_configure(config: pytest.Config) -> None:
 
 ### pytest_sessionstart
 
-Sets up inline coverage collection in PRIVATE mode (when `--cov` is not active).
+Attaches per-test coverage context switching to pytest-cov's coverage in PIGGYBACK mode (when `--cov` is
+active). In PRIVATE mode it does nothing: the coverage pre-scan subprocess collects the coverage data.
 
 ```python
 def pytest_sessionstart(session: pytest.Session) -> None:
-    """Start inline coverage collection if needed."""
-```
-
-### pytest_runtestloop
-
-Hookimpl wrapper that saves and stops coverage data after the test loop completes.
-
-```python
-def pytest_runtestloop(session: pytest.Session) -> Generator[None, None, None]:
-    """Wrap the test loop to capture coverage data."""
+    """Attach per-test coverage contexts when piggybacking on pytest-cov."""
 ```
 
 ### pytest_collection_finish
@@ -267,15 +256,6 @@ After test collection completes, discovers source files and generates gremlins.
 ```python
 def pytest_collection_finish(session: pytest.Session) -> None:
     """After test collection, discover source files and generate gremlins."""
-```
-
-### pytest_configure_node (xdist only)
-
-Passes gremlin temp directory path to xdist workers via `node.workerinput`.
-
-```python
-def pytest_configure_node(node: _XdistWorkerNode) -> None:
-    """Pass gremlins config to xdist worker nodes."""
 ```
 
 ### pytest_xdist_node_collection_finished (xdist only)

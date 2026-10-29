@@ -29,6 +29,7 @@ from types import (
     ModuleType,
     SimpleNamespace,
 )
+import zlib
 
 import pytest
 
@@ -56,7 +57,7 @@ ORIGINAL = 'VALUE = "original"\n'
 
 def _encode(source: str) -> str:
     """Ship ``source`` the way sources.json does: as a parsed tree, pickled and base64 encoded."""
-    return base64.b64encode(pickle.dumps(ast.parse(source))).decode('ascii')
+    return base64.b64encode(zlib.compress(pickle.dumps(ast.parse(source)))).decode('ascii')
 
 
 def _entry(origin: Path, source: str = INSTRUMENTED) -> Sources:

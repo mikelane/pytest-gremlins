@@ -12,9 +12,8 @@ The built-in operators cover common mutation patterns, but your domain may have 
 - **Data validation**: Remove required field checks, alter regex patterns
 
 Custom operators let you catch bugs specific to your codebase that generic operators miss.
-Today a custom operator can only mutate six kinds of node (comparisons, binary and boolean
-operations, unary operations, literals and `return` statements), so ideas that change method
-calls, like the Django ORM swaps above, don't work yet. See
+A custom operator can mutate seven kinds of node (comparisons, binary and boolean operations,
+unary operations, literals, calls and `return` statements). See
 [Which Nodes an Operator Is Offered](#which-nodes-an-operator-is-offered).
 
 ## Prerequisites
@@ -69,7 +68,7 @@ class GremlinOperator(Protocol):
 ### Which Nodes an Operator Is Offered
 
 pytest-gremlins doesn't pass every AST node to your operator. The instrumentation step calls
-`can_mutate()` only for these six node types:
+`can_mutate()` only for these seven node types:
 
 | Node type | Python code it covers |
 |-----------|-----------------------|
@@ -78,14 +77,14 @@ pytest-gremlins doesn't pass every AST node to your operator. The instrumentatio
 | `ast.BoolOp` | `and` / `or` |
 | `ast.UnaryOp` | `not x`, `-x` |
 | `ast.Constant` | Literals: `'text'`, `42`, `True` |
+| `ast.Call` | Function and method calls: `f(x)`, `qs.filter(a=1)` |
 | `ast.Return` | `return` statements |
 
-An operator that matches any other node type, such as `ast.Call`, `ast.Attribute` or
-`ast.Subscript`, never produces a gremlin. Its `can_mutate()` is never called for those nodes,
-and a run reports no gremlins for it. Supporting more node types needs a code change, tracked in
-[#698](https://github.com/mikelane/pytest-gremlins/issues/698).
+An operator that matches any other node type, such as `ast.Attribute` or `ast.Subscript`, never
+produces a gremlin. Its `can_mutate()` is never called for those nodes, and a run reports no
+gremlins for it. Supporting more node types needs a code change.
 
-For the five expression types, `mutate()` must return expression nodes. For `ast.Return`, it
+For the six expression types, `mutate()` must return expression nodes. For `ast.Return`, it
 must return `ast.Return` statements.
 
 ## Creating Your First Operator
@@ -284,13 +283,54 @@ class MyOperator:
     # ... rest of implementation
 ```
 
-### Entry Points (Not Implemented)
+### Method 3: Entry Points
 
-!!! warning "Not yet implemented"
-    pytest-gremlins doesn't load operators from entry points. A
-    `[project.entry-points."pytest_gremlins.operators"]` table in a package's `pyproject.toml`
-    has no effect. To use an operator from a package, import it in your project's root
-    `conftest.py` and register it as in Method 1.
+A package can ship operators that pytest-gremlins picks up with no `conftest.py` registration. Declare an
+entry point in the `pytest_gremlins.operators` group, in the package's `pyproject.toml`:
+
+```toml
+[project.entry-points."pytest_gremlins.operators"]
+my-package = "my_package.gremlins:register"
+```
+
+The entry point loads a function that receives an `OperatorRegistry` and registers each operator it ships:
+
+```python
+# my_package/gremlins.py
+from pytest_gremlins.operators import OperatorRegistry
+
+from my_package.operators import StringEmptyOperator
+
+
+def register(registry: OperatorRegistry) -> None:
+    registry.register(StringEmptyOperator)
+```
+
+Install the package and run `pytest --gremlins`. The operator's name comes from `registry.register`, so
+`string-empty` works in the `operators` list and in `--gremlin-operators`. The entry-point name
+(`my-package` above) only identifies the entry point in warnings. A callable can register several
+operators, or none, for example when an optional dependency isn't installed.
+
+!!! warning "Trust boundary"
+    With `--gremlins`, pytest-gremlins imports every installed package that declares the
+    `pytest_gremlins.operators` group, and runs its callable. A plain `pytest` run imports none of them.
+    `pytest --gremlins --collect-only` does import them. Install only packages you trust.
+
+**Precedence.** Operators resolve in this order: built-in operators, registrations in the root
+`conftest.py`, then entry points in the order `importlib.metadata` lists them. An entry point never
+replaces an operator that is already registered; the first registration wins and pytest-gremlins emits a
+`GremlinEntryPointWarning` naming the operator and the entry point that lost. A `conftest.py` in a
+subdirectory loads later, at collection, and overwrites as it always has.
+
+**Failures.** Each entry point is loaded on its own. If the import fails, the callable raises an
+`Exception`, or the loaded object isn't callable, pytest-gremlins emits a `GremlinEntryPointWarning`
+naming the entry point and its distribution (with the exception message, or "is not callable"), drops
+anything that callable registered before it failed, and carries on with the next entry point.
+
+Under xdist, warnings appear once, from the controller. They go through pytest's warning filters, so `-W` and
+`filterwarnings` apply. To ignore them, filter the category
+`pytest_gremlins.operators.GremlinEntryPointWarning`. With `filterwarnings = error`, a broken entry point
+stops the run at startup.
 
 ## AST Manipulation Patterns
 
@@ -325,11 +365,6 @@ def mutate(self, node: ast.AST) -> list[ast.AST]:
 ```
 
 ### Pattern 3: Function Call Modification
-
-!!! warning "Doesn't work yet"
-    This pattern and Pattern 4 match `ast.Call`, which pytest-gremlins doesn't offer to custom
-    operators (see [Which Nodes an Operator Is Offered](#which-nodes-an-operator-is-offered)
-    and [#698](https://github.com/mikelane/pytest-gremlins/issues/698)).
 
 Swap method names or arguments:
 
@@ -385,7 +420,7 @@ def mutate(self, node: ast.AST) -> list[ast.AST]:
 
 ### Keep can_mutate() Fast
 
-`can_mutate()` is called for every offered node (every comparison, operation, literal and
+`can_mutate()` is called for every offered node (every comparison, operation, call, literal and
 `return`) in the code under test. Keep it simple:
 
 ```python
@@ -465,12 +500,6 @@ class MyOperator:
 ```
 
 ## Complete Example: Django QuerySet Operator
-
-!!! warning "Doesn't produce gremlins yet"
-    This operator matches `ast.Call` nodes, which pytest-gremlins doesn't offer to custom
-    operators today, so a run with it reports no gremlins. It is kept as a design example until
-    [#698](https://github.com/mikelane/pytest-gremlins/issues/698) lands. For an operator that
-    works now, see [Creating Your First Operator](#creating-your-first-operator).
 
 Here's a complete example for Django ORM mutations:
 
@@ -684,8 +713,7 @@ the run's registry doesn't have your operator:
 
 1. Check that your operator matches one of the
    [node types an operator is offered](#which-nodes-an-operator-is-offered). An operator that
-   matches any other node type, such as `ast.Call`, never produces a gremlin
-   ([#698](https://github.com/mikelane/pytest-gremlins/issues/698)).
+   matches any other node type, such as `ast.Attribute`, never produces a gremlin.
 2. Add logging to `can_mutate()` to verify it's being called
 3. Check that your AST pattern matching is correct with `ast.dump()`
 4. Ensure `mutate()` returns a non-empty list
