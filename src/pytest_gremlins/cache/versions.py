@@ -197,7 +197,15 @@ def _is_exempt_from_classification(operator_class: type) -> bool:
     )
 
 
-def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root: Path | None) -> set[str]:
+@dataclass(frozen=True)
+class _SupplierLabels:
+    """The operator supplier labels, and whether any of them is an always-miss token."""
+
+    labels: set[str]
+    has_always_miss_token: bool
+
+
+def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root: Path | None) -> _SupplierLabels:
     """Label each operator by the installed distribution that provably owns it, else by an always-miss token.
 
     An operator class keeps a stable key only when it is importable (see ``_is_importable``) and an installed
@@ -216,9 +224,57 @@ def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root
         labels |= owners
         if not owners:
             unproven.add(operator_class)
-    return labels | {
+    always_miss_tokens = {
         f'{_LOCAL_OPERATOR_PREFIX}{cls.__module__}{_UNREADABLE_MARKER}{uuid.uuid4().hex}' for cls in unproven
     }
+    return _SupplierLabels(labels | always_miss_tokens, has_always_miss_token=bool(always_miss_tokens))
+
+
+@dataclass(frozen=True)
+class VersionsFingerprint:
+    """The versions part of the cache key, and whether a later run can read what this run writes under it.
+
+    Attributes:
+        text: The fingerprint string; see ``installed_versions_fingerprint``.
+        writes_are_readable: False when an operator no installed distribution provably owns put a fresh random
+            token in ``text``, so no later run can read a result cached under it.
+    """
+
+    text: str
+    writes_are_readable: bool
+
+
+def versions_fingerprint(
+    operators: Iterable[GremlinOperator] = (),
+    project_root: Path | None = None,
+) -> VersionsFingerprint:
+    """Return the fingerprint of ``installed_versions_fingerprint`` together with whether writes under it are readable.
+
+    Readability is reported by the code that builds the labels, never re-parsed from the string, so an operator
+    module whose name contains the ``|`` separator is still recognized.
+
+    Args:
+        operators: The operators registered for this run.
+        project_root: The pytest rootdir.
+
+    Returns:
+        The fingerprint and its readability.
+
+    Example:
+        >>> versions_fingerprint().writes_are_readable
+        True
+    """
+    suppliers = {
+        _distribution_label(entry_point.dist)
+        for entry_point in entry_points(group=ENTRY_POINT_GROUP)
+        if entry_point.dist is not None
+    }
+    operator_suppliers = _operator_supplier_labels(operators, project_root)
+    suppliers |= operator_suppliers.labels
+    return VersionsFingerprint(
+        text='|'.join([f'cache-version={CACHE_VERSION}', *sorted(suppliers)]),
+        writes_are_readable=not operator_suppliers.has_always_miss_token,
+    )
 
 
 def installed_versions_fingerprint(
@@ -246,30 +302,4 @@ def installed_versions_fingerprint(
     Returns:
         A deterministic fingerprint, independent of entry-point discovery order.
     """
-    suppliers = {
-        _distribution_label(entry_point.dist)
-        for entry_point in entry_points(group=ENTRY_POINT_GROUP)
-        if entry_point.dist is not None
-    }
-    suppliers |= _operator_supplier_labels(operators, project_root)
-    return '|'.join([f'cache-version={CACHE_VERSION}', *sorted(suppliers)])
-
-
-def is_unreadable_fingerprint(fingerprint: str) -> bool:
-    """Whether ``fingerprint`` carries a fresh random token, so no later run can read what a run keyed by it writes.
-
-    Args:
-        fingerprint: A string returned by ``installed_versions_fingerprint``.
-
-    Returns:
-        True when an operator that no installed distribution provably owns is part of the fingerprint.
-
-    Example:
-        >>> is_unreadable_fingerprint('cache-version=1|local-operator=helpers:unreadable-0f3a')
-        True
-        >>> is_unreadable_fingerprint('cache-version=1|acme-operators==2.0')
-        False
-    """
-    return any(
-        label.startswith(_LOCAL_OPERATOR_PREFIX) and _UNREADABLE_MARKER in label for label in fingerprint.split('|')
-    )
+    return versions_fingerprint(operators, project_root).text

@@ -16,7 +16,7 @@ from typing import (
 import pytest
 
 from pytest_gremlins.cache.incremental import IncrementalCache
-from pytest_gremlins.cache.versions import is_unreadable_fingerprint
+from pytest_gremlins.cache.versions import versions_fingerprint
 from pytest_gremlins.operators.comparison import ComparisonOperator
 
 if TYPE_CHECKING:
@@ -27,10 +27,10 @@ if TYPE_CHECKING:
 UNOWNED_OPERATOR_SOURCE = 'class HelperOperator:\n    name = "helper"\n    description = "x"\n'
 
 
-def _unowned_operator(project_root: Path) -> GremlinOperator:
+def _unowned_operator(project_root: Path, module_name: str = 'path_loaded_unowned_helper') -> GremlinOperator:
     path = project_root / 'gremlin_ops.py'
     path.write_text(UNOWNED_OPERATOR_SOURCE)
-    spec = importlib.util.spec_from_file_location('path_loaded_unowned_helper', path)
+    spec = importlib.util.spec_from_file_location(module_name, path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -54,6 +54,9 @@ def project_root(tmp_path: Path) -> Path:
 
 @pytest.mark.medium
 class DescribeCacheWritesWithAnUnownedOperator:
+    def it_reports_the_fingerprint_as_unreadable(self, project_root: Path) -> None:
+        assert versions_fingerprint([_unowned_operator(project_root)], project_root).writes_are_readable is False
+
     def it_adds_no_row_through_cache_result(self, tmp_path: Path, project_root: Path) -> None:
         cache_dir = tmp_path / '.gremlins_cache'
 
@@ -82,6 +85,9 @@ class DescribeCacheWritesWithAnUnownedOperator:
 
 @pytest.mark.medium
 class DescribeCacheWritesWithOnlyInstalledOperators:
+    def it_reports_the_fingerprint_as_readable(self, project_root: Path) -> None:
+        assert versions_fingerprint([ComparisonOperator()], project_root).writes_are_readable is True
+
     def it_writes_through_cache_result_and_hits_on_the_next_run(self, tmp_path: Path, project_root: Path) -> None:
         cache_dir = tmp_path / '.gremlins_cache'
         with IncrementalCache(cache_dir, [ComparisonOperator()], project_root) as cache:
@@ -104,20 +110,17 @@ class DescribeCacheWritesWithOnlyInstalledOperators:
         assert _row_count(cache_dir) == 1
 
 
-@pytest.mark.small
-class DescribeIsUnreadableFingerprint:
-    @pytest.mark.parametrize(
-        ('fingerprint', 'expected'),
-        [
-            pytest.param('cache-version=1', False, id='cache-version-only'),
-            pytest.param('cache-version=1|acme-ops==2.0', False, id='installed-distribution'),
-            pytest.param('cache-version=1|local-operator=helpers:unreadable-0f3a', True, id='unowned-operator'),
-            pytest.param(
-                'cache-version=1|acme-ops==2.0|local-operator=a.b:unreadable-1c', True, id='unowned-among-installed'
-            ),
-            pytest.param('cache-version=1|odd:unreadable-x==1.0', False, id='marker-outside-local-operator-label'),
-            pytest.param('cache-version=1|local-operator=helpers', False, id='local-label-without-marker'),
-        ],
-    )
-    def it_reports_whether_an_unowned_operator_token_is_present(self, fingerprint: str, expected: bool) -> None:
-        assert is_unreadable_fingerprint(fingerprint) is expected
+@pytest.mark.medium
+class DescribeCacheWritesWithAnUnownedOperatorWhoseModuleNameHoldsTheSeparator:
+    def it_reports_the_fingerprint_as_unreadable(self, project_root: Path) -> None:
+        operator = _unowned_operator(project_root, 'ops|helper')
+
+        assert versions_fingerprint([operator], project_root).writes_are_readable is False
+
+    def it_adds_no_row_through_cache_result(self, tmp_path: Path, project_root: Path) -> None:
+        cache_dir = tmp_path / '.gremlins_cache'
+
+        with IncrementalCache(cache_dir, [_unowned_operator(project_root, 'ops|helper')], project_root) as cache:
+            cache.cache_result('g001', 'src', {'test_a': 'h'}, {'status': 'zapped'})
+
+        assert _row_count(cache_dir) == 0
