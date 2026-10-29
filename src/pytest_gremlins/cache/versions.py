@@ -101,6 +101,7 @@ class _IndexedDistribution:
     """What the owner lookup needs to know about one installed distribution."""
 
     label: str
+    root: Path
     modules: frozenset[str]
     editable_project: Path | None
 
@@ -112,6 +113,7 @@ def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
             return None
         return _IndexedDistribution(
             label=_distribution_label(dist),
+            root=Path(str(dist.locate_file(''))).resolve(),
             modules=frozenset(_declared_top_level_modules(dist)),
             editable_project=_editable_project_directory(dist),
         )
@@ -135,6 +137,13 @@ def _is_project_local(location: Path, project_root: Path | None) -> bool:
     if project_root is None or not location.is_relative_to(project_root.resolve()):
         return False
     return not any(location.is_relative_to(site) for site in _site_directories())
+
+
+def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
+    """Whether ``location`` is inside the ``top_level`` package or module the distribution installed."""
+    if top_level not in entry.modules or not location.is_relative_to(entry.root):
+        return False
+    return location.relative_to(entry.root).parts[0].partition('.')[0] == top_level
 
 
 def _is_editable_owner(entry: _IndexedDistribution, location: Path) -> bool:
@@ -173,7 +182,7 @@ def _installed_owner_labels(
     if location is None or _is_project_local(location, project_root):
         return set()
     top_level = operator_class.__module__.partition('.')[0]
-    declared = {entry.label for entry in installed if top_level in entry.modules}
+    declared = {entry.label for entry in installed if _is_installed_module_file(entry, top_level, location)}
     return declared or {entry.label for entry in installed if _is_editable_owner(entry, location)}
 
 
