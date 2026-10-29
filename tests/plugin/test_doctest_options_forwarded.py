@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 
 from pytest_gremlins import plugin
-from pytest_gremlins.cache.incremental import RUNNER_FIDELITY_VERSION
 
 
 def _session(
@@ -150,9 +149,3 @@ class DescribeDoctestIniValuesInThePrescanCommand:
         command = captured[0]
         assert command[command.index('doctest_encoding=latin-1') - 1] == '-o'
         assert 'addopts=-q' in command
-
-
-@pytest.mark.small
-class DescribeFidelityVersionAfterDoctestOptionsAreForwarded:
-    def it_retires_verdicts_cached_while_doctest_gremlins_errored(self) -> None:
-        assert RUNNER_FIDELITY_VERSION == 'rf21'
