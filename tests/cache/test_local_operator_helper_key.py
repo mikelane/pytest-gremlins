@@ -1,4 +1,8 @@
-"""The content of a project-local operator helper module is part of the cache key (#882)."""
+"""A project-local operator helper module makes every run miss the cache (#882).
+
+Hashing helper files was dropped: a project-local helper gets the always-miss token. Slower, never stale.
+Restoring hits is tracked in #887.
+"""
 
 from __future__ import annotations
 
@@ -44,19 +48,21 @@ class DescribeLocalOperatorHelperInFingerprint:
 
         assert installed_versions_fingerprint([after], tmp_path) != fingerprint_before
 
-    def it_is_stable_when_the_helper_module_is_unchanged(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        operator = _load_operator(monkeypatch, tmp_path / 'helper_mod.py', source=OPERATOR_SOURCE.format(delta=1))
-
-        assert installed_versions_fingerprint([operator], tmp_path) == installed_versions_fingerprint(
-            [operator], tmp_path
-        )
-
-    def it_names_the_helper_by_its_path_relative_to_the_rootdir(
+    def it_misses_the_cache_even_when_the_helper_module_is_unchanged(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         operator = _load_operator(monkeypatch, tmp_path / 'helper_mod.py', source=OPERATOR_SOURCE.format(delta=1))
 
-        assert 'local-operator=helper_mod.py:' in installed_versions_fingerprint([operator], tmp_path)
+        assert installed_versions_fingerprint([operator], tmp_path) != installed_versions_fingerprint(
+            [operator], tmp_path
+        )
+
+    def it_contributes_the_always_miss_token_for_the_helper(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        operator = _load_operator(monkeypatch, tmp_path / 'helper_mod.py', source=OPERATOR_SOURCE.format(delta=1))
+
+        assert 'local-operator=helper_mod:unreadable-' in installed_versions_fingerprint([operator], tmp_path)
 
     def it_adds_nothing_for_an_operator_defined_in_a_conftest(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

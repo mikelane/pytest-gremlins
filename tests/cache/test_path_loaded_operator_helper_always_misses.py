@@ -3,7 +3,7 @@
 A conftest that loads its helper with ``spec_from_file_location`` never registers it in ``sys.modules``, and no
 inference from the class's methods can prove which file defined it: decorators, generated dataclass methods and
 methods copied from a same-named class all carry code from other files. The pessimistic answer is a fresh token on
-every call, so a verdict is recomputed and never reused stale. A helper that is importable still hashes its file.
+every call, so a verdict is recomputed and never reused stale. An importable helper gets the same token.
 """
 
 from __future__ import annotations

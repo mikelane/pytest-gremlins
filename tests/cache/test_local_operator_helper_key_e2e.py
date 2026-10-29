@@ -1,7 +1,7 @@
-"""A project-local operator helper module is part of the cache key (#882).
+"""A project-local operator helper module always misses the cache (#882).
 
 A conftest.py that imports an operator from a helper module under the rootdir registers it. The helper is neither a
-mutation target nor a conftest, so its content hash has to join the key or editing it reuses stale verdicts.
+mutation target nor a conftest, so it gets the always-miss token: slower, never stale (hits: #887).
 """
 
 from __future__ import annotations
@@ -52,14 +52,14 @@ GREMLIN_ARGS = ('--gremlins', '--gremlin-targets=target.py', '--gremlin-operator
 
 @pytest.mark.medium
 class DescribeProjectLocalOperatorHelperModule:
-    def it_hits_the_cache_when_the_helper_module_is_unchanged(self, pytester: pytest.Pytester) -> None:
+    def it_misses_the_cache_when_the_helper_module_is_unchanged(self, pytester: pytest.Pytester) -> None:
         pytester.makeconftest(CONFTEST)
         pytester.makepyfile(target=TARGET, test_target=TARGET_TEST, gremlin_ops=OPERATOR_TEMPLATE.format(delta=1))
         pytester.runpytest_subprocess(*GREMLIN_ARGS).stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])
 
         warm = pytester.runpytest_subprocess(*GREMLIN_ARGS)
 
-        warm.stdout.fnmatch_lines(['Cache: 1 hits, 0 misses (100% hit rate)'])
+        warm.stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])
 
     def it_misses_the_cache_after_the_helper_module_changes(self, pytester: pytest.Pytester) -> None:
         pytester.makeconftest(CONFTEST)
