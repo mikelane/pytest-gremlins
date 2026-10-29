@@ -642,10 +642,9 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
   from a source gremlin runs inherit (a conftest `pytest_plugins`, `PYTEST_PLUGINS`, or `-p pytest_rerunfailures`
   in `addopts`). Their autoload would register the plugin twice, and every gremlin would error, so gremlins
   hands them `--disable-plugin-autoload` and `-p pytest_rerunfailures` instead. They then load the plugin once and
-  rerun like the session. Their other plugins are not loaded automatically, as in the session, so load pytest-cov through
-  `addopts` too.
-  Other plugins loaded only by a command-line `-p` with autoload disabled, such as pytest-cov, are still not
-  carried over (see [#654](https://github.com/mikelane/pytest-gremlins/issues/654)).
+  rerun like the session. Their other plugins are not loaded automatically, as in the session; pytest-cov is the
+  exception, which gremlins loads for them when the session has it (see
+  [pytest-cov under disabled autoload](troubleshooting.md#pytest-cov-when-plugin-autoload-is-disabled)).
 
 If a baseline test needed a rerun to pass, gremlins prints one warning that names it (up to ten tests; the rest are
 counted):

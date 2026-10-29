@@ -618,6 +618,17 @@ If coverage numbers look wrong only in runs with `--gremlins`, please
 [open an issue](https://github.com/mikelane/pytest-gremlins/issues) with the pytest-cov and
 coverage.py versions and your `addopts`.
 
+### pytest-cov when plugin autoload is disabled
+
+Gremlin runs pass `--no-cov` only when pytest-cov is loaded in your session, not merely installed. With
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` or `--disable-plugin-autoload`, an installed pytest-cov that you did not load with
+`-p` registers nothing, and gremlin runs leave `--no-cov` out. Earlier versions passed it anyway, so every gremlin run
+failed with `unrecognized arguments: --no-cov`, and the run had no usable verdicts.
+
+When autoload is disabled for gremlin runs (by the environment, or by the flag in `addopts` or `PYTEST_ADDOPTS`) and
+your session loaded pytest-cov, for example with `-p pytest_cov` on the command line, gremlins loads it in the gremlin
+runs under the name your session registered it with (`pytest_cov` or `pytest_cov.plugin`) and passes `--no-cov`.
+
 ---
 
 ### Using pytest-xdist with gremlins
