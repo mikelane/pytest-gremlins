@@ -42,8 +42,8 @@ Every command-line option starts with `--gremlin-*` or `--gremlins*`, except `--
 | `--gremlin-clear-cache` | flag | `false` | Clear cache before running |
 | `--gremlin-parallel` | flag | `false` | Enable parallel mutation execution |
 | `--gremlin-workers` | integer or `auto` | CPU count | Number of parallel workers (implies `--gremlin-parallel`); `auto` means the CPU count |
-| `--gremlin-batch` | flag | `false` | Enable batch execution mode |
-| `--gremlin-batch-size` | integer | `10` | Number of gremlins per batch |
+| `--gremlin-batch` | flag | `false` | Group gremlins into worker tasks (does not reduce subprocesses) |
+| `--gremlin-batch-size` | integer | `10` | Number of gremlins per worker task |
 | `--gremlin-coverage-timeout` | integer | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled; scaled up like the mutant timeout when pytest-rerunfailures reruns are configured |
 | `--gremlin-mutant-timeout` | integer | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
 | `--gremlin-executor` | `auto` or `subprocess` | `auto` | How each gremlin's tests run. `auto` is the same as `subprocess`. `fork` and `inprocess` are also accepted by the parser but stop the run with a usage error, because they did not run the mutated code ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
@@ -150,7 +150,7 @@ pytest --gremlins --gremlin-parallel
 pytest --gremlins --gremlin-workers=4
 ```
 
-**Enable batch mode for reduced overhead:**
+**Group gremlins into batches (worker tasks):**
 
 ```bash
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
@@ -306,7 +306,7 @@ max-pardons-pct = 5.0
 | `cache` | boolean | `false` | Enable incremental analysis cache |
 | `report` | string or list | `"console"` | Report format(s): `"html"`, `"json"`, `"console"`, or a list like `["html", "json"]` |
 | `batch_size` | int | `10` | Number of gremlins per batch in batch execution mode |
-| `coverage_timeout` | int | `120` | Seconds (1-86400) the coverage pre-scan may run; on expiry gremlins warns and runs every test per gremlin; scaled by the rerun budget like `mutant_timeout` |
+| `coverage_timeout` | int | `120` | Seconds (1-86400) the coverage pre-scan may run; on expiry gremlins prints a notice to stderr and runs every test per gremlin; scaled by the rerun budget like `mutant_timeout` |
 | `mutant_timeout` | int | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
 | `max_pardons` | int | no limit | Absolute ceiling on pardoned gremlins |
 | `max-pardons-pct` | float | no limit | Maximum percentage of pardoned gremlins (0-100) |
@@ -710,8 +710,9 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
   only turns coverage-guided test selection off, so every gremlin runs the full suite; it never changes a verdict.
 - When rerun scaling has already pushed a limit to the 86400-second cap, the timeout messages say to lower
   `--reruns` or `--reruns-delay` instead of advising a higher per-attempt limit, which could not help.
-- The incremental cache keys each verdict on the effective timeout and on the rerun budget itself (the rerun count,
-  including `--force-reruns`, and the delay), so cached verdicts are judged again when either changes. Two settings
+- The incremental cache keys each verdict on the rerun budget itself (the rerun count, including `--force-reruns`,
+  and the delay), so cached verdicts are judged again when it changes. A changed effective timeout judges again only
+  the verdicts it could change (see the timeout option above). Two settings
   that scale to the same timeout still do not share verdicts. For example, `--gremlin-mutant-timeout 60` with no
   reruns and `--gremlin-mutant-timeout 30 --reruns 1` both give 60 seconds, but each is judged on its own. The same
   holds for two settings that both reach the 86400 cap. A kill from a flaky test that failed without reruns must
@@ -719,9 +720,15 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
 - **A large delay makes runs slower, not wrong.** A kill is only finished after every rerun, so each killed
   gremlin costs about `reruns * reruns_delay` seconds of waiting on top of the test time. Lower
   `--reruns-delay` if your mutation runs become too slow.
-- `@pytest.mark.flaky(reruns=..., reruns_delay=...)` markers are not visible at session level and are not
-  counted. A test whose marker sets a long delay can still exceed the timeout. If it does, raise
-  `--gremlin-mutant-timeout` yourself.
+- `@pytest.mark.flaky(reruns=..., reruns_delay=..., reruns_delay_backoff_factor=...)` markers on collected tests
+  are counted. A marker replaces the session budget for its test, as it does in pytest-rerunfailures, and a marker
+  on a function wins over one on its class. Each marker is scaled by the same formula, and the timeout is the
+  largest of the session value and every marker's value, so a marker smaller than the session budget changes
+  nothing. The widest marker applies to every gremlin, because the covering tests are not known when the timeout
+  is fixed. One test with a long `reruns_delay` therefore raises the timeout of all gremlins, and a hung
+  mutant takes that long to be reported. The effective timeout is part of the cache key, so changing a marker
+  judges the affected gremlins again. Under `pytest-xdist` the controller collects no tests, so markers are not
+  counted there.
 - The formula assumes one failing test. `--reruns-mode append` (which adds the global count to a marker's count)
   and a selection with several failing tests, each rerun in turn, can need more time than the formula allows. A
   gremlin that runs out of time this way is still reported as a timeout and counted as a kill when its
@@ -731,7 +738,8 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
 
 ### Coverage Pre-Scan Timeout
 
-The pre-scan is limited to 120 seconds by default. If it runs longer, gremlins emits this warning (wrapped here for width)
+The pre-scan is limited to 120 seconds by default. If it runs longer, gremlins prints this notice to stderr
+(wrapped here for width)
 
 ```text
 pytest-gremlins: coverage pre-scan exceeded 120s; coverage-guided test selection disabled
@@ -739,14 +747,17 @@ pytest-gremlins: coverage pre-scan exceeded 120s; coverage-guided test selection
 ```
 
 When pytest-rerunfailures is loaded with reruns configured, the limit is scaled by the rerun budget (see
-[Flaky tests and pytest-rerunfailures](#flaky-tests-and-pytest-rerunfailures)), and the warning names both limits:
+[Flaky tests and pytest-rerunfailures](#flaky-tests-and-pytest-rerunfailures)), and the notice names both limits:
 
 ```text
 pytest-gremlins: coverage pre-scan exceeded 400s (120s per attempt, scaled for the pytest-rerunfailures budget);
 coverage-guided test selection disabled (set coverage_timeout / --gremlin-coverage-timeout to raise the per-attempt limit)
 ```
 
-and falls back to running every test for every gremlin. Raise the limit with the CLI or TOML:
+and falls back to running every test for every gremlin. The notice is plain terminal output, not a Python
+warning, so `filterwarnings = error` in your pytest config cannot turn it into a crash. The same holds for the
+"coverage pre-scan could not start" and "Coverage collection returned no data" notices.
+Raise the limit with the CLI or TOML:
 
 ```bash
 pytest --gremlins --gremlin-coverage-timeout=600
@@ -777,8 +788,14 @@ mutant_timeout = 120
 ```
 
 The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
-the TOML key. The incremental cache keys each verdict on the timeout it was reached under, so a changed
-timeout judges every gremlin again. So does a changed rerun count or delay.
+the TOML key. A changed rerun count or delay judges every gremlin again.
+
+The incremental cache stores the timeout each verdict was reached under and reuses a verdict at a different timeout
+only when the new limit cannot change it. A zapped, survived or error verdict is reused when the gremlin's run took
+strictly less than the new limit; a run that took exactly the new limit, or whose time is unknown, is judged
+again. A timeout verdict is reused only at the limit it was confirmed under, because it counts only when the
+unmutated run fits in half the limit, which is not known for another limit. Verdicts are identical to a cold run at
+the new timeout.
 
 With pytest-rerunfailures configured, the limit is the budget of one attempt and the effective timeout is
 larger; see [Flaky Tests and pytest-rerunfailures](#flaky-tests-and-pytest-rerunfailures).
@@ -803,7 +820,9 @@ genuine hang costs one extra solo run, up to the limit.
 
 ### Batch Execution
 
-Batch mode reduces subprocess overhead by testing multiple gremlins per subprocess:
+Batch mode groups gremlins into batches and hands each batch to a worker as one task. It does not
+reduce subprocesses: every gremlin still gets its own bootstrap subprocess, and all gremlins share one
+test command that selects the union of the tests covering any of them.
 
 ```bash
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
@@ -813,9 +832,9 @@ Batch size tuning:
 
 | Batch Size | Tradeoff |
 |------------|----------|
-| Small (5-10) | More subprocess overhead, but faster feedback on failures |
+| Small (5-10) | More worker tasks, but faster feedback on failures |
 | Medium (20-50) | Balanced for most projects |
-| Large (100+) | Less overhead, but slower feedback |
+| Large (100+) | Fewer worker tasks, but slower feedback |
 
 ### Combined Performance Options
 
