@@ -42,8 +42,8 @@ Every command-line option starts with `--gremlin-*` or `--gremlins*`, except `--
 | `--gremlin-clear-cache` | flag | `false` | Clear cache before running |
 | `--gremlin-parallel` | flag | `false` | Enable parallel mutation execution |
 | `--gremlin-workers` | integer or `auto` | CPU count | Number of parallel workers (implies `--gremlin-parallel`); `auto` means the CPU count |
-| `--gremlin-batch` | flag | `false` | Enable batch execution mode |
-| `--gremlin-batch-size` | integer | `10` | Number of gremlins per batch |
+| `--gremlin-batch` | flag | `false` | Group gremlins into worker tasks (does not reduce subprocesses) |
+| `--gremlin-batch-size` | integer | `10` | Number of gremlins per worker task |
 | `--gremlin-coverage-timeout` | integer | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled; scaled up like the mutant timeout when pytest-rerunfailures reruns are configured |
 | `--gremlin-mutant-timeout` | integer | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
 | `--gremlin-executor` | `auto` or `subprocess` | `auto` | How each gremlin's tests run. `auto` is the same as `subprocess`. `fork` and `inprocess` are also accepted by the parser but stop the run with a usage error, because they did not run the mutated code ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
@@ -150,7 +150,7 @@ pytest --gremlins --gremlin-parallel
 pytest --gremlins --gremlin-workers=4
 ```
 
-**Enable batch mode for reduced overhead:**
+**Group gremlins into batches (worker tasks):**
 
 ```bash
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
@@ -820,7 +820,9 @@ genuine hang costs one extra solo run, up to the limit.
 
 ### Batch Execution
 
-Batch mode reduces subprocess overhead by testing multiple gremlins per subprocess:
+Batch mode groups gremlins into batches and hands each batch to a worker as one task. It does not
+reduce subprocesses: every gremlin still gets its own bootstrap subprocess, and all gremlins share one
+test command that selects the union of the tests covering any of them.
 
 ```bash
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
@@ -830,9 +832,9 @@ Batch size tuning:
 
 | Batch Size | Tradeoff |
 |------------|----------|
-| Small (5-10) | More subprocess overhead, but faster feedback on failures |
+| Small (5-10) | More worker tasks, but faster feedback on failures |
 | Medium (20-50) | Balanced for most projects |
-| Large (100+) | Less overhead, but slower feedback |
+| Large (100+) | Fewer worker tasks, but slower feedback |
 
 ### Combined Performance Options
 

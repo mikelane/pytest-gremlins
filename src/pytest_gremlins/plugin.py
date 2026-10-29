@@ -721,7 +721,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action='store_true',
         default=False,
         dest='gremlin_batch',
-        help='Enable batch execution to reduce subprocess overhead',
+        help='Group gremlins into worker tasks; does not reduce subprocesses (one per gremlin)',
     )
     group.addoption(
         '--gremlin-batch-size',
@@ -729,7 +729,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         type=int,
         default=None,
         dest='gremlin_batch_size',
-        help='Number of gremlins per batch (default: 10)',
+        help='Number of gremlins per worker task in batch mode (default: 10)',
     )
     group.addoption(
         '--gremlin-coverage-timeout',
@@ -3392,11 +3392,10 @@ def _run_batch_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
-    """Run mutation testing using batch execution for reduced overhead.
+    """Run mutation testing by grouping gremlins into batches handed to workers.
 
-    Batch execution reduces subprocess overhead by testing multiple gremlins
-    in each subprocess call. Instead of 1 subprocess per gremlin (with ~600ms
-    overhead each), we batch gremlins and spawn fewer subprocesses.
+    Batching groups gremlins into worker tasks. It does not reduce subprocesses:
+    each gremlin in a batch still gets its own bootstrap subprocess.
 
     Args:
         session: The pytest session.
