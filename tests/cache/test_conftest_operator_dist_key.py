@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import shutil
 import sys
 from typing import TYPE_CHECKING
@@ -101,6 +102,34 @@ class DescribeFingerprintNamesOperatorOwners:
         operators = [LocalOperator()]
 
         assert installed_versions_fingerprint(operators) != installed_versions_fingerprint(operators)
+
+    def it_misses_for_a_module_beside_the_package_that_claims_the_package_name(
+        self, site: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _install_package(site, 'supplied_dist', '1.0', 'supplied_ops')
+        other_file = site / 'other_mod.py'
+        other_file.write_text(OPERATOR_SOURCE)
+        spec = importlib.util.spec_from_file_location('supplied_ops.other', other_file)
+        assert spec is not None
+        assert spec.loader is not None
+        other_module = importlib.util.module_from_spec(spec)
+        monkeypatch.setitem(sys.modules, 'supplied_ops.other', other_module)
+        spec.loader.exec_module(other_module)
+        operator: GremlinOperator = other_module.SuppliedOperator()
+        assert type(operator).__module__ == 'supplied_ops.other'
+
+        fingerprint = installed_versions_fingerprint([operator])
+
+        assert 'supplied_dist' not in fingerprint
+        assert fingerprint != installed_versions_fingerprint([operator])
+
+    def it_keys_only_on_the_distribution_that_owns_the_operator(self, site: Path) -> None:
+        _install_package(site, 'supplied_dist', '1.0', 'supplied_ops')
+        _install_package(site, 'bystander_dist', '3.0', 'bystander_ops')
+
+        fingerprint = installed_versions_fingerprint([_supplied_operator()])
+
+        assert fingerprint == f'cache-version={CACHE_VERSION}|supplied_dist==1.0'
 
     def it_ignores_the_built_in_operators(self) -> None:
         assert installed_versions_fingerprint([ComparisonOperator()]) == installed_versions_fingerprint()
