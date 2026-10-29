@@ -3023,7 +3023,8 @@ def _loader_options_for(config: pytest.Config, plugin_names: tuple[str, ...]) ->
 
 
 # The entry-point name (``-p pytest_cov``, autoload) or the module name (``-p pytest_cov.plugin``, ``pytest_plugins``).
-_PYTEST_COV_PLUGIN_NAMES = ('pytest_cov', 'pytest_cov.plugin')
+# The module name goes first: bare ``pytest_cov`` can also be the hookless package that ``PYTEST_PLUGINS`` registers.
+_PYTEST_COV_PLUGIN_NAMES = ('pytest_cov.plugin', 'pytest_cov')
 _NO_COV_OPTION = '--no-cov'
 
 

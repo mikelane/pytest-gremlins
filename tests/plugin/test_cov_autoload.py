@@ -184,3 +184,27 @@ class DescribeGremlinRunsWithTheDisableFlagInPytestAddopts:
         result = pytester_with_markers.runpytest_subprocess(*SESSION_ARGS, '-p', 'pytest_cov')
 
         _assert_gremlins_ran_cleanly(result)
+
+
+@pytest.mark.small
+@pytest.mark.usefixtures('autoload_disabled')
+class DescribePytestCovOptionsWithBothNamesRegistered:
+    def it_loads_the_plugin_by_its_module_name_when_the_bare_package_holds_the_entry_point_name(self) -> None:
+        config = _config(loaded=('pytest_cov', 'pytest_cov.plugin'))
+
+        assert _pytest_cov_options_for(config, []) == ['-p', 'pytest_cov.plugin', '--no-cov']
+
+
+@pytest.mark.medium
+class DescribeGremlinRunsWithTheBarePackageAlsoRegistered:
+    pytestmark = pytest.mark.usefixtures('autoload_disabled')
+
+    def it_registers_pytest_cov_once_when_pytest_plugins_also_names_the_bare_package(
+        self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('PYTEST_PLUGINS', 'pytest_cov')
+        _write_project(pytester_with_markers, '[pytest]\naddopts = -p pytest_cov.plugin\n')
+
+        result = pytester_with_markers.runpytest_subprocess(*SESSION_ARGS)
+
+        _assert_gremlins_ran_cleanly(result)
