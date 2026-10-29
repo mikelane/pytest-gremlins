@@ -156,6 +156,26 @@ class DescribeHelperClassification:
 
         assert _always_misses(operator, root)
 
+    def it_misses_for_a_class_registered_under_an_installed_package_name_whose_file_is_elsewhere(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        elsewhere = tmp_path / 'elsewhere'
+        elsewhere.mkdir()
+        source = elsewhere / 'fake_ops.py'
+        source.write_text(OPERATOR_SOURCE.format(delta=1))
+        spec = importlib.util.spec_from_file_location('pluggy.fake_ops', source)
+        assert spec is not None
+        assert spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        monkeypatch.setitem(sys.modules, 'pluggy.fake_ops', module)
+        spec.loader.exec_module(module)
+        operator = module.HelperOperator()
+        operator_class = type(operator)
+        operator_class.__module__ = 'pluggy.fake_ops'
+
+        assert _always_misses(operator, tmp_path / 'project')
+        assert 'pluggy==' not in installed_versions_fingerprint([operator], tmp_path / 'project')
+
     def it_keeps_a_stable_key_for_an_installed_distribution_under_a_venv_in_the_rootdir(self) -> None:
         venv_root = Path(pluggy.__file__).resolve().parents[5]
         operator = pluggy.HookimplMarker('project')
