@@ -139,7 +139,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/aggregator.py': '1edf168a66e9a95fed83e875eeee1a5a04682312b53b17284311f4148f0796ed',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/batch_executor.py': '92c4a89b02951d9ec3a0da1dfc1b368c6b771fbb8f065a08a6109123d4f41392',  # pragma: allowlist secret  # noqa: E501
+    'parallel/batch_executor.py': '1d9ddd85f39485f58f7b122daf67cb7d6bd3da0096e9ce6216cb614dbffdc5c1',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/distribution.py': '547985ecbe111d9640a41ccbc477e1a275053b864ccf988a9402f47fc57498be',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -151,15 +151,15 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/lightweight.py': '72dd62804a24be6334d38305fdd058fe70c537e445a73329d1e11c81f22482db',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/persistent_pool.py': '6ba2581453b79eeb92da9ae6ec2e87efc4dee093557d4bdb39e921d3a4d534dc',  # pragma: allowlist secret  # noqa: E501
+    'parallel/persistent_pool.py': 'ff1309b9440529053e646d0af40990a4cb7068cb6c66e637d3cafe1fa0be220b',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/pool.py': 'dd1e32efef562fe73506be11431bcc516d87b064bbd0edc5f1ff73711989344a',  # pragma: allowlist secret
     # --
-    'parallel/pool_config.py': 'a16b38e1dc699fd2813edb5f31bd704c114f25c4172228624253bef37f1a8466',  # pragma: allowlist secret  # noqa: E501
+    'parallel/pool_config.py': '7af64e5f01674965d50a40aea73547967316c01c10258aa6e800f7eaa90cae20',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '48563582f5b532e180a04c1db78fed5e8b85da6e4b49197b9fcb52d40caf9e10',  # pragma: allowlist secret
+    'plugin.py': 'bf0ece5e2c97b940b6c79907adc775c5f8cfc6c4a8f1a8447df7e6f38fc3bacf',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
