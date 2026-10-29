@@ -101,3 +101,13 @@ class DescribePathLoadedOperatorHelperModule:
         warm = pytester.runpytest_subprocess(*GREMLIN_ARGS)
 
         warm.stdout.fnmatch_lines(['Cache: 1 hits, 0 misses (100% hit rate)'])
+
+    def it_misses_the_cache_after_the_helper_module_changes(self, pytester: pytest.Pytester) -> None:
+        pytester.makeconftest(PATH_LOADED_CONFTEST)
+        pytester.makepyfile(target=TARGET, test_target=TARGET_TEST, gremlin_ops=OPERATOR_TEMPLATE.format(delta=1))
+        pytester.runpytest_subprocess(*GREMLIN_ARGS).stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])
+        pytester.makepyfile(gremlin_ops=OPERATOR_TEMPLATE.format(delta=0))
+
+        edited = pytester.runpytest_subprocess(*GREMLIN_ARGS)
+
+        edited.stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])

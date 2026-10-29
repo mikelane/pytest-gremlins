@@ -198,16 +198,27 @@ def _operator_owner_labels(operators: Iterable[GremlinOperator], project_root: P
 
 
 def _class_source_file(operator_class: type) -> str | None:
-    """Return the file of a class's first plain method, for a module that is not in ``sys.modules``.
+    """Return the file that defines a class, for a module that is not in ``sys.modules``.
 
     A conftest that loads its helper with ``spec_from_file_location`` never registers it, and ``inspect`` can
-    only find a class's file through ``sys.modules``. A method's code object always records its file.
+    only find a class's file through ``sys.modules``. A method's code object records its file, but only a member
+    whose ``co_qualname`` is ``<Class>.<name>`` was written in the class body: ``functools.wraps`` copies
+    ``__qualname__`` but not ``co_qualname``, and generated dataclass methods carry another qualname. Returns None
+    when no member proves it, so the caller keys the class on the always-miss token instead of hashing a wrong file.
     """
-    for member in vars(operator_class).values():
-        code = getattr(member, '__code__', None)
-        if code is not None:
+    for name, member in vars(operator_class).items():
+        code = getattr(_unwrap_descriptor(member), '__code__', None)
+        if code is not None and code.co_qualname == f'{operator_class.__qualname__}.{name}':
             return str(code.co_filename)
     return None
+
+
+def _unwrap_descriptor(member: object) -> object:
+    if isinstance(member, (classmethod, staticmethod)):
+        return member.__func__
+    if isinstance(member, property):
+        return member.fget
+    return member
 
 
 def _local_helper_file(operator: GremlinOperator, project_root: Path | None) -> Path | None:
