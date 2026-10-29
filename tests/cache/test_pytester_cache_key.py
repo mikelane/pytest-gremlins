@@ -7,12 +7,15 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.cache.incremental import IncrementalCache
+from pytest_gremlins.cache.types import CachedGremlinResult
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 TEST_HASHES = {'tests/test_x.py::test_a': 'hash_a'}
 V1_13_1_FIDELITY_VERSION = 'rf20'
+SURVIVED = CachedGremlinResult(status='survived', killing_test=None, execution_time_ms=None)
 
 
 @pytest.mark.medium
@@ -36,10 +39,26 @@ class DescribePytesterTokenInCacheKey:
     def it_misses_a_verdict_stored_before_pytester_was_loaded(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / '.gremlins_cache'
         with IncrementalCache(cache_dir) as plain:
-            plain.cache_result('g001', 'src_hash', TEST_HASHES, {'status': 'survived'})  # type: ignore[arg-type]
+            plain.cache_result('g001', 'src_hash', TEST_HASHES, SURVIVED)
 
         with IncrementalCache(cache_dir, pytester_loaded=lambda: True) as loaded:
             assert loaded.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
+
+    def it_hits_a_verdict_stored_without_pytester_when_pytester_is_still_not_loaded(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / '.gremlins_cache'
+        with IncrementalCache(cache_dir) as first:
+            first.cache_result('g001', 'src_hash', TEST_HASHES, SURVIVED)
+
+        with IncrementalCache(cache_dir) as second:
+            assert second.get_cached_result('g001', 'src_hash', TEST_HASHES) == SURVIVED
+
+    def it_misses_a_verdict_stored_while_pytester_was_loaded_once_it_is_not(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / '.gremlins_cache'
+        with IncrementalCache(cache_dir, pytester_loaded=lambda: True) as loaded:
+            loaded.cache_result('g001', 'src_hash', TEST_HASHES, SURVIVED)
+
+        with IncrementalCache(cache_dir) as plain:
+            assert plain.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
     def it_asks_whether_pytester_is_loaded_when_the_key_is_built_not_when_the_cache_opens(self, tmp_path: Path) -> None:
         state = {'loaded': False}
@@ -92,10 +111,10 @@ class DescribePytesterDetectionEndToEnd:
 
     @pytest.mark.parametrize('enabler', ENABLERS.values(), ids=ENABLERS.keys())
     def it_misses_the_cache_once_when_pytester_is_loaded_and_then_hits(
-        self, project: pytest.Pytester, enabler: object
+        self, project: pytest.Pytester, enabler: Callable[[pytest.Pytester], tuple[str, ...]]
     ) -> None:
         project.runpytest_subprocess(*GREMLIN_ARGS).stdout.fnmatch_lines([COLD])
-        extra = enabler(project)  # type: ignore[operator]
+        extra = enabler(project)
 
         project.runpytest_subprocess(*GREMLIN_ARGS, *extra).stdout.fnmatch_lines([COLD])
 

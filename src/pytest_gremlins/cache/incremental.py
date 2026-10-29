@@ -119,6 +119,11 @@ NO_RERUNS: RerunBudget = (0, 0.0)
 
 
 def _never_loaded() -> bool:
+    """Report that pytester is not loaded; the default for caches opened outside a pytest session.
+
+    Returns:
+        Always ``False``, so the key carries no ``PYTESTER_KEY_PART``.
+    """
     return False
 
 

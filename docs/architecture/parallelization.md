@@ -293,10 +293,11 @@ because pytest's assertion-rewrite hook served it ahead of the gremlin finder; t
 cached as SURVIVED.
 So are verdicts cached while code that ran in a `multiprocessing` `spawn` child was never instrumented (#604);
 a gremlin only that child exercised was cached as SURVIVED.
-A session that loads the pytester plugin, by `-p pytester`, `pytest_plugins` in any `conftest.py`, or `addopts`, also adds
-a `pytester-615` part to the key. Its verdicts cached while an in-process pytester session (`runpytest()`,
-`inline_run()`) served an instrumented target uninstrumented through its own assertion-rewrite hook (#615) miss once;
-a gremlin only such a test exercised was cached as SURVIVED. Projects that never load pytester keep their cache (#891).
+A session that loads the pytester plugin adds a `pytester-615` part to the key, whether it loads it with
+`-p pytester`, `-p _pytest.pytester`, `pytest_plugins` in a `conftest.py`, `PYTEST_PLUGINS` or `addopts`.
+Before #615 was fixed, an in-process pytester session (`runpytest()`, `inline_run()`) served an instrumented target
+uninstrumented through its own assertion-rewrite hook, and a gremlin only such a test exercised was cached as
+SURVIVED. Those sessions get one cache miss. Sessions that never load pytester keep their cache (#891).
 The key also carries the interpreter's optimize level, read from `PYTHONOPTIMIZE` the way CPython reads it (#613),
 so a verdict reached with `assert` statements stripped is never served to a run that keeps them.
 So are verdicts cached while instrumented modules were compiled under their module name (#563), when a

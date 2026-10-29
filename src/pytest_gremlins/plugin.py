@@ -1021,7 +1021,14 @@ PYTESTER_PLUGIN_NAMES = ('pytester', '_pytest.pytester')
 
 
 def _pytester_loaded(config: pytest.Config) -> bool:
-    """Report whether the session loads the pytester plugin under any registration name (#891)."""
+    """Report whether the session loads the pytester plugin under any registration name (#891).
+
+    Args:
+        config: The pytest config whose plugin manager is asked.
+
+    Returns:
+        True when pytester is registered under any name in ``PYTESTER_PLUGIN_NAMES``.
+    """
     return any(config.pluginmanager.has_plugin(name) for name in PYTESTER_PLUGIN_NAMES)
 
 

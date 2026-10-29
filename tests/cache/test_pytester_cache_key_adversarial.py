@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 GREMLIN_ARGS = ('--gremlins', '--gremlin-targets=target.py', '--gremlin-operators=comparison', '--gremlin-cache')
 COLD = 'Cache: 0 hits, 2 misses (0% hit rate)'
+WARM = 'Cache: 2 hits, 0 misses (100% hit rate)'
 TARGET_WITH_COMPARISON = 'def limit(x):\n    return x > 41\n'
 TEST_WITH_COMPARISON = 'from target import limit\n\n\ndef test_limit():\n    assert limit(42)\n'
 
@@ -25,8 +31,7 @@ class DescribePytesterLoadedByModulePath:
 
         project.runpytest_subprocess(*GREMLIN_ARGS, '-p', '_pytest.pytester').stdout.fnmatch_lines([COLD])
 
-
-WARM = 'Cache: 2 hits, 0 misses (100% hit rate)'
+        project.runpytest_subprocess(*GREMLIN_ARGS, '-p', '_pytest.pytester').stdout.fnmatch_lines([WARM])
 
 
 def _conftest_module_path(pytester: pytest.Pytester, _monkeypatch: pytest.MonkeyPatch) -> tuple[str, ...]:
@@ -73,10 +78,13 @@ MODES = {
 class DescribePytesterLoadedThroughOtherSources:
     @pytest.mark.parametrize('enabler', EXTRA_ENABLERS.values(), ids=EXTRA_ENABLERS.keys())
     def it_misses_once_then_hits(
-        self, project: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, enabler: object
+        self,
+        project: pytest.Pytester,
+        monkeypatch: pytest.MonkeyPatch,
+        enabler: Callable[[pytest.Pytester, pytest.MonkeyPatch], tuple[str, ...]],
     ) -> None:
         project.runpytest_subprocess(*GREMLIN_ARGS).stdout.fnmatch_lines([COLD])
-        extra = enabler(project, monkeypatch)  # type: ignore[operator]
+        extra = enabler(project, monkeypatch)
 
         project.runpytest_subprocess(*GREMLIN_ARGS, *extra).stdout.fnmatch_lines([COLD])
 
