@@ -90,6 +90,22 @@ class OperatorRegistry:
             raise KeyError(f"Unknown operator: '{name}'")
         return self._operators[name]()
 
+    def get_class(self, name: str) -> type[GremlinOperator]:
+        """Get the operator class registered under a name.
+
+        Args:
+            name: The registered name of the operator.
+
+        Returns:
+            The registered class, not an instance.
+
+        Raises:
+            KeyError: If no operator is registered with the given name.
+        """
+        if name not in self._operators:
+            raise KeyError(f"Unknown operator: '{name}'")
+        return self._operators[name]
+
     def get_all(self, enabled: list[str] | None = None) -> list[GremlinOperator]:
         """Get operator instances.
 

@@ -11,6 +11,9 @@ import pytest
 from pytest_gremlins import plugin
 from pytest_gremlins.config import MAX_TIMEOUT_SECONDS
 from pytest_gremlins.rerun_options import (
+    flaky_marker_rerun_budget,
+    mutant_timeout_for_items,
+    mutant_timeout_with_flaky_markers,
     scaled_mutant_timeout,
     session_rerun_backoff_factor,
     session_rerun_budget,
@@ -384,6 +387,153 @@ class DescribeRerunDelayEndToEnd:
             '1',
             '--reruns-delay',
             str(_RERUN_DELAY),
+            '-p',
+            'no:cacheprovider',
+        )
+
+        output = result.stdout.str()
+        assert re.search(r'Zapped: [1-9]\d* gremlins', output), output
+        assert 'Timeout:' not in output, output
+        assert 'Error:' not in output, output
+
+
+def _marker(*args: object, **kwargs: object) -> SimpleNamespace:
+    return SimpleNamespace(args=args, kwargs=kwargs)
+
+
+@pytest.mark.small
+class DescribeFlakyMarkerRerunBudget:
+    def it_reads_keyword_arguments(self) -> None:
+        marker = _marker(reruns=3, reruns_delay=2, reruns_delay_backoff_factor=4)
+
+        assert flaky_marker_rerun_budget(marker) == (3, 2.0, 4.0)
+
+    def it_reads_positional_arguments(self) -> None:
+        assert flaky_marker_rerun_budget(_marker(3, 2, 4)) == (3, 2.0, 4.0)
+
+    def it_prefers_keyword_over_positional_arguments(self) -> None:
+        assert flaky_marker_rerun_budget(_marker(1, 1, reruns=5, reruns_delay=7)) == (5, 7.0, 1.0)
+
+    def it_defaults_a_bare_marker_to_one_rerun_without_delay(self) -> None:
+        assert flaky_marker_rerun_budget(_marker()) == (1, 0.0, 1.0)
+
+    def it_does_not_inherit_the_session_delay(self) -> None:
+        assert flaky_marker_rerun_budget(_marker(reruns=2)) == (2, 0.0, 1.0)
+
+    def it_treats_reruns_none_as_no_reruns(self) -> None:
+        assert flaky_marker_rerun_budget(_marker(reruns=None)) == (0, 0.0, 1.0)
+
+    def it_caps_infinite_reruns_at_the_maximum_timeout(self) -> None:
+        reruns, _, _ = flaky_marker_rerun_budget(_marker(reruns=float('inf')))
+
+        assert reruns == MAX_TIMEOUT_SECONDS
+
+    def it_treats_nan_reruns_as_no_reruns(self) -> None:
+        assert flaky_marker_rerun_budget(_marker(reruns=float('nan'))) == (0, 0.0, 1.0)
+
+    def it_treats_a_positional_reruns_none_as_no_reruns(self) -> None:
+        assert flaky_marker_rerun_budget(_marker(None)) == (0, 0.0, 1.0)
+
+    def it_treats_delay_and_factor_none_as_unset(self) -> None:
+        marker = _marker(reruns=2, reruns_delay=None, reruns_delay_backoff_factor=None)
+
+        assert flaky_marker_rerun_budget(marker) == (2, 0.0, 1.0)
+
+
+@pytest.mark.small
+class DescribeMutantTimeoutWithFlakyMarkers:
+    def it_widens_the_timeout_to_cover_a_marker_that_outspends_the_session(self) -> None:
+        markers = [_marker(reruns=2, reruns_delay=20)]
+
+        assert mutant_timeout_with_flaky_markers(30, session_timeout=30, markers=markers) == 130
+
+    def it_keeps_the_session_timeout_when_every_marker_is_smaller(self) -> None:
+        markers = [_marker(reruns=1, reruns_delay=1)]
+
+        assert mutant_timeout_with_flaky_markers(30, session_timeout=130, markers=markers) == 130
+
+    def it_takes_the_largest_of_several_markers(self) -> None:
+        markers = [_marker(reruns=1, reruns_delay=1), _marker(reruns=2, reruns_delay=20), _marker(reruns=1)]
+
+        assert mutant_timeout_with_flaky_markers(30, session_timeout=30, markers=markers) == 130
+
+    def it_keeps_the_session_timeout_without_markers(self) -> None:
+        assert mutant_timeout_with_flaky_markers(30, session_timeout=90, markers=[]) == 90
+
+    def it_applies_the_backoff_factor_of_the_marker(self) -> None:
+        markers = [_marker(reruns=2, reruns_delay=1, reruns_delay_backoff_factor=3)]
+
+        assert mutant_timeout_with_flaky_markers(30, session_timeout=30, markers=markers) == 94
+
+
+_MARKED_TESTS = """
+import pytest
+
+@pytest.mark.small
+@pytest.mark.flaky(reruns=2, reruns_delay=20)
+def test_on_a_function():
+    pass
+
+@pytest.mark.small
+@pytest.mark.flaky(reruns=1, reruns_delay=50)
+class TestOnAClass:
+    def test_method(self):
+        pass
+
+@pytest.mark.small
+def test_unmarked():
+    pass
+"""
+
+
+def _marked_items(pytester: pytest.Pytester) -> list[pytest.Item]:
+    pytester.makepyfile(test_marked=_MARKED_TESTS)
+    items, _ = pytester.inline_genitems('-p', 'no:test_categories')
+    return items
+
+
+@pytest.mark.medium
+class DescribeMutantTimeoutWidenedByCollectedFlakyMarkers:
+    def it_covers_a_marker_on_a_function(self, pytester: pytest.Pytester) -> None:
+        items = [item for item in _marked_items(pytester) if item.name == 'test_on_a_function']
+
+        assert mutant_timeout_for_items(30, 30, items) == 130
+
+    def it_covers_a_marker_on_a_class(self, pytester: pytest.Pytester) -> None:
+        items = [item for item in _marked_items(pytester) if item.name == 'test_method']
+
+        assert mutant_timeout_for_items(30, 30, items) == 110
+
+    def it_keeps_the_session_timeout_for_unmarked_tests(self, pytester: pytest.Pytester) -> None:
+        items = [item for item in _marked_items(pytester) if item.name == 'test_unmarked']
+
+        assert mutant_timeout_for_items(30, 90, items) == 90
+
+    def it_keeps_the_session_timeout_when_the_marker_is_smaller(self, pytester: pytest.Pytester) -> None:
+        items = [item for item in _marked_items(pytester) if item.name == 'test_on_a_function']
+
+        assert mutant_timeout_for_items(30, 500, items) == 500
+
+
+_TEST_WITH_A_FLAKY_MARKER = _TEST_THAT_KILLS_THE_MUTANT.replace(
+    '@pytest.mark.medium', f'@pytest.mark.medium\n@pytest.mark.flaky(reruns=1, reruns_delay={_RERUN_DELAY})'
+)
+
+
+@pytest.mark.medium
+class DescribeFlakyMarkerDelayEndToEnd:
+    def it_zaps_a_mutant_whose_covering_test_sleeps_between_marker_reruns(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+        pytester.makepyfile(sample=_ADDITION, test_sample=_TEST_WITH_A_FLAKY_MARKER)
+
+        result = pytester.runpytest_subprocess(
+            '--gremlins',
+            '--gremlin-targets=sample.py',
+            '--gremlin-operators=arithmetic',
+            '--gremlin-mutant-timeout',
+            str(_ONE_ATTEMPT_LIMIT),
             '-p',
             'no:cacheprovider',
         )
