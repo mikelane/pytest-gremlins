@@ -835,6 +835,18 @@ class DescribeHtmlReporterHistorySection:
 
         assert 'historyChart' in html
 
+    def it_draws_the_history_chart_when_every_target_is_skipped(self):
+        history = [
+            {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
+            {'timestamp': '2026-01-02T00:00:00+00:00', 'score': 85.0, 'by_file': {}, 'by_operator': {}},
+        ]
+
+        html = HtmlReporter().to_html(
+            MutationScore.from_results([]), history=history, skipped_files={'src/demo/chain.py': 'RecursionError'}
+        )
+
+        assert 'new Chart(histEl' in html
+
     def it_embeds_history_data_as_json_in_canvas_attribute(self, make_result):
         score = MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)])
         history = [
@@ -1343,6 +1355,16 @@ class DescribeWriteReportHistoryPersistence:
 
         assert json.loads(history_path.read_text()) == original
         assert 'chain.py' in output_path.read_text()
+
+    def it_does_not_append_an_all_pardoned_score_to_existing_history(self, make_result, tmp_path: Path):
+        output_path = tmp_path / 'index.html'
+        reporter = HtmlReporter()
+        reporter.write_report(MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)]), output_path)
+
+        reporter.write_report(MutationScore.from_results([make_result(GremlinResultStatus.PARDONED)]), output_path)
+
+        entries = json.loads((tmp_path / 'history.json').read_text())
+        assert [entry['score'] for entry in entries] == [100.0]
 
     def it_still_writes_html_when_history_raises(self, make_result, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         results = [make_result(GremlinResultStatus.ZAPPED)]

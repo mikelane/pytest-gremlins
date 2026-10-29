@@ -143,6 +143,7 @@ class HtmlReporter:
             crossorigin="anonymous"></script>
     <script>
         {self._get_chart_script(score, chart_data) if score.total > 0 else ''}
+        {self._get_history_script()}
         {self._get_expand_collapse_script()}
     </script>
 </body>
@@ -155,7 +156,8 @@ class HtmlReporter:
 
         Creates any missing parent directories before writing.  History is
         appended to ``history.json`` in the same directory as the report when
-        at least one gremlin was tested. Empty runs leave history unchanged.
+        at least one non-pardoned gremlin was tested. Runs with nothing tested
+        (no gremlins, or only pardoned ones) leave history unchanged.
         If history persistence fails, a warning is logged and the HTML report
         is still written.
 
@@ -166,7 +168,7 @@ class HtmlReporter:
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
         history_path = output_path.parent / 'history.json'
-        if score.total > 0:
+        if score.total - score.pardoned > 0:
             try:
                 append_history_entry(
                     rootdir=output_path.parent,
@@ -601,36 +603,6 @@ class HtmlReporter:
                     }}
                 }});
             }}
-
-            var histEl = document.getElementById('historyChart');
-            if (histEl) {{
-                var entries = JSON.parse(histEl.dataset.history || '[]');
-                if (entries.length >= 2) {{
-                    new Chart(histEl, {{
-                        type: 'line',
-                        data: {{
-                            labels: entries.map(function(e) {{ return e.timestamp.substring(0, 10); }}),
-                            datasets: [{{
-                                label: 'Mutation Score %',
-                                data: entries.map(function(e) {{ return e.score; }}),
-                                borderColor: '#4caf50',
-                                backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                                tension: 0.3,
-                                fill: true,
-                            }}]
-                        }},
-                        options: {{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {{ legend: {{ labels: {{ color: textColor }} }} }},
-                            scales: {{
-                                x: {{ ticks: {{ color: textColor }}, grid: {{ color: borderColor }} }},
-                                y: {{ min: 0, max: 100, ticks: {{ color: textColor }}, grid: {{ color: borderColor }} }}
-                            }}
-                        }}
-                    }});
-                }}
-            }}
         }});
 
         function toggleTheme() {{
@@ -646,6 +618,49 @@ class HtmlReporter:
                 btn.setAttribute('aria-pressed', 'false');
             }}
         }}
+        """
+
+    def _get_history_script(self) -> str:
+        """Get inline JS drawing the history trend chart.
+
+        Emitted for every report, including runs with no gremlins tested, because the
+        history box is rendered whenever there are two or more entries.
+        """
+        return """
+        window.addEventListener('load', function() {
+            var textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim();
+            var borderColor = getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim();
+
+            var histEl = document.getElementById('historyChart');
+            if (histEl) {
+                var entries = JSON.parse(histEl.dataset.history || '[]');
+                if (entries.length >= 2) {
+                    new Chart(histEl, {
+                        type: 'line',
+                        data: {
+                            labels: entries.map(function(e) { return e.timestamp.substring(0, 10); }),
+                            datasets: [{
+                                label: 'Mutation Score %',
+                                data: entries.map(function(e) { return e.score; }),
+                                borderColor: '#4caf50',
+                                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                                tension: 0.3,
+                                fill: true,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { labels: { color: textColor } } },
+                            scales: {
+                                x: { ticks: { color: textColor }, grid: { color: borderColor } },
+                                y: { min: 0, max: 100, ticks: { color: textColor }, grid: { color: borderColor } }
+                            }
+                        }
+                    });
+                }
+            }
+        });
         """
 
     def _get_expand_collapse_script(self) -> str:
