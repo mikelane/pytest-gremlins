@@ -829,6 +829,7 @@ def _init_cache(
     cache_enabled: bool,
     clear_cache: bool,
     operators: Sequence[GremlinOperator],
+    pytester_loaded: Callable[[], bool] = lambda: False,
 ) -> IncrementalCache | None:
     """Initialise the incremental cache when enabled, optionally clearing it first.
 
@@ -838,6 +839,7 @@ def _init_cache(
         clear_cache: Whether to wipe the cache before use.
         operators: The operators registered for the run, after conftest registration; their owning
             distributions are part of the cache key.
+        pytester_loaded: Reports whether the session loads the pytester plugin; such sessions get their own key part.
 
     Returns:
         An open IncrementalCache, or None when caching is disabled.
@@ -845,7 +847,7 @@ def _init_cache(
     if not cache_enabled:
         return None
     cache_dir = rootdir / '.gremlins_cache'
-    cache = IncrementalCache(cache_dir, operators, project_root=rootdir)
+    cache = IncrementalCache(cache_dir, operators, project_root=rootdir, pytester_loaded=pytester_loaded)
     if clear_cache:
         cache.clear()
         print('pytest-gremlins: cache cleared')
@@ -1089,7 +1091,13 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # Cache: merge_configs already resolved CLI-beats-TOML; default False
     cache_enabled: bool = bool(toml_cache)
-    cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache, operators)
+    cache: IncrementalCache | None = _init_cache(
+        rootdir,
+        cache_enabled,
+        config.option.gremlin_clear_cache,
+        operators,
+        pytester_loaded=lambda: config.pluginmanager.has_plugin('pytester'),
+    )
 
     xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
     xdist_workers_for_parallel = xdist_worker_int if xdist_active else None
