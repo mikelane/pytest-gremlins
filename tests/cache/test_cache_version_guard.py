@@ -93,7 +93,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'coverage/types.py': '6300b3a3c2f3a3ccd433e43fb172f367243f4f3eb10cd588306790ae415453ae',  # pragma: allowlist secret
     # --
-    'gremlins_options.py': 'd6aca18098f0c89d14ba54ee4d46b398a9331100c8d25398cb66fca8fac47959',  # pragma: allowlist secret  # noqa: E501
+    'gremlins_options.py': 'a222a60f665711808dac20c94eb44b072fe4483cfd9de134a15bb3c8172075a0',  # pragma: allowlist secret  # noqa: E501
     # --
     'instrumentation/__init__.py': '22aab29f2f7b08257f748738722eff5fede51bc1c5d90010a588fc38c92d42aa',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -159,7 +159,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'db210cae1b045c030cac6fd7341f568a050cd64b0b7c9367209a03e231151838',  # pragma: allowlist secret
+    'plugin.py': '12fc39aa1edf8843aa98b92a4041c2b758430a216a0e5559a5f914c848ee3879',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -171,7 +171,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rerun_options.py': '988743f054ce69cdeec2be71ffc4e906cb5b0fb9f362046fcbbfdb78513ec415',  # pragma: allowlist secret
     # --
-    'xdist_options.py': '90005fa9699bae11a9d1d7693817864e7fe0fcf593fab68abb7c0fb48dfa4536',  # pragma: allowlist secret
+    'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }
 
 
