@@ -3024,8 +3024,8 @@ def _loader_options_for(config: pytest.Config, plugin_names: tuple[str, ...]) ->
 
 # The entry-point name (``-p pytest_cov``, autoload) or the module name (``-p pytest_cov.plugin``, ``pytest_plugins``).
 # The module name goes first: bare ``pytest_cov`` can also be the hookless package that ``PYTEST_PLUGINS`` registers.
-_PYTEST_COV_PLUGIN_NAMES = ('pytest_cov.plugin', 'pytest_cov')
-_PYTEST_COV_ENTRY_POINT_NAMES = _PYTEST_COV_PLUGIN_NAMES[1:]
+_PYTEST_COV_PLUGIN_NAMES: tuple[str, ...] = ('pytest_cov.plugin', 'pytest_cov')
+_PYTEST_COV_ENTRY_POINT_NAMES: tuple[str, ...] = _PYTEST_COV_PLUGIN_NAMES[1:]
 _PYTEST_COV_BLOCKS = frozenset({'no:pytest_cov', 'no:cov'})
 _NO_COV_OPTION = '--no-cov'
 
@@ -3044,19 +3044,35 @@ def _pytest_cov_options_for(config: pytest.Config, rerun_options: Sequence[str])
     ``--no-cov`` exists only where pytest-cov is registered, so it is forwarded only when this session has the option
     (``config.option.no_cov``), never merely because the package is importable.  Gremlin runs get a ``-p`` loader
     for the name this session registered it under, so the flag always has a plugin to parse it.  Repeating that name
-    is a no-op where an inherited source loaded it as well, while a different name would register it twice.  The
-    loader matters in two setups.  Gremlin runs that start with autoload disabled (the environment, a flag in
-    ``addopts`` or ``PYTEST_ADDOPTS``, or the ``--disable-plugin-autoload`` the rerun options forward, issue #684)
-    do not register pytest-cov themselves.  Gremlin runs that autoload still do not when the inherited ``addopts``
-    or ``PYTEST_ADDOPTS`` hold ``-p no:pytest_cov`` and only the session's own command line (not passed on) loaded
-    it again; the later ``-p`` overrides the inherited block.  With autoload on only the entry-point name is
-    forwarded, because the module name would register the autoloaded plugin a second time.  The exception is
-    an inherited ``-p no:pytest_cov`` (or ``no:cov``): the gremlin run then does not autoload pytest-cov, so a
-    session that registered only the module name gets that name forwarded too.  A block typed only on the
-    session's command line is not inherited, so it changes nothing.  If the session
-    registered pytest-cov under a name this does not know, autoloading runs still get the bare flag, which they
-    can parse where nothing blocks the plugin, and runs without autoload get nothing, which errs toward a missed
-    kill.
+    is a no-op where an inherited source loaded it as well, while a different name would register it twice.
+
+    The loader matters in two setups:
+
+    * Gremlin runs that start with autoload disabled (the environment, a flag in ``addopts`` or ``PYTEST_ADDOPTS``,
+      or the ``--disable-plugin-autoload`` the rerun options forward, issue #684) do not register pytest-cov
+      themselves.
+    * Gremlin runs that autoload still do not when the inherited ``addopts`` or ``PYTEST_ADDOPTS`` hold
+      ``-p no:pytest_cov`` and only the session's own command line (not passed on) loaded it again.  The later
+      ``-p`` overrides the inherited block.
+
+    With autoload on, only the entry-point name is forwarded, because the module name would register the autoloaded
+    plugin a second time.  The exception is an inherited ``-p no:pytest_cov`` (or ``no:cov``): the gremlin run then
+    does not autoload pytest-cov, so a session that registered only the module name gets that name forwarded too.  A
+    block typed only on the session's command line is not inherited, so it changes nothing.
+
+    If the session registered pytest-cov under a name this does not know, autoloading runs still get the bare flag,
+    which they can parse where nothing blocks the plugin, and runs without autoload get nothing, which errs toward a
+    missed kill.
+
+    Args:
+        config: The session's pytest config, read for the registered plugins, ``no_cov`` and the inherited
+            ``addopts``.
+        rerun_options: The options forwarded to gremlin runs by :func:`_rerun_options_for`, checked for
+            ``--disable-plugin-autoload``.
+
+    Returns:
+        The options to append to every gremlin run command: ``[]``, ``['--no-cov']`` or
+        ``['-p', <plugin name>, '--no-cov']``.
     """
     if not hasattr(config.option, 'no_cov'):
         return []
