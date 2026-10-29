@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import pytest
@@ -76,7 +77,9 @@ TEST_WITH_COMPARISON = 'from target import limit\n\n\ndef test_limit():\n    ass
 
 
 @pytest.fixture
-def project(pytester: pytest.Pytester) -> pytest.Pytester:
+def project(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> pytest.Pytester:
+    """Make the child pytest sessions these tests spawn write UTF-8, so Windows cp1252 bullets decode."""
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
     pytester.makepyfile(target=TARGET_WITH_COMPARISON, test_target=TEST_WITH_COMPARISON)
     return pytester
 
@@ -100,6 +103,13 @@ ENABLERS = {
     'root conftest': _enable_with_root_conftest,
     'addopts': _enable_with_addopts,
 }
+
+
+@pytest.mark.medium
+class DescribePytesterSubprocessEncoding:
+    @pytest.mark.usefixtures('project')
+    def it_writes_child_output_as_utf8(self) -> None:
+        assert os.environ.get('PYTHONIOENCODING') == 'utf-8'
 
 
 @pytest.mark.medium

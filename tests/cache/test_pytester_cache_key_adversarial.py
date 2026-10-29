@@ -17,7 +17,9 @@ TEST_WITH_COMPARISON = 'from target import limit\n\n\ndef test_limit():\n    ass
 
 
 @pytest.fixture
-def project(pytester: pytest.Pytester) -> pytest.Pytester:
+def project(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> pytest.Pytester:
+    """Make the child pytest sessions these tests spawn write UTF-8, so Windows cp1252 bullets decode."""
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
     pytester.makepyfile(target=TARGET_WITH_COMPARISON, test_target=TEST_WITH_COMPARISON)
     return pytester
 
