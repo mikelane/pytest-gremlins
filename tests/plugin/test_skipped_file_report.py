@@ -132,7 +132,7 @@ class DescribeSkippedFileReport:
 
         assert not (pytester.path / 'coverage/gremlins/history.json').exists()
 
-    def it_prints_report_locations_before_the_closing_separator_when_every_target_is_skipped(
+    def it_prints_report_locations_just_above_the_mutation_report_header_when_every_target_is_skipped(
         self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
     ) -> None:
         _write_project(pytester, with_age=False)
@@ -141,13 +141,21 @@ class DescribeSkippedFileReport:
             pytester, '--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json,html'
         )
 
-        lines = result.stdout.lines
-        skipped_index = next(i for i, line in enumerate(lines) if 'skipped and not mutation tested' in line)
-        closing_separator_index = next(
-            i for i in range(skipped_index, len(lines)) if lines[i].startswith('=') and set(lines[i]) == {'=', ' '}
+        # The whole empty-run block, line for line: the report locations sit directly above the
+        # header, so they are inside the gremlins block and before its closing separator.
+        result.stdout.fnmatch_lines(
+            [
+                'HTML report written to: *coverage/gremlins/index.html',
+                'JSON report written to: *coverage/gremlins/gremlins.json',
+                '=* pytest-gremlins mutation report =*',
+                '',
+                '1 file(s) skipped and not mutation tested:',
+                '  - *chain.py (RecursionError: *)',
+                '',
+                '=*  =*',
+            ],
+            consecutive=True,
         )
-        report_index = next(i for i, line in enumerate(lines) if 'JSON report written to' in line)
-        assert report_index < closing_separator_index
 
     def it_records_skipped_files_in_html_when_other_files_mutate(
         self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated

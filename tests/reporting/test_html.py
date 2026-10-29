@@ -845,6 +845,7 @@ class DescribeHtmlReporterHistorySection:
             MutationScore.from_results([]), history=history, skipped_files={'src/demo/chain.py': 'RecursionError'}
         )
 
+        assert '<canvas id="historyChart"' in html
         assert 'new Chart(histEl' in html
 
     def it_embeds_history_data_as_json_in_canvas_attribute(self, make_result):
