@@ -4684,31 +4684,13 @@ def _write_empty_run_report(terminalreporter: pytest.TerminalReporter, gremlin_s
     terminalreporter.write_sep('=', '')
 
 
-def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
+def _write_file_reports(
     terminalreporter: pytest.TerminalReporter,
-    exitstatus: int,  # noqa: ARG001
+    gremlin_session: GremlinSession,
     config: pytest.Config,
+    score: MutationScore,
 ) -> None:
-    """Add mutation testing results to terminal output."""
-    gremlin_session = _get_session()
-    if gremlin_session is None or not gremlin_session.enabled:
-        return
-
-    for notice in gremlin_session.terminal_notices:
-        terminalreporter.write_line(notice)
-
-    if not gremlin_session.gremlins:
-        _write_empty_run_report(terminalreporter, gremlin_session)
-        if not gremlin_session.skipped_files:
-            return
-
-    score = MutationScore.from_results(
-        gremlin_session.results,
-        mutant_timeout=gremlin_session.mutant_timeout,
-        mutant_attempt_timeout=gremlin_session.mutant_attempt_timeout,
-    )
-
-    # Write file-based reports as requested
+    """Write the HTML and JSON reports the session asked for and say where they went."""
     rootdir = _get_rootdir(config)
 
     if 'html' in gremlin_session.report_formats:
@@ -4731,8 +4713,35 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
             logger.warning('Failed to write JSON report: %s', exc)
             terminalreporter.write_line(f'JSON report write failed: {exc}')
 
-    if not gremlin_session.gremlins:
+
+def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
+    terminalreporter: pytest.TerminalReporter,
+    exitstatus: int,  # noqa: ARG001
+    config: pytest.Config,
+) -> None:
+    """Add mutation testing results to terminal output."""
+    gremlin_session = _get_session()
+    if gremlin_session is None or not gremlin_session.enabled:
         return
+
+    for notice in gremlin_session.terminal_notices:
+        terminalreporter.write_line(notice)
+
+    score = MutationScore.from_results(
+        gremlin_session.results,
+        mutant_timeout=gremlin_session.mutant_timeout,
+        mutant_attempt_timeout=gremlin_session.mutant_attempt_timeout,
+    )
+
+    if not gremlin_session.gremlins:
+        if gremlin_session.skipped_files:
+            # Skipped files still get reports, so a stale score is overwritten. Write them first so
+            # their locations print before the empty-run report's closing separator.
+            _write_file_reports(terminalreporter, gremlin_session, config, score)
+        _write_empty_run_report(terminalreporter, gremlin_session)
+        return
+
+    _write_file_reports(terminalreporter, gremlin_session, config, score)
 
     terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
     terminalreporter.write_line('')
