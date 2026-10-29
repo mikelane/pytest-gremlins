@@ -17,7 +17,9 @@ import sysconfig
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from urllib.request import url2pathname
+import uuid
 
+from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 
 if TYPE_CHECKING:
@@ -195,6 +197,47 @@ def _operator_owner_labels(operators: Iterable[GremlinOperator], project_root: P
     return labels
 
 
+def _local_helper_file(operator: GremlinOperator, project_root: Path | None) -> Path | None:
+    """Return the file of a project-local helper module that defines ``operator``, or None if it needs no hash.
+
+    Built-in operators, operators from installed distributions (outside ``project_root`` or in site-packages) and
+    operators defined in a ``conftest.py`` return None: the first two are covered by ``CACHE_VERSION`` and the
+    distribution label, and conftest files are already hashed with the tests they cover.
+    """
+    module_name = type(operator).__module__
+    if module_name.partition('.')[0] == 'pytest_gremlins':
+        return None
+    origin = getattr(sys.modules.get(module_name), '__file__', None)
+    if origin is None:
+        return Path(f'<no-file:{module_name}>')
+    location = Path(origin).resolve()
+    if location.name == 'conftest.py' or not _is_project_local(location, project_root):
+        return None
+    return location
+
+
+def _local_helper_fingerprints(operators: Iterable[GremlinOperator], project_root: Path | None) -> set[str]:
+    """Return ``local-operator=<path>:<hash>`` entries for operators defined in project-local helper modules.
+
+    Only the helper file's own content is hashed; modules it imports are not tracked. A helper whose file cannot
+    be found or read gets a fresh random token, so the key never matches and its verdicts are recomputed.
+    """
+    if project_root is None:
+        return set()
+    hasher = ContentHasher()
+    entries: set[str] = set()
+    for operator in operators:
+        helper = _local_helper_file(operator, project_root)
+        if helper is None:
+            continue
+        try:
+            relative = helper.relative_to(project_root.resolve()).as_posix()
+            entries.add(f'local-operator={relative}:{hasher.hash_file(helper)}')
+        except (OSError, ValueError):
+            entries.add(f'local-operator={type(operator).__module__}:unreadable-{uuid.uuid4().hex}')
+    return entries
+
+
 def installed_versions_fingerprint(
     operators: Iterable[GremlinOperator] = (),
     project_root: Path | None = None,
@@ -224,4 +267,5 @@ def installed_versions_fingerprint(
         if entry_point.dist is not None
     }
     suppliers |= _operator_owner_labels(operators, project_root)
+    suppliers |= _local_helper_fingerprints(operators, project_root)
     return '|'.join([f'cache-version={CACHE_VERSION}', *sorted(suppliers)])
