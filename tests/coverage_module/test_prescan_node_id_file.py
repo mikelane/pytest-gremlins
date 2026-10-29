@@ -10,7 +10,6 @@ import json
 from pathlib import Path
 import subprocess
 from unittest.mock import patch
-import warnings
 
 import pytest
 
@@ -149,50 +148,40 @@ class DescribePrescanLaunchFailure:
         assert spy.node_ids_file is not None
         assert not spy.node_ids_file.parent.exists()
 
-    def it_does_not_escape_the_coverage_collection(self, tmp_path: Path) -> None:
+    def it_does_not_escape_the_coverage_collection(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         session = GremlinSession(enabled=True)
         session.test_node_ids = {node_id: node_id for node_id in REPORTED_NODE_IDS}
 
-        with (
-            patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=self.LAUNCH_ERROR),
-            warnings.catch_warnings(record=True) as caught,
-        ):
-            warnings.simplefilter('always')
+        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=self.LAUNCH_ERROR):
             _collect_coverage(session, tmp_path)
 
         assert session.test_selector is not None
-        assert [str(warning.message) for warning in caught if issubclass(warning.category, UserWarning)] == [
+        assert capsys.readouterr().err.splitlines() == [
             'pytest-gremlins: coverage pre-scan could not start ([Errno 206] The filename or extension is too long); '
             'coverage-guided test selection disabled, so every gremlin runs the full test suite',
         ]
 
     def it_warns_that_the_pre_scan_could_not_be_run_when_the_node_ids_file_cannot_be_written(
-        self, tmp_path: Path
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         session = GremlinSession(enabled=True)
         session.test_node_ids = {node_id: node_id for node_id in REPORTED_NODE_IDS}
         disk_full = OSError(28, 'No space left on device')
 
-        with (
-            patch('pytest_gremlins.plugin.command_with_node_ids_file', autospec=True, side_effect=disk_full),
-            warnings.catch_warnings(record=True) as caught,
-        ):
-            warnings.simplefilter('always')
+        with patch('pytest_gremlins.plugin.command_with_node_ids_file', autospec=True, side_effect=disk_full):
             _collect_coverage(session, tmp_path)
 
-        assert [str(warning.message) for warning in caught if issubclass(warning.category, UserWarning)] == [
+        assert capsys.readouterr().err.splitlines() == [
             'pytest-gremlins: coverage pre-scan could not start ([Errno 28] No space left on device); '
             'coverage-guided test selection disabled, so every gremlin runs the full test suite',
         ]
 
-    def it_does_not_also_claim_that_no_data_was_recorded(self, tmp_path: Path) -> None:
+    def it_does_not_also_claim_that_no_data_was_recorded(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         session = GremlinSession(enabled=True)
 
-        with (
-            patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=self.LAUNCH_ERROR),
-            warnings.catch_warnings(record=True) as caught,
-        ):
-            warnings.simplefilter('always')
+        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=self.LAUNCH_ERROR):
             _collect_coverage(session, tmp_path)
 
-        assert 'returned no data' not in ' '.join(str(warning.message) for warning in caught)
+        assert 'returned no data' not in capsys.readouterr().err
