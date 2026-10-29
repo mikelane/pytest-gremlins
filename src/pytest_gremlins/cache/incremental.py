@@ -278,7 +278,10 @@ class IncrementalCache:
             cache_dir: Directory to store cache files.
             operators: The operators registered for this run; the installed distributions that own them are
                 part of the cache key, so upgrading a package that supplies one retires its verdicts.
-            project_root: The pytest rootdir; operator modules under it are project code and add nothing.
+            project_root: The pytest rootdir; an operator module under it is project code, so no distribution
+                label is added. An operator keeps a stable key only when it is importable by its qualified name and
+                an installed distribution owns its module. Every other operator, a conftest operator excepted,
+                misses the cache on every run (#887 tracks restoring hits).
             pytester_loaded: Reports whether the session loads the pytester plugin. It is asked each time a key is
                 built, because a nested ``conftest.py`` can enable pytester after the cache opens.
         """
