@@ -53,7 +53,7 @@ EXCLUDED_FROM_GUARD: dict[str, str] = {
 }
 
 RECORDED_CACHE_VERSION = 1
-RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
+RECORDED_RUNNER_FIDELITY_VERSION = 'rf21'
 # One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
 # between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
 RECORDED_DIGESTS: dict[str, str] = {
@@ -61,7 +61,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': '62d2d86d63e4a7f2cb3fc82c05363ced7f882543d4dd438c2d153c39b85e10cf',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': '3e4e178d9eccb65aa6047ef1a771687610370358e54cf36e1f3801c30d0fe97f',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/store.py': '967c632516b6ae126921f43f1c72b753de59c0cac9679557793c2082e0003cc1',  # pragma: allowlist secret
     # --
@@ -159,7 +159,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '8a3ccf5cc2b8ae9b11f2ad99110aa5b3b768aaee408e107e3d92cd0b47f1bd5c',  # pragma: allowlist secret
+    'plugin.py': 'bf0ece5e2c97b940b6c79907adc775c5f8cfc6c4a8f1a8447df7e6f38fc3bacf',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
