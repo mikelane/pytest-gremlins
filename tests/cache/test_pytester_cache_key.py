@@ -109,7 +109,7 @@ ENABLERS = {
 class DescribePytesterSubprocessEncoding:
     @pytest.mark.usefixtures('project')
     def it_writes_child_output_as_utf8(self) -> None:
-        assert os.environ.get('PYTHONIOENCODING') == 'utf-8'
+        assert os.environ['PYTHONIOENCODING'] == 'utf-8'
 
 
 @pytest.mark.medium
