@@ -24,5 +24,5 @@ For more information, see https://pytest-gremlins.readthedocs.io
 
 from __future__ import annotations
 
-__version__ = '1.12.2'
+__version__ = '1.13.1'
 __all__ = ['__version__']

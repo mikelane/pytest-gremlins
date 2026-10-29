@@ -6,24 +6,49 @@ scaling issues with the cache.
 
 from __future__ import annotations
 
-import time
+from contextlib import closing
+import json
+import sqlite3
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+_GREMLIN_ARGS = (
+    '--gremlins',
+    '--gremlin-targets=validator.py',
+    '--gremlin-operators=comparison',
+    '--gremlin-cache',
+    '--gremlin-report=json',
+)
+_REPORT_RELATIVE_PATH = ('coverage', 'gremlins', 'gremlins.json')
+
+
+def _overwrite_cached_statuses(db_path: Path, *, only_status: str, new_status: str) -> None:
+    with closing(sqlite3.connect(db_path)) as conn:
+        for cache_key, result_json in conn.execute('SELECT cache_key, result_json FROM results').fetchall():
+            entry = json.loads(result_json)
+            if entry['status'] == only_status:
+                entry['status'] = new_status
+                conn.execute('UPDATE results SET result_json = ? WHERE cache_key = ?', (json.dumps(entry), cache_key))
+        conn.commit()
 
 
 @pytest.mark.medium
 class DescribeCacheLargeScale:
     """Tests for cache with larger number of gremlins."""
 
-    def it_returns_identical_scores_on_warm_cache_rerun_with_many_gremlins(
-        self,
-        pytester_with_markers: pytest.Pytester,
-    ) -> None:
-        """Cache produces same mutation scores on warm rerun with many gremlins.
+    @pytest.fixture
+    def large_project(self, pytester_with_markers: pytest.Pytester) -> pytest.Pytester:
+        """Write a project whose validator.py yields about a dozen comparison gremlins over 26 tests.
 
-        Targets one module with the comparison operator (about a dozen gremlins) while the suite
-        collects 25 tests. Every gremlin runs through a full pytest bootstrap, so the workload is
-        kept small enough for the medium time limit.
+        Every gremlin runs through a full pytest bootstrap, so the workload is kept small enough for
+        the medium time limit.
         """
         # Create source files similar to benchmark
         pytester_with_markers.makepyfile(
@@ -68,6 +93,9 @@ def is_negative(n):
 
 def is_zero(n):
     return n == 0
+
+def is_small(n):
+    return n < 1000
             """,
         )
 
@@ -130,7 +158,7 @@ class TestPower:
         pytester_with_markers.makepyfile(
             test_validator="""
 import pytest
-from validator import is_adult, is_valid_percentage, is_positive, is_negative, is_zero
+from validator import is_adult, is_valid_percentage, is_positive, is_negative, is_zero, is_small
 
 @pytest.mark.medium
 class TestIsAdult:
@@ -180,41 +208,78 @@ class TestIsZero:
 
     def test_positive(self):
         assert is_zero(1) is False
+
+@pytest.mark.medium
+class TestIsSmall:
+    def test_far_below_the_limit(self):
+        assert is_small(5) is True
             """,
         )
 
-        # Cold cache run
-        cold_start = time.perf_counter()
-        pytester_with_markers.runpytest(
-            '--gremlins',
-            '--gremlin-targets=validator.py',
-            '--gremlin-operators=comparison',
-            '--gremlin-cache',
+        return pytester_with_markers
+
+    def _run_with_json_report(self, pytester: pytest.Pytester) -> tuple[pytest.RunResult, list[dict[str, Any]]]:
+        report_path = pytester.path.joinpath(*_REPORT_RELATIVE_PATH)
+        report_path.unlink(missing_ok=True)
+        result = pytester.runpytest(*_GREMLIN_ARGS)
+        report = json.loads(report_path.read_text())
+        verdicts = sorted(report['results'], key=lambda entry: entry['gremlin_id'])
+        return result, [{key: entry.get(key) for key in ('gremlin_id', 'status', 'killing_test')} for entry in verdicts]
+
+    def it_returns_identical_scores_on_warm_cache_rerun_with_many_gremlins(
+        self,
+        large_project: pytest.Pytester,
+    ) -> None:
+        """Cache replays the cold run's verdicts on a warm rerun, with every gremlin served from the cache."""
+        _, cold_verdicts = self._run_with_json_report(large_project)
+
+        warm_result, warm_verdicts = self._run_with_json_report(large_project)
+
+        warm_result.assert_outcomes(passed=26)
+        assert len(cold_verdicts) > 0
+        assert warm_verdicts == cold_verdicts
+        warm_result.stdout.fnmatch_lines([f'Cache: {len(cold_verdicts)} hits, 0 misses (100% hit rate)'])
+
+    def it_reports_both_zapped_and_survived_verdicts_in_the_cold_run(
+        self,
+        large_project: pytest.Pytester,
+    ) -> None:
+        """The workload has survivors and kills, so a cache fabricating either kind changes the verdicts."""
+        _, cold_verdicts = self._run_with_json_report(large_project)
+
+        assert {verdict['status'] for verdict in cold_verdicts} == {'zapped', 'survived'}
+
+    @pytest.mark.parametrize(
+        ('original_status', 'fabricated_status'),
+        [('survived', 'zapped'), ('zapped', 'survived')],
+    )
+    def it_detects_a_cache_that_fabricates_verdicts_of_one_kind(
+        self,
+        large_project: pytest.Pytester,
+        original_status: str,
+        fabricated_status: str,
+    ) -> None:
+        """Rewriting every cached verdict of one kind changes the warm verdicts."""
+        _, cold_verdicts = self._run_with_json_report(large_project)
+        _overwrite_cached_statuses(
+            large_project.path / '.gremlins_cache' / 'results.db',
+            only_status=original_status,
+            new_status=fabricated_status,
         )
-        cold_time = time.perf_counter() - cold_start
 
-        # Warm cache run
-        warm_start = time.perf_counter()
-        result = pytester_with_markers.runpytest(
-            '--gremlins',
-            '--gremlin-targets=validator.py',
-            '--gremlin-operators=comparison',
-            '--gremlin-cache',
-        )
-        warm_time = time.perf_counter() - warm_start
+        _, warm_verdicts = self._run_with_json_report(large_project)
 
-        # Verify tests passed (12 + 13 = 25 tests total)
-        result.assert_outcomes(passed=25)
+        assert warm_verdicts != cold_verdicts
 
-        # Print timing info for debugging
-        print('\n\nTiming results:')
-        print(f'  Cold cache: {cold_time:.2f}s')
-        print(f'  Warm cache: {warm_time:.2f}s (speedup: {cold_time / warm_time:.1f}x)')
+    def it_fails_loudly_when_the_warm_run_writes_no_report(
+        self,
+        large_project: pytest.Pytester,
+    ) -> None:
+        """A stale report from the cold run is never read as the warm run's report."""
+        self._run_with_json_report(large_project)
+        report_path = large_project.path.joinpath(*_REPORT_RELATIVE_PATH)
+        report_path.unlink()
+        report_path.mkdir()
 
-        # The cold run is the no-cache baseline: every gremlin runs through pytest, so a second
-        # no-cache run would only double the cost without adding a signal.
-        speedup = cold_time / warm_time
-        assert speedup >= 2.0, (
-            f'Warm cache speedup is only {speedup:.1f}x vs cold cache. '
-            f'Expected at least 2x. (cold: {cold_time:.2f}s, warm: {warm_time:.2f}s)'
-        )
+        with pytest.raises((OSError, json.JSONDecodeError)):
+            self._run_with_json_report(large_project)

@@ -165,7 +165,8 @@ operator, with its captured stderr in a collapsed "Show stderr" block.
 **Skipped Files:**
 
 Shown only when a source file could not be instrumented, under "Files skipped and not mutation
-tested", with the reason for each file.
+tested", with the reason for each file. When every target was skipped, the HTML and JSON reports are
+still written (with a total of 0), so a stale report from an earlier run is replaced.
 
 **Status Color Coding:**
 
@@ -267,6 +268,10 @@ rebuilds the file.
 
 This is useful for tracking whether your mutation score is trending up or down as your
 project evolves, without needing an external dashboard.
+
+A run that tested no gremlins, because every target was skipped or every gremlin was pardoned,
+adds no history entry, so it cannot plot a 0% point. The trend chart still draws from the
+existing entries.
 
 !!! note "Known limitation"
     History entries record only the score, not skipped files. A run that skipped a file can
@@ -403,7 +408,7 @@ A mapping of file paths to per-file statistics:
 Present only when a source file could not be instrumented. It maps each skipped path to the
 reason in the form `ExceptionType: message`; these files are not counted in `summary` or `files`.
 The HTML report also lists them above the charts, so a high mutation score is not mistaken
-for full source coverage.
+for full source coverage. When every target was skipped, `summary.total` is 0 and `skipped_files` lists them all.
 
 **Results Array (Gremlin Objects):**
 

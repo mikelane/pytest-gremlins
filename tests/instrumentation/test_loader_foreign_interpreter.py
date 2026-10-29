@@ -14,6 +14,7 @@ import base64
 import importlib.machinery
 import pickle
 from types import ModuleType
+import zlib
 
 import pytest
 
@@ -31,7 +32,7 @@ class _TreeFromAnotherPython:
 
 
 def _foreign_tree() -> str:
-    return base64.b64encode(pickle.dumps(_TreeFromAnotherPython())).decode('ascii')
+    return base64.b64encode(zlib.compress(pickle.dumps(_TreeFromAnotherPython()))).decode('ascii')
 
 
 @pytest.mark.small

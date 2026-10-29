@@ -211,6 +211,13 @@ Cache keys incorporate three components:
 | `source_hash` | Source file content changes |
 | `combined_test_hash` | Any covering test file changes |
 
+The cache also records which code produced its verdicts: an internal cache version, and every distribution that
+provides a `pytest_gremlins.operators` entry point or owns the module of an operator registered for the run
+(including operators a `conftest.py` registers). Upgrading pytest-gremlins keeps the cache, unless the release
+changes how verdicts are computed and raises the cache version (then the first run is cold). Installing, removing,
+upgrading or downgrading an operator package invalidates it. Old entries stop matching; they remain in `results.db`
+until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
+
 ### Invalidation Rules
 
 | Change | Cache Effect |
@@ -219,6 +226,11 @@ Cache keys incorporate three components:
 | Test file modified | Miss for gremlins covered by that test |
 | New test added | Miss for gremlins the new test covers |
 | Test deleted | Miss for gremlins that test was zapping |
+| pytest-gremlins upgraded | Hit, unless the release raised the cache version (then a miss for every gremlin) |
+| Distribution providing a `pytest_gremlins.operators` entry point installed, removed or changed version | Miss for every gremlin (old entries stop matching) |
+| Installed package (including a PEP 610 editable install) that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
+| Operator defined in `conftest.py` under the pytest rootdir (project-local, even if the project is installed editable) | No effect on the key; the source and conftest hashes cover it |
+| Operator defined in a project-local helper module a conftest imports, an operator no installed distribution owns, or an editable install recorded only through a `.pth` file or a setuptools import finder | No effect on the key, and no hash covers it ([#882](https://github.com/mikelane/pytest-gremlins/issues/882)): run with `--gremlin-clear-cache` after changing it |
 | Nothing changed | Hit (return cached result) |
 
 ### Usage Example
