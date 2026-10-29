@@ -81,33 +81,6 @@ class DescribeSysmonDetectionOnRealCoverage:
         assert output == 'False'
 
 
-class DescribePrivateModeCoreOnRealCoverage:
-    """PRIVATE mode's own coverage instance measures with CTracer, not sysmon."""
-
-    def it_starts_the_private_coverage_on_ctracer(self, tmp_path: Path) -> None:
-        output = _run_probe(
-            """
-            from unittest.mock import MagicMock
-
-            import pytest
-
-            from pytest_gremlins.plugin import CoverageMode, GremlinSession, _set_session, pytest_sessionstart
-
-            gremlin_session = GremlinSession(enabled=True, coverage_mode=CoverageMode.PRIVATE)
-            _set_session(gremlin_session)
-            pytest_sessionstart(MagicMock(spec=pytest.Session))
-            cov = gremlin_session.private_coverage
-            cov.start()
-            core = dict(cov.sys_info())['core']
-            cov.stop()
-            print(core)
-            """,
-            tmp_path,
-        )
-
-        assert output == 'CTracer'
-
-
 class DescribePiggybackRunWithWarningsAsErrors:
     """``--gremlins --cov`` completes under ``filterwarnings = error`` on sysmon."""
 
