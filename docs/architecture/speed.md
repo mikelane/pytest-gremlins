@@ -138,18 +138,16 @@ else:
 | Operator package (one providing a `pytest_gremlins.operators` entry point, or owning a registered operator's module) installed, removed or changed version, or a pytest-gremlins release that raised the cache version | Every mutation |
 | Nothing changed | Return cached results instantly |
 
-An operator registered from `conftest.py` counts too when its module comes from an installed package, including an
-editable install marked by a PEP 610 `direct_url.json` with `dir_info.editable` set to true. Non-editable installs
-from a local directory, a VCS URL or an archive are ordinary installed packages and count. An operator whose module
-is under the pytest rootdir is project code and adds no installed-distribution label to the key, even when the
-project under test is itself installed editable. If the operator class is defined in `conftest.py`, the source and
-conftest hashes cover it. If it is defined in a project-local helper module that a conftest imports, every run
-misses the cache: the key carries a fresh random token, so the run is slower but never serves a stale verdict.
-Helper files are not hashed, whether or not the helper is importable (a plain `import`, or a load by file path with
-`importlib.util.spec_from_file_location`). Restoring cache hits for such helpers is tracked in
-[#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator no installed distribution owns adds
-nothing to the key. Editable installs recorded only through a `.pth` file, or that map modules through a setuptools
-import finder, are not recognized: run with `--gremlin-clear-cache` after changing such a package.
+An operator keeps cache hits only when it comes from an installed distribution. That means the operator class is
+importable by its qualified name (walking `__qualname__` from its module returns the same class object), and an
+installed package owns the module's file, including an editable install marked by a PEP 610 `direct_url.json` with
+`dir_info.editable` set to true. Non-editable installs from a local directory, a VCS URL or an archive count. Such an
+operator keys on its distribution's version. Every other operator misses the cache on every run: project-local
+helper modules, modules loaded by file path, modules that share a name with an installed or standard-library module,
+namespace packages, classes defined inside functions, and editable installs recorded only through a `.pth` file or a
+setuptools import finder. The key carries a fresh random token, so the run is slower but never serves a stale
+verdict. Operators defined in `conftest.py` are the exception: the source and conftest hashes cover them. Restoring
+cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887).
 
 **Why it works:**
 

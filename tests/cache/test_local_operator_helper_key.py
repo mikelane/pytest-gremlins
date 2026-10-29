@@ -79,12 +79,14 @@ class DescribeLocalOperatorHelperInFingerprint:
             [], tmp_path
         )
 
-    def it_adds_nothing_for_a_helper_outside_the_rootdir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_misses_the_cache_for_a_registered_helper_outside_the_rootdir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         root = tmp_path / 'root'
         root.mkdir()
         operator = _load_operator(monkeypatch, tmp_path / 'helper_mod.py', source=OPERATOR_SOURCE.format(delta=1))
 
-        assert 'local-operator=' not in installed_versions_fingerprint([operator], root)
+        assert installed_versions_fingerprint([operator], root) != installed_versions_fingerprint([operator], root)
 
     def it_misses_the_cache_when_the_module_has_no_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         operator = _load_operator(monkeypatch, tmp_path / 'helper_mod.py', source=OPERATOR_SOURCE.format(delta=1))
