@@ -10,7 +10,10 @@ import argparse
 import ast
 import base64
 import collections.abc
-from concurrent.futures import as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+)
 from dataclasses import (
     dataclass,
     field,
@@ -718,7 +721,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action='store_true',
         default=False,
         dest='gremlin_batch',
-        help='Enable batch execution to reduce subprocess overhead',
+        help='Group gremlins into worker tasks; does not reduce subprocesses (one per gremlin)',
     )
     group.addoption(
         '--gremlin-batch-size',
@@ -726,7 +729,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         type=int,
         default=None,
         dest='gremlin_batch_size',
-        help='Number of gremlins per batch (default: 10)',
+        help='Number of gremlins per worker task in batch mode (default: 10)',
     )
     group.addoption(
         '--gremlin-coverage-timeout',
@@ -1222,6 +1225,28 @@ if _XDIST_AVAILABLE:
             )
         else:
             logger.debug('pytest_xdist_node_collection_finished: captured %d item IDs from first worker', len(ids))
+
+
+def _is_gremlin_finder(finder: object) -> bool:
+    """Report whether a ``sys.meta_path`` entry is a gremlin finder; a hostile ``__getattr__`` counts as no."""
+    try:
+        return bool(getattr(finder, 'is_gremlin_finder', False))
+    except Exception:
+        return False
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_load_initial_conftests() -> collections.abc.Generator[None, None, None]:
+    """Keep an installed gremlin finder ahead of the assertion-rewrite hook this session just installed.
+
+    An in-process pytester session (``runpytest()``, ``inline_run()``) runs ``pytest.main`` inside a gremlin
+    subprocess; its rewrite hook lands at the front of ``sys.meta_path`` and would serve, uninstrumented, every
+    target it claims that is first imported in that session (#615).
+    """
+    for finder in [finder for finder in sys.meta_path if _is_gremlin_finder(finder)]:
+        sys.meta_path.remove(finder)
+        sys.meta_path.insert(0, finder)
+    yield
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
@@ -2269,6 +2294,40 @@ def _confirm_collection_kill(
         killing_test=None,
         error_output=f'{SELECTION_FAILS_TO_LOAD_PREFIX}\n{outcome.output[-MAX_SELECTION_FAILURE_OUTPUT_CHARS:]}',
     )
+
+
+def _prefill_collection_kill_confirmations(
+    pending: Sequence[tuple[GremlinResult, Sequence[str]]],
+    gremlin_session: GremlinSession,
+    rootdir: Path,
+) -> None:
+    """Fill the unmutated-load memo for every collection kill in ``pending``, running distinct selections concurrently.
+
+    Collection confirmations measure no time, so they can overlap; timeout confirmations compare
+    durations and must stay solo, so they are not touched here. Worker threads only run the
+    subprocess; the memo is written from the calling thread, so it needs no lock. Concurrency is
+    bounded by the configured worker count. :func:`_confirm_collection_kill` then reads the warm memo
+    and decides each verdict exactly as before.
+
+    Args:
+        pending: Each result paired with the node ids its subprocess was asked to run.
+        gremlin_session: The current gremlin session, holding the memo and the worker count.
+        rootdir: Root directory of the project.
+    """
+    selections = {
+        tuple(node_ids): node_ids
+        for result, node_ids in pending
+        if result.status == GremlinResultStatus.ZAPPED and result.killing_test == COLLECTION_KILLING_TEST
+    }
+    unchecked = [selection for selection in selections if selection not in gremlin_session.unmutated_load_checks]
+    if not unchecked:
+        return
+    worker_count = min(len(unchecked), gremlin_session.parallel_workers or os.cpu_count() or 4)
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        outcomes = executor.map(
+            lambda selection: _collect_unmutated(gremlin_session, rootdir, selections[selection]), unchecked
+        )
+        gremlin_session.unmutated_load_checks.update(zip(unchecked, outcomes, strict=True))
 
 
 def _confirm_kill(
@@ -3355,11 +3414,10 @@ def _run_batch_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
-    """Run mutation testing using batch execution for reduced overhead.
+    """Run mutation testing by grouping gremlins into batches handed to workers.
 
-    Batch execution reduces subprocess overhead by testing multiple gremlins
-    in each subprocess call. Instead of 1 subprocess per gremlin (with ~600ms
-    overhead each), we batch gremlins and spawn fewer subprocesses.
+    Batching groups gremlins into worker tasks. It does not reduce subprocesses:
+    each gremlin in a batch still gets its own bootstrap subprocess.
 
     Args:
         session: The pytest session.
@@ -3452,33 +3510,34 @@ def _run_batch_mutation_testing(  # pragma: no cover
     # Convert WorkerResults to GremlinResults
     results: list[GremlinResult] = list(cached_results)
 
+    batch_node_ids = _node_ids_for_tests(all_covering_tests, gremlin_session)
+    unconfirmed: list[GremlinResult] = []
     for worker_result in worker_results:
         gremlin_id = worker_result.gremlin_id
         if gremlin_id not in gremlin_by_id:
             continue
 
-        gremlin = gremlin_by_id[gremlin_id]
-        selected_tests = gremlin_tests[gremlin_id]
-        gremlin_result = GremlinResult(
-            gremlin=gremlin,
-            status=worker_result.status,
-            killing_test=worker_result.killing_test,
-            execution_time_ms=worker_result.execution_time_ms,
-            error_output=worker_result.error_output,
-            selected_tests=selected_tests,
+        unconfirmed.append(
+            GremlinResult(
+                gremlin=gremlin_by_id[gremlin_id],
+                status=worker_result.status,
+                killing_test=worker_result.killing_test,
+                execution_time_ms=worker_result.execution_time_ms,
+                error_output=worker_result.error_output,
+                selected_tests=gremlin_tests[gremlin_id],
+            )
         )
-        # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
+
+    # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
+    _prefill_collection_kill_confirmations([(r, batch_node_ids) for r in unconfirmed], gremlin_session, rootdir)
+    for unconfirmed_result in unconfirmed:
         gremlin_result = _confirm_pooled_result(
-            gremlin_result,
-            test_command,
-            _node_ids_for_tests(all_covering_tests, gremlin_session),
-            gremlin_session,
-            rootdir,
+            unconfirmed_result, test_command, batch_node_ids, gremlin_session, rootdir
         )
         results.append(gremlin_result)
-
-        # Cache the result
-        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
+        _cache_gremlin_result(
+            unconfirmed_result.gremlin, unconfirmed_result.selected_tests, gremlin_result, gremlin_session
+        )
 
     return results
 
@@ -3581,37 +3640,54 @@ def _run_parallel_mutation_testing(  # pragma: no cover
 
     # Convert WorkerResults to GremlinResults and cache them
     results: list[GremlinResult] = list(cached_results)
+    unconfirmed: list[GremlinResult] = []
     for worker_result in aggregator.get_results():
         gremlin_id = worker_result.gremlin_id
         if gremlin_id not in gremlin_by_id:
             continue
 
-        gremlin = gremlin_by_id[gremlin_id]
-        selected_tests = gremlin_tests[gremlin_id]
         gremlin_result = GremlinResult(
-            gremlin=gremlin,
+            gremlin=gremlin_by_id[gremlin_id],
             status=worker_result.status,
             killing_test=worker_result.killing_test,
             execution_time_ms=worker_result.execution_time_ms,
             error_output=worker_result.error_output,
-            selected_tests=selected_tests,
+            selected_tests=gremlin_tests[gremlin_id],
         )
         if gremlin_id in launch_failed_ids:
             results.append(gremlin_result)
             continue
-        gremlin_result = _confirm_pooled_result(
-            gremlin_result,
-            test_commands[gremlin_id],
-            _node_ids_for_tests(selected_tests, gremlin_session),
+        unconfirmed.append(gremlin_result)
+
+    results.extend(_confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir))
+
+    return results
+
+
+def _confirm_and_cache_pooled_results(
+    unconfirmed: list[GremlinResult],
+    test_commands: dict[str, list[str]],
+    gremlin_session: GremlinSession,
+    rootdir: Path,
+) -> list[GremlinResult]:
+    """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them."""
+    _prefill_collection_kill_confirmations(
+        [(r, _node_ids_for_tests(r.selected_tests, gremlin_session)) for r in unconfirmed], gremlin_session, rootdir
+    )
+    confirmed: list[GremlinResult] = []
+    for unconfirmed_result in unconfirmed:
+        confirmed_result = _confirm_pooled_result(
+            unconfirmed_result,
+            test_commands[unconfirmed_result.gremlin.gremlin_id],
+            _node_ids_for_tests(unconfirmed_result.selected_tests, gremlin_session),
             gremlin_session,
             rootdir,
         )
-        results.append(gremlin_result)
-
-        # Cache the result
-        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
-
-    return results
+        confirmed.append(confirmed_result)
+        _cache_gremlin_result(
+            unconfirmed_result.gremlin, unconfirmed_result.selected_tests, confirmed_result, gremlin_session
+        )
+    return confirmed
 
 
 def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:

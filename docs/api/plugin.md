@@ -27,8 +27,8 @@ The plugin handles:
 | `--gremlin-clear-cache` | `False` | Clear cache before running |
 | `--gremlin-parallel` | `False` | Enable parallel execution |
 | `--gremlin-workers` | CPU count | Number of parallel workers, or `auto`; implies `--gremlin-parallel` |
-| `--gremlin-batch` | `False` | Enable batch execution mode |
-| `--gremlin-batch-size` | `10` | Gremlins per batch |
+| `--gremlin-batch` | `False` | Group gremlins into worker tasks; does not reduce subprocesses |
+| `--gremlin-batch-size` | `10` | Gremlins per worker task |
 | `--gremlin-coverage-timeout` | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled |
 | `--gremlin-mutant-timeout` | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before it is reported as a timeout; scaled up for pytest-rerunfailures reruns |
 | `--gremlin-executor` | `auto` | `auto` (same as `subprocess`) or `subprocess`; `fork` and `inprocess` exit with a usage error ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
@@ -74,7 +74,7 @@ pytest --gremlins --gremlin-parallel
 # Specify worker count
 pytest --gremlins --gremlin-parallel --gremlin-workers=8
 
-# Use batch mode for reduced subprocess overhead
+# Group gremlins into worker tasks (does not reduce subprocesses)
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
 ```
 
