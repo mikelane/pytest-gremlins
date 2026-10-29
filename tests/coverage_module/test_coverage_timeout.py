@@ -8,7 +8,6 @@ from unittest.mock import (
     MagicMock,
     patch,
 )
-import warnings
 
 from _pytest.config.argparsing import (
     OptionGroup,
@@ -158,49 +157,45 @@ class DescribeRunTestsWithCoverageTimeout:
 class DescribeCollectCoverageTimeoutWarning:
     """_collect_coverage warns specifically about a timeout, not about 'no data'."""
 
-    def _collect_with_timeout(self, tmp_path: Path, seconds: int) -> list[warnings.WarningMessage]:
+    def _collect_with_timeout(self, tmp_path: Path, seconds: int, capsys: pytest.CaptureFixture[str]) -> list[str]:
         session = GremlinSession(enabled=True, coverage_timeout=seconds)
-        with (
-            patch(
-                'pytest_gremlins.plugin._run_tests_with_coverage',
-                autospec=True,
-                side_effect=CoveragePrescanTimeoutError(seconds),
-            ),
-            warnings.catch_warnings(record=True) as caught,
+        with patch(
+            'pytest_gremlins.plugin._run_tests_with_coverage',
+            autospec=True,
+            side_effect=CoveragePrescanTimeoutError(seconds),
         ):
-            warnings.simplefilter('always')
             _collect_coverage(session, tmp_path)
-        return [w for w in caught if issubclass(w.category, UserWarning)]
+        return capsys.readouterr().err.splitlines()
 
-    def it_emits_the_timeout_warning_with_the_limit_and_the_remedy(self, tmp_path: Path) -> None:
-        messages = [str(w.message) for w in self._collect_with_timeout(tmp_path, 45)]
+    def it_emits_the_timeout_warning_with_the_limit_and_the_remedy(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        messages = self._collect_with_timeout(tmp_path, 45, capsys)
 
         assert messages == [
             'pytest-gremlins: coverage pre-scan exceeded 45s; coverage-guided test selection disabled '
             '(set coverage_timeout / --gremlin-coverage-timeout to raise it)'
         ]
 
-    def it_names_the_per_attempt_and_the_rerun_scaled_limit(self, tmp_path: Path) -> None:
+    def it_names_the_per_attempt_and_the_rerun_scaled_limit(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         session = GremlinSession(enabled=True, coverage_timeout=400, coverage_attempt_timeout=120)
-        with (
-            patch(
-                'pytest_gremlins.plugin._run_tests_with_coverage',
-                autospec=True,
-                side_effect=CoveragePrescanTimeoutError(400),
-            ),
-            warnings.catch_warnings(record=True) as caught,
+        with patch(
+            'pytest_gremlins.plugin._run_tests_with_coverage',
+            autospec=True,
+            side_effect=CoveragePrescanTimeoutError(400),
         ):
-            warnings.simplefilter('always')
             _collect_coverage(session, tmp_path)
 
-        assert [str(w.message) for w in caught if issubclass(w.category, UserWarning)] == [
+        assert capsys.readouterr().err.splitlines() == [
             'pytest-gremlins: coverage pre-scan exceeded 400s (120s per attempt, scaled for the pytest-rerunfailures '
             'budget); coverage-guided test selection disabled '
             '(set coverage_timeout / --gremlin-coverage-timeout to raise the per-attempt limit)'
         ]
 
-    def it_does_not_also_emit_the_no_data_warning(self, tmp_path: Path) -> None:
-        messages = [str(w.message) for w in self._collect_with_timeout(tmp_path, 45)]
+    def it_does_not_also_emit_the_no_data_warning(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        messages = self._collect_with_timeout(tmp_path, 45, capsys)
 
         all_text = ' '.join(messages)
         assert 'returned no data' not in all_text
@@ -228,20 +223,18 @@ class DescribeCollectCoverageTimeoutWarning:
     def it_leaves_the_pre_scan_timeout_alone_when_no_reruns_are_configured(self, tmp_path: Path) -> None:
         assert self._prescan_timeout_for(tmp_path, 3, reruns=0) == 6
 
-    def it_does_not_advise_raising_the_limit_when_it_is_already_at_the_cap(self, tmp_path: Path) -> None:
+    def it_does_not_advise_raising_the_limit_when_it_is_already_at_the_cap(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         session = GremlinSession(enabled=True, coverage_timeout=86400, coverage_attempt_timeout=30000)
-        with (
-            patch(
-                'pytest_gremlins.plugin._run_tests_with_coverage',
-                autospec=True,
-                side_effect=CoveragePrescanTimeoutError(86400),
-            ),
-            warnings.catch_warnings(record=True) as caught,
+        with patch(
+            'pytest_gremlins.plugin._run_tests_with_coverage',
+            autospec=True,
+            side_effect=CoveragePrescanTimeoutError(86400),
         ):
-            warnings.simplefilter('always')
             _collect_coverage(session, tmp_path)
 
-        assert [str(w.message) for w in caught if issubclass(w.category, UserWarning)] == [
+        assert capsys.readouterr().err.splitlines() == [
             'pytest-gremlins: coverage pre-scan exceeded 86400s (30000s per attempt, scaled for the '
             'pytest-rerunfailures budget); coverage-guided test selection disabled '
             '(the limit is capped at 86400s; lower --reruns or --reruns-delay)'

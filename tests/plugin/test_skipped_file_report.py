@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import json
+from pathlib import Path
 
 import pytest
 
@@ -53,6 +54,16 @@ def _write_project(pytester: pytest.Pytester, *, with_age: bool, pyproject: str 
         pytester.path.joinpath('tests', 'test_age.py').write_text(AGE_TEST)
 
 
+def _write_stale_reports(pytester: pytest.Pytester) -> dict[str, Path]:
+    report_dir = pytester.path / 'coverage/gremlins'
+    report_dir.mkdir(parents=True)
+    json_path = report_dir / 'gremlins.json'
+    html_path = report_dir / 'index.html'
+    json_path.write_text('{"summary": {"total": 5}}')
+    html_path.write_text('stale score')
+    return {'json': json_path, 'html': html_path}
+
+
 def _skip_message_count(result: pytest.RunResult) -> int:
     return sum('pytest-gremlins: skipped' in line and 'chain.py' in line for line in result.stdout.lines)
 
@@ -75,6 +86,76 @@ class DescribeSkippedFileReport:
         assert report['summary']['total'] > 0
         assert list(report['skipped_files']) == [str(pytester.path / 'src/demo/chain.py')]
         assert 'RecursionError' in report['skipped_files'][str(pytester.path / 'src/demo/chain.py')]
+
+    def it_overwrites_a_stale_json_report_when_every_target_is_skipped(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
+        _write_project(pytester, with_age=False)
+        json_path = _write_stale_reports(pytester)['json']
+
+        run_pytest_isolated(pytester, '--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json,html')
+
+        report = json.loads(json_path.read_text())
+        assert report['summary']['total'] == 0
+        assert list(report['skipped_files']) == [str(pytester.path / 'src/demo/chain.py')]
+        assert 'RecursionError' in report['skipped_files'][str(pytester.path / 'src/demo/chain.py')]
+
+    def it_lists_the_skipped_file_in_html_when_every_target_is_skipped(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
+        _write_project(pytester, with_age=False)
+        html_path = _write_stale_reports(pytester)['html']
+
+        run_pytest_isolated(pytester, '--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json,html')
+
+        html = html_path.read_text()
+        assert 'Files skipped and not mutation tested' in html
+        assert 'chain.py' in html
+
+    def it_removes_stale_html_content_when_every_target_is_skipped(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
+        _write_project(pytester, with_age=False)
+        html_path = _write_stale_reports(pytester)['html']
+
+        run_pytest_isolated(pytester, '--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json,html')
+
+        assert 'stale score' not in html_path.read_text()
+
+    def it_leaves_history_unwritten_when_every_target_is_skipped(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
+        _write_project(pytester, with_age=False)
+        _write_stale_reports(pytester)
+
+        run_pytest_isolated(pytester, '--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json,html')
+
+        assert not (pytester.path / 'coverage/gremlins/history.json').exists()
+
+    def it_prints_report_locations_just_above_the_mutation_report_header_when_every_target_is_skipped(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
+        _write_project(pytester, with_age=False)
+
+        result = run_pytest_isolated(
+            pytester, '--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json,html'
+        )
+
+        # The whole empty-run block, line for line: the report locations sit directly above the
+        # header, so they are inside the gremlins block and before its closing separator.
+        result.stdout.fnmatch_lines(
+            [
+                'HTML report written to: *coverage/gremlins/index.html',
+                'JSON report written to: *coverage/gremlins/gremlins.json',
+                '=* pytest-gremlins mutation report =*',
+                '',
+                '1 file(s) skipped and not mutation tested:',
+                '  - *chain.py (RecursionError: *)',
+                '',
+                '=*  =*',
+            ],
+            consecutive=True,
+        )
 
     def it_records_skipped_files_in_html_when_other_files_mutate(
         self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
