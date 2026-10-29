@@ -177,10 +177,10 @@ class DescribeHelperClassification:
         assert 'pluggy==' not in installed_versions_fingerprint([operator], tmp_path / 'project')
 
     def it_keeps_a_stable_key_for_an_installed_distribution_under_a_venv_in_the_rootdir(self) -> None:
-        venv_root = Path(pluggy.__file__).resolve().parents[5]
+        directory_holding_the_venv = Path(sys.prefix).resolve().parent
         operator = pluggy.HookimplMarker('project')
 
-        assert not _always_misses(operator, venv_root)
+        assert not _always_misses(operator, directory_holding_the_venv)
 
 
 def _load_operator_unregistered(path: Path, module_name: str) -> object:
