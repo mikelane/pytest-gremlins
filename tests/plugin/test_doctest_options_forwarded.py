@@ -155,4 +155,4 @@ class DescribeDoctestIniValuesInThePrescanCommand:
 @pytest.mark.small
 class DescribeFidelityVersionAfterDoctestOptionsAreForwarded:
     def it_retires_verdicts_cached_while_doctest_gremlins_errored(self) -> None:
-        assert RUNNER_FIDELITY_VERSION == 'rf20'
+        assert RUNNER_FIDELITY_VERSION == 'rf21'

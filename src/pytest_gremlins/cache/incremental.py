@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.operators.protocol import GremlinOperator
 
 
-RUNNER_FIDELITY_VERSION = 'rf20'
+RUNNER_FIDELITY_VERSION = 'rf21'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 This marker covers test execution and outcome-to-verdict mapping (``parallel/``, ``control_run.py``);
@@ -94,6 +94,10 @@ verdicts cached for a gremlin whose selected test had no node id (#702).
 ``rf20`` retires verdicts cached under a key that included the mutant timeout (#567). The timeout now lives in the
 stored value, so a verdict can be reused at a different limit when it would not change; old entries are pruned when
 the cache opens.
+
+``rf21`` retires verdicts cached while an in-process pytester session (``runpytest()``, ``inline_run()``) inside a
+gremlin run let its assertion-rewrite hook serve an instrumented target uninstrumented (#615); every gremlin only
+such a test exercised was cached as SURVIVED.
 
 It also retires verdicts cached while doctest gremlins errored, because ``--doctest-modules`` typed on the command
 line never reached gremlin runs, and verdicts cached as ZAPPED while ``doctest_optionflags`` or
