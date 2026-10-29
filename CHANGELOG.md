@@ -26,9 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Upgrading the package that supplies a `conftest.py`-registered operator kept serving old cached verdicts.** The
   cache key now includes the name and version of the installed distribution that owns each registered operator's
   module (editable installs are recognized through PEP 610 metadata), so a version change starts from fresh
-  results. This narrows the limitation in the 1.13.0 upgrade note. Still not tracked (#882): operators defined in a
-  project-local helper module that a `conftest.py` imports, operators no installed distribution owns, and editable
-  installs recorded only through a `.pth` file or a setuptools import finder. After changing one of those, run with
+  results. This narrows the limitation in the 1.13.0 upgrade note. An operator defined in a project-local helper
+  module that a `conftest.py` imports now makes every run miss the cache (slower, never stale; hits are tracked in
+  #887). Still not tracked (#882): operators no installed distribution owns, and editable installs recorded only
+  through a `.pth` file or a setuptools import finder. After changing one of those, run with
   `--gremlin-clear-cache`. (#873, #884)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/architecture/speed/#pillar-3-incremental-analysis)

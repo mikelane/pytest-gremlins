@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 from dataclasses import dataclass
 from importlib.metadata import (
     Distribution,
@@ -20,7 +19,6 @@ from urllib.parse import urlparse
 from urllib.request import url2pathname
 import uuid
 
-from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 
 if TYPE_CHECKING:
@@ -198,91 +196,38 @@ def _operator_owner_labels(operators: Iterable[GremlinOperator], project_root: P
     return labels
 
 
-def _importable_module_file(operator_class: type) -> str | None:
-    """Return the file of the module that holds ``operator_class``, or None when ``sys.modules`` cannot prove it.
+def _is_project_local_helper(operator: GremlinOperator, project_root: Path) -> bool:
+    """Whether ``operator`` comes from project code that no installed distribution supplies and no conftest covers.
 
-    A conftest that loads its helper with ``spec_from_file_location`` need not register it, and the class's methods
-    cannot say which file defined it (decorators, generated methods and copied methods carry other files' code). The
-    module counts only when walking the class's ``__qualname__`` from it finds this very class: a path-loaded helper
-    whose spec name matches an unrelated imported module, or a class built inside a function, finds nothing. The
-    module's file must also contain the ``class`` statement, so a package ``__init__.py`` that merely re-exports a
-    class defined in another file is not trusted.
-    """
-    if '<locals>' in operator_class.__qualname__:
-        return None
-    holder: object = sys.modules.get(operator_class.__module__)
-    for part in operator_class.__qualname__.split('.'):
-        holder = getattr(holder, part, None)
-    if holder is not operator_class:
-        return None
-    module_file: str | None = getattr(sys.modules[operator_class.__module__], '__file__', None)
-    if module_file is None or not _file_defines_class(Path(module_file), operator_class.__qualname__):
-        return None
-    return module_file
-
-
-def _file_defines_class(source: Path, qualname: str) -> bool:
-    """Return whether ``source`` parses and holds a ``class`` statement at the dotted ``qualname`` path."""
-    try:
-        tree = ast.parse(source.read_bytes())
-    except (OSError, SyntaxError, ValueError, RecursionError):
-        return False
-    return _holds_class_path(tree, qualname.split('.'))
-
-
-def _holds_class_path(scope: ast.AST, path: list[str]) -> bool:
-    """Return whether ``scope`` holds ``class path[0]`` directly, or inside ``if``/``try``-style blocks.
-
-    Function bodies are not searched: a class built there is not reachable by ``__qualname__`` from the module.
-    """
-    for node in ast.iter_child_nodes(scope):
-        if isinstance(node, ast.ClassDef):
-            if node.name == path[0] and (len(path) == 1 or _holds_class_path(node, path[1:])):
-                return True
-        elif not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and _holds_class_path(node, path):
-            return True
-    return False
-
-
-def _local_helper_file(operator: GremlinOperator, project_root: Path | None) -> Path | None:
-    """Return the file of a project-local helper module that defines ``operator``, or None if it needs no hash.
-
-    Built-in operators, operators from installed distributions (outside ``project_root`` or in site-packages) and
-    operators defined in a ``conftest.py`` return None: the first two are covered by ``CACHE_VERSION`` and the
-    distribution label, and conftest files are already hashed with the tests they cover.
+    Built-in operators and operators from installed distributions (outside ``project_root`` or in site-packages) are
+    covered by ``CACHE_VERSION`` and the distribution label. Operators defined in a ``conftest.py`` are already hashed
+    with the tests they cover. A module with no file, such as one loaded by path and never registered in
+    ``sys.modules``, cannot be placed, so it counts as a project-local helper.
     """
     module_name = type(operator).__module__
     if module_name.partition('.')[0] == 'pytest_gremlins':
-        return None
-    origin = _importable_module_file(type(operator))
-    if origin is None:
-        return Path(f'<no-file:{module_name}>')
-    location = Path(origin).resolve()
-    if location.name == 'conftest.py' or not _is_project_local(location, project_root):
-        return None
-    return location
+        return False
+    module_file: str | None = getattr(sys.modules.get(module_name), '__file__', None)
+    if module_file is None:
+        return True
+    location = Path(module_file).resolve()
+    return location.name != 'conftest.py' and _is_project_local(location, project_root)
 
 
 def _local_helper_fingerprints(operators: Iterable[GremlinOperator], project_root: Path | None) -> set[str]:
-    """Return ``local-operator=<path>:<hash>`` entries for operators defined in project-local helper modules.
+    """Return a ``local-operator=<module>:unreadable-<random>`` token for each project-local operator helper.
 
-    Only the helper file's own content is hashed; modules it imports are not tracked. A helper whose file cannot
-    be found or read gets a fresh random token, so the key never matches and its verdicts are recomputed.
+    A helper's file is never hashed: what it defines can come from other files, so no hash proves the class is
+    unchanged. The random token makes the key differ on every run, so a helper's verdicts are recomputed and
+    never served stale. Restoring cache hits for helpers is tracked in #887.
     """
     if project_root is None:
         return set()
-    hasher = ContentHasher()
-    entries: set[str] = set()
-    for operator in operators:
-        helper = _local_helper_file(operator, project_root)
-        if helper is None:
-            continue
-        try:
-            relative = helper.relative_to(project_root.resolve()).as_posix()
-            entries.add(f'local-operator={relative}:{hasher.hash_file(helper)}')
-        except (OSError, ValueError):
-            entries.add(f'local-operator={type(operator).__module__}:unreadable-{uuid.uuid4().hex}')
-    return entries
+    return {
+        f'local-operator={type(operator).__module__}:unreadable-{uuid.uuid4().hex}'
+        for operator in operators
+        if _is_project_local_helper(operator, project_root)
+    }
 
 
 def installed_versions_fingerprint(
@@ -297,8 +242,9 @@ def installed_versions_fingerprint(
 
     Args:
         operators: The operators registered for this run.
-        project_root: The pytest rootdir. An operator module under it is project code and adds nothing, even
-            when the project under test is itself installed editable.
+        project_root: The pytest rootdir. An operator helper module under it is project code: it adds no
+            distribution label but makes every run miss the cache (#887 tracks restoring hits). An operator defined
+            in a ``conftest.py`` adds nothing.
 
     Raising ``CACHE_VERSION`` or any upgrade, downgrade, install or removal of an operator distribution
     changes the string, so verdicts cached under an older string are never reused. A pytest-gremlins
