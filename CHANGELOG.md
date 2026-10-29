@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.13.1 (2026-10-28)
+
+**Changing the mutant timeout keeps the cached verdicts it cannot change, and upgrading the package behind a
+`conftest.py`-registered operator now invalidates the cache.**
+
+1.13.0 was tagged but never published to PyPI, so upgrading from 1.12.2 also brings in everything listed under
+1.13.0 below, including its upgrade notes.
+
+### Feature
+
+- **Changing `--gremlin-mutant-timeout` no longer throws away the whole cache.** The cache stores the timeout each
+  verdict was reached under. At a new limit it reuses a zapped, survived or error verdict whose run took strictly
+  less than that limit, and reuses a timeout verdict only at the limit it was confirmed under. Verdicts match a cold
+  run at the new timeout. (#567, #786)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
+
+### Fix
+
+- **Upgrading the package that supplies a `conftest.py`-registered operator kept serving old cached verdicts.** The
+  cache key now includes the name and version of the installed distribution that owns each registered operator's
+  module (editable installs are recognized through PEP 610 metadata), so a version change starts from fresh
+  results. This narrows the limitation in the 1.13.0 upgrade note. Still not tracked (#882): operators defined in a
+  project-local helper module that a `conftest.py` imports, operators no installed distribution owns, and editable
+  installs recorded only through a `.pth` file or a setuptools import finder. After changing one of those, run with
+  `--gremlin-clear-cache`. (#873, #884)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/architecture/speed/#pillar-3-incremental-analysis)
+
+### Internal
+
+- The cache-version guard test skips `__init__.py`, so the version bump in a release no longer fails it. (#881)
+- The cache-version guard records one digest per file, so unrelated PRs no longer conflict on it. (#883)
+
 ## v1.13.0 (2026-10-28)
 
 **Operator packages can now register themselves through entry points, the cache now notices when an operator package
