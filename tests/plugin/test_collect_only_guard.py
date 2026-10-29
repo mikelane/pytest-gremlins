@@ -112,7 +112,7 @@ class DescribeCollectOnlyConfigValidation:
     def it_rejects_an_invalid_toml_value(self, collect_only_project: pytest.Pytester) -> None:
         collect_only_project.makepyprojecttoml('[tool.pytest-gremlins]\ncache = "yes"\n')
         result = collect_only_project.runpytest_subprocess('--gremlins', '--collect-only', *_NO_CATEGORIES)
-        assert result.ret != pytest.ExitCode.OK
+        assert result.ret == pytest.ExitCode.USAGE_ERROR
         assert 'must be a boolean' in result.stdout.str() + result.stderr.str()
 
     def it_rejects_an_out_of_range_max_pardons_pct(self, collect_only_project: pytest.Pytester) -> None:
@@ -124,3 +124,60 @@ class DescribeCollectOnlyConfigValidation:
 
     def it_still_skips_mutation_for_a_valid_config(self, collect_only_run: pytest.RunResult) -> None:
         assert 'mutation report' not in collect_only_run.stdout.str()
+
+
+_NON_RUNNING_MODES = ['--setup-plan', '--setup-only', '--fixtures', '--fixtures-per-test']
+# pytest's fixture-listing modes report exit status 0 after a configure-time pytest.exit
+# with USAGE_ERROR; the error message still prints. Strict, so a fix flips this to a failure.
+_FIXTURE_LISTING_EXIT_STATUS_XFAIL = pytest.mark.xfail(
+    strict=True, reason='--fixtures/--fixtures-per-test exit 0 on a configure-time usage error'
+)
+
+
+@pytest.mark.medium
+class DescribeNonRunningModeGuard:
+    @pytest.mark.parametrize('mode', _NON_RUNNING_MODES)
+    def it_names_the_mode_in_the_stderr_notice(self, collect_only_project: pytest.Pytester, mode: str) -> None:
+        result = collect_only_project.runpytest_subprocess('--gremlins', mode, *_NO_CATEGORIES)
+        result.stderr.fnmatch_lines([f'pytest-gremlins: {mode} detected, skipping mutation testing'])
+        assert 'detected, skipping' not in result.stdout.str()
+
+    @pytest.mark.parametrize('mode', _NON_RUNNING_MODES)
+    def it_skips_the_mutation_report_and_gremlin_execution(
+        self, collect_only_project: pytest.Pytester, mode: str
+    ) -> None:
+        result = collect_only_project.runpytest_subprocess('--gremlins', mode, *_NO_CATEGORIES)
+        output = result.stdout.str()
+        assert 'mutation report' not in output
+        assert 'Gremlin 1/' not in output
+        assert 'pytest-gremlins: Starting' not in output
+        assert not (collect_only_project.path / '.gremlins_cache').exists()
+
+    @pytest.mark.parametrize('mode', _NON_RUNNING_MODES)
+    def it_exits_with_the_normal_status_for_the_mode(self, collect_only_project: pytest.Pytester, mode: str) -> None:
+        result = collect_only_project.runpytest_subprocess('--gremlins', mode, *_NO_CATEGORIES)
+        assert result.ret == pytest.ExitCode.OK
+
+    @pytest.mark.parametrize('mode', _NON_RUNNING_MODES)
+    def it_still_rejects_invalid_configuration(self, collect_only_project: pytest.Pytester, mode: str) -> None:
+        result = collect_only_project.runpytest_subprocess(
+            '--gremlins', mode, '--gremlin-max-pardons-pct=150', *_NO_CATEGORIES
+        )
+        assert '--gremlin-max-pardons-pct must be between 0 and 100' in result.stdout.str() + result.stderr.str()
+
+    @pytest.mark.parametrize(
+        'mode',
+        [
+            '--setup-plan',
+            '--setup-only',
+            pytest.param('--fixtures', marks=_FIXTURE_LISTING_EXIT_STATUS_XFAIL),
+            pytest.param('--fixtures-per-test', marks=_FIXTURE_LISTING_EXIT_STATUS_XFAIL),
+        ],
+    )
+    def it_exits_with_a_usage_error_for_invalid_configuration(
+        self, collect_only_project: pytest.Pytester, mode: str
+    ) -> None:
+        result = collect_only_project.runpytest_subprocess(
+            '--gremlins', mode, '--gremlin-max-pardons-pct=150', *_NO_CATEGORIES
+        )
+        assert result.ret == pytest.ExitCode.USAGE_ERROR

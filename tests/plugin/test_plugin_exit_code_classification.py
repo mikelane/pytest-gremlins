@@ -71,6 +71,27 @@ class DescribeGremlinExitCodeClassification:
 
         assert result.status == GremlinResultStatus.ZAPPED
 
+    @pytest.mark.parametrize('returncode', [0, 1])
+    def it_records_the_elapsed_time_of_the_run(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        sample_gremlin: Gremlin,
+        returncode: int,
+    ) -> None:
+        """The cache reuses a verdict at another timeout only when it knows how long the run took (#567)."""
+        clock = iter([100.0, 102.5])
+
+        def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            return subprocess.CompletedProcess(args=['pytest'], returncode=returncode, stdout=b'', stderr=b'')
+
+        monkeypatch.setattr('pytest_gremlins.plugin.subprocess.run', fake_run)
+        monkeypatch.setattr('pytest_gremlins.plugin.time.monotonic', lambda: next(clock))
+
+        result = _test_gremlin(sample_gremlin, ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
+
+        assert result.execution_time_ms == 2500.0
+
     @pytest.mark.parametrize(
         'exit_code',
         [

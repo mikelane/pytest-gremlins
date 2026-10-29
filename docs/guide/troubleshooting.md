@@ -284,7 +284,8 @@ gremlin it covers, and tests that never ran back no verdict at all. Any baseline
 `--continue-on-collection-errors`), the session was interrupted, pytest reported a usage error such as an
 unknown node id, no tests were collected, or `pytest.exit(...)` stopped the run (with any return code,
 including 0) therefore skips the whole mutation run, with or without pytest-xdist. pytest-gremlins keeps
-pytest's own exit status. With `--collect-only` it prints its own `--collect-only detected` notice instead.
+pytest's own exit status. With `--collect-only`, `--setup-plan`, `--setup-only`, `--fixtures` or
+`--fixtures-per-test` it prints its own notice instead, naming the mode (for example `--collect-only detected`).
 
 Failing non-test checks do not block mutation testing. If every test passed but pytest still exited 1
 (for example `--cov-fail-under` was not met), pytest-gremlins prints one note and continues:
@@ -675,6 +676,37 @@ Upgrade to v1.5.0 or later. The instrumentation engine now inserts gremlin switc
 ```bash
 pip install --upgrade pytest-gremlins
 ```
+
+---
+
+### Survivors in a target first imported inside an in-process pytester run
+
+**Symptom:**
+
+Your tests call `pytester.runpytest()`, `runpytest_inprocess()` or `inline_run()`. The module under test is
+first imported by that inner session, and gremlins that your tests do catch are reported as survivors.
+
+**Cause:** The inner session installs its own assertion-rewrite hook at the front of `sys.meta_path`. For a
+target that hook claims (a `python_files` match, a `conftest.py`, or a `pytest.register_assert_rewrite`
+name), it serves the module before pytest-gremlins can instrument it. pytest-gremlins re-fronts its finder
+when the inner session loads the gremlins plugin, which covers the default setup.
+
+**Solution:**
+
+Leave the gremlins plugin enabled in the inner session. Four inner-session settings defeat the fix, so a
+target first imported there is not instrumented:
+
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`
+- `-p no:gremlins`
+- loading the target itself as a plugin with `-p package.module`
+- loading the target itself as a plugin through `PYTEST_PLUGINS=package.module`
+
+pytest imports `-p` and `PYTEST_PLUGINS` modules while it parses its configuration, before the point where
+pytest-gremlins puts its finder back in front. A target loaded from the inner `conftest.py` through
+`pytest_plugins` is fine.
+
+In those cases, import the target in the outer test before the inner session starts, or avoid claiming it
+through `python_files`.
 
 ---
 
