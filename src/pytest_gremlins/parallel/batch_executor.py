@@ -1,12 +1,9 @@
-"""Batch executor for reduced subprocess overhead.
+"""Batch executor that groups gremlins into worker tasks.
 
-This module implements batch execution of gremlin tests, addressing the
-primary performance bottleneck: subprocess spawning overhead of 500-700ms
-per gremlin.
-
-By batching multiple gremlins into single subprocess calls:
-- 100 gremlins with batch_size=10 = 10 subprocess calls (not 100)
-- Overhead reduced from 100*600ms = 60s to 10*600ms = 6s (10x improvement)
+Batching groups gremlins into worker tasks. It does not reduce subprocesses:
+the plugin's batch path still starts one bootstrap subprocess per gremlin
+(100 gremlins with batch_size=10 = 10 worker tasks, still 100 subprocesses).
+Making a batch share one subprocess is tracked in issue #538.
 
 The BatchExecutor coordinates:
 1. Partitioning gremlins into batches
@@ -37,9 +34,8 @@ if TYPE_CHECKING:
 class BatchExecutor:
     """Coordinates batch execution of gremlin tests.
 
-    Partitions gremlins into batches and executes them with reduced
-    subprocess overhead. Each batch runs in a single subprocess, with
-    gremlins tested sequentially within the batch.
+    Partitions gremlins into batches and hands each batch to a worker as
+    one task. Gremlins in a batch are tested sequentially by that worker.
 
     Supports PoolConfig for advanced configuration including process
     start method selection and worker warmup.

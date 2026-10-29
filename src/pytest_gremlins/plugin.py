@@ -10,7 +10,10 @@ import argparse
 import ast
 import base64
 import collections.abc
-from concurrent.futures import as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+)
 from dataclasses import (
     dataclass,
     field,
@@ -21,6 +24,7 @@ from enum import Enum
 import functools
 import importlib.util
 import inspect
+from itertools import pairwise
 import json
 import logging
 import os
@@ -33,20 +37,20 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import tokenize
 from typing import (
     TYPE_CHECKING,
-    Protocol,
 )
-import warnings
+import zlib
 
-import coverage
 from coverage.exceptions import CoverageException
 import pytest
 
 from pytest_gremlins import node_id_args
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import (
+    MILLISECONDS_PER_SECOND,
     NO_RERUNS,
     IncrementalCache,
     RerunBudget,
@@ -99,6 +103,11 @@ from pytest_gremlins.instrumentation.transformer import (
     transform_source,
 )
 from pytest_gremlins.node_id_file import command_with_node_ids_file
+from pytest_gremlins.operators.entry_points import (
+    GremlinEntryPointWarning,
+    discard_warning,
+    load_entry_point_operators,
+)
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
 from pytest_gremlins.parallel.exit_codes import (
@@ -152,17 +161,13 @@ if TYPE_CHECKING:
         Sequence,
     )
 
+    import coverage
+
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.operators import GremlinOperator
 
 
 _XDIST_AVAILABLE = importlib.util.find_spec('xdist') is not None
-
-
-class _XdistWorkerNode(Protocol):
-    """Structural type for an xdist worker node that exposes ``workerinput``."""
-
-    workerinput: dict[str, object]
 
 
 logger = logging.getLogger(__name__)
@@ -291,12 +296,7 @@ class GremlinSession:
             collection finishes.  ``None`` until the hook fires; ``[]`` if the
             worker collected nothing.
         coverage_mode: Whether to reuse pytest-cov's coverage (PIGGYBACK) or
-            manage an inline coverage instance (PRIVATE).
-        private_coverage: The inline ``coverage.Coverage`` instance used in
-            PRIVATE mode.  ``None`` in PIGGYBACK mode or before session start.
-        gremlins_tmpdir: Path (as a string) to the shared temporary directory
-            where xdist workers write their per-worker coverage data files in
-            PRIVATE mode.  ``None`` when xdist is not active.
+            rely on the coverage pre-scan subprocess (PRIVATE).
         exclude_patterns: Glob patterns from ``[tool.pytest-gremlins] exclude``
             used to skip matching files during source discovery.
         test_name_to_node_ids: Reverse index mapping bare function names to
@@ -361,8 +361,6 @@ class GremlinSession:
     xdist_loaded: bool = False
     xdist_workers: int | None = None
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
-    private_coverage: coverage.Coverage | None = None
-    gremlins_tmpdir: str | None = None
     exclude_patterns: list[str] = field(default_factory=list)
     strict_pardons: bool = False
     audit_pardons: bool = False
@@ -441,6 +439,16 @@ def _extract_test_name_from_context(context: str) -> str:
     if '|' in context:
         return context.rsplit('|', maxsplit=1)[0]
     return context
+
+
+def _entry_point_warner(config: pytest.Config) -> collections.abc.Callable[[str], None]:
+    """Return a warning sink for operator entry points that honours pytest's warning filters.
+
+    Workers stay silent so a broken entry point is reported once, by the controller.
+    """
+    if _is_xdist_worker(config):
+        return discard_warning
+    return lambda message: config.issue_config_time_warning(GremlinEntryPointWarning(message), stacklevel=2)
 
 
 def _is_xdist_worker(config: pytest.Config) -> bool:
@@ -714,7 +722,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action='store_true',
         default=False,
         dest='gremlin_batch',
-        help='Enable batch execution to reduce subprocess overhead',
+        help='Group gremlins into worker tasks; does not reduce subprocesses (one per gremlin)',
     )
     group.addoption(
         '--gremlin-batch-size',
@@ -722,7 +730,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         type=int,
         default=None,
         dest='gremlin_batch_size',
-        help='Number of gremlins per batch (default: 10)',
+        help='Number of gremlins per worker task in batch mode (default: 10)',
     )
     group.addoption(
         '--gremlin-coverage-timeout',
@@ -820,6 +828,7 @@ def _init_cache(
     rootdir: Path,
     cache_enabled: bool,
     clear_cache: bool,
+    operators: Sequence[GremlinOperator],
 ) -> IncrementalCache | None:
     """Initialise the incremental cache when enabled, optionally clearing it first.
 
@@ -827,6 +836,8 @@ def _init_cache(
         rootdir: Project root directory where the cache directory is created.
         cache_enabled: Whether to create a cache instance at all.
         clear_cache: Whether to wipe the cache before use.
+        operators: The operators registered for the run, after conftest registration; their owning
+            distributions are part of the cache key.
 
     Returns:
         An open IncrementalCache, or None when caching is disabled.
@@ -834,7 +845,7 @@ def _init_cache(
     if not cache_enabled:
         return None
     cache_dir = rootdir / '.gremlins_cache'
-    cache = IncrementalCache(cache_dir)
+    cache = IncrementalCache(cache_dir, operators, project_root=rootdir)
     if clear_cache:
         cache.clear()
         print('pytest-gremlins: cache cleared')
@@ -1035,6 +1046,10 @@ def pytest_configure(config: pytest.Config) -> None:
 
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
+    # Entry-point operators must be registered before load_config validates operator names.
+    registry = get_default_registry()
+    load_entry_point_operators(registry, warn=_entry_point_warner(config))
+
     # Load config from pyproject.toml and merge with CLI args
     config_warnings: list[str] = []
     try:
@@ -1055,8 +1070,6 @@ def pytest_configure(config: pytest.Config) -> None:
     except ValueError as invalid:
         raise pytest.UsageError(f'pytest-gremlins: {invalid}') from invalid
 
-    registry = get_default_registry()
-
     # Use merged operators or all if none specified
     operators = registry.get_all(enabled=merged_config.operators) if merged_config.operators else registry.get_all()
 
@@ -1076,7 +1089,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # Cache: merge_configs already resolved CLI-beats-TOML; default False
     cache_enabled: bool = bool(toml_cache)
-    cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache)
+    cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache, operators)
 
     xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
     xdist_workers_for_parallel = xdist_worker_int if xdist_active else None
@@ -1133,40 +1146,6 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
-if _XDIST_AVAILABLE:
-
-    @pytest.hookimpl(optionalhook=True)
-    def pytest_configure_node(node: _XdistWorkerNode) -> None:
-        """Inject gremlins tmpdir into xdist worker input for PRIVATE coverage mode.
-
-        Called on the controller for each xdist worker node before it starts.
-        Injects ``gremlins_tmpdir`` so workers can write their coverage data to a
-        shared directory that the controller combines in ``pytest_sessionfinish``.
-
-        Only active in PRIVATE mode; PIGGYBACK mode relies on pytest-cov's own
-        xdist integration for coverage combining.
-
-        Args:
-            node: The xdist worker node object.  Must have a ``workerinput`` dict.
-        """
-        gremlin_session = _get_session()
-        if gremlin_session is None or not gremlin_session.enabled:
-            return
-
-        if gremlin_session.coverage_mode != CoverageMode.PRIVATE:
-            return
-
-        if gremlin_session.gremlins_tmpdir is None:  # pragma: no cover
-            logger.warning(
-                'pytest_configure_node: gremlins_tmpdir is None in PRIVATE mode; '
-                'worker coverage data will not be combined'
-            )
-            return
-
-        node.workerinput['gremlins_tmpdir'] = gremlin_session.gremlins_tmpdir
-        logger.debug('pytest_configure_node: injected gremlins_tmpdir=%s', gremlin_session.gremlins_tmpdir)
-
-
 def _is_running_on_sysmon(cov: coverage.Coverage) -> bool:
     """Report whether ``cov`` measures with coverage's sysmon core.
 
@@ -1196,9 +1175,8 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     to the pytest-cov coverage instance so that every test phase is tagged
     with ``{nodeid}|{when}`` in the coverage database.
 
-    In PRIVATE mode, creates a fresh ``coverage.Coverage`` instance, stores it
-    on the session, and registers a ``GremlinContextPlugin`` on it.  The
-    coverage instance is started/stopped in ``pytest_runtestloop``.
+    In PRIVATE mode nothing is registered: the pre-scan subprocess collects the
+    coverage that gremlins reads, so no inline instance is needed.
 
     Args:
         session: The pytest session object.
@@ -1216,12 +1194,6 @@ def pytest_sessionstart(session: pytest.Session) -> None:
             logger.debug('pytest-cov coverage runs on sysmon; skipping per-test context switching')
             return
         context_plugin = GremlinContextPlugin(cov_instance)
-        session.config.pluginmanager.register(context_plugin)
-    else:
-        private_cov = coverage.Coverage(data_suffix=True)
-        private_cov.set_option('run:core', 'ctrace')
-        gremlin_session.private_coverage = private_cov
-        context_plugin = GremlinContextPlugin(private_cov)
         session.config.pluginmanager.register(context_plugin)
 
 
@@ -1256,32 +1228,26 @@ if _XDIST_AVAILABLE:
             logger.debug('pytest_xdist_node_collection_finished: captured %d item IDs from first worker', len(ids))
 
 
+def _is_gremlin_finder(finder: object) -> bool:
+    """Report whether a ``sys.meta_path`` entry is a gremlin finder; a hostile ``__getattr__`` counts as no."""
+    try:
+        return bool(getattr(finder, 'is_gremlin_finder', False))
+    except Exception:
+        return False
+
+
 @pytest.hookimpl(hookwrapper=True)
-def pytest_runtestloop(session: pytest.Session) -> collections.abc.Generator[None, None, None]:  # noqa: ARG001
-    """Start and stop private coverage around the full test loop.
+def pytest_load_initial_conftests() -> collections.abc.Generator[None, None, None]:
+    """Keep an installed gremlin finder ahead of the assertion-rewrite hook this session just installed.
 
-    In PRIVATE mode, wraps the entire test run so coverage is active for all
-    tests.  After the test loop finishes, stops and saves the coverage data for
-    later reading in ``pytest_sessionfinish``.
-
-    In PIGGYBACK mode or when gremlins is disabled, this hook is transparent.
-
-    Args:
-        session: The pytest session (unused; coverage instance is on GremlinSession).
-
-    Yields:
-        Control to the next hook implementation (the actual test runner).
+    An in-process pytester session (``runpytest()``, ``inline_run()``) runs ``pytest.main`` inside a gremlin
+    subprocess; its rewrite hook lands at the front of ``sys.meta_path`` and would serve, uninstrumented, every
+    target it claims that is first imported in that session (#615).
     """
-    gremlin_session = _get_session()
-    if gremlin_session is None or not gremlin_session.enabled or gremlin_session.private_coverage is None:
-        yield
-        return
-
-    private_cov = gremlin_session.private_coverage
-    private_cov.start()
+    for finder in [finder for finder in sys.meta_path if _is_gremlin_finder(finder)]:
+        sys.meta_path.remove(finder)
+        sys.meta_path.insert(0, finder)
     yield
-    private_cov.stop()
-    private_cov.save()
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:
@@ -1356,7 +1322,24 @@ def _hash_sources_and_tests_for_cache(
     for test_file in {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}:
         # A file part pytest left empty (a test outside rootdir) cannot say which file the test lives in.
         if test_file and (rootdir / test_file).is_file():
-            gremlin_session.test_hashes[test_file] = hasher.hash_file(rootdir / test_file)
+            gremlin_session.test_hashes[test_file] = _hash_test_file_with_conftests(hasher, rootdir, test_file)
+
+
+def _hash_test_file_with_conftests(hasher: ContentHasher, rootdir: Path, test_file: str) -> str:
+    """Hash a test file together with every ``conftest.py`` from rootdir down to its directory.
+
+    A fixture edited in a conftest changes what the test does, so it must change the key (#702).
+    """
+    parts = [hasher.hash_file(rootdir / test_file)]
+    directory = (rootdir / test_file).parent
+    while directory == rootdir or rootdir in directory.parents:
+        conftest = directory / 'conftest.py'
+        if conftest.is_file():
+            parts.append(f'{conftest.relative_to(rootdir).as_posix()}:{hasher.hash_file(conftest)}')
+        if directory == rootdir:
+            break
+        directory = directory.parent
+    return hasher.hash_string('|'.join(parts)) if len(parts) > 1 else parts[0]
 
 
 def _generate_gremlins(
@@ -1640,8 +1623,8 @@ def _write_instrumented_sources(
 
     Creates a temporary directory containing:
     1. A JSON file mapping the normalized real path of each instrumented file to its
-       instrumented tree (``tree``: the instrumented AST, pickled and base64 encoded for the subprocess to
-       compile under the real file path; absent when the tree is too deep to pickle), its unparsed text
+       instrumented tree (``tree``: the instrumented AST, pickled, zlib compressed and base64 encoded for the subprocess
+       to compile under the real file path; absent when the tree is too deep to pickle), its unparsed text
        (``source``: always present, what the subprocess compiles when the tree is absent or too deep), the
        path it came from, the file's device and inode (``identity``, for spellings the path key misses) and
        the lowercased file names it may be imported as (``names``, so the finder skips every other import
@@ -1709,7 +1692,7 @@ del _gremlin_os
 
 
 def _encode_tree(instrumented_tree: ast.Module) -> str | None:
-    """Return ``instrumented_tree`` pickled and base64 encoded for sources.json, or ``None`` if nested too deeply.
+    """Return ``instrumented_tree`` pickled, zlib compressed and base64 encoded, or ``None`` if nested too deeply.
 
     The subprocess compiles the tree itself, under the real file path, so the original line numbers survive and
     the subprocess's own optimize level and warning filters apply. Pickling recurses once per level of nesting,
@@ -1719,7 +1702,9 @@ def _encode_tree(instrumented_tree: ast.Module) -> str | None:
     releases before #563.
     """
     try:
-        return base64.b64encode(pickle.dumps(ast.fix_missing_locations(instrumented_tree))).decode('ascii')
+        return base64.b64encode(zlib.compress(pickle.dumps(ast.fix_missing_locations(instrumented_tree)))).decode(
+            'ascii'
+        )
     except RecursionError:
         return None
 
@@ -2232,7 +2217,14 @@ def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: Grem
     if outcome.loads_cleanly:
         return
     gremlin_session.load_failures_attributable = False
-    (instrumented_dir / UNATTRIBUTABLE_MARKER).write_text('', encoding='utf-8')
+    try:
+        (instrumented_dir / UNATTRIBUTABLE_MARKER).write_text('', encoding='utf-8')
+    except OSError as write_error:
+        print(
+            f'pytest-gremlins: could not write the load-failure marker ({write_error}); '
+            'load failures under a mutant may be scored as kills.',
+            file=sys.stderr,
+        )
     print(build_diagnostic(outcome.output), file=sys.stderr)
 
 
@@ -2303,6 +2295,40 @@ def _confirm_collection_kill(
         killing_test=None,
         error_output=f'{SELECTION_FAILS_TO_LOAD_PREFIX}\n{outcome.output[-MAX_SELECTION_FAILURE_OUTPUT_CHARS:]}',
     )
+
+
+def _prefill_collection_kill_confirmations(
+    pending: Sequence[tuple[GremlinResult, Sequence[str]]],
+    gremlin_session: GremlinSession,
+    rootdir: Path,
+) -> None:
+    """Fill the unmutated-load memo for every collection kill in ``pending``, running distinct selections concurrently.
+
+    Collection confirmations measure no time, so they can overlap; timeout confirmations compare
+    durations and must stay solo, so they are not touched here. Worker threads only run the
+    subprocess; the memo is written from the calling thread, so it needs no lock. Concurrency is
+    bounded by the configured worker count. :func:`_confirm_collection_kill` then reads the warm memo
+    and decides each verdict exactly as before.
+
+    Args:
+        pending: Each result paired with the node ids its subprocess was asked to run.
+        gremlin_session: The current gremlin session, holding the memo and the worker count.
+        rootdir: Root directory of the project.
+    """
+    selections = {
+        tuple(node_ids): node_ids
+        for result, node_ids in pending
+        if result.status == GremlinResultStatus.ZAPPED and result.killing_test == COLLECTION_KILLING_TEST
+    }
+    unchecked = [selection for selection in selections if selection not in gremlin_session.unmutated_load_checks]
+    if not unchecked:
+        return
+    worker_count = min(len(unchecked), gremlin_session.parallel_workers or os.cpu_count() or 4)
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        outcomes = executor.map(
+            lambda selection: _collect_unmutated(gremlin_session, rootdir, selections[selection]), unchecked
+        )
+        gremlin_session.unmutated_load_checks.update(zip(unchecked, outcomes, strict=True))
 
 
 def _confirm_kill(
@@ -2648,6 +2674,18 @@ def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:
     return relative_node_ids
 
 
+def _report_diagnostic(message: str) -> None:
+    """Write a run-time diagnostic to stderr.
+
+    Not ``warnings.warn``: these run inside ``pytest_sessionfinish``, where a user's
+    ``filterwarnings = error`` would escalate them into a crash (issue #543).
+
+    Args:
+        message: The diagnostic text, written as a single line to stderr.
+    """
+    print(message, file=sys.stderr)
+
+
 def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> None:
     """Warn that the pre-scan timed out, which is a different cause from "no data" (issues #503, #673)."""
     scaled_note = scaled_limit_note(attempt_timeout, seconds)
@@ -2657,31 +2695,28 @@ def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> N
         if scaled_note and limit_is_capped(seconds)
         else f'set coverage_timeout / --gremlin-coverage-timeout to raise {raised_limit}'
     )
-    warnings.warn(
+    _report_diagnostic(
         f'pytest-gremlins: coverage pre-scan exceeded {seconds}s{scaled_note}; '
         'coverage-guided test selection disabled '
-        f'({advice})',
-        stacklevel=1,
+        f'({advice})'
     )
 
 
 def _warn_prescan_launch_failure(launch_error: CoveragePrescanLaunchError) -> None:
     """Warn that the pre-scan could not be run, naming the cause (issue #485)."""
-    warnings.warn(
+    _report_diagnostic(
         f'pytest-gremlins: coverage pre-scan could not start ({launch_error.cause}); '
-        'coverage-guided test selection disabled, so every gremlin runs the full test suite',
-        stacklevel=1,
+        'coverage-guided test selection disabled, so every gremlin runs the full test suite'
     )
 
 
 def _warn_no_coverage_data() -> None:
     """Warn that the pre-scan finished but recorded nothing (issue #113)."""
-    warnings.warn(
+    _report_diagnostic(
         'Coverage collection returned no data. '
         'If you have --cov in pytest addopts, this may interfere with '
         "gremlins' coverage-guided test selection. "
-        'See https://github.com/mikelane/pytest-gremlins/issues/113',
-        stacklevel=1,
+        'See https://github.com/mikelane/pytest-gremlins/issues/113'
     )
 
 
@@ -2849,9 +2884,12 @@ def _is_cov_addopt(token: str) -> bool:
 # Registered as ``rerunfailures`` when found through its entry point (autoload, or ``-p rerunfailures``, which
 # pytest resolves even with autoload disabled), as ``pytest_rerunfailures`` when loaded by module name
 # (``-p pytest_rerunfailures``, ``pytest_plugins`` or ``PYTEST_PLUGINS``).
-_RERUNFAILURES_PLUGIN_NAMES = ('rerunfailures', 'pytest_rerunfailures')
+_RERUNFAILURES_ENTRY_POINT_NAME = 'rerunfailures'
+_RERUNFAILURES_MODULE_NAME = 'pytest_rerunfailures'
+_RERUNFAILURES_PLUGIN_NAMES = (_RERUNFAILURES_ENTRY_POINT_NAME, _RERUNFAILURES_MODULE_NAME)
 # Blocking by the entry-point name also blocks the plugin when it is loaded by module name.
 _BLOCK_RERUNFAILURES_OPTION = ('-p', 'no:rerunfailures')
+_CONFTEST_FILE_NAME = 'conftest.py'  # pytest registers a conftest under its file path
 _DISABLE_PLUGIN_AUTOLOAD_ENV_VAR = 'PYTEST_DISABLE_PLUGIN_AUTOLOAD'
 _DISABLE_PLUGIN_AUTOLOAD_FLAG = '--disable-plugin-autoload'
 
@@ -2881,6 +2919,79 @@ def _gremlin_runs_have_autoload_disabled(config: pytest.Config) -> bool:
     """
     return bool(os.environ.get(_DISABLE_PLUGIN_AUTOLOAD_ENV_VAR)) or (
         _DISABLE_PLUGIN_AUTOLOAD_FLAG in _arguments_gremlin_runs_inherit(config)
+    )
+
+
+def _plugin_names_loaded_by(tokens: Sequence[str]) -> set[str]:
+    """Return the names ``-p <name>`` and ``-p<name>`` in ``tokens`` load (``-p no:<name>`` blocks)."""
+    names = {value for flag, value in pairwise(tokens) if flag == '-p'}
+    names |= {argument.removeprefix('-p') for argument in tokens if argument.startswith('-p') and argument != '-p'}
+    return {name.strip() for name in names if not name.startswith('no:')}
+
+
+def _command_line_loads_module(config: pytest.Config) -> bool:
+    """Return whether the session's own command line names pytest-rerunfailures by module name."""
+    arguments = expand_argument_files(list(config.invocation_params.args), base_dir=config.invocation_params.dir)
+    return _RERUNFAILURES_MODULE_NAME in _plugin_names_loaded_by(arguments)
+
+
+def _plugins_declared_by(module: object) -> set[str]:
+    """Return the names a module lists in its ``pytest_plugins``, read the way pytest reads it.
+
+    Pytest treats ``None`` (or any non-iterable) as empty and splits a string on commas.
+    """
+    declared = getattr(module, 'pytest_plugins', None)
+    if isinstance(declared, str):
+        return {name.strip() for name in declared.split(',')}
+    if isinstance(declared, (list, tuple, set, frozenset)):
+        return {name for name in declared if isinstance(name, str)}
+    return set()
+
+
+def _with_plugins_they_load(names: set[str]) -> set[str]:
+    """Return ``names`` plus every plugin that those already imported modules load through ``pytest_plugins``."""
+    pending = list(names)
+    reached = set(names)
+    while pending:
+        for declared in _plugins_declared_by(sys.modules.get(pending.pop())):
+            if declared not in reached:
+                reached.add(declared)
+                pending.append(declared)
+    return reached
+
+
+def _inherited_source_loads_module(config: pytest.Config) -> bool:
+    """Return whether ``addopts``, ``PYTEST_ADDOPTS``, ``PYTEST_PLUGINS`` or a conftest loads the module by name.
+
+    The load may be indirect: a plugin such as one of these names can itself list the module in its own
+    ``pytest_plugins``.  Only conftests count: a plugin loaded on the command line is not inherited, whatever
+    it declares.
+    """
+    names = _plugin_names_loaded_by(_arguments_gremlin_runs_inherit(config))
+    names |= {name.strip() for name in os.environ.get('PYTEST_PLUGINS', '').split(',')}
+    for name, plugin in config.pluginmanager.list_name_plugin():
+        if name.endswith(_CONFTEST_FILE_NAME):
+            names |= _plugins_declared_by(plugin)
+    return _RERUNFAILURES_MODULE_NAME in _with_plugins_they_load(names)
+
+
+def _gremlin_runs_would_load_the_module_twice(config: pytest.Config) -> bool:
+    """Return whether gremlin runs would register pytest-rerunfailures under both of its names (issue #684).
+
+    The session turned autoload off on its command line only, which gremlin runs never see, and loaded the
+    plugin by module name through a source they inherit (conftest ``pytest_plugins``, ``PYTEST_PLUGINS`` or ini
+    ``addopts``).  A gremlin run that autoloads would register the ``rerunfailures`` entry point and then load
+    the module again as ``pytest_rerunfailures``, which pluggy rejects.  Blocking ``rerunfailures`` is no answer:
+    pytest then blocks the module name too and nothing reruns.  When only the command line names the module,
+    nothing is inherited that could load it twice, so gremlin runs keep autoload (and the other plugins the
+    command line loaded) and reach the plugin through its entry point (issue #679 covers the rest).
+    """
+    return (
+        bool(getattr(config.option, 'disable_plugin_autoload', False))
+        and not _gremlin_runs_have_autoload_disabled(config)
+        and config.pluginmanager.hasplugin(_RERUNFAILURES_MODULE_NAME)
+        and not config.pluginmanager.hasplugin(_RERUNFAILURES_ENTRY_POINT_NAME)
+        and (not _command_line_loads_module(config) or _inherited_source_loads_module(config))
     )
 
 
@@ -2996,10 +3107,15 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     runs start with autoload disabled, by the environment or by a flag in ``addopts`` or ``PYTEST_ADDOPTS``
     (see :func:`_loader_options_for_gremlin_runs`): without it they would not load a plugin the session got from its
     command line, and would not rerun while the budget assumes they do (issue #679).
+    When the session disabled autoload on its command line only and registered the plugin under its module name,
+    gremlin runs get ``--disable-plugin-autoload`` and the module loader instead, so an inherited module-name
+    load registers it once (issue #684).
     """
     if not _rerunfailures_is_loaded(config):
         return list(_BLOCK_RERUNFAILURES_OPTION)
     loader_options = _loader_options_for_gremlin_runs(config, _RERUNFAILURES_PLUGIN_NAMES)
+    if _gremlin_runs_would_load_the_module_twice(config):
+        loader_options = [_DISABLE_PLUGIN_AUTOLOAD_FLAG, '-p', _RERUNFAILURES_MODULE_NAME]
     return [*loader_options, *_rerun_settings_for(config)]
 
 
@@ -3301,6 +3417,8 @@ def _run_tests_with_coverage(
         'pytest_gremlins.coverage.subprocess_bootstrap',
         '-p',
         'no:gremlins',
+        '-W',
+        'ignore::pytest.PytestAssertRewriteWarning',
         '-o',
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
         *doctest_ini_overrides,
@@ -3378,11 +3496,10 @@ def _run_batch_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
-    """Run mutation testing using batch execution for reduced overhead.
+    """Run mutation testing by grouping gremlins into batches handed to workers.
 
-    Batch execution reduces subprocess overhead by testing multiple gremlins
-    in each subprocess call. Instead of 1 subprocess per gremlin (with ~600ms
-    overhead each), we batch gremlins and spawn fewer subprocesses.
+    Batching groups gremlins into worker tasks. It does not reduce subprocesses:
+    each gremlin in a batch still gets its own bootstrap subprocess.
 
     Args:
         session: The pytest session.
@@ -3439,11 +3556,23 @@ def _run_batch_mutation_testing(  # pragma: no cover
                 seen_tests.add(test)
                 all_covering_tests.append(test)
 
-    test_command = _build_filtered_test_command(
-        base_test_command,
-        all_covering_tests,
-        gremlin_session,
-    )
+    try:
+        test_command = _build_filtered_test_command(
+            base_test_command,
+            all_covering_tests,
+            gremlin_session,
+        )
+    except OSError as write_error:
+        logger.warning('Cannot launch the gremlin batch: %s', write_error)
+        return cached_results + [
+            GremlinResult(
+                gremlin=gremlin,
+                status=GremlinResultStatus.ERROR,
+                error_output=_node_ids_write_failure_output(write_error),
+                selected_tests=gremlin_tests[gremlin.gremlin_id],
+            )
+            for gremlin in uncached_gremlins
+        ]
 
     # Execute batches
     executor = BatchExecutor(
@@ -3463,33 +3592,34 @@ def _run_batch_mutation_testing(  # pragma: no cover
     # Convert WorkerResults to GremlinResults
     results: list[GremlinResult] = list(cached_results)
 
+    batch_node_ids = _node_ids_for_tests(all_covering_tests, gremlin_session)
+    unconfirmed: list[GremlinResult] = []
     for worker_result in worker_results:
         gremlin_id = worker_result.gremlin_id
         if gremlin_id not in gremlin_by_id:
             continue
 
-        gremlin = gremlin_by_id[gremlin_id]
-        selected_tests = gremlin_tests[gremlin_id]
-        gremlin_result = GremlinResult(
-            gremlin=gremlin,
-            status=worker_result.status,
-            killing_test=worker_result.killing_test,
-            execution_time_ms=worker_result.execution_time_ms,
-            error_output=worker_result.error_output,
-            selected_tests=selected_tests,
+        unconfirmed.append(
+            GremlinResult(
+                gremlin=gremlin_by_id[gremlin_id],
+                status=worker_result.status,
+                killing_test=worker_result.killing_test,
+                execution_time_ms=worker_result.execution_time_ms,
+                error_output=worker_result.error_output,
+                selected_tests=gremlin_tests[gremlin_id],
+            )
         )
-        # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
+
+    # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
+    _prefill_collection_kill_confirmations([(r, batch_node_ids) for r in unconfirmed], gremlin_session, rootdir)
+    for unconfirmed_result in unconfirmed:
         gremlin_result = _confirm_pooled_result(
-            gremlin_result,
-            test_command,
-            _node_ids_for_tests(all_covering_tests, gremlin_session),
-            gremlin_session,
-            rootdir,
+            unconfirmed_result, test_command, batch_node_ids, gremlin_session, rootdir
         )
         results.append(gremlin_result)
-
-        # Cache the result
-        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
+        _cache_gremlin_result(
+            unconfirmed_result.gremlin, unconfirmed_result.selected_tests, gremlin_result, gremlin_session
+        )
 
     return results
 
@@ -3542,6 +3672,8 @@ def _run_parallel_mutation_testing(  # pragma: no cover
 
     print(f'\npytest-gremlins: Starting parallel execution with {gremlin_session.parallel_workers or "auto"} workers')
 
+    test_commands: dict[str, list[str]] = {}
+    launch_failed_ids: set[str] = set()
     with WorkerPool(
         max_workers=gremlin_session.parallel_workers,
         timeout=gremlin_session.mutant_timeout,
@@ -3551,11 +3683,18 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         for gremlin in uncached_gremlins:
             selected_tests = gremlin_tests[gremlin.gremlin_id]
 
-            test_command = _build_filtered_test_command(
-                base_test_command,
-                selected_tests,
-                gremlin_session,
-            )
+            try:
+                test_command = _build_filtered_test_command(
+                    base_test_command,
+                    selected_tests,
+                    gremlin_session,
+                )
+            except OSError as write_error:
+                logger.warning('Cannot launch gremlin %s: %s', gremlin.gremlin_id, write_error)
+                aggregator.add_error(gremlin.gremlin_id, OSError(_node_ids_write_failure_output(write_error)))
+                launch_failed_ids.add(gremlin.gremlin_id)
+                continue
+            test_commands[gremlin.gremlin_id] = test_command
 
             future = pool.submit(
                 gremlin_id=gremlin.gremlin_id,
@@ -3583,34 +3722,54 @@ def _run_parallel_mutation_testing(  # pragma: no cover
 
     # Convert WorkerResults to GremlinResults and cache them
     results: list[GremlinResult] = list(cached_results)
+    unconfirmed: list[GremlinResult] = []
     for worker_result in aggregator.get_results():
         gremlin_id = worker_result.gremlin_id
         if gremlin_id not in gremlin_by_id:
             continue
 
-        gremlin = gremlin_by_id[gremlin_id]
-        selected_tests = gremlin_tests[gremlin_id]
         gremlin_result = GremlinResult(
-            gremlin=gremlin,
+            gremlin=gremlin_by_id[gremlin_id],
             status=worker_result.status,
             killing_test=worker_result.killing_test,
             execution_time_ms=worker_result.execution_time_ms,
             error_output=worker_result.error_output,
-            selected_tests=selected_tests,
+            selected_tests=gremlin_tests[gremlin_id],
         )
-        gremlin_result = _confirm_pooled_result(
-            gremlin_result,
-            _build_filtered_test_command(base_test_command, selected_tests, gremlin_session),
-            _node_ids_for_tests(selected_tests, gremlin_session),
+        if gremlin_id in launch_failed_ids:
+            results.append(gremlin_result)
+            continue
+        unconfirmed.append(gremlin_result)
+
+    results.extend(_confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir))
+
+    return results
+
+
+def _confirm_and_cache_pooled_results(
+    unconfirmed: list[GremlinResult],
+    test_commands: dict[str, list[str]],
+    gremlin_session: GremlinSession,
+    rootdir: Path,
+) -> list[GremlinResult]:
+    """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them."""
+    _prefill_collection_kill_confirmations(
+        [(r, _node_ids_for_tests(r.selected_tests, gremlin_session)) for r in unconfirmed], gremlin_session, rootdir
+    )
+    confirmed: list[GremlinResult] = []
+    for unconfirmed_result in unconfirmed:
+        confirmed_result = _confirm_pooled_result(
+            unconfirmed_result,
+            test_commands[unconfirmed_result.gremlin.gremlin_id],
+            _node_ids_for_tests(unconfirmed_result.selected_tests, gremlin_session),
             gremlin_session,
             rootdir,
         )
-        results.append(gremlin_result)
-
-        # Cache the result
-        _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
-
-    return results
+        confirmed.append(confirmed_result)
+        _cache_gremlin_result(
+            unconfirmed_result.gremlin, unconfirmed_result.selected_tests, confirmed_result, gremlin_session
+        )
+    return confirmed
 
 
 def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
@@ -3631,7 +3790,7 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
 
     The function is side-effect heavy on purpose: it emits diagnostic text to
     stdout, then sets ``gremlin_session.enabled = False`` so the per-gremlin
-    loops driven by :func:`pytest_runtestloop` turn into no-ops. It does
+    loops driven by the test run turn into no-ops. It does
     **not** call :func:`sys.exit` or :func:`pytest.exit` — letting pytest
     finish its own session cleanly preserves the user's regular test results
     without masking them behind an early exit code.
@@ -3884,11 +4043,23 @@ def _run_mutation_testing(
 
         _report_gremlin_progress(i, len(gremlin_session.gremlins), gremlin, test_count, total)
 
-        test_command = _build_filtered_test_command(
-            base_test_command,
-            selected_tests,
-            gremlin_session,
-        )
+        try:
+            test_command = _build_filtered_test_command(
+                base_test_command,
+                selected_tests,
+                gremlin_session,
+            )
+        except OSError as write_error:
+            logger.warning('Cannot launch gremlin %s: %s', gremlin.gremlin_id, write_error)
+            results.append(
+                GremlinResult(
+                    gremlin=gremlin,
+                    status=GremlinResultStatus.ERROR,
+                    error_output=_node_ids_write_failure_output(write_error),
+                    selected_tests=selected_tests,
+                )
+            )
+            continue
         gremlin_result = _test_gremlin(
             gremlin,
             test_command,
@@ -3959,13 +4130,13 @@ def _build_test_hashes_for_gremlin(
 
 
 def _selection_has_unhashed_test_file(selected_tests: Sequence[str], gremlin_session: GremlinSession) -> bool:
-    """Whether a selected test lives in a file that could not be hashed (for example, outside rootdir).
+    """Whether a selected test has no node id, or lives in a file that could not be hashed (outside rootdir).
 
     A cache key built without that file's hash would replay a verdict after the test changed.
     """
     for test_name in selected_tests:
         node_id = _node_id_for_test(test_name, gremlin_session)
-        if '::' in node_id and node_id.split('::')[0] not in gremlin_session.test_hashes:
+        if '::' not in node_id or node_id.split('::')[0] not in gremlin_session.test_hashes:
             return True
     return False
 
@@ -4254,6 +4425,11 @@ def _report_gremlin_progress(
     print(f'{prefix} - running {test_count}/{total_tests} tests')
 
 
+def _node_ids_write_failure_output(error: OSError) -> str:
+    """Describe a failed write of the node-ids file for a gremlin's ``error_output``."""
+    return f'Could not write the node ids file for the gremlin test command: {error}'[:2000]
+
+
 def _build_filtered_test_command(
     base_command: list[str],
     selected_tests: Sequence[str],
@@ -4297,6 +4473,24 @@ def _pytest_cov_available() -> bool:
         return False
     else:
         return True
+
+
+def _gremlin_runs_load_pytest_cov(gremlin_addopts: str, rerun_options: Sequence[str]) -> bool:
+    """Return whether gremlin runs have pytest-cov loaded, so that they know ``--no-cov``.
+
+    Gremlin runs that get ``--disable-plugin-autoload`` from the rerun options (issue #684) do not autoload it, and
+    the session's own command line is not passed on, so only a ``-p`` loader in their ``addopts``,
+    ``PYTEST_ADDOPTS`` or ``PYTEST_PLUGINS`` loads it.  Other gremlin runs autoload it as before.
+    """
+    if _DISABLE_PLUGIN_AUTOLOAD_FLAG not in rerun_options:
+        return True
+    try:
+        pytest_addopts_tokens = shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))
+    except ValueError:
+        pytest_addopts_tokens = []
+    loaded = _plugin_names_loaded_by([*shlex.split(gremlin_addopts), *pytest_addopts_tokens])
+    loaded |= set(os.environ.get('PYTEST_PLUGINS', '').split(','))
+    return any(name.strip().startswith('pytest_cov') for name in loaded)
 
 
 def _build_test_command(
@@ -4368,7 +4562,7 @@ def _build_test_command(
             *doctest_ini_overrides,
         ]
 
-    if _pytest_cov_available():
+    if _pytest_cov_available() and _gremlin_runs_load_pytest_cov(gremlin_addopts, rerun_options):
         command.append('--no-cov')
 
     if xdist_loaded:
@@ -4397,6 +4591,34 @@ def _immediate_result_if_pardoned(gremlin: Gremlin) -> GremlinResult | None:
 
 
 def _test_gremlin(
+    gremlin: Gremlin,
+    test_command: list[str],
+    rootdir: Path,
+    instrumented_dir: Path | None,
+    *,
+    timeout: int,
+) -> GremlinResult:
+    """Test a single gremlin and record how long the run took.
+
+    The elapsed time lets the incremental cache reuse the verdict under a different mutant timeout (#567).
+
+    Args:
+        gremlin: The gremlin to test.
+        test_command: Command to run tests.
+        rootdir: Root directory of the project.
+        instrumented_dir: Directory containing bootstrap infrastructure.
+        timeout: Seconds the test run may take before the gremlin is reported as a timeout.
+
+    Returns:
+        Result of testing the gremlin, with ``execution_time_ms`` set.
+    """
+    started = time.monotonic()
+    result = _run_gremlin_subprocess(gremlin, test_command, rootdir, instrumented_dir, timeout=timeout)
+    elapsed_ms = (time.monotonic() - started) * MILLISECONDS_PER_SECOND
+    return dataclass_replace(result, execution_time_ms=elapsed_ms)
+
+
+def _run_gremlin_subprocess(
     gremlin: Gremlin,
     test_command: list[str],
     rootdir: Path,
@@ -4562,30 +4784,13 @@ def _write_empty_run_report(terminalreporter: pytest.TerminalReporter, gremlin_s
     terminalreporter.write_sep('=', '')
 
 
-def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
+def _write_file_reports(
     terminalreporter: pytest.TerminalReporter,
-    exitstatus: int,  # noqa: ARG001
+    gremlin_session: GremlinSession,
     config: pytest.Config,
+    score: MutationScore,
 ) -> None:
-    """Add mutation testing results to terminal output."""
-    gremlin_session = _get_session()
-    if gremlin_session is None or not gremlin_session.enabled:
-        return
-
-    for notice in gremlin_session.terminal_notices:
-        terminalreporter.write_line(notice)
-
-    if not gremlin_session.gremlins:
-        _write_empty_run_report(terminalreporter, gremlin_session)
-        return
-
-    score = MutationScore.from_results(
-        gremlin_session.results,
-        mutant_timeout=gremlin_session.mutant_timeout,
-        mutant_attempt_timeout=gremlin_session.mutant_attempt_timeout,
-    )
-
-    # Write file-based reports as requested
+    """Write the HTML and JSON reports the session asked for and say where they went."""
     rootdir = _get_rootdir(config)
 
     if 'html' in gremlin_session.report_formats:
@@ -4607,6 +4812,36 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
         except OSError as exc:
             logger.warning('Failed to write JSON report: %s', exc)
             terminalreporter.write_line(f'JSON report write failed: {exc}')
+
+
+def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
+    terminalreporter: pytest.TerminalReporter,
+    exitstatus: int,  # noqa: ARG001
+    config: pytest.Config,
+) -> None:
+    """Add mutation testing results to terminal output."""
+    gremlin_session = _get_session()
+    if gremlin_session is None or not gremlin_session.enabled:
+        return
+
+    for notice in gremlin_session.terminal_notices:
+        terminalreporter.write_line(notice)
+
+    score = MutationScore.from_results(
+        gremlin_session.results,
+        mutant_timeout=gremlin_session.mutant_timeout,
+        mutant_attempt_timeout=gremlin_session.mutant_attempt_timeout,
+    )
+
+    if not gremlin_session.gremlins:
+        if gremlin_session.skipped_files:
+            # Skipped files still get reports, so a stale score is overwritten. Write them first so
+            # their locations print before the empty-run report's closing separator.
+            _write_file_reports(terminalreporter, gremlin_session, config, score)
+        _write_empty_run_report(terminalreporter, gremlin_session)
+        return
+
+    _write_file_reports(terminalreporter, gremlin_session, config, score)
 
     terminalreporter.write_sep('=', 'pytest-gremlins mutation report')
     terminalreporter.write_line('')
