@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from importlib.metadata import (
     Distribution,
@@ -203,7 +204,9 @@ def _importable_module_file(operator_class: type) -> str | None:
     A conftest that loads its helper with ``spec_from_file_location`` need not register it, and the class's methods
     cannot say which file defined it (decorators, generated methods and copied methods carry other files' code). The
     module counts only when walking the class's ``__qualname__`` from it finds this very class: a path-loaded helper
-    whose spec name matches an unrelated imported module, or a class built inside a function, finds nothing.
+    whose spec name matches an unrelated imported module, or a class built inside a function, finds nothing. The
+    module's file must also contain the ``class`` statement, so a package ``__init__.py`` that merely re-exports a
+    class defined in another file is not trusted.
     """
     if '<locals>' in operator_class.__qualname__:
         return None
@@ -212,7 +215,33 @@ def _importable_module_file(operator_class: type) -> str | None:
         holder = getattr(holder, part, None)
     if holder is not operator_class:
         return None
-    return getattr(sys.modules[operator_class.__module__], '__file__', None)
+    module_file: str | None = getattr(sys.modules[operator_class.__module__], '__file__', None)
+    if module_file is None or not _file_defines_class(Path(module_file), operator_class.__qualname__):
+        return None
+    return module_file
+
+
+def _file_defines_class(source: Path, qualname: str) -> bool:
+    """Return whether ``source`` parses and holds a ``class`` statement at the dotted ``qualname`` path."""
+    try:
+        tree = ast.parse(source.read_bytes())
+    except (OSError, SyntaxError, ValueError, RecursionError):
+        return False
+    return _holds_class_path(tree, qualname.split('.'))
+
+
+def _holds_class_path(scope: ast.AST, path: list[str]) -> bool:
+    """Return whether ``scope`` holds ``class path[0]`` directly, or inside ``if``/``try``-style blocks.
+
+    Function bodies are not searched: a class built there is not reachable by ``__qualname__`` from the module.
+    """
+    for node in ast.iter_child_nodes(scope):
+        if isinstance(node, ast.ClassDef):
+            if node.name == path[0] and (len(path) == 1 or _holds_class_path(node, path[1:])):
+                return True
+        elif not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and _holds_class_path(node, path):
+            return True
+    return False
 
 
 def _local_helper_file(operator: GremlinOperator, project_root: Path | None) -> Path | None:
