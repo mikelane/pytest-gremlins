@@ -3026,7 +3026,16 @@ def _loader_options_for(config: pytest.Config, plugin_names: tuple[str, ...]) ->
 # The module name goes first: bare ``pytest_cov`` can also be the hookless package that ``PYTEST_PLUGINS`` registers.
 _PYTEST_COV_PLUGIN_NAMES = ('pytest_cov.plugin', 'pytest_cov')
 _PYTEST_COV_ENTRY_POINT_NAMES = _PYTEST_COV_PLUGIN_NAMES[1:]
+_PYTEST_COV_BLOCKS = frozenset({'no:pytest_cov', 'no:cov'})
 _NO_COV_OPTION = '--no-cov'
+
+
+def _gremlin_runs_inherit_a_pytest_cov_block(config: pytest.Config) -> bool:
+    """Return whether ``addopts`` or ``PYTEST_ADDOPTS`` hold ``-p no:pytest_cov`` (or ``-p no:cov``, ``-pno:...``)."""
+    tokens = _arguments_gremlin_runs_inherit(config)
+    blocked = {value for flag, value in pairwise(tokens) if flag == '-p'}
+    blocked |= {argument.removeprefix('-p') for argument in tokens if argument.startswith('-p')}
+    return not _PYTEST_COV_BLOCKS.isdisjoint(name.strip() for name in blocked)
 
 
 def _pytest_cov_options_for(config: pytest.Config, rerun_options: Sequence[str]) -> list[str]:
@@ -3041,7 +3050,10 @@ def _pytest_cov_options_for(config: pytest.Config, rerun_options: Sequence[str])
     do not register pytest-cov themselves.  Gremlin runs that autoload still do not when the inherited ``addopts``
     or ``PYTEST_ADDOPTS`` hold ``-p no:pytest_cov`` and only the session's own command line (not passed on) loaded
     it again; the later ``-p`` overrides the inherited block.  With autoload on only the entry-point name is
-    forwarded, because the module name would register the autoloaded plugin a second time.  If the session
+    forwarded, because the module name would register the autoloaded plugin a second time.  The exception is
+    an inherited ``-p no:pytest_cov`` (or ``no:cov``): the gremlin run then does not autoload pytest-cov, so a
+    session that registered only the module name gets that name forwarded too.  A block typed only on the
+    session's command line is not inherited, so it changes nothing.  If the session
     registered pytest-cov under a name this does not know, autoloading runs still get the bare flag, which they
     can parse where nothing blocks the plugin, and runs without autoload get nothing, which errs toward a missed
     kill.
@@ -3051,7 +3063,10 @@ def _pytest_cov_options_for(config: pytest.Config, rerun_options: Sequence[str])
     if _gremlin_runs_have_autoload_disabled(config) or _DISABLE_PLUGIN_AUTOLOAD_FLAG in rerun_options:
         loader_options = _loader_options_for(config, _PYTEST_COV_PLUGIN_NAMES)
         return [*loader_options, _NO_COV_OPTION] if loader_options else []
-    return [*_loader_options_for(config, _PYTEST_COV_ENTRY_POINT_NAMES), _NO_COV_OPTION]
+    autoloaded_names = (
+        _PYTEST_COV_PLUGIN_NAMES if _gremlin_runs_inherit_a_pytest_cov_block(config) else _PYTEST_COV_ENTRY_POINT_NAMES
+    )
+    return [*_loader_options_for(config, autoloaded_names), _NO_COV_OPTION]
 
 
 def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
