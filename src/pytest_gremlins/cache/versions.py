@@ -40,6 +40,9 @@ _UNREADABLE_METADATA = (OSError, ValueError, TypeError)
 # RUNNER_FIDELITY_VERSION in incremental.py covers test execution and outcome-to-verdict mapping.
 CACHE_VERSION = 1
 
+_LOCAL_OPERATOR_PREFIX = 'local-operator='
+_UNREADABLE_MARKER = ':unreadable-'
+
 
 def _metadata_field(dist: Distribution, field: str) -> str | None:
     values = dist.metadata.get_all(field)
@@ -213,7 +216,9 @@ def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root
         labels |= owners
         if not owners:
             unproven.add(operator_class)
-    return labels | {f'local-operator={cls.__module__}:unreadable-{uuid.uuid4().hex}' for cls in unproven}
+    return labels | {
+        f'{_LOCAL_OPERATOR_PREFIX}{cls.__module__}{_UNREADABLE_MARKER}{uuid.uuid4().hex}' for cls in unproven
+    }
 
 
 def installed_versions_fingerprint(
@@ -248,3 +253,23 @@ def installed_versions_fingerprint(
     }
     suppliers |= _operator_supplier_labels(operators, project_root)
     return '|'.join([f'cache-version={CACHE_VERSION}', *sorted(suppliers)])
+
+
+def is_unreadable_fingerprint(fingerprint: str) -> bool:
+    """Whether ``fingerprint`` carries a fresh random token, so no later run can read what a run keyed by it writes.
+
+    Args:
+        fingerprint: A string returned by ``installed_versions_fingerprint``.
+
+    Returns:
+        True when an operator that no installed distribution provably owns is part of the fingerprint.
+
+    Example:
+        >>> is_unreadable_fingerprint('cache-version=1|local-operator=helpers:unreadable-0f3a')
+        True
+        >>> is_unreadable_fingerprint('cache-version=1|acme-operators==2.0')
+        False
+    """
+    return any(
+        label.startswith(_LOCAL_OPERATOR_PREFIX) and _UNREADABLE_MARKER in label for label in fingerprint.split('|')
+    )
