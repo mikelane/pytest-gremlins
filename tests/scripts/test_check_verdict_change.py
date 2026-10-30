@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -213,6 +214,45 @@ class DescribeGuardedPathsFromTheGuard:
 
     def it_leaves_out_what_the_guard_excludes(self) -> None:
         assert 'src/pytest_gremlins/reporting/html.py' not in checker.guarded_repo_paths()
+
+
+MODULE_BODY = ''.join(f'value_{index} = {index}\n' for index in range(30))
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(['git', '-c', 'user.name=qa', '-c', 'user.email=qa@example.com', *args], cwd=repo, check=True)  # noqa: S607
+
+
+@pytest.fixture
+def repo_with_module_moved_out_of_the_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # A throwaway repository: isolate it from the developer's global git config, as test_verify_release_tag does.
+    monkeypatch.setenv('GIT_CONFIG_GLOBAL', os.devnull)
+    monkeypatch.setenv('GIT_CONFIG_NOSYSTEM', '1')
+    module = tmp_path / 'src' / 'pytest_gremlins' / 'moved.py'
+    module.parent.mkdir(parents=True)
+    module.write_text(MODULE_BODY, encoding='utf-8')
+    _git(tmp_path, 'init', '--quiet')
+    _git(tmp_path, 'add', '.')
+    _git(tmp_path, 'commit', '--quiet', '-m', 'base')
+    (tmp_path / 'tools').mkdir()
+    _git(tmp_path, 'mv', 'src/pytest_gremlins/moved.py', 'tools/moved.py')
+    with (tmp_path / 'tools' / 'moved.py').open('a', encoding='utf-8') as moved:
+        moved.write('extra = 1\n')
+    _git(tmp_path, 'commit', '--quiet', '-am', 'move the module out of the package')
+    monkeypatch.setattr(checker, 'REPO_ROOT', tmp_path)
+    return tmp_path
+
+
+@pytest.mark.medium
+class DescribeModuleMovedOutOfThePackage:
+    @pytest.mark.usefixtures('repo_with_module_moved_out_of_the_package')
+    def it_counts_the_old_path_like_a_deleted_package_module(self) -> None:
+        changed = checker._git_diff_names('HEAD~1')
+        deleted = checker._git_diff_names('HEAD~1', '--diff-filter=D')
+
+        changes = checker.guarded_changes(changed, deleted, set())
+
+        assert 'src/pytest_gremlins/moved.py' in changes
 
 
 def _write_run(path: Path, verdicts: dict[str, str], cache_version: str = '1') -> Path:

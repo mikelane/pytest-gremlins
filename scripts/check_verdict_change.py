@@ -199,7 +199,7 @@ def guarded_repo_paths() -> set[str]:
 
 def _git_diff_names(base_ref: str, *filters: str) -> list[str]:
     completed = subprocess.run(
-        [GIT, 'diff', '--name-only', *filters, base_ref, 'HEAD'],
+        [GIT, 'diff', '--name-only', '--no-renames', *filters, base_ref, 'HEAD'],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
