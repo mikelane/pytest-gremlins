@@ -19,6 +19,7 @@ Without a release tag, any lowering fails.
 from __future__ import annotations
 
 import argparse
+import ast
 from collections import Counter
 from collections.abc import (
     Callable,
@@ -94,8 +95,26 @@ class Markers:
 
 
 def _marker_value(source: str, name: str) -> str | None:
-    match = re.search(rf'^{name}\s*(?::[^=\n]+)?=\s*[\'"]?([^\'"\s#]+)', source, re.MULTILINE)
-    return match.group(1) if match else None
+    """Return the literal a module-level assignment gives ``name``, or None when there is none or it is not literal.
+
+    Parses the source rather than matching text, so a docstring line that looks like the assignment is ignored.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign):
+            targets, value = statement.targets, statement.value
+        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+            targets, value = [statement.target], statement.value
+        else:
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == name for target in targets):
+            continue
+        literal = value.value if isinstance(value, ast.Constant) else None
+        return str(literal) if isinstance(literal, (int, str)) and not isinstance(literal, bool) else None
+    return None
 
 
 def parse_markers(versions_source: str, incremental_source: str) -> Markers | None:

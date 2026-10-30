@@ -204,6 +204,22 @@ class DescribeParseMarkers:
     def it_returns_nothing_when_a_marker_is_missing(self) -> None:
         assert checker.parse_markers('x = 1\n', "RUNNER_FIDELITY_VERSION = 'rf20'\n") is None
 
+    def it_ignores_a_marker_line_inside_a_docstring(self) -> None:
+        markers = checker.parse_markers(
+            '"""Notes.\n\nCACHE_VERSION = 0 was the first value.\n"""\n\nCACHE_VERSION = 7\n',
+            '"""\nRUNNER_FIDELITY_VERSION = \'rf1\' was the first value.\n"""\nRUNNER_FIDELITY_VERSION = \'rf20\'\n',
+        )
+
+        assert markers == checker.Markers(cache_version='7', runner_fidelity_version='rf20')
+
+    def it_reads_a_parenthesized_value(self) -> None:
+        markers = checker.parse_markers('CACHE_VERSION = (\n    7\n)\n', "RUNNER_FIDELITY_VERSION = ('rf20')\n")
+
+        assert markers == checker.Markers(cache_version='7', runner_fidelity_version='rf20')
+
+    def it_returns_nothing_when_a_marker_is_not_a_literal(self) -> None:
+        assert checker.parse_markers('CACHE_VERSION = compute()\n', "RUNNER_FIDELITY_VERSION = 'rf20'\n") is None
+
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(
