@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+from functools import cached_property
 from importlib.metadata import (
     Distribution,
     PackagePath,
@@ -83,36 +85,76 @@ def _top_level_modules_from_record(files: Iterable[PackagePath]) -> set[str]:
     return modules
 
 
-def _pth_directories(dist: Distribution, files: Iterable[PackagePath]) -> frozenset[Path]:
+class _InstallRecord:
+    """A distribution's install record (``RECORD`` or ``installed-files.txt``), read at most once.
+
+    ``SOURCES.txt`` of a source checkout's ``.egg-info`` is not an install record, so it never counts. An empty or
+    blank record is no install record either: ``Distribution.files`` would fall back to ``SOURCES.txt`` for it.
+    """
+
+    def __init__(self, dist: Distribution) -> None:
+        self._dist = dist
+
+    @cached_property
+    def files(self) -> tuple[PackagePath, ...]:
+        record = self._dist.read_text('RECORD')
+        if record is not None and record.strip():
+            return tuple(PackagePath(row[0]) for row in csv.reader(record.splitlines()) if row)
+        installed_files = self._dist.read_text('installed-files.txt')
+        if installed_files is None or not installed_files.strip():
+            return ()
+        return tuple(self._dist.files or ())
+
+    @cached_property
+    def paths(self) -> frozenset[Path]:
+        """The resolved location of every listed file; empty when the record cannot be read."""
+        try:
+            return frozenset(Path(str(self._dist.locate_file(file))).resolve() for file in self.files)
+        except _UNREADABLE_METADATA:
+            return frozenset()
+
+
+def _pth_entries(pth: Path) -> list[str]:
+    """Return the path lines of a ``.pth`` file as ``site.addpackage`` reads them; unreadable files add nothing."""
+    try:
+        lines = pth.read_text(encoding='utf-8').splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    return [line.rstrip() for line in lines if line.rstrip() and not line.startswith(('#', 'import ', 'import\t'))]
+
+
+def _pth_directories(dist: Distribution, files: Iterable[PackagePath], project: Path) -> frozenset[Path]:
     """Return the directories a PEP 660 editable's top-level ``.pth`` files put on ``sys.path``.
 
     hatchling, uv_build, flit and pdm write no ``top_level.txt``; the packages they expose are the direct children
-    of these directories. Blank lines, comments and ``import`` hooks add nothing.
+    of these directories. Blank lines, comments and ``import`` hooks add nothing. The project directory itself
+    (a flat layout) is left out: every sibling of the package would otherwise count as the distribution's own.
     """
     roots: set[Path] = set()
     for file in files:
         if len(file.parts) != 1 or not file.name.endswith('.pth'):
             continue
         pth = Path(str(dist.locate_file(file)))
-        for line in pth.read_text(encoding='utf-8').splitlines():
-            entry = line.strip()
-            if entry and not entry.startswith(('#', 'import ', 'import\t')):
-                directory = (pth.parent / entry).resolve()
-                if directory.is_dir():
-                    roots.add(directory)
+        for entry in _pth_entries(pth):
+            directory = (pth.parent / entry).resolve()
+            if directory.is_dir() and directory != project:
+                roots.add(directory)
     return frozenset(roots)
 
 
-def _declared_modules(dist: Distribution) -> tuple[set[str], frozenset[Path]]:
-    """Return the top-level modules a distribution installs and, without ``top_level.txt``, its ``.pth`` directories.
+def _declared_modules(
+    dist: Distribution, record: _InstallRecord, editable_project: Path | None
+) -> tuple[set[str], frozenset[Path]]:
+    """Return the top-level modules a distribution installs and, for an editable, its ``.pth`` directories.
 
-    Modules come from ``top_level.txt``, else from the ``RECORD`` (read once, shared with the ``.pth`` lookup).
+    Modules come from ``top_level.txt``, else from the install record. Only an editable without ``top_level.txt``
+    reads ``.pth`` files; a regular wheel's ``.pth`` files are never opened.
     """
     top_level = dist.read_text('top_level.txt')
     if top_level is not None:
         return set(top_level.split()), frozenset()
-    files = tuple(dist.files or ())
-    return _top_level_modules_from_record(files), _pth_directories(dist, files)
+    path_roots = _pth_directories(dist, record.files, editable_project) if editable_project is not None else frozenset()
+    return _top_level_modules_from_record(record.files), path_roots
 
 
 def _editable_project_directory(dist: Distribution) -> Path | None:
@@ -144,7 +186,7 @@ class _IndexedDistribution:
     modules: frozenset[str]
     editable_project: Path | None
     editable_path_roots: frozenset[Path]
-    distribution: Distribution
+    record: _InstallRecord
 
 
 def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
@@ -152,14 +194,16 @@ def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
     try:
         if _is_own_distribution(dist):
             return None
-        modules, path_roots = _declared_modules(dist)
+        record = _InstallRecord(dist)
+        editable_project = _editable_project_directory(dist)
+        modules, path_roots = _declared_modules(dist, record, editable_project)
         return _IndexedDistribution(
             label=_distribution_label(dist),
             root=Path(str(dist.locate_file(''))).resolve(),
             modules=frozenset(modules),
-            editable_project=_editable_project_directory(dist),
+            editable_project=editable_project,
             editable_path_roots=path_roots,
-            distribution=dist,
+            record=record,
         )
     except _UNREADABLE_METADATA:
         return None
@@ -183,28 +227,13 @@ def _is_project_local(location: Path, project_root: Path | None) -> bool:
     return not any(location.is_relative_to(site) for site in _site_directories())
 
 
-def _is_listed_in_install_record(dist: Distribution, location: Path) -> bool:
-    """Whether the distribution's ``RECORD`` or ``installed-files.txt`` lists ``location``.
-
-    ``SOURCES.txt`` of a source checkout's ``.egg-info`` is not an install record, so it never counts. An empty or
-    blank record is no install record either: ``Distribution.files`` would fall back to ``SOURCES.txt`` for it.
-    """
-    try:
-        record_texts = (dist.read_text('RECORD'), dist.read_text('installed-files.txt'))
-        if not any(text is not None and text.strip() for text in record_texts):
-            return False
-        return any(Path(str(dist.locate_file(file))).resolve() == location for file in dist.files or ())
-    except _UNREADABLE_METADATA:
-        return False
-
-
 def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
     """Whether ``location`` is a file the distribution installed: in the ``top_level`` module and its install record."""
     if top_level not in entry.modules or not location.is_relative_to(entry.root):
         return False
     if location.relative_to(entry.root).parts[0].partition('.')[0] != top_level:
         return False
-    return _is_listed_in_install_record(entry.distribution, location)
+    return location in entry.record.paths
 
 
 def _is_under_editable_path_root(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:

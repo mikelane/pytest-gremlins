@@ -8,7 +8,10 @@ from importlib.metadata import PathDistribution
 import json
 from pathlib import Path
 import sys
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import pytest
 
@@ -74,26 +77,28 @@ class DescribeOperatorOwnerLookupGaps:
 
         assert 'editable_ops_dist' not in fingerprint
 
-    def it_never_reads_pth_files(self, tmp_path: Path, site: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_does_not_read_pth_files_of_a_distribution_that_is_not_an_editable_install(
+        self, tmp_path: Path, site: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         src = tmp_path / 'editable_src'
         src.mkdir()
         (src / 'editable_ops.py').write_text(OPERATOR_SOURCE)
         monkeypatch.syspath_prepend(str(src))
         _dist_info(site, 'pth_dist', '_pth_dist.pth,,\npth_dist-1.0.dist-info/RECORD,,\n')
-        (site / '_pth_dist.pth').write_bytes('/opt/caf\xe9/src\n'.encode('latin-1'))
+        (site / '_pth_dist.pth').write_text(f'{src}\n')
         importlib.invalidate_caches()
-        read_names: list[str] = []
-        original = PathDistribution.read_text
+        read_paths: list[str] = []
+        original = Path.read_text
 
-        def recording_read_text(self: PathDistribution, filename: str) -> str | None:
-            read_names.append(filename)
-            return original(self, filename)
+        def recording_read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+            read_paths.append(self.name)
+            return original(self, *args, **kwargs)
 
-        monkeypatch.setattr(PathDistribution, 'read_text', recording_read_text)
+        monkeypatch.setattr(Path, 'read_text', recording_read_text)
 
         installed_versions_fingerprint([_operator_from('editable_ops')])
 
-        assert not any(name.endswith('.pth') for name in read_names)
+        assert '_pth_dist.pth' not in read_paths
 
     def it_names_a_pep610_editable_install_that_owns_a_registered_operator(
         self, tmp_path: Path, site: Path, monkeypatch: pytest.MonkeyPatch

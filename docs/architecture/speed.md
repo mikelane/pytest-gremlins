@@ -150,12 +150,12 @@ finder. The key carries a fresh random token, so the run is slower but never ser
 in a `conftest.py` on the hashed chain are the exception: the source and conftest hashes cover them. Restoring cache
 hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887).
 
-An installed package owns a module's file only when its install record (`RECORD` or `installed-files.txt`) lists
-the file. A source checkout's `SOURCES.txt` does not count, so a leftover `<pkg>.egg-info` beside a checkout on
-`sys.path`, an unrecorded file in a shared namespace package, and a helper elsewhere under an editable project
-directory all miss. An editable install must also declare the module's top-level name, from `top_level.txt` or
-from a directory its `.pth` file lists. An empty install record counts as none. A `conftest.py` outside the hashed
-chain (above the pytest rootdir) misses too.
+An installed package owns a module's file only when its install record (`RECORD` or `installed-files.txt`) lists the
+file. A source checkout's `SOURCES.txt` does not count, so a leftover `<pkg>.egg-info` beside a checkout on `sys.path`,
+an unrecorded file in a shared namespace package, and a helper elsewhere under an editable project directory all miss.
+An editable install must also declare the module's top-level name, from `top_level.txt` or from a directory its `.pth`
+file lists; a flat-layout editable without `top_level.txt` always misses. An empty install record counts as none. A
+`conftest.py` outside the hashed chain (above the pytest rootdir) misses too.
 
 **Why it works:**
 
