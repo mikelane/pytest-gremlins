@@ -25,7 +25,11 @@ from types import (
     CodeType,
     ModuleType,
 )
-from typing import Any
+from typing import (
+    Any,
+    Protocol,
+    cast,
+)
 import zlib
 
 # Entries are decoded from sources.json and mix str, str | None and list[str] values.
@@ -213,7 +217,7 @@ class GremlinLoader(importlib.abc.Loader):
 
     def get_data(self, path: str) -> bytes:  # noqa: D102
         # pkgutil.get_data reads package data through the loader and gives up when it has no get_data.
-        return self._original_loader.get_data(path)  # type: ignore[attr-defined, no-any-return]
+        return cast('importlib.abc.ResourceLoader', self._original_loader).get_data(path)
 
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> None:  # noqa: ARG002, D102
         return None
@@ -299,6 +303,27 @@ class GremlinLoader(importlib.abc.Loader):
         except RecursionError:
             # Silent on purpose: the loader falls back to the shipped source, as the class docstring explains.
             return None
+
+
+class InstalledFinder(Protocol):
+    """What ``install`` relies on in a finder found on ``sys.meta_path``.
+
+    The bootstrap and the spawn hook (#604) each embed their own copy of ``GremlinFinder``, so ``isinstance``
+    cannot recognise a finder the other copy installed. This structural type names the two members it is
+    recognised and reused by.
+    """
+
+    is_gremlin_finder: bool
+
+    def find_spec(
+        self, fullname: str, path: Sequence[str] | None = None, target: ModuleType | None = None, /
+    ) -> importlib.machinery.ModuleSpec | None:
+        """Return the spec the import system should use, so the finder can sit on ``sys.meta_path``."""
+        ...
+
+    def serves(self, instrumented_sources: InstrumentedSources) -> bool:
+        """Return whether this finder was built for exactly ``instrumented_sources``."""
+        ...
 
 
 class GremlinFinder(importlib.abc.MetaPathFinder):
@@ -389,19 +414,21 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
         return None
 
 
-def install(instrumented_sources: InstrumentedSources) -> GremlinFinder:
+def install(instrumented_sources: InstrumentedSources) -> InstalledFinder:
     """Register a finder for ``instrumented_sources`` ahead of every other finder and return it.
 
     Idempotent: the spawn hook (#604) and the bootstrap both call this in the same process, and one finder
     must serve it. A finder already installed for equal sources is moved to the front and returned; one for
     other sources is replaced.
     """
-    installed_finders: list[Any] = [finder for finder in sys.meta_path if getattr(finder, 'is_gremlin_finder', False)]
+    installed_finders = [
+        cast('InstalledFinder', finder) for finder in sys.meta_path if getattr(finder, 'is_gremlin_finder', False)
+    ]
     for installed_finder in installed_finders:
         sys.meta_path.remove(installed_finder)
         if installed_finder.serves(instrumented_sources):
             sys.meta_path.insert(0, installed_finder)
-            return installed_finder  # type: ignore[no-any-return]
+            return installed_finder
     finder = GremlinFinder(instrumented_sources)
     sys.meta_path.insert(0, finder)
     return finder
