@@ -153,14 +153,16 @@ class DescribeStringRerunSettingsInNativeToml:
     def it_runs_gremlins_without_an_internal_error_when_reruns_is_a_toml_string(
         self, pytester_with_markers: pytest.Pytester
     ) -> None:
-        steady_test = "from sample import classify\n\n\ndef test_big():\n    assert classify(11) == 'big'\n"
-        write_flaky_project(pytester_with_markers, steady_test)
+        # The flaky test fails the baseline unless the string value is read and applied, and it
+        # fabricates kills unless the gremlin runs rerun it too, so survivors prove the setting took effect.
+        write_flaky_project(pytester_with_markers)
         pytester_with_markers.makefile('.toml', pyproject='[tool.pytest]\nreruns = "2"\n')
 
         result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS)
 
         assert 'INTERNALERROR' not in result.stdout.str()
-        assert verdicts(result.stdout.str())['Zapped'] > 0
+        assert 'needed a rerun' in result.stderr.str()
+        assert survivor_count(result.stdout.str()) > 0
 
 
 @pytest.mark.medium
