@@ -78,7 +78,8 @@ uv run --no-sync python scripts/check_verdict_change.py compare base.json head.j
 The per-PR check above only sees verdict changes that its sample project exercises. At release time a second check
 covers the rest: `scripts/check_cache_kept.py` compares the guarded code (the same file set as above, computed by the
 guard test's own function) at the previous release with the code being released. The previous release is the newest
-`v*` tag reachable from the commit being released, not counting the tag being released.
+`v*` tag reachable from the commit being released, not counting the tag being released. In the `CHANGELOG.md` check
+of a PR (`--newest`) every tag counts, so a topmost entry that is already released is compared with its own tag.
 
 The release passes when any of these holds:
 

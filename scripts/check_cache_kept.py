@@ -6,7 +6,8 @@ The incremental cache keeps a verdict until ``CACHE_VERSION`` or ``RUNNER_FIDELI
 ship with no marker raised and leave users' warm caches returning wrong verdicts. This check runs at release time.
 
 It compares the code being released (``HEAD``) with the previous release: the newest ``v*`` tag reachable from
-``HEAD``, not counting the tag of the version being released. The files compared are the ones the cache-version
+``HEAD``, not counting the tag of the version being released (``--newest`` counts every tag, so a topmost entry that
+is already released is compared with its own tag). The files compared are the ones the cache-version
 guard hashes, taken from the guard's own file-set function (``check_verdict_change.guarded_repo_paths``), never from a
 second list. It passes when
 
@@ -98,19 +99,14 @@ def check_cache_kept(changed: Sequence[str], previous: Markers, head: Markers, p
     ]
 
 
-def previous_release_tag(version: str, repo: Path = REPO_ROOT) -> str | None:
-    """Return the newest release tag reachable from ``HEAD``, leaving out the tag of ``version``, or ``None``."""
-    tag = _git_output(
-        repo,
-        'describe',
-        '--tags',
-        '--abbrev=0',
-        '--match',
-        RELEASE_TAG_PATTERN,
-        '--exclude',
-        f'v{version.removeprefix("v")}',
-        'HEAD',
-    )
+def previous_release_tag(version: str | None, repo: Path = REPO_ROOT) -> str | None:
+    """Return the newest release tag reachable from ``HEAD``, or ``None``.
+
+    The tag of ``version`` is left out, because that release is the one being checked. With no ``version`` every
+    release tag counts: the topmost changelog entry may already be released, and then the code is compared with it.
+    """
+    excluded = ['--exclude', f'v{version.removeprefix("v")}'] if version else []
+    tag = _git_output(repo, 'describe', '--tags', '--abbrev=0', '--match', RELEASE_TAG_PATTERN, *excluded, 'HEAD')
     return tag.strip() if tag else None
 
 
@@ -149,7 +145,7 @@ def _check(args: argparse.Namespace) -> tuple[str, list[str]]:
     version = version.removeprefix('v')
     if not version:
         raise CannotCheckError('the version is empty')
-    previous_tag = previous_release_tag(version)
+    previous_tag = previous_release_tag(None if args.newest else version)
     if previous_tag is None:
         raise CannotCheckError('no earlier release tag is reachable from HEAD; fetch tags (fetch-depth: 0)')
     previous = released_markers(previous_tag)

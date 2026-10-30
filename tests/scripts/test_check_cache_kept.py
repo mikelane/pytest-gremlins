@@ -160,6 +160,9 @@ class DescribePreviousReleaseTag:
     def it_does_not_count_the_tag_being_released(self, repo: Path) -> None:
         assert checker.previous_release_tag('1.1.0', repo) == 'v1.0.0'
 
+    def it_counts_every_tag_when_no_version_is_being_released(self, repo: Path) -> None:
+        assert checker.previous_release_tag(None, repo) == 'v1.1.0'
+
     def it_accepts_a_version_with_a_leading_v(self, repo: Path) -> None:
         assert checker.previous_release_tag('v1.1.0', repo) == 'v1.0.0'
 
