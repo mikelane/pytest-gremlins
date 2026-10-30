@@ -79,7 +79,8 @@ The per-PR check above only sees verdict changes that its sample project exercis
 covers the rest: `scripts/check_cache_kept.py` compares the guarded code (the same file set as above, computed by the
 guard test's own function) at the previous release with the code being released. The previous release is the newest
 `v*` tag reachable from the commit being released, not counting the tag being released. In the `CHANGELOG.md` check
-of a PR (`--newest`) every tag counts, so a topmost entry that is already released is compared with its own tag.
+of a PR (`--newest`), a topmost entry that is already released passes: the release gates checked it when it shipped,
+and later changes are checked once the next entry is added.
 
 The release passes when any of these holds:
 

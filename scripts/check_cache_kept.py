@@ -6,10 +6,10 @@ The incremental cache keeps a verdict until ``CACHE_VERSION`` or ``RUNNER_FIDELI
 ship with no marker raised and leave users' warm caches returning wrong verdicts. This check runs at release time.
 
 It compares the code being released (``HEAD``) with the previous release: the newest ``v*`` tag reachable from
-``HEAD``, not counting the tag of the version being released (``--newest`` counts every tag, so a topmost entry that
-is already released is compared with its own tag). The files compared are the ones the cache-version
-guard hashes, taken from the guard's own file-set function (``check_verdict_change.guarded_repo_paths``), never from a
-second list. It passes when
+``HEAD``, not counting the tag of the version being released. With ``--newest``, a topmost entry whose tag already
+exists passes: the release gates checked it when it shipped, and later changes are checked once the next entry exists.
+The files compared are the ones the cache-version guard hashes, taken from the guard's own file-set function
+(``check_verdict_change.guarded_repo_paths``), never from a second list. It passes when
 
 * no guarded file changed since the previous release, or
 * ``CACHE_VERSION`` or ``RUNNER_FIDELITY_VERSION`` differs from its value at the previous release (a lowered marker
@@ -127,6 +127,11 @@ def previous_release_tag(version: str | None, repo: Path = REPO_ROOT) -> str | N
     return tag.strip() if tag else None
 
 
+def _is_tagged(version: str, repo: Path = REPO_ROOT) -> bool:
+    """Return whether the release tag ``v<version>`` exists, so that version is already released."""
+    return _git_output(repo, 'rev-parse', '-q', '--verify', f'refs/tags/v{version}^{{commit}}') is not None
+
+
 def _head_markers() -> Markers:
     """Return the cache markers of the working tree; raise ``CannotCheckError`` when they cannot be parsed."""
     versions = (REPO_ROOT / VERSIONS_PATH).read_text(encoding='utf-8')
@@ -160,13 +165,22 @@ def _preamble(changelog: str, version: str) -> str:
     return preamble
 
 
-def _check(args: argparse.Namespace) -> tuple[str, list[str]]:
-    """Run the check for the parsed arguments; return the version checked and its problems."""
+def _check(args: argparse.Namespace) -> tuple[str, list[str], str]:
+    """Run the check for the parsed arguments; return the version checked, its problems and the message on a pass."""
     changelog = _read_changelog(args.changelog)
     version: str = newest_version(changelog) if args.newest else args.version
     version = version.removeprefix('v')
     if not version:
         raise CannotCheckError('the version is empty')
+    if args.newest and _is_tagged(version):
+        # The release gates checked this entry when it shipped. Later changes belong to the next entry, and a
+        # released entry must not be edited to cover them, so there is nothing to check until that entry exists.
+        return (
+            version,
+            [],
+            f'v{version} is already released; changes since then are checked when the next entry is added.',
+        )
+
     previous_tag = previous_release_tag(None if args.newest else version)
     if previous_tag is None:
         raise CannotCheckError('no earlier release tag is reachable from HEAD; fetch tags (fetch-depth: 0)')
@@ -177,7 +191,8 @@ def _check(args: argparse.Namespace) -> tuple[str, list[str]]:
     head = _head_markers()
     needs_line = bool(changed) and head == previous
     preamble = _preamble(changelog, version) if needs_line else ''
-    return version, check_cache_kept(changed, previous, head, preamble)
+    passed = f'The {version} release changes no guarded code, raises a cache marker, or states why it keeps the cache.'
+    return version, check_cache_kept(changed, previous, head, preamble), passed
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -195,7 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point; returns 0 when the release passes, 1 when it fails, 2 when the check could not run."""
     args = _parse_args(argv)
     try:
-        version, problems = _check(args)
+        version, problems, passed = _check(args)
     except CannotCheckError as error:
         print(f'could not check the release cache markers: {error}', file=sys.stderr)
         return 2
@@ -207,7 +222,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for problem in problems:
             print(f'{PROBLEM_PREFIX}{problem}')
         return 1
-    print(f'The {version} release changes no guarded code, raises a cache marker, or states why it keeps the cache.')
+    print(passed)
     return 0
 
 

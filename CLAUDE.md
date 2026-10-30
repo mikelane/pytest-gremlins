@@ -256,7 +256,8 @@ tag, the release fails unless the entry has a `(cache kept: <reason>)` line with
 entry's prose before its first `###` heading; it is accepted nowhere else, because the docs gate allows only list items
 under the gated headings. The reason is public and is reviewed in the changelog PR. It runs in the same three places as
 the docs gate (`ci.yml` on a `CHANGELOG.md` change with `--newest`, `cut-release.yml`, and `verify-tag`), exits 1 naming
-the changed files, exits 2 when it could not run, and has no bypass.
+the changed files, exits 2 when it could not run, and has no bypass. With `--newest`, a topmost entry that is already
+tagged passes; the changes after it are checked once the next entry is added.
 
 **Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`
 pre-commit hook blocks commits to `main` and leaves a dirty version bump to revert.
