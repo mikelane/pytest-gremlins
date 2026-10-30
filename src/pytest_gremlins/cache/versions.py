@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+from functools import cached_property
 from importlib.metadata import (
     Distribution,
+    PackagePath,
     distributions,
     entry_points,
 )
 import json
 from pathlib import Path
+import posixpath
 import re
 import sys
 import sysconfig
@@ -30,9 +34,9 @@ _OWN_PACKAGE = 'pytest_gremlins'
 
 # A distribution with unreadable or malformed metadata is skipped; it must never break pytest_configure.
 # UnicodeDecodeError and json.JSONDecodeError are ValueErrors; importlib.metadata raises TypeError for a RECORD row
-# with too many fields. Shape problems in direct_url.json are checked
-# explicitly in _editable_project_directory, so a bad editable marker never costs a distribution its label.
-_UNREADABLE_METADATA = (OSError, ValueError, TypeError)
+# with too many fields; csv.Error is a RECORD field over the csv size limit. Shape problems in direct_url.json are
+# checked explicitly in _editable_project_directory, so a bad editable marker never costs a distribution its label.
+_UNREADABLE_METADATA = (OSError, ValueError, TypeError, csv.Error)
 
 # Raise this on any change that could alter a verdict, or which gremlins exist, for the same source and tests.
 # tests/cache/test_cache_version_guard.py fails until you decide. It guards every .py file in the package except a
@@ -67,16 +71,75 @@ def _is_own_distribution(dist: Distribution) -> bool:
     return name is not None and _normalized(name) == _OWN_DISTRIBUTION
 
 
-def _declared_top_level_modules(dist: Distribution) -> set[str]:
-    """Return the top-level modules a distribution installs, from ``top_level.txt`` else its RECORD."""
+def _is_editable_stub(name: str) -> bool:
+    """Whether a top-level RECORD entry is a PEP 660 ``.pth`` or ``__editable__`` finder file, not a module."""
+    return name.endswith('.pth') or name.startswith('__editable__')
+
+
+def _top_level_modules_from_record(files: Iterable[PackagePath]) -> set[str]:
+    modules: set[str] = set()
+    for file in files:
+        root = file.parts[0] if file.parts else ''
+        if _is_editable_stub(root):
+            continue
+        modules.add(root.split('.')[0] if len(file.parts) == 1 else root)
+    return modules
+
+
+class _InstallRecord:
+    """A distribution's install record (``RECORD`` or ``installed-files.txt``), read at most once.
+
+    ``SOURCES.txt`` of a source checkout's ``.egg-info`` is not an install record, so it never counts. An empty or
+    blank record is no install record either: ``Distribution.files`` would fall back to ``SOURCES.txt`` for it.
+    """
+
+    def __init__(self, dist: Distribution) -> None:
+        self._dist = dist
+
+    @cached_property
+    def files(self) -> tuple[PackagePath, ...]:
+        record = self._dist.read_text('RECORD')
+        if record is not None and record.strip():
+            return tuple(PackagePath(row[0]) for row in csv.reader(record.splitlines()) if row)
+        installed_files = self._dist.read_text('installed-files.txt')
+        if installed_files is None or not installed_files.strip():
+            return ()
+        return self._installed_files_entries(installed_files)
+
+    def _installed_files_entries(self, installed_files: str) -> tuple[PackagePath, ...]:
+        """Parse ``installed-files.txt``: each line is relative to the ``.egg-info`` directory that holds it."""
+        egg_info = getattr(self._dist, '_path', None)
+        if egg_info is None:
+            return ()
+        return tuple(
+            PackagePath(posixpath.join(Path(str(egg_info)).name, line))
+            for line in installed_files.splitlines()
+            if line.strip()
+        )
+
+    @cached_property
+    def paths(self) -> frozenset[Path]:
+        """The resolved location of every listed file; empty when the record cannot be read."""
+        try:
+            files = self.files
+        except _UNREADABLE_METADATA:
+            return frozenset()
+        return frozenset(path for file in files if (path := self._resolved(file)) is not None)
+
+    def _resolved(self, file: PackagePath) -> Path | None:
+        """Resolve one listed file; ``None`` when its location is unreadable or loops (``RuntimeError`` before 3.13)."""
+        try:
+            return Path(str(self._dist.locate_file(file))).resolve()
+        except (*_UNREADABLE_METADATA, RuntimeError):
+            return None
+
+
+def _declared_modules(dist: Distribution, record: _InstallRecord) -> set[str]:
+    """Return the top-level modules a distribution installs, from ``top_level.txt`` else from its install record."""
     top_level = dist.read_text('top_level.txt')
     if top_level is not None:
         return set(top_level.split())
-    modules: set[str] = set()
-    for file in dist.files or ():
-        root = file.parts[0] if file.parts else ''
-        modules.add(root.split('.')[0] if len(file.parts) == 1 else root)
-    return modules
+    return _top_level_modules_from_record(record.files)
 
 
 def _editable_project_directory(dist: Distribution) -> Path | None:
@@ -107,6 +170,7 @@ class _IndexedDistribution:
     root: Path
     modules: frozenset[str]
     editable_project: Path | None
+    record: _InstallRecord
 
 
 def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
@@ -114,11 +178,15 @@ def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
     try:
         if _is_own_distribution(dist):
             return None
+        record = _InstallRecord(dist)
+        editable_project = _editable_project_directory(dist)
+        modules = _declared_modules(dist, record)
         return _IndexedDistribution(
             label=_distribution_label(dist),
             root=Path(str(dist.locate_file(''))).resolve(),
-            modules=frozenset(_declared_top_level_modules(dist)),
-            editable_project=_editable_project_directory(dist),
+            modules=frozenset(modules),
+            editable_project=editable_project,
+            record=record,
         )
     except _UNREADABLE_METADATA:
         return None
@@ -143,19 +211,31 @@ def _is_project_local(location: Path, project_root: Path | None) -> bool:
 
 
 def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
-    """Whether ``location`` is inside the ``top_level`` package or module the distribution installed."""
+    """Whether ``location`` is a file the distribution installed: in the ``top_level`` module and its install record."""
     if top_level not in entry.modules or not location.is_relative_to(entry.root):
         return False
-    return location.relative_to(entry.root).parts[0].partition('.')[0] == top_level
+    if location.relative_to(entry.root).parts[0].partition('.')[0] != top_level:
+        return False
+    return location in entry.record.paths
 
 
-def _is_editable_owner(entry: _IndexedDistribution, location: Path) -> bool:
+def _is_editable_owner(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
     """Whether a PEP 610 editable install (``direct_url.json`` with ``dir_info.editable``) put ``location`` on the path.
+
+    The module's top-level name must also belong to the distribution, so a helper elsewhere under the editable
+    project directory (a monorepo's ``tools/``) is not claimed. A PEP 660 editable lists a ``.pth`` or finder
+    file in its RECORD instead of the package, so those entries are ignored when reading the declared modules.
+    An editable without a ``top_level.txt`` (hatchling, uv_build, flit, pdm) declares no names and owns nothing:
+    its ``.pth`` directory may hold children the wheel does not ship, and no metadata says which do.
 
     Editable installs recorded only through a ``.pth`` file, or through a setuptools import finder, leave no
     ``direct_url.json`` marker and are not recognized.
     """
-    return entry.editable_project is not None and location.is_relative_to(entry.editable_project)
+    return (
+        entry.editable_project is not None
+        and location.is_relative_to(entry.editable_project)
+        and top_level in entry.modules
+    )
 
 
 def _is_importable(operator_class: type) -> bool:
@@ -186,15 +266,21 @@ def _installed_owner_labels(
         return set()
     top_level = operator_class.__module__.partition('.')[0]
     declared = {entry.label for entry in installed if _is_installed_module_file(entry, top_level, location)}
-    return declared or {entry.label for entry in installed if _is_editable_owner(entry, location)}
+    return declared or {entry.label for entry in installed if _is_editable_owner(entry, top_level, location)}
 
 
-def _is_exempt_from_classification(operator_class: type) -> bool:
-    """pytest-gremlins' own operators are covered by ``CACHE_VERSION``; a conftest operator by the tests it covers."""
+def _is_exempt_from_classification(operator_class: type, project_root: Path | None) -> bool:
+    """pytest-gremlins' own operators are covered by ``CACHE_VERSION``; a conftest operator by the tests it covers.
+
+    Only conftests from the rootdir down to a test file are hashed into the test key, so a ``conftest.py`` outside
+    the rootdir is not exempt. With no rootdir known, every ``conftest.py`` is exempt.
+    """
+    if operator_class.__module__.partition('.')[0] == _OWN_PACKAGE:
+        return True
     module_file = _module_file(operator_class)
-    return operator_class.__module__.partition('.')[0] == _OWN_PACKAGE or (
-        module_file is not None and module_file.name == 'conftest.py'
-    )
+    if module_file is None or module_file.name != 'conftest.py':
+        return False
+    return project_root is None or module_file.is_relative_to(project_root.resolve())
 
 
 @dataclass(frozen=True)
@@ -214,7 +300,9 @@ def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root
     hashed: what it defines can come from other files, so no hash proves the class unchanged. Restoring cache
     hits for such operators is tracked in #887.
     """
-    classes = {type(operator) for operator in operators if not _is_exempt_from_classification(type(operator))}
+    classes = {
+        type(operator) for operator in operators if not _is_exempt_from_classification(type(operator), project_root)
+    }
     importable = {cls for cls in classes if _is_importable(cls)}
     installed = _index_distributions() if importable else []
     labels: set[str] = set()

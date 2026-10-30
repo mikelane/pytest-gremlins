@@ -58,6 +58,7 @@ def _install_dist(site: Path, version: str) -> None:
     dist_info.mkdir(parents=True)
     (dist_info / 'METADATA').write_text(f'Metadata-Version: 2.1\nName: conftest_ops_dist\nVersion: {version}\n')
     (dist_info / 'top_level.txt').write_text('conftest_ops\n')
+    (dist_info / 'RECORD').write_text('conftest_ops.py,,\n')
     (site / 'conftest_ops.py').write_text(OPERATOR_MODULE)
     importlib.invalidate_caches()
 
