@@ -5,6 +5,78 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.13.2 (2026-10-30)
+
+**Custom operators that no installed package owns can no longer be served stale cached verdicts, pytester-based test
+suites stop reporting false survivors, and a batch of plugin-loading and report fixes lands.**
+
+### Upgrade notes
+
+- **Operators that no installed package provably owns now miss the cache on every run.** In 1.13.1 an operator
+  module under the pytest rootdir added nothing to the cache key, so editing a project-local helper could serve a
+  stale verdict. A module outside the rootdir keyed on whichever installed package claimed its top-level name. Now
+  an operator keeps cache hits only when it is importable by its qualified name and an installed package owns its
+  module file. A regular install owns the file when its `RECORD` or `installed-files.txt` lists it. A PEP 610
+  editable install owns it when the file is under the editable project directory and the install's `top_level.txt`
+  names the module. Cases that now miss on every run include project-local helper modules, a `conftest.py` above
+  the pytest rootdir, a source checkout outside the rootdir with a leftover `<pkg>.egg-info`, an unrecorded file in
+  a shared namespace package, `.egg` installs, editable installs without `top_level.txt` (hatchling, uv_build, flit
+  and pdm), and editable installs recorded only through a `.pth` file or a setuptools import finder. The docs table
+  lists every case. Runs that use these operators are slower but never stale, and they write
+  nothing to the cache, so `results.db` does not grow. These keep their cache: operators in a `conftest.py` from
+  the rootdir down, normal wheels, zip installs and setuptools editables. This replaces the "still not tracked"
+  list in the 1.13.1 note. (#882, #890, #892, #893, #897, #901)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
+- **Sessions that load the pytester plugin miss the cache once after upgrading.** Verdicts cached while the
+  pytester bug below was present can be false survivors, so they are recomputed. Sessions that never load pytester
+  keep their cache. (#891, #895)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#survivors-in-a-target-first-imported-inside-an-in-process-pytester-run)
+
+### Feature
+
+- **Faster instrumentation of long operator chains.** A 120-term chain like `x + x + ...` now instruments in about
+  0.3 s instead of 3.2 s. Gremlins and verdicts are unchanged. (#640, #806)
+  (no docs: a speedup with no change to options, output or verdicts)
+- **Collection-kill confirmations run concurrently with `--gremlin-parallel` and `--gremlin-batch`.** Runs with many
+  gremlins that break test collection finish sooner. Verdicts are unchanged. (#553, #807)
+  (no docs: a speedup with no change to options, output or verdicts)
+
+### Fix
+
+- **In-process pytester sessions reported caught gremlins as survivors.** When a target was first imported inside
+  `pytester.runpytest()`, `runpytest_inprocess()` or `inline_run()`, pytest's assertion-rewrite hook served it
+  before pytest-gremlins could instrument it. The gremlin finder now stays in front. (#615, #816)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#survivors-in-a-target-first-imported-inside-an-in-process-pytester-run)
+- **With plugin autoload disabled, an installed but unloaded pytest-cov made every gremlin run fail.** Gremlin runs
+  got `--no-cov` and stopped with `unrecognized arguments`. pytest-gremlins now passes `--no-cov` only when the
+  session loaded pytest-cov, and loads pytest-cov in gremlin runs when only the command line loaded it. (#654, #896)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#pytest-cov-when-plugin-autoload-is-disabled)
+- **Every gremlin scored ERROR when `--disable-plugin-autoload` was given only on the command line and
+  pytest-rerunfailures was loaded by module name.** This happened with a conftest `pytest_plugins`,
+  `PYTEST_PLUGINS` or `-p pytest_rerunfailures` in `addopts`. Gremlin runs now register the plugin once. (#684,
+  #792)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
+- **No JSON or HTML report was written when every target file was skipped.** Reports from an earlier run stayed on
+  disk and looked current. The reports are now written with zero gremlins and the skipped files, and such a run is
+  not added to the HTML history. (#648, #888)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/reports/#report-contents)
+
+### Documentation
+
+- The `--gremlin-batch` and `--gremlin-batch-size` help text and docs now say what batching does: it groups
+  gremlins into worker tasks, and each gremlin still runs in its own subprocess. (#733, #777)
+- Added a design spike on a faster per-mutant runner. (#538, #809)
+
+### Internal
+
+- Typing cleanups in the instrumentation package, and pre-scan option-stripping tables derived from
+  `pytest_addoption`. (#569, #824, #900, #904)
+- Deleted the unused `instrumentation/import_hooks` module. (#605, #828)
+- Replaced a constant-pinning test with a cache-retirement behavior test. (#833)
+- CI: the large test tier runs nightly and gates releases, swallowed hermeticity violations fail the build, PRs that
+  change verdicts must raise a cache marker, and a marker may be lowered back to its released value. (#474, #798,
+  #800, #898, #903)
+
 ## v1.13.1 (2026-10-28)
 
 **Changing the mutant timeout keeps the cached verdicts it cannot change, and upgrading the package behind a
