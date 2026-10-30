@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from collections.abc import (
+    Callable,
     Collection,
     Iterable,
     Mapping,
@@ -297,8 +298,8 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one subcommand and return its exit code."""
     args = _parser().parse_args(argv)
-    handler: Any = args.handler
-    return int(handler(args))
+    handler: Callable[[argparse.Namespace], int] = args.handler
+    return handler(args)
 
 
 if __name__ == '__main__':
