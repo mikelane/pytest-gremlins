@@ -67,7 +67,14 @@ __all__ = ['GIT', 'cache_kept_reasons', 'check_cache_kept', 'main', 'previous_re
 
 
 def cache_kept_reasons(preamble: str) -> list[str]:
-    """Return the stripped reason of every ``(cache kept: ...)`` line in ``preamble``; code spans do not count."""
+    """Return the stripped reason of every ``(cache kept: ...)`` line in ``preamble``; code spans do not count.
+
+    Args:
+        preamble: The changelog entry's prose before its first ``###`` heading.
+
+    Returns:
+        One reason per ``(cache kept: ...)`` line, in order; a line with no reason gives an empty string.
+    """
     visible = CODE_SPAN.sub('', preamble)
     return [match.group(1).strip() for match in CACHE_KEPT.finditer(visible)]
 
@@ -80,6 +87,9 @@ def check_cache_kept(changed: Sequence[str], previous: Markers, head: Markers, p
         previous: The cache markers at the previous release.
         head: The cache markers of the code being released.
         preamble: The changelog entry's prose before its first ``###`` heading.
+
+    Returns:
+        The problems, one line each, or an empty list when the release passes.
     """
     if not changed or head != previous:
         return []
@@ -104,6 +114,13 @@ def previous_release_tag(version: str | None, repo: Path = REPO_ROOT) -> str | N
 
     The tag of ``version`` is left out, because that release is the one being checked. With no ``version`` every
     release tag counts: the topmost changelog entry may already be released, and then the code is compared with it.
+
+    Args:
+        version: The version being released, with or without the leading ``v``, or ``None`` to count every tag.
+        repo: The repository to read the tags from.
+
+    Returns:
+        The tag name, or ``None`` when no release tag is reachable.
     """
     excluded = ['--exclude', f'v{version.removeprefix("v")}'] if version else []
     tag = _git_output(repo, 'describe', '--tags', '--abbrev=0', '--match', RELEASE_TAG_PATTERN, *excluded, 'HEAD')
@@ -111,6 +128,7 @@ def previous_release_tag(version: str | None, repo: Path = REPO_ROOT) -> str | N
 
 
 def _head_markers() -> Markers:
+    """Return the cache markers of the working tree; raise ``CannotCheckError`` when they cannot be parsed."""
     versions = (REPO_ROOT / VERSIONS_PATH).read_text(encoding='utf-8')
     incremental = (REPO_ROOT / INCREMENTAL_PATH).read_text(encoding='utf-8')
     markers = parse_markers(versions, incremental)
@@ -120,12 +138,14 @@ def _head_markers() -> Markers:
 
 
 def _changed_guarded_files(previous_tag: str) -> list[str]:
+    """Return the guarded files that differ between ``previous_tag`` and the working tree."""
     changed = _git_diff_names(previous_tag)
     deleted = _git_diff_names(previous_tag, '--diff-filter=D')
     return guarded_changes(changed, deleted, guarded_repo_paths())
 
 
 def _read_changelog(path: Path) -> str:
+    """Return the changelog text, decoded strictly as UTF-8 with its line breaks unchanged."""
     try:
         return path.read_bytes().decode('utf-8')
     except OSError as error:
@@ -133,6 +153,7 @@ def _read_changelog(path: Path) -> str:
 
 
 def _preamble(changelog: str, version: str) -> str:
+    """Return the preamble of the ``version`` entry; raise ``CannotCheckError`` when the entry is missing."""
     preamble = entry_preamble(changelog, version)
     if preamble is None:
         raise CannotCheckError(f'the changelog has no "## v{version}" entry')
@@ -140,6 +161,7 @@ def _preamble(changelog: str, version: str) -> str:
 
 
 def _check(args: argparse.Namespace) -> tuple[str, list[str]]:
+    """Run the check for the parsed arguments; return the version checked and its problems."""
     changelog = _read_changelog(args.changelog)
     version: str = newest_version(changelog) if args.newest else args.version
     version = version.removeprefix('v')
