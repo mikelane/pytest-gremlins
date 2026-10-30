@@ -184,6 +184,21 @@ class ResultStore:
         )
         self._conn.commit()
 
+    def delete_keys_not_ending_with(self, suffix: str) -> None:
+        """Remove every result whose key does not end with ``suffix``.
+
+        Used to discard entries written under an older key format.
+
+        Args:
+            suffix: The key suffix to keep.
+        """
+        escaped_suffix = suffix.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        self._conn.execute(
+            "DELETE FROM results WHERE cache_key NOT LIKE ? ESCAPE '\\'",
+            ('%' + escaped_suffix,),
+        )
+        self._conn.commit()
+
     def clear(self) -> None:
         """Remove all entries from the cache."""
         self._conn.execute('DELETE FROM results')

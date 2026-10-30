@@ -187,19 +187,9 @@ Optimized worker pool that keeps workers alive across multiple gremlin tests.
 
 ### Why Persistent Workers?
 
-Standard approach (1 subprocess per gremlin):
-
-```text
-100 gremlins x 600ms startup = 60 seconds overhead
-```
-
-Persistent workers (reused processes):
-
-```text
-4 workers x 600ms startup = 2.4 seconds overhead
-```
-
-**25x reduction** in subprocess overhead.
+Persistent workers keep worker processes alive across gremlin tasks, so the worker processes themselves
+are created once instead of once per task. This does not reduce the number of test subprocesses: each gremlin
+still runs in its own subprocess, including gremlins submitted through `submit_batch`.
 
 ### Usage Example
 
@@ -224,7 +214,7 @@ with pool:
     )
     result = future.result()
 
-    # Or submit batches (even faster)
+    # Or submit a batch (one worker task; still one subprocess per gremlin)
     batch_future = pool.submit_batch(
         gremlin_ids=['g002', 'g003', 'g004'],
         test_command=['pytest', '-x'],
@@ -239,7 +229,8 @@ with pool:
 
 ## BatchExecutor
 
-Coordinates batch execution of gremlin tests for reduced subprocess overhead.
+Coordinates batch execution of gremlin tests: gremlins are grouped into batches,
+each handed to a worker as one task.
 
 ::: pytest_gremlins.parallel.batch_executor.BatchExecutor
     options:
@@ -256,21 +247,14 @@ Coordinates batch execution of gremlin tests for reduced subprocess overhead.
 
 ### Why Batch Execution?
 
-Standard approach (1 subprocess call per gremlin):
+Batching groups gremlins into worker tasks. It does not reduce subprocesses: the plugin's batch path
+still starts one bootstrap subprocess per gremlin. Making a batch share one subprocess is tracked in
+[#538](https://github.com/mikelane/pytest-gremlins/issues/538).
 
 ```text
-100 gremlins = 100 subprocess calls
-100 x 600ms overhead = 60 seconds
+100 gremlins, batch_size=10 = 10 worker tasks
+100 gremlins = still 100 subprocesses
 ```
-
-Batch execution (batch_size=10):
-
-```text
-100 gremlins / 10 = 10 subprocess calls
-10 x 600ms overhead = 6 seconds
-```
-
-**10x reduction** in subprocess overhead.
 
 ### Usage Example
 
@@ -465,8 +449,8 @@ pytest --gremlins --gremlin-parallel --gremlin-batch --gremlin-workers=8 --greml
 |------|-----------------|----------|----------|
 | Sequential | 1 per gremlin | High | Small projects |
 | Parallel | 1 per gremlin | High (but concurrent) | Multi-core, many gremlins |
-| Batch | 1 per batch | Low | Large test suites |
-| Parallel + Batch | Batches in parallel | Lowest | Maximum speed |
+| Batch | 1 per gremlin | High (same as parallel) | Fewer, larger worker tasks |
+| Parallel + Batch | 1 per gremlin | High (but concurrent) | Fewer, larger worker tasks |
 
 ### Example Timings
 
@@ -475,11 +459,11 @@ Project: 1000 gremlins, 8 CPU cores
 
 Sequential:           1000 x 600ms = 600 seconds
 Parallel (8 workers): 1000 x 600ms / 8 = 75 seconds
-Batch (size=10):      100 x 600ms = 60 seconds
-Parallel + Batch:     100 x 600ms / 8 = 7.5 seconds
-
-Speedup: 80x
+Batch (size=10):      still 1000 subprocesses, so about the same time as the mode it runs in
 ```
+
+Batching groups gremlins into worker tasks. It does not cut the subprocess count; the speedup comes from
+parallel workers.
 
 ---
 
@@ -487,6 +471,6 @@ Speedup: 80x
 
 1. **Use forkserver on Unix** - Fastest subprocess creation
 2. **Enable warmup** - Reduces latency on first batch
-3. **Tune batch size** - Balance between overhead and early termination
+3. **Tune batch size** - Balance worker task size against early termination
 4. **Match workers to cores** - No benefit beyond physical cores
 5. **Monitor timeouts** - Increase if legitimate tests are timing out

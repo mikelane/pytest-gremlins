@@ -8,6 +8,7 @@ from pytest_gremlins.operators.arithmetic import ArithmeticOperator
 from pytest_gremlins.operators.boolean import BooleanOperator
 from pytest_gremlins.operators.boundary import BoundaryOperator
 from pytest_gremlins.operators.comparison import ComparisonOperator
+from pytest_gremlins.operators.entry_points import GremlinEntryPointWarning
 from pytest_gremlins.operators.protocol import GremlinOperator
 from pytest_gremlins.operators.registry import OperatorRegistry
 from pytest_gremlins.operators.return_value import ReturnOperator
@@ -17,6 +18,7 @@ __all__ = [
     'BooleanOperator',
     'BoundaryOperator',
     'ComparisonOperator',
+    'GremlinEntryPointWarning',
     'GremlinOperator',
     'OperatorRegistry',
     'ReturnOperator',
