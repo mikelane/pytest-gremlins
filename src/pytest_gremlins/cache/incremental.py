@@ -10,20 +10,30 @@ import re
 from typing import (
     TYPE_CHECKING,
     TypeAlias,
+    cast,
 )
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore
+from pytest_gremlins.cache.versions import versions_fingerprint
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import (
+        Callable,
+        Iterable,
+        Mapping,
+    )
     from pathlib import Path
 
     from pytest_gremlins.cache.types import CachedGremlinResult
+    from pytest_gremlins.operators.protocol import GremlinOperator
 
 
-RUNNER_FIDELITY_VERSION = 'rf18'
+RUNNER_FIDELITY_VERSION = 'rf20'
 """Bump when a change to how tests are executed can alter cached verdicts.
+
+This marker covers test execution and outcome-to-verdict mapping (``parallel/``, ``control_run.py``);
+``CACHE_VERSION`` in ``versions.py`` covers what gets mutated (``operators/``, ``instrumentation/``).
 
 ``rf3`` retires every verdict cached by v1.9.0 or by interim builds, which judged tests with the
 lightweight runner. That runner could fabricate verdicts (async, parametrized, fixture-taking tests,
@@ -79,11 +89,26 @@ by a command-line ``-p`` while autoload was disabled for them, by ``PYTEST_DISAB
 ``rf18`` retires verdicts cached under a key that ignored the rerun settings beyond count and delay (backoff factor,
 ``only_rerun``, ``rerun_except``, ``--reruns-mode``, ``--rerun-exclude-path``, ``--max-suite-reruns``; #677).
 
+``rf19`` retires verdicts cached under a key that ignored ``conftest.py`` files above the covering tests, and
+verdicts cached for a gremlin whose selected test had no node id (#702).
+
+``rf20`` retires verdicts cached under a key that included the mutant timeout (#567). The timeout now lives in the
+stored value, so a verdict can be reused at a different limit when it would not change; old entries are pruned when
+the cache opens.
+
 It also retires verdicts cached while doctest gremlins errored, because ``--doctest-modules`` typed on the command
 line never reached gremlin runs, and verdicts cached as ZAPPED while ``doctest_optionflags`` or
 ``doctest_encoding`` set by ``-o`` or ``-c`` never reached them, so a doctest that needed them failed under every
 gremlin (#594).  The resolved doctest settings also key the cache, so changing them is a miss (#594).
+
+Verdicts cached while an in-process pytester session (``runpytest()``, ``inline_run()``) inside a gremlin run let its
+assertion-rewrite hook serve an instrumented target uninstrumented (#615) are retired without a new marker: a session
+that loads the pytester plugin adds ``PYTESTER_KEY_PART`` to every key, so only those projects miss once (#891).
+Every other project keeps the ``rf20`` key it had under v1.13.1.
 """
+
+PYTESTER_KEY_PART = 'pytester-615'
+"""Key part added only while the pytester plugin is loaded, so just those sessions retire #615 verdicts."""
 
 
 RerunBudget: TypeAlias = tuple[int, float]
@@ -91,6 +116,15 @@ RerunBudget: TypeAlias = tuple[int, float]
 
 NO_RERUNS: RerunBudget = (0, 0.0)
 """The budget of a run that never reruns a failing test: no reruns and no delay."""
+
+
+def _never_loaded() -> bool:
+    """Report that pytester is not loaded; the default for caches opened outside a pytest session.
+
+    Returns:
+        Always ``False``, so the key carries no ``PYTESTER_KEY_PART``.
+    """
+    return False
 
 
 def _effective_rerun_budget(rerun_budget: RerunBudget) -> RerunBudget:
@@ -105,6 +139,8 @@ def _effective_rerun_budget(rerun_budget: RerunBudget) -> RerunBudget:
         return NO_RERUNS
     return reruns, 0.0 if reruns_delay <= 0 else float(reruns_delay)
 
+
+MILLISECONDS_PER_SECOND = 1000
 
 _C_INTEGER = re.compile(r'[ \t\n\v\f\r]*(?P<sign>[+-]?)(?P<digits>[0-9]+)')
 _C_INT_MAX = 2**31 - 1
@@ -149,6 +185,47 @@ def _level_from_digits(sign: str, significant_digits: str) -> int:
     return min(level, 2)
 
 
+_STORED_TIMEOUT_FIELD = '_mutant_timeout'
+"""Bookkeeping field holding the limit a verdict was reached under; stripped before a result is returned."""
+
+_TIMEOUT_STATUS = 'timeout'
+
+
+def _with_timeout(result: CachedGremlinResult, mutant_timeout: int | None) -> CachedGremlinResult:
+    """Return a copy of ``result`` that also records the limit it was reached under."""
+    stored: dict[str, object] = {**result, _STORED_TIMEOUT_FIELD: mutant_timeout}
+    return cast('CachedGremlinResult', stored)
+
+
+def _reusable_result(stored: CachedGremlinResult | None, mutant_timeout: int | None) -> CachedGremlinResult | None:
+    """Return the stored verdict without bookkeeping if it still holds at ``mutant_timeout``, else None."""
+    if stored is None:
+        return None
+    fields = dict(stored)
+    stored_timeout = fields.pop(_STORED_TIMEOUT_FIELD, None)
+    if not _holds_at_timeout(stored['status'], stored.get('execution_time_ms'), stored_timeout, mutant_timeout):
+        return None
+    return cast('CachedGremlinResult', fields)
+
+
+def _holds_at_timeout(
+    status: str,
+    execution_time_ms: float | None,
+    stored_timeout: object,
+    mutant_timeout: int | None,
+) -> bool:
+    """Whether a verdict reached under ``stored_timeout`` is the verdict a cold run at ``mutant_timeout`` reaches.
+
+    The same limit always holds. At another limit only a non-TIMEOUT verdict that finished strictly inside the new
+    limit holds; an elapsed time equal to the limit is a miss, and an unknown elapsed time is a miss.
+    """
+    if stored_timeout == mutant_timeout:
+        return True
+    if status == _TIMEOUT_STATUS or execution_time_ms is None or mutant_timeout is None:
+        return False
+    return execution_time_ms / MILLISECONDS_PER_SECOND < mutant_timeout
+
+
 class IncrementalCache:
     """Coordinator for incremental analysis caching.
 
@@ -165,12 +242,19 @@ class IncrementalCache:
     - gremlin_id: Unique identifier for the mutation
     - source_hash: SHA-256 hash of the source file content
     - test_hashes: Combined hash of all test files covering this gremlin
-    - mutant_timeout: the per-gremlin test timeout the verdict was reached under
+    - mutant_timeout: not part of the key; stored with the verdict and checked on lookup (see below)
     - optimize_level: the optimize level the gremlin subprocess compiled under
     - rerun_budget: the ``(reruns, reruns_delay)`` the gremlin runs were allowed
     - rerun_settings: the other resolved rerun settings (backoff factor, filters, mode, exclusions, suite cap)
+    - versions: ``CACHE_VERSION`` and operator-package versions (any change retires the whole cache)
+    - PYTESTER_KEY_PART: present only while the session loads the pytester plugin (#891)
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
+
+    A verdict is reused at a different ``mutant_timeout`` only when the new limit cannot change it: a non-TIMEOUT
+    verdict whose elapsed time is strictly below the new limit. A TIMEOUT verdict is reused only at the limit it was
+    reached under, because its confirmation (the unmutated run fitting in half the limit) is not known to hold at
+    another limit.
 
     Example:
         >>> from pathlib import Path
@@ -181,15 +265,35 @@ class IncrementalCache:
         >>> cache.close()
     """
 
-    def __init__(self, cache_dir: Path) -> None:
+    def __init__(
+        self,
+        cache_dir: Path,
+        operators: Iterable[GremlinOperator] = (),
+        project_root: Path | None = None,
+        pytester_loaded: Callable[[], bool] = _never_loaded,
+    ) -> None:
         """Initialize the incremental cache.
 
         Args:
             cache_dir: Directory to store cache files.
+            operators: The operators registered for this run; the installed distributions that own them are
+                part of the cache key, so upgrading a package that supplies one retires its verdicts.
+            project_root: The pytest rootdir; an operator module under it is project code, so no distribution
+                label is added. An operator keeps a stable key only when it is importable by its qualified name and
+                an installed distribution owns its module. Every other operator, a conftest operator excepted,
+                misses the cache on every run (#887 tracks restoring hits), and such a run writes no results, since
+                no later run could read them.
+            pytester_loaded: Reports whether the session loads the pytester plugin. It is asked each time a key is
+                built, because a nested ``conftest.py`` can enable pytester after the cache opens.
         """
+        self._pytester_loaded = pytester_loaded
         self._cache_dir = cache_dir
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
+        self._store.delete_keys_not_ending_with(f':{RUNNER_FIDELITY_VERSION}')
+        fingerprint = versions_fingerprint(operators, project_root)
+        self._versions_hash = self._hasher.hash_string(fingerprint.text)
+        self._writes_are_readable = fingerprint.writes_are_readable
         self._hits = 0
         self._misses = 0
 
@@ -198,7 +302,6 @@ class IncrementalCache:
         gremlin_id: str,
         source_hash: str,
         test_hashes: dict[str, str],
-        mutant_timeout: int | None = None,
         optimize_level: int = 0,
         *,
         rerun_budget: RerunBudget = NO_RERUNS,
@@ -210,7 +313,6 @@ class IncrementalCache:
         - gremlin_id: unique mutation identifier
         - source_hash: content hash of the source file
         - test_hashes: combined hash of all relevant test files (names AND hashes)
-        - mutant_timeout: the per-gremlin test timeout in seconds
         - optimize_level: the optimize level the gremlin subprocess compiles under
         - rerun_budget: the reruns and rerun delay the gremlin runs were allowed
         - rerun_settings: the other resolved rerun settings the gremlin runs used
@@ -219,7 +321,6 @@ class IncrementalCache:
             gremlin_id: Unique identifier for the gremlin.
             source_hash: SHA-256 hash of the source file.
             test_hashes: Mapping of test name to content hash.
-            mutant_timeout: Per-gremlin test timeout in seconds; a different value is a miss.
             optimize_level: Optimize level of the gremlin subprocess; a different level is a miss.
             rerun_budget: ``(reruns, reruns_delay)`` the gremlin runs were allowed; a different budget is a miss
                 even when it scales the timeout to the same value.
@@ -235,9 +336,11 @@ class IncrementalCache:
         combined_test_hash = self._hasher.hash_string('|'.join(sorted_test_items)) if sorted_test_items else 'no_tests'
 
         reruns, reruns_delay = _effective_rerun_budget(rerun_budget)
+        pytester_part = f':{PYTESTER_KEY_PART}' if self._pytester_loaded() else ''
         return (
-            f'{gremlin_id}:{source_hash}:{combined_test_hash}:timeout={mutant_timeout}'
-            f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}:{RUNNER_FIDELITY_VERSION}'
+            f'{gremlin_id}:{source_hash}:{combined_test_hash}'
+            f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}'
+            f':v={self._versions_hash}{pytester_part}:{RUNNER_FIDELITY_VERSION}'
         )
 
     def get_cached_result(
@@ -263,7 +366,8 @@ class IncrementalCache:
             gremlin_id: Unique identifier for the gremlin.
             source_hash: Current SHA-256 hash of the source file.
             test_hashes: Current mapping of test name to content hash.
-            mutant_timeout: Per-gremlin test timeout in seconds; a different value is a miss.
+            mutant_timeout: Per-gremlin test timeout in seconds; a verdict reached under another limit is
+                reused only if it still holds there.
             optimize_level: Optimize level of the gremlin subprocess; a different level is a miss.
             rerun_budget: ``(reruns, reruns_delay)`` of the run; a different budget is a miss.
             rerun_settings: The other resolved rerun settings of the run; different settings are a miss.
@@ -275,12 +379,11 @@ class IncrementalCache:
             gremlin_id,
             source_hash,
             test_hashes,
-            mutant_timeout,
             optimize_level,
             rerun_budget=rerun_budget,
             rerun_settings=rerun_settings,
         )
-        result = self._store.get(cache_key)
+        result = _reusable_result(self._store.get(cache_key), mutant_timeout)
 
         if result is None:
             self._misses += 1
@@ -317,16 +420,17 @@ class IncrementalCache:
             rerun_budget: ``(reruns, reruns_delay)`` the result was reached under.
             rerun_settings: The other resolved rerun settings the result was reached under.
         """
+        if not self._writes_are_readable:
+            return
         cache_key = self._build_cache_key(
             gremlin_id,
             source_hash,
             test_hashes,
-            mutant_timeout,
             optimize_level,
             rerun_budget=rerun_budget,
             rerun_settings=rerun_settings,
         )
-        self._store.put(cache_key, result)
+        self._store.put(cache_key, _with_timeout(result, mutant_timeout))
 
     def cache_result_deferred(
         self,
@@ -355,16 +459,17 @@ class IncrementalCache:
             rerun_budget: ``(reruns, reruns_delay)`` the result was reached under.
             rerun_settings: The other resolved rerun settings the result was reached under.
         """
+        if not self._writes_are_readable:
+            return
         cache_key = self._build_cache_key(
             gremlin_id,
             source_hash,
             test_hashes,
-            mutant_timeout,
             optimize_level,
             rerun_budget=rerun_budget,
             rerun_settings=rerun_settings,
         )
-        self._store.put_deferred(cache_key, result)
+        self._store.put_deferred(cache_key, _with_timeout(result, mutant_timeout))
 
     def flush(self) -> None:
         """Commit all pending deferred cache writes."""

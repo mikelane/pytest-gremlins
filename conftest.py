@@ -11,6 +11,9 @@ from pathlib import Path
 import pytest
 
 
+pytest_plugins = ['hermeticity_gate']
+
+
 def _has_size_marker(item: pytest.Item) -> bool:
     """Check if an item already has a size marker."""
     return any(marker.name in ('small', 'medium', 'large') for marker in item.iter_markers())

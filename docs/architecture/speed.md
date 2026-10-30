@@ -135,7 +135,30 @@ else:
 | Test file modified | Mutations covered by those tests |
 | New test added | Mutations the new test covers |
 | Test deleted | Mutations that test was zapping |
+| Operator package (one providing a `pytest_gremlins.operators` entry point, or owning a registered operator's module) installed, removed or changed version, or a pytest-gremlins release that raised the cache version | Every mutation |
 | Nothing changed | Return cached results instantly |
+
+An operator keeps cache hits only when it comes from an installed distribution. That means the operator class is
+importable by its qualified name (walking `__qualname__` from its module returns the same class object), and an
+installed package owns the module's file, including an editable install marked by a PEP 610 `direct_url.json` with
+`dir_info.editable` set to true. Non-editable installs from a local directory, a VCS URL or an archive count. Such an
+operator keys on its distribution's version. Every other operator misses the cache on every run: project-local
+helper modules, modules loaded by file path, modules that share a name with an installed or standard-library module,
+namespace-package modules (unless an installed distribution in that namespace sits at the same top-level name),
+classes defined inside functions, and editable installs recorded only through a `.pth` file or a setuptools import
+finder. The key carries a fresh random token, so the run is slower but never serves a stale verdict. Operators defined
+in a `conftest.py` on the hashed chain are the exception: the source and conftest hashes cover them. Restoring cache
+hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887).
+
+An installed package owns a module's file only when its install record (`RECORD` or `installed-files.txt`) lists the
+file. A source checkout's `SOURCES.txt` does not count, so a leftover `<pkg>.egg-info` beside a checkout on `sys.path`,
+an unrecorded file in a shared namespace package, and a helper elsewhere under an editable project directory all miss.
+An editable install must also declare the module's top-level name in `top_level.txt`. An editable install without
+`top_level.txt` (non-setuptools backends such as hatchling, uv_build, flit and pdm) always misses; setuptools editables
+and normal wheels keep stable keys. An empty install record counts as none. A `.egg` install has no
+install record, so it misses; zip installs keep their version label. A `conftest.py` above the pytest rootdir misses
+too (one in a sibling directory under the rootdir is tracked in
+[#899](https://github.com/mikelane/pytest-gremlins/issues/899)).
 
 **Why it works:**
 
