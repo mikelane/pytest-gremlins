@@ -52,7 +52,7 @@ EXCLUDED_FROM_GUARD: dict[str, str] = {
     'reporting/stryker_export.py': 'Exports finished results in Stryker format; decides no verdict.',
 }
 
-RECORDED_CACHE_VERSION = 1
+RECORDED_CACHE_VERSION = 2
 RECORDED_RUNNER_FIDELITY_VERSION = 'rf21'
 # One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
 # between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
@@ -61,13 +61,13 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': '19a75ff2f148ede6e0eb9a75f2827473f0d6121ab3ea6197c82407c9e5afda4c',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': '7c4b34f2f13881c1834ae9856d1ac6538d238cb288b8795ed7291460ae1fcb27',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/store.py': '967c632516b6ae126921f43f1c72b753de59c0cac9679557793c2082e0003cc1',  # pragma: allowlist secret
     # --
     'cache/types.py': 'e8f2a82731cb4bfaec2a4803fe312826f3a85511224868322aa7eb127339085a',  # pragma: allowlist secret
     # --
-    'cache/versions.py': '3af3692c92c1ce27b38ec59c1fe2c469394548a823027fe3f272b109dd7a157b',  # pragma: allowlist secret
+    'cache/versions.py': 'b206f1364a67b641ae0bd9d1d00bb2858629852a14c9b1b587cbf9f4e72417a7',  # pragma: allowlist secret
     # --
     'config.py': 'c505aee0edbe35832d21e600138b9ce95832d4c99094185f908f9ca9f534338a',  # pragma: allowlist secret
     # --
@@ -129,7 +129,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'operators/protocol.py': '999044b8fd477412888e1febfbc756cc8928e8f1afd0fc4ec11cca4c28437be2',  # pragma: allowlist secret  # noqa: E501
     # --
-    'operators/registry.py': 'd080086690b1d631cbf8d7c8b0c3a98f0c9e48309778c98bf148df9d0b897625',  # pragma: allowlist secret  # noqa: E501
+    'operators/registry.py': '5d2fbe933255b5bcd9a0c97427877390d2cae21aead4663aeff62b6de7691e6e',  # pragma: allowlist secret  # noqa: E501
     # --
     'operators/return_value.py': 'c38d8601fa6a360995fa0fde826316f89084a518bd1829ab57c3e7f65bf97070',  # pragma: allowlist secret  # noqa: E501
     # --

@@ -74,6 +74,18 @@ TARGET_TEST = (
     'def test_less():\n    assert less(1, 2)\n    assert not less(2, 1)\n'
 )
 
+BROKEN_CONSTRUCTOR_MODULE = textwrap.dedent(
+    """
+    class BrokenOperator:
+        def __init__(self):
+            raise ImportError('missing optional dependency')
+
+
+    def register(registry):
+        registry.register(BrokenOperator, name='broken-constructor')
+    """
+)
+
 
 def _write_project(pytester: pytest.Pytester, *, conftest_extra: str = '', pyproject: str = '') -> None:
     pytester.makeconftest(MARKERS_CONFTEST + conftest_extra)
@@ -104,6 +116,61 @@ def _count(result: pytest.RunResult, text: str) -> int:
 @pytest.fixture
 def ep_constant(install_entry_point_dist: Installer) -> None:
     install_entry_point_dist({'ep': 'ep_ops:register'}, {'ep_ops': EP_CONSTANT_MODULE})
+
+
+@pytest.mark.medium
+class DescribeUninstantiableOperators:
+    @pytest.mark.parametrize('operator_args', [(), ('--gremlin-operators=broken-constructor,comparison',)])
+    def it_uninstantiable_entry_point_operator_does_not_stop_the_run(
+        self, install_entry_point_dist: Installer, pytester: pytest.Pytester, operator_args: tuple[str, ...]
+    ) -> None:
+        install_entry_point_dist({'broken': 'broken_ops:register'}, {'broken_ops': BROKEN_CONSTRUCTOR_MODULE})
+        _write_project(pytester)
+
+        result = _run(pytester, *operator_args)
+
+        assert result.ret == 0
+        report = json.loads(pytester.path.joinpath('coverage/gremlins/gremlins.json').read_text())
+        statuses = {entry['status'] for entry in report['results'] if entry['operator'] == 'comparison'}
+        assert 'zapped' in statuses
+        assert statuses <= {'zapped', 'survived'}
+        assert 'broken-constructor' not in {entry['operator'] for entry in report['results']}
+        assert "Operator 'broken-constructor'" in _output(result)
+        assert 'ImportError: missing optional dependency' in _output(result)
+
+    @pytest.mark.parametrize('operator_args', [(), ('--gremlin-operators=broken-constructor,comparison',)])
+    def it_uninstantiable_conftest_operator_does_not_stop_the_run(
+        self, pytester: pytest.Pytester, operator_args: tuple[str, ...]
+    ) -> None:
+        conftest = (
+            '\nfrom pytest_gremlins.instrumentation.transformer import get_default_registry\n'
+            + BROKEN_CONSTRUCTOR_MODULE
+            + '\nregister(get_default_registry())\n'
+        )
+        _write_project(pytester, conftest_extra=conftest)
+
+        result = _run(pytester, *operator_args)
+
+        assert result.ret == 0
+        report = json.loads(pytester.path.joinpath('coverage/gremlins/gremlins.json').read_text())
+        statuses = {entry['status'] for entry in report['results'] if entry['operator'] == 'comparison'}
+        assert 'zapped' in statuses
+        assert statuses <= {'zapped', 'survived'}
+        assert 'broken-constructor' not in {entry['operator'] for entry in report['results']}
+        assert "Operator 'broken-constructor'" in _output(result)
+        assert 'ImportError: missing optional dependency' in _output(result)
+
+    def it_honours_python_warning_filters_for_constructor_failures(
+        self, install_entry_point_dist: Installer, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        install_entry_point_dist({'broken': 'broken_ops:register'}, {'broken_ops': BROKEN_CONSTRUCTOR_MODULE})
+        _write_project(pytester)
+        monkeypatch.setenv('PYTHONWARNINGS', 'error::UserWarning')
+
+        result = _run(pytester)
+
+        assert result.ret != 0
+        assert "UserWarning: Operator 'broken-constructor'" in _output(result)
 
 
 @pytest.mark.medium

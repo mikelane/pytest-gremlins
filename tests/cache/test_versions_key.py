@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
 import shutil
 from typing import TYPE_CHECKING
@@ -13,8 +14,14 @@ from pytest_gremlins.cache.versions import (
     CACHE_VERSION,
     installed_versions_fingerprint,
 )
+from pytest_gremlins.instrumentation.transformer import transform_source
+from pytest_gremlins.operators.arithmetic import ArithmeticOperator
+from pytest_gremlins.operators.boundary import BoundaryOperator
+from pytest_gremlins.operators.comparison import ComparisonOperator
+from pytest_gremlins.operators.registry import OperatorRegistry
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from pytest_gremlins.cache.types import CachedGremlinResult
@@ -98,6 +105,106 @@ class DescribeVersionsInCacheKey:
             cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
 
         with IncrementalCache(cache_dir) as cache:
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == ZAPPED
+
+    def it_keeps_cached_verdicts_separate_when_a_constructor_fails_then_recovers(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def unavailable(_self: ComparisonOperator) -> None:
+            raise ImportError('optional dependency unavailable')
+
+        registry = OperatorRegistry()
+        registry.register(ComparisonOperator)
+        registry.register(BoundaryOperator)
+        source = 'def less(a):\n    return a < 10\n'
+        cache_dir = tmp_path / '.gremlins_cache'
+        healthy = registry.get_all()
+        healthy_gremlins, _ = transform_source(source, 'target.py', operators=healthy)
+        gremlin_id = healthy_gremlins[0].gremlin_id
+        with IncrementalCache(cache_dir, operators=healthy) as cache:
+            cache.cache_result(gremlin_id, 'same_source', TEST_HASHES, ZAPPED)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(ComparisonOperator, '__init__', unavailable)
+            with pytest.warns(UserWarning, match='comparison.*ImportError'):
+                surviving = registry.get_all()
+            surviving_gremlins, _ = transform_source(source, 'target.py', operators=surviving)
+            assert surviving_gremlins[0].gremlin_id == gremlin_id
+            assert surviving_gremlins[0].operator_name != healthy_gremlins[0].operator_name
+            assert ast.dump(surviving_gremlins[0].mutated_node) != ast.dump(healthy_gremlins[0].mutated_node)
+            assert installed_versions_fingerprint(surviving) == installed_versions_fingerprint(healthy)
+            with IncrementalCache(cache_dir, operators=surviving) as cache:
+                assert cache.get_cached_result(gremlin_id, 'same_source', TEST_HASHES) is None
+                cache.cache_result(gremlin_id, 'same_source', TEST_HASHES, {'status': 'survived'})
+
+        recovered = registry.get_all()
+        assert installed_versions_fingerprint(recovered) == installed_versions_fingerprint(healthy)
+        with IncrementalCache(cache_dir, operators=recovered) as cache:
+            assert cache.get_cached_result(gremlin_id, 'same_source', TEST_HASHES) == ZAPPED
+
+    def it_misses_when_active_operator_order_changes(self, tmp_path: Path) -> None:
+        operators = [ComparisonOperator(), ArithmeticOperator()]
+        cache_dir = tmp_path / '.gremlins_cache'
+        with IncrementalCache(cache_dir, operators=operators) as cache:
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
+
+        with IncrementalCache(cache_dir, operators=reversed(operators)) as cache:
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
+
+    def it_misses_when_active_operator_multiplicity_changes(self, tmp_path: Path) -> None:
+        comparison = ComparisonOperator()
+        cache_dir = tmp_path / '.gremlins_cache'
+        with IncrementalCache(cache_dir, operators=[comparison]) as cache:
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
+
+        with IncrementalCache(cache_dir, operators=[comparison, comparison]) as cache:
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
+
+    def it_misses_for_a_different_operator_class_with_the_same_name(
+        self, tmp_path: Path, install_entry_point_dist: Callable[..., Path]
+    ) -> None:
+        site = install_entry_point_dist(
+            {
+                'first': 'gremlin_same_name_ops:FirstComparison',
+                'alternate': 'gremlin_same_name_ops:AlternateComparison',
+            },
+            {
+                'gremlin_same_name_ops': (
+                    'from pytest_gremlins.operators.comparison import ComparisonOperator\n'
+                    'class FirstComparison(ComparisonOperator):\n'
+                    '    pass\n'
+                    'class AlternateComparison(ComparisonOperator):\n'
+                    '    pass\n'
+                ),
+            },
+            dist_name='gremlin_same_name_ops_dist',
+        )
+        (site / 'gremlin_same_name_ops_dist-1.0.dist-info' / 'top_level.txt').write_text('gremlin_same_name_ops\n')
+        module = importlib.import_module('gremlin_same_name_ops')
+        first = module.FirstComparison()
+        alternate = module.AlternateComparison()
+        assert first.name == alternate.name
+        assert type(first) is not type(alternate)
+        fingerprint = installed_versions_fingerprint([first])
+        assert 'gremlin_same_name_ops_dist==1.0' in fingerprint
+        assert installed_versions_fingerprint([alternate]) == fingerprint
+
+        cache_dir = tmp_path / '.gremlins_cache'
+        with IncrementalCache(cache_dir, operators=[first]) as cache:
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
+
+        with IncrementalCache(cache_dir, operators=[module.FirstComparison()]) as cache:
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == ZAPPED
+
+        with IncrementalCache(cache_dir, operators=[alternate]) as cache:
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
+
+    def it_hits_with_an_iterator_of_fresh_instances_of_the_same_operators(self, tmp_path: Path) -> None:
+        cache_dir = tmp_path / '.gremlins_cache'
+        with IncrementalCache(cache_dir, operators=[ComparisonOperator(), ArithmeticOperator()]) as cache:
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
+
+        with IncrementalCache(cache_dir, operators=iter([ComparisonOperator(), ArithmeticOperator()])) as cache:
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == ZAPPED
 
 

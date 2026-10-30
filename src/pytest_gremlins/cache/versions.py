@@ -38,7 +38,8 @@ _UNREADABLE_METADATA = (OSError, ValueError, TypeError)
 # tests/cache/test_cache_version_guard.py fails until you decide. It guards every .py file in the package except a
 # reviewed exclusion list, so a new file is covered without editing a list. CACHE_VERSION covers what gets mutated;
 # RUNNER_FIDELITY_VERSION in incremental.py covers test execution and outcome-to-verdict mapping.
-CACHE_VERSION = 1
+# Version 2 retires verdicts from before the active operator sequence was included in the key.
+CACHE_VERSION = 2
 
 _LOCAL_OPERATOR_PREFIX = 'local-operator='
 _UNREADABLE_MARKER = ':unreadable-'

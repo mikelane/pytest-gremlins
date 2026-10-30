@@ -332,6 +332,23 @@ Under xdist, warnings appear once, from the controller. They go through pytest's
 `pytest_gremlins.operators.GremlinEntryPointWarning`. With `filterwarnings = error`, a broken entry point
 stops the run at startup.
 
+### Operator Constructor Failures
+
+An operator registered with an explicit name can still fail when its constructor runs, for example because
+an optional dependency is missing. When selecting operators with `OperatorRegistry.get_all()`,
+pytest-gremlins skips constructors that raise `Exception` and emits a `UserWarning` naming the registered
+operator, exception type and message. The remaining selected operators still run. This applies to both
+entry-point and `conftest.py` registrations; disabled operators are not instantiated.
+
+Normal Python warning filters still apply: escalating `UserWarning` to an error stops the run rather than
+silently ignoring that policy. `KeyboardInterrupt` and `SystemExit` are not caught. The registration is kept
+so a later call can retry construction. Direct `registry.get(name)` calls still propagate constructor errors.
+
+With incremental caching enabled, the cache key includes the active operators' module, qualified class name
+and operator name, in order (including duplicates). A run that skips a failed constructor therefore cannot
+reuse verdicts from a different active operator sequence, even if the installed packages have not changed.
+This identity does not fingerprint arbitrary mutable settings inside a custom operator.
+
 ## AST Manipulation Patterns
 
 ### Pattern 1: Simple Value Replacement

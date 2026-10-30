@@ -48,11 +48,12 @@ The cache key for a mutation result includes everything that could affect the ou
 
 ```python
 cache_key = hash(
-    source_file_content +      # The code being mutated
-    mutation_definition +      # What mutation is applied
-    test_file_contents +       # Tests that cover this mutation
-    cache_version +            # Raised when a change can alter a verdict
-    operator_dist_versions     # Versions of packages that supply operators
+    source_file_content  # The code being mutated
+    + mutation_definition  # What mutation is applied
+    + test_file_contents  # Tests that cover this mutation
+    + cache_version  # Raised when a change can alter a verdict
+    + operator_dist_versions  # Versions of packages that supply operators
+    + active_operator_identities  # Ordered (module, qualified class name, operator name) tuples
 )
 ```
 
@@ -84,7 +85,17 @@ The cache is smart about what needs re-analysis. An operator package is any dist
 | Test deleted | Mutations that test was covering |
 | pytest-gremlins upgraded | Nothing, unless the release raised the cache version (then everything) |
 | Operator package installed, removed or changed version | Everything (old entries stop matching) |
+| Active operator identities, order or multiplicity changed | Entries for a different operator sequence stop matching |
 | Nothing changed | Nothing (instant results) |
+
+The active sequence contains only successfully instantiated, selected operators. Skipping a constructor
+that raises an exception can shift sequential gremlin IDs; the operator-identity component prevents those
+IDs from matching verdicts for a different mutation. Restoring the same sequence can reuse its own cached
+verdicts when the other key components also match and the operator suppliers allow cache reuse. Except
+for supported `conftest.py` operators, an operator that is unowned by an installed distribution or not
+importable by its qualified name always misses the cache, and its run writes no results. Stable operator
+identities do not override that rule. Cache version 2 retires older entries once. Operator identity does
+not include arbitrary mutable instance settings.
 
 ### Source File Changed
 
