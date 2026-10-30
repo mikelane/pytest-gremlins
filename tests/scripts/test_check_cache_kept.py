@@ -9,6 +9,7 @@ import sys
 from types import ModuleType
 
 import pytest
+import yaml
 
 SCRIPTS = Path(__file__).resolve().parents[2] / 'scripts'
 
@@ -236,3 +237,64 @@ class DescribeMain:
     def it_has_no_flag_that_skips_the_check(self, flag: str) -> None:
         with pytest.raises(SystemExit):
             checker.main(['--newest', flag])
+
+
+WORKFLOWS = Path(__file__).resolve().parents[2] / '.github' / 'workflows'
+GATE = 'check_cache_kept.py'
+
+
+def _steps(workflow: str, job: str) -> list[dict[str, object]]:
+    jobs = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding='utf-8'))['jobs']
+    steps: list[dict[str, object]] = jobs[job]['steps']
+    return steps
+
+
+def _gate_step(workflow: str, job: str) -> dict[str, object]:
+    return next(step for step in _steps(workflow, job) if GATE in str(step.get('run', '')))
+
+
+def _index(workflow: str, job: str, text: str) -> int:
+    return next(i for i, step in enumerate(_steps(workflow, job)) if text in str(step.get('run', '')))
+
+
+@pytest.mark.medium
+class DescribeWorkflowGate:
+    @pytest.mark.parametrize(
+        ('workflow', 'job'),
+        [('ci.yml', 'docs'), ('cut-release.yml', 'cut-release'), ('release.yml', 'verify-tag')],
+    )
+    def it_never_skips_or_tolerates_failure_of_the_check(self, workflow: str, job: str) -> None:
+        step = _gate_step(workflow, job)
+
+        assert 'if' not in step or workflow == 'ci.yml'
+        assert 'continue-on-error' not in step
+
+    def it_runs_in_the_changelog_pr_check_when_the_changelog_changes(self) -> None:
+        step = _gate_step('ci.yml', 'docs')
+
+        assert step['if'] == "needs.changes.outputs.changelog == 'true'"
+        assert '--newest' in str(step['run'])
+
+    def it_fetches_tags_in_the_changelog_pr_check(self) -> None:
+        checkout = _steps('ci.yml', 'docs')[0]
+
+        assert checkout['with'] == {'fetch-depth': 0}
+
+    def it_checks_the_version_commitizen_will_bump_to_before_the_version_is_bumped(self) -> None:
+        step = _gate_step('cut-release.yml', 'cut-release')
+
+        assert 'cz bump --get-next' in str(step['run'])
+        assert _index('cut-release.yml', 'cut-release', GATE) < _index(
+            'cut-release.yml', 'cut-release', 'cz bump --yes'
+        )
+
+    def it_checks_the_tag_being_released_after_checking_it_out(self) -> None:
+        checkout = _index('release.yml', 'verify-tag', 'git checkout --detach "refs/tags/$RELEASE_TAG"')
+
+        assert checkout < _index('release.yml', 'verify-tag', GATE)
+
+    def it_runs_in_the_project_environment_so_the_guard_can_import_the_package(self) -> None:
+        run = str(_gate_step('release.yml', 'verify-tag')['run'])
+
+        assert '--no-project' not in run
+        assert '"$RELEASE_TAG"' in run
