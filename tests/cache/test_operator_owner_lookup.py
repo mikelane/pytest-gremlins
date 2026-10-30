@@ -105,6 +105,7 @@ class DescribeOperatorOwnerLookupGaps:
         dist_info = site / 'editable_ops_dist-1.0.dist-info'
         dist_info.mkdir()
         (dist_info / 'METADATA').write_text('Metadata-Version: 2.1\nName: editable_ops_dist\nVersion: 1.0\n')
+        (dist_info / 'top_level.txt').write_text('editable_ops\n')
         (dist_info / 'direct_url.json').write_text(
             json.dumps({'url': project.as_uri(), 'dir_info': {'editable': True}})
         )

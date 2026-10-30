@@ -150,11 +150,11 @@ finder. The key carries a fresh random token, so the run is slower but never ser
 in a `conftest.py` on the hashed chain are the exception: the source and conftest hashes cover them. Restoring cache
 hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887).
 
-Some cases still keep a stable key when the operator's code has changed, tracked in
-[#890](https://github.com/mikelane/pytest-gremlins/issues/890): a leftover `<pkg>.egg-info` beside a source checkout on
-`sys.path`, a file in a shared namespace package that no `RECORD` lists, a file under a PEP 610 editable project
-directory outside the distribution's package, and a `conftest.py` outside the hashed chain. After editing code in one
-of these, run with `--gremlin-clear-cache`.
+An installed package owns a module's file only when its install record (`RECORD` or `installed-files.txt`) lists
+the file. A source checkout's `SOURCES.txt` does not count, so a leftover `<pkg>.egg-info` beside a checkout on
+`sys.path`, an unrecorded file in a shared namespace package, and a helper elsewhere under an editable project
+directory all miss. An editable install must also declare the module's top-level name. A `conftest.py` outside the
+hashed chain (above the pytest rootdir) misses too.
 
 **Why it works:**
 
