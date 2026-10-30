@@ -5,17 +5,24 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterator
 import importlib
-from importlib.metadata import PathDistribution
+from importlib.metadata import (
+    Distribution,
+    PathDistribution,
+)
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any
+import zipfile
 
 import pytest
 
+from pytest_gremlins.cache import versions
 from pytest_gremlins.cache.versions import installed_versions_fingerprint
 
 OPERATOR_SOURCE = 'class HelperOperator:\n    name = "helper"\n    description = "v1"\n'
+OVERSIZED_FIELD = 'x' * 200_000
 
 
 @pytest.fixture
@@ -29,6 +36,31 @@ def isolated_modules() -> Iterator[None]:
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+
+
+def _installed_package(site: Path, name: str, record: str, *, top_level: bool) -> None:
+    _write(site / name / '__init__.py', '')
+    _write(site / name / 'ops.py', OPERATOR_SOURCE)
+    info = site / f'{name}-1.0.dist-info'
+    _write(info / 'METADATA', f'Metadata-Version: 2.1\nName: {name}\nVersion: 1.0\n')
+    _write(info / 'RECORD', record)
+    if top_level:
+        _write(info / 'top_level.txt', f'{name}\n')
+
+
+class _PathlessDistribution(Distribution):
+    """A distribution from a custom finder: it reads files from a directory but has no ``_path`` attribute."""
+
+    def __init__(self, directory: Path, root: Path) -> None:
+        self._directory = directory
+        self._root = root
+
+    def read_text(self, filename: str) -> str | None:
+        target = self._directory / filename
+        return target.read_text() if target.is_file() else None
+
+    def locate_file(self, path: str | os.PathLike[str]) -> Path:
+        return self._root / path
 
 
 @pytest.mark.medium
@@ -189,3 +221,125 @@ class DescribeInstallRecordOwnership:
         operator = importlib.import_module('legpkg_s4.ops').HelperOperator()
 
         assert 'legpkg-s4==1.0' in installed_versions_fingerprint([operator], rootdir)
+
+    def it_does_not_crash_on_a_record_field_over_the_csv_size_limit_without_top_level_txt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A corrupt RECORD row longer than ``csv.field_size_limit()`` raises ``csv.Error``, not a ValueError."""
+        rootdir = tmp_path / 'project'
+        rootdir.mkdir()
+        site = tmp_path / 'site'
+        _installed_package(site, 'csvpkg_a4', f'csvpkg_a4/ops.py,,\n{OVERSIZED_FIELD},,\n', top_level=False)
+        monkeypatch.syspath_prepend(str(site))
+        operator = importlib.import_module('csvpkg_a4.ops').HelperOperator()
+
+        fingerprint = installed_versions_fingerprint([operator], rootdir)
+
+        assert fingerprint.startswith('cache-version=')
+
+    def it_does_not_crash_on_a_record_field_over_the_csv_size_limit_with_top_level_txt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With ``top_level.txt`` the RECORD is first parsed lazily in ``paths``, outside any handler."""
+        rootdir = tmp_path / 'project'
+        rootdir.mkdir()
+        site = tmp_path / 'site'
+        _installed_package(site, 'csvpkg_b4', f'csvpkg_b4/ops.py,,\n{OVERSIZED_FIELD},,\n', top_level=True)
+        monkeypatch.syspath_prepend(str(site))
+        operator = importlib.import_module('csvpkg_b4.ops').HelperOperator()
+
+        fingerprint = installed_versions_fingerprint([operator], rootdir)
+
+        assert fingerprint.startswith('cache-version=')
+
+    def it_does_not_crash_on_a_record_entry_through_a_symlink_loop(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``Path.resolve()`` raises RuntimeError on a symlink loop on Python 3.11 and 3.12."""
+        rootdir = tmp_path / 'project'
+        rootdir.mkdir()
+        site = tmp_path / 'site'
+        _installed_package(site, 'looppkg_c4', 'looppkg_c4/ops.py,,\nlooppkg_c4/loop/x.py,,\n', top_level=True)
+        (site / 'looppkg_c4' / 'loop').symlink_to('loop')
+        monkeypatch.syspath_prepend(str(site))
+        operator = importlib.import_module('looppkg_c4.ops').HelperOperator()
+
+        fingerprint = installed_versions_fingerprint([operator], rootdir)
+
+        assert fingerprint.startswith('cache-version=')
+
+    def it_misses_without_crashing_on_a_non_utf8_record_with_top_level_txt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        rootdir = tmp_path / 'project'
+        rootdir.mkdir()
+        site = tmp_path / 'site'
+        _installed_package(site, 'binpkg_d4', '', top_level=True)
+        (site / 'binpkg_d4-1.0.dist-info' / 'RECORD').write_bytes(b'binpkg_d4/ops.py,,\n\xff\xfe,,\n')
+        monkeypatch.syspath_prepend(str(site))
+        operator = importlib.import_module('binpkg_d4.ops').HelperOperator()
+
+        assert 'binpkg_d4==1.0' not in installed_versions_fingerprint([operator], rootdir)
+
+    def it_misses_for_a_whitespace_only_record(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        rootdir = tmp_path / 'project'
+        rootdir.mkdir()
+        site = tmp_path / 'site'
+        _installed_package(site, 'blankpkg_e4', ' \n\t\n', top_level=True)
+        monkeypatch.syspath_prepend(str(site))
+        operator = importlib.import_module('blankpkg_e4.ops').HelperOperator()
+
+        assert 'blankpkg_e4==1.0' not in installed_versions_fingerprint([operator], rootdir)
+
+    def it_misses_without_crashing_for_an_egg_info_distribution_without_a_path_attribute(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A custom finder's distribution has no ``_path``, so ``installed-files.txt`` cannot be anchored."""
+        rootdir = tmp_path / 'project'
+        rootdir.mkdir()
+        site = tmp_path / 'site'
+        _write(site / 'nopath_f4' / '__init__.py', '')
+        _write(site / 'nopath_f4' / 'ops.py', OPERATOR_SOURCE)
+        egg_info = site / 'nopath_f4-1.0.egg-info'
+        _write(egg_info / 'PKG-INFO', 'Metadata-Version: 2.1\nName: nopath-f4\nVersion: 1.0\n')
+        _write(egg_info / 'top_level.txt', 'nopath_f4\n')
+        _write(egg_info / 'installed-files.txt', '../nopath_f4/__init__.py\n../nopath_f4/ops.py\n')
+        monkeypatch.syspath_prepend(str(site))
+        monkeypatch.setattr(versions, 'distributions', lambda: [_PathlessDistribution(egg_info, site)])
+        operator = importlib.import_module('nopath_f4.ops').HelperOperator()
+
+        assert 'nopath-f4==1.0' not in installed_versions_fingerprint([operator], rootdir)
+
+    def it_keeps_the_version_label_for_a_zipped_wheel_on_sys_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Issue #890 AC: zip installs keep their version label."""
+        rootdir = tmp_path / 'project'
+        rootdir.mkdir()
+        archive = tmp_path / 'zippkg_g4-1.0-py3-none-any.whl'
+        with zipfile.ZipFile(archive, 'w') as wheel:
+            wheel.writestr('zippkg_g4/__init__.py', '')
+            wheel.writestr('zippkg_g4/ops.py', OPERATOR_SOURCE)
+            wheel.writestr('zippkg_g4-1.0.dist-info/METADATA', 'Metadata-Version: 2.1\nName: zippkg-g4\nVersion: 1.0\n')
+            wheel.writestr('zippkg_g4-1.0.dist-info/RECORD', 'zippkg_g4/__init__.py,,\nzippkg_g4/ops.py,,\n')
+        monkeypatch.syspath_prepend(str(archive))
+        operator = importlib.import_module('zippkg_g4.ops').HelperOperator()
+
+        assert 'zippkg-g4==1.0' in installed_versions_fingerprint([operator], rootdir)
+
+    def it_misses_for_an_operator_in_an_egg_directory_on_sys_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Decision on #890: a real ``EGG-INFO`` has no install record, so no record proves ownership."""
+        rootdir = tmp_path / 'project'
+        rootdir.mkdir()
+        egg = tmp_path / 'eggpkg_h4-1.0-py3.12.egg'
+        _write(egg / 'eggpkg_h4' / '__init__.py', '')
+        _write(egg / 'eggpkg_h4' / 'ops.py', OPERATOR_SOURCE)
+        _write(egg / 'EGG-INFO' / 'PKG-INFO', 'Metadata-Version: 2.1\nName: eggpkg-h4\nVersion: 1.0\n')
+        _write(egg / 'EGG-INFO' / 'top_level.txt', 'eggpkg_h4\n')
+        _write(egg / 'EGG-INFO' / 'SOURCES.txt', 'eggpkg_h4/__init__.py\neggpkg_h4/ops.py\n')
+        monkeypatch.syspath_prepend(str(egg))
+        operator = importlib.import_module('eggpkg_h4.ops').HelperOperator()
+
+        assert 'eggpkg-h4==1.0' not in installed_versions_fingerprint([operator], rootdir)

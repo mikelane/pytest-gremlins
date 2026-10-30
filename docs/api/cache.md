@@ -240,7 +240,9 @@ elsewhere under an editable project directory all miss. An editable install also
 name in its `top_level.txt`. An editable install without `top_level.txt` (non-setuptools backends such as hatchling,
 uv_build, flit and pdm) always misses, because its `.pth` directory can hold packages the wheel does not
 ship. Setuptools editables and normal wheels keep stable keys. An empty `RECORD` or `installed-files.txt` counts as
-no install record. A `conftest.py` outside the hashed conftest chain (above the pytest rootdir) misses too.
+no install record. A `.egg` install has no install record, so it misses; zip installs keep their version label. A
+`conftest.py` above the pytest rootdir misses too (one in a sibling directory under the rootdir is tracked in
+[#899](https://github.com/mikelane/pytest-gremlins/issues/899)).
 
 ### Usage Example
 

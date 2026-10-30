@@ -34,9 +34,9 @@ _OWN_PACKAGE = 'pytest_gremlins'
 
 # A distribution with unreadable or malformed metadata is skipped; it must never break pytest_configure.
 # UnicodeDecodeError and json.JSONDecodeError are ValueErrors; importlib.metadata raises TypeError for a RECORD row
-# with too many fields. Shape problems in direct_url.json are checked
-# explicitly in _editable_project_directory, so a bad editable marker never costs a distribution its label.
-_UNREADABLE_METADATA = (OSError, ValueError, TypeError)
+# with too many fields; csv.Error is a RECORD field over the csv size limit. Shape problems in direct_url.json are
+# checked explicitly in _editable_project_directory, so a bad editable marker never costs a distribution its label.
+_UNREADABLE_METADATA = (OSError, ValueError, TypeError, csv.Error)
 
 # Raise this on any change that could alter a verdict, or which gremlins exist, for the same source and tests.
 # tests/cache/test_cache_version_guard.py fails until you decide. It guards every .py file in the package except a
@@ -121,9 +121,17 @@ class _InstallRecord:
     def paths(self) -> frozenset[Path]:
         """The resolved location of every listed file; empty when the record cannot be read."""
         try:
-            return frozenset(Path(str(self._dist.locate_file(file))).resolve() for file in self.files)
+            files = self.files
         except _UNREADABLE_METADATA:
             return frozenset()
+        return frozenset(path for file in files if (path := self._resolved(file)) is not None)
+
+    def _resolved(self, file: PackagePath) -> Path | None:
+        """Resolve one listed file; ``None`` when its location is unreadable or loops (``RuntimeError`` before 3.13)."""
+        try:
+            return Path(str(self._dist.locate_file(file))).resolve()
+        except (*_UNREADABLE_METADATA, RuntimeError):
+            return None
 
 
 def _declared_modules(dist: Distribution, record: _InstallRecord) -> set[str]:

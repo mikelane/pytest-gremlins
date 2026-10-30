@@ -155,8 +155,10 @@ file. A source checkout's `SOURCES.txt` does not count, so a leftover `<pkg>.egg
 an unrecorded file in a shared namespace package, and a helper elsewhere under an editable project directory all miss.
 An editable install must also declare the module's top-level name in `top_level.txt`. An editable install without
 `top_level.txt` (non-setuptools backends such as hatchling, uv_build, flit and pdm) always misses; setuptools editables
-and normal wheels keep stable keys. An empty install record counts as none. A
-`conftest.py` outside the hashed chain (above the pytest rootdir) misses too.
+and normal wheels keep stable keys. An empty install record counts as none. A `.egg` install has no
+install record, so it misses; zip installs keep their version label. A `conftest.py` above the pytest rootdir misses
+too (one in a sibling directory under the rootdir is tracked in
+[#899](https://github.com/mikelane/pytest-gremlins/issues/899)).
 
 **Why it works:**
 
