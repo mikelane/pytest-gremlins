@@ -55,7 +55,10 @@ the marker to raise:
 
 Raise the marker, update `RECORDED_CACHE_VERSION` or `RECORDED_RUNNER_FIDELITY_VERSION` and
 `RECORDED_DIGESTS` in the guard test, and push. The job passes once a marker is raised above the
-base branch's. Markers only go up: lowering one fails the job. If the verdict change is a bug,
+base branch's. Markers only go up: lowering one fails the job, with one exception. A marker that landed after
+the latest release was never written to a user's cache, so it may go back down to the value at the newest release tag
+reachable from the base, as long as no sample verdict changed. Lowering below the released value always fails, and
+so does lowering when no release tag can be found. If the verdict change is a bug,
 fix the code instead. A change that alters no verdict, such as a refactor or a docstring edit,
 passes without a bump, so users keep a warm cache.
 
@@ -66,7 +69,8 @@ uv run python scripts/check_verdict_change.py guarded-changes "$(git merge-base 
 uv run python scripts/check_verdict_change.py run --out head.json
 # Install the base package (uv pip install --no-deps --reinstall <checkout of main>), then:
 uv run --no-sync python scripts/check_verdict_change.py run --out base.json
-uv run --no-sync python scripts/check_verdict_change.py compare base.json head.json
+uv run --no-sync python scripts/check_verdict_change.py compare base.json head.json \
+  --released-ref "$(git merge-base origin/main HEAD)"
 ```
 
 ## Code of Conduct
