@@ -27,6 +27,7 @@ from types import (
 )
 from typing import (
     Any,
+    Protocol,
     cast,
 )
 import zlib
@@ -304,6 +305,27 @@ class GremlinLoader(importlib.abc.Loader):
             return None
 
 
+class InstalledFinder(Protocol):
+    """What ``install`` relies on in a finder found on ``sys.meta_path``.
+
+    The bootstrap and the spawn hook (#604) each embed their own copy of ``GremlinFinder``, so ``isinstance``
+    cannot recognise a finder the other copy installed. This structural type names the two members it is
+    recognised and reused by.
+    """
+
+    is_gremlin_finder: bool
+
+    def find_spec(
+        self, fullname: str, path: Sequence[str] | None = None, target: ModuleType | None = None, /
+    ) -> importlib.machinery.ModuleSpec | None:
+        """Return the spec the import system should use, so the finder can sit on ``sys.meta_path``."""
+        ...
+
+    def serves(self, instrumented_sources: InstrumentedSources) -> bool:
+        """Return whether this finder was built for exactly ``instrumented_sources``."""
+        ...
+
+
 class GremlinFinder(importlib.abc.MetaPathFinder):
     """Swap the loader of any spec whose origin is an instrumented file.
 
@@ -392,19 +414,21 @@ class GremlinFinder(importlib.abc.MetaPathFinder):
         return None
 
 
-def install(instrumented_sources: InstrumentedSources) -> GremlinFinder:
+def install(instrumented_sources: InstrumentedSources) -> InstalledFinder:
     """Register a finder for ``instrumented_sources`` ahead of every other finder and return it.
 
     Idempotent: the spawn hook (#604) and the bootstrap both call this in the same process, and one finder
     must serve it. A finder already installed for equal sources is moved to the front and returned; one for
     other sources is replaced.
     """
-    installed_finders: list[Any] = [finder for finder in sys.meta_path if getattr(finder, 'is_gremlin_finder', False)]
+    installed_finders = [
+        cast('InstalledFinder', finder) for finder in sys.meta_path if getattr(finder, 'is_gremlin_finder', False)
+    ]
     for installed_finder in installed_finders:
         sys.meta_path.remove(installed_finder)
         if installed_finder.serves(instrumented_sources):
             sys.meta_path.insert(0, installed_finder)
-            return installed_finder  # type: ignore[no-any-return]
+            return installed_finder
     finder = GremlinFinder(instrumented_sources)
     sys.meta_path.insert(0, finder)
     return finder
