@@ -25,7 +25,10 @@ from types import (
     CodeType,
     ModuleType,
 )
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 import zlib
 
 # Entries are decoded from sources.json and mix str, str | None and list[str] values.
@@ -213,7 +216,7 @@ class GremlinLoader(importlib.abc.Loader):
 
     def get_data(self, path: str) -> bytes:  # noqa: D102
         # pkgutil.get_data reads package data through the loader and gives up when it has no get_data.
-        return self._original_loader.get_data(path)  # type: ignore[attr-defined, no-any-return]
+        return cast('importlib.abc.ResourceLoader', self._original_loader).get_data(path)
 
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> None:  # noqa: ARG002, D102
         return None
