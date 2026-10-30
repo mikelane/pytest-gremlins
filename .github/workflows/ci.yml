@@ -101,6 +101,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     strategy:
       fail-fast: false
       matrix:
@@ -121,6 +123,21 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
+
+      - name: Verify the matrix Python
+        shell: bash
+        env:
+          EXPECTED_PYTHON: ${{ matrix.python-version }}
+        run: |
+          uv run python - "$EXPECTED_PYTHON" <<'PY'
+          import sys
+
+          actual = f'{sys.version_info.major}.{sys.version_info.minor}'
+          expected = sys.argv[1]
+          print(f'uv run selected Python {actual}')
+          if actual != expected:
+              raise SystemExit(f'Expected Python {expected}, selected Python {actual}')
+          PY
 
       - name: Run tests with coverage
         shell: bash

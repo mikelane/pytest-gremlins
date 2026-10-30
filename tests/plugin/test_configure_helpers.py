@@ -74,7 +74,7 @@ _ROOT = Path('/project')
 @pytest.fixture
 def existing_paths(monkeypatch: pytest.MonkeyPatch) -> set[PurePosixPath]:
     existing: set[PurePosixPath] = set()
-    monkeypatch.setattr(Path, 'exists', lambda self: PurePosixPath(self) in existing)
+    monkeypatch.setattr(Path, 'exists', lambda self: PurePosixPath(self.as_posix()) in existing)
     return existing
 
 
