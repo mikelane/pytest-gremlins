@@ -111,7 +111,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'instrumentation/switcher.py': '602bef0ec33b9e4f0edbb24db1497f2d9fbf57952662a5f11ec51dee262cff0e',  # pragma: allowlist secret  # noqa: E501
     # --
-    'instrumentation/transformer.py': '4ae5263c706731e471a1d65e65aa0c39e54a3bcf0b53c1c030c8b8af37cad646',  # pragma: allowlist secret  # noqa: E501
+    'instrumentation/transformer.py': '1fd0ecc046dbae7b2d2771beac1b170427d365508e1ee855f52355b79096a3f5',  # pragma: allowlist secret  # noqa: E501
     # --
     'node_id_args.py': 'd8a6f83045811ffe0c9513e74a15278966c62071db6f3722b1ebc5359c073bb9',  # pragma: allowlist secret
     # --
