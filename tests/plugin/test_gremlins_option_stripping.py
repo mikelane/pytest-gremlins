@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from typing import Any
 
 import pytest
@@ -10,6 +11,8 @@ from pytest_gremlins.gremlins_options import (
     GREMLINS_FLAG_ONLY_OPTS,
     GREMLINS_VALUE_OPTS,
     addopts_without_gremlins,
+    option_tables_from,
+    option_takes_value,
 )
 from pytest_gremlins.plugin import (
     _prescan_env,
@@ -37,19 +40,108 @@ def _registered_options() -> dict[str, dict[str, Any]]:
     return recorder.options
 
 
+_PRE_DERIVATION_VALUE_OPTS = frozenset(
+    {
+        '--gremlin-operators',
+        '--gremlin-report',
+        '--gremlin-targets',
+        '--gremlin-exclude',
+        '--gremlin-workers',
+        '--gremlin-batch-size',
+        '--gremlin-coverage-timeout',
+        '--gremlin-mutant-timeout',
+        '--gremlins-html-dir',
+        '--gremlin-max-pardons-pct',
+        '--max-pardons',
+        '--gremlin-executor',
+        '--gremlin-explain',
+    }
+)
+_PRE_DERIVATION_FLAG_ONLY_OPTS = frozenset(
+    {
+        '--gremlins',
+        '--gremlin-cache',
+        '--gremlin-clear-cache',
+        '--gremlin-parallel',
+        '--gremlin-batch',
+        '--strict-pardons',
+        '--gremlin-audit-pardons',
+        '--gremlin-no-coverage-filter',
+    }
+)
+
+
 @pytest.mark.small
 class DescribeGremlinsOptionTables:
-    """The stripper's tables must track ``pytest_addoption``, or a new option leaks into the pre-scan."""
+    """The stripper's tables are derived from ``pytest_addoption``, so a new option needs no second edit."""
 
-    def it_lists_every_value_less_option_as_flag_only(self) -> None:
-        flags = {name for name, kw in _registered_options().items() if kw.get('action') == 'store_true'}
+    def it_derives_the_flag_only_table_the_hand_maintained_one_listed(self) -> None:
+        assert GREMLINS_FLAG_ONLY_OPTS == _PRE_DERIVATION_FLAG_ONLY_OPTS
 
-        assert flags == GREMLINS_FLAG_ONLY_OPTS
+    def it_derives_the_value_table_the_hand_maintained_one_listed(self) -> None:
+        assert GREMLINS_VALUE_OPTS == _PRE_DERIVATION_VALUE_OPTS
 
-    def it_lists_every_value_taking_option_as_value_taking(self) -> None:
-        values = {name for name, kw in _registered_options().items() if kw.get('action') != 'store_true'}
+    def it_tables_every_registered_option_exactly_once(self) -> None:
+        assert set(_registered_options()) == GREMLINS_FLAG_ONLY_OPTS | GREMLINS_VALUE_OPTS
+        assert not GREMLINS_FLAG_ONLY_OPTS & GREMLINS_VALUE_OPTS
 
-        assert values == GREMLINS_VALUE_OPTS
+
+@pytest.mark.small
+class DescribeOptionTablesFrom:
+    def it_classifies_a_new_option_without_any_table_edit(self) -> None:
+        def register(parser: Any) -> None:
+            parser.addoption('--brand-new', action='store_true')
+            parser.addoption('--brand-new-value', action='store')
+
+        value_opts, flag_opts = option_tables_from(register)
+
+        assert (value_opts, flag_opts) == ({'--brand-new-value'}, {'--brand-new'})
+
+    def it_tables_the_negated_spelling_of_a_boolean_optional_action_as_a_flag(self) -> None:
+        value_opts, flag_opts = option_tables_from(
+            lambda p: p.addoption('--toggle', action=argparse.BooleanOptionalAction)
+        )
+
+        assert (value_opts, flag_opts) == (set(), {'--toggle', '--no-toggle'})
+
+    def it_ignores_ini_registrations_made_by_pytest_addoption(self) -> None:
+        def register(parser: Any) -> None:
+            parser.addini('gremlin_thing', 'help')
+            parser.getgroup('g').addoption('--new-flag', action='store_true')
+
+        assert option_tables_from(register) == (set(), {'--new-flag'})
+
+
+@pytest.mark.small
+class DescribeOptionTakesValue:
+    @pytest.mark.parametrize('action', ['store_true', 'store_false', 'store_const', 'count', 'append_const'])
+    def it_treats_value_less_actions_as_flags(self, action: str) -> None:
+        assert not option_takes_value({'action': action})
+
+    @pytest.mark.parametrize('kwargs', [{}, {'action': 'store'}, {'action': 'append'}, {'action': 'extend'}])
+    def it_treats_value_consuming_actions_as_taking_a_value(self, kwargs: dict[str, Any]) -> None:
+        assert option_takes_value(kwargs)
+
+    def it_treats_nargs_zero_as_a_flag(self) -> None:
+        assert not option_takes_value({'action': 'store', 'nargs': 0})
+
+    def it_treats_boolean_optional_action_as_a_flag(self) -> None:
+        assert not option_takes_value({'action': argparse.BooleanOptionalAction})
+
+    def it_treats_a_custom_action_class_with_nargs_zero_as_a_flag(self) -> None:
+        class Toggle(argparse.Action):
+            def __init__(self, option_strings: Any, dest: Any, **kwargs: Any) -> None:
+                super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+        assert not option_takes_value({'action': Toggle})
+
+    def it_treats_a_custom_action_class_without_nargs_zero_as_taking_a_value(self) -> None:
+        assert option_takes_value({'action': argparse.Action})
+
+    def it_keeps_a_store_false_flag_from_eating_the_next_token(self) -> None:
+        value_opts, flag_opts = option_tables_from(lambda p: p.addoption('--off', action='store_false'))
+
+        assert (value_opts, flag_opts) == (set(), {'--off'})
 
 
 @pytest.mark.small
@@ -73,6 +165,14 @@ class DescribeAddoptsWithoutGremlins:
 
     def it_requotes_kept_tokens(self) -> None:
         assert addopts_without_gremlins("-k 'a or b' --gremlins") == "-k 'a or b'"
+
+    def it_keeps_every_token_after_the_end_of_options_marker(self) -> None:
+        assert addopts_without_gremlins('-v --gremlins -- --gremlins --gremlin-workers 4') == (
+            '-v -- --gremlins --gremlin-workers 4'
+        )
+
+    def it_keeps_a_positional_after_the_end_of_options_marker(self) -> None:
+        assert addopts_without_gremlins('-v -- tests/test_a.py') == '-v -- tests/test_a.py'
 
 
 @pytest.mark.small
