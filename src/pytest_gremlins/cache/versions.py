@@ -13,6 +13,7 @@ from importlib.metadata import (
 )
 import json
 from pathlib import Path
+import posixpath
 import re
 import sys
 import sysconfig
@@ -103,7 +104,18 @@ class _InstallRecord:
         installed_files = self._dist.read_text('installed-files.txt')
         if installed_files is None or not installed_files.strip():
             return ()
-        return tuple(self._dist.files or ())
+        return self._installed_files_entries(installed_files)
+
+    def _installed_files_entries(self, installed_files: str) -> tuple[PackagePath, ...]:
+        """Parse ``installed-files.txt``: each line is relative to the ``.egg-info`` directory that holds it."""
+        egg_info = getattr(self._dist, '_path', None)
+        if egg_info is None:
+            return ()
+        return tuple(
+            PackagePath(posixpath.join(Path(str(egg_info)).name, line))
+            for line in installed_files.splitlines()
+            if line.strip()
+        )
 
     @cached_property
     def paths(self) -> frozenset[Path]:
@@ -114,47 +126,12 @@ class _InstallRecord:
             return frozenset()
 
 
-def _pth_entries(pth: Path) -> list[str]:
-    """Return the path lines of a ``.pth`` file as ``site.addpackage`` reads them; unreadable files add nothing."""
-    try:
-        lines = pth.read_text(encoding='utf-8').splitlines()
-    except (OSError, UnicodeDecodeError):
-        return []
-    return [line.rstrip() for line in lines if line.rstrip() and not line.startswith(('#', 'import ', 'import\t'))]
-
-
-def _pth_directories(dist: Distribution, files: Iterable[PackagePath], project: Path) -> frozenset[Path]:
-    """Return the directories a PEP 660 editable's top-level ``.pth`` files put on ``sys.path``.
-
-    hatchling, uv_build, flit and pdm write no ``top_level.txt``; the packages they expose are the direct children
-    of these directories. Blank lines, comments and ``import`` hooks add nothing. The project directory itself
-    (a flat layout) is left out: every sibling of the package would otherwise count as the distribution's own.
-    """
-    roots: set[Path] = set()
-    for file in files:
-        if len(file.parts) != 1 or not file.name.endswith('.pth'):
-            continue
-        pth = Path(str(dist.locate_file(file)))
-        for entry in _pth_entries(pth):
-            directory = (pth.parent / entry).resolve()
-            if directory.is_dir() and directory != project:
-                roots.add(directory)
-    return frozenset(roots)
-
-
-def _declared_modules(
-    dist: Distribution, record: _InstallRecord, editable_project: Path | None
-) -> tuple[set[str], frozenset[Path]]:
-    """Return the top-level modules a distribution installs and, for an editable, its ``.pth`` directories.
-
-    Modules come from ``top_level.txt``, else from the install record. Only an editable without ``top_level.txt``
-    reads ``.pth`` files; a regular wheel's ``.pth`` files are never opened.
-    """
+def _declared_modules(dist: Distribution, record: _InstallRecord) -> set[str]:
+    """Return the top-level modules a distribution installs, from ``top_level.txt`` else from its install record."""
     top_level = dist.read_text('top_level.txt')
     if top_level is not None:
-        return set(top_level.split()), frozenset()
-    path_roots = _pth_directories(dist, record.files, editable_project) if editable_project is not None else frozenset()
-    return _top_level_modules_from_record(record.files), path_roots
+        return set(top_level.split())
+    return _top_level_modules_from_record(record.files)
 
 
 def _editable_project_directory(dist: Distribution) -> Path | None:
@@ -185,7 +162,6 @@ class _IndexedDistribution:
     root: Path
     modules: frozenset[str]
     editable_project: Path | None
-    editable_path_roots: frozenset[Path]
     record: _InstallRecord
 
 
@@ -196,13 +172,12 @@ def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
             return None
         record = _InstallRecord(dist)
         editable_project = _editable_project_directory(dist)
-        modules, path_roots = _declared_modules(dist, record, editable_project)
+        modules = _declared_modules(dist, record)
         return _IndexedDistribution(
             label=_distribution_label(dist),
             root=Path(str(dist.locate_file(''))).resolve(),
             modules=frozenset(modules),
             editable_project=editable_project,
-            editable_path_roots=path_roots,
             record=record,
         )
     except _UNREADABLE_METADATA:
@@ -236,21 +211,14 @@ def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, locat
     return location in entry.record.paths
 
 
-def _is_under_editable_path_root(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
-    """Whether ``location`` is in the ``top_level`` package or module that sits directly in a ``.pth`` directory."""
-    return any(
-        location.is_relative_to(root / top_level) or location == root / f'{top_level}.py'
-        for root in entry.editable_path_roots
-    )
-
-
 def _is_editable_owner(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
     """Whether a PEP 610 editable install (``direct_url.json`` with ``dir_info.editable``) put ``location`` on the path.
 
     The module's top-level name must also belong to the distribution, so a helper elsewhere under the editable
     project directory (a monorepo's ``tools/``) is not claimed. A PEP 660 editable lists a ``.pth`` or finder
     file in its RECORD instead of the package, so those entries are ignored when reading the declared modules.
-    Without a ``top_level.txt``, the name must be a direct child of a directory the editable's ``.pth`` lists.
+    An editable without a ``top_level.txt`` (hatchling, uv_build, flit, pdm) declares no names and owns nothing:
+    its ``.pth`` directory may hold children the wheel does not ship, and no metadata says which do.
 
     Editable installs recorded only through a ``.pth`` file, or through a setuptools import finder, leave no
     ``direct_url.json`` marker and are not recognized.
@@ -258,7 +226,7 @@ def _is_editable_owner(entry: _IndexedDistribution, top_level: str, location: Pa
     return (
         entry.editable_project is not None
         and location.is_relative_to(entry.editable_project)
-        and (top_level in entry.modules or _is_under_editable_path_root(entry, top_level, location))
+        and top_level in entry.modules
     )
 
 

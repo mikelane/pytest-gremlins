@@ -31,10 +31,10 @@ def _write(path: Path, text: str) -> None:
 @pytest.mark.medium
 @pytest.mark.usefixtures('isolated_modules')
 class DescribeInstallRecordOwnershipEdgeCases:
-    def it_keeps_a_stable_key_for_a_pep660_editable_without_top_level_txt_outside_the_rootdir(
+    def it_misses_for_a_pep660_editable_without_top_level_txt_outside_the_rootdir(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A PEP 660 editable with no ``top_level.txt`` declares its package through the paths in its ``.pth``."""
+        """A PEP 660 editable with no ``top_level.txt`` (hatchling, uv_build, flit, pdm) owns no names."""
         rootdir = tmp_path / 'project'
         rootdir.mkdir()
         plugin = tmp_path / 'plugin_checkout'
@@ -53,7 +53,7 @@ class DescribeInstallRecordOwnershipEdgeCases:
         monkeypatch.syspath_prepend(str(plugin / 'src'))
         operator = importlib.import_module('hedpkg_q1.ops').HelperOperator()
 
-        assert 'hedpkg-q1==2.0' in installed_versions_fingerprint([operator], rootdir)
+        assert 'hedpkg-q1==2.0' not in installed_versions_fingerprint([operator], rootdir)
 
     def it_misses_for_a_source_egg_info_whose_installed_files_txt_is_empty(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

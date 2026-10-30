@@ -153,8 +153,9 @@ hits for the others is tracked in [#887](https://github.com/mikelane/pytest-grem
 An installed package owns a module's file only when its install record (`RECORD` or `installed-files.txt`) lists the
 file. A source checkout's `SOURCES.txt` does not count, so a leftover `<pkg>.egg-info` beside a checkout on `sys.path`,
 an unrecorded file in a shared namespace package, and a helper elsewhere under an editable project directory all miss.
-An editable install must also declare the module's top-level name, from `top_level.txt` or from a directory its `.pth`
-file lists; a flat-layout editable without `top_level.txt` always misses. An empty install record counts as none. A
+An editable install must also declare the module's top-level name in `top_level.txt`. An editable install without
+`top_level.txt` (non-setuptools backends such as hatchling, uv_build, flit and pdm) always misses; setuptools editables
+and normal wheels keep stable keys. An empty install record counts as none. A
 `conftest.py` outside the hashed chain (above the pytest rootdir) misses too.
 
 **Why it works:**

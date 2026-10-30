@@ -237,10 +237,10 @@ An installed distribution owns an operator's module only when the distribution's
 `installed-files.txt`) lists the module's file. A source checkout's `SOURCES.txt` is not an install record, so a
 checkout on `sys.path` with a leftover `<pkg>.egg-info`, an unrecorded file in a shared namespace package, and a helper
 elsewhere under an editable project directory all miss. An editable install also has to declare the module's top-level
-name: from `top_level.txt`, or, when there is none (hatchling, uv_build, flit and pdm editables), as a package or module
-sitting directly in a directory its `.pth` file lists. A flat-layout editable without `top_level.txt`, whose `.pth`
-lists the project directory itself, declares no names and always misses. An empty `RECORD` or `installed-files.txt`
-counts as no install record. A `conftest.py` outside the hashed conftest chain (above the pytest rootdir) misses too.
+name in its `top_level.txt`. An editable install without `top_level.txt` (non-setuptools backends such as hatchling,
+uv_build, flit and pdm) always misses, because its `.pth` directory can hold packages the wheel does not
+ship. Setuptools editables and normal wheels keep stable keys. An empty `RECORD` or `installed-files.txt` counts as
+no install record. A `conftest.py` outside the hashed conftest chain (above the pytest rootdir) misses too.
 
 ### Usage Example
 
