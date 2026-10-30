@@ -301,3 +301,89 @@ class DescribeWorkflowGate:
 
         assert '--no-project' not in run
         assert '"$RELEASE_TAG"' in run
+
+
+GUARD_STUB = (
+    'from pathlib import Path\n'
+    "PACKAGE_ROOT = Path(__file__).resolve().parents[2] / 'src' / 'pytest_gremlins'\n"
+    'def guarded_sources():\n'
+    "    return sorted(PACKAGE_ROOT.rglob('*.py'))\n"
+)
+GATE_SCRIPTS = ('check_cache_kept.py', 'check_verdict_change.py', 'check_release_docs.py')
+
+
+def _write(root: Path, relative: str, text: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8')
+
+
+def _changelog(*versions: str) -> str:
+    entries = ''.join(f'## v{version} (2026-11-01)\n\nSummary.\n\n### Internal\n\n- Work.\n\n' for version in versions)
+    return f'# Changelog\n\n{entries}'
+
+
+def _commit(repo: Path, message: str) -> None:
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-q', '-m', message)
+
+
+@pytest.fixture
+def released_project(tmp_path: Path) -> Path:
+    """A project at v1.1.0 (a release that raised CACHE_VERSION), with guarded code changed again after it."""
+    root = tmp_path / 'project'
+    for script in GATE_SCRIPTS:
+        _write(root, f'scripts/{script}', (SCRIPTS / script).read_text(encoding='utf-8'))
+    _write(root, 'tests/cache/test_cache_version_guard.py', GUARD_STUB)
+    _write(root, 'src/pytest_gremlins/cache/versions.py', 'CACHE_VERSION = 3\n')
+    _write(root, 'src/pytest_gremlins/cache/incremental.py', "RUNNER_FIDELITY_VERSION = 'rf21'\n")
+    _write(root, 'src/pytest_gremlins/plugin.py', 'A = 1\n')
+    _write(root, 'CHANGELOG.md', _changelog('1.0.0'))
+    _git(root, 'init', '-q')
+    _commit(root, 'one')
+    _git(root, 'tag', 'v1.0.0')
+    _write(root, 'src/pytest_gremlins/plugin.py', 'A = 2\n')
+    _write(root, 'src/pytest_gremlins/cache/versions.py', 'CACHE_VERSION = 4\n')
+    _write(root, 'CHANGELOG.md', _changelog('1.1.0', '1.0.0'))
+    _commit(root, 'two')
+    _git(root, 'tag', 'v1.1.0')
+    _write(root, 'src/pytest_gremlins/plugin.py', 'A = 3\n')
+    _commit(root, 'unreleased guarded change')
+    return root
+
+
+def _run_gate(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(root / 'scripts' / GATE), *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.medium
+class DescribeNewestEntryAgainstARealRepository:
+    def it_does_not_ask_an_already_released_entry_to_justify_later_changes(self, released_project: Path) -> None:
+        completed = _run_gate(released_project, '--newest')
+
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        assert 'cache kept' not in completed.stdout
+
+    def it_fails_an_unreleased_entry_for_the_changes_since_the_last_release(self, released_project: Path) -> None:
+        _write(released_project, 'CHANGELOG.md', _changelog('1.2.0', '1.1.0', '1.0.0'))
+        _commit(released_project, 'changelog for 1.2.0')
+
+        completed = _run_gate(released_project, '--newest')
+
+        assert completed.returncode == 1, completed.stdout + completed.stderr
+        assert 'src/pytest_gremlins/plugin.py' in completed.stdout
+
+    def it_passes_an_unreleased_entry_that_keeps_the_cache_on_purpose(self, released_project: Path) -> None:
+        changelog = _changelog('1.2.0', '1.1.0', '1.0.0').replace(
+            'Summary.', 'Summary.\n\n(cache kept: renamed a constant)', 1
+        )
+        _write(released_project, 'CHANGELOG.md', changelog)
+        _commit(released_project, 'changelog for 1.2.0')
+
+        assert _run_gate(released_project, '--newest').returncode == 0
