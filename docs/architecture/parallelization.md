@@ -272,7 +272,7 @@ loads `sitecustomize`, so a child started with any of them still runs the origin
 
 ### Cached results
 
-The incremental cache key includes a runner fidelity version (`rf21`), so verdicts cached by
+The incremental cache key includes a runner fidelity version (`rf20`), so verdicts cached by
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 So are timeouts cached before they were confirmed against the unmutated tests (#565).
 So are verdicts cached while instrumented modules had no `__file__` (#525), when target code that read it
@@ -293,9 +293,11 @@ because pytest's assertion-rewrite hook served it ahead of the gremlin finder; t
 cached as SURVIVED.
 So are verdicts cached while code that ran in a `multiprocessing` `spawn` child was never instrumented (#604);
 a gremlin only that child exercised was cached as SURVIVED.
-So are verdicts cached while an in-process pytester session (`runpytest()`, `inline_run()`) served an instrumented
-target uninstrumented through its own assertion-rewrite hook (#615); a gremlin only such a test exercised was
-cached as SURVIVED.
+A session that loads the pytester plugin adds a `pytester-615` part to the key, whether it loads it with
+`-p pytester`, `-p _pytest.pytester`, `pytest_plugins` in a `conftest.py`, `PYTEST_PLUGINS` or `addopts`.
+Before #615 was fixed, an in-process pytester session (`runpytest()`, `inline_run()`) served an instrumented target
+uninstrumented through its own assertion-rewrite hook, and a gremlin only such a test exercised was cached as
+SURVIVED. Those sessions get one cache miss. Sessions that never load pytester keep their cache (#891).
 The key also carries the interpreter's optimize level, read from `PYTHONOPTIMIZE` the way CPython reads it (#613),
 so a verdict reached with `assert` statements stripped is never served to a run that keeps them.
 So are verdicts cached while instrumented modules were compiled under their module name (#563), when a

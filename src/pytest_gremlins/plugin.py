@@ -831,6 +831,7 @@ def _init_cache(
     cache_enabled: bool,
     clear_cache: bool,
     operators: Sequence[GremlinOperator],
+    pytester_loaded: Callable[[], bool] = lambda: False,
 ) -> IncrementalCache | None:
     """Initialise the incremental cache when enabled, optionally clearing it first.
 
@@ -840,6 +841,7 @@ def _init_cache(
         clear_cache: Whether to wipe the cache before use.
         operators: The operators registered for the run, after conftest registration; their owning
             distributions are part of the cache key.
+        pytester_loaded: Reports whether the session loads the pytester plugin; such sessions get their own key part.
 
     Returns:
         An open IncrementalCache, or None when caching is disabled.
@@ -847,7 +849,7 @@ def _init_cache(
     if not cache_enabled:
         return None
     cache_dir = rootdir / '.gremlins_cache'
-    cache = IncrementalCache(cache_dir, operators, project_root=rootdir)
+    cache = IncrementalCache(cache_dir, operators, project_root=rootdir, pytester_loaded=pytester_loaded)
     if clear_cache:
         cache.clear()
         print('pytest-gremlins: cache cleared')
@@ -1015,6 +1017,23 @@ def _reject_disabled_executor(executor: str) -> None:
         )
 
 
+# pytester registers under its entry-point name when loaded by name, and under its module path when loaded
+# with ``-p _pytest.pytester`` or ``pytest_plugins = ['_pytest.pytester']`` (#891).
+PYTESTER_PLUGIN_NAMES = ('pytester', '_pytest.pytester')
+
+
+def _pytester_loaded(config: pytest.Config) -> bool:
+    """Report whether the session loads the pytester plugin under any registration name (#891).
+
+    Args:
+        config: The pytest config whose plugin manager is asked.
+
+    Returns:
+        True when pytester is registered under any name in ``PYTESTER_PLUGIN_NAMES``.
+    """
+    return any(config.pluginmanager.has_plugin(name) for name in PYTESTER_PLUGIN_NAMES)
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
@@ -1091,7 +1110,13 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # Cache: merge_configs already resolved CLI-beats-TOML; default False
     cache_enabled: bool = bool(toml_cache)
-    cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache, operators)
+    cache: IncrementalCache | None = _init_cache(
+        rootdir,
+        cache_enabled,
+        config.option.gremlin_clear_cache,
+        operators,
+        pytester_loaded=lambda: _pytester_loaded(config),
+    )
 
     xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
     rerun_options = _rerun_options_for(config)

@@ -19,6 +19,7 @@ from pytest_gremlins.cache.versions import versions_fingerprint
 
 if TYPE_CHECKING:
     from collections.abc import (
+        Callable,
         Iterable,
         Mapping,
     )
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.operators.protocol import GremlinOperator
 
 
-RUNNER_FIDELITY_VERSION = 'rf21'
+RUNNER_FIDELITY_VERSION = 'rf20'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 This marker covers test execution and outcome-to-verdict mapping (``parallel/``, ``control_run.py``);
@@ -95,15 +96,19 @@ verdicts cached for a gremlin whose selected test had no node id (#702).
 stored value, so a verdict can be reused at a different limit when it would not change; old entries are pruned when
 the cache opens.
 
-``rf21`` retires verdicts cached while an in-process pytester session (``runpytest()``, ``inline_run()``) inside a
-gremlin run let its assertion-rewrite hook serve an instrumented target uninstrumented (#615); every gremlin only
-such a test exercised was cached as SURVIVED.
-
 It also retires verdicts cached while doctest gremlins errored, because ``--doctest-modules`` typed on the command
 line never reached gremlin runs, and verdicts cached as ZAPPED while ``doctest_optionflags`` or
 ``doctest_encoding`` set by ``-o`` or ``-c`` never reached them, so a doctest that needed them failed under every
 gremlin (#594).  The resolved doctest settings also key the cache, so changing them is a miss (#594).
+
+Verdicts cached while an in-process pytester session (``runpytest()``, ``inline_run()``) inside a gremlin run let its
+assertion-rewrite hook serve an instrumented target uninstrumented (#615) are retired without a new marker: a session
+that loads the pytester plugin adds ``PYTESTER_KEY_PART`` to every key, so only those projects miss once (#891).
+Every other project keeps the ``rf20`` key it had under v1.13.1.
 """
+
+PYTESTER_KEY_PART = 'pytester-615'
+"""Key part added only while the pytester plugin is loaded, so just those sessions retire #615 verdicts."""
 
 
 RerunBudget: TypeAlias = tuple[int, float]
@@ -111,6 +116,15 @@ RerunBudget: TypeAlias = tuple[int, float]
 
 NO_RERUNS: RerunBudget = (0, 0.0)
 """The budget of a run that never reruns a failing test: no reruns and no delay."""
+
+
+def _never_loaded() -> bool:
+    """Report that pytester is not loaded; the default for caches opened outside a pytest session.
+
+    Returns:
+        Always ``False``, so the key carries no ``PYTESTER_KEY_PART``.
+    """
+    return False
 
 
 def _effective_rerun_budget(rerun_budget: RerunBudget) -> RerunBudget:
@@ -233,6 +247,7 @@ class IncrementalCache:
     - rerun_budget: the ``(reruns, reruns_delay)`` the gremlin runs were allowed
     - rerun_settings: the other resolved rerun settings (backoff factor, filters, mode, exclusions, suite cap)
     - versions: ``CACHE_VERSION`` and operator-package versions (any change retires the whole cache)
+    - PYTESTER_KEY_PART: present only while the session loads the pytester plugin (#891)
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
 
@@ -255,6 +270,7 @@ class IncrementalCache:
         cache_dir: Path,
         operators: Iterable[GremlinOperator] = (),
         project_root: Path | None = None,
+        pytester_loaded: Callable[[], bool] = _never_loaded,
     ) -> None:
         """Initialize the incremental cache.
 
@@ -267,7 +283,10 @@ class IncrementalCache:
                 an installed distribution owns its module. Every other operator, a conftest operator excepted,
                 misses the cache on every run (#887 tracks restoring hits), and such a run writes no results, since
                 no later run could read them.
+            pytester_loaded: Reports whether the session loads the pytester plugin. It is asked each time a key is
+                built, because a nested ``conftest.py`` can enable pytester after the cache opens.
         """
+        self._pytester_loaded = pytester_loaded
         self._cache_dir = cache_dir
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
@@ -317,10 +336,11 @@ class IncrementalCache:
         combined_test_hash = self._hasher.hash_string('|'.join(sorted_test_items)) if sorted_test_items else 'no_tests'
 
         reruns, reruns_delay = _effective_rerun_budget(rerun_budget)
+        pytester_part = f':{PYTESTER_KEY_PART}' if self._pytester_loaded() else ''
         return (
             f'{gremlin_id}:{source_hash}:{combined_test_hash}'
             f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}'
-            f':v={self._versions_hash}:{RUNNER_FIDELITY_VERSION}'
+            f':v={self._versions_hash}{pytester_part}:{RUNNER_FIDELITY_VERSION}'
         )
 
     def get_cached_result(
