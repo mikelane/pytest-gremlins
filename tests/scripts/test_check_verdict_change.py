@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 from types import ModuleType
@@ -145,3 +146,78 @@ class DescribeGuardedChanges:
         changes = checker.guarded_changes(deleted, deleted, GUARDED)
 
         assert changes == []
+
+
+@pytest.mark.medium
+class DescribeGuardedPathsFromTheGuard:
+    def it_lists_package_sources_from_the_guard_file_set(self) -> None:
+        assert 'src/pytest_gremlins/plugin.py' in checker.guarded_repo_paths()
+
+    def it_leaves_out_what_the_guard_excludes(self) -> None:
+        assert 'src/pytest_gremlins/reporting/html.py' not in checker.guarded_repo_paths()
+
+
+def _write_run(path: Path, verdicts: dict[str, str], cache_version: str = '1') -> Path:
+    path.write_text(
+        json.dumps({'cache_version': cache_version, 'runner_fidelity_version': 'rf21', 'verdicts': verdicts}),
+        encoding='utf-8',
+    )
+    return path
+
+
+@pytest.mark.medium
+class DescribeCompareCommand:
+    def it_exits_zero_when_no_verdict_changed(self, tmp_path: Path) -> None:
+        base = _write_run(tmp_path / 'base.json', ZAPPED)
+        head = _write_run(tmp_path / 'head.json', ZAPPED)
+
+        assert checker.main(['compare', str(base), str(head)]) == 0
+
+    def it_exits_one_and_names_the_gremlin_when_a_verdict_changed_without_a_bump(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        base = _write_run(tmp_path / 'base.json', ZAPPED)
+        head = _write_run(tmp_path / 'head.json', SURVIVED)
+
+        exit_code = checker.main(['compare', str(base), str(head)])
+
+        assert (exit_code, 'zapped -> survived' in capsys.readouterr().out) == (1, True)
+
+    def it_exits_zero_when_a_verdict_changed_with_a_bump(self, tmp_path: Path) -> None:
+        base = _write_run(tmp_path / 'base.json', ZAPPED)
+        head = _write_run(tmp_path / 'head.json', SURVIVED, cache_version='2')
+
+        assert checker.main(['compare', str(base), str(head)]) == 0
+
+
+@pytest.fixture(scope='module')
+def sample_run(tmp_path_factory: pytest.TempPathFactory) -> tuple[dict[str, str], list[dict[str, object]]]:
+    workdir = tmp_path_factory.mktemp('verdict-run') / 'sample'
+    out = workdir.parent / 'run.json'
+    assert checker.main(['run', '--out', str(out), '--workdir', str(workdir)]) == 0
+    report = json.loads((workdir / checker.REPORT_PATH).read_text(encoding='utf-8'))
+    return json.loads(out.read_text(encoding='utf-8'))['verdicts'], report['results']
+
+
+SampleRun = tuple[dict[str, str], list[dict[str, object]]]
+
+
+@pytest.mark.large
+class DescribeSampleRun:
+    """The sample drives every verdict path the CI job is meant to watch."""
+
+    @pytest.mark.parametrize('status', ['zapped', 'survived', 'timeout'])
+    def it_produces_each_verdict(self, sample_run: SampleRun, status: str) -> None:
+        verdicts, _ = sample_run
+
+        assert status in verdicts.values()
+
+    def it_zaps_a_gremlin_that_stops_collection(self, sample_run: SampleRun) -> None:
+        _, results = sample_run
+
+        assert '<collection>' in {entry.get('killing_test') for entry in results}
+
+    def it_keeps_gremlins_that_only_a_rerun_test_covers_alive(self, sample_run: SampleRun) -> None:
+        verdicts, _ = sample_run
+
+        assert verdicts['sample.py:43 comparison: <= to >'] == 'survived'

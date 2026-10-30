@@ -1,18 +1,45 @@
-"""Fail a PR whose code changes a gremlin verdict without raising a cache version (#876)."""
+"""Fail a PR whose code changes a gremlin verdict without raising a cache version (#876).
+
+The incremental cache keeps a verdict until ``CACHE_VERSION`` or ``RUNNER_FIDELITY_VERSION`` changes. The CI
+``Verdict Change Check`` job runs pytest-gremlins on a fixed sample project with the base and the head code and
+compares the per-gremlin verdicts:
+
+    python scripts/check_verdict_change.py guarded-changes <base-sha>   # changed paths the guard covers
+    python scripts/check_verdict_change.py run --out head.json          # verdicts and markers of this install
+    python scripts/check_verdict_change.py compare base.json head.json  # exit 1 on a change without a bump
+
+``compare`` exits 1 when a verdict changed and neither marker was raised, naming every changed gremlin and the
+marker to raise. ``run`` exits 2 when pytest-gremlins wrote no report.
+"""
 
 from __future__ import annotations
 
+import argparse
 from collections import Counter
 from collections.abc import (
     Collection,
     Iterable,
     Mapping,
+    Sequence,
 )
 from dataclasses import dataclass
+import importlib.util
+import json
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 from typing import Any
 
 PACKAGE_DIR = 'src/pytest_gremlins/'
+REPO_ROOT = Path(__file__).resolve().parents[1]
+GUARD_MODULE = REPO_ROOT / 'tests' / 'cache' / 'test_cache_version_guard.py'
+SAMPLE_DIR = REPO_ROOT / 'tests' / 'fixtures' / 'verdict_sample'
+REPORT_PATH = Path('coverage') / 'gremlins' / 'gremlins.json'
+GIT = shutil.which('git') or 'git'
+EXIT_VERDICT_CHANGED = 1
+EXIT_NO_REPORT = 2
 
 CACHE_VERSION_ADVICE = (
     'The set of gremlins changed, so the change alters what gets mutated: raise CACHE_VERSION in '
@@ -121,3 +148,123 @@ def check_verdicts(
     if diff.is_empty or base_markers != head_markers:
         return None
     return _describe(diff)
+
+
+def guarded_repo_paths() -> set[str]:
+    """Return the repository paths of the files the cache-version guard hashes, from its own file-set function."""
+    spec = importlib.util.spec_from_file_location('cache_version_guard', GUARD_MODULE)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'cannot load the cache-version guard from {GUARD_MODULE}')
+    guard = importlib.util.module_from_spec(spec)
+    # The guard's dataclasses look their module up in sys.modules while it executes.
+    sys.modules[spec.name] = guard
+    spec.loader.exec_module(guard)
+    return {source.relative_to(REPO_ROOT).as_posix() for source in guard.guarded_sources()}
+
+
+def _git_diff_names(base_ref: str, *filters: str) -> list[str]:
+    completed = subprocess.run(
+        [GIT, 'diff', '--name-only', *filters, base_ref, 'HEAD'],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return completed.stdout.splitlines()
+
+
+def _installed_markers() -> Markers:
+    from pytest_gremlins.cache.incremental import RUNNER_FIDELITY_VERSION  # noqa: PLC0415
+    from pytest_gremlins.cache.versions import CACHE_VERSION  # noqa: PLC0415
+
+    return Markers(cache_version=str(CACHE_VERSION), runner_fidelity_version=str(RUNNER_FIDELITY_VERSION))
+
+
+def _run_sample(sample: Path, workdir: Path) -> dict[str, str] | None:
+    shutil.rmtree(workdir, ignore_errors=True)
+    shutil.copytree(sample, workdir)
+    completed = subprocess.run(
+        [sys.executable, '-m', 'pytest', '--gremlins'], cwd=workdir, capture_output=True, text=True, check=False
+    )
+    report_file = workdir / REPORT_PATH
+    if not report_file.is_file():
+        print(completed.stdout, completed.stderr, sep='\n')
+        return None
+    return verdicts_from_report(json.loads(report_file.read_text(encoding='utf-8')), workdir)
+
+
+def _guarded_changes_command(args: argparse.Namespace) -> int:
+    changed = _git_diff_names(args.base_ref)
+    deleted = _git_diff_names(args.base_ref, '--diff-filter=D')
+    for path in guarded_changes(changed, deleted, guarded_repo_paths()):
+        print(path)
+    return 0
+
+
+def _run_command(args: argparse.Namespace) -> int:
+    verdicts = _run_sample(args.sample, args.workdir)
+    if verdicts is None:
+        print(f'pytest-gremlins wrote no report for the sample at {args.sample}', file=sys.stderr)
+        return EXIT_NO_REPORT
+    markers = _installed_markers()
+    run = {
+        'cache_version': markers.cache_version,
+        'runner_fidelity_version': markers.runner_fidelity_version,
+        'verdicts': verdicts,
+    }
+    args.out.write_text(json.dumps(run, indent=2, sort_keys=True), encoding='utf-8')
+    return 0
+
+
+def _load_run(path: Path) -> tuple[dict[str, str], Markers]:
+    run = json.loads(path.read_text(encoding='utf-8'))
+    markers = Markers(cache_version=run['cache_version'], runner_fidelity_version=run['runner_fidelity_version'])
+    return run['verdicts'], markers
+
+
+def _compare_command(args: argparse.Namespace) -> int:
+    base_verdicts, base_markers = _load_run(args.base)
+    head_verdicts, head_markers = _load_run(args.head)
+    failure = check_verdicts(base_verdicts, head_verdicts, base_markers, head_markers)
+    if failure is not None:
+        print(failure)
+        return EXIT_VERDICT_CHANGED
+    print(f'{len(head_verdicts)} sample gremlins checked: no verdict changed, or a cache marker was raised.')
+    return 0
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(required=True)
+
+    guarded = commands.add_parser('guarded-changes', help='print the changed paths the cache-version guard covers')
+    guarded.add_argument('base_ref', help='the commit to diff HEAD against')
+    guarded.set_defaults(handler=_guarded_changes_command)
+
+    run = commands.add_parser('run', help='run pytest-gremlins on the sample and record its verdicts')
+    run.add_argument('--out', type=Path, required=True, help='where to write the verdicts and markers')
+    run.add_argument('--sample', type=Path, default=SAMPLE_DIR, help='the sample project to copy')
+    run.add_argument(
+        '--workdir',
+        type=Path,
+        default=Path(tempfile.gettempdir()) / 'pytest-gremlins-verdict-sample',
+        help='where to copy the sample; reuse it for base and head so gremlin paths match',
+    )
+    run.set_defaults(handler=_run_command)
+
+    compare = commands.add_parser('compare', help='fail when a verdict changed without a cache-marker bump')
+    compare.add_argument('base', type=Path, help='the run file from the base code')
+    compare.add_argument('head', type=Path, help='the run file from the head code')
+    compare.set_defaults(handler=_compare_command)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run one subcommand and return its exit code."""
+    args = _parser().parse_args(argv)
+    handler: Any = args.handler
+    return int(handler(args))
+
+
+if __name__ == '__main__':
+    sys.exit(main())
