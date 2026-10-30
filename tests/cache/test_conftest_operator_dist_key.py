@@ -35,6 +35,7 @@ def _install_package(site: Path, dist_name: str, version: str, module: str) -> N
     dist_info.mkdir(parents=True)
     (dist_info / 'METADATA').write_text(f'Metadata-Version: 2.1\nName: {dist_name}\nVersion: {version}\n')
     (dist_info / 'top_level.txt').write_text(f'{module}\n')
+    (dist_info / 'RECORD').write_text(f'{module}.py,,\n')
     (site / f'{module}.py').write_text(OPERATOR_SOURCE)
     importlib.invalidate_caches()
 
