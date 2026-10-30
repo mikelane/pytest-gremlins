@@ -249,6 +249,15 @@ and the job fails if the file is empty.
 not affect it. To ship a change without docs, write a `(no docs: <reason>)` exemption in the changelog PR, where the
 reason is public and gets reviewed.
 
+**Cache markers at release time.** `scripts/check_cache_kept.py` compares the guarded code (the cache-version guard's
+own file set) at the newest `v*` tag reachable from the release, not counting the tag being released, with the code
+being released. If it changed and neither `CACHE_VERSION` nor `RUNNER_FIDELITY_VERSION` differs from its value at that
+tag, the release fails unless the entry has a `(cache kept: <reason>)` line with a non-empty reason. Put the line in the
+entry's prose before its first `###` heading; it is accepted nowhere else, because the docs gate allows only list items
+under the gated headings. The reason is public and is reviewed in the changelog PR. It runs in the same three places as
+the docs gate (`ci.yml` on a `CHANGELOG.md` change with `--newest`, `cut-release.yml`, and `verify-tag`), exits 1 naming
+the changed files, exits 2 when it could not run, and has no bypass.
+
 **Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`
 pre-commit hook blocks commits to `main` and leaves a dirty version bump to revert.
 
