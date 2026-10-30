@@ -10,7 +10,7 @@ with various optimization settings:
 - **Worker Warmup**: Pre-warm workers immediately after pool creation to reduce
   latency on the first batch of work.
 
-- **Batch Size**: Configure how many gremlins are processed per subprocess call.
+- **Batch Size**: Configure how many gremlins are handed to a worker as one task.
 
 Example:
     >>> config = PoolConfig(max_workers=4, start_method='forkserver', warmup=True)
