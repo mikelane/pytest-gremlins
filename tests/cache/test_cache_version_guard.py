@@ -101,7 +101,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'instrumentation/gremlin.py': 'e395cdccebf405d826b8e699db383c1b876ade684afcd03c86cf202ccd99ad89',  # pragma: allowlist secret  # noqa: E501
     # --
-    'instrumentation/origin_finder.py': 'e9788fa40047ae794896f7b8b2eb91c66119fefa4241efbcab3e3f13ee73d22e',  # pragma: allowlist secret  # noqa: E501
+    'instrumentation/origin_finder.py': 'bf015833cefb378c87181a5c3e8da40fdbae176cc152beff3a48183bec2b5b00',  # pragma: allowlist secret  # noqa: E501
     # --
     'instrumentation/pragma.py': 'c62fc42dce8d590bd58fa84e35183957ac428019b1c7227ea15ef2c4fbcf5597',  # pragma: allowlist secret  # noqa: E501
     # --
