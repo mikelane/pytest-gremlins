@@ -720,6 +720,12 @@ pytest-gremlins puts its finder back in front. A target loaded from the inner `c
 In those cases, import the target in the outer test before the inner session starts, or avoid claiming it
 through `python_files`.
 
+**Cache:** A verdict cached while this bug was present can be a survivor that your tests in fact catch. It is
+never a false zap. After upgrading, a session that loads the pytester plugin misses the cache once and recomputes
+those verdicts. The plugin can be loaded by `-p pytester`, `-p _pytest.pytester`, `pytest_plugins` in a
+`conftest.py`, `PYTEST_PLUGINS` or `addopts`. Sessions that never load pytester keep their cache, because pytester
+is the only case known to be affected.
+
 ---
 
 ### Low code coverage numbers for pytest-gremlins itself
