@@ -376,6 +376,7 @@ class GremlinSession:
     preserved_addopts: str = ''
     doctest_ini_overrides: list[str] = field(default_factory=list)
     rerun_options: list[str] = field(default_factory=list)
+    pytest_cov_options: list[str] = field(default_factory=list)
     rerun_ini_warnings: list[str] = field(default_factory=list)
     baseline_rerun_test_ids: set[str] = field(default_factory=set)
     coverage_timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS
@@ -1092,6 +1093,7 @@ def pytest_configure(config: pytest.Config) -> None:
     cache: IncrementalCache | None = _init_cache(rootdir, cache_enabled, config.option.gremlin_clear_cache, operators)
 
     xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
+    rerun_options = _rerun_options_for(config)
     xdist_workers_for_parallel = xdist_worker_int if xdist_active else None
     parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers=xdist_workers_for_parallel)
     merged_workers = toml_workers if isinstance(toml_workers, int) else None
@@ -1133,7 +1135,8 @@ def pytest_configure(config: pytest.Config) -> None:
             xdist_workers=xdist_worker_int if xdist_active else None,
             preserved_addopts=_addopts_for_gremlin_runs(config),
             doctest_ini_overrides=_doctest_ini_overrides(config),
-            rerun_options=_rerun_options_for(config),
+            rerun_options=rerun_options,
+            pytest_cov_options=_pytest_cov_options_for(config, rerun_options),
             rerun_ini_warnings=_rerun_ini_warnings_for(config),
             coverage_timeout=_rerun_scaled_timeout(config, coverage_timeout, label='Coverage pre-scan'),
             coverage_attempt_timeout=coverage_timeout,
@@ -2237,6 +2240,7 @@ def _unmutated_command_and_env(gremlin_session: GremlinSession, rootdir: Path) -
         xdist_loaded=gremlin_session.xdist_loaded,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
+        pytest_cov_options=gremlin_session.pytest_cov_options,
     )
     env = env_without_xdist_addopts(os.environ)
     env.pop(ACTIVE_GREMLIN_ENV_VAR, None)
@@ -3009,8 +3013,76 @@ def _loader_options_for_gremlin_runs(config: pytest.Config, plugin_names: tuple[
     """
     if not _gremlin_runs_have_autoload_disabled(config):
         return []
+    return _loader_options_for(config, plugin_names)
+
+
+def _loader_options_for(config: pytest.Config, plugin_names: tuple[str, ...]) -> list[str]:
+    """Return ``-p`` and the first of ``plugin_names`` that this session registered, or nothing."""
     registered_name = next((name for name in plugin_names if config.pluginmanager.hasplugin(name)), None)
     return [] if registered_name is None else ['-p', registered_name]
+
+
+# The entry-point name (``-p pytest_cov``, autoload) or the module name (``-p pytest_cov.plugin``, ``pytest_plugins``).
+# The module name goes first: bare ``pytest_cov`` can also be the hookless package that ``PYTEST_PLUGINS`` registers.
+_PYTEST_COV_PLUGIN_NAMES: tuple[str, ...] = ('pytest_cov.plugin', 'pytest_cov')
+_PYTEST_COV_ENTRY_POINT_NAMES: tuple[str, ...] = _PYTEST_COV_PLUGIN_NAMES[1:]
+_PYTEST_COV_BLOCKS = frozenset({'no:pytest_cov', 'no:cov'})
+_NO_COV_OPTION = '--no-cov'
+
+
+def _gremlin_runs_inherit_a_pytest_cov_block(config: pytest.Config) -> bool:
+    """Return whether ``addopts`` or ``PYTEST_ADDOPTS`` hold ``-p no:pytest_cov`` (or ``-p no:cov``, ``-pno:...``)."""
+    tokens = _arguments_gremlin_runs_inherit(config)
+    blocked = {value for flag, value in pairwise(tokens) if flag == '-p'}
+    blocked |= {argument.removeprefix('-p') for argument in tokens if argument.startswith('-p')}
+    return not _PYTEST_COV_BLOCKS.isdisjoint(name.strip() for name in blocked)
+
+
+def _pytest_cov_options_for(config: pytest.Config, rerun_options: Sequence[str]) -> list[str]:
+    """Return the pytest-cov options for gremlin runs: ``--no-cov``, and a loader when they need one (issue #654).
+
+    ``--no-cov`` exists only where pytest-cov is registered, so it is forwarded only when this session has the option
+    (``config.option.no_cov``), never merely because the package is importable.  Gremlin runs get a ``-p`` loader
+    for the name this session registered it under, so the flag always has a plugin to parse it.  Repeating that name
+    is a no-op where an inherited source loaded it as well, while a different name would register it twice.
+
+    The loader matters in two setups:
+
+    * Gremlin runs that start with autoload disabled (the environment, a flag in ``addopts`` or ``PYTEST_ADDOPTS``,
+      or the ``--disable-plugin-autoload`` the rerun options forward, issue #684) do not register pytest-cov
+      themselves.
+    * Gremlin runs that autoload still do not when the inherited ``addopts`` or ``PYTEST_ADDOPTS`` hold
+      ``-p no:pytest_cov`` and only the session's own command line (not passed on) loaded it again.  The later
+      ``-p`` overrides the inherited block.
+
+    With autoload on, only the entry-point name is forwarded, because the module name would register the autoloaded
+    plugin a second time.  The exception is an inherited ``-p no:pytest_cov`` (or ``no:cov``): the gremlin run then
+    does not autoload pytest-cov, so a session that registered only the module name gets that name forwarded too.  A
+    block typed only on the session's command line is not inherited, so it changes nothing.
+
+    If the session registered pytest-cov under a name this does not know, autoloading runs still get the bare flag,
+    which they can parse where nothing blocks the plugin, and runs without autoload get nothing, which errs toward a
+    missed kill.
+
+    Args:
+        config: The session's pytest config, read for the registered plugins, ``no_cov`` and the inherited
+            ``addopts``.
+        rerun_options: The options forwarded to gremlin runs by :func:`_rerun_options_for`, checked for
+            ``--disable-plugin-autoload``.
+
+    Returns:
+        The options to append to every gremlin run command: ``[]``, ``['--no-cov']`` or
+        ``['-p', <plugin name>, '--no-cov']``.
+    """
+    if not hasattr(config.option, 'no_cov'):
+        return []
+    if _gremlin_runs_have_autoload_disabled(config) or _DISABLE_PLUGIN_AUTOLOAD_FLAG in rerun_options:
+        loader_options = _loader_options_for(config, _PYTEST_COV_PLUGIN_NAMES)
+        return [*loader_options, _NO_COV_OPTION] if loader_options else []
+    autoloaded_names = (
+        _PYTEST_COV_PLUGIN_NAMES if _gremlin_runs_inherit_a_pytest_cov_block(config) else _PYTEST_COV_ENTRY_POINT_NAMES
+    )
+    return [*_loader_options_for(config, autoloaded_names), _NO_COV_OPTION]
 
 
 def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
@@ -3515,6 +3587,7 @@ def _run_batch_mutation_testing(  # pragma: no cover
         xdist_loaded=gremlin_session.xdist_loaded,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
+        pytest_cov_options=gremlin_session.pytest_cov_options,
     )
     gremlins = gremlin_session.gremlins
 
@@ -3647,6 +3720,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         xdist_loaded=gremlin_session.xdist_loaded,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
+        pytest_cov_options=gremlin_session.pytest_cov_options,
     )
     gremlins = gremlin_session.gremlins
 
@@ -4014,6 +4088,7 @@ def _run_mutation_testing(
         xdist_loaded=gremlin_session.xdist_loaded,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
+        pytest_cov_options=gremlin_session.pytest_cov_options,
     )
 
     for i, gremlin in enumerate(gremlin_session.gremlins, 1):
@@ -4457,42 +4532,6 @@ def _build_filtered_test_command(
     )
 
 
-def _pytest_cov_available() -> bool:
-    """Check if pytest-cov is available in the current environment.
-
-    The check runs in the parent process (where gremlins is running),
-    not the subprocess.  This is correct because gremlins and the target
-    project share the same venv.
-
-    Returns:
-        True when ``pytest-cov`` is importable, False otherwise.
-    """
-    try:
-        import pytest_cov  # type: ignore  # noqa: F401, PLC0415
-    except ImportError:
-        return False
-    else:
-        return True
-
-
-def _gremlin_runs_load_pytest_cov(gremlin_addopts: str, rerun_options: Sequence[str]) -> bool:
-    """Return whether gremlin runs have pytest-cov loaded, so that they know ``--no-cov``.
-
-    Gremlin runs that get ``--disable-plugin-autoload`` from the rerun options (issue #684) do not autoload it, and
-    the session's own command line is not passed on, so only a ``-p`` loader in their ``addopts``,
-    ``PYTEST_ADDOPTS`` or ``PYTEST_PLUGINS`` loads it.  Other gremlin runs autoload it as before.
-    """
-    if _DISABLE_PLUGIN_AUTOLOAD_FLAG not in rerun_options:
-        return True
-    try:
-        pytest_addopts_tokens = shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))
-    except ValueError:
-        pytest_addopts_tokens = []
-    loaded = _plugin_names_loaded_by([*shlex.split(gremlin_addopts), *pytest_addopts_tokens])
-    loaded |= set(os.environ.get('PYTEST_PLUGINS', '').split(','))
-    return any(name.strip().startswith('pytest_cov') for name in loaded)
-
-
 def _build_test_command(
     instrumented_dir: Path | None,
     preserved_addopts: str = '',
@@ -4500,6 +4539,7 @@ def _build_test_command(
     xdist_loaded: bool = False,
     doctest_ini_overrides: Sequence[str] = (),
     rerun_options: Sequence[str] = (),
+    pytest_cov_options: Sequence[str] = (),
 ) -> list[str]:
     """Build the command to run tests.
 
@@ -4507,9 +4547,9 @@ def _build_test_command(
     to register import hooks before running pytest. Otherwise, runs
     pytest directly.
 
-    ``--no-cov`` is only appended when ``pytest-cov`` is installed so
-    that projects without the plugin do not receive an unknown CLI flag
-    (which causes pytest exit-code 4).
+    ``--no-cov`` arrives through ``pytest_cov_options`` and only when gremlin runs have pytest-cov
+    loaded, so that runs without the plugin do not receive an unknown CLI flag (which causes pytest
+    exit-code 4).
 
     Args:
         instrumented_dir: Directory containing bootstrap infrastructure, or None.
@@ -4532,6 +4572,8 @@ def _build_test_command(
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended last so they win over
             ``addopts`` as they do in the baseline run.  A flaky test then has to fail on every
             attempt before it can zap a gremlin (issue #546).
+        pytest_cov_options: The ``--no-cov`` flag, preceded by a ``-p`` loader when gremlin runs start with
+            autoload disabled (see :func:`_pytest_cov_options_for`); empty when they do not load pytest-cov.
 
     Returns:
         Command list to run tests.
@@ -4562,8 +4604,7 @@ def _build_test_command(
             *doctest_ini_overrides,
         ]
 
-    if _pytest_cov_available() and _gremlin_runs_load_pytest_cov(gremlin_addopts, rerun_options):
-        command.append('--no-cov')
+    command.extend(pytest_cov_options)
 
     if xdist_loaded:
         command.extend(['-n', '0'])

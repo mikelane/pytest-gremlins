@@ -8,7 +8,6 @@ from importlib.metadata import (
     distributions,
     entry_points,
 )
-import importlib.util
 import json
 from pathlib import Path
 import re
@@ -17,6 +16,7 @@ import sysconfig
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from urllib.request import url2pathname
+import uuid
 
 from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.operators.protocol import GremlinOperator
 
 _OWN_DISTRIBUTION = 'pytest-gremlins'
+_OWN_PACKAGE = 'pytest_gremlins'
 
 # A distribution with unreadable or malformed metadata is skipped; it must never break pytest_configure.
 # UnicodeDecodeError and json.JSONDecodeError are ValueErrors; importlib.metadata raises TypeError for a RECORD row
@@ -75,21 +76,6 @@ def _declared_top_level_modules(dist: Distribution) -> set[str]:
     return modules
 
 
-def _module_location(top_level_module: str) -> Path | None:
-    """Return the file (or package directory) a top-level module was loaded from, if it has one."""
-    loaded = sys.modules.get(top_level_module)
-    origin = getattr(loaded, '__file__', None)
-    if origin is None:
-        try:
-            spec = importlib.util.find_spec(top_level_module)
-        except (ImportError, ValueError):
-            return None
-        origin = spec.origin if spec is not None else None
-    if origin is None or not Path(origin).is_absolute():
-        return None
-    return Path(origin).resolve()
-
-
 def _editable_project_directory(dist: Distribution) -> Path | None:
     """Return the project directory of a PEP 610 editable install (``direct_url.json``), if it is one.
 
@@ -115,6 +101,7 @@ class _IndexedDistribution:
     """What the owner lookup needs to know about one installed distribution."""
 
     label: str
+    root: Path
     modules: frozenset[str]
     editable_project: Path | None
 
@@ -126,6 +113,7 @@ def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
             return None
         return _IndexedDistribution(
             label=_distribution_label(dist),
+            root=Path(str(dist.locate_file(''))).resolve(),
             modules=frozenset(_declared_top_level_modules(dist)),
             editable_project=_editable_project_directory(dist),
         )
@@ -151,6 +139,13 @@ def _is_project_local(location: Path, project_root: Path | None) -> bool:
     return not any(location.is_relative_to(site) for site in _site_directories())
 
 
+def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
+    """Whether ``location`` is inside the ``top_level`` package or module the distribution installed."""
+    if top_level not in entry.modules or not location.is_relative_to(entry.root):
+        return False
+    return location.relative_to(entry.root).parts[0].partition('.')[0] == top_level
+
+
 def _is_editable_owner(entry: _IndexedDistribution, location: Path) -> bool:
     """Whether a PEP 610 editable install (``direct_url.json`` with ``dir_info.editable``) put ``location`` on the path.
 
@@ -160,39 +155,65 @@ def _is_editable_owner(entry: _IndexedDistribution, location: Path) -> bool:
     return entry.editable_project is not None and location.is_relative_to(entry.editable_project)
 
 
-def _operator_owner_labels(operators: Iterable[GremlinOperator], project_root: Path | None) -> set[str]:
-    """Label the installed distributions that own the modules of the given operators.
+def _is_importable(operator_class: type) -> bool:
+    """Whether walking the class's qualified name from its module returns this exact class object.
 
-    pytest-gremlins itself is skipped: its version is deliberately covered by ``CACHE_VERSION`` instead.
-    An operator whose module is project-local (under ``project_root``) or in no installed distribution
-    contributes nothing.
+    A module registered under a colliding name (a stdlib or installed module's name), a namespace package, a class
+    nested in a function, and a class a module merely re-exports under another name all fail.
     """
-    candidates = {
-        type(operator).__module__.partition('.')[0]
-        for operator in operators
-        if type(operator).__module__.partition('.')[0] != 'pytest_gremlins'
-    }
-    locations = {module: _module_location(module) for module in candidates}
-    wanted = {
-        module
-        for module, location in locations.items()
-        if location is None or not _is_project_local(location, project_root)
-    }
-    if not wanted:
+    found: object = sys.modules.get(operator_class.__module__)
+    for part in operator_class.__qualname__.split('.'):
+        if part == '<locals>':
+            return False
+        found = getattr(found, part, None)
+    return found is operator_class
+
+
+def _module_file(operator_class: type) -> Path | None:
+    origin = getattr(sys.modules.get(operator_class.__module__), '__file__', None)
+    return Path(origin).resolve() if origin is not None else None
+
+
+def _installed_owner_labels(
+    operator_class: type, installed: list[_IndexedDistribution], project_root: Path | None
+) -> set[str]:
+    """Label the installed distributions that own an importable operator class; empty when none is proven."""
+    location = _module_file(operator_class)
+    if location is None or _is_project_local(location, project_root):
         return set()
-    installed = _index_distributions()
+    top_level = operator_class.__module__.partition('.')[0]
+    declared = {entry.label for entry in installed if _is_installed_module_file(entry, top_level, location)}
+    return declared or {entry.label for entry in installed if _is_editable_owner(entry, location)}
+
+
+def _is_exempt_from_classification(operator_class: type) -> bool:
+    """pytest-gremlins' own operators are covered by ``CACHE_VERSION``; a conftest operator by the tests it covers."""
+    module_file = _module_file(operator_class)
+    return operator_class.__module__.partition('.')[0] == _OWN_PACKAGE or (
+        module_file is not None and module_file.name == 'conftest.py'
+    )
+
+
+def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root: Path | None) -> set[str]:
+    """Label each operator by the installed distribution that provably owns it, else by an always-miss token.
+
+    An operator class keeps a stable key only when it is importable (see ``_is_importable``) and an installed
+    distribution owns its module's file. Any other operator contributes ``local-operator=<module>:unreadable-<random>``,
+    which differs on every run, so its verdicts are recomputed and never served stale. A helper's file is never
+    hashed: what it defines can come from other files, so no hash proves the class unchanged. Restoring cache
+    hits for such operators is tracked in #887.
+    """
+    classes = {type(operator) for operator in operators if not _is_exempt_from_classification(type(operator))}
+    importable = {cls for cls in classes if _is_importable(cls)}
+    installed = _index_distributions() if importable else []
     labels: set[str] = set()
-    unowned = set(wanted)
-    for entry in installed:
-        owned = entry.modules & wanted
-        if owned:
-            labels.add(entry.label)
-            unowned -= owned
-    for module in unowned:
-        location = locations[module]
-        if location is not None:
-            labels |= {entry.label for entry in installed if _is_editable_owner(entry, location)}
-    return labels
+    unproven = classes - importable
+    for operator_class in importable:
+        owners = _installed_owner_labels(operator_class, installed, project_root)
+        labels |= owners
+        if not owners:
+            unproven.add(operator_class)
+    return labels | {f'local-operator={cls.__module__}:unreadable-{uuid.uuid4().hex}' for cls in unproven}
 
 
 def installed_versions_fingerprint(
@@ -207,8 +228,10 @@ def installed_versions_fingerprint(
 
     Args:
         operators: The operators registered for this run.
-        project_root: The pytest rootdir. An operator module under it is project code and adds nothing, even
-            when the project under test is itself installed editable.
+        project_root: The pytest rootdir. An operator module under it is project code, not an installed
+            distribution. An operator keeps a stable key only when it is importable by its qualified name and an
+            installed distribution owns its module; every other operator, a ``conftest.py`` operator excepted,
+            makes every run miss the cache (#887 tracks restoring hits).
 
     Raising ``CACHE_VERSION`` or any upgrade, downgrade, install or removal of an operator distribution
     changes the string, so verdicts cached under an older string are never reused. A pytest-gremlins
@@ -223,5 +246,5 @@ def installed_versions_fingerprint(
         for entry_point in entry_points(group=ENTRY_POINT_GROUP)
         if entry_point.dist is not None
     }
-    suppliers |= _operator_owner_labels(operators, project_root)
+    suppliers |= _operator_supplier_labels(operators, project_root)
     return '|'.join([f'cache-version={CACHE_VERSION}', *sorted(suppliers)])
