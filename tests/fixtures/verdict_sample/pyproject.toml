@@ -1,0 +1,12 @@
+# The fixed project the CI verdict-diff job runs pytest-gremlins on (#876). Its own config makes it the rootdir,
+# so the repository's pytest settings and conftest files never reach it. Test files are named check_*.py so the
+# repository's own test run does not collect them.
+[tool.pytest.ini_options]
+python_files = ["check_*.py"]
+test_categories_enforcement = "disabled"
+addopts = ["-p", "no:cacheprovider", "--reruns", "1"]
+
+[tool.pytest-gremlins]
+paths = ["sample.py"]
+report = "json"
+mutant_timeout = 8
