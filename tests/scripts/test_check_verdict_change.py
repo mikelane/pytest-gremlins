@@ -84,3 +84,64 @@ class DescribeVerdictCheck:
         failure = checker.check_verdicts(ZAPPED, head, BASE_MARKERS, BASE_MARKERS)
 
         assert failure.endswith(checker.CACHE_VERSION_ADVICE)
+
+
+def _entry(line_number: int, status: str, description: str = '>= to >') -> dict[str, object]:
+    return {
+        'gremlin_id': f'sample_ab12_g{line_number:03d}',
+        'file_path': '/runner/work/sample/sample.py',
+        'line_number': line_number,
+        'status': status,
+        'operator': 'comparison',
+        'description': description,
+    }
+
+
+@pytest.mark.small
+class DescribeVerdictsFromReport:
+    def it_keys_each_verdict_by_the_path_inside_the_sample_and_the_mutation(self) -> None:
+        report = {'results': [_entry(10, 'zapped')]}
+
+        verdicts = checker.verdicts_from_report(report, Path('/runner/work/sample'))
+
+        assert verdicts == {'sample.py:10 comparison: >= to >': 'zapped'}
+
+    def it_numbers_gremlins_that_share_a_line_operator_and_description(self) -> None:
+        report = {'results': [_entry(10, 'zapped', 'boundary shift'), _entry(10, 'survived', 'boundary shift')]}
+
+        verdicts = checker.verdicts_from_report(report, Path('/runner/work/sample'))
+
+        assert verdicts == {
+            'sample.py:10 comparison: boundary shift': 'zapped',
+            'sample.py:10 comparison: boundary shift #2': 'survived',
+        }
+
+
+GUARDED = frozenset({'src/pytest_gremlins/plugin.py', 'src/pytest_gremlins/config.py'})
+
+
+@pytest.mark.small
+class DescribeGuardedChanges:
+    def it_keeps_a_changed_path_that_the_guard_covers(self) -> None:
+        changes = checker.guarded_changes(['src/pytest_gremlins/plugin.py', 'docs/index.md'], [], GUARDED)
+
+        assert changes == ['src/pytest_gremlins/plugin.py']
+
+    def it_drops_a_changed_package_file_that_the_guard_excludes(self) -> None:
+        changes = checker.guarded_changes(['src/pytest_gremlins/reporting/html.py'], [], GUARDED)
+
+        assert changes == []
+
+    def it_keeps_a_deleted_package_module_because_the_head_guard_cannot_list_it(self) -> None:
+        deleted = ['src/pytest_gremlins/old_module.py']
+
+        changes = checker.guarded_changes(deleted, deleted, GUARDED)
+
+        assert changes == ['src/pytest_gremlins/old_module.py']
+
+    def it_drops_a_deleted_file_outside_the_package_sources(self) -> None:
+        deleted = ['tests/test_old.py', 'src/pytest_gremlins/py.typed']
+
+        changes = checker.guarded_changes(deleted, deleted, GUARDED)
+
+        assert changes == []
