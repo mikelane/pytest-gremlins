@@ -1,84 +1,38 @@
-"""An assert holding gremlin switches becomes one plain assert per gremlin so pytest can explain it (#603)."""
+"""An assert holding gremlin switches becomes one plain assert per gremlin so pytest can explain it (#603).
+
+Every test drives ``GremlinLoader.exec_module`` with the assertion-rewrite hook that pytest uses, then observes
+the loaded module: which branch an assert runs and what its failure message says.
+"""
 
 from __future__ import annotations
 
-import ast
 import importlib.machinery
 from pathlib import Path
 from types import ModuleType
+from typing import (
+    Protocol,
+    cast,
+)
 
 from _pytest.assertion.rewrite import AssertionRewritingHook
 import pytest
 
-from pytest_gremlins.instrumentation.origin_finder import (
-    GremlinLoader,
-    _specialize_asserts,
-)
+from pytest_gremlins.instrumentation.origin_finder import GremlinLoader
+
+_ORIGIN = '/project/src/served_mod.py'
+
+
+class _ResourceReaderSource(Protocol):
+    def get_resource_reader(self, fullname: str) -> object: ...
+
+
+class _PathReader(Protocol):
+    path: Path
+
 
 _SWITCHED_ASSERT = (
     "def check(n):\n    assert (n >= 0 if __gremlin_active__ == 'g001' else n > 0), 'bad'\n    return n\n"
 )
-
-
-def _run_check(source_tree: ast.Module, active: str, value: int) -> int:
-    namespace: dict[str, object] = {'__gremlin_active__': active}
-    exec(compile(source_tree, '<test>', 'exec'), namespace)  # noqa: S102
-    return namespace['check'](value)  # type: ignore[operator, no-any-return]
-
-
-_DEEP_ELIF_BRANCHES = 600
-
-
-def _deep_elif_with_switched_assert_at_the_bottom() -> ast.Module:
-    branches = ''.join(f'    elif flags[{index}]:\n        return {index}\n' for index in range(1, _DEEP_ELIF_BRANCHES))
-    bottom = "    else:\n        assert (n >= 0 if __gremlin_active__ == 'g001' else n > 0)\n"
-    return ast.parse(f'def check(flags, n):\n    if flags[0]:\n        return 0\n{branches}{bottom}')
-
-
-@pytest.mark.small
-class DescribeSpecializeAsserts:
-    def it_leaves_no_switch_inside_any_assert(self) -> None:
-        specialized = _specialize_asserts(ast.parse(_SWITCHED_ASSERT))
-
-        asserts = [node for node in ast.walk(specialized) if isinstance(node, ast.Assert)]
-
-        assert [ast.unparse(node.test) for node in asserts] == ['n >= 0', 'n > 0']
-
-    def it_runs_the_active_gremlins_assert(self) -> None:
-        specialized = _specialize_asserts(ast.parse(_SWITCHED_ASSERT))
-
-        assert _run_check(specialized, 'g001', 0) == 0
-
-    def it_runs_the_original_assert_when_no_gremlin_is_active(self) -> None:
-        specialized = _specialize_asserts(ast.parse(_SWITCHED_ASSERT))
-
-        with pytest.raises(AssertionError, match='bad'):
-            _run_check(specialized, '', 0)
-
-    def it_keeps_an_assert_without_switches_untouched(self) -> None:
-        tree = ast.parse('assert 1 < 2\n')
-
-        assert ast.dump(_specialize_asserts(tree)) == ast.dump(ast.parse('assert 1 < 2\n'))
-
-    def it_specializes_an_assert_at_the_bottom_of_a_very_deep_elif_chain(self) -> None:
-        specialized = _specialize_asserts(_deep_elif_with_switched_assert_at_the_bottom())
-
-        asserts = [node for node in ast.walk(specialized) if isinstance(node, ast.Assert)]
-
-        assert [ast.unparse(node.test) for node in asserts] == ['n >= 0', 'n > 0']
-
-    def it_leaves_an_assert_unspecialized_when_specializing_it_overflows_the_stack(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        def overflow(_node: ast.Assert, _active_id: str | None) -> ast.Assert:
-            raise RecursionError
-
-        monkeypatch.setattr('pytest_gremlins.instrumentation.origin_finder._resolve_assert', overflow)
-        tree = ast.parse(_SWITCHED_ASSERT)
-        before = ast.dump(tree)
-
-        assert ast.dump(_specialize_asserts(tree)) == before
-
 
 _TWO_SWITCHES_ASSERT = (
     'def check(n):\n'
@@ -87,12 +41,17 @@ _TWO_SWITCHES_ASSERT = (
     '    return n\n'
 )
 
+_SAME_SWITCH_TWICE = (
+    'def check(a, b, c, d):\n'
+    "    assert (a if __gremlin_active__ == 'g001' else b) or (c if __gremlin_active__ == 'g001' else d)\n"
+)
+
 _SWITCHED_MESSAGE_ASSERT = "def check(n):\n    assert n > 0, ('low' if __gremlin_active__ == 'g001' else 'bad')\n"
 
 _SWITCHED_ASSERT_IN_HANDLER = (
     'def check(n):\n'
     '    try:\n'
-    '        pass\n'
+    '        raise ValueError\n'
     '    except ValueError:\n'
     "        assert (n >= 0 if __gremlin_active__ == 'g001' else n > 0)\n"
 )
@@ -104,128 +63,224 @@ _SWITCHED_ASSERT_IN_MATCH_CASE = (
     "            assert (n >= 0 if __gremlin_active__ == 'g001' else n > 0)\n"
 )
 
+_DEEP_ELIF_BRANCHES = 600
 
-def _assert_conditions(tree: ast.Module) -> list[str]:
-    return [ast.unparse(node.test) for node in ast.walk(tree) if isinstance(node, ast.Assert)]
+
+def _deep_elif_with_switched_assert_at_the_bottom() -> str:
+    branches = ''.join(f'    elif flags[{index}]:\n        return {index}\n' for index in range(1, _DEEP_ELIF_BRANCHES))
+    bottom = "    else:\n        assert (n >= 0 if __gremlin_active__ == 'g001' else n > 0)\n"
+    return f'def check(flags, n):\n    if flags[0]:\n        return 0\n{branches}{bottom}'
+
+
+_NESTING_DEEPER_THAN_THE_STACK = 1500
+
+
+def _switched_assert_nested_deeper_than_the_stack() -> str:
+    nested = "(n >= 0 if __gremlin_active__ == 'g001' else n > 0)"
+    negations = 'not ' * _NESTING_DEEPER_THAN_THE_STACK
+    return f'def check(n):\n    assert {negations}{nested}\n    return n\n'
+
+
+def _lookalike_assert(condition: str) -> str:
+    return f'def check(flag, other, wanted):\n    assert (True if {condition} else False)\n'
+
+
+def _load(source: str, config: pytest.Config, *, name: str, active: str = '') -> ModuleType:
+    module = ModuleType(name)
+    module.__spec__ = importlib.machinery.ModuleSpec(name, None, origin=_ORIGIN)
+    module.__dict__['__gremlin_active__'] = active
+    GremlinLoader(None, AssertionRewritingHook(config), source=source).exec_module(module)
+    return module
 
 
 @pytest.mark.small
-class DescribeSpecializeAssertsSwitchShapes:
-    """Every gremlin switch an assert holds is resolved, and nothing that merely looks like one is touched."""
+class DescribeGremlinLoaderSpecializesSwitchedAsserts:
+    def it_runs_the_active_gremlins_assert(self, pytestconfig: pytest.Config) -> None:
+        module = _load(_SWITCHED_ASSERT, pytestconfig, name='active_mod', active='g001')
 
-    def it_writes_one_assert_per_gremlin_and_one_for_the_original(self) -> None:
-        specialized = _specialize_asserts(ast.parse(_TWO_SWITCHES_ASSERT))
+        assert module.check(0) == 0
 
-        assert _assert_conditions(specialized) == ['n >= 0 and n < 10', 'n > 0 and n < 9', 'n > 0 and n < 10']
+    def it_runs_the_original_assert_when_no_gremlin_is_active(self, pytestconfig: pytest.Config) -> None:
+        module = _load(_SWITCHED_ASSERT, pytestconfig, name='original_mod')
 
-    def it_runs_the_first_gremlins_assert_when_it_is_active(self) -> None:
-        specialized = _specialize_asserts(ast.parse(_TWO_SWITCHES_ASSERT))
+        with pytest.raises(AssertionError, match='bad'):
+            module.check(0)
 
-        assert _run_check(specialized, 'g001', 0) == 0
+    def it_explains_the_active_gremlins_assert_with_its_operands(self, pytestconfig: pytest.Config) -> None:
+        module = _load(_SWITCHED_ASSERT, pytestconfig, name='explained_active_mod', active='g001')
 
-    def it_runs_the_second_gremlins_assert_when_it_is_active(self) -> None:
-        specialized = _specialize_asserts(ast.parse(_TWO_SWITCHES_ASSERT))
+        with pytest.raises(AssertionError, match=r'assert -1 >= 0'):
+            module.check(-1)
+
+    def it_explains_the_original_assert_with_its_operands(self, pytestconfig: pytest.Config) -> None:
+        module = _load(_SWITCHED_ASSERT, pytestconfig, name='explained_original_mod')
+
+        with pytest.raises(AssertionError, match=r'assert 0 > 0'):
+            module.check(0)
+
+    def it_leaves_an_assert_without_switches_explained_as_pytest_does(self, pytestconfig: pytest.Config) -> None:
+        module = _load('def check(n):\n    assert n > 0\n', pytestconfig, name='plain_mod')
+
+        with pytest.raises(AssertionError, match=r'assert -1 > 0'):
+            module.check(-1)
+
+    def it_specializes_an_assert_at_the_bottom_of_a_very_deep_elif_chain(self, pytestconfig: pytest.Config) -> None:
+        module = _load(
+            _deep_elif_with_switched_assert_at_the_bottom(), pytestconfig, name='deep_elif_mod', active='g001'
+        )
+
+        with pytest.raises(AssertionError, match=r'assert -1 >= 0'):
+            module.check([False] * _DEEP_ELIF_BRANCHES, -1)
+
+    def it_keeps_the_active_gremlin_when_specializing_an_assert_overflows_the_stack(
+        self, pytestconfig: pytest.Config
+    ) -> None:
+        module = _load(
+            _switched_assert_nested_deeper_than_the_stack(), pytestconfig, name='overflow_assert_mod', active='g001'
+        )
+
+        assert module.check(0) == 0
+
+    def it_still_fails_the_active_gremlins_assert_when_specializing_it_overflows_the_stack(
+        self, pytestconfig: pytest.Config
+    ) -> None:
+        module = _load(
+            _switched_assert_nested_deeper_than_the_stack(), pytestconfig, name='overflow_guard_mod', active='g001'
+        )
 
         with pytest.raises(AssertionError):
-            _run_check(specialized, 'g002', 9)
+            module.check(-1)
 
-    def it_writes_one_assert_per_gremlin_when_the_same_switch_appears_twice(self) -> None:
-        source = "assert (a if __gremlin_active__ == 'g001' else b) or (c if __gremlin_active__ == 'g001' else d)\n"
 
-        specialized = _specialize_asserts(ast.parse(source))
-
-        assert _assert_conditions(specialized) == ['a or c', 'b or d']
-
-    def it_specializes_an_assert_whose_switch_is_only_in_its_message(self) -> None:
-        specialized = _specialize_asserts(ast.parse(_SWITCHED_MESSAGE_ASSERT))
-
-        with pytest.raises(AssertionError, match='low'):
-            _run_check(specialized, 'g001', 0)
-
-    def it_specializes_an_assert_inside_an_except_handler(self) -> None:
-        specialized = _specialize_asserts(ast.parse(_SWITCHED_ASSERT_IN_HANDLER))
-
-        assert _assert_conditions(specialized) == ['n >= 0', 'n > 0']
-
-    def it_specializes_an_assert_inside_a_match_case(self) -> None:
-        specialized = _specialize_asserts(ast.parse(_SWITCHED_ASSERT_IN_MATCH_CASE))
-
-        assert _assert_conditions(specialized) == ['n >= 0', 'n > 0']
+@pytest.mark.small
+class DescribeGremlinLoaderResolvesEverySwitchAnAssertHolds:
+    """Every gremlin switch an assert holds is resolved, and nothing that merely looks like one is touched."""
 
     @pytest.mark.parametrize(
-        'source',
+        ('active', 'value', 'message'),
         [
-            pytest.param('assert (a if flag else b)\n', id='plain-ternary'),
-            pytest.param("assert (a if other == 'g001' else b)\n", id='other-name'),
-            pytest.param("assert (a if __gremlin_active__ != 'g001' else b)\n", id='not-equal'),
-            pytest.param('assert (a if __gremlin_active__ == wanted else b)\n', id='non-constant-id'),
-            pytest.param("assert (a if __gremlin_active__ == 'g001' == wanted else b)\n", id='chained-compare'),
-            pytest.param("assert (a if 'g001' == __gremlin_active__ else b)\n", id='reversed-operands'),
+            pytest.param('g001', -1, r'assert \(-1 >= 0\)', id='first-gremlin'),
+            pytest.param('g002', 9, r'assert \(9 > 0 and 9 < 9\)', id='second-gremlin'),
+            pytest.param('', 0, r'assert \(0 > 0', id='original'),
         ],
     )
-    def it_leaves_an_assert_untouched_when_its_ternary_is_not_a_gremlin_switch(self, source: str) -> None:
-        tree = ast.parse(source)
+    def it_runs_the_assert_of_the_active_gremlin_and_explains_it(
+        self, pytestconfig: pytest.Config, active: str, value: int, message: str
+    ) -> None:
+        module = _load(_TWO_SWITCHES_ASSERT, pytestconfig, name=f'two_switch_{active or "none"}_mod', active=active)
 
-        assert ast.dump(_specialize_asserts(tree)) == ast.dump(ast.parse(source))
+        with pytest.raises(AssertionError, match=message):
+            module.check(value)
 
+    def it_runs_the_original_assert_for_an_id_no_switch_names(self, pytestconfig: pytest.Config) -> None:
+        module = _load(_TWO_SWITCHES_ASSERT, pytestconfig, name='unknown_id_mod', active='g999')
 
-def _module_from(name: str, origin: str, active: str = '') -> ModuleType:
-    module = ModuleType(name)
-    module.__spec__ = importlib.machinery.ModuleSpec(name, None, origin=origin)
-    module.__dict__['__gremlin_active__'] = active
-    return module
+        assert module.check(5) == 5
+
+    def it_resolves_a_switch_that_appears_twice_in_one_assert(self, pytestconfig: pytest.Config) -> None:
+        active = _load(_SAME_SWITCH_TWICE, pytestconfig, name='twice_active_mod', active='g001')
+        original = _load(_SAME_SWITCH_TWICE, pytestconfig, name='twice_original_mod')
+
+        with pytest.raises(AssertionError, match=r'False or False'):
+            active.check(False, True, False, True)
+        original.check(False, True, False, True)
+
+    def it_specializes_an_assert_whose_switch_is_only_in_its_message(self, pytestconfig: pytest.Config) -> None:
+        module = _load(_SWITCHED_MESSAGE_ASSERT, pytestconfig, name='message_switch_mod', active='g001')
+
+        with pytest.raises(AssertionError, match='low'):
+            module.check(0)
+
+    def it_specializes_an_assert_inside_an_except_handler(self, pytestconfig: pytest.Config) -> None:
+        module = _load(_SWITCHED_ASSERT_IN_HANDLER, pytestconfig, name='handler_mod', active='g001')
+
+        with pytest.raises(AssertionError, match=r'assert -1 >= 0'):
+            module.check(-1)
+
+    def it_specializes_an_assert_inside_a_match_case(self, pytestconfig: pytest.Config) -> None:
+        module = _load(_SWITCHED_ASSERT_IN_MATCH_CASE, pytestconfig, name='match_case_mod', active='g001')
+
+        with pytest.raises(AssertionError, match=r'assert -1 >= 0'):
+            module.check(-1)
+
+    @pytest.mark.parametrize(
+        ('condition', 'active'),
+        [
+            pytest.param('flag', 'g001', id='plain-ternary'),
+            pytest.param("other == 'g001'", 'g001', id='other-name'),
+            pytest.param("__gremlin_active__ != 'g001'", 'g001', id='not-equal'),
+        ],
+    )
+    def it_takes_the_else_branch_of_a_ternary_that_is_not_a_gremlin_switch(
+        self, pytestconfig: pytest.Config, condition: str, active: str
+    ) -> None:
+        module = _load(_lookalike_assert(condition), pytestconfig, name='lookalike_else_mod', active=active)
+
+        with pytest.raises(AssertionError):
+            module.check(False, 'x', 'g001')
+
+    def it_evaluates_the_whole_chain_of_a_chained_compare_that_names_a_gremlin(
+        self, pytestconfig: pytest.Config
+    ) -> None:
+        module = _load(
+            _lookalike_assert("__gremlin_active__ == 'g001' == wanted"),
+            pytestconfig,
+            name='chained_compare_mod',
+            active='g001',
+        )
+
+        with pytest.raises(AssertionError):
+            module.check(False, 'x', 'g002')
+
+    @pytest.mark.parametrize(
+        ('condition', 'active'),
+        [
+            pytest.param("__gremlin_active__ != 'g001'", 'g002', id='not-equal-other-id'),
+            pytest.param('__gremlin_active__ == wanted', 'g001', id='non-constant-id'),
+            pytest.param("'g001' == __gremlin_active__", 'g001', id='reversed-operands'),
+        ],
+    )
+    def it_takes_the_if_branch_of_a_ternary_that_is_not_a_gremlin_switch(
+        self, pytestconfig: pytest.Config, condition: str, active: str
+    ) -> None:
+        module = _load(_lookalike_assert(condition), pytestconfig, name='lookalike_if_mod', active=active)
+
+        module.check(False, 'x', 'g001')
 
 
 @pytest.mark.small
 class DescribeGremlinLoaderRewritesSourceForPytestsHook:
     """A module pytest's rewrite hook served keeps pytest's assert messages when the loader compiles source text."""
 
-    ORIGIN = '/project/src/served_mod.py'
     PLAIN_SOURCE = 'def check(n):\n    assert n > 0\n'
-    SWITCHED_SOURCE = "def check(n):\n    assert (n >= 0 if __gremlin_active__ == 'g001' else n > 0)\n"
-
-    def it_explains_a_failed_assert_with_its_operands(self, pytestconfig: pytest.Config) -> None:
-        module = _module_from('served_mod', self.ORIGIN)
-
-        GremlinLoader(None, AssertionRewritingHook(pytestconfig), source=self.PLAIN_SOURCE).exec_module(module)
-
-        with pytest.raises(AssertionError, match=r'assert -1 > 0'):
-            module.check(-1)
-
-    def it_explains_the_active_gremlins_assert_with_its_operands(self, pytestconfig: pytest.Config) -> None:
-        module = _module_from('served_switch_mod', self.ORIGIN, active='g001')
-
-        GremlinLoader(None, AssertionRewritingHook(pytestconfig), source=self.SWITCHED_SOURCE).exec_module(module)
-
-        with pytest.raises(AssertionError, match=r'assert -1 >= 0'):
-            module.check(-1)
-
-    def it_explains_the_original_assert_when_no_gremlin_is_active(self, pytestconfig: pytest.Config) -> None:
-        module = _module_from('served_original_mod', self.ORIGIN)
-
-        GremlinLoader(None, AssertionRewritingHook(pytestconfig), source=self.SWITCHED_SOURCE).exec_module(module)
-
-        with pytest.raises(AssertionError, match=r'assert 0 > 0'):
-            module.check(0)
-
-    def it_records_the_module_as_rewritten_with_the_hook(self, pytestconfig: pytest.Config) -> None:
-        hook = AssertionRewritingHook(pytestconfig)
-
-        GremlinLoader(None, hook, source=self.PLAIN_SOURCE).exec_module(_module_from('recorded_mod', self.ORIGIN))
-
-        assert hook._rewritten_names == {'recorded_mod': Path(self.ORIGIN)}
 
     def it_explains_asserts_when_pytest_renames_its_hook_class(self, pytestconfig: pytest.Config) -> None:
         class RenamedRewriteLoader(AssertionRewritingHook):
             pass
 
         RenamedRewriteLoader.__module__ = '_pytest.assertion.rewrite'
-        module = _module_from('renamed_hook_mod', self.ORIGIN)
+        module = ModuleType('renamed_hook_mod')
+        module.__spec__ = importlib.machinery.ModuleSpec('renamed_hook_mod', None, origin=_ORIGIN)
 
         GremlinLoader(None, RenamedRewriteLoader(pytestconfig), source=self.PLAIN_SOURCE).exec_module(module)
 
         with pytest.raises(AssertionError, match=r'assert -1 > 0'):
             module.check(-1)
+
+    def it_keeps_package_data_reachable_through_the_hook_for_a_module_it_rewrote(
+        self, pytestconfig: pytest.Config
+    ) -> None:
+        # The hook's get_resource_reader looks the module up in its rewritten names, so a missing record would
+        # break importlib.resources for every module the loader serves.
+        hook = AssertionRewritingHook(pytestconfig)
+        module = ModuleType('recorded_mod')
+        module.__spec__ = importlib.machinery.ModuleSpec('recorded_mod', None, origin=_ORIGIN)
+        loader = GremlinLoader(None, hook, source=self.PLAIN_SOURCE)
+
+        loader.exec_module(module)
+
+        reader = cast('_PathReader', cast('_ResourceReaderSource', loader).get_resource_reader('recorded_mod'))
+        assert reader.path == Path(_ORIGIN).parent
 
     def it_runs_plain_asserts_when_rewriting_overflows_the_stack(
         self, pytestconfig: pytest.Config, monkeypatch: pytest.MonkeyPatch
@@ -234,15 +289,15 @@ class DescribeGremlinLoaderRewritesSourceForPytestsHook:
             raise RecursionError
 
         monkeypatch.setattr('_pytest.assertion.rewrite.rewrite_asserts', overflow)
-        module = _module_from('overflow_mod', self.ORIGIN)
 
-        GremlinLoader(None, AssertionRewritingHook(pytestconfig), source=self.PLAIN_SOURCE).exec_module(module)
+        module = _load(self.PLAIN_SOURCE, pytestconfig, name='overflow_mod')
 
         with pytest.raises(AssertionError, match=r'^$'):
             module.check(-1)
 
     def it_leaves_asserts_plain_when_another_loader_found_the_module(self) -> None:
-        module = _module_from('unserved_mod', self.ORIGIN)
+        module = ModuleType('unserved_mod')
+        module.__spec__ = importlib.machinery.ModuleSpec('unserved_mod', None, origin=_ORIGIN)
 
         GremlinLoader(None, object(), source=self.PLAIN_SOURCE).exec_module(module)
 

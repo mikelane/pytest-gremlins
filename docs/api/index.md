@@ -35,7 +35,6 @@ pytest_gremlins/
 │   ├── transformer.py    # AST transformer
 │   ├── switcher.py       # Environment-based switching
 │   ├── finder.py         # Mutation point finder
-│   ├── import_hooks.py   # Import interception
 │   └── pragma.py         # Pardon pragma parsing
 │
 ├── coverage/             # Coverage-guided selection
@@ -92,7 +91,7 @@ pytest_gremlins/
 - [Instrumentation Module](instrumentation.md) - AST transformation and switching
   - [Gremlin Dataclass](instrumentation.md#gremlin)
   - [Source Transformation](instrumentation.md#transformer)
-  - [Import Hooks](instrumentation.md#import-hooks)
+  - [Origin Finder](instrumentation.md#origin-finder)
 
 ### Coverage
 
