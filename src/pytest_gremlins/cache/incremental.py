@@ -15,7 +15,7 @@ from typing import (
 
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore
-from pytest_gremlins.cache.versions import installed_versions_fingerprint
+from pytest_gremlins.cache.versions import versions_fingerprint
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -265,13 +265,16 @@ class IncrementalCache:
             project_root: The pytest rootdir; an operator module under it is project code, so no distribution
                 label is added. An operator keeps a stable key only when it is importable by its qualified name and
                 an installed distribution owns its module. Every other operator, a conftest operator excepted,
-                misses the cache on every run (#887 tracks restoring hits).
+                misses the cache on every run (#887 tracks restoring hits), and such a run writes no results, since
+                no later run could read them.
         """
         self._cache_dir = cache_dir
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
         self._store.delete_keys_not_ending_with(f':{RUNNER_FIDELITY_VERSION}')
-        self._versions_hash = self._hasher.hash_string(installed_versions_fingerprint(operators, project_root))
+        fingerprint = versions_fingerprint(operators, project_root)
+        self._versions_hash = self._hasher.hash_string(fingerprint.text)
+        self._writes_are_readable = fingerprint.writes_are_readable
         self._hits = 0
         self._misses = 0
 
@@ -397,6 +400,8 @@ class IncrementalCache:
             rerun_budget: ``(reruns, reruns_delay)`` the result was reached under.
             rerun_settings: The other resolved rerun settings the result was reached under.
         """
+        if not self._writes_are_readable:
+            return
         cache_key = self._build_cache_key(
             gremlin_id,
             source_hash,
@@ -434,6 +439,8 @@ class IncrementalCache:
             rerun_budget: ``(reruns, reruns_delay)`` the result was reached under.
             rerun_settings: The other resolved rerun settings the result was reached under.
         """
+        if not self._writes_are_readable:
+            return
         cache_key = self._build_cache_key(
             gremlin_id,
             source_hash,

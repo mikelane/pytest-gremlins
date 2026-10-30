@@ -61,13 +61,13 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': 'ef17d1462157b9847cbf2fd78206bfdf64011e8585b962fb41d78385f4e3e26f',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': '19a75ff2f148ede6e0eb9a75f2827473f0d6121ab3ea6197c82407c9e5afda4c',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/store.py': '967c632516b6ae126921f43f1c72b753de59c0cac9679557793c2082e0003cc1',  # pragma: allowlist secret
     # --
     'cache/types.py': 'e8f2a82731cb4bfaec2a4803fe312826f3a85511224868322aa7eb127339085a',  # pragma: allowlist secret
     # --
-    'cache/versions.py': 'acac8a9b1043ed71153ebfd9d96ab20f57c6c064f1b31ff65ced38d833e6f796',  # pragma: allowlist secret
+    'cache/versions.py': '3af3692c92c1ce27b38ec59c1fe2c469394548a823027fe3f272b109dd7a157b',  # pragma: allowlist secret
     # --
     'config.py': 'c505aee0edbe35832d21e600138b9ce95832d4c99094185f908f9ca9f534338a',  # pragma: allowlist secret
     # --
@@ -93,7 +93,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'coverage/types.py': '6300b3a3c2f3a3ccd433e43fb172f367243f4f3eb10cd588306790ae415453ae',  # pragma: allowlist secret
     # --
-    'gremlins_options.py': 'd6aca18098f0c89d14ba54ee4d46b398a9331100c8d25398cb66fca8fac47959',  # pragma: allowlist secret  # noqa: E501
+    'gremlins_options.py': 'a222a60f665711808dac20c94eb44b072fe4483cfd9de134a15bb3c8172075a0',  # pragma: allowlist secret  # noqa: E501
     # --
     'instrumentation/__init__.py': '22aab29f2f7b08257f748738722eff5fede51bc1c5d90010a588fc38c92d42aa',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -109,7 +109,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'instrumentation/switcher.py': '602bef0ec33b9e4f0edbb24db1497f2d9fbf57952662a5f11ec51dee262cff0e',  # pragma: allowlist secret  # noqa: E501
     # --
-    'instrumentation/transformer.py': '4ae5263c706731e471a1d65e65aa0c39e54a3bcf0b53c1c030c8b8af37cad646',  # pragma: allowlist secret  # noqa: E501
+    'instrumentation/transformer.py': '1fd0ecc046dbae7b2d2771beac1b170427d365508e1ee855f52355b79096a3f5',  # pragma: allowlist secret  # noqa: E501
     # --
     'node_id_args.py': 'd8a6f83045811ffe0c9513e74a15278966c62071db6f3722b1ebc5359c073bb9',  # pragma: allowlist secret
     # --
@@ -157,7 +157,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'ba5063d736ac900a9b1c0df66b3b91f2fb7f038112f6dc534b410acdbbacad0b',  # pragma: allowlist secret
+    'plugin.py': 'af401b7492c2137688f108fc489ca479f39626e577f82b38bb12bfa23cfac248',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -169,7 +169,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rerun_options.py': '988743f054ce69cdeec2be71ffc4e906cb5b0fb9f362046fcbbfdb78513ec415',  # pragma: allowlist secret
     # --
-    'xdist_options.py': '90005fa9699bae11a9d1d7693817864e7fe0fcf593fab68abb7c0fb48dfa4536',  # pragma: allowlist secret
+    'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }
 
 
