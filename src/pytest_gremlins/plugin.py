@@ -1935,8 +1935,8 @@ import unittest
 __ORIGIN_FINDER_SOURCE__
 
 
-def setup_import_hooks():
-    """Register the gremlin import hooks from sources.json."""
+def install_origin_finder():
+    """Install the origin finder from sources.json."""
     sources_file = os.environ.get('PYTEST_GREMLINS_SOURCES_FILE')
     if not sources_file:
         return
@@ -2084,7 +2084,7 @@ def setup_pythonpath(rootdir):
 def main():
     rootdir = os.environ.get('GREMLIN_ROOTDIR', os.getcwd())
     setup_pythonpath(rootdir)
-    setup_import_hooks()
+    install_origin_finder()
 
     unverifiable = False
     for spec in sys.argv[1:]:
