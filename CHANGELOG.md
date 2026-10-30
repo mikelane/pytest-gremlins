@@ -12,15 +12,20 @@ suites stop reporting false survivors, and a batch of plugin-loading and report 
 
 ### Upgrade notes
 
-- **Operators that no installed package owns now miss the cache on every run.** An operator keeps cache hits only
-  when it is importable by its qualified name and an installed distribution's install record (`RECORD` or
-  `installed-files.txt`) lists its module file. Before, an operator in a project-local helper module could key on
-  the version of whichever package claimed its top-level name and get a stale verdict. Now these operators miss
-  instead: project-local helper modules, editable installs without `top_level.txt` (hatchling, uv_build, flit and
-  pdm), `.egg` installs, and editable installs recorded only through a `.pth` file. Runs that use them are slower
-  but never stale, and they write nothing to the cache, so `results.db` does not grow. Operators defined in a
-  `conftest.py` on the hashed chain and operators from normal wheels or setuptools editables keep their cache.
-  This replaces the "still not tracked" list in the 1.13.1 note. (#882, #890, #892, #893, #897, #901)
+- **Operators that no installed package provably owns now miss the cache on every run.** In 1.13.1 an operator
+  module under the pytest rootdir added nothing to the cache key, so editing a project-local helper could serve a
+  stale verdict. A module outside the rootdir keyed on whichever installed package claimed its top-level name. Now
+  an operator keeps cache hits only when it is importable by its qualified name and an installed package owns its
+  module file. A regular install owns the file when its `RECORD` or `installed-files.txt` lists it. A PEP 610
+  editable install owns it when the file is under the editable project directory and the install's `top_level.txt`
+  names the module. Cases that now miss on every run include project-local helper modules, a `conftest.py` above
+  the pytest rootdir, a source checkout outside the rootdir with a leftover `<pkg>.egg-info`, an unrecorded file in
+  a shared namespace package, `.egg` installs, editable installs without `top_level.txt` (hatchling, uv_build, flit
+  and pdm), and editable installs recorded only through a `.pth` file or a setuptools import finder. The docs table
+  lists every case. Runs that use these operators are slower but never stale, and they write
+  nothing to the cache, so `results.db` does not grow. These keep their cache: operators in a `conftest.py` from
+  the rootdir down, normal wheels, zip installs and setuptools editables. This replaces the "still not tracked"
+  list in the 1.13.1 note. (#882, #890, #892, #893, #897, #901)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
 - **Sessions that load the pytester plugin miss the cache once after upgrading.** Verdicts cached while the
   pytester bug below was present can be false survivors, so they are recomputed. Sessions that never load pytester

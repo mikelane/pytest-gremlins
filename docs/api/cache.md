@@ -233,11 +233,13 @@ until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 | Operator that does not come from an installed distribution: a project-local helper module, a module loaded by file path or sharing a name with another module, a namespace-package module (unless an installed distribution in that namespace sits at the same top-level name), a class defined inside a function, a module with no file, or an editable install recorded only through a `.pth` file or a setuptools import finder | Every run misses the cache for every gremlin: the key carries a fresh random token, so the run is slower but never serves a stale verdict. The run also writes no results to the cache, since no later run could read them, so `results.db` does not grow. An operator keeps hits only when it is importable by its qualified name and an installed package owns its module. Restoring cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator from an installed distribution still keys on that distribution's version |
 | Nothing changed | Hit (return cached result) |
 
-An installed distribution owns an operator's module only when the distribution's install record (`RECORD` or
+A regular installed distribution owns an operator's module only when the distribution's install record (`RECORD` or
 `installed-files.txt`) lists the module's file. A source checkout's `SOURCES.txt` is not an install record, so a
-checkout on `sys.path` with a leftover `<pkg>.egg-info`, an unrecorded file in a shared namespace package, and a helper
-elsewhere under an editable project directory all miss. An editable install also has to declare the module's top-level
-name in its `top_level.txt`. An editable install without `top_level.txt` (non-setuptools backends such as hatchling,
+checkout on `sys.path` with a leftover `<pkg>.egg-info` and an unrecorded file in a shared namespace package both miss.
+A PEP 660 editable install's `RECORD` lists only a `.pth` or finder file, so an editable install (PEP 610
+`direct_url.json`) owns a module instead when the module's file is under the editable project directory and the
+module's top-level name is in the install's `top_level.txt`. A helper elsewhere under an editable project directory
+misses. An editable install without `top_level.txt` (non-setuptools backends such as hatchling,
 uv_build, flit and pdm) always misses, because its `.pth` directory can hold packages the wheel does not
 ship. Setuptools editables and normal wheels keep stable keys. An empty `RECORD` or `installed-files.txt` counts as
 no install record. A `.egg` install has no install record, so it misses; zip installs keep their version label. A
