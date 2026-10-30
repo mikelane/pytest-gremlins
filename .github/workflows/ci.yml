@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  merge_group:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,9 +24,9 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       changelog: ${{ steps.filter.outputs.changelog }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -35,7 +36,7 @@ jobs:
               - 'pyproject.toml'
               - 'tox.ini'
               - 'uv.lock'
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/**'
             docs:
               - 'docs/**'
               - 'mkdocs.yml'
@@ -49,12 +50,13 @@ jobs:
     needs: changes
     if: needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -77,12 +79,13 @@ jobs:
     needs: changes
     if: needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -104,12 +107,13 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.11', '3.12', '3.13', '3.14']
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
+          prune-cache: true
           cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
@@ -130,7 +134,7 @@ jobs:
           uv run coverage xml
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -152,12 +156,13 @@ jobs:
         # (guarded by tests/config/test_pytest_version_matrix.py).
         pytest: ['8.4.2', '9.0.0', 'latest']
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
+          prune-cache: true
           cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python
@@ -190,12 +195,16 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v7
+      # Full history and tags: the cache gate below compares the code with the previous release tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -217,18 +226,24 @@ jobs:
         if: needs.changes.outputs.changelog == 'true'
         run: uv run python scripts/check_release_docs.py --newest --site-dir site
 
+      # Guarded code changed since the previous release with no cache marker raised needs a "(cache kept: ...)" line.
+      - name: Check the newest changelog entry raises a cache marker or keeps the cache on purpose
+        if: needs.changes.outputs.changelog == 'true'
+        run: uv run python scripts/check_cache_kept.py --newest
+
   security:
     name: Security Audit
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -245,12 +260,13 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.src == 'true'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.13
@@ -260,7 +276,7 @@ jobs:
 
       - name: Restore attrs checkout cache
         id: attrs-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/attrs-checkout
           key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
@@ -274,7 +290,7 @@ jobs:
 
       - name: Save attrs checkout cache
         if: steps.attrs-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/attrs-checkout
           key: attrs-bd2446d77736a164b59b268a3792ed3e4bfba088
@@ -282,14 +298,115 @@ jobs:
       - name: Run attrs smoke test
         run: uv run pytest tests/integration/test_attrs_smoke.py -m medium -v
 
+  # The paths come from the cache-version guard's own guarded_sources(), so a new package file is covered at once.
+  verdict-changes:
+    name: Detect Verdict-Guarded Changes
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
+    outputs:
+      guarded: ${{ steps.guarded.outputs.guarded }}
+      base-sha: ${{ steps.base.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+          prune-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      # A pull request and a merge group both check out a merge onto main, so its merge base with main is the base.
+      # On a push to main the merge base is HEAD itself, so nothing counts as changed.
+      - name: Find the base commit
+        id: base
+        run: |
+          git fetch --no-tags origin main
+          echo "sha=$(git merge-base origin/main HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: List changed guarded paths
+        id: guarded
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: |
+          paths=$(uv run --no-sync python scripts/check_verdict_change.py guarded-changes "$BASE_SHA")
+          if [[ -n "$paths" ]]; then
+            printf 'Guarded paths changed since %s:\n%s\n' "$BASE_SHA" "$paths"
+            echo "guarded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No guarded path changed since $BASE_SHA"
+            echo "guarded=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Runs pytest-gremlins on the fixed sample with the base and the head package, the gremlin cache off (it is off
+  # unless --gremlin-cache or cache = true asks for it), and fails when a verdict changed without a marker bump.
+  verdict-change:
+    name: Verdict Change Check
+    runs-on: ubuntu-latest
+    needs: verdict-changes
+    if: needs.verdict-changes.outputs.guarded == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+          prune-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      # Both runs use the same sample directory, so gremlin paths match between them.
+      - name: Record head verdicts
+        run: >-
+          uv run --no-sync python scripts/check_verdict_change.py run
+          --out "$RUNNER_TEMP/head.json" --workdir "$RUNNER_TEMP/verdict-sample"
+
+      # The head's sample and script stay; only the installed package is swapped for the base's.
+      - name: Install the base package
+        env:
+          BASE_SHA: ${{ needs.verdict-changes.outputs.base-sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          uv pip install --python .venv/bin/python --no-deps --reinstall "$RUNNER_TEMP/base"
+
+      - name: Record base verdicts
+        run: >-
+          uv run --no-sync python scripts/check_verdict_change.py run
+          --out "$RUNNER_TEMP/base.json" --workdir "$RUNNER_TEMP/verdict-sample"
+
+      # A marker the PR lowers may go back to the value at the newest release tag reachable from the base.
+      - name: Compare verdicts
+        env:
+          BASE_SHA: ${{ needs.verdict-changes.outputs.base-sha }}
+        run: >-
+          uv run --no-sync python scripts/check_verdict_change.py compare
+          "$RUNNER_TEMP/base.json" "$RUNNER_TEMP/head.json" --released-ref "$BASE_SHA"
+
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [changes, lint, typecheck, test, pytest-compat, docs, security, attrs-smoke]
+    needs: [changes, lint, typecheck, test, pytest-compat, docs, security, attrs-smoke, verdict-changes, verdict-change]
     if: always()
     steps:
       - name: Verify all jobs succeeded
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           SRC_CHANGED: ${{ needs.changes.outputs.src }}
           DOCS_CHANGED: ${{ needs.changes.outputs.docs }}
           LINT_RESULT: ${{ needs.lint.result }}
@@ -299,7 +416,16 @@ jobs:
           DOCS_RESULT: ${{ needs.docs.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
           ATTRS_SMOKE_RESULT: ${{ needs.attrs-smoke.result }}
+          VERDICT_CHANGES_RESULT: ${{ needs.verdict-changes.result }}
+          VERDICT_GUARDED: ${{ needs.verdict-changes.outputs.guarded }}
+          VERDICT_CHANGE_RESULT: ${{ needs.verdict-change.result }}
         run: |
+          # Without a successful Detect Changes the outputs below are empty, so every gated check would look skipped
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "Detect Changes did not succeed: $CHANGES_RESULT"
+            exit 1
+          fi
+
           # For docs-only changes, skip src-related checks
           if [[ "$SRC_CHANGED" == "true" ]]; then
             if [[ "$LINT_RESULT" != "success" ]] || \
@@ -307,10 +433,17 @@ jobs:
                [[ "$TEST_RESULT" != "success" ]] || \
                [[ "$PYTEST_COMPAT_RESULT" != "success" ]] || \
                [[ "$SECURITY_RESULT" != "success" ]] || \
-               [[ "$ATTRS_SMOKE_RESULT" != "success" ]]; then
+               [[ "$ATTRS_SMOKE_RESULT" != "success" ]] || \
+               [[ "$VERDICT_CHANGES_RESULT" != "success" ]]; then
               echo "Source code checks failed"
               exit 1
             fi
+          fi
+
+          # The verdict check is skipped, not failed, when no path the cache-version guard covers changed
+          if [[ "$VERDICT_GUARDED" == "true" ]] && [[ "$VERDICT_CHANGE_RESULT" != "success" ]]; then
+            echo "Verdict change check failed"
+            exit 1
           fi
 
           # Docs check runs for both src and docs changes

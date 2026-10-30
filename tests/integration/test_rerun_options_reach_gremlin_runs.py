@@ -128,6 +128,11 @@ class DescribeRerunIniKeysInAConfigFileNamedOnTheCommandLine:
         assert verdicts(result.stdout.str())['Zapped'] == 0
 
 
+@pytest.mark.skipif(
+    pytest.version_tuple >= (9, 2),
+    reason='pytest 9.2 type-checks native TOML ini values and rejects an integer for the string-typed '
+    '`reruns` option before gremlins starts, so the integer reaches no plugin code.',
+)
 @pytest.mark.medium
 class DescribeNumericRerunSettingsInNativeToml:
     def it_runs_gremlins_without_an_internal_error_when_reruns_is_a_toml_integer(

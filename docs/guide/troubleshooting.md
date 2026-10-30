@@ -215,7 +215,8 @@ pytest-gremlins: skipped src/demo/chain.py: could not instrument (RecursionError
 ```
 
 If every target was skipped, the mutation report says `1 file(s) skipped and not mutation tested`
-and lists the files instead of `No gremlins found`.
+and lists the files instead of `No gremlins found`. The HTML and JSON reports are still written, with a total of 0
+and the skipped files listed.
 
 **Cause:** Instrumenting the file raised an exception. A very long operator chain (about 120 `+` terms or
 about 245 `|` terms) exceeds Python's recursion limit. Any other exception from instrumentation is
@@ -651,6 +652,17 @@ If coverage numbers look wrong only in runs with `--gremlins`, please
 [open an issue](https://github.com/mikelane/pytest-gremlins/issues) with the pytest-cov and
 coverage.py versions and your `addopts`.
 
+### pytest-cov when plugin autoload is disabled
+
+Gremlin runs pass `--no-cov` only when pytest-cov is loaded in your session, not merely installed. With
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` or `--disable-plugin-autoload`, an installed pytest-cov that you did not load with
+`-p` registers nothing, and gremlin runs leave `--no-cov` out. Earlier versions passed it anyway, so every gremlin run
+failed with `unrecognized arguments: --no-cov`, and the run had no usable verdicts.
+
+When autoload is disabled for gremlin runs (by the environment, or by the flag in `addopts` or `PYTEST_ADDOPTS`) and
+your session loaded pytest-cov, for example with `-p pytest_cov` on the command line, gremlins loads it in the gremlin
+runs under the name your session registered it with (`pytest_cov` or `pytest_cov.plugin`) and passes `--no-cov`.
+
 ---
 
 ### Using pytest-xdist with gremlins
@@ -709,6 +721,43 @@ Upgrade to v1.5.0 or later. The instrumentation engine now inserts gremlin switc
 ```bash
 pip install --upgrade pytest-gremlins
 ```
+
+---
+
+### Survivors in a target first imported inside an in-process pytester run
+
+**Symptom:**
+
+Your tests call `pytester.runpytest()`, `runpytest_inprocess()` or `inline_run()`. The module under test is
+first imported by that inner session, and gremlins that your tests do catch are reported as survivors.
+
+**Cause:** The inner session installs its own assertion-rewrite hook at the front of `sys.meta_path`. For a
+target that hook claims (a `python_files` match, a `conftest.py`, or a `pytest.register_assert_rewrite`
+name), it serves the module before pytest-gremlins can instrument it. pytest-gremlins re-fronts its finder
+when the inner session loads the gremlins plugin, which covers the default setup.
+
+**Solution:**
+
+Leave the gremlins plugin enabled in the inner session. Four inner-session settings defeat the fix, so a
+target first imported there is not instrumented:
+
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`
+- `-p no:gremlins`
+- loading the target itself as a plugin with `-p package.module`
+- loading the target itself as a plugin through `PYTEST_PLUGINS=package.module`
+
+pytest imports `-p` and `PYTEST_PLUGINS` modules while it parses its configuration, before the point where
+pytest-gremlins puts its finder back in front. A target loaded from the inner `conftest.py` through
+`pytest_plugins` is fine.
+
+In those cases, import the target in the outer test before the inner session starts, or avoid claiming it
+through `python_files`.
+
+**Cache:** A verdict cached while this bug was present can be a survivor that your tests in fact catch. It is
+never a false zap. After upgrading, a session that loads the pytester plugin misses the cache once and recomputes
+those verdicts. The plugin can be loaded by `-p pytester`, `-p _pytest.pytester`, `pytest_plugins` in a
+`conftest.py`, `PYTEST_PLUGINS` or `addopts`. Sessions that never load pytester keep their cache, because pytester
+is the only case known to be affected.
 
 ---
 

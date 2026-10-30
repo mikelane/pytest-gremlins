@@ -82,3 +82,12 @@ class DescribeRunnerFidelityCacheKey:
             cache._store.put(misnamed_key, {'status': 'survived'})  # type: ignore[arg-type]
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
+
+    def it_retires_results_cached_while_doctest_gremlins_errored(self, tmp_path: Path) -> None:
+        """rf17 is the last version whose verdicts predate forwarding doctest options to gremlin runs (#594)."""
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
+            rf17_key = current_key.rsplit(':', 1)[0] + ':rf17'
+            cache._store.put(rf17_key, {'status': 'error'})  # type: ignore[arg-type]
+
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None

@@ -211,6 +211,13 @@ Cache keys incorporate three components:
 | `source_hash` | Source file content changes |
 | `combined_test_hash` | Any covering test file changes |
 
+The cache also records which code produced its verdicts: an internal cache version, and every distribution that
+provides a `pytest_gremlins.operators` entry point or owns the module of an operator registered for the run
+(including operators a `conftest.py` registers). Upgrading pytest-gremlins keeps the cache, unless the release
+changes how verdicts are computed and raises the cache version (then the first run is cold). Installing, removing,
+upgrading or downgrading an operator package invalidates it. Old entries stop matching; they remain in `results.db`
+until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
+
 ### Invalidation Rules
 
 | Change | Cache Effect |
@@ -219,7 +226,25 @@ Cache keys incorporate three components:
 | Test file modified | Miss for gremlins covered by that test |
 | New test added | Miss for gremlins the new test covers |
 | Test deleted | Miss for gremlins that test was zapping |
+| pytest-gremlins upgraded | Hit, unless the release raised the cache version (then a miss for every gremlin) |
+| Distribution providing a `pytest_gremlins.operators` entry point installed, removed or changed version | Miss for every gremlin (old entries stop matching) |
+| Installed package (including a PEP 610 editable install) that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
+| Operator defined in a `conftest.py` on the hashed chain (from the pytest rootdir down to each test file, even if the project is installed editable) | No effect on the key; the source and conftest hashes cover it |
+| Operator that does not come from an installed distribution: a project-local helper module, a module loaded by file path or sharing a name with another module, a namespace-package module (unless an installed distribution in that namespace sits at the same top-level name), a class defined inside a function, a module with no file, or an editable install recorded only through a `.pth` file or a setuptools import finder | Every run misses the cache for every gremlin: the key carries a fresh random token, so the run is slower but never serves a stale verdict. The run also writes no results to the cache, since no later run could read them, so `results.db` does not grow. An operator keeps hits only when it is importable by its qualified name and an installed package owns its module. Restoring cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator from an installed distribution still keys on that distribution's version |
 | Nothing changed | Hit (return cached result) |
+
+A regular installed distribution owns an operator's module only when the distribution's install record (`RECORD` or
+`installed-files.txt`) lists the module's file. A source checkout's `SOURCES.txt` is not an install record, so a
+checkout on `sys.path` with a leftover `<pkg>.egg-info` and an unrecorded file in a shared namespace package both miss.
+A PEP 660 editable install's `RECORD` lists only a `.pth` or finder file, so an editable install (PEP 610
+`direct_url.json`) owns a module instead when the module's file is under the editable project directory and the
+module's top-level name is in the install's `top_level.txt`. A helper elsewhere under an editable project directory
+misses. An editable install without `top_level.txt` (non-setuptools backends such as hatchling,
+uv_build, flit and pdm) always misses, because its `.pth` directory can hold packages the wheel does not
+ship. Setuptools editables and normal wheels keep stable keys. An empty `RECORD` or `installed-files.txt` counts as
+no install record. A `.egg` install has no install record, so it misses; zip installs keep their version label. A
+`conftest.py` above the pytest rootdir misses too (one in a sibling directory under the rootdir is tracked in
+[#899](https://github.com/mikelane/pytest-gremlins/issues/899)).
 
 ### Usage Example
 

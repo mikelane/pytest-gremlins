@@ -1,6 +1,6 @@
 [project]
 name = "pytest-gremlins"
-version = "1.12.2"
+version = "1.13.2"
 description = "Fast-first mutation testing for pytest. Let the gremlins loose, see which ones survive."
 readme = "README.md"
 license = { text = "MIT" }
@@ -68,6 +68,7 @@ dev = [
     "ruff>=0.8.0",
     "tox>=4.61.5",
     "tox-uv>=1.36.0",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [project.urls]
@@ -91,6 +92,8 @@ packages = ["src/pytest_gremlins"]
 include = [
     "/src",
     "/tests",
+    "/conftest.py",
+    "/hermeticity_gate.py",
     "/docs",
     "/README.md",
     "/LICENSE",
@@ -169,9 +172,6 @@ line-ending = "auto"
     "S101",    # assert is fine in tests
     "PT004",   # Fixtures don't need leading underscore
     "PT005",   # Fixtures don't need leading underscore
-]
-"tests/instrumentation/test_import_hooks.py" = [
-    "PLC0415", # Intentional inline import - testing import hook behavior
 ]
 "benchmarks/**/*.py" = [
     "D",       # No docstrings required in benchmarks (already has module docs)
@@ -256,6 +256,8 @@ show_error_codes = true
 show_column_numbers = true
 pretty = true
 files = ["src/pytest_gremlins", "tests"]
+explicit_package_bases = true
+mypy_path = ["$MYPY_CONFIG_FILE_DIR", "$MYPY_CONFIG_FILE_DIR/src"]
 
 [[tool.mypy.overrides]]
 module = "tests.*"
@@ -267,6 +269,7 @@ disallow_untyped_decorators = false
 # =============================================================================
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 python_classes = ["Describe"]
 python_functions = ["it_"]
 test_categories_enforcement = "strict"
