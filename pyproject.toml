@@ -92,6 +92,8 @@ packages = ["src/pytest_gremlins"]
 include = [
     "/src",
     "/tests",
+    "/conftest.py",
+    "/hermeticity_gate.py",
     "/docs",
     "/README.md",
     "/LICENSE",
