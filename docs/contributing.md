@@ -37,8 +37,8 @@ one of them leaves every user with a warm cache on the old verdict.
 **When it runs.** The `Verdict Change Check` CI job runs on a PR or merge group that changes a
 file the cache-version guard covers: every `.py` file under `src/pytest_gremlins/` except the
 ones listed in `EXCLUDED_FROM_GUARD` in `tests/cache/test_cache_version_guard.py`. Deleting a
-package module counts too. For any other change the job is skipped, and `All Checks Passed`
-does not wait for it.
+package module counts too, and so does editing the guard test itself. For any other change the job
+is skipped, and `All Checks Passed` does not wait for it.
 
 The job runs pytest-gremlins, with the cache off, on the fixed sample project in
 `tests/fixtures/verdict_sample/`, once with the base branch's package and once with the PR's,
@@ -54,10 +54,10 @@ the marker to raise:
   Raise `RUNNER_FIDELITY_VERSION`, or `CACHE_VERSION` if it alters what gets mutated instead.
 
 Raise the marker, update `RECORDED_CACHE_VERSION` or `RECORDED_RUNNER_FIDELITY_VERSION` and
-`RECORDED_DIGESTS` in the guard test, and push. The job passes once a marker differs from the
-base branch's. If the verdict change is a bug, fix the code instead. A change that alters no
-verdict, such as a refactor or a docstring edit, passes without a bump, so users keep a warm
-cache.
+`RECORDED_DIGESTS` in the guard test, and push. The job passes once a marker is raised above the
+base branch's. Markers only go up: lowering one fails the job. If the verdict change is a bug,
+fix the code instead. A change that alters no verdict, such as a refactor or a docstring edit,
+passes without a bump, so users keep a warm cache.
 
 To run the check locally against `main`:
 

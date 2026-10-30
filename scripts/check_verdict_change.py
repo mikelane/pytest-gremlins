@@ -9,7 +9,8 @@ compares the per-gremlin verdicts:
     python scripts/check_verdict_change.py compare base.json head.json  # exit 1 on a change without a bump
 
 ``compare`` exits 1 when a verdict changed and neither marker was raised, naming every changed gremlin and the
-marker to raise. ``run`` exits 2 when pytest-gremlins wrote no report.
+marker to raise. It also exits 1 when neither run produced a gremlin or a marker was lowered: markers only go up.
+``run`` exits 2 when pytest-gremlins wrote no report or the report has no results.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from dataclasses import dataclass
 import importlib.util
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -34,7 +36,8 @@ from typing import Any
 
 PACKAGE_DIR = 'src/pytest_gremlins/'
 REPO_ROOT = Path(__file__).resolve().parents[1]
-GUARD_MODULE = REPO_ROOT / 'tests' / 'cache' / 'test_cache_version_guard.py'
+GUARD_PATH = 'tests/cache/test_cache_version_guard.py'
+GUARD_MODULE = REPO_ROOT / GUARD_PATH
 SAMPLE_DIR = REPO_ROOT / 'tests' / 'fixtures' / 'verdict_sample'
 REPORT_PATH = Path('coverage') / 'gremlins' / 'gremlins.json'
 GIT = shutil.which('git') or 'git'
@@ -52,12 +55,36 @@ RUNNER_FIDELITY_ADVICE = (
 )
 
 
+NO_GREMLINS_MESSAGE = (
+    'Neither run produced a gremlin on the sample project, so there are no verdicts to compare. Check that the '
+    'sample in tests/fixtures/verdict_sample/ still has mutable code and that pytest-gremlins finds it.'
+)
+LOWERED_MARKER_MESSAGE = (
+    'A cache marker was lowered ({lowered}). Markers only go up: lowering one revives verdicts that an older '
+    'release cached. Restore the base value or raise it.'
+)
+
+
 @dataclass(frozen=True)
 class Markers:
     """The two hand-raised markers that key the incremental cache."""
 
     cache_version: str
     runner_fidelity_version: str
+
+    def lowered_from(self, base: Markers) -> list[str]:
+        """Name each marker that is lower here than in ``base``."""
+        lowered = []
+        if _rank(self.cache_version) < _rank(base.cache_version):
+            lowered.append('CACHE_VERSION')
+        if _rank(self.runner_fidelity_version) < _rank(base.runner_fidelity_version):
+            lowered.append('RUNNER_FIDELITY_VERSION')
+        return lowered
+
+
+def _rank(marker: str) -> int:
+    """Order a marker by the number in it: ``7`` is 7 and ``rf21`` is 21."""
+    return int(re.sub(r'\D', '', marker))
 
 
 @dataclass(frozen=True)
@@ -83,10 +110,12 @@ def guarded_changes(changed: Iterable[str], deleted: Iterable[str], guarded: Col
     """Return the changed repository paths that the cache-version guard covers, sorted.
 
     ``guarded`` comes from the guard's ``guarded_sources()`` on the head code, which cannot list a file the PR
-    deleted, so every deleted package module counts as guarded.
+    deleted, so every deleted package module counts as guarded. An edit to the guard file itself counts too: the
+    same PR may add a module to ``EXCLUDED_FROM_GUARD`` and change it, which the head's guard set no longer lists.
     """
     deleted_modules = {path for path in deleted if path.startswith(PACKAGE_DIR) and path.endswith('.py')}
-    return sorted({path for path in changed if path in guarded} | deleted_modules)
+    guarded_paths = {path for path in changed if path in guarded or path == GUARD_PATH}
+    return sorted(guarded_paths | deleted_modules)
 
 
 def verdicts_from_report(report: Mapping[str, Any], sample_root: Path) -> dict[str, str]:
@@ -99,7 +128,7 @@ def verdicts_from_report(report: Mapping[str, Any], sample_root: Path) -> dict[s
     verdicts: dict[str, str] = {}
     seen: Counter[str] = Counter()
     for entry in report['results']:
-        relative_path = Path(entry['file_path']).relative_to(sample_root).as_posix()
+        relative_path = Path(entry['file_path']).resolve().relative_to(sample_root.resolve()).as_posix()
         name = f'{relative_path}:{entry["line_number"]} {entry["operator"]}: {entry["description"]}'
         seen[name] += 1
         verdicts[name if seen[name] == 1 else f'{name} #{seen[name]}'] = entry['status']
@@ -142,8 +171,14 @@ def check_verdicts(
     """Return why the head code fails the check, or None when it passes.
 
     The check passes when every gremlin keeps its verdict, or when a cache marker was raised between base and
-    head, which throws every cached verdict away.
+    head, which throws every cached verdict away. It fails when neither run produced a gremlin, or when a marker
+    was lowered.
     """
+    if not base and not head:
+        return NO_GREMLINS_MESSAGE
+    lowered = head_markers.lowered_from(base_markers)
+    if lowered:
+        return LOWERED_MARKER_MESSAGE.format(lowered=', '.join(lowered))
     diff = compare_verdicts(base, head)
     if diff.is_empty or base_markers != head_markers:
         return None
@@ -203,8 +238,8 @@ def _guarded_changes_command(args: argparse.Namespace) -> int:
 
 def _run_command(args: argparse.Namespace) -> int:
     verdicts = _run_sample(args.sample, args.workdir)
-    if verdicts is None:
-        print(f'pytest-gremlins wrote no report for the sample at {args.sample}', file=sys.stderr)
+    if not verdicts:
+        print(f'pytest-gremlins wrote no gremlin results for the sample at {args.sample}', file=sys.stderr)
         return EXIT_NO_REPORT
     markers = _installed_markers()
     run = {

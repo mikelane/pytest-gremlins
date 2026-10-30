@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import sys
 from types import ModuleType
 
@@ -86,6 +87,39 @@ class DescribeVerdictCheck:
 
         assert failure.endswith(checker.CACHE_VERSION_ADVICE)
 
+    def it_fails_when_neither_run_produced_a_gremlin(self) -> None:
+        failure = checker.check_verdicts({}, {}, BASE_MARKERS, BASE_MARKERS)
+
+        assert failure is not None
+
+    @pytest.mark.parametrize(
+        'head_markers',
+        [
+            checker.Markers(cache_version='0', runner_fidelity_version='rf21'),
+            checker.Markers(cache_version='1', runner_fidelity_version='rf20'),
+        ],
+        ids=['cache-version', 'runner-fidelity-version'],
+    )
+    def it_fails_when_a_marker_was_lowered_with_a_verdict_change(self, head_markers: object) -> None:
+        failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, head_markers)
+
+        assert failure is not None
+        assert 'only go up' in failure
+
+    def it_fails_when_a_marker_was_lowered_even_if_no_verdict_changed(self) -> None:
+        lowered = checker.Markers(cache_version='0', runner_fidelity_version='rf21')
+
+        failure = checker.check_verdicts(ZAPPED, ZAPPED, BASE_MARKERS, lowered)
+
+        assert failure is not None
+
+    def it_fails_when_one_marker_was_raised_and_the_other_lowered(self) -> None:
+        mixed = checker.Markers(cache_version='2', runner_fidelity_version='rf20')
+
+        failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, mixed)
+
+        assert failure is not None
+
 
 def _entry(line_number: int, status: str, description: str = '>= to >') -> dict[str, object]:
     return {
@@ -118,6 +152,22 @@ class DescribeVerdictsFromReport:
         }
 
 
+@pytest.mark.medium
+class DescribeSymlinkedSampleRoot:
+    def it_keys_verdicts_when_the_sample_root_is_reached_through_a_symlink(self, tmp_path: Path) -> None:
+        # macOS: tempfile.gettempdir() is /var/..., a symlink to /private/var/..., and the plugin reports the
+        # resolved path.
+        real = tmp_path / 'real'
+        real.mkdir()
+        link = tmp_path / 'link'
+        link.symlink_to(real, target_is_directory=True)
+        entry = {**_entry(10, 'zapped'), 'file_path': str(real / 'sample.py')}
+
+        verdicts = checker.verdicts_from_report({'results': [entry]}, link)
+
+        assert verdicts == ZAPPED
+
+
 GUARDED = frozenset({'src/pytest_gremlins/plugin.py', 'src/pytest_gremlins/config.py'})
 
 
@@ -146,6 +196,14 @@ class DescribeGuardedChanges:
         changes = checker.guarded_changes(deleted, deleted, GUARDED)
 
         assert changes == []
+
+    def it_counts_an_edit_to_the_guard_file_as_a_guarded_change(self) -> None:
+        # One PR can add a module to EXCLUDED_FROM_GUARD and change it; the head guard no longer lists the module.
+        changed = ['tests/cache/test_cache_version_guard.py', 'src/pytest_gremlins/newly_excluded.py']
+
+        changes = checker.guarded_changes(changed, [], GUARDED)
+
+        assert changes == ['tests/cache/test_cache_version_guard.py']
 
 
 @pytest.mark.medium
@@ -188,6 +246,33 @@ class DescribeCompareCommand:
         head = _write_run(tmp_path / 'head.json', SURVIVED, cache_version='2')
 
         assert checker.main(['compare', str(base), str(head)]) == 0
+
+    def it_exits_nonzero_when_neither_run_produced_a_gremlin(self, tmp_path: Path) -> None:
+        base = _write_run(tmp_path / 'base.json', {})
+        head = _write_run(tmp_path / 'head.json', {})
+
+        assert checker.main(['compare', str(base), str(head)]) != 0
+
+
+@pytest.mark.medium
+class DescribeRunCommand:
+    def it_exits_two_when_the_report_has_no_results(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        def write_empty_report(*_args: object, cwd: Path, **_kwargs: object) -> object:
+            report = cwd / checker.REPORT_PATH
+            report.parent.mkdir(parents=True)
+            report.write_text(json.dumps({'results': []}), encoding='utf-8')
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        monkeypatch.setattr(checker.subprocess, 'run', write_empty_report)
+        sample = tmp_path / 'sample'
+        sample.mkdir()
+        out = tmp_path / 'run.json'
+
+        exit_code = checker.main(
+            ['run', '--out', str(out), '--sample', str(sample), '--workdir', str(tmp_path / 'work')]
+        )
+
+        assert (exit_code, out.exists()) == (checker.EXIT_NO_REPORT, False)
 
 
 @pytest.fixture(scope='module')
