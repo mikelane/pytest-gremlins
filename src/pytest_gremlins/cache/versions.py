@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib.metadata import (
     Distribution,
+    PackagePath,
     distributions,
     entry_points,
 )
@@ -72,18 +73,46 @@ def _is_editable_stub(name: str) -> bool:
     return name.endswith('.pth') or name.startswith('__editable__')
 
 
-def _declared_top_level_modules(dist: Distribution) -> set[str]:
-    """Return the top-level modules a distribution installs, from ``top_level.txt`` else its RECORD."""
-    top_level = dist.read_text('top_level.txt')
-    if top_level is not None:
-        return set(top_level.split())
+def _top_level_modules_from_record(files: Iterable[PackagePath]) -> set[str]:
     modules: set[str] = set()
-    for file in dist.files or ():
+    for file in files:
         root = file.parts[0] if file.parts else ''
         if _is_editable_stub(root):
             continue
         modules.add(root.split('.')[0] if len(file.parts) == 1 else root)
     return modules
+
+
+def _pth_directories(dist: Distribution, files: Iterable[PackagePath]) -> frozenset[Path]:
+    """Return the directories a PEP 660 editable's top-level ``.pth`` files put on ``sys.path``.
+
+    hatchling, uv_build, flit and pdm write no ``top_level.txt``; the packages they expose are the direct children
+    of these directories. Blank lines, comments and ``import`` hooks add nothing.
+    """
+    roots: set[Path] = set()
+    for file in files:
+        if len(file.parts) != 1 or not file.name.endswith('.pth'):
+            continue
+        pth = Path(str(dist.locate_file(file)))
+        for line in pth.read_text(encoding='utf-8').splitlines():
+            entry = line.strip()
+            if entry and not entry.startswith(('#', 'import ', 'import\t')):
+                directory = (pth.parent / entry).resolve()
+                if directory.is_dir():
+                    roots.add(directory)
+    return frozenset(roots)
+
+
+def _declared_modules(dist: Distribution) -> tuple[set[str], frozenset[Path]]:
+    """Return the top-level modules a distribution installs and, without ``top_level.txt``, its ``.pth`` directories.
+
+    Modules come from ``top_level.txt``, else from the ``RECORD`` (read once, shared with the ``.pth`` lookup).
+    """
+    top_level = dist.read_text('top_level.txt')
+    if top_level is not None:
+        return set(top_level.split()), frozenset()
+    files = tuple(dist.files or ())
+    return _top_level_modules_from_record(files), _pth_directories(dist, files)
 
 
 def _editable_project_directory(dist: Distribution) -> Path | None:
@@ -114,6 +143,7 @@ class _IndexedDistribution:
     root: Path
     modules: frozenset[str]
     editable_project: Path | None
+    editable_path_roots: frozenset[Path]
     distribution: Distribution
 
 
@@ -122,11 +152,13 @@ def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
     try:
         if _is_own_distribution(dist):
             return None
+        modules, path_roots = _declared_modules(dist)
         return _IndexedDistribution(
             label=_distribution_label(dist),
             root=Path(str(dist.locate_file(''))).resolve(),
-            modules=frozenset(_declared_top_level_modules(dist)),
+            modules=frozenset(modules),
             editable_project=_editable_project_directory(dist),
+            editable_path_roots=path_roots,
             distribution=dist,
         )
     except _UNREADABLE_METADATA:
@@ -154,10 +186,12 @@ def _is_project_local(location: Path, project_root: Path | None) -> bool:
 def _is_listed_in_install_record(dist: Distribution, location: Path) -> bool:
     """Whether the distribution's ``RECORD`` or ``installed-files.txt`` lists ``location``.
 
-    ``SOURCES.txt`` of a source checkout's ``.egg-info`` is not an install record, so it never counts.
+    ``SOURCES.txt`` of a source checkout's ``.egg-info`` is not an install record, so it never counts. An empty or
+    blank record is no install record either: ``Distribution.files`` would fall back to ``SOURCES.txt`` for it.
     """
     try:
-        if dist.read_text('RECORD') is None and dist.read_text('installed-files.txt') is None:
+        record_texts = (dist.read_text('RECORD'), dist.read_text('installed-files.txt'))
+        if not any(text is not None and text.strip() for text in record_texts):
             return False
         return any(Path(str(dist.locate_file(file))).resolve() == location for file in dist.files or ())
     except _UNREADABLE_METADATA:
@@ -173,20 +207,29 @@ def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, locat
     return _is_listed_in_install_record(entry.distribution, location)
 
 
+def _is_under_editable_path_root(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
+    """Whether ``location`` is in the ``top_level`` package or module that sits directly in a ``.pth`` directory."""
+    return any(
+        location.is_relative_to(root / top_level) or location == root / f'{top_level}.py'
+        for root in entry.editable_path_roots
+    )
+
+
 def _is_editable_owner(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
     """Whether a PEP 610 editable install (``direct_url.json`` with ``dir_info.editable``) put ``location`` on the path.
 
     The module's top-level name must also belong to the distribution, so a helper elsewhere under the editable
     project directory (a monorepo's ``tools/``) is not claimed. A PEP 660 editable lists a ``.pth`` or finder
     file in its RECORD instead of the package, so those entries are ignored when reading the declared modules.
+    Without a ``top_level.txt``, the name must be a direct child of a directory the editable's ``.pth`` lists.
 
     Editable installs recorded only through a ``.pth`` file, or through a setuptools import finder, leave no
     ``direct_url.json`` marker and are not recognized.
     """
     return (
         entry.editable_project is not None
-        and top_level in entry.modules
         and location.is_relative_to(entry.editable_project)
+        and (top_level in entry.modules or _is_under_editable_path_root(entry, top_level, location))
     )
 
 
