@@ -42,7 +42,12 @@ class DescribeVerdictCheck:
     def it_fails_when_a_verdict_changed_and_no_marker_was_raised(self) -> None:
         failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, BASE_MARKERS)
 
-        assert failure is not None
+        assert failure == (
+            'Gremlin verdicts on the sample project changed, but neither cache marker was raised, so users with '
+            'a warm cache would keep the old verdicts:\n'
+            'changed: sample.py:10 comparison: >= to >: zapped -> survived\n'
+            f'{checker.RUNNER_FIDELITY_ADVICE}'
+        )
 
     @pytest.mark.parametrize(
         'head_markers',
@@ -91,35 +96,34 @@ class DescribeVerdictCheck:
     def it_fails_when_neither_run_produced_a_gremlin(self) -> None:
         failure = checker.check_verdicts({}, {}, BASE_MARKERS, BASE_MARKERS)
 
-        assert failure is not None
+        assert failure == checker.NO_GREMLINS_MESSAGE
 
     @pytest.mark.parametrize(
-        'head_markers',
+        ('head_markers', 'lowered'),
         [
-            checker.Markers(cache_version='0', runner_fidelity_version='rf21'),
-            checker.Markers(cache_version='1', runner_fidelity_version='rf20'),
+            (checker.Markers(cache_version='0', runner_fidelity_version='rf21'), 'CACHE_VERSION'),
+            (checker.Markers(cache_version='1', runner_fidelity_version='rf20'), 'RUNNER_FIDELITY_VERSION'),
         ],
         ids=['cache-version', 'runner-fidelity-version'],
     )
-    def it_fails_when_a_marker_was_lowered_with_a_verdict_change(self, head_markers: object) -> None:
+    def it_fails_when_a_marker_was_lowered_with_a_verdict_change(self, head_markers: object, lowered: str) -> None:
         failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, head_markers)
 
-        assert failure is not None
-        assert 'only go up' in failure
+        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered)
 
     def it_fails_when_a_marker_was_lowered_even_if_no_verdict_changed(self) -> None:
         lowered = checker.Markers(cache_version='0', runner_fidelity_version='rf21')
 
         failure = checker.check_verdicts(ZAPPED, ZAPPED, BASE_MARKERS, lowered)
 
-        assert failure is not None
+        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered='CACHE_VERSION')
 
     def it_fails_when_one_marker_was_raised_and_the_other_lowered(self) -> None:
         mixed = checker.Markers(cache_version='2', runner_fidelity_version='rf20')
 
         failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, mixed)
 
-        assert failure is not None
+        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION')
 
 
 def _entry(line_number: int, status: str, description: str = '>= to >') -> dict[str, object]:
@@ -287,11 +291,11 @@ class DescribeCompareCommand:
 
         assert checker.main(['compare', str(base), str(head)]) == 0
 
-    def it_exits_nonzero_when_neither_run_produced_a_gremlin(self, tmp_path: Path) -> None:
+    def it_exits_one_when_neither_run_produced_a_gremlin(self, tmp_path: Path) -> None:
         base = _write_run(tmp_path / 'base.json', {})
         head = _write_run(tmp_path / 'head.json', {})
 
-        assert checker.main(['compare', str(base), str(head)]) != 0
+        assert checker.main(['compare', str(base), str(head)]) == checker.EXIT_VERDICT_CHANGED
 
 
 @pytest.mark.medium
