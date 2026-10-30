@@ -264,6 +264,7 @@ nav:
       - Operators Design: design/OPERATORS.md
       - Agent Guidelines: design/AGENT_GUIDELINES.md
       - Performance Analysis: performance/profiling-report.md
+      - Runner Redesign Spike: performance/runner-redesign-spike.md
 
 # Extra Configuration
 extra:

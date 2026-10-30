@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+from functools import cached_property
 from importlib.metadata import (
     Distribution,
+    PackagePath,
     distributions,
     entry_points,
 )
-import importlib.util
 import json
 from pathlib import Path
+import posixpath
 import re
 import sys
 import sysconfig
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from urllib.request import url2pathname
+import uuid
 
 from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 
@@ -26,18 +30,22 @@ if TYPE_CHECKING:
     from pytest_gremlins.operators.protocol import GremlinOperator
 
 _OWN_DISTRIBUTION = 'pytest-gremlins'
+_OWN_PACKAGE = 'pytest_gremlins'
 
 # A distribution with unreadable or malformed metadata is skipped; it must never break pytest_configure.
 # UnicodeDecodeError and json.JSONDecodeError are ValueErrors; importlib.metadata raises TypeError for a RECORD row
-# with too many fields. Shape problems in direct_url.json are checked
-# explicitly in _editable_project_directory, so a bad editable marker never costs a distribution its label.
-_UNREADABLE_METADATA = (OSError, ValueError, TypeError)
+# with too many fields; csv.Error is a RECORD field over the csv size limit. Shape problems in direct_url.json are
+# checked explicitly in _editable_project_directory, so a bad editable marker never costs a distribution its label.
+_UNREADABLE_METADATA = (OSError, ValueError, TypeError, csv.Error)
 
 # Raise this on any change that could alter a verdict, or which gremlins exist, for the same source and tests.
 # tests/cache/test_cache_version_guard.py fails until you decide. It guards every .py file in the package except a
 # reviewed exclusion list, so a new file is covered without editing a list. CACHE_VERSION covers what gets mutated;
 # RUNNER_FIDELITY_VERSION in incremental.py covers test execution and outcome-to-verdict mapping.
 CACHE_VERSION = 1
+
+_LOCAL_OPERATOR_PREFIX = 'local-operator='
+_UNREADABLE_MARKER = ':unreadable-'
 
 
 def _metadata_field(dist: Distribution, field: str) -> str | None:
@@ -63,31 +71,75 @@ def _is_own_distribution(dist: Distribution) -> bool:
     return name is not None and _normalized(name) == _OWN_DISTRIBUTION
 
 
-def _declared_top_level_modules(dist: Distribution) -> set[str]:
-    """Return the top-level modules a distribution installs, from ``top_level.txt`` else its RECORD."""
-    top_level = dist.read_text('top_level.txt')
-    if top_level is not None:
-        return set(top_level.split())
+def _is_editable_stub(name: str) -> bool:
+    """Whether a top-level RECORD entry is a PEP 660 ``.pth`` or ``__editable__`` finder file, not a module."""
+    return name.endswith('.pth') or name.startswith('__editable__')
+
+
+def _top_level_modules_from_record(files: Iterable[PackagePath]) -> set[str]:
     modules: set[str] = set()
-    for file in dist.files or ():
+    for file in files:
         root = file.parts[0] if file.parts else ''
+        if _is_editable_stub(root):
+            continue
         modules.add(root.split('.')[0] if len(file.parts) == 1 else root)
     return modules
 
 
-def _module_location(top_level_module: str) -> Path | None:
-    """Return the file (or package directory) a top-level module was loaded from, if it has one."""
-    loaded = sys.modules.get(top_level_module)
-    origin = getattr(loaded, '__file__', None)
-    if origin is None:
+class _InstallRecord:
+    """A distribution's install record (``RECORD`` or ``installed-files.txt``), read at most once.
+
+    ``SOURCES.txt`` of a source checkout's ``.egg-info`` is not an install record, so it never counts. An empty or
+    blank record is no install record either: ``Distribution.files`` would fall back to ``SOURCES.txt`` for it.
+    """
+
+    def __init__(self, dist: Distribution) -> None:
+        self._dist = dist
+
+    @cached_property
+    def files(self) -> tuple[PackagePath, ...]:
+        record = self._dist.read_text('RECORD')
+        if record is not None and record.strip():
+            return tuple(PackagePath(row[0]) for row in csv.reader(record.splitlines()) if row)
+        installed_files = self._dist.read_text('installed-files.txt')
+        if installed_files is None or not installed_files.strip():
+            return ()
+        return self._installed_files_entries(installed_files)
+
+    def _installed_files_entries(self, installed_files: str) -> tuple[PackagePath, ...]:
+        """Parse ``installed-files.txt``: each line is relative to the ``.egg-info`` directory that holds it."""
+        egg_info = getattr(self._dist, '_path', None)
+        if egg_info is None:
+            return ()
+        return tuple(
+            PackagePath(posixpath.join(Path(str(egg_info)).name, line))
+            for line in installed_files.splitlines()
+            if line.strip()
+        )
+
+    @cached_property
+    def paths(self) -> frozenset[Path]:
+        """The resolved location of every listed file; empty when the record cannot be read."""
         try:
-            spec = importlib.util.find_spec(top_level_module)
-        except (ImportError, ValueError):
+            files = self.files
+        except _UNREADABLE_METADATA:
+            return frozenset()
+        return frozenset(path for file in files if (path := self._resolved(file)) is not None)
+
+    def _resolved(self, file: PackagePath) -> Path | None:
+        """Resolve one listed file; ``None`` when its location is unreadable or loops (``RuntimeError`` before 3.13)."""
+        try:
+            return Path(str(self._dist.locate_file(file))).resolve()
+        except (*_UNREADABLE_METADATA, RuntimeError):
             return None
-        origin = spec.origin if spec is not None else None
-    if origin is None or not Path(origin).is_absolute():
-        return None
-    return Path(origin).resolve()
+
+
+def _declared_modules(dist: Distribution, record: _InstallRecord) -> set[str]:
+    """Return the top-level modules a distribution installs, from ``top_level.txt`` else from its install record."""
+    top_level = dist.read_text('top_level.txt')
+    if top_level is not None:
+        return set(top_level.split())
+    return _top_level_modules_from_record(record.files)
 
 
 def _editable_project_directory(dist: Distribution) -> Path | None:
@@ -115,8 +167,10 @@ class _IndexedDistribution:
     """What the owner lookup needs to know about one installed distribution."""
 
     label: str
+    root: Path
     modules: frozenset[str]
     editable_project: Path | None
+    record: _InstallRecord
 
 
 def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
@@ -124,10 +178,15 @@ def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
     try:
         if _is_own_distribution(dist):
             return None
+        record = _InstallRecord(dist)
+        editable_project = _editable_project_directory(dist)
+        modules = _declared_modules(dist, record)
         return _IndexedDistribution(
             label=_distribution_label(dist),
-            modules=frozenset(_declared_top_level_modules(dist)),
-            editable_project=_editable_project_directory(dist),
+            root=Path(str(dist.locate_file(''))).resolve(),
+            modules=frozenset(modules),
+            editable_project=editable_project,
+            record=record,
         )
     except _UNREADABLE_METADATA:
         return None
@@ -151,48 +210,159 @@ def _is_project_local(location: Path, project_root: Path | None) -> bool:
     return not any(location.is_relative_to(site) for site in _site_directories())
 
 
-def _is_editable_owner(entry: _IndexedDistribution, location: Path) -> bool:
+def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
+    """Whether ``location`` is a file the distribution installed: in the ``top_level`` module and its install record."""
+    if top_level not in entry.modules or not location.is_relative_to(entry.root):
+        return False
+    if location.relative_to(entry.root).parts[0].partition('.')[0] != top_level:
+        return False
+    return location in entry.record.paths
+
+
+def _is_editable_owner(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
     """Whether a PEP 610 editable install (``direct_url.json`` with ``dir_info.editable``) put ``location`` on the path.
+
+    The module's top-level name must also belong to the distribution, so a helper elsewhere under the editable
+    project directory (a monorepo's ``tools/``) is not claimed. A PEP 660 editable lists a ``.pth`` or finder
+    file in its RECORD instead of the package, so those entries are ignored when reading the declared modules.
+    An editable without a ``top_level.txt`` (hatchling, uv_build, flit, pdm) declares no names and owns nothing:
+    its ``.pth`` directory may hold children the wheel does not ship, and no metadata says which do.
 
     Editable installs recorded only through a ``.pth`` file, or through a setuptools import finder, leave no
     ``direct_url.json`` marker and are not recognized.
     """
-    return entry.editable_project is not None and location.is_relative_to(entry.editable_project)
+    return (
+        entry.editable_project is not None
+        and location.is_relative_to(entry.editable_project)
+        and top_level in entry.modules
+    )
 
 
-def _operator_owner_labels(operators: Iterable[GremlinOperator], project_root: Path | None) -> set[str]:
-    """Label the installed distributions that own the modules of the given operators.
+def _is_importable(operator_class: type) -> bool:
+    """Whether walking the class's qualified name from its module returns this exact class object.
 
-    pytest-gremlins itself is skipped: its version is deliberately covered by ``CACHE_VERSION`` instead.
-    An operator whose module is project-local (under ``project_root``) or in no installed distribution
-    contributes nothing.
+    A module registered under a colliding name (a stdlib or installed module's name), a namespace package, a class
+    nested in a function, and a class a module merely re-exports under another name all fail.
     """
-    candidates = {
-        type(operator).__module__.partition('.')[0]
-        for operator in operators
-        if type(operator).__module__.partition('.')[0] != 'pytest_gremlins'
-    }
-    locations = {module: _module_location(module) for module in candidates}
-    wanted = {
-        module
-        for module, location in locations.items()
-        if location is None or not _is_project_local(location, project_root)
-    }
-    if not wanted:
+    found: object = sys.modules.get(operator_class.__module__)
+    for part in operator_class.__qualname__.split('.'):
+        if part == '<locals>':
+            return False
+        found = getattr(found, part, None)
+    return found is operator_class
+
+
+def _module_file(operator_class: type) -> Path | None:
+    origin = getattr(sys.modules.get(operator_class.__module__), '__file__', None)
+    return Path(origin).resolve() if origin is not None else None
+
+
+def _installed_owner_labels(
+    operator_class: type, installed: list[_IndexedDistribution], project_root: Path | None
+) -> set[str]:
+    """Label the installed distributions that own an importable operator class; empty when none is proven."""
+    location = _module_file(operator_class)
+    if location is None or _is_project_local(location, project_root):
         return set()
-    installed = _index_distributions()
+    top_level = operator_class.__module__.partition('.')[0]
+    declared = {entry.label for entry in installed if _is_installed_module_file(entry, top_level, location)}
+    return declared or {entry.label for entry in installed if _is_editable_owner(entry, top_level, location)}
+
+
+def _is_exempt_from_classification(operator_class: type, project_root: Path | None) -> bool:
+    """pytest-gremlins' own operators are covered by ``CACHE_VERSION``; a conftest operator by the tests it covers.
+
+    Only conftests from the rootdir down to a test file are hashed into the test key, so a ``conftest.py`` outside
+    the rootdir is not exempt. With no rootdir known, every ``conftest.py`` is exempt.
+    """
+    if operator_class.__module__.partition('.')[0] == _OWN_PACKAGE:
+        return True
+    module_file = _module_file(operator_class)
+    if module_file is None or module_file.name != 'conftest.py':
+        return False
+    return project_root is None or module_file.is_relative_to(project_root.resolve())
+
+
+@dataclass(frozen=True)
+class _SupplierLabels:
+    """The operator supplier labels, and whether any of them is an always-miss token."""
+
+    labels: set[str]
+    has_always_miss_token: bool
+
+
+def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root: Path | None) -> _SupplierLabels:
+    """Label each operator by the installed distribution that provably owns it, else by an always-miss token.
+
+    An operator class keeps a stable key only when it is importable (see ``_is_importable``) and an installed
+    distribution owns its module's file. Any other operator contributes ``local-operator=<module>:unreadable-<random>``,
+    which differs on every run, so its verdicts are recomputed and never served stale. A helper's file is never
+    hashed: what it defines can come from other files, so no hash proves the class unchanged. Restoring cache
+    hits for such operators is tracked in #887.
+    """
+    classes = {
+        type(operator) for operator in operators if not _is_exempt_from_classification(type(operator), project_root)
+    }
+    importable = {cls for cls in classes if _is_importable(cls)}
+    installed = _index_distributions() if importable else []
     labels: set[str] = set()
-    unowned = set(wanted)
-    for entry in installed:
-        owned = entry.modules & wanted
-        if owned:
-            labels.add(entry.label)
-            unowned -= owned
-    for module in unowned:
-        location = locations[module]
-        if location is not None:
-            labels |= {entry.label for entry in installed if _is_editable_owner(entry, location)}
-    return labels
+    unproven = classes - importable
+    for operator_class in importable:
+        owners = _installed_owner_labels(operator_class, installed, project_root)
+        labels |= owners
+        if not owners:
+            unproven.add(operator_class)
+    always_miss_tokens = {
+        f'{_LOCAL_OPERATOR_PREFIX}{cls.__module__}{_UNREADABLE_MARKER}{uuid.uuid4().hex}' for cls in unproven
+    }
+    return _SupplierLabels(labels | always_miss_tokens, has_always_miss_token=bool(always_miss_tokens))
+
+
+@dataclass(frozen=True)
+class VersionsFingerprint:
+    """The versions part of the cache key, and whether a later run can read what this run writes under it.
+
+    Attributes:
+        text: The fingerprint string; see ``installed_versions_fingerprint``.
+        writes_are_readable: False when an operator no installed distribution provably owns put a fresh random
+            token in ``text``, so no later run can read a result cached under it.
+    """
+
+    text: str
+    writes_are_readable: bool
+
+
+def versions_fingerprint(
+    operators: Iterable[GremlinOperator] = (),
+    project_root: Path | None = None,
+) -> VersionsFingerprint:
+    """Return the fingerprint of ``installed_versions_fingerprint`` together with whether writes under it are readable.
+
+    Readability is reported by the code that builds the labels, never re-parsed from the string, so an operator
+    module whose name contains the ``|`` separator is still recognized.
+
+    Args:
+        operators: The operators registered for this run.
+        project_root: The pytest rootdir.
+
+    Returns:
+        The fingerprint and its readability.
+
+    Example:
+        >>> versions_fingerprint().writes_are_readable
+        True
+    """
+    suppliers = {
+        _distribution_label(entry_point.dist)
+        for entry_point in entry_points(group=ENTRY_POINT_GROUP)
+        if entry_point.dist is not None
+    }
+    operator_suppliers = _operator_supplier_labels(operators, project_root)
+    suppliers |= operator_suppliers.labels
+    return VersionsFingerprint(
+        text='|'.join([f'cache-version={CACHE_VERSION}', *sorted(suppliers)]),
+        writes_are_readable=not operator_suppliers.has_always_miss_token,
+    )
 
 
 def installed_versions_fingerprint(
@@ -207,8 +377,10 @@ def installed_versions_fingerprint(
 
     Args:
         operators: The operators registered for this run.
-        project_root: The pytest rootdir. An operator module under it is project code and adds nothing, even
-            when the project under test is itself installed editable.
+        project_root: The pytest rootdir. An operator module under it is project code, not an installed
+            distribution. An operator keeps a stable key only when it is importable by its qualified name and an
+            installed distribution owns its module; every other operator, a ``conftest.py`` operator excepted,
+            makes every run miss the cache (#887 tracks restoring hits).
 
     Raising ``CACHE_VERSION`` or any upgrade, downgrade, install or removal of an operator distribution
     changes the string, so verdicts cached under an older string are never reused. A pytest-gremlins
@@ -218,10 +390,4 @@ def installed_versions_fingerprint(
     Returns:
         A deterministic fingerprint, independent of entry-point discovery order.
     """
-    suppliers = {
-        _distribution_label(entry_point.dist)
-        for entry_point in entry_points(group=ENTRY_POINT_GROUP)
-        if entry_point.dist is not None
-    }
-    suppliers |= _operator_owner_labels(operators, project_root)
-    return '|'.join([f'cache-version={CACHE_VERSION}', *sorted(suppliers)])
+    return versions_fingerprint(operators, project_root).text
