@@ -201,7 +201,7 @@ per-test coverage data in a pre-scan and uses it for test selection. Two options
 - `--gremlin-no-coverage-filter` turns it off, so every gremlin runs the whole test suite. This
   is slow, but it rules out test selection as the reason a gremlin survived.
 - `--gremlin-coverage-timeout` (or `coverage_timeout` in `[tool.pytest-gremlins]`, default 120
-  seconds) limits how long the pre-scan may run. If it runs out, pytest-gremlins warns and
+  seconds) limits how long the pre-scan may run. If it runs out, pytest-gremlins prints a notice to stderr and
   every gremlin runs every test.
 
 ## Edge Cases

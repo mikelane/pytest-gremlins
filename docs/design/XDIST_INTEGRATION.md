@@ -100,7 +100,9 @@ so workers never recurse into xdist.
 **A worker is identifiable by `hasattr(config, 'workerinput')`.** This is how
 pytest-cov does it. Does not require xdist to be installed on the gremlins side.
 
-**`pytest_configure_node(node)` fires on the controller before each worker starts.**
+**`pytest_configure_node(node)` fires on the controller before each worker starts.** (xdist
+behavior, described here as design history. Whether gremlins itself keeps a hook of this
+name is tracked in #588.)
 `node.workerinput` is a dict that gets serialized and sent to the worker as
 `config.workerinput`. This is how pytest-cov passes coverage config to workers — it is
 the right injection point for anything a worker needs to know before collection starts.
@@ -273,7 +275,7 @@ it builds its own ordered list from coverage data. No special handling needed.
 **The `pytest_configure_node` path (a possible Phase 2).** Rather than running mutation
 subprocesses, gremlins could inject the instrumented sources and the gremlin assignment
 into each worker via `node.workerinput` before the worker starts — similar to how
-pytest-cov passes coverage config. Workers would then register the `GremlinFinder`
+pytest-cov passes coverage config. Workers would then install the `GremlinFinder`
 import hook in their own `pytest_configure` phase and run their assigned gremlin
 in-process. This eliminates the mutation subprocess layer entirely and gives gremlins
 a genuine in-process xdist integration. It requires coverage data to be available
