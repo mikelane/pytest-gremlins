@@ -306,9 +306,17 @@ def build_switching_expression(original: ast.expr, gremlins: list[Gremlin]) -> a
     Returns:
         An IfExp AST node implementing the switching logic.
     """
+    return _wrap_in_switch(copy.deepcopy(original), gremlins)
+
+
+def _wrap_in_switch(original: ast.expr, gremlins: list[Gremlin]) -> ast.IfExp:
+    """Wrap ``original`` itself, uncopied, as the final branch of the switching expression.
+
+    Only safe when no gremlin refers to ``original`` or to a node inside it.
+    """
     gremlin_active = ast.Name(id='__gremlin_active__', ctx=ast.Load())
 
-    result: ast.expr = copy.deepcopy(original)
+    result: ast.expr = original
 
     for gremlin in reversed(gremlins):
         condition = ast.Compare(
@@ -450,7 +458,9 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
             return node
 
         self.gremlins.extend(gremlins)
-        return build_switching_expression(node, gremlins)
+        # Every gremlin was built from ``pristine``, so none refers into ``node`` and it needs no copy.
+        # Copying it here would copy the nested switches once per level of a chain and make this cubic.
+        return _wrap_in_switch(node, gremlins)
 
     def visit_Compare(self, node: ast.Compare) -> ast.expr:
         """Replace comparison nodes with mutation switching expressions."""
