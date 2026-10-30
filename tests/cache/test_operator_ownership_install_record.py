@@ -13,16 +13,21 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+from typing import TYPE_CHECKING
 
 import pytest
 
 from pytest_gremlins.cache.versions import installed_versions_fingerprint
+
+if TYPE_CHECKING:
+    from pytest_gremlins.operators.protocol import GremlinOperator
 
 OPERATOR_SOURCE = 'class HelperOperator:\n    name = "helper"\n    description = "v1"\n'
 
 
 @pytest.fixture
 def isolated_modules() -> Iterator[None]:
+    """Drop every module a test imported, so the throwaway packages never leak into later tests."""
     before = set(sys.modules)
     yield
     for name in set(sys.modules) - before:
@@ -105,7 +110,7 @@ class DescribeOperatorOwnershipInstallRecord:
         assert 'edpkg-r7==3.0' not in installed_versions_fingerprint([operator], rootdir)
 
 
-def _load_conftest_operator(conftest: Path) -> object:
+def _load_conftest_operator(conftest: Path) -> GremlinOperator:
     """Import ``conftest`` the way pytest does: under a unique module name, from its file path."""
     spec = importlib.util.spec_from_file_location(f'conftest_r890_{conftest.parent.name}', conftest)
     assert spec is not None
@@ -113,7 +118,8 @@ def _load_conftest_operator(conftest: Path) -> object:
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    return module.HelperOperator()
+    operator: GremlinOperator = module.HelperOperator()
+    return operator
 
 
 @pytest.mark.medium
