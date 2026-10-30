@@ -28,6 +28,7 @@ def _load_checker() -> ModuleType:
 checker = _load_checker()
 
 BASE_MARKERS = checker.Markers(cache_version='1', runner_fidelity_version='rf21')
+RELEASED_MARKERS = checker.Markers(cache_version='1', runner_fidelity_version='rf20')
 ZAPPED = {'sample.py:10 comparison: >= to >': 'zapped'}
 SURVIVED = {'sample.py:10 comparison: >= to >': 'survived'}
 
@@ -102,28 +103,160 @@ class DescribeVerdictCheck:
         ('head_markers', 'lowered'),
         [
             (checker.Markers(cache_version='0', runner_fidelity_version='rf21'), 'CACHE_VERSION'),
-            (checker.Markers(cache_version='1', runner_fidelity_version='rf20'), 'RUNNER_FIDELITY_VERSION'),
+            (checker.Markers(cache_version='1', runner_fidelity_version='rf19'), 'RUNNER_FIDELITY_VERSION'),
         ],
         ids=['cache-version', 'runner-fidelity-version'],
     )
     def it_fails_when_a_marker_was_lowered_with_a_verdict_change(self, head_markers: object, lowered: str) -> None:
-        failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, head_markers)
+        failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, head_markers, released=RELEASED_MARKERS)
 
         assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered)
 
     def it_fails_when_a_marker_was_lowered_even_if_no_verdict_changed(self) -> None:
         lowered = checker.Markers(cache_version='0', runner_fidelity_version='rf21')
 
-        failure = checker.check_verdicts(ZAPPED, ZAPPED, BASE_MARKERS, lowered)
+        failure = checker.check_verdicts(ZAPPED, ZAPPED, BASE_MARKERS, lowered, released=RELEASED_MARKERS)
 
         assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered='CACHE_VERSION')
 
     def it_fails_when_one_marker_was_raised_and_the_other_lowered(self) -> None:
         mixed = checker.Markers(cache_version='2', runner_fidelity_version='rf20')
 
-        failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, mixed)
+        failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, mixed, released=RELEASED_MARKERS)
 
         assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION')
+
+
+UNRELEASED_BASE = checker.Markers(cache_version='3', runner_fidelity_version='rf21')
+RELEASED_AT_2_RF20 = checker.Markers(cache_version='2', runner_fidelity_version='rf20')
+LOWERED_TO_RELEASED = [
+    pytest.param(
+        checker.Markers(cache_version='3', runner_fidelity_version='rf20'),
+        'RUNNER_FIDELITY_VERSION',
+        id='runner-fidelity-version',
+    ),
+    pytest.param(
+        checker.Markers(cache_version='2', runner_fidelity_version='rf21'), 'CACHE_VERSION', id='cache-version'
+    ),
+]
+
+
+@pytest.mark.small
+class DescribeMarkerLoweredToTheReleasedValue:
+    @pytest.mark.parametrize(('candidate', 'lowered'), LOWERED_TO_RELEASED)
+    def it_passes_when_a_marker_is_lowered_to_the_released_value_and_no_verdict_changed(
+        self, candidate: object, lowered: str
+    ) -> None:
+        failure = checker.check_verdicts(ZAPPED, ZAPPED, UNRELEASED_BASE, candidate, released=RELEASED_AT_2_RF20)
+
+        assert failure is None, lowered
+
+    @pytest.mark.parametrize(
+        ('candidate', 'lowered'),
+        [
+            (checker.Markers(cache_version='3', runner_fidelity_version='rf19'), 'RUNNER_FIDELITY_VERSION'),
+            (checker.Markers(cache_version='1', runner_fidelity_version='rf21'), 'CACHE_VERSION'),
+        ],
+        ids=['runner-fidelity-version', 'cache-version'],
+    )
+    def it_fails_when_a_marker_is_lowered_below_the_released_value(self, candidate: object, lowered: str) -> None:
+        failure = checker.check_verdicts(ZAPPED, ZAPPED, UNRELEASED_BASE, candidate, released=RELEASED_AT_2_RF20)
+
+        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered)
+
+    @pytest.mark.parametrize(('candidate', 'lowered'), LOWERED_TO_RELEASED)
+    def it_fails_when_a_marker_is_lowered_to_the_released_value_and_a_verdict_changed(
+        self, candidate: object, lowered: str
+    ) -> None:
+        failure = checker.check_verdicts(ZAPPED, SURVIVED, UNRELEASED_BASE, candidate, released=RELEASED_AT_2_RF20)
+
+        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered)
+
+    def it_fails_closed_and_says_why_when_no_release_is_known(self) -> None:
+        lowered = checker.Markers(cache_version='3', runner_fidelity_version='rf20')
+
+        failure = checker.check_verdicts(ZAPPED, ZAPPED, UNRELEASED_BASE, lowered, released=None)
+
+        assert failure == (
+            checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION') + ' ' + checker.NO_RELEASE_MESSAGE
+        )
+
+    def it_does_not_need_a_release_when_no_marker_is_lowered(self) -> None:
+        failure = checker.check_verdicts(ZAPPED, ZAPPED, UNRELEASED_BASE, UNRELEASED_BASE, released=None)
+
+        assert failure is None
+
+
+@pytest.mark.small
+class DescribeParseMarkers:
+    def it_reads_both_markers_from_the_two_sources(self) -> None:
+        markers = checker.parse_markers('CACHE_VERSION = 7\n', "RUNNER_FIDELITY_VERSION = 'rf20'\n")
+
+        assert markers == checker.Markers(cache_version='7', runner_fidelity_version='rf20')
+
+    def it_reads_annotated_assignments(self) -> None:
+        markers = checker.parse_markers(
+            'CACHE_VERSION: int = 7  # bumped\n', 'RUNNER_FIDELITY_VERSION: Final = "rf20"\n'
+        )
+
+        assert markers == checker.Markers(cache_version='7', runner_fidelity_version='rf20')
+
+    def it_returns_nothing_when_a_marker_is_missing(self) -> None:
+        assert checker.parse_markers('x = 1\n', "RUNNER_FIDELITY_VERSION = 'rf20'\n") is None
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        [checker.GIT, '-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+def _commit_markers(repo: Path, cache_version: str, fidelity: str) -> None:
+    cache_dir = repo / 'src' / 'pytest_gremlins' / 'cache'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / 'versions.py').write_text(f'CACHE_VERSION = {cache_version}\n', encoding='utf-8')
+    (cache_dir / 'incremental.py').write_text(f"RUNNER_FIDELITY_VERSION = '{fidelity}'\n", encoding='utf-8')
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-q', '-m', 'markers')
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    work = tmp_path / 'work'
+    work.mkdir()
+    _git(work, 'init', '-q')
+    return work
+
+
+@pytest.mark.medium
+class DescribeReleasedMarkers:
+    def it_reads_the_markers_at_the_newest_tag_reachable_from_the_ref(self, repo: Path) -> None:
+        _commit_markers(repo, '1', 'rf19')
+        _git(repo, 'tag', 'v1.0.0')
+        _commit_markers(repo, '2', 'rf20')
+        _git(repo, 'tag', 'v1.1.0')
+        _commit_markers(repo, '3', 'rf21')
+
+        markers = checker.released_markers('HEAD', repo=repo)
+
+        assert markers == checker.Markers(cache_version='2', runner_fidelity_version='rf20')
+
+    def it_returns_nothing_when_no_release_tag_is_reachable(self, repo: Path) -> None:
+        _commit_markers(repo, '1', 'rf19')
+        _git(repo, 'tag', 'not-a-release')
+
+        assert checker.released_markers('HEAD', repo=repo) is None
+
+    def it_returns_nothing_when_the_tag_has_no_marker_sources(self, repo: Path) -> None:
+        (repo / 'README.md').write_text('hi\n', encoding='utf-8')
+        _git(repo, 'add', '.')
+        _git(repo, 'commit', '-q', '-m', 'init')
+        _git(repo, 'tag', 'v1.0.0')
+
+        assert checker.released_markers('HEAD', repo=repo) is None
 
 
 def _entry(line_number: int, status: str, description: str = '>= to >') -> dict[str, object]:
@@ -296,6 +429,29 @@ class DescribeCompareCommand:
         head = _write_run(tmp_path / 'head.json', {})
 
         assert checker.main(['compare', str(base), str(head)]) == checker.EXIT_VERDICT_CHANGED
+
+    def it_exits_one_when_a_marker_was_lowered_and_the_release_ref_has_no_tag(
+        self, tmp_path: Path, repo: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _commit_markers(repo, '1', 'rf21')
+        base = _write_run(tmp_path / 'base.json', ZAPPED, cache_version='2')
+        head = _write_run(tmp_path / 'head.json', ZAPPED, cache_version='1')
+
+        exit_code = checker.main(['compare', str(base), str(head), '--released-ref', 'HEAD', '--repo', str(repo)])
+
+        assert (exit_code, checker.NO_RELEASE_MESSAGE in capsys.readouterr().out) == (1, True)
+
+    def it_exits_zero_when_a_marker_was_lowered_to_the_value_at_the_release_tag(
+        self, tmp_path: Path, repo: Path
+    ) -> None:
+        _commit_markers(repo, '1', 'rf21')
+        _git(repo, 'tag', 'v1.0.0')
+        base = _write_run(tmp_path / 'base.json', ZAPPED, cache_version='2')
+        head = _write_run(tmp_path / 'head.json', ZAPPED, cache_version='1')
+
+        exit_code = checker.main(['compare', str(base), str(head), '--released-ref', 'HEAD', '--repo', str(repo)])
+
+        assert exit_code == 0
 
 
 @pytest.mark.medium
