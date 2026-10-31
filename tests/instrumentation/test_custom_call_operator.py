@@ -13,6 +13,7 @@ from typing import (
 import pytest
 
 from pytest_gremlins.instrumentation.transformer import transform_source
+from pytest_gremlins.operators.comparison import ComparisonOperator
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -142,6 +143,56 @@ class _NonCallableDescriptionOperator(_FilterMutationOperator):
     get_description = None
 
 
+class _ReturnNoneOperator:
+    """Replaces a returned expression with None and describes it by unparsing the nodes it is given."""
+
+    name = 'return_none_custom'
+    description = 'Replace a returned expression with None'
+
+    def can_mutate(self, node: ast.AST) -> bool:
+        return isinstance(node, ast.Return) and node.value is not None
+
+    def mutate(self, node: ast.AST) -> list[ast.AST]:
+        mutated = copy.deepcopy(node)
+        assert isinstance(mutated, ast.Return)
+        mutated.value = ast.Constant(value=None)
+        return [mutated]
+
+    def get_description(self, original: ast.AST, mutated: ast.AST) -> str:
+        return f'{ast.unparse(original)} -> {ast.unparse(mutated)}'
+
+
+class _NoArgumentDescriptionOperator(_FilterMutationOperator):
+    """Written before ``get_description`` was called, with a helper that takes no arguments."""
+
+    name = 'legacy_filter'
+
+    def get_description(self) -> str:  # type: ignore[override]
+        return self.description
+
+
+class _RaisingDescriptionOperator(_FilterMutationOperator):
+    name = 'raising_desc'
+
+    def get_description(self, original: ast.AST, mutated: ast.AST) -> str:  # noqa: ARG002
+        msg = 'boom'
+        raise RuntimeError(msg)
+
+
+class _NoneDescriptionOperator(_FilterMutationOperator):
+    name = 'none_desc'
+
+    def get_description(self, original: ast.AST, mutated: ast.AST) -> str | None:  # type: ignore[override]  # noqa: ARG002
+        return None
+
+
+class _EmptyDescriptionOperator(_FilterMutationOperator):
+    name = 'empty_desc'
+
+    def get_description(self, original: ast.AST, mutated: ast.AST) -> str:  # noqa: ARG002
+        return ''
+
+
 @pytest.mark.small
 class DescribeCustomOperatorDescriptions:
     def it_uses_the_operator_get_description_for_the_gremlin(self) -> None:
@@ -169,3 +220,42 @@ class DescribeCustomOperatorDescriptions:
         gremlins, _tree = transform_source(source, 'm.py', operators=[_FilterAndFirstOperator()])
 
         assert sorted(g.description for g in gremlins) == ['filter -> exclude', 'first -> last']
+
+    def it_describes_a_custom_return_gremlin_from_the_source_as_written(self) -> None:
+        source = 'def f(a, b):\n    return a < b\n'
+
+        gremlins, _tree = transform_source(source, 'm.py', operators=[ComparisonOperator(), _ReturnNoneOperator()])
+
+        custom = [g for g in gremlins if g.operator_name == 'return_none_custom']
+        assert [g.description for g in custom] == ['return a < b -> return None']
+
+    @pytest.mark.parametrize(
+        'operator',
+        [
+            pytest.param(_NoArgumentDescriptionOperator(), id='takes-no-arguments'),
+            pytest.param(_RaisingDescriptionOperator(), id='raises'),
+        ],
+    )
+    def it_keeps_the_files_other_gremlins_when_a_legacy_get_description_takes_no_arguments(
+        self, operator: _FilterMutationOperator
+    ) -> None:
+        source = 'def f(qs, a, b):\n    return qs.filter(x=a < b)\n'
+
+        gremlins, _tree = transform_source(source, 'm.py', operators=[ComparisonOperator(), operator])
+
+        assert {g.operator_name for g in gremlins} == {'comparison', operator.name}
+        assert [g.description for g in gremlins if g.operator_name == operator.name] == [f'{operator.name} mutation']
+
+    @pytest.mark.parametrize(
+        'operator',
+        [
+            pytest.param(_NoneDescriptionOperator(), id='none'),
+            pytest.param(_EmptyDescriptionOperator(), id='empty'),
+        ],
+    )
+    def it_falls_back_to_the_operator_name_when_get_description_returns_none(
+        self, operator: _FilterMutationOperator
+    ) -> None:
+        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[operator])
+
+        assert [g.description for g in gremlins] == [f'{operator.name} mutation']
