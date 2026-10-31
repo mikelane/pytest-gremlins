@@ -148,6 +148,11 @@ class DescribeNumericRerunSettingsInNativeToml:
         assert verdicts(result.stdout.str())['Zapped'] > 0
 
 
+@pytest.mark.skipif(
+    pytest.version_tuple < (9, 0),
+    reason='pytest < 9 does not read the native [tool.pytest] table, so reruns = "2" is ignored and the flake '
+    'fails the baseline.',
+)
 @pytest.mark.medium
 class DescribeStringRerunSettingsInNativeToml:
     def it_runs_gremlins_without_an_internal_error_when_reruns_is_a_toml_string(
