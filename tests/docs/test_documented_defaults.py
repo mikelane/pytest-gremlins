@@ -62,7 +62,11 @@ class DescribeDefaultCommentMismatches:
         assert default_comment_mismatches({'operators': 'all operators'}, {'operators': 'all'}) == []
 
     def it_rejects_a_comment_that_differs_from_the_table_default(self):
-        assert len(default_comment_mismatches({'batch_size': '11'}, {'batch_size': '`10`'})) == 1
+        problems = default_comment_mismatches({'batch_size': '11'}, {'batch_size': '`10`'})
+
+        assert problems == ['batch_size: the TOML example says "Default: 11", the options table says \'10\'']
 
     def it_rejects_a_comment_for_a_key_the_table_lacks(self):
-        assert len(default_comment_mismatches({'invented': '1'}, {})) == 1
+        problems = default_comment_mismatches({'invented': '1'}, {})
+
+        assert problems == ['invented: the TOML example says "Default: 1" but the options table has no such key']
