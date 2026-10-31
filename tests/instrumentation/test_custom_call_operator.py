@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import ast
 import copy
-from typing import ClassVar
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    cast,
+)
 
 import pytest
 
 from pytest_gremlins.instrumentation.transformer import transform_source
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class _FilterToExcludeOperator:
@@ -44,7 +51,8 @@ def _run_f(tree: ast.Module, active: str | None) -> object:
     ast.fix_missing_locations(tree)
     namespace: dict[str, object] = {'__gremlin_active__': active}
     exec(compile(tree, 'm.py', 'exec'), namespace)  # noqa: S102
-    return namespace['f'](_QuerySet())  # type: ignore[operator]
+    run_f = cast('Callable[[_QuerySet], object]', namespace['f'])
+    return run_f(_QuerySet())
 
 
 @pytest.mark.small
