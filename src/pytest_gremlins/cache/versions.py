@@ -293,16 +293,31 @@ def _member_code_file(member: object) -> str | None:
     return code.co_filename if code is not None else None
 
 
-def _has_conftest_function(operator_class: type) -> bool:
-    return any(
-        file is not None and Path(file).name == _CONFTEST_FILE_NAME
-        for file in map(_member_code_file, vars(operator_class).values())
+def _conftest_function_files(operator_class: type) -> list[Path]:
+    files = (_member_code_file(member) for member in vars(operator_class).values())
+    return [Path(file) for file in files if file is not None and Path(file).name == _CONFTEST_FILE_NAME]
+
+
+def _resolved(paths: Iterable[Path]) -> set[Path]:
+    return {path.resolve() for path in paths}
+
+
+def _is_module_defined_in(operator_class: type, loaded: set[Path]) -> bool:
+    """Whether the class's module is named like a conftest and its file is one of the loaded conftests."""
+    module_file = _module_file(operator_class)
+    return _has_conftest_module_name(operator_class) and module_file is not None and module_file in loaded
+
+
+def _is_conftest_defined(operator_class: type, loaded: set[Path]) -> bool:
+    """Whether the class is defined in a loaded ``conftest.py``, or a function in its body comes from one (#899).
+
+    The module name and the functions' ``co_filename`` only nominate candidates: an operator from an installed
+    package whose module happens to be called ``conftest`` is not a conftest operator, so the file must be one
+    of the conftests registered as plugins.
+    """
+    return _is_module_defined_in(operator_class, loaded) or bool(
+        _resolved(_conftest_function_files(operator_class)) & loaded
     )
-
-
-def _is_conftest_defined(operator_class: type) -> bool:
-    """Whether the class is defined in a ``conftest.py``, or any function in its body comes from one (#899)."""
-    return _has_conftest_module_name(operator_class) or _has_conftest_function(operator_class)
 
 
 def _conftest_name(conftest: Path, project_root: Path | None) -> str:
@@ -352,12 +367,14 @@ def _operator_supplier_labels(
     hits for such operators is tracked in #887.
 
     An operator defined in a ``conftest.py`` (see ``_is_conftest_defined``) adds one label hashing every loaded
-    ``conftest.py`` (#899). A class whose module is a conftest is covered by that label alone; one that merely
+    ``conftest.py`` (#899). A class whose module is a loaded conftest is covered by that label alone; one that merely
     borrows a conftest function is still classified by its own module as well.
     """
     classes_in_use = {type(operator) for operator in operators if not _is_own_operator(type(operator))}
-    conftest_defined = {cls for cls in classes_in_use if _is_conftest_defined(cls)}
-    classes = {cls for cls in classes_in_use if not _has_conftest_module_name(cls)}
+    loaded_conftests = list(loaded_conftests)
+    loaded = _resolved(loaded_conftests)
+    conftest_defined = {cls for cls in classes_in_use if _is_conftest_defined(cls, loaded)}
+    classes = {cls for cls in classes_in_use if not _is_module_defined_in(cls, loaded)}
     importable = {cls for cls in classes if _is_importable(cls)}
     installed = _index_distributions() if importable else []
     labels: set[str] = set()

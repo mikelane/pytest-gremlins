@@ -130,17 +130,21 @@ class DescribeConftestOperatorOwnership:
         rootdir = tmp_path / 'project'
         rootdir.mkdir()
         _write(tmp_path / 'outside' / 'conftest.py', OPERATOR_SOURCE)
-        operator = _load_conftest_operator(tmp_path / 'outside' / 'conftest.py')
+        conftest = tmp_path / 'outside' / 'conftest.py'
+        operator = _load_conftest_operator(conftest)
 
-        assert installed_versions_fingerprint([operator], rootdir) == installed_versions_fingerprint(
-            [operator], rootdir
+        loaded = [conftest]
+        assert installed_versions_fingerprint([operator], rootdir, loaded) == installed_versions_fingerprint(
+            [operator], rootdir, loaded
         )
 
     def it_keeps_a_stable_key_for_a_conftest_operator_inside_the_rootdir(self, tmp_path: Path) -> None:
         rootdir = tmp_path / 'project'
         _write(rootdir / 'conftest.py', OPERATOR_SOURCE)
-        operator = _load_conftest_operator(rootdir / 'conftest.py')
+        conftest = rootdir / 'conftest.py'
+        operator = _load_conftest_operator(conftest)
 
-        assert installed_versions_fingerprint([operator], rootdir) == installed_versions_fingerprint(
-            [operator], rootdir
+        loaded = [conftest]
+        assert installed_versions_fingerprint([operator], rootdir, loaded) == installed_versions_fingerprint(
+            [operator], rootdir, loaded
         )
