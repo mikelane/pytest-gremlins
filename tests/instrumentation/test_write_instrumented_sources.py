@@ -25,6 +25,8 @@ from pytest_gremlins.plugin import (
     _write_instrumented_sources,
 )
 
+from .recursion_error import _raise_recursion_error
+
 
 def _injected_body(source: str) -> list[ast.stmt]:
     """Parse ``source``, inject the activation variable, and return the body of the resulting module."""
@@ -199,10 +201,6 @@ def _written_entries(tmp_path: Path, relative_paths: list[str]) -> InstrumentedS
     result_dir = _write_instrumented_sources(asts, tmp_path)
     entries: InstrumentedSources = json.loads((result_dir / 'sources.json').read_text())
     return entries
-
-
-def _raise_recursion_error(*_args: object, **_kwargs: object) -> None:
-    raise RecursionError
 
 
 @pytest.mark.medium
