@@ -1,5 +1,7 @@
 """A test file's cache key follows the other test files it imports, statically (#910)."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -9,13 +11,12 @@ from pytest_gremlins import plugin
 TEST_FILE = 'tests/test_a.py'
 
 
-def _test_hash(rootdir: Path, test_file: str = TEST_FILE, python_files: tuple[str, ...] | None = None) -> str:
+def _test_hash(
+    rootdir: Path, test_file: str = TEST_FILE, python_files: tuple[str, ...] = plugin.DEFAULT_TEST_FILE_PATTERNS
+) -> str:
     session = plugin.GremlinSession(enabled=True, cache_enabled=True)
     session.test_node_ids = {f'{test_file}::test_x': f'{test_file}::test_x'}
-    if python_files is None:
-        plugin._hash_sources_and_tests_for_cache(session, {}, rootdir)
-    else:
-        plugin._hash_sources_and_tests_for_cache(session, {}, rootdir, python_files)
+    plugin._hash_sources_and_tests_for_cache(session, {}, rootdir, python_files)
     return session.test_hashes[test_file]
 
 
