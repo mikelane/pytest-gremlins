@@ -10,10 +10,10 @@ from pytest_gremlins.cache.hasher import ContentHasher
 TEST_FILE = 'tests/test_a.py'
 
 
-def _test_hash(rootdir: Path, test_file: str = TEST_FILE) -> str:
-    node_id = f'{test_file}::test_a'
+def _test_hash(rootdir: Path, test_file: str = TEST_FILE, also_collected: tuple[str, ...] = ()) -> str:
     session = plugin.GremlinSession(enabled=True, cache_enabled=True)
-    session.test_node_ids = {node_id: node_id}
+    node_ids = [f'{name}::test_x' for name in (test_file, *also_collected)]
+    session.test_node_ids = {node_id: node_id for node_id in node_ids}
     plugin._hash_sources_and_tests_for_cache(session, {}, rootdir)
     return session.test_hashes[test_file]
 
@@ -72,11 +72,28 @@ class DescribeHelperModulesFoldedIntoTestHash:
     def it_keeps_the_hash_when_a_sibling_test_file_changes(self, tmp_path: Path) -> None:
         _write_project(tmp_path)
         (tmp_path / 'tests' / 'test_b.py').write_text('def test_b(): pass\n')
-        before = _test_hash(tmp_path)
+        before = _test_hash(tmp_path, also_collected=('tests/test_b.py',))
 
         (tmp_path / 'tests' / 'test_b.py').write_text('def test_b(): assert True\n')
 
-        assert _test_hash(tmp_path) == before
+        assert _test_hash(tmp_path, also_collected=('tests/test_b.py',)) == before
+
+    @pytest.mark.parametrize(
+        'helper',
+        ['tests/test_utils.py', 'tests/testing/test_helpers.py', 'tests/fixtures_test.py'],
+        ids=['test-prefixed', 'test-prefixed-subdir', 'test-suffixed'],
+    )
+    def it_misses_the_cache_after_an_edit_to_a_test_named_helper_with_no_collected_tests(
+        self, tmp_path: Path, helper: str
+    ) -> None:
+        _write_project(tmp_path)
+        (tmp_path / helper).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / helper).write_text('V = 1\n')
+        before = _test_hash(tmp_path)
+
+        (tmp_path / helper).write_text('V = 2\n')
+
+        assert _test_hash(tmp_path) != before
 
     def it_hashes_identically_on_repeated_runs(self, tmp_path: Path) -> None:
         _write_project(tmp_path)

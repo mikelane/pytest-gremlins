@@ -1348,17 +1348,30 @@ def _hash_sources_and_tests_for_cache(
     hasher = ContentHasher()
     for file_path, source in source_files.items():
         gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
-    for test_file in {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}:
+    test_files = {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}
+    collected_paths = frozenset(rootdir / test_file for test_file in test_files if test_file)
+    helper_parts_by_sweep: dict[tuple[Path, bool], list[str]] = {}
+    for test_file in test_files:
         # A file part pytest left empty (a test outside rootdir) cannot say which file the test lives in.
         if test_file and (rootdir / test_file).is_file():
-            gremlin_session.test_hashes[test_file] = _hash_test_file_with_conftests(hasher, rootdir, test_file)
+            gremlin_session.test_hashes[test_file] = _hash_test_file_with_conftests(
+                hasher, rootdir, test_file, collected_paths, helper_parts_by_sweep
+            )
 
 
-def _hash_test_file_with_conftests(hasher: ContentHasher, rootdir: Path, test_file: str) -> str:
+def _hash_test_file_with_conftests(
+    hasher: ContentHasher,
+    rootdir: Path,
+    test_file: str,
+    collected_paths: frozenset[Path] | None = None,
+    helper_parts_by_sweep: dict[tuple[Path, bool], list[str]] | None = None,
+) -> str:
     """Hash a test file with every ``conftest.py`` from rootdir down to it and the helper modules in its test root.
 
     A fixture edited in a conftest changes what the test does, so it must change the key (#702). So does an edit
-    to a helper module the test or a conftest imports (#760).
+    to a helper module the test or a conftest imports (#760). ``helper_parts_by_sweep`` memoizes the helper
+    sweep so each test root is read once per run, not once per test file. ``collected_paths`` defaults to the
+    test file alone.
     """
     parts = [hasher.hash_file(rootdir / test_file)]
     directory = (rootdir / test_file).parent
@@ -1369,25 +1382,46 @@ def _hash_test_file_with_conftests(hasher: ContentHasher, rootdir: Path, test_fi
         if directory == rootdir:
             break
         directory = directory.parent
-    parts.extend(_helper_module_hash_parts(hasher, rootdir, test_file))
+    collected = collected_paths if collected_paths is not None else frozenset({rootdir / test_file})
+    memo = helper_parts_by_sweep if helper_parts_by_sweep is not None else {}
+    sweep = _helper_sweep(rootdir, test_file)
+    if sweep not in memo:
+        memo[sweep] = _helper_module_hash_parts(hasher, rootdir, sweep, collected)
+    parts.extend(memo[sweep])
     return hasher.hash_string('|'.join(parts)) if len(parts) > 1 else parts[0]
 
 
-def _helper_module_hash_parts(hasher: ContentHasher, rootdir: Path, test_file: str) -> list[str]:
-    """Hash every non-test ``.py`` file in the test file's test root, in sorted path order (#760).
+def _helper_sweep(rootdir: Path, test_file: str) -> tuple[Path, bool]:
+    """Return the directory to sweep for helpers and whether to recurse into it.
 
     The test root is the top-level directory under rootdir that holds the test file. A test file that sits
-    directly in rootdir, or a rootdir that is the filesystem root, has no safe directory to sweep, so the
-    test file's own directory is read without recursing. A ``pytest_plugins`` module or a helper a test or
-    conftest imports is not named by the test file, so the coarse rule hashes every helper there: an edit
-    re-runs gremlins for every test file under that root, never replays a stale verdict. Collected tests and
-    conftests (``_should_include_file`` is false) are skipped, as is ``__pycache__``.
+    directly in rootdir, or a rootdir that is the filesystem root, has no safe directory to sweep recursively,
+    so the test file's own directory is read without recursing.
     """
     parts = Path(test_file).parts
-    sweeps_whole_tree = len(parts) > 1 and rootdir != rootdir.parent
-    candidates = (rootdir / parts[0]).rglob('*.py') if sweeps_whole_tree else (rootdir / test_file).parent.glob('*.py')
-    helpers = sorted(path for path in candidates if path.is_file() and _should_include_file(path))
+    if len(parts) > 1 and rootdir != rootdir.parent:
+        return rootdir / parts[0], True
+    return (rootdir / test_file).parent, False
+
+
+def _helper_module_hash_parts(
+    hasher: ContentHasher, rootdir: Path, sweep: tuple[Path, bool], collected_paths: frozenset[Path]
+) -> list[str]:
+    """Hash every non-test ``.py`` file in the swept directory, in sorted path order (#760).
+
+    A ``pytest_plugins`` module or a helper a test or conftest imports is not named by the test file, so the
+    coarse rule hashes every helper there: an edit re-runs gremlins for every test file under that root, never
+    replays a stale verdict. A helper is any Python file that is not a collected test file, a ``conftest.py``
+    or under ``__pycache__``. The file name decides nothing: ``test_utils.py`` with no tests is a helper.
+    """
+    directory, recursive = sweep
+    candidates = directory.rglob('*.py') if recursive else directory.glob('*.py')
+    helpers = sorted(path for path in candidates if path.is_file() and _is_helper_module(path, collected_paths))
     return [f'{path.relative_to(rootdir).as_posix()}:{hasher.hash_file(path)}' for path in helpers]
+
+
+def _is_helper_module(path: Path, collected_paths: frozenset[Path]) -> bool:
+    return path not in collected_paths and path.name != 'conftest.py' and '__pycache__' not in path.parts
 
 
 def _generate_gremlins(
