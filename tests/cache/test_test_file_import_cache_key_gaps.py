@@ -251,3 +251,23 @@ class DescribePytestPluginsInsideModuleLevelBlocks:
         (tmp_path / 'tests/test_utils.py').write_bytes(_fixture_module(2))
 
         assert _test_hash(tmp_path) == before
+
+
+@pytest.mark.medium
+class DescribeUnnormalizedPythonpathEntries:
+    def it_misses_the_cache_after_editing_a_test_named_module_on_a_dotdot_pythonpath_entry(
+        self, tmp_path: Path
+    ) -> None:
+        _write(
+            tmp_path,
+            {
+                'tests/support/test_shared.py': b'def make(): return 1\n',
+                'tests/test_a.py': b'from test_shared import make\n',
+            },
+        )
+        pythonpath = (tmp_path / '..' / tmp_path.name / 'tests' / 'support',)
+        before = _test_hash(tmp_path, pythonpath=pythonpath)
+
+        (tmp_path / 'tests/support/test_shared.py').write_bytes(b'def make(): return 2\n')
+
+        assert _test_hash(tmp_path, pythonpath=pythonpath) != before

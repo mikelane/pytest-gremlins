@@ -1363,7 +1363,7 @@ def _hash_sources_and_tests_for_cache(
     for file_path, source in source_files.items():
         gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
     test_files = {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}
-    memo = _KeyMemo(pythonpath=pythonpath)
+    memo = _KeyMemo(pythonpath=tuple(Path(os.path.normpath(entry)) for entry in pythonpath))
     for test_file in test_files:
         # A file part pytest left empty (a test outside rootdir) cannot say which file the test lives in.
         if test_file and (rootdir / test_file).is_file():
