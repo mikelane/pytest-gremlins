@@ -244,3 +244,80 @@ class DescribeAnyInstrumentationFailureIsReported:
         result = pytester.runpytest_inprocess('--gremlins', '--gremlin-targets', 'src/demo')
 
         result.stdout.fnmatch_lines(['pytest-gremlins: skipped *chain.py: could not instrument (ValueError: boom)'])
+
+
+NOTHING_FOUND_ARGS = ['--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json,html']
+NO_PATHS_ARGS = ['--gremlins', '--gremlin-targets', 'missing_dir', '--gremlin-report=json,html']
+TRIVIAL_TEST = 'def test_nothing():\n    assert True\n'
+
+
+ZERO_GREMLIN_SCENARIOS = [
+    pytest.param(NOTHING_FOUND_ARGS, True, id='nothing-found'),
+    pytest.param(NO_PATHS_ARGS, False, id='no-paths'),
+]
+
+
+def _write_project_without_gremlins(pytester: pytest.Pytester, *, with_src: bool) -> None:
+    pytester.makepyprojecttoml(PYPROJECT)
+    if with_src:
+        pytester.mkdir('src')
+        pytester.mkdir('src/demo')
+        pytester.path.joinpath('src', 'demo', '__init__.py').write_text('')
+    pytester.mkdir('tests')
+    pytester.path.joinpath('tests', 'conftest.py').write_text(TESTS_CONFTEST)
+    pytester.path.joinpath('tests', 'test_nothing.py').write_text(TRIVIAL_TEST)
+
+
+@pytest.mark.medium
+class DescribeZeroGremlinReports:
+    """A run with no gremlins and no skipped files still replaces stale reports (issue #889)."""
+
+    @pytest.mark.parametrize(('run_args', 'with_src'), ZERO_GREMLIN_SCENARIOS)
+    def it_overwrites_a_stale_json_report(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated, run_args: list[str], with_src: bool
+    ) -> None:
+        _write_project_without_gremlins(pytester, with_src=with_src)
+        json_path = _write_stale_reports(pytester)['json']
+
+        run_pytest_isolated(pytester, *run_args)
+
+        assert json.loads(json_path.read_text())['summary']['total'] == 0
+
+    @pytest.mark.parametrize(('run_args', 'with_src'), ZERO_GREMLIN_SCENARIOS)
+    def it_removes_stale_html_content(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated, run_args: list[str], with_src: bool
+    ) -> None:
+        _write_project_without_gremlins(pytester, with_src=with_src)
+        html_path = _write_stale_reports(pytester)['html']
+
+        run_pytest_isolated(pytester, *run_args)
+
+        assert 'stale score' not in html_path.read_text()
+
+    @pytest.mark.parametrize(('run_args', 'with_src'), ZERO_GREMLIN_SCENARIOS)
+    def it_leaves_history_unwritten(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated, run_args: list[str], with_src: bool
+    ) -> None:
+        _write_project_without_gremlins(pytester, with_src=with_src)
+        _write_stale_reports(pytester)
+
+        run_pytest_isolated(pytester, *run_args)
+
+        assert not (pytester.path / 'coverage/gremlins/history.json').exists()
+
+    @pytest.mark.parametrize(('run_args', 'with_src'), ZERO_GREMLIN_SCENARIOS)
+    def it_prints_report_locations_just_above_the_mutation_report_header(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated, run_args: list[str], with_src: bool
+    ) -> None:
+        _write_project_without_gremlins(pytester, with_src=with_src)
+
+        result = run_pytest_isolated(pytester, *run_args)
+
+        result.stdout.fnmatch_lines(
+            [
+                'HTML report written to: *coverage/gremlins/index.html',
+                'JSON report written to: *coverage/gremlins/gremlins.json',
+                '=* pytest-gremlins mutation report =*',
+            ],
+            consecutive=True,
+        )
