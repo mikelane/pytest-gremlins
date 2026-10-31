@@ -17,10 +17,7 @@ import pytest
 from pytest_gremlins.cache.versions import installed_versions_fingerprint
 from pytest_gremlins.operators.comparison import ComparisonOperator
 
-OPERATOR_SOURCE = (
-    'class HelperOperator:\n    name = "helper"\n    description = "x"\n    delta = {delta}\n\n'
-    '    def mutate(self, node):\n        return []\n'
-)
+OPERATOR_SOURCE = 'class HelperOperator:\n    name = "helper"\n    description = "x"\n    delta = {delta}\n'
 
 
 def _load_operator(
@@ -70,10 +67,10 @@ class DescribeLocalOperatorHelperInFingerprint:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         conftest = tmp_path / 'conftest.py'
-        before = _load_operator(monkeypatch, conftest, 'conftest_mod', OPERATOR_SOURCE.format(delta=1))
+        before = _load_operator(monkeypatch, conftest, 'conftest', OPERATOR_SOURCE.format(delta=1))
         fingerprint_before = installed_versions_fingerprint([before], tmp_path)
 
-        after = _load_operator(monkeypatch, conftest, 'conftest_mod', OPERATOR_SOURCE.format(delta=0))
+        after = _load_operator(monkeypatch, conftest, 'conftest', OPERATOR_SOURCE.format(delta=0))
 
         assert installed_versions_fingerprint([after], tmp_path) == fingerprint_before
 

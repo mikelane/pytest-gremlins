@@ -22,10 +22,7 @@ from pytest_gremlins.cache.versions import installed_versions_fingerprint
 if TYPE_CHECKING:
     from pytest_gremlins.operators.protocol import GremlinOperator
 
-OPERATOR_SOURCE = (
-    'class HelperOperator:\n    name = "helper"\n    description = "v1"\n\n'
-    '    def mutate(self, node):\n        return []\n'
-)
+OPERATOR_SOURCE = 'class HelperOperator:\n    name = "helper"\n    description = "v1"\n'
 
 
 @pytest.fixture
@@ -115,7 +112,7 @@ class DescribeOperatorOwnershipInstallRecord:
 
 def _load_conftest_operator(conftest: Path) -> GremlinOperator:
     """Import ``conftest`` the way pytest does: under a unique module name, from its file path."""
-    spec = importlib.util.spec_from_file_location(f'conftest_r890_{conftest.parent.name}', conftest)
+    spec = importlib.util.spec_from_file_location(f'conftest_r890_{conftest.parent.name}.conftest', conftest)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -128,14 +125,14 @@ def _load_conftest_operator(conftest: Path) -> GremlinOperator:
 @pytest.mark.medium
 @pytest.mark.usefixtures('isolated_modules')
 class DescribeConftestOperatorOwnership:
-    def it_misses_for_a_conftest_operator_outside_the_rootdir(self, tmp_path: Path) -> None:
-        """Only conftests from the rootdir down to a test file are hashed, so one above the rootdir is unhashed."""
+    def it_keeps_a_stable_key_for_a_conftest_operator_outside_the_rootdir(self, tmp_path: Path) -> None:
+        """A conftest is covered by the label that hashes the loaded conftests, wherever it sits (#899)."""
         rootdir = tmp_path / 'project'
         rootdir.mkdir()
         _write(tmp_path / 'outside' / 'conftest.py', OPERATOR_SOURCE)
         operator = _load_conftest_operator(tmp_path / 'outside' / 'conftest.py')
 
-        assert installed_versions_fingerprint([operator], rootdir) != installed_versions_fingerprint(
+        assert installed_versions_fingerprint([operator], rootdir) == installed_versions_fingerprint(
             [operator], rootdir
         )
 

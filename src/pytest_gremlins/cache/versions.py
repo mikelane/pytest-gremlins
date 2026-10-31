@@ -11,6 +11,7 @@ from importlib.metadata import (
     distributions,
     entry_points,
 )
+import inspect
 import json
 from pathlib import Path
 import posixpath
@@ -47,7 +48,8 @@ CACHE_VERSION = 1
 
 _LOCAL_OPERATOR_PREFIX = 'local-operator='
 _UNREADABLE_MARKER = ':unreadable-'
-_NESTED_CONFTEST_PREFIX = 'nested-conftest-operator='
+_CONFTEST_OPERATORS_PREFIX = 'conftest-operators='
+_CONFTEST_FILE_NAME = 'conftest.py'
 
 
 def _metadata_field(dist: Distribution, field: str) -> str | None:
@@ -275,51 +277,57 @@ def _is_own_operator(operator_class: type) -> bool:
     return operator_class.__module__.partition('.')[0] == _OWN_PACKAGE
 
 
-def _function_code_file(member: object) -> str | None:
-    """The file a function, ``staticmethod``, ``classmethod`` or ``property`` in a class body was compiled from."""
+def _has_conftest_module_name(operator_class: type) -> bool:
+    module_name = operator_class.__module__
+    return module_name == 'conftest' or module_name.endswith('.conftest')
+
+
+def _member_code_file(member: object) -> str | None:
+    """The file a function, ``staticmethod``, ``classmethod`` or ``property`` in a class body was compiled from.
+
+    A ``functools.wraps`` decorator is looked through, so the file named is the decorated function's.
+    """
     function = getattr(member, '__func__', None) or getattr(member, 'fget', None) or member
+    function = inspect.unwrap(function) if callable(function) else function
     code = getattr(function, '__code__', None)
     return code.co_filename if code is not None else None
 
 
-def _class_defining_file(operator_class: type) -> Path | None:
-    """The one file every function in the class body was compiled from; ``None`` when no single file is proven.
-
-    ``sys.modules`` cannot name this file: pytest replaces ``sys.modules['conftest']`` for each rootless
-    ``conftest.py`` it loads, so the module entry can belong to a sibling directory's conftest (#899).
-    """
-    code_files = {_function_code_file(member) for member in vars(operator_class).values()}
-    files = [file for file in code_files if file is not None]
-    return Path(files[0]).resolve() if len(files) == 1 else None
+def _has_conftest_function(operator_class: type) -> bool:
+    return any(
+        file is not None and Path(file).name == _CONFTEST_FILE_NAME
+        for file in map(_member_code_file, vars(operator_class).values())
+    )
 
 
-def _conftest_operator_file(operator_class: type, project_root: Path | None) -> Path | None:
-    """The ``conftest.py`` that defines the operator, when it is at or under the rootdir (any, with no rootdir)."""
-    defining_file = _class_defining_file(operator_class)
-    if defining_file is None or defining_file.name != 'conftest.py':
-        return None
-    if project_root is None or defining_file.is_relative_to(project_root.resolve()):
-        return defining_file
-    return None
+def _is_conftest_defined(operator_class: type) -> bool:
+    """Whether the class is defined in a ``conftest.py``, or any function in its body comes from one (#899)."""
+    return _has_conftest_module_name(operator_class) or _has_conftest_function(operator_class)
 
 
-def _is_rootdir_conftest(conftest: Path, project_root: Path | None) -> bool:
-    return project_root is not None and conftest.parent == project_root.resolve()
+def _conftest_name(conftest: Path, project_root: Path | None) -> str:
+    resolved = conftest.resolve()
+    if project_root is not None and resolved.is_relative_to(project_root.resolve()):
+        return resolved.relative_to(project_root.resolve()).as_posix()
+    return resolved.as_posix()
 
 
-def _nested_conftest_label(conftest: Path, project_root: Path | None) -> str | None:
-    """Label a below-rootdir ``conftest.py`` by its content hash; ``None`` when the file cannot be read.
+def _conftest_operators_label(loaded_conftests: Iterable[Path], project_root: Path | None) -> str | None:
+    """Label the content of every loaded ``conftest.py``; ``None`` when one cannot be read.
 
     The test key hashes only the conftests on the path from the rootdir to a covering test, so an operator in
-    ``a/conftest.py`` never reaches the key of a gremlin covered only by tests under ``b/`` (#899). Naming the
-    file's content in the versions part reaches every key, so editing the operator misses for every gremlin.
+    ``a/conftest.py`` never reaches the key of a gremlin covered only by tests under ``b/`` (#899). Which
+    conftest defines the operator is not worked out: its code can come from another conftest, a decorator or a
+    base class. Hashing them all makes an edit to any loaded conftest a miss for every gremlin.
     """
+    hasher = ContentHasher()
     try:
-        content_hash = ContentHasher().hash_file(conftest)
+        entries = sorted(
+            {(_conftest_name(conftest, project_root), hasher.hash_file(conftest)) for conftest in loaded_conftests}
+        )
     except OSError:
         return None
-    root = project_root.resolve() if project_root is not None else conftest.parent
-    return f'{_NESTED_CONFTEST_PREFIX}{conftest.relative_to(root).as_posix()}:{content_hash}'
+    return f'{_CONFTEST_OPERATORS_PREFIX}{hasher.hash_string("|".join(f"{name}:{digest}" for name, digest in entries))}'
 
 
 @dataclass(frozen=True)
@@ -330,7 +338,11 @@ class _SupplierLabels:
     has_always_miss_token: bool
 
 
-def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root: Path | None) -> _SupplierLabels:
+def _operator_supplier_labels(
+    operators: Iterable[GremlinOperator],
+    project_root: Path | None,
+    loaded_conftests: Iterable[Path] = (),
+) -> _SupplierLabels:
     """Label each operator by the installed distribution that provably owns it, else by an always-miss token.
 
     An operator class keeps a stable key only when it is importable (see ``_is_importable``) and an installed
@@ -338,24 +350,24 @@ def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root
     which differs on every run, so its verdicts are recomputed and never served stale. A helper's file is never
     hashed: what it defines can come from other files, so no hash proves the class unchanged. Restoring cache
     hits for such operators is tracked in #887.
+
+    An operator defined in a ``conftest.py`` (see ``_is_conftest_defined``) adds one label hashing every loaded
+    ``conftest.py`` (#899). A class whose module is a conftest is covered by that label alone; one that merely
+    borrows a conftest function is still classified by its own module as well.
     """
-    candidates = {type(operator) for operator in operators if not _is_own_operator(type(operator))}
-    conftest_files = {cls: _conftest_operator_file(cls, project_root) for cls in candidates}
-    classes = {cls for cls in candidates if conftest_files[cls] is None}
-    nested_labels: set[str] = set()
-    unreadable_conftests: set[type] = set()
-    for cls, conftest in conftest_files.items():
-        if conftest is None or _is_rootdir_conftest(conftest, project_root):
-            continue
-        label = _nested_conftest_label(conftest, project_root)
-        if label is None:
-            unreadable_conftests.add(cls)
-        else:
-            nested_labels.add(label)
+    classes_in_use = {type(operator) for operator in operators if not _is_own_operator(type(operator))}
+    conftest_defined = {cls for cls in classes_in_use if _is_conftest_defined(cls)}
+    classes = {cls for cls in classes_in_use if not _has_conftest_module_name(cls)}
     importable = {cls for cls in classes if _is_importable(cls)}
     installed = _index_distributions() if importable else []
-    labels: set[str] = set(nested_labels)
-    unproven = (classes - importable) | unreadable_conftests
+    labels: set[str] = set()
+    unproven = classes - importable
+    if conftest_defined:
+        conftest_label = _conftest_operators_label(loaded_conftests, project_root)
+        if conftest_label is None:
+            unproven.add(min(conftest_defined, key=lambda cls: cls.__module__))
+        else:
+            labels.add(conftest_label)
     for operator_class in importable:
         owners = _installed_owner_labels(operator_class, installed, project_root)
         labels |= owners
@@ -384,6 +396,7 @@ class VersionsFingerprint:
 def versions_fingerprint(
     operators: Iterable[GremlinOperator] = (),
     project_root: Path | None = None,
+    loaded_conftests: Iterable[Path] = (),
 ) -> VersionsFingerprint:
     """Return the fingerprint of ``installed_versions_fingerprint`` together with whether writes under it are readable.
 
@@ -393,6 +406,8 @@ def versions_fingerprint(
     Args:
         operators: The operators registered for this run.
         project_root: The pytest rootdir.
+        loaded_conftests: The ``conftest.py`` files the session has loaded; hashed into one label when an
+            operator is defined in a conftest (#899).
 
     Returns:
         The fingerprint and its readability.
@@ -406,7 +421,7 @@ def versions_fingerprint(
         for entry_point in entry_points(group=ENTRY_POINT_GROUP)
         if entry_point.dist is not None
     }
-    operator_suppliers = _operator_supplier_labels(operators, project_root)
+    operator_suppliers = _operator_supplier_labels(operators, project_root, loaded_conftests)
     suppliers |= operator_suppliers.labels
     return VersionsFingerprint(
         text='|'.join([f'cache-version={CACHE_VERSION}', *sorted(suppliers)]),
@@ -417,6 +432,7 @@ def versions_fingerprint(
 def installed_versions_fingerprint(
     operators: Iterable[GremlinOperator] = (),
     project_root: Path | None = None,
+    loaded_conftests: Iterable[Path] = (),
 ) -> str:
     """Return a string naming the cache version and each distribution that supplies operators.
 
@@ -430,6 +446,9 @@ def installed_versions_fingerprint(
             distribution. An operator keeps a stable key only when it is importable by its qualified name and an
             installed distribution owns its module; every other operator, a ``conftest.py`` operator excepted,
             makes every run miss the cache (#887 tracks restoring hits).
+        loaded_conftests: The ``conftest.py`` files the session has loaded. When an operator is defined in a
+            conftest, their paths (rootdir-relative, or absolute outside the rootdir) and contents are hashed
+            into one ``conftest-operators=`` label, so an edit to any of them misses for every gremlin (#899).
 
     Raising ``CACHE_VERSION`` or any upgrade, downgrade, install or removal of an operator distribution
     changes the string, so verdicts cached under an older string are never reused. A pytest-gremlins
@@ -439,4 +458,4 @@ def installed_versions_fingerprint(
     Returns:
         A deterministic fingerprint, independent of entry-point discovery order.
     """
-    return versions_fingerprint(operators, project_root).text
+    return versions_fingerprint(operators, project_root, loaded_conftests).text

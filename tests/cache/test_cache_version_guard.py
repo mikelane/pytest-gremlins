@@ -61,13 +61,13 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': 'dd48893b76e7c0338a2436351d160177aa4863701020ffd9e51d7f4449525e51',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': '526915f6d2c50050f75f72db1bfc41e3b51db096a7b11646f56c8e787714bc8d',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/store.py': '967c632516b6ae126921f43f1c72b753de59c0cac9679557793c2082e0003cc1',  # pragma: allowlist secret
     # --
     'cache/types.py': 'e8f2a82731cb4bfaec2a4803fe312826f3a85511224868322aa7eb127339085a',  # pragma: allowlist secret
     # --
-    'cache/versions.py': '0bdbb68ff194c7d28a35de00f03728108a90364c5f34d13636e72128bc17c4ab',  # pragma: allowlist secret
+    'cache/versions.py': '4d54f18efecf450b9c10e9c78eea9041935798078c4c04bc65d34ea098f900d7',  # pragma: allowlist secret
     # --
     'config.py': '2cb1a04ee48ed07a7e519f0ac69dc39ab7e55ece8351f7eabc2b94767e34cf87',  # pragma: allowlist secret
     # --
@@ -157,7 +157,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '8dc546780cffbbbe67038d1fb412419a70db970806b0cfddba22950f7b96db62',  # pragma: allowlist secret
+    'plugin.py': '5cc0972758ca1d8e006ef68a3ecd31e4e4470103983a5494143f2570005e4a55',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
