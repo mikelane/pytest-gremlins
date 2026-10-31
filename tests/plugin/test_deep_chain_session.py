@@ -8,6 +8,7 @@ joins the skipped files; the rest of the run continues.
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,8 @@ RunPytestIsolated = Callable[..., pytest.RunResult]
 CHAIN_TERMS = 200
 CHAIN_SOURCE = 'def big(x):\n    return ' + ' + '.join(['x'] * CHAIN_TERMS) + '\n'
 AGE_SOURCE = 'def is_adult(age):\n    return age >= 18\n'
+SKIP_NOTICE = '*skipped */src/demo/chain.py: could not instrument (RecursionError*'
+AGE_GREMLIN_COUNT = len(transform_source(AGE_SOURCE, 'age.py')[0])
 PROJECT_TESTS = (
     'from demo.age import is_adult\n'
     'from demo.chain import big\n\n\n'
@@ -78,3 +81,22 @@ class DescribeGremlinRunWithDeepChain:
         output = result.stdout.str() + result.stderr.str()
         assert 'INTERNALERROR' not in output
         result.stdout.fnmatch_lines(['*Zapped: * gremlins*'])
+        result.stdout.fnmatch_lines([SKIP_NOTICE])
+
+    def it_records_only_the_chain_as_skipped_and_drops_its_gremlins(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated
+    ) -> None:
+        pytester.makepyprojecttoml('[tool.pytest.ini_options]\npythonpath = ["src"]\n')
+        pytester.mkdir('src')
+        pytester.mkdir('src/demo')
+        pytester.path.joinpath('src', 'demo', '__init__.py').write_text('')
+        pytester.path.joinpath('src', 'demo', 'chain.py').write_text(CHAIN_SOURCE)
+        pytester.path.joinpath('src', 'demo', 'age.py').write_text(AGE_SOURCE)
+        pytester.mkdir('tests')
+        pytester.path.joinpath('tests', 'test_demo.py').write_text(PROJECT_TESTS)
+
+        run_pytest_isolated(pytester, '--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json')
+
+        report = json.loads(pytester.path.joinpath('coverage/gremlins/gremlins.json').read_text())
+        assert list(report['skipped_files']) == [str(pytester.path / 'src/demo/chain.py')]
+        assert report['summary']['total'] == AGE_GREMLIN_COUNT
