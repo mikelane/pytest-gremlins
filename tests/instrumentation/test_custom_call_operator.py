@@ -18,7 +18,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-class _FilterToExcludeOperator:
+class _FilterMutationOperator:
+    """Swaps .filter() for .exclude() and defines no ``get_description``."""
+
     name = 'call_swap'
     description = 'Swap .filter() for .exclude()'
 
@@ -32,6 +34,8 @@ class _FilterToExcludeOperator:
         mutated.func.attr = 'exclude'
         return [mutated]
 
+
+class _FilterToExcludeOperator(_FilterMutationOperator):
     def get_description(self, original: ast.AST, mutated: ast.AST) -> str:  # noqa: ARG002
         return 'filter -> exclude'
 
@@ -134,30 +138,34 @@ class _FilterAndFirstOperator:
         return _describe_method_swap(original, mutated)
 
 
-class _DescribedFilterOperator(_FilterToExcludeOperator):
-    def get_description(self, original: ast.AST, mutated: ast.AST) -> str:
-        return _describe_method_swap(original, mutated)
-
-
-class _UndescribedFilterOperator(_FilterToExcludeOperator):
-    get_description = None  # type: ignore[assignment]
+class _NonCallableDescriptionOperator(_FilterMutationOperator):
+    get_description = None
 
 
 @pytest.mark.small
 class DescribeCustomOperatorDescriptions:
     def it_uses_the_operator_get_description_for_the_gremlin(self) -> None:
-        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_DescribedFilterOperator()])
+        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_FilterToExcludeOperator()])
 
         assert [g.description for g in gremlins] == ['filter -> exclude']
 
-    def it_falls_back_to_the_operator_name_when_it_has_no_get_description(self) -> None:
-        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_UndescribedFilterOperator()])
+    @pytest.mark.parametrize(
+        'operator',
+        [
+            pytest.param(_FilterMutationOperator(), id='no-get-description-attribute'),
+            pytest.param(_NonCallableDescriptionOperator(), id='non-callable-get-description'),
+        ],
+    )
+    def it_falls_back_to_the_operator_name_when_get_description_is_missing_or_not_callable(
+        self, operator: _FilterMutationOperator
+    ) -> None:
+        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[operator])
 
         assert [g.description for g in gremlins] == ['call_swap mutation']
 
-    def it_gives_two_gremlins_on_one_call_chain_distinct_descriptions(self) -> None:
+    def it_describes_each_gremlin_on_one_call_chain_by_its_own_swap(self) -> None:
         source = 'def f(qs):\n    return qs.filter(a=1).first()\n'
 
         gremlins, _tree = transform_source(source, 'm.py', operators=[_FilterAndFirstOperator()])
 
-        assert len({g.description for g in gremlins}) == 2
+        assert sorted(g.description for g in gremlins) == ['filter -> exclude', 'first -> last']

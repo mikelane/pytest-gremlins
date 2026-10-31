@@ -191,6 +191,8 @@ class DescribeGremlinRunsUnderABlockWithOtherRunModes:
         pytester = pytester_with_markers
         pytester.makepyfile(sample=SAMPLE)
         pytester.makepyfile(test_sample=STEADY_TEST)
+        # Wider than the siblings' 8/3: worker start-up on a loaded runner can eat a 3s timeout. The 60s
+        # delay still overshoots the 20s timeout, so an unblocked rerun still shows up as a Timeout.
         pytester.makeini('[pytest]\nreruns = 1\nreruns_delay = 60\n')
 
         result = pytester.runpytest_subprocess(
