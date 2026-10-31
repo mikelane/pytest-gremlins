@@ -3427,6 +3427,13 @@ def _addopts_without_cov(raw_addopts: list[str]) -> str:
     return ' '.join(shlex.quote(token) for token in kept)
 
 
+# A non-editable install imports pytest_gremlins before pytest can mark it for assertion rewriting, and pytest 9.2
+# applies ini ``filterwarnings = error`` to that config-time warning. ``-W`` on the command line escapes the message
+# and matches it at the start, so this ignores only the warning for this module and nothing for the user's modules.
+ASSERT_REWRITE_WARNING_FILTER = (
+    'ignore:Module already imported so cannot be rewritten; pytest_gremlins:pytest.PytestAssertRewriteWarning'
+)
+
 # sysmon (the default core on Python 3.14+) silently drops contexts set through
 # Coverage.switch_context, crediting each line only to the first test that ran it.
 # ctrace supports them; the rc route degrades to pytrace if CTracer is unavailable.
@@ -3566,7 +3573,7 @@ def _run_tests_with_coverage(
         '-p',
         'no:gremlins',
         '-W',
-        'ignore::pytest.PytestAssertRewriteWarning',
+        ASSERT_REWRITE_WARNING_FILTER,
         '-o',
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
         *doctest_ini_overrides,
@@ -4951,10 +4958,9 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     )
 
     if not gremlin_session.gremlins:
-        if gremlin_session.skipped_files:
-            # Skipped files still get reports, so a stale score is overwritten. Write them first so
-            # their locations print before the empty-run report's closing separator.
-            _write_file_reports(terminalreporter, gremlin_session, config, score)
+        # A run with no gremlins still writes (zero-gremlin) reports, so a stale score is overwritten.
+        # Write them first so their locations print before the empty-run report's closing separator.
+        _write_file_reports(terminalreporter, gremlin_session, config, score)
         _write_empty_run_report(terminalreporter, gremlin_session)
         return
 

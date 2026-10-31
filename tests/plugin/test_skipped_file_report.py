@@ -23,14 +23,7 @@ AGE_SOURCE = 'def is_adult(age):\n    return age >= 18\n'
 CHAIN_TEST = 'from demo.chain import big\n\n\ndef test_big():\n    assert big(1) == 130\n'
 AGE_TEST = 'from demo.age import is_adult\n\n\ndef test_is_adult():\n    assert is_adult(20)\n'
 PYPROJECT = '[tool.pytest.ini_options]\npythonpath = ["src"]\n'
-# A non-editable install (tox) imports ``pytest_gremlins`` before pytest can mark it for assertion rewriting, so
-# the pre-scan child warns "Module already imported" and, under ``error``, dies before recording coverage.
-# That is a separate defect from the one under test here, so this project tolerates exactly that warning.
-WARNINGS_AS_ERRORS_PYPROJECT = (
-    PYPROJECT
-    + 'filterwarnings = ["error", "ignore:Module already imported so cannot be rewritten:'
-    + 'pytest.PytestAssertRewriteWarning"]\n'
-)
+WARNINGS_AS_ERRORS_PYPROJECT = PYPROJECT + 'filterwarnings = ["error"]\n'
 SKIP_LINE = 'pytest-gremlins: skipped *chain.py: could not instrument (RecursionError: *)'
 TESTS_CONFTEST = (
     'import pytest\n'
@@ -244,3 +237,95 @@ class DescribeAnyInstrumentationFailureIsReported:
         result = pytester.runpytest_inprocess('--gremlins', '--gremlin-targets', 'src/demo')
 
         result.stdout.fnmatch_lines(['pytest-gremlins: skipped *chain.py: could not instrument (ValueError: boom)'])
+
+
+NOTHING_FOUND_ARGS = ['--gremlins', '--gremlin-targets', 'src/demo', '--gremlin-report=json,html']
+NO_PATHS_ARGS = ['--gremlins', '--gremlin-targets', 'missing_dir', '--gremlin-report=json,html']
+TRIVIAL_TEST = 'def test_nothing():\n    assert True\n'
+
+
+# Each scenario pairs its run arguments with the line that proves the empty-run report took that path.
+ZERO_GREMLIN_SCENARIOS = [
+    pytest.param(NOTHING_FOUND_ARGS, 'No gremlins found in source code. Searched paths:', id='nothing-found'),
+    pytest.param(NO_PATHS_ARGS, 'No gremlins found: no source paths were discovered.', id='no-paths'),
+]
+ZERO_GREMLIN_RUN_ARGS = [
+    pytest.param(NOTHING_FOUND_ARGS, id='nothing-found'),
+    pytest.param(NO_PATHS_ARGS, id='no-paths'),
+]
+
+
+def _write_project_without_gremlins(pytester: pytest.Pytester) -> None:
+    pytester.makepyprojecttoml(PYPROJECT)
+    pytester.mkdir('src')
+    pytester.mkdir('src/demo')
+    pytester.path.joinpath('src', 'demo', '__init__.py').write_text('')
+    pytester.mkdir('tests')
+    pytester.path.joinpath('tests', 'conftest.py').write_text(TESTS_CONFTEST)
+    pytester.path.joinpath('tests', 'test_nothing.py').write_text(TRIVIAL_TEST)
+
+
+@pytest.mark.medium
+class DescribeZeroGremlinReports:
+    """A run with no gremlins and no skipped files still replaces stale reports (issue #889)."""
+
+    @pytest.mark.parametrize('run_args', ZERO_GREMLIN_RUN_ARGS)
+    def it_overwrites_a_stale_json_report(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated, run_args: list[str]
+    ) -> None:
+        _write_project_without_gremlins(pytester)
+        json_path = _write_stale_reports(pytester)['json']
+
+        run_pytest_isolated(pytester, *run_args)
+
+        report = json.loads(json_path.read_text())
+        assert report['summary']['total'] == 0
+        assert report['results'] == []
+        assert report['files'] == {}
+
+    @pytest.mark.parametrize('run_args', ZERO_GREMLIN_RUN_ARGS)
+    def it_replaces_stale_html_with_a_fresh_report(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated, run_args: list[str]
+    ) -> None:
+        _write_project_without_gremlins(pytester)
+        html_path = _write_stale_reports(pytester)['html']
+
+        run_pytest_isolated(pytester, *run_args)
+
+        html = html_path.read_text()
+        assert 'stale score' not in html
+        assert '<title>pytest-gremlins Mutation Report</title>' in html
+
+    @pytest.mark.parametrize('run_args', ZERO_GREMLIN_RUN_ARGS)
+    def it_leaves_history_unwritten(
+        self, pytester: pytest.Pytester, run_pytest_isolated: RunPytestIsolated, run_args: list[str]
+    ) -> None:
+        _write_project_without_gremlins(pytester)
+        _write_stale_reports(pytester)
+
+        run_pytest_isolated(pytester, *run_args)
+
+        assert not (pytester.path / 'coverage/gremlins/history.json').exists()
+
+    @pytest.mark.parametrize(('run_args', 'empty_run_line'), ZERO_GREMLIN_SCENARIOS)
+    def it_prints_report_locations_just_above_the_mutation_report_header(
+        self,
+        pytester: pytest.Pytester,
+        run_pytest_isolated: RunPytestIsolated,
+        run_args: list[str],
+        empty_run_line: str,
+    ) -> None:
+        _write_project_without_gremlins(pytester)
+
+        result = run_pytest_isolated(pytester, *run_args)
+
+        result.stdout.fnmatch_lines(
+            [
+                'HTML report written to: *coverage/gremlins/index.html',
+                'JSON report written to: *coverage/gremlins/gremlins.json',
+                '=* pytest-gremlins mutation report =*',
+                '',
+                empty_run_line,
+            ],
+            consecutive=True,
+        )
