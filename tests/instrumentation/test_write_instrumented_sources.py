@@ -6,8 +6,10 @@ import ast
 import base64
 import importlib.machinery
 import json
+import os
 from pathlib import Path
 import pickle
+import traceback
 import types
 
 import pytest
@@ -24,6 +26,8 @@ from pytest_gremlins.plugin import (
     _inject_gremlin_active,
     _write_instrumented_sources,
 )
+
+from .recursion_error import _raise_recursion_error
 
 
 def _injected_body(source: str) -> list[ast.stmt]:
@@ -201,10 +205,6 @@ def _written_entries(tmp_path: Path, relative_paths: list[str]) -> InstrumentedS
     return entries
 
 
-def _raise_recursion_error(*_args: object, **_kwargs: object) -> None:
-    raise RecursionError
-
-
 @pytest.mark.medium
 class DescribeWriteInstrumentedSourceDeepTreeFallback:
     """A tree too deep to pickle is shipped as source alone, never dropped and never fatal (#563)."""
@@ -358,3 +358,126 @@ class DescribeImportingAShippedTree:
         module = _import_shipped(entry, source='y = 2\n')
 
         assert (vars(module).get('x'), module.y) == (None, 2)
+
+
+@pytest.mark.small
+class DescribeInjectedHeaderLocations:
+    """The injected header never carries a line number that a real statement of the file also carries (#614)."""
+
+    SOURCE = '\n\n\nx = 1\n'
+
+    def it_places_every_header_statement_on_the_line_of_the_first_real_statement(self) -> None:
+        header = _injected_body(self.SOURCE)[:3]
+
+        assert [statement.lineno for statement in header] == [4, 4, 4]
+
+    def it_places_header_expressions_on_the_line_of_the_first_real_statement(self) -> None:
+        header = _injected_body(self.SOURCE)[:3]
+
+        expression_spans = {
+            (node.lineno, node.end_lineno)
+            for statement in header
+            for node in ast.walk(statement)
+            if isinstance(node, ast.expr)
+        }
+
+        assert expression_spans == {(4, 4)}
+
+    def it_keeps_the_real_statement_on_its_own_line(self) -> None:
+        assert _injected_body(self.SOURCE)[3].lineno == 4
+
+    def it_places_the_header_after_the_docstring_on_the_line_of_the_next_statement(self) -> None:
+        header = _injected_body('"""Doc."""\n\n\ny = 2\n')[1:4]
+
+        assert [statement.lineno for statement in header] == [4, 4, 4]
+
+    def it_places_the_header_after_the_docstring_when_nothing_follows_it(self) -> None:
+        header = _injected_body('"""\nPackage summary.\n"""\n')[1:4]
+
+        assert [statement.lineno for statement in header] == [4, 4, 4]
+
+    def it_places_the_header_after_future_imports_when_nothing_follows_them(self) -> None:
+        header = _injected_body('from __future__ import annotations\n\n')[1:4]
+
+        assert [statement.lineno for statement in header] == [2, 2, 2]
+
+    def it_places_the_header_of_an_empty_module_on_line_one(self) -> None:
+        tree = _inject_gremlin_active(ast.parse(''))
+
+        assert [statement.lineno for statement in tree.body] == [1, 1, 1]
+
+    def it_gives_every_header_node_empty_column_spans(self) -> None:
+        header = _injected_body(self.SOURCE)[:3]
+
+        column_spans = {
+            (node.col_offset, node.end_col_offset)
+            for statement in header
+            for node in ast.walk(statement)
+            if isinstance(node, (ast.stmt, ast.expr))
+        }
+
+        assert column_spans == {(0, 0)}
+
+    def it_keeps_a_header_only_module_compilable(self) -> None:
+        tree = _inject_gremlin_active(ast.parse(''))
+
+        assert isinstance(compile(tree, 'empty.py', 'exec'), types.CodeType)
+
+
+def _raise_from_environ_get(*_args: object) -> str:
+    msg = 'environ.get failed'
+    raise RuntimeError(msg)
+
+
+def _failing_header_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
+) -> traceback.TracebackException:
+    """Run ``source`` through the injected header with ``os.environ.get`` raising; return the traceback."""
+    target = tmp_path / 'target.py'
+    target.write_text(source)
+    code = compile(_inject_gremlin_active(ast.parse(source)), str(target), 'exec')
+    monkeypatch.setattr(os.environ, 'get', _raise_from_environ_get)
+    with pytest.raises(RuntimeError) as raised:
+        exec(code, {'__name__': 'target'})  # noqa: S102
+    return traceback.TracebackException.from_exception(raised.value)
+
+
+def _module_frame(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str) -> traceback.FrameSummary:
+    shown = _failing_header_traceback(tmp_path, monkeypatch, source)
+    return next(frame for frame in shown.stack if frame.filename == str(tmp_path / 'target.py'))
+
+
+@pytest.mark.medium
+class DescribeInjectedHeaderTraceback:
+    """When ``os.environ.get`` raises inside the header, the rendered traceback does not mislead (#614)."""
+
+    ALIAS_SOURCE = 'import collections.abc as an_alias_long_enough_to_reach_the_header_columns\n'
+
+    def it_does_not_underline_part_of_the_first_real_statement(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        frame = _module_frame(tmp_path, monkeypatch, self.ALIAS_SOURCE)
+
+        assert (frame.colno, frame.end_colno) in {(None, None), (0, 0)}
+
+    def it_renders_the_frame_without_caret_markers(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        shown = _failing_header_traceback(tmp_path, monkeypatch, self.ALIAS_SOURCE)
+
+        rendered = ''.join(shown.format())
+        module_frame_text = rendered.split(f'File "{tmp_path / "target.py"}"')[1].split('File "')[0]
+
+        assert '^' not in module_frame_text
+
+    def it_does_not_point_the_traceback_into_the_docstring(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        frame = _module_frame(tmp_path, monkeypatch, '"""\nPackage summary.\n"""\n')
+
+        assert frame.line != 'Package summary.'
+
+    def it_does_not_point_the_traceback_at_the_real_leading_lines(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        frame = _module_frame(tmp_path, monkeypatch, 'first = 1\nsecond = 2\nthird = 3\nfourth = 4\n')
+
+        assert frame.lineno == 1
