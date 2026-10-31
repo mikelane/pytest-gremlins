@@ -27,9 +27,9 @@ updates:
   # Groups keep all actions/* in one PR and all astral-sh/* in another,
   # rather than generating a separate PR per action per week.
   #
-  # Note: pypa/gh-action-pypi-publish is pinned to a branch (release/v1),
-  # not a tag — Dependabot cannot auto-update branch-pinned actions.
-  # Review https://github.com/pypa/gh-action-pypi-publish/releases manually.
+  # Every action is pinned to a full commit SHA with its release tag in a trailing
+  # comment (enforced by tests/config/test_workflow_action_pins.py). Dependabot
+  # updates both the SHA and the comment.
   - package-ecosystem: github-actions
     directory: /
     schedule:

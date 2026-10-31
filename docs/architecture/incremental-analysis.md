@@ -51,7 +51,8 @@ cache_key = hash(
     source_file_content +      # The code being mutated
     mutation_definition +      # What mutation is applied
     test_file_contents +       # Tests that cover this mutation
-    pytest_gremlins_version    # Tool version (for format changes)
+    cache_version +            # Raised when a change can alter a verdict
+    operator_dist_versions     # Versions of packages that supply operators
 )
 ```
 
@@ -65,14 +66,15 @@ key = hash(
     file_hash("src/auth.py"),           # abc123
     "comparison:>=:>:line42:col8",       # mutation details
     file_hash("tests/test_auth.py"),     # def456
-    "0.1.0"                               # version
+    "cache-version=1"                    # cache version and operator package versions
 )
-# Result: "abc123_def456_comparison_42_8_gt_0.1.0"
+# Result: a single key string built from all four parts
 ```
 
 ## Cache Invalidation Rules
 
-The cache is smart about what needs re-analysis:
+The cache is smart about what needs re-analysis. An operator package is any distribution that provides a
+`pytest_gremlins.operators` entry point.
 
 | What Changed | What Gets Invalidated |
 |--------------|----------------------|
@@ -80,7 +82,8 @@ The cache is smart about what needs re-analysis:
 | Test file modified | Mutations covered by those tests |
 | New test added | Mutations the new test covers |
 | Test deleted | Mutations that test was covering |
-| pytest-gremlins upgraded | Everything (version mismatch) |
+| pytest-gremlins upgraded | Nothing, unless the release raised the cache version (then everything) |
+| Operator package installed, removed or changed version | Everything (old entries stop matching) |
 | Nothing changed | Nothing (instant results) |
 
 ### Source File Changed
@@ -164,7 +167,7 @@ cache = true
 
 ### Clearing Cache
 
-To discard all cached results and start fresh:
+To start fresh, ignoring all cached results:
 
 ```bash
 pytest --gremlins --gremlin-clear-cache
@@ -285,15 +288,15 @@ if sha256(entry["data"]) != entry["checksum"]:
 
 ### Version Compatibility
 
-Cache entries include the pytest-gremlins version:
+Cache keys include an internal cache version. Upgrading pytest-gremlins, including a minor or patch bump, keeps the
+cache. A release that changes how verdicts are computed (operators, instrumentation, verdict decisions) raises the cache
+version, so the first run after that upgrade is cold: old entries stop matching.
 
-```python
-if entry["version"] != current_version:
-    log.info("Version mismatch, invalidating cache")
-    clear_cache()
-```
+The same holds when a package providing a `pytest_gremlins.operators` entry point is installed, removed or
+changes version.
 
-Minor version bumps (0.1.0 -> 0.1.1) preserve cache compatibility. Major changes (0.1.0 -> 0.2.0) clear the cache.
+Entries that stop matching remain in `results.db` until pruning
+([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 
 ## Debugging Cache Behavior
 
@@ -321,6 +324,13 @@ If cache invalidation has bugs, results could be stale. Mitigations:
 
 The cache uses disk space. For most projects, this is negligible (< 10 MB). The
 `.gremlins_cache/` directory can be deleted at any time to reclaim space.
+
+### Line Endings
+
+Test files are hashed byte for byte, so CRLF and LF copies of one file hash differently. On Windows with
+`core.autocrlf=true` the cache can miss after every checkout and never warm across platforms. Correctness is
+unaffected (a miss only re-runs work). See
+[Cache never warms across checkouts on Windows](../guide/troubleshooting.md#cache-never-warms-across-checkouts-on-windows).
 
 ### Cache Warming
 

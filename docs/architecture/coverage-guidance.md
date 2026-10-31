@@ -99,6 +99,25 @@ tests = get_tests_for_mutation("src/auth.py", 42)
 
 Instead of running 500 tests, we run 2.
 
+#### Order and early exit
+
+Every test that covers the mutated line is selected. They are passed to pytest in priority
+order, with the most specific tests first (tests that cover fewer lines rank higher). Each
+gremlin's run uses `-x`, so pytest stops at the first failing test. That failure is the kill.
+The selection is not cut down to a single priority test.
+
+A gremlin that survives ran every covering test that has a pytest node id, and none of them
+failed. Covering tests without a node id are dropped, with one notice on stderr. The gremlin is
+scored ERROR only when all of its covering tests are dropped.
+
+Under `--gremlin-batch`, the order is different. The batch command runs the deduplicated union
+of every batched gremlin's covering tests, so one gremlin's tests are mixed in with the others'
+and extra tests can run.
+
+To rule out selection as the cause of a survivor, see `--gremlin-no-coverage-filter` and
+`--gremlin-explain` under [Debugging Coverage Issues](#debugging-coverage-issues). The same
+rules are summarized in the [Configuration guide](../guide/configuration.md#explaining-a-survivor).
+
 ### The Math
 
 | Scenario | Test Runs |
@@ -182,7 +201,7 @@ per-test coverage data in a pre-scan and uses it for test selection. Two options
 - `--gremlin-no-coverage-filter` turns it off, so every gremlin runs the whole test suite. This
   is slow, but it rules out test selection as the reason a gremlin survived.
 - `--gremlin-coverage-timeout` (or `coverage_timeout` in `[tool.pytest-gremlins]`, default 120
-  seconds) limits how long the pre-scan may run. If it runs out, pytest-gremlins warns and
+  seconds) limits how long the pre-scan may run. If it runs out, pytest-gremlins prints a notice to stderr and
   every gremlin runs every test.
 
 ## Edge Cases
@@ -240,6 +259,12 @@ pytest --gremlins --gremlin-report=html
 
 The HTML report lists each surviving gremlin with its file, line, operator,
 and description, giving you enough context to add the missing test.
+
+To check whether test selection caused a survivor, run `--gremlin-explain=<id>`. It prints the
+covering set and the selected list for one gremlin and says whether they drift apart. To rule
+selection out entirely, run with `--gremlin-no-coverage-filter`, which runs every test for
+every gremlin. Both options are described in the
+[Configuration guide](../guide/configuration.md#explaining-a-survivor).
 
 To check test selection for one gremlin, pass its full id to `--gremlin-explain`. It prints the
 tests whose coverage includes the gremlin's line, the tests selected for it, and any that were

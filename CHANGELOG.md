@@ -5,6 +5,192 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.13.2 (2026-10-30)
+
+**Custom operators that no installed package owns can no longer be served stale cached verdicts, pytester-based test
+suites stop reporting false survivors, and a batch of plugin-loading and report fixes lands.**
+
+### Upgrade notes
+
+- **Operators that no installed package provably owns now miss the cache on every run.** In 1.13.1 an operator
+  module under the pytest rootdir added nothing to the cache key, so editing a project-local helper could serve a
+  stale verdict. A module outside the rootdir keyed on whichever installed package claimed its top-level name. Now
+  an operator keeps cache hits only when it is importable by its qualified name and an installed package owns its
+  module file. A regular install owns the file when its `RECORD` or `installed-files.txt` lists it. A PEP 610
+  editable install owns it when the file is under the editable project directory and the install's `top_level.txt`
+  names the module. Cases that now miss on every run include project-local helper modules, a `conftest.py` above
+  the pytest rootdir, a source checkout outside the rootdir with a leftover `<pkg>.egg-info`, an unrecorded file in
+  a shared namespace package, `.egg` installs, editable installs without `top_level.txt` (hatchling, uv_build, flit
+  and pdm), and editable installs recorded only through a `.pth` file or a setuptools import finder. The docs table
+  lists every case. Runs that use these operators are slower but never stale, and they write
+  nothing to the cache, so `results.db` does not grow. These keep their cache: operators in a `conftest.py` from
+  the rootdir down, normal wheels, zip installs and setuptools editables. This replaces the "still not tracked"
+  list in the 1.13.1 note. (#882, #890, #892, #893, #897, #901)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
+- **Sessions that load the pytester plugin miss the cache once after upgrading.** Verdicts cached while the
+  pytester bug below was present can be false survivors, so they are recomputed. Sessions that never load pytester
+  keep their cache. (#891, #895)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#survivors-in-a-target-first-imported-inside-an-in-process-pytester-run)
+
+### Feature
+
+- **Faster instrumentation of long operator chains.** A 120-term chain like `x + x + ...` now instruments in about
+  0.3 s instead of 3.2 s. Gremlins and verdicts are unchanged. (#640, #806)
+  (no docs: a speedup with no change to options, output or verdicts)
+- **Collection-kill confirmations run concurrently with `--gremlin-parallel` and `--gremlin-batch`.** Runs with many
+  gremlins that break test collection finish sooner. Verdicts are unchanged. (#553, #807)
+  (no docs: a speedup with no change to options, output or verdicts)
+
+### Fix
+
+- **In-process pytester sessions reported caught gremlins as survivors.** When a target was first imported inside
+  `pytester.runpytest()`, `runpytest_inprocess()` or `inline_run()`, pytest's assertion-rewrite hook served it
+  before pytest-gremlins could instrument it. The gremlin finder now stays in front. (#615, #816)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#survivors-in-a-target-first-imported-inside-an-in-process-pytester-run)
+- **With plugin autoload disabled, an installed but unloaded pytest-cov made every gremlin run fail.** Gremlin runs
+  got `--no-cov` and stopped with `unrecognized arguments`. pytest-gremlins now passes `--no-cov` only when the
+  session loaded pytest-cov, and loads pytest-cov in gremlin runs when only the command line loaded it. (#654, #896)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#pytest-cov-when-plugin-autoload-is-disabled)
+- **Every gremlin scored ERROR when `--disable-plugin-autoload` was given only on the command line and
+  pytest-rerunfailures was loaded by module name.** This happened with a conftest `pytest_plugins`,
+  `PYTEST_PLUGINS` or `-p pytest_rerunfailures` in `addopts`. Gremlin runs now register the plugin once. (#684,
+  #792)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
+- **No JSON or HTML report was written when every target file was skipped.** Reports from an earlier run stayed on
+  disk and looked current. The reports are now written with zero gremlins and the skipped files, and such a run is
+  not added to the HTML history. (#648, #888)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/reports/#report-contents)
+
+### Documentation
+
+- The `--gremlin-batch` and `--gremlin-batch-size` help text and docs now say what batching does: it groups
+  gremlins into worker tasks, and each gremlin still runs in its own subprocess. (#733, #777)
+- Added a design spike on a faster per-mutant runner. (#538, #809)
+
+### Internal
+
+- Typing cleanups in the instrumentation package, and pre-scan option-stripping tables derived from
+  `pytest_addoption`. (#569, #824, #900, #904)
+- Deleted the unused `instrumentation/import_hooks` module. (#605, #828)
+- Replaced a constant-pinning test with a cache-retirement behavior test. (#833)
+- CI: the large test tier runs nightly and gates releases, swallowed hermeticity violations fail the build, PRs that
+  change verdicts must raise a cache marker, and a marker may be lowered back to its released value. (#474, #798,
+  #800, #898, #903)
+
+## v1.13.1 (2026-10-28)
+
+**Changing the mutant timeout keeps the cached verdicts it cannot change, and upgrading the package behind a
+`conftest.py`-registered operator now invalidates the cache.**
+
+1.13.0 was tagged but never published to PyPI, so upgrading from 1.12.2 also brings in everything listed under
+1.13.0 below, including its upgrade notes.
+
+### Feature
+
+- **Changing `--gremlin-mutant-timeout` no longer throws away the whole cache.** The cache stores the timeout each
+  verdict was reached under. At a new limit it reuses a zapped, survived or error verdict whose run took strictly
+  less than that limit, and reuses a timeout verdict only at the limit it was confirmed under. Verdicts match a cold
+  run at the new timeout. (#567, #786)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
+
+### Fix
+
+- **Upgrading the package that supplies a `conftest.py`-registered operator kept serving old cached verdicts.** The
+  cache key now includes the name and version of the installed distribution that owns each registered operator's
+  module (editable installs are recognized through PEP 610 metadata), so a version change starts from fresh
+  results. This narrows the limitation in the 1.13.0 upgrade note. Still not tracked (#882): operators defined in a
+  project-local helper module that a `conftest.py` imports, operators no installed distribution owns, and editable
+  installs recorded only through a `.pth` file or a setuptools import finder. After changing one of those, run with
+  `--gremlin-clear-cache`. (#873, #884)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/architecture/speed/#pillar-3-incremental-analysis)
+
+### Internal
+
+- The cache-version guard test skips `__init__.py`, so the version bump in a release no longer fails it. (#881)
+- The cache-version guard records one digest per file, so unrelated PRs no longer conflict on it. (#883)
+
+## v1.13.0 (2026-10-28)
+
+**Operator packages can now register themselves through entry points, the cache now notices when an operator package
+changes or a release raises the cache version, and a batch of crash and false-kill fixes lands.** The first run after
+upgrading starts from an empty cache.
+
+### Upgrade notes
+
+- **The first run after upgrading to 1.13.0 starts from an empty cache, once.** Cached verdicts are now keyed on a
+  cache version and on the exact version of every installed package that provides a `pytest_gremlins.operators` entry
+  point, and test files are now hashed together with every `conftest.py` above them. Later upgrades keep the
+  cache unless the release raises the cache version. Installing, removing or upgrading an operator package
+  invalidates it. Operators registered from `conftest.py` are not tracked yet (#873): after changing them, run with
+  `--gremlin-clear-cache`. (#702, #758, #867, #874)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/architecture/incremental-analysis/#version-compatibility)
+- **pytest 9.2 rejects an integer `reruns` value in the ini or TOML config.** pytest-rerunfailures declares `reruns`
+  as a string option, and pytest 9.2 now enforces that before pytest-gremlins starts. Write `reruns = "2"`, not
+  `reruns = 2`. (#862, #863)
+  (no docs: this is a pytest 9.2 change, not a pytest-gremlins one)
+
+### Feature
+
+- **Operator packages are discovered through entry points.** A package that declares a `pytest_gremlins.operators`
+  entry point has its operators registered as soon as it is installed, with no `conftest.py` needed. A broken entry
+  point emits a `GremlinEntryPointWarning` and the others still load. (#742, #788)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/extensibility/#method-3-entry-points)
+
+### Fix
+
+- **Custom operators that match function or method calls produced no gremlins.** `ast.Call` nodes are now offered to
+  operators, so the documented Django QuerySet example works. (#698, #757)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/extensibility/#which-nodes-an-operator-is-offered)
+- **Editing a `conftest.py` did not invalidate cached verdicts.** A cached ZAPPED or SURVIVED verdict could be
+  replayed after a fixture change. A gremlin whose selected test has no matching node id is no longer cached.
+  (#702, #758)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/architecture/parallelization/#cached-results)
+- **Wrong-typed `[tool.pytest-gremlins]` values raised INTERNALERROR.** They now exit 4 with a clear message. Unknown
+  keys warn and name the closest valid key, and every hyphenated key also accepts its underscore spelling. (#566,
+  #787)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#key-spelling-validation-and-unknown-keys)
+- **`filterwarnings = error` could crash a green run.** The "Coverage collection returned no data", pre-scan timeout
+  and pre-scan launch failure notices now go to stderr instead of through `warnings`, so a warning filter can't turn
+  them into exceptions. (#543, #759)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#coverage-pre-scan-timeout)
+- **On pytest 9.2, `filterwarnings = error` aborted the coverage pre-scan.** The run crashed or, under narrower
+  filters, every gremlin ran every test. The pre-scan now ignores pytest's assert-rewrite warning for the plugin
+  itself. (#862, #863)
+  (no docs: restores the documented coverage pre-scan behavior on pytest 9.2)
+- **A per-test `flaky(reruns=N)` marker could time a mutant out as a false kill.** The rerun-scaled mutant timeout
+  now covers the widest per-test rerun count, not only the global `--reruns`. (#696, #791)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
+- **`--setup-plan`, `--setup-only`, `--fixtures` and `--fixtures-per-test` still ran the mutation phase.** They now
+  skip it like `--collect-only`, with a stderr notice that names the mode. (#528, #756)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#configuration-validation)
+- **`--cov` in `PYTEST_ADDOPTS` silently disabled coverage-guided test selection.** The coverage pre-scan now strips
+  it, so gremlins run only their covering tests again. (#669, #770)
+  (no docs: restores documented coverage-guided selection and adds no option or output)
+- **An INTERNALERROR when the coverage C tracer was unavailable and warnings were errors.** An unused coverage instance
+  caused it and has been removed. (#533, #768)
+  (no docs: fixes a crash; the removed hook and fixture were internal)
+- **A failed node-ids file write aborted the whole session.** The affected gremlin is now scored ERROR with a
+  diagnostic, and the rest of the run and the report complete. (#625, #763)
+  (no docs: turns a crash into the existing ERROR verdict)
+- **Reports for return gremlins showed the instrumented switch expression.** Diffs and reports now show the line you
+  wrote. (#639, #851)
+  (no docs: restores the documented report output)
+
+### Internal
+
+- The pickled AST in `sources.json` is zlib-compressed, which shrinks the payload each gremlin run loads to roughly a
+  third on the benchmark modules. A benchmark guards its size and decode time. (#612, #805)
+- GitHub Releases for PEP 440 alpha, beta and rc tags are now marked as prereleases. (#772)
+- CI: actions are pinned to commit SHAs, required checks run on `merge_group`, and `All Checks Passed` fails when
+  change detection does not succeed. (#775, #843, #861)
+- Tests: warm-cache verdicts are checked against a cold run, and timing-sensitive cache and chain-growth tests count
+  calls instead of measuring wall-clock time. (#558, #642, #769, #812, #822, #832, #846)
+- Dependencies: bumped commitizen, coverage, playwright, pre-commit, ruff, tox, tox-uv and `astral-sh/setup-uv`,
+  added `types-PyYAML` to the dev group, and bumped msgpack, pillow, virtualenv, filelock, uv and certifi to clear
+  pip-audit advisories. (#737, #738, #739, #740, #741, #744, #749, #750, #751, #776, #854, #855, #859, #860)
+
 ## v1.12.2 (2026-10-18)
 
 **The Stryker export no longer crashes on an unusual `# coding:` line, and the docs gain a page on how a gremlin run

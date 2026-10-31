@@ -264,15 +264,15 @@ print(get_active_gremlin())  # 'g001'
 
 ---
 
-## Import Hooks
+## Origin Finder
 
-The import hooks module intercepts Python imports to inject instrumented code.
+The `origin_finder` module intercepts Python imports to inject instrumented code.
 
 <!-- markdownlint-disable MD046 -->
 !!! note "What the mutation subprocess runs"
-    The subprocess that tests each gremlin does not use the `import_hooks` classes below. It runs
-    the finder in `pytest_gremlins.instrumentation.origin_finder`, which is copied into the
-    generated bootstrap script.
+    The subprocess that tests each gremlin runs the finder in
+    `pytest_gremlins.instrumentation.origin_finder`, which is copied into the generated bootstrap
+    script.
 
     That finder never decides what a module is called. It asks the rest of `sys.meta_path` which
     file a name resolves to and, when that file was instrumented, swaps in a loader that runs the
@@ -297,9 +297,9 @@ The import hooks module intercepts Python imports to inject instrumented code.
 
 ### GremlinFinder
 
-MetaPathFinder that intercepts imports for instrumented modules.
+MetaPathFinder that serves instrumented files, matched by resolved origin.
 
-::: pytest_gremlins.instrumentation.import_hooks.GremlinFinder
+::: pytest_gremlins.instrumentation.origin_finder.GremlinFinder
     options:
       show_root_heading: true
       show_source: true
@@ -309,43 +309,33 @@ MetaPathFinder that intercepts imports for instrumented modules.
 
 ### GremlinLoader
 
-Loader that executes instrumented AST code.
+Loader that executes the instrumented source.
 
-::: pytest_gremlins.instrumentation.import_hooks.GremlinLoader
+::: pytest_gremlins.instrumentation.origin_finder.GremlinLoader
     options:
       show_root_heading: true
       show_source: true
       members:
         - "__init__"
-        - create_module
         - exec_module
 
-### register_import_hooks
+### install
 
-Registers import hooks for instrumented modules.
+Installs the finder on `sys.meta_path`.
 
-::: pytest_gremlins.instrumentation.import_hooks.register_import_hooks
+::: pytest_gremlins.instrumentation.origin_finder.install
     options:
       show_root_heading: true
       show_source: true
 
-### unregister_import_hooks
-
-Removes import hooks from sys.meta_path.
-
-::: pytest_gremlins.instrumentation.import_hooks.unregister_import_hooks
-    options:
-      show_root_heading: true
-      show_source: true
-
-### Import Hook Flow
+### Finder Flow
 
 ```text
-1. register_import_hooks({'mymodule': instrumented_ast})
+1. install(instrumented_sources)
 2. import mymodule  # Python calls GremlinFinder.find_spec()
-3. GremlinFinder returns ModuleSpec with GremlinLoader
-4. Python calls GremlinLoader.exec_module()
-5. Loader injects __gremlin_active__ and executes instrumented AST
+3. GremlinFinder asks the rest of sys.meta_path for the file, and matches it by origin
+4. A match returns the spec with a GremlinLoader
+5. Python calls GremlinLoader.exec_module(), which runs the instrumented source
 ```
 
 ---
