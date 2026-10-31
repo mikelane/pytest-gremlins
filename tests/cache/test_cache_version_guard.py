@@ -101,7 +101,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'instrumentation/gremlin.py': 'e395cdccebf405d826b8e699db383c1b876ade684afcd03c86cf202ccd99ad89',  # pragma: allowlist secret  # noqa: E501
     # --
-    'instrumentation/origin_finder.py': '5054acd89da72cf41b3bac20f282ffcdac7509a0e6fadf0c058e85a233f7e773',  # pragma: allowlist secret  # noqa: E501
+    'instrumentation/origin_finder.py': 'b428426ed1eb15be47321c1baf4eae83264fa4fef91a009d391ff9915ced226a',  # pragma: allowlist secret  # noqa: E501
     # --
     'instrumentation/pragma.py': 'c62fc42dce8d590bd58fa84e35183957ac428019b1c7227ea15ef2c4fbcf5597',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -157,7 +157,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '8dc546780cffbbbe67038d1fb412419a70db970806b0cfddba22950f7b96db62',  # pragma: allowlist secret
+    'plugin.py': '70426f40177b62fbbad127f21338cd4a5daed54f4c93d47f54c27249537b5947',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
