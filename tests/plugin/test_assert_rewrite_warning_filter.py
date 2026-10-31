@@ -25,7 +25,6 @@ RunPytestIsolated = Callable[..., pytest.RunResult]
 WARNINGS_AS_ERRORS_PYPROJECT = '[tool.pytest.ini_options]\nfilterwarnings = ["error"]\n'
 IMPORT_THEN_REGISTER_CONFTEST = 'import {module}\nimport pytest\n\npytest.register_assert_rewrite({module!r})\n'
 
-
 SMALL_TEST = 'import pytest\n\n\n@pytest.mark.small\ndef test_one():\n    assert True\n'
 
 
@@ -46,21 +45,28 @@ class DescribeAssertRewriteWarningFilter:
         )
 
 
+@pytest.fixture
+def prescan_cmd(tmp_path: Path) -> list[str]:
+    """Return the command line the coverage pre-scan hands to ``subprocess.run``."""
+    captured_cmd: list[str] = []
+
+    def capture_cmd(cmd: list[str], **_kwargs: object) -> None:
+        captured_cmd.extend(cmd)
+
+    with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
+        _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path)
+    return captured_cmd
+
+
 @pytest.mark.medium
 class DescribePrescanCommandAssertRewriteFilter:
     """The coverage pre-scan command carries the narrow filter, not a blanket ignore."""
 
-    def it_passes_the_narrow_filter_and_no_blanket_ignore(self, tmp_path: Path) -> None:
-        captured_cmd: list[str] = []
+    def it_passes_the_narrow_filter_after_the_warning_flag(self, prescan_cmd: list[str]) -> None:
+        assert prescan_cmd[prescan_cmd.index('-W') + 1] == ASSERT_REWRITE_WARNING_FILTER
 
-        def capture_cmd(cmd: list[str], **_kwargs: object) -> None:
-            captured_cmd.extend(cmd)
-
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
-            _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path)
-
-        warning_filters = [captured_cmd[i + 1] for i, value in enumerate(captured_cmd) if value == '-W']
-        assert warning_filters == [ASSERT_REWRITE_WARNING_FILTER]
+    def it_passes_exactly_one_warning_filter(self, prescan_cmd: list[str]) -> None:
+        assert prescan_cmd.count('-W') == 1
 
 
 @pytest.mark.medium
@@ -83,4 +89,5 @@ class DescribeAssertRewriteFilterInAChildPytest:
 
         result = run_pytest_isolated(pytester, '-W', ASSERT_REWRITE_WARNING_FILTER, '-p', 'no:gremlins')
 
+        assert result.ret != 0
         result.stderr.fnmatch_lines(['*Module already imported so cannot be rewritten; usermod*'])
