@@ -906,8 +906,24 @@ and `### Fix` must end with either a docs reference or an exemption:
   HTML comments (`<!--` anywhere, even in a code span), other headings (`####`, indented or tab-indented `#`),
   thematic breaks and underlined headings fail the check, and the failure names the line. Put prose before the
   first `###` heading.
+- The whole selected entry, including the preamble, `### Internal` and `### Documentation`, is read as a strict
+  format. A visible line must be prose, a list line, a version heading or one of the five `###` headings. Every
+  other line that starts with `#` fails, including `#Feature`, `####Detail`, `###Feature`, `#Feature ###`,
+  `#\tFeature` and `##v2.0.0`. An issue-number line is the one exception: a `#720)` line indented by two spaces is
+  accepted only while a list item is open directly above it, and a standalone `#720)` indented by four spaces
+  renders as a heading and fails.
+- Every thematic-break and underline-style heading line fails anywhere in the entry: `=`, `===`, `-`, `--`, `---`,
+  `***`, `___`, `* * *` and `- - -`. The check does not guess from the previous line, so a delimiter under `A | B`
+  or `<em>Feature</em>` fails too. These rules apply again after list and `>` prefixes are stripped, which catches
+  `> #Feature`, `- #### Detail`, `> <em>Feature</em>` + `> ---` and `- ---`.
+- A raw `<h1>`-`<h6>` tag fails wherever it is visible, in any case and with attributes (`<H2 class="x">`), inside
+  a block quote or a list item included. A tag written as a code span (`<h1>` in backticks) stays literal text.
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
-  heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
+  heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check. A fence must
+  open at the outer level: a fence opener inside a list item or block quote fails with an explicit message. Lines
+  inside a closed outer fence or comment are literal, so a quoted or listed fence opener written there is left alone.
+- A second visible `##` heading for the version being released fails wherever it appears, including `##v2.0.0`,
+  an indented, quoted or listed copy, and one with a date or closing hashes.
 - A `###` heading may have up to 3 leading spaces, a tab after the `###` and a closing `###`
   (`### Internal ###`). It is read like any other heading, so it must be one of the five names above.
 

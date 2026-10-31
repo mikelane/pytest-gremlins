@@ -192,6 +192,24 @@ The PR fails CI until the entry passes the release docs gate.
   HTML comments (`<!--` anywhere, even in a code span), other headings (`####`, indented or tab-indented `#`),
   thematic breaks and underlined headings fail the check, and the failure names the line. Put prose before the
   first `###` heading.
+- The entry is a **strict format**, checked across the whole selected entry (the preamble, `### Internal`,
+  `### Documentation` and the gated sections alike). It is not a Markdown renderer, so a line outside a closed
+  outer code fence or HTML comment must be prose, a list line, a version heading or one of the five `###` headings.
+  Every other line that starts with `#` fails, including `#Feature`, `####Detail`, `###Feature`, `#Feature ###`,
+  `#\tFeature` and `##v2.0.0`; an issue-number continuation is the one exception, because it wraps a reference
+  inside a bullet. It is a `#720)` line indented by two spaces, and it counts only while a list item is open
+  directly above it: a standalone `#720)` indented by four spaces renders as a heading and fails.
+- A raw `<h1>`-`<h6>` tag fails wherever it is visible, in any case and with attributes (`<H2 class="x">`), including
+  inside a block quote or a list item, because the renderer makes a real heading of it. A tag written as a code span
+  (`<h1>` in backticks) stays literal text.
+- Every thematic-break and underline-style heading line fails anywhere in the entry: `=`, `===`, `-`, `--`, `---`,
+  `***`, `___`, `* * *` and `- - -`. The check does not guess from the previous line; a delimiter under `A | B` or
+  `<em>Feature</em>` fails for being a delimiter. The same heading and delimiter rules apply after list and `>`
+  prefixes are stripped, so `> #Feature`, `- #### Detail`, `> <em>Feature</em>` + `> ---` and `- ---` fail too.
+- A code fence must open at the outer level (up to the indentation the scanner already allows). A fence inside a
+  list item or block quote is rejected with an explicit unsupported-construct message; it is never read as code.
+- A second visible `##` heading for the version being released fails wherever it appears, including `##v2.0.0`,
+  an indented, quoted or listed copy, and one with a date or closing hashes.
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
   heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
 - An entry runs to the next `## vX.Y.Z` heading. Any other `##` line inside it
