@@ -527,8 +527,8 @@ class DjangoQuerySetOperator:
         - exclude() -> filter()
         - first() -> last()
         - last() -> first()
-        - exists() -> (removed, returns queryset)
-        - order_by('x') -> order_by('-x')
+        - select_related() -> prefetch_related()
+        - prefetch_related() -> select_related()
     """
 
     METHOD_SWAPS: ClassVar[dict[str, str]] = {
