@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import copy
+from typing import ClassVar
 
 import pytest
 
@@ -96,3 +97,59 @@ class DescribeCanMutateCostOnCallNodes:
         transform_source('def f(qs):\n    return qs.filter(a=1)\n', 'm.py', operators=[operator])
 
         assert operator.call_node_checks <= 2
+
+
+class _FilterAndFirstOperator:
+    name = 'call_swap'
+    description = 'Swap .filter() for .exclude() and .first() for .last()'
+    _SWAPS: ClassVar[dict[str, str]] = {'filter': 'exclude', 'first': 'last'}
+
+    def can_mutate(self, node: ast.AST) -> bool:
+        return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in self._SWAPS
+
+    def mutate(self, node: ast.AST) -> list[ast.AST]:
+        mutated = copy.deepcopy(node)
+        assert isinstance(mutated, ast.Call)
+        assert isinstance(mutated.func, ast.Attribute)
+        mutated.func.attr = self._SWAPS[mutated.func.attr]
+        return [mutated]
+
+    def get_description(self, original: ast.AST, mutated: ast.AST) -> str:
+        assert isinstance(original, ast.Call)
+        assert isinstance(original.func, ast.Attribute)
+        assert isinstance(mutated, ast.Call)
+        assert isinstance(mutated.func, ast.Attribute)
+        return f'{original.func.attr} -> {mutated.func.attr}'
+
+
+class _DescribedFilterOperator(_FilterToExcludeOperator):
+    def get_description(self, original: ast.AST, mutated: ast.AST) -> str:
+        assert isinstance(original, ast.Call)
+        assert isinstance(original.func, ast.Attribute)
+        assert isinstance(mutated, ast.Call)
+        assert isinstance(mutated.func, ast.Attribute)
+        return f'{original.func.attr} -> {mutated.func.attr}'
+
+
+class _UndescribedFilterOperator(_FilterToExcludeOperator):
+    get_description = None  # type: ignore[assignment]
+
+
+@pytest.mark.small
+class DescribeCustomOperatorDescriptions:
+    def it_uses_the_operator_get_description_for_the_gremlin(self) -> None:
+        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_DescribedFilterOperator()])
+
+        assert [g.description for g in gremlins] == ['filter -> exclude']
+
+    def it_falls_back_to_the_operator_name_when_it_has_no_get_description(self) -> None:
+        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_UndescribedFilterOperator()])
+
+        assert [g.description for g in gremlins] == ['call_swap mutation']
+
+    def it_gives_two_gremlins_on_one_call_chain_distinct_descriptions(self) -> None:
+        source = 'def f(qs):\n    return qs.filter(a=1).first()\n'
+
+        gremlins, _tree = transform_source(source, 'm.py', operators=[_FilterAndFirstOperator()])
+
+        assert len({g.description for g in gremlins}) == 2

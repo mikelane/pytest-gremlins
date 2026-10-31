@@ -227,7 +227,19 @@ def _get_mutation_description(
         if desc:
             return desc
 
-    return f'{operator.name} mutation'  # pragma: no cover
+    return _get_custom_operator_description(original, mutated, operator)
+
+
+def _get_custom_operator_description(
+    original: ast.expr | ast.stmt,
+    mutated: ast.expr | ast.stmt,
+    operator: GremlinOperator,
+) -> str:
+    """Describe a mutation with the operator's optional ``get_description()``, else by operator name."""
+    describe = getattr(operator, 'get_description', None)
+    if callable(describe):
+        return str(describe(original, mutated))
+    return f'{operator.name} mutation'
 
 
 class GremlinCollector(ast.NodeVisitor):
