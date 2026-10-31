@@ -133,7 +133,7 @@ def create_gremlins_for_node(
     if not operator.can_mutate(node):
         return []
 
-    mutations = operator.mutate(node)
+    mutations = list(operator.mutate(node))
     gremlins: list[Gremlin] = []
 
     describe_against = node if description_original is None else description_original
@@ -216,7 +216,7 @@ def _mutations_to_describe(
     if description_original is None:
         return mutations
     try:
-        pristine_mutations = operator.mutate(description_original)
+        pristine_mutations = list(operator.mutate(description_original))
     except Exception:
         return mutations
     return pristine_mutations if len(pristine_mutations) == len(mutations) else mutations
