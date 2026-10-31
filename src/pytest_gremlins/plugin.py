@@ -1325,7 +1325,11 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     gremlin_session.source_files = source_files
 
     _hash_sources_and_tests_for_cache(
-        gremlin_session, source_files, rootdir, _test_file_patterns(gremlin_session, session.config)
+        gremlin_session,
+        source_files,
+        rootdir,
+        _test_file_patterns(gremlin_session, session.config),
+        _pythonpath_entries(gremlin_session, session.config),
     )
 
     if gremlin_session.xdist_active and not session.items:
@@ -1343,13 +1347,15 @@ def _hash_sources_and_tests_for_cache(
     source_files: dict[str, str],
     rootdir: Path,
     test_file_patterns: tuple[str, ...] = DEFAULT_TEST_FILE_PATTERNS,
+    pythonpath: tuple[Path, ...] = (),
 ) -> None:
     """Record content hashes of the source and test files that key the incremental cache.
 
     Without these hashes the cache can neither store nor replay a verdict, so every gremlin runs again.
     Test hashes are keyed by the file part of the normalized node ids, so a test binds to its own file's
     hash by exact lookup and the keys are the same with or without xdist. ``test_file_patterns`` are the
-    ``python_files`` globs that tell a test file from a helper.
+    ``python_files`` globs that tell a test file from a helper; ``pythonpath`` holds the directories the ini
+    ``pythonpath`` setting puts on ``sys.path``, where an import can resolve.
     """
     if not gremlin_session.cache_enabled:
         return
@@ -1357,7 +1363,7 @@ def _hash_sources_and_tests_for_cache(
     for file_path, source in source_files.items():
         gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
     test_files = {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}
-    memo = _KeyMemo()
+    memo = _KeyMemo(pythonpath=pythonpath)
     for test_file in test_files:
         # A file part pytest left empty (a test outside rootdir) cannot say which file the test lives in.
         if test_file and (rootdir / test_file).is_file():
@@ -1374,12 +1380,61 @@ def _test_file_patterns(gremlin_session: GremlinSession, config: pytest.Config) 
     return tuple(configured) if configured else DEFAULT_TEST_FILE_PATTERNS
 
 
+def _pythonpath_entries(gremlin_session: GremlinSession, config: pytest.Config) -> tuple[Path, ...]:
+    """Return the ini ``pythonpath`` directories, resolved against rootdir; only the cache key needs them."""
+    if not gremlin_session.cache_enabled:
+        return ()
+    return tuple(config.rootpath / entry for entry in config.getini('pythonpath'))
+
+
 @dataclass
 class _KeyMemo:
-    """Per-run memo so each test root is swept once and each file is parsed once."""
+    """Per-run memo: each test root is swept once, each file is parsed and hashed once, each import resolved once."""
 
+    pythonpath: tuple[Path, ...] = ()
     helper_parts_by_sweep: dict[tuple[Path, bool], list[str]] = field(default_factory=dict)
-    imports_by_file: dict[Path, frozenset[Path]] = field(default_factory=dict)
+    import_targets_by_file: dict[Path, frozenset[Path]] = field(default_factory=dict)
+    import_targets_under_root: dict[tuple[Path, Path], frozenset[Path]] = field(default_factory=dict)
+    reachable_from: dict[tuple[Path, Path], frozenset[Path]] = field(default_factory=dict)
+    test_file_names: dict[Path, bool] = field(default_factory=dict)
+    module_files: dict[tuple[Path, tuple[str, ...], int], tuple[Path, ...]] = field(default_factory=dict)
+    directories_to_rootdir: dict[Path, tuple[Path, ...]] = field(default_factory=dict)
+    conftests_by_directory: dict[Path, tuple[Path, ...]] = field(default_factory=dict)
+    file_hashes: dict[Path, str] = field(default_factory=dict)
+    hash_parts: dict[Path, str] = field(default_factory=dict)
+
+
+def _file_hash(hasher: ContentHasher, path: Path, memo: _KeyMemo) -> str:
+    if path not in memo.file_hashes:
+        memo.file_hashes[path] = hasher.hash_file(path)
+    return memo.file_hashes[path]
+
+
+def _hash_part(hasher: ContentHasher, rootdir: Path, path: Path, memo: _KeyMemo) -> str:
+    if path not in memo.hash_parts:
+        memo.hash_parts[path] = f'{path.relative_to(rootdir).as_posix()}:{_file_hash(hasher, path, memo)}'
+    return memo.hash_parts[path]
+
+
+def _directories_to_rootdir(rootdir: Path, directory: Path, memo: _KeyMemo) -> tuple[Path, ...]:
+    """Return ``directory`` and each parent up to rootdir, nearest first; empty when it is outside rootdir."""
+    if directory not in memo.directories_to_rootdir:
+        chain: list[Path] = []
+        if directory.is_relative_to(rootdir):
+            current = directory
+            while current != rootdir:
+                chain.append(current)
+                current = current.parent
+            chain.append(rootdir)
+        memo.directories_to_rootdir[directory] = tuple(chain)
+    return memo.directories_to_rootdir[directory]
+
+
+def _conftests_on_path(rootdir: Path, directory: Path, memo: _KeyMemo) -> tuple[Path, ...]:
+    if directory not in memo.conftests_by_directory:
+        candidates = (d / 'conftest.py' for d in _directories_to_rootdir(rootdir, directory, memo))
+        memo.conftests_by_directory[directory] = tuple(path for path in candidates if path.is_file())
+    return memo.conftests_by_directory[directory]
 
 
 def _hash_test_file_with_conftests(
@@ -1397,25 +1452,15 @@ def _hash_test_file_with_conftests(
     """
     memo = memo if memo is not None else _KeyMemo()
     test_path = rootdir / test_file
-    parts = [hasher.hash_file(test_path)]
-    entry_points = [test_path]
-    directory = test_path.parent
-    while directory == rootdir or rootdir in directory.parents:
-        conftest = directory / 'conftest.py'
-        if conftest.is_file():
-            parts.append(f'{conftest.relative_to(rootdir).as_posix()}:{hasher.hash_file(conftest)}')
-            entry_points.append(conftest)
-        if directory == rootdir:
-            break
-        directory = directory.parent
+    parts = [_file_hash(hasher, test_path, memo)]
+    conftests = _conftests_on_path(rootdir, test_path.parent, memo)
+    parts.extend(_hash_part(hasher, rootdir, conftest, memo) for conftest in conftests)
     sweep = _helper_sweep(rootdir, test_file)
     if sweep not in memo.helper_parts_by_sweep:
         memo.helper_parts_by_sweep[sweep] = _helper_module_hash_parts(hasher, rootdir, sweep, test_file_patterns)
     parts.extend(memo.helper_parts_by_sweep[sweep])
-    imported = _imported_test_files(rootdir, sweep[0], entry_points, test_file_patterns, memo)
-    parts.extend(
-        f'{path.relative_to(rootdir).as_posix()}:{hasher.hash_file(path)}' for path in sorted(imported - {test_path})
-    )
+    imported = _imported_test_files(rootdir, sweep[0], [test_path, *conftests], test_file_patterns, memo)
+    parts.extend(sorted(_hash_part(hasher, rootdir, path, memo) for path in imported - {test_path}))
     return hasher.hash_string('|'.join(parts)) if len(parts) > 1 else parts[0]
 
 
@@ -1472,62 +1517,120 @@ def _imported_test_files(
 
     Imports that only run at call time (``importlib.import_module`` with a computed name) are not followed.
     """
-    visited: set[Path] = set(entry_points)
-    pending = list(entry_points)
-    while pending:
-        current = pending.pop()
-        for target in _direct_imports(rootdir, test_root, current, memo):
-            if target not in visited:
-                visited.add(target)
-                pending.append(target)
-    return frozenset(path for path in visited if _is_test_file_name(path, test_file_patterns))
+    reachable: set[Path] = set()
+    for entry_point in entry_points:
+        reachable |= _reachable_from(rootdir, test_root, entry_point, memo)
+    return frozenset(path for path in reachable if _is_known_test_file(path, test_file_patterns, memo))
 
 
-def _direct_imports(rootdir: Path, test_root: Path, path: Path, memo: _KeyMemo) -> frozenset[Path]:
-    if path not in memo.imports_by_file:
-        memo.imports_by_file[path] = frozenset(
-            target for target in _parse_import_targets(rootdir, path) if target.is_relative_to(test_root)
+def _reachable_from(rootdir: Path, test_root: Path, start: Path, memo: _KeyMemo) -> frozenset[Path]:
+    """Return ``start`` and every file it reaches through imports under ``test_root``.
+
+    A file whose own reach is already known contributes it whole, so a long import chain is walked once.
+    """
+    key = (start, test_root)
+    if key not in memo.reachable_from:
+        visited: set[Path] = {start}
+        pending = [start]
+        while pending:
+            current = pending.pop()
+            for target in _import_targets_under(rootdir, test_root, current, memo):
+                if target in visited:
+                    continue
+                known = memo.reachable_from.get((target, test_root))
+                if known is None:
+                    visited.add(target)
+                    pending.append(target)
+                else:
+                    visited |= known
+        memo.reachable_from[key] = frozenset(visited)
+    return memo.reachable_from[key]
+
+
+def _is_known_test_file(path: Path, test_file_patterns: tuple[str, ...], memo: _KeyMemo) -> bool:
+    if path not in memo.test_file_names:
+        memo.test_file_names[path] = _is_test_file_name(path, test_file_patterns)
+    return memo.test_file_names[path]
+
+
+def _import_targets_under(rootdir: Path, test_root: Path, path: Path, memo: _KeyMemo) -> frozenset[Path]:
+    key = (path, test_root)
+    if key not in memo.import_targets_under_root:
+        memo.import_targets_under_root[key] = frozenset(
+            target for target in _import_targets(rootdir, path, memo) if target.is_relative_to(test_root)
         )
-    return memo.imports_by_file[path]
+    return memo.import_targets_under_root[key]
 
 
-def _parse_import_targets(rootdir: Path, path: Path) -> set[Path]:
-    """Resolve every ``import`` statement in ``path`` to the ``.py`` files it names; unreadable source yields none."""
+def _import_targets(rootdir: Path, path: Path, memo: _KeyMemo) -> frozenset[Path]:
+    if path not in memo.import_targets_by_file:
+        memo.import_targets_by_file[path] = frozenset(_parse_import_targets(rootdir, path, memo))
+    return memo.import_targets_by_file[path]
+
+
+def _parse_import_targets(rootdir: Path, path: Path, memo: _KeyMemo) -> set[Path]:
+    """Resolve every import in ``path`` to the ``.py`` files it names; unreadable source yields none.
+
+    A string in a module-level ``pytest_plugins`` assignment names a module pytest imports, so it counts as an
+    import. Parsing the raw bytes lets ``ast`` honor a BOM or a ``coding:`` declaration.
+    """
     try:
-        tree = ast.parse(path.read_text(encoding='utf-8'))
-    except (SyntaxError, OSError, UnicodeDecodeError, ValueError):
+        tree = ast.parse(path.read_bytes())
+    except (SyntaxError, OSError, ValueError):
         return set()
     targets: set[Path] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                targets.update(_module_files(rootdir, path, alias.name.split('.'), 0))
+                targets.update(_module_files(rootdir, path, alias.name.split('.'), 0, memo))
         elif isinstance(node, ast.ImportFrom):
             module = node.module.split('.') if node.module else []
-            targets.update(_module_files(rootdir, path, module, node.level))
+            targets.update(_module_files(rootdir, path, module, node.level, memo))
             for alias in node.names:
-                targets.update(_module_files(rootdir, path, [*module, alias.name], node.level))
+                targets.update(_module_files(rootdir, path, [*module, alias.name], node.level, memo))
+    for plugin_module in _pytest_plugins_modules(tree):
+        targets.update(_module_files(rootdir, path, plugin_module.split('.'), 0, memo))
     return targets
 
 
-def _module_files(rootdir: Path, importer: Path, module: list[str], level: int) -> list[Path]:
+def _pytest_plugins_modules(tree: ast.Module) -> list[str]:
+    """Return the module names in a module-level ``pytest_plugins = 'x'`` or ``['x', 'y']`` assignment."""
+    names: list[str] = []
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign):
+            assigns_plugins = any(isinstance(t, ast.Name) and t.id == 'pytest_plugins' for t in statement.targets)
+        elif isinstance(statement, ast.AnnAssign):
+            assigns_plugins = isinstance(statement.target, ast.Name) and statement.target.id == 'pytest_plugins'
+        else:
+            continue
+        value = statement.value
+        if assigns_plugins and value is not None:
+            elements = value.elts if isinstance(value, (ast.List, ast.Tuple)) else [value]
+            names.extend(e.value for e in elements if isinstance(e, ast.Constant) and isinstance(e.value, str))
+    return names
+
+
+def _module_files(rootdir: Path, importer: Path, module: list[str], level: int, memo: _KeyMemo) -> tuple[Path, ...]:
     """Return the existing files a dotted module path can name, looked up from where Python could start.
 
-    A relative import starts at the importer's package. An absolute one may start at rootdir or at any
-    directory between the importer and rootdir (pytest puts a test file's own directory on ``sys.path``).
+    A relative import starts at the importer's package. An absolute one may start at rootdir, at any directory
+    between the importer and rootdir (pytest puts a test file's own directory on ``sys.path``) or at an ini
+    ``pythonpath`` entry. Answers are memoized per importer directory, so a directory of test files resolves
+    each import once.
     """
     if not module:
-        return []
-    if level:
-        ancestors = [importer.parent, *importer.parent.parents]
-        bases = ancestors[level - 1 : level]
-    else:
-        bases = [
-            base for base in (importer.parent, *importer.parent.parents) if base == rootdir or rootdir in base.parents
-        ]
-    stems = [base.joinpath(*module) for base in bases]
-    candidates = [candidate for stem in stems for candidate in (stem.with_suffix('.py'), stem / '__init__.py')]
-    return [candidate for candidate in candidates if candidate.is_file()]
+        return ()
+    key = (importer.parent, tuple(module), level)
+    if key not in memo.module_files:
+        if level:
+            ancestors = [importer.parent, *importer.parent.parents]
+            bases: list[Path] = ancestors[level - 1 : level]
+        else:
+            bases = [*_directories_to_rootdir(rootdir, importer.parent, memo), *memo.pythonpath]
+        stems = [base.joinpath(*module) for base in bases]
+        candidates = [candidate for stem in stems for candidate in (stem.with_suffix('.py'), stem / '__init__.py')]
+        memo.module_files[key] = tuple(candidate for candidate in candidates if candidate.is_file())
+    return memo.module_files[key]
 
 
 def _generate_gremlins(
@@ -2710,7 +2813,11 @@ def _rebuild_state_from_xdist_workers(
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
     _hash_sources_and_tests_for_cache(
-        gremlin_session, source_files, rootdir, _test_file_patterns(gremlin_session, session.config)
+        gremlin_session,
+        source_files,
+        rootdir,
+        _test_file_patterns(gremlin_session, session.config),
+        _pythonpath_entries(gremlin_session, session.config),
     )
     logger.debug('pytest_sessionfinish: xdist Phase 2 discovered %d source files', len(source_files))
     _generate_gremlins(gremlin_session, source_files, rootdir)

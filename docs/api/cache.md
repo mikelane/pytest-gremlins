@@ -74,7 +74,11 @@ key.
 **Imported test files.** Other test files that a test, or a `conftest.py` on its path, imports are hashed into its key
 too, so editing `make()` in `tests/test_b.py` re-runs the gremlins of a `tests/test_a.py` that imports it. pytest-gremlins
 reads each file's `import x`, `from x import y` and relative imports with `ast`, resolves them to `.py` files under the
-test root, and follows them transitively (import cycles are safe). A file that cannot be parsed contributes nothing.
+test root, and follows them transitively (import cycles are safe). A module named in a module-level `pytest_plugins`
+assignment (a string, or a list or tuple of strings) counts as an import, so a test-named fixture module loaded that way
+is in the key. An absolute import is looked up from rootdir, from each directory between the importing file and
+rootdir, and from each `pythonpath` entry in your pytest ini (resolved against rootdir). Source with a byte-order mark
+or a `coding:` declaration is read correctly. A file that cannot be parsed contributes nothing.
 A test file that nothing imports does not affect other files' keys.
 
 **Limit: dynamic imports are not followed.** A test file reached only through `importlib.import_module` with a computed
