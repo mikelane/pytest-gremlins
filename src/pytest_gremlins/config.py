@@ -335,15 +335,18 @@ def _read_max_pardons(tool_config: dict[str, Any], pyproject_path: Path) -> int 
     return raw
 
 
-def _read_operators(tool_config: dict[str, Any], on_warning: Callable[[str], None]) -> list[str] | None:
+def _read_operators(
+    tool_config: dict[str, Any], on_warning: Callable[[str], None], *, warn_when_empty: bool
+) -> list[str] | None:
     """Return ``operators`` as a list of registered names, or None when the key is absent.
 
-    An empty list keeps meaning "all operators", and says so through ``on_warning``.
+    An empty list keeps meaning "all operators", and says so through ``on_warning`` unless ``warn_when_empty`` is
+    False (the command line names the operators, so the empty list is not what the run uses).
     """
     operators = _read_string_list(tool_config, 'operators', '["comparison", "boundary"]')
     if operators is None:
         return None
-    if not operators:
+    if not operators and warn_when_empty:
         on_warning(
             '[tool.pytest-gremlins].operators is empty, which runs all operators. '
             'To run only some, name them (e.g. operators = ["comparison", "boundary"]); '
@@ -368,7 +371,9 @@ def _read_section(pyproject_content: dict[str, Any]) -> dict[str, Any]:
     return section
 
 
-def load_config(rootdir: Path, on_warning: Callable[[str], None] | None = None) -> GremlinConfig:
+def load_config(
+    rootdir: Path, on_warning: Callable[[str], None] | None = None, *, warn_when_operators_empty: bool = True
+) -> GremlinConfig:
     """Load configuration from pyproject.toml.
 
     Reads the [tool.pytest-gremlins] section from pyproject.toml in the
@@ -379,6 +384,8 @@ def load_config(rootdir: Path, on_warning: Callable[[str], None] | None = None) 
         rootdir: Directory containing pyproject.toml.
         on_warning: Receives one message per unknown key, and one for an empty ``operators`` list.
             Defaults to ``logging``.
+        warn_when_operators_empty: Set False when the command line overrides ``operators``, so an empty list in
+            the file is not what the run uses and the warning would be false.
 
     Returns:
         GremlinConfig with values from pyproject.toml or defaults.
@@ -401,18 +408,30 @@ def load_config(rootdir: Path, on_warning: Callable[[str], None] | None = None) 
     warn = on_warning or logger.warning
     tool_config = _normalize_keys(_read_section(pyproject_content), warn)
 
+    workers = _read_workers(tool_config, pyproject_path)
+    batch_size = _read_batch_size(tool_config, pyproject_path)
+    coverage_timeout = _read_timeout_seconds(tool_config, 'coverage_timeout', 300, pyproject_path)
+    mutant_timeout = _read_timeout_seconds(tool_config, 'mutant_timeout', 120, pyproject_path)
+    cache = _read_cache(tool_config, pyproject_path)
+    report = _read_report(tool_config, pyproject_path)
+    max_pardons_pct = _read_max_pardons_pct(tool_config, pyproject_path)
+    max_pardons = _read_max_pardons(tool_config, pyproject_path)
+    operators = _read_operators(tool_config, warn, warn_when_empty=warn_when_operators_empty)
+    paths = _read_string_list(tool_config, 'paths', '["src"]')
+    exclude = _read_string_list(tool_config, 'exclude', '["tests/*"]')
+
     return GremlinConfig(
-        operators=_read_operators(tool_config, warn),
-        paths=_read_string_list(tool_config, 'paths', '["src"]'),
-        exclude=_read_string_list(tool_config, 'exclude', '["tests/*"]'),
-        workers=_read_workers(tool_config, pyproject_path),
-        cache=_read_cache(tool_config, pyproject_path),
-        report=_read_report(tool_config, pyproject_path),
-        batch_size=_read_batch_size(tool_config, pyproject_path),
-        max_pardons_pct=_read_max_pardons_pct(tool_config, pyproject_path),
-        max_pardons=_read_max_pardons(tool_config, pyproject_path),
-        coverage_timeout=_read_timeout_seconds(tool_config, 'coverage_timeout', 300, pyproject_path),
-        mutant_timeout=_read_timeout_seconds(tool_config, 'mutant_timeout', 120, pyproject_path),
+        operators=operators,
+        paths=paths,
+        exclude=exclude,
+        workers=workers,
+        cache=cache,
+        report=report,
+        batch_size=batch_size,
+        max_pardons_pct=max_pardons_pct,
+        max_pardons=max_pardons,
+        coverage_timeout=coverage_timeout,
+        mutant_timeout=mutant_timeout,
     )
 
 

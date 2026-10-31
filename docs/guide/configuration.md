@@ -342,8 +342,10 @@ use a list, not a bare string, got 'tests/*'
     (e.g. operators = ["comparison", "boundary"]); to run all operators, remove the key.
     ```
 
-- A `tool` entry in `pyproject.toml` that is not a table (`tool = 5`) stops the run with exit code 4, like any other
-  wrong-typed value: `[tool] must be a table of settings, got 5`.
+- A `tool` entry in `pyproject.toml` that is not a table (`tool = 5`) is rejected with `[tool] must be a table of
+  settings, got 5` and exit code 4, like any other wrong-typed value. You see this message only when pytest reads its
+  own configuration from another file (for example `-c other.ini`). When pytest reads `pyproject.toml` itself, pytest
+  crashes on the malformed `tool` entry before pytest-gremlins loads, with its own error and exit code 1.
 - A key pytest-gremlins does not know does not stop the run. A warning names the key and the closest valid key
   (`did you mean 'max-pardons-pct'?`), and the key is ignored. The warning also appears when the run skips mutation
   testing (`--collect-only`, a failing baseline). Key names are shown quoted, with control characters escaped. An

@@ -1075,7 +1075,11 @@ def pytest_configure(config: pytest.Config) -> None:
     config_warnings: list[str] = []
     try:
         merged_config = merge_configs(
-            load_config(rootdir, on_warning=config_warnings.append),
+            load_config(
+                rootdir,
+                on_warning=config_warnings.append,
+                warn_when_operators_empty=not (config.option.gremlin_operators or '').strip(),
+            ),
             cli_operators=config.option.gremlin_operators,
             cli_targets=config.option.gremlin_targets,
             cli_exclude=config.option.gremlin_exclude,
