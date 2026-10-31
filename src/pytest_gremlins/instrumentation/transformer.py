@@ -461,7 +461,16 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
         pristine: ast.expr,
         operators: list[GremlinOperator] | None = None,
     ) -> ast.expr:
-        """Switch the already-instrumented ``node`` between the mutations of its ``pristine`` copy."""
+        """Switch the already-instrumented ``node`` between the mutations of its ``pristine`` copy.
+
+        Args:
+            node: The node after its operands were instrumented.
+            pristine: A copy of ``node`` taken before its operands were instrumented.
+            operators: The operators that apply to ``node``, when already known.
+
+        Returns:
+            A switching expression over the mutations, or ``node`` itself when no operator mutates it.
+        """
         gremlins = self._create_gremlins_for_node(pristine, operators)
         if not gremlins:
             return node
@@ -488,15 +497,14 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
             chain.append(chain[-1].left)
         pristines = [copy_ast(level) for level in chain]
 
-        switched: ast.expr | None = None
+        bottom = chain.pop()
+        self.generic_visit(bottom)
+        switched = self._switch_between_mutations_of(bottom, pristines.pop())
         for level, pristine in zip(reversed(chain), reversed(pristines), strict=True):
-            if switched is None:
-                self.generic_visit(level)
-            else:
-                level.left = switched
-                level.right = self.visit(level.right)
+            level.left = switched
+            level.right = self.visit(level.right)
             switched = self._switch_between_mutations_of(level, pristine)
-        return switched  # type: ignore[return-value]
+        return switched
 
     def visit_BoolOp(self, node: ast.BoolOp) -> ast.expr:
         """Replace boolean operation nodes with mutation switching expressions."""

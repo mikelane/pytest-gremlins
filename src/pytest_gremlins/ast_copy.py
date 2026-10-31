@@ -14,6 +14,21 @@ def copy_ast(root: NodeT) -> NodeT:
 
     ``copy.deepcopy`` recurses several frames per level, so a chain such as ``x + x + ... + x`` of a few hundred
     terms exhausts the interpreter's recursion limit. This walks the tree with an explicit stack instead.
+
+    Args:
+        root: The node whose subtree to copy.
+
+    Returns:
+        A copy of ``root`` of the same type. Every AST node and list field in it is new; leaf values such as
+        names and constants are shared, as they are immutable.
+
+    Examples:
+        >>> tree = ast.parse('a + b + c', mode='eval')
+        >>> clone = copy_ast(tree)
+        >>> clone is tree, clone.body is tree.body, clone.body.left is tree.body.left
+        (False, False, False)
+        >>> ast.dump(clone) == ast.dump(tree)
+        True
     """
     root_copy = copy.copy(root)
     pending: list[ast.AST] = [root_copy]

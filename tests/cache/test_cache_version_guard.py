@@ -57,7 +57,7 @@ RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
 # One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
 # between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
 RECORDED_DIGESTS: dict[str, str] = {
-    'ast_copy.py': 'bb3072cc9a468d5d4bee815251a8cf7eacaba8bb7c1b0eb56aa0603bc6492d30',  # pragma: allowlist secret
+    'ast_copy.py': 'f94a3572585f293c0798490a1685f4d77eb970f67c0f53556dcef29826998832',  # pragma: allowlist secret
     # --
     'cache/__init__.py': '62df21d4f76d4423b6066843acd9402dc17a026cadba50937fa4efe3841ae428',  # pragma: allowlist secret
     # --
@@ -111,7 +111,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'instrumentation/switcher.py': '602bef0ec33b9e4f0edbb24db1497f2d9fbf57952662a5f11ec51dee262cff0e',  # pragma: allowlist secret  # noqa: E501
     # --
-    'instrumentation/transformer.py': '64223eb7a7b092e8852eaf9f80f991847a102c50bd6ffc1855711255f515d391',  # pragma: allowlist secret  # noqa: E501
+    'instrumentation/transformer.py': '2c19bf845723acda4ec7c5150a98c29133dec9707a473d4c4e4bb0994389c218',  # pragma: allowlist secret  # noqa: E501
     # --
     'node_id_args.py': 'd8a6f83045811ffe0c9513e74a15278966c62071db6f3722b1ebc5359c073bb9',  # pragma: allowlist secret
     # --
