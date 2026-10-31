@@ -416,6 +416,39 @@ rm -rf .gremlins_cache/
 
 ---
 
+### Cache never warms across checkouts on Windows
+
+**Symptom:** The incremental cache re-runs every gremlin after a fresh checkout, or a cache restored
+from a Linux/macOS run (for example in CI) never hits on Windows, even though no code changed.
+
+**Cause:** Test files are hashed byte for byte. With `core.autocrlf = true` (a common Windows default),
+git writes files committed with LF as CRLF, so the same test file hashes differently than on a
+Linux/macOS checkout. This costs cache hits only. Results stay correct, because a different hash
+causes a cache miss and never serves a wrong result.
+
+**Solution:** Make line endings deterministic, then re-checkout the files so existing CRLF files are
+rewritten. Changing the setting alone does not touch files already on disk. The simplest way to re-checkout
+is a fresh clone. To do it in place, commit or stash your changes first, because
+`git rm --cached -r . && git reset --hard` discards uncommitted work.
+
+Pick either remedy:
+
+- Set `core.autocrlf=input` globally so git does not convert to CRLF on checkout. Use `--global`, not a
+  repo-local setting: a fresh clone does not keep repo-local config, so it would be checked out with CRLF
+  again:
+
+  ```bash
+  git config --global core.autocrlf input
+  ```
+
+- Or commit a `.gitattributes` that pins Python files to LF:
+
+  ```text
+  *.py text eol=lf
+  ```
+
+---
+
 ### Error: Test timeout exceeded
 
 **Symptom:**
