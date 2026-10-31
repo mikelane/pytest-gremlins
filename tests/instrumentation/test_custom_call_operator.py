@@ -107,6 +107,14 @@ class DescribeCanMutateCostOnCallNodes:
         assert operator.call_node_checks <= 2
 
 
+def _describe_method_swap(original: ast.AST, mutated: ast.AST) -> str:
+    assert isinstance(original, ast.Call)
+    assert isinstance(original.func, ast.Attribute)
+    assert isinstance(mutated, ast.Call)
+    assert isinstance(mutated.func, ast.Attribute)
+    return f'{original.func.attr} -> {mutated.func.attr}'
+
+
 class _FilterAndFirstOperator:
     name = 'call_swap'
     description = 'Swap .filter() for .exclude() and .first() for .last()'
@@ -123,20 +131,12 @@ class _FilterAndFirstOperator:
         return [mutated]
 
     def get_description(self, original: ast.AST, mutated: ast.AST) -> str:
-        assert isinstance(original, ast.Call)
-        assert isinstance(original.func, ast.Attribute)
-        assert isinstance(mutated, ast.Call)
-        assert isinstance(mutated.func, ast.Attribute)
-        return f'{original.func.attr} -> {mutated.func.attr}'
+        return _describe_method_swap(original, mutated)
 
 
 class _DescribedFilterOperator(_FilterToExcludeOperator):
     def get_description(self, original: ast.AST, mutated: ast.AST) -> str:
-        assert isinstance(original, ast.Call)
-        assert isinstance(original.func, ast.Attribute)
-        assert isinstance(mutated, ast.Call)
-        assert isinstance(mutated.func, ast.Attribute)
-        return f'{original.func.attr} -> {mutated.func.attr}'
+        return _describe_method_swap(original, mutated)
 
 
 class _UndescribedFilterOperator(_FilterToExcludeOperator):
