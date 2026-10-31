@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pytest_gremlins.plugin import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_COVERAGE_TIMEOUT_SECONDS,
     DEFAULT_MUTANT_TIMEOUT_SECONDS,
     DEFAULT_REPORT_FORMATS,
 )
+from pytest_gremlins.reporting.html import resolve_html_output_path
 
 from .docs_facts import (
     default_cells,
     registered_help_defaults,
     registered_options,
+    toml_default_comments,
 )
 
 # The phrase the docs use for each option or key that has no code default. Each name has exactly one, so a wrong
@@ -59,7 +63,11 @@ def normalize(cell: str) -> str:
     return cell.strip().strip('`').strip('"').lower()
 
 
+_PROJECT_ROOT = Path('project')
+HTML_REPORT_DIR = resolve_html_output_path(_PROJECT_ROOT, None).parent.relative_to(_PROJECT_ROOT).as_posix() + '/'
+
 CODE_DEFAULTS: dict[str, object] = {
+    '--gremlins-html-dir': HTML_REPORT_DIR,
     '--gremlin-batch-size': DEFAULT_BATCH_SIZE,
     '--gremlin-report': DEFAULT_REPORT_FORMATS,
     '--gremlin-coverage-timeout': DEFAULT_COVERAGE_TIMEOUT_SECONDS,
@@ -105,3 +113,20 @@ def expected_flag_defaults() -> dict[str, str | None]:
 def expected_key_defaults() -> dict[str, str | None]:
     hard = hard_code_defaults()
     return {key: hard.get(CONFIG_KEY_TO_FLAG.get(key, '')) for key in key_defaults_in_docs()}
+
+
+def default_comment_mismatches(comments: dict[str, str], table_cells: dict[str, str]) -> list[str]:
+    """Describe each TOML ``# Default:`` comment that does not start with the default its key's table cell states."""
+    problems: list[str] = []
+    for key, comment in comments.items():
+        stated = normalize(table_cells[key]) if key in table_cells else None
+        shown = normalize(comment)
+        if stated is None:
+            problems.append(f'{key}: the TOML example says "Default: {comment}" but the options table has no such key')
+        elif not shown.startswith(stated):
+            problems.append(f'{key}: the TOML example says "Default: {comment}", the options table says {stated!r}')
+    return problems
+
+
+def toml_default_comment_mismatches() -> list[str]:
+    return default_comment_mismatches(toml_default_comments(), key_defaults_in_docs())

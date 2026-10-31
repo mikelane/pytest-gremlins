@@ -34,6 +34,8 @@ DEFAULT_COLUMN_HEADER = 'Default'
 
 _HELP_DEFAULT = re.compile(r'\(default: ([^,)]+)')
 _TABLE_ROW_FLAG = re.compile(r'^\|\s*`(--[a-z0-9-]+)`\s*\|')
+_DEFAULT_COMMENT = re.compile(r'^#\s*Default:\s*(.+)$')
+_TOML_ASSIGNMENT = re.compile(r'^([A-Za-z0-9_-]+)\s*=')
 _FENCE = re.compile(r'^\s*```(\w*)')
 
 
@@ -229,6 +231,22 @@ def pages_showing_toml_keys_outside_configuration_page(docs_root: Path = DOCS_RO
         for key in keys_shown_in_toml_blocks(page):
             pages_by_key.setdefault(key, set()).add(str(page.relative_to(docs_root)))
     return {key: sorted(pages) for key, pages in pages_by_key.items()}
+
+
+def toml_default_comments(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
+    """Map each key in a TOML block on ``page`` to the text of the ``# Default:`` comment above it."""
+    comments: dict[str, str] = {}
+    for language, lines in fenced_blocks(page):
+        stated: str | None = None
+        for _, line in lines if language == 'toml' else []:
+            comment = _DEFAULT_COMMENT.match(line.strip())
+            assignment = _TOML_ASSIGNMENT.match(line)
+            if comment:
+                stated = comment.group(1)
+            elif assignment and stated is not None:
+                comments[assignment.group(1)] = stated
+                stated = None
+    return comments
 
 
 def keys_the_loader_ignores(workdir: Path, page: Path = CONFIGURATION_PAGE) -> frozenset[str]:

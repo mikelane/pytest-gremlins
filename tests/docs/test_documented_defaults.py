@@ -18,11 +18,13 @@ from pytest_gremlins.config import CONFIG_KEYS
 
 from .default_facts import (
     CONFIG_KEY_TO_FLAG,
+    default_comment_mismatches,
     default_mismatches,
     expected_flag_defaults,
     expected_key_defaults,
     flag_defaults_in_docs,
     key_defaults_in_docs,
+    toml_default_comment_mismatches,
 )
 
 
@@ -42,3 +44,25 @@ class DescribeDocumentedDefaults:
 
     def it_maps_every_config_key_to_the_flag_that_overrides_it(self):
         assert set(CONFIG_KEY_TO_FLAG) == CONFIG_KEYS
+
+    def it_states_in_each_toml_example_the_default_its_table_row_states(self):
+        mismatches = toml_default_comment_mismatches()
+
+        assert not mismatches, 'TOML example Default comments differ from the options table:\n' + '\n'.join(mismatches)
+
+
+@pytest.mark.small
+class DescribeDefaultCommentMismatches:
+    """A TOML ``# Default:`` comment may add detail after the table's default, but not change it."""
+
+    def it_accepts_a_comment_that_repeats_the_table_default(self):
+        assert default_comment_mismatches({'batch_size': '10'}, {'batch_size': '`10`'}) == []
+
+    def it_accepts_a_comment_that_adds_detail_after_the_table_default(self):
+        assert default_comment_mismatches({'operators': 'all operators'}, {'operators': 'all'}) == []
+
+    def it_rejects_a_comment_that_differs_from_the_table_default(self):
+        assert len(default_comment_mismatches({'batch_size': '11'}, {'batch_size': '`10`'})) == 1
+
+    def it_rejects_a_comment_for_a_key_the_table_lacks(self):
+        assert len(default_comment_mismatches({'invented': '1'}, {})) == 1
