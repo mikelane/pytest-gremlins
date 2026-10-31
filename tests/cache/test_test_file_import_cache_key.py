@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from pytest_gremlins import plugin
+from pytest_gremlins.cache.hasher import ContentHasher
 
 TEST_FILE = 'tests/test_a.py'
 
@@ -154,7 +155,7 @@ class DescribeImportedTestFilesFoldedIntoTestHash:
     def it_does_not_crash_when_the_test_file_itself_has_a_syntax_error(self, tmp_path: Path) -> None:
         _write(tmp_path, {'tests/test_a.py': 'def broken(:\n'})
 
-        assert _test_hash(tmp_path)
+        assert _test_hash(tmp_path) == ContentHasher().hash_file(tmp_path / TEST_FILE)
 
     def it_keeps_the_key_when_an_unimported_test_file_changes(self, tmp_path: Path) -> None:
         _write(tmp_path, {'tests/test_a.py': 'X = 1\n', 'tests/test_b.py': 'Y = 1\n'})
