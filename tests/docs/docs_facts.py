@@ -7,6 +7,7 @@ the docs describe.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -14,7 +15,10 @@ import re
 import tomllib
 from typing import Any
 
-from pytest_gremlins.config import load_config
+from pytest_gremlins.config import (
+    CONFIG_KEYS,
+    load_config,
+)
 from pytest_gremlins.plugin import pytest_addoption
 
 from .emitted_messages import MESSAGE_PREFIX
@@ -34,6 +38,8 @@ DEFAULT_COLUMN_HEADER = 'Default'
 
 _HELP_DEFAULT = re.compile(r'\(default: ([^,)]+)')
 _TABLE_ROW_FLAG = re.compile(r'^\|\s*`(--[a-z0-9-]+)`\s*\|')
+_DEFAULT_COMMENT = re.compile(r'^#\s*Default:\s*(.+)$')
+_TOML_ASSIGNMENT = re.compile(r'^([A-Za-z0-9_-]+)\s*=')
 _FENCE = re.compile(r'^\s*```(\w*)')
 
 
@@ -218,6 +224,56 @@ def documented_keys(page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
 def keys_shown_in_toml_blocks(page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
     """Return the keys that appear under ``[tool.pytest-gremlins]`` in any TOML block on ``page``."""
     return frozenset(key for block in pytest_gremlins_toml_blocks(page) for key in block)
+
+
+def toml_keys_the_loader_does_not_read(keys: Iterable[str]) -> frozenset[str]:
+    """Return the ``keys`` the loader does not read, accepting the hyphen or underscore spelling it accepts."""
+    read = {key.replace('-', '_') for key in CONFIG_KEYS}
+    return frozenset(key for key in keys if key.replace('-', '_') not in read)
+
+
+def pages_showing_toml_keys_outside_configuration_page(docs_root: Path = DOCS_ROOT) -> dict[str, list[str]]:
+    """Map each ``[tool.pytest-gremlins]`` key in a TOML block on any other page under ``docs_root`` to its pages."""
+    pages_by_key: dict[str, set[str]] = {}
+    for page in sorted(docs_root.rglob('*.md')):
+        if page == CONFIGURATION_PAGE:
+            continue
+        for key in keys_shown_in_toml_blocks(page):
+            pages_by_key.setdefault(key, set()).add(str(page.relative_to(docs_root)))
+    return {key: sorted(pages) for key, pages in pages_by_key.items()}
+
+
+def toml_default_comments(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
+    """Map each key in a TOML block on ``page`` to the text of the ``# Default:`` comment above it."""
+    comments: dict[str, str] = {}
+    for language, lines in fenced_blocks(page):
+        if language != 'toml':
+            continue
+        stated: str | None = None
+        for _, line in lines:
+            comment = _DEFAULT_COMMENT.match(line.strip())
+            assignment = _TOML_ASSIGNMENT.match(line)
+            if comment:
+                stated = comment.group(1)
+            elif assignment and stated is not None:
+                comments[assignment.group(1)] = stated
+                stated = None
+            elif _interrupts_default_comment(line):
+                stated = None
+    return comments
+
+
+def _interrupts_default_comment(line: str) -> bool:
+    """Return whether ``line`` separates a ``# Default:`` comment from the assignment below it.
+
+    Explanatory comment lines continue the Default comment. A commented-out assignment does not.
+    """
+    text = line.strip()
+    if not text:
+        return False
+    if not text.startswith('#'):
+        return True
+    return _TOML_ASSIGNMENT.match(text.lstrip('#').lstrip()) is not None
 
 
 def keys_the_loader_ignores(workdir: Path, page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
