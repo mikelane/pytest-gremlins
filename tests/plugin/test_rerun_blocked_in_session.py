@@ -193,9 +193,10 @@ class DescribeGremlinRunsUnderABlockWithOtherRunModes:
         pytester = pytester_with_markers
         pytester.makepyfile(sample=SAMPLE)
         pytester.makepyfile(test_sample=STEADY_TEST)
-        # Wider than the siblings' 8/3: worker start-up on a loaded runner can eat a 3s timeout. Workers have
-        # no per-mutant timeout, so an unblocked rerun is not reported as a Timeout: it just sleeps for the
-        # delay. Elapsed time below the delay is what tells a blocked run from an unblocked one.
+        # Wider than the siblings' 8/3: worker start-up on a loaded runner can eat a 3s timeout. Workers do
+        # have a per-mutant timeout, but this session runs with -p no:rerunfailures, so the timeout is not
+        # widened: an unblocked rerun is cut at the 20s timeout and reported as a Timeout, leaving no Zapped
+        # gremlins. Zapped > 0 is the primary signal; elapsed time below the delay is a backup.
         pytester.makeini(f'[pytest]\nreruns = 1\nreruns_delay = {PARALLEL_RERUNS_DELAY_SECONDS}\n')
 
         started = time.monotonic()

@@ -259,3 +259,63 @@ class DescribeCustomOperatorDescriptions:
         gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[operator])
 
         assert [g.description for g in gremlins] == [f'{operator.name} mutation']
+
+
+class _NegateReturnOperator:
+    """Keeps the returned expression and negates it, describing the mutation by unparsing both nodes."""
+
+    name = 'negate_return'
+    description = 'Negate a returned expression'
+
+    def can_mutate(self, node: ast.AST) -> bool:
+        return isinstance(node, ast.Return) and node.value is not None
+
+    def mutate(self, node: ast.AST) -> list[ast.AST]:
+        mutated = copy.deepcopy(node)
+        assert isinstance(mutated, ast.Return)
+        assert mutated.value is not None
+        mutated.value = ast.UnaryOp(op=ast.Not(), operand=mutated.value)
+        return [mutated]
+
+    def get_description(self, original: ast.AST, mutated: ast.AST) -> str:
+        return f'{ast.unparse(original)} -> {ast.unparse(mutated)}'
+
+
+class _RaisingDescriptionPropertyOperator(_FilterToExcludeOperator):
+    name = 'raising_property'
+
+    @property
+    def get_description(self) -> object:  # type: ignore[override]
+        msg = 'boom'
+        raise RuntimeError(msg)
+
+
+class _BlankDescriptionOperator(_FilterToExcludeOperator):
+    name = 'blank_desc'
+
+    def get_description(self, original: ast.AST, mutated: ast.AST) -> str:  # noqa: ARG002
+        return '   '
+
+
+@pytest.mark.small
+class DescribeCustomReturnDescriptionsRun2:
+    def it_describes_the_mutated_side_of_a_custom_return_gremlin_without_instrumentation(self) -> None:
+        source = 'def f(a, b):\n    return a < b\n'
+
+        gremlins, _tree = transform_source(source, 'm.py', operators=[ComparisonOperator(), _NegateReturnOperator()])
+
+        custom = [g.description for g in gremlins if g.operator_name == 'negate_return']
+        assert custom == ['return a < b -> return not a < b']
+
+
+@pytest.mark.small
+class DescribeGetDescriptionFallbackRun2:
+    def it_falls_back_when_reading_get_description_raises(self) -> None:
+        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_RaisingDescriptionPropertyOperator()])
+
+        assert [g.description for g in gremlins] == ['raising_property mutation']
+
+    def it_falls_back_when_get_description_returns_only_whitespace(self) -> None:
+        gremlins, _tree = transform_source(_FILTER_SOURCE, 'm.py', operators=[_BlankDescriptionOperator()])
+
+        assert [g.description for g in gremlins] == ['blank_desc mutation']

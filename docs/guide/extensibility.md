@@ -64,7 +64,7 @@ class GremlinOperator(Protocol):
 | `description`  | Shown in reports and `--help` output                                            |
 | `can_mutate()` | Fast check - called for every node of an offered type (see below), return `True` only for nodes you handle |
 | `mutate()`     | Generate mutation variants - called only when `can_mutate()` returns `True`     |
-| `get_description(original, mutated)` | Optional - returns the text shown for each gremlin in reports. Without it, or if it raises or returns `None` or an empty string, a custom gremlin reads `<name> mutation` |
+| `get_description(original, mutated)` | Optional - returns the text shown for each gremlin in reports. Without it, or if it raises, or if reading it raises, or returns `None` or an empty or whitespace-only string, a custom gremlin reads `<name> mutation` |
 
 ### Which Nodes an Operator Is Offered
 

@@ -136,11 +136,16 @@ def create_gremlins_for_node(
     mutations = operator.mutate(node)
     gremlins: list[Gremlin] = []
 
-    for mutated_node in mutations:
+    describe_against = node if description_original is None else description_original
+    described_mutations = _mutations_to_describe(mutations, operator, description_original)
+
+    for mutated_node, described_node in zip(mutations, described_mutations, strict=True):
         if not isinstance(mutated_node, (ast.expr, ast.stmt)):
             continue  # pragma: no cover
         description = _get_mutation_description(
-            node if description_original is None else description_original, mutated_node, operator
+            describe_against,
+            described_node if isinstance(described_node, (ast.expr, ast.stmt)) else mutated_node,
+            operator,
         )
         gremlin = Gremlin(
             gremlin_id=id_generator(),
@@ -198,6 +203,25 @@ def _get_return_description(original: ast.expr | ast.stmt, mutated: ast.expr | a
     return None  # pragma: no cover
 
 
+def _mutations_to_describe(
+    mutations: list[ast.AST],
+    operator: GremlinOperator,
+    description_original: ast.expr | ast.stmt | None,
+) -> list[ast.AST]:
+    """Pick the mutated nodes to describe, so a description never shows instrumentation code.
+
+    When ``description_original`` is a pristine copy, the operator mutates it again and the results are paired
+    with ``mutations`` by index. A failure or a different count means no safe pairing, so ``mutations`` is used.
+    """
+    if description_original is None:
+        return mutations
+    try:
+        pristine_mutations = operator.mutate(description_original)
+    except Exception:
+        return mutations
+    return pristine_mutations if len(pristine_mutations) == len(mutations) else mutations
+
+
 def _get_mutation_description(
     original: ast.expr | ast.stmt,
     mutated: ast.expr | ast.stmt,
@@ -242,12 +266,12 @@ def _get_custom_operator_description(
 ) -> str:
     """Describe a mutation with the operator's optional ``get_description()``, else by operator name."""
     fallback = f'{operator.name} mutation'
-    describe = getattr(operator, 'get_description', None)
-    if not callable(describe):
-        return fallback
     try:
+        describe = getattr(operator, 'get_description', None)
+        if not callable(describe):
+            return fallback
         description = describe(original, mutated)
-        return str(description) if description else fallback
+        return str(description) if description and str(description).strip() else fallback
     except Exception:
         return fallback
 
