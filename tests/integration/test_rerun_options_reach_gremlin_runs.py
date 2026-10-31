@@ -148,6 +148,28 @@ class DescribeNumericRerunSettingsInNativeToml:
         assert verdicts(result.stdout.str())['Zapped'] > 0
 
 
+@pytest.mark.skipif(
+    pytest.version_tuple < (9, 0),
+    reason='pytest < 9 does not read the native [tool.pytest] table, so reruns = "2" is ignored and the flake '
+    'fails the baseline.',
+)
+@pytest.mark.medium
+class DescribeStringRerunSettingsInNativeToml:
+    def it_runs_gremlins_without_an_internal_error_when_reruns_is_a_toml_string(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        # The flaky test fails the baseline unless the string value is read and applied, and it
+        # fabricates kills unless the gremlin runs rerun it too, so survivors prove the setting took effect.
+        write_flaky_project(pytester_with_markers)
+        pytester_with_markers.makefile('.toml', pyproject='[tool.pytest]\nreruns = "2"\n')
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS)
+
+        assert 'INTERNALERROR' not in result.stdout.str()
+        assert 'needed a rerun' in result.stderr.str()
+        assert survivor_count(result.stdout.str()) > 0
+
+
 @pytest.mark.medium
 class DescribeProjectsWithoutRerunOptions:
     def it_completes_without_rerun_flags_or_a_warning(self, pytester_with_markers: pytest.Pytester) -> None:
