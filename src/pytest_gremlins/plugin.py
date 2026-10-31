@@ -1769,8 +1769,26 @@ def _inject_gremlin_active(tree: ast.Module) -> ast.Module:
 __gremlin_active__ = _gremlin_os.environ.get('{ACTIVE_GREMLIN_ENV_VAR}')
 del _gremlin_os
 """
-    body = _prepend_injection(tree.body, ast.parse(activation_source).body)
+    header = ast.parse(activation_source).body
+    body = _prepend_injection(tree.body, header)
+    _relocate_to_next_statement(header, body)
     return ast.Module(body=body, type_ignores=tree.type_ignores)
+
+
+def _relocate_to_next_statement(header: list[ast.stmt], body: list[ast.stmt]) -> None:
+    """Move the injected ``header`` onto the line of the statement that follows it, in place.
+
+    The header is parsed from its own three-line text, so its nodes would claim lines 1 to 3 of the target
+    file. Were ``os.environ.get`` to raise during import, the traceback would point at those real lines. A header
+    with no statement after it keeps its own lines: no real statement can share them.
+    """
+    following_index = body.index(header[-1]) + 1
+    if following_index == len(body):
+        return
+    line = body[following_index].lineno
+    for node in (descendant for statement in header for descendant in ast.walk(statement)):
+        if isinstance(node, (ast.stmt, ast.expr)):
+            node.lineno = node.end_lineno = line
 
 
 def _encode_tree(instrumented_tree: ast.Module) -> str | None:

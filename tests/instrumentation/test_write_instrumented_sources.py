@@ -356,3 +356,33 @@ class DescribeImportingAShippedTree:
         module = _import_shipped(entry, source='y = 2\n')
 
         assert (vars(module).get('x'), module.y) == (None, 2)
+
+
+@pytest.mark.small
+class DescribeInjectedHeaderLocations:
+    """The injected header never carries a line number that a real statement of the file also carries (#614)."""
+
+    SOURCE = '\n\n\nx = 1\n'
+
+    def it_places_every_header_statement_on_the_line_of_the_first_real_statement(self) -> None:
+        header = _injected_body(self.SOURCE)[:3]
+
+        assert [statement.lineno for statement in header] == [4, 4, 4]
+
+    def it_places_header_expressions_on_the_line_of_the_first_real_statement(self) -> None:
+        header_assignment = _injected_body(self.SOURCE)[1]
+
+        assert header_assignment.value.lineno == 4  # type: ignore[attr-defined]
+
+    def it_keeps_the_real_statement_on_its_own_line(self) -> None:
+        assert _injected_body(self.SOURCE)[3].lineno == 4
+
+    def it_places_the_header_after_the_docstring_on_the_line_of_the_next_statement(self) -> None:
+        header = _injected_body('"""Doc."""\n\n\ny = 2\n')[1:4]
+
+        assert [statement.lineno for statement in header] == [4, 4, 4]
+
+    def it_keeps_a_header_only_module_compilable(self) -> None:
+        tree = _inject_gremlin_active(ast.parse(''))
+
+        assert compile(tree, 'empty.py', 'exec') is not None
