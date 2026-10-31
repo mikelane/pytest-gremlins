@@ -215,6 +215,13 @@ with close matches among the collected tests. A short id like `g001` doesn't mat
 ```
 <!-- markdownlint-enable MD013 -->
 
+**Test order and early exit.** Every covering test of a gremlin runs in priority order, with the
+most specific tests first (tests that cover fewer lines rank higher). The run stops at the
+first failing test, and that failure is the kill. A survivor ran all of its covering tests that
+have a pytest node id and none failed. If a survivor looks wrong, run it with
+`--gremlin-explain=<id>`, or with `--gremlin-no-coverage-filter` to rule out test selection. See
+[Coverage-Guided Test Selection](../architecture/coverage-guidance.md#order-and-early-exit).
+
 **Combine multiple options:**
 
 ```bash

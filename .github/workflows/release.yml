@@ -85,6 +85,11 @@ jobs:
       - name: Check the changelog entry links to the docs
         run: uv run --no-project --python 3.12 python scripts/check_release_docs.py "$RELEASE_TAG" --site-dir "$RUNNER_TEMP/site"
 
+      # Cache gate. Like the docs gate it has no input, variable or condition that skips it. It needs the project
+      # environment (no --no-project): the cache-version guard it takes its file set from imports the package.
+      - name: Check the release raises a cache marker or keeps the cache on purpose
+        run: uv run python scripts/check_cache_kept.py "$RELEASE_TAG"
+
   # Run full test suite before release
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})

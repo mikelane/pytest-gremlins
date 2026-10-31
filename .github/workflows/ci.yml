@@ -195,7 +195,10 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.src == 'true'
     steps:
+      # Full history and tags: the cache gate below compares the code with the previous release tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -222,6 +225,11 @@ jobs:
       - name: Check the newest changelog entry links to the docs
         if: needs.changes.outputs.changelog == 'true'
         run: uv run python scripts/check_release_docs.py --newest --site-dir site
+
+      # Guarded code changed since the previous release with no cache marker raised needs a "(cache kept: ...)" line.
+      - name: Check the newest changelog entry raises a cache marker or keeps the cache on purpose
+        if: needs.changes.outputs.changelog == 'true'
+        run: uv run python scripts/check_cache_kept.py --newest
 
   security:
     name: Security Audit
