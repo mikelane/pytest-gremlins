@@ -1450,21 +1450,30 @@ def _generate_gremlins(
             gremlins, instrumented_tree = transform_source(source, file_path, gremlin_session.operators)
         except Exception as exc:
             logger.exception('Failed to transform %s; skipping file', file_path)
-            reason = _describe_exception(exc)
-            gremlin_session.skipped_files[file_path] = reason
-            displayed_path = _neutralize_control_characters(file_path)
-            _queue_terminal_notice(
-                gremlin_session, f'pytest-gremlins: skipped {displayed_path}: could not instrument ({reason})'
-            )
+            _skip_file(gremlin_session, file_path, _describe_exception(exc))
             continue
         all_gremlins.extend(gremlins)
         instrumented_asts[file_path] = instrumented_tree
 
+    if all_gremlins:
+        unwritable: dict[str, str] = {}
+        instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir, duplicates, unwritable)
+        gremlin_session.instrumented_dir = instrumented_dir
+        for file_path, reason in unwritable.items():
+            logger.warning('Instrumented tree for %s is too deep to write; skipping file', file_path)
+            _skip_file(gremlin_session, file_path, reason)
+        all_gremlins = [gremlin for gremlin in all_gremlins if gremlin.file_path not in unwritable]
+
     gremlin_session.gremlins = all_gremlins
 
-    if all_gremlins:
-        instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir, duplicates)
-        gremlin_session.instrumented_dir = instrumented_dir
+
+def _skip_file(gremlin_session: GremlinSession, file_path: str, reason: str) -> None:
+    """Record ``file_path`` as not mutation tested and queue the terminal notice naming it and the reason."""
+    gremlin_session.skipped_files[file_path] = reason
+    displayed_path = _neutralize_control_characters(file_path)
+    _queue_terminal_notice(
+        gremlin_session, f'pytest-gremlins: skipped {displayed_path}: could not instrument ({reason})'
+    )
 
 
 def _neutralize_control_characters(text: str) -> str:
@@ -1700,6 +1709,7 @@ def _write_instrumented_sources(
     instrumented_asts: dict[str, ast.Module],
     rootdir: Path,
     duplicates: dict[str, list[str]] | None = None,
+    unwritable: dict[str, str] | None = None,
 ) -> Path:
     """Write instrumented sources to a JSON file for import hook injection.
 
@@ -1725,6 +1735,8 @@ def _write_instrumented_sources(
         rootdir: Root directory of the project; a relative path is taken from it.
         duplicates: For a path in ``instrumented_asts``, the other spellings of the same file that
             were dropped as targets; imported through one of them, the file is still served.
+        unwritable: Filled with each file whose tree is too deep to unparse (``RecursionError``), mapped to the
+            reason; such a file is left out of the sources. When ``None`` the ``RecursionError`` propagates.
 
     Returns:
         Path to the temporary directory containing the bootstrap infrastructure.
@@ -1733,22 +1745,14 @@ def _write_instrumented_sources(
 
     instrumented_sources: origin_finder.InstrumentedSources = {}
     for original_path, tree in instrumented_asts.items():
-        origin = (rootdir / original_path).absolute()
-        instrumented_tree = _inject_gremlin_active(tree)
-        encoded_tree = _encode_tree(instrumented_tree)
-        if encoded_tree is None:
-            logger.debug(
-                'Instrumented tree for %s too deep to pickle; shipping unparsed source (reflowed line numbers)',
-                origin,
-            )
-        spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
-        instrumented_sources[normalize_origin(str(origin))] = {
-            'source': ast.unparse(instrumented_tree),
-            **({} if encoded_tree is None else {'tree': encoded_tree}),
-            'origin': str(origin),
-            'identity': file_identity(str(origin)),
-            'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
-        }
+        try:
+            entry = _instrumented_source_entry(original_path, tree, rootdir, duplicates)
+        except RecursionError as error:
+            if unwritable is None:
+                raise
+            unwritable[original_path] = _describe_exception(error)
+            continue
+        instrumented_sources[entry[0]] = entry[1]
 
     sources_file = temp_dir / 'sources.json'
     sources_file.write_text(json.dumps(instrumented_sources))
@@ -1761,6 +1765,28 @@ def _write_instrumented_sources(
     # configure hooks or sys.path, so every gremlin runs through the bootstrap (#538).
 
     return temp_dir
+
+
+def _instrumented_source_entry(
+    original_path: str, tree: ast.Module, rootdir: Path, duplicates: dict[str, list[str]] | None
+) -> tuple[str, origin_finder.InstrumentedEntry]:
+    """Return the ``sources.json`` key and entry for one file; ``RecursionError`` if its tree is too deep to unparse."""
+    origin = (rootdir / original_path).absolute()
+    instrumented_tree = _inject_gremlin_active(tree)
+    encoded_tree = _encode_tree(instrumented_tree)
+    if encoded_tree is None:
+        logger.debug(
+            'Instrumented tree for %s too deep to pickle; shipping unparsed source (reflowed line numbers)',
+            origin,
+        )
+    spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
+    return normalize_origin(str(origin)), {
+        'source': ast.unparse(instrumented_tree),
+        **({} if encoded_tree is None else {'tree': encoded_tree}),
+        'origin': str(origin),
+        'identity': file_identity(str(origin)),
+        'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
+    }
 
 
 def _inject_gremlin_active(tree: ast.Module) -> ast.Module:
