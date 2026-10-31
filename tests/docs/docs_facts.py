@@ -237,8 +237,10 @@ def toml_default_comments(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
     """Map each key in a TOML block on ``page`` to the text of the ``# Default:`` comment above it."""
     comments: dict[str, str] = {}
     for language, lines in fenced_blocks(page):
+        if language != 'toml':
+            continue
         stated: str | None = None
-        for _, line in lines if language == 'toml' else []:
+        for _, line in lines:
             comment = _DEFAULT_COMMENT.match(line.strip())
             assignment = _TOML_ASSIGNMENT.match(line)
             if comment:

@@ -87,12 +87,13 @@ def default_mismatches(documented: dict[str, str], expected_by_name: dict[str, s
     for name, cell in documented.items():
         expected = expected_by_name.get(name)
         shown = normalize(cell)
+        phrase = UNSET_PHRASE_BY_NAME.get(name)
         if expected is not None and shown != expected.lower():
             problems.append(f'{name}: documented {shown!r}, code default {expected!r}')
-        elif expected is None and shown != UNSET_PHRASE_BY_NAME.get(name):
+        elif expected is None and shown != phrase:
             problems.append(
                 f'{name}: documented {shown!r}, but the code has no default '
-                f'(use {UNSET_PHRASE_BY_NAME.get(name)!r}; register a phrase in UNSET_PHRASE_BY_NAME if none)'
+                f'(use {phrase!r}; register a phrase in UNSET_PHRASE_BY_NAME if none)'
             )
     return problems
 
@@ -119,14 +120,15 @@ def default_comment_mismatches(comments: dict[str, str], table_cells: dict[str, 
     """Describe each TOML ``# Default:`` comment that does not start with the default its key's table cell states."""
     problems: list[str] = []
     for key, comment in comments.items():
-        stated = normalize(table_cells[key]) if key in table_cells else None
-        shown = normalize(comment)
-        if stated is None:
+        if key not in table_cells:
             problems.append(f'{key}: the TOML example says "Default: {comment}" but the options table has no such key')
-        elif not shown.startswith(stated):
+            continue
+        stated = normalize(table_cells[key])
+        if not normalize(comment).startswith(stated):
             problems.append(f'{key}: the TOML example says "Default: {comment}", the options table says {stated!r}')
     return problems
 
 
 def toml_default_comment_mismatches() -> list[str]:
+    """Describe each ``# Default:`` comment on the configuration page that disagrees with its options table row."""
     return default_comment_mismatches(toml_default_comments(), key_defaults_in_docs())
