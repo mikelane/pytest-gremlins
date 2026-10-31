@@ -7,6 +7,7 @@ the docs describe.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -14,7 +15,10 @@ import re
 import tomllib
 from typing import Any
 
-from pytest_gremlins.config import load_config
+from pytest_gremlins.config import (
+    CONFIG_KEYS,
+    load_config,
+)
 from pytest_gremlins.plugin import pytest_addoption
 
 from .emitted_messages import MESSAGE_PREFIX
@@ -222,6 +226,12 @@ def keys_shown_in_toml_blocks(page: Path = CONFIGURATION_PAGE) -> frozenset[str]
     return frozenset(key for block in pytest_gremlins_toml_blocks(page) for key in block)
 
 
+def toml_keys_the_loader_does_not_read(keys: Iterable[str]) -> frozenset[str]:
+    """Return the ``keys`` the loader does not read, accepting the hyphen or underscore spelling it accepts."""
+    read = {key.replace('-', '_') for key in CONFIG_KEYS}
+    return frozenset(key for key in keys if key.replace('-', '_') not in read)
+
+
 def pages_showing_toml_keys_outside_configuration_page(docs_root: Path = DOCS_ROOT) -> dict[str, list[str]]:
     """Map each ``[tool.pytest-gremlins]`` key in a TOML block on any other page under ``docs_root`` to its pages."""
     pages_by_key: dict[str, set[str]] = {}
@@ -247,6 +257,8 @@ def toml_default_comments(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
                 stated = comment.group(1)
             elif assignment and stated is not None:
                 comments[assignment.group(1)] = stated
+                stated = None
+            elif line.strip():
                 stated = None
     return comments
 

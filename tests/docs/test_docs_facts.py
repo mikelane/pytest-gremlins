@@ -15,6 +15,7 @@ from .docs_facts import (
     pytest_gremlins_toml_blocks,
     quoted_messages,
     registered_flags,
+    toml_default_comments,
 )
 
 
@@ -90,3 +91,17 @@ class DescribeDefaultCells:
 
         with pytest.raises(DocsFormatError, match=r'configuration\.md:3: .*Default'):
             default_cells(page)
+
+
+@pytest.mark.medium
+class DescribeTomlDefaultCommentAttribution:
+    """A Default comment belongs to the assignment directly below it, not to whichever key comes next."""
+
+    def it_does_not_carry_an_orphan_comment_over_a_commented_out_key(self, tmp_path: Path):
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: 10\n# batch_size = 20\n\ncache = true\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {}

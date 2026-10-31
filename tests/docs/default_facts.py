@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from pytest_gremlins.plugin import (
     DEFAULT_BATCH_SIZE,
@@ -124,7 +125,7 @@ def default_comment_mismatches(comments: dict[str, str], table_cells: dict[str, 
             problems.append(f'{key}: the TOML example says "Default: {comment}" but the options table has no such key')
             continue
         stated = normalize(table_cells[key])
-        if not normalize(comment).startswith(stated):
+        if not re.match(rf'{re.escape(stated)}(?!\w)', normalize(comment)):
             problems.append(f'{key}: the TOML example says "Default: {comment}", the options table says {stated!r}')
     return problems
 

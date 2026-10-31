@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from .default_facts import default_mismatches
+from .default_facts import (
+    default_comment_mismatches,
+    default_mismatches,
+)
 
 
 @pytest.mark.small
@@ -37,3 +40,14 @@ class DescribeDefaultMismatches:
         problems = default_mismatches({'--gremlin-batch-size': '`11`'}, {'--gremlin-batch-size': '10'})
 
         assert problems == ["--gremlin-batch-size: documented '11', code default '10'"]
+
+
+@pytest.mark.small
+class DescribeDefaultCommentPrefixMatch:
+    """A TOML Default comment that states a different number must not pass because it starts with the right digits."""
+
+    def it_rejects_a_comment_stating_300_when_the_table_says_30(self):
+        assert default_comment_mismatches({'mutant_timeout': '300'}, {'mutant_timeout': '`30`'}) != []
+
+    def it_rejects_a_comment_stating_1200_when_the_table_says_120(self):
+        assert default_comment_mismatches({'coverage_timeout': '1200'}, {'coverage_timeout': '`120`'}) != []
