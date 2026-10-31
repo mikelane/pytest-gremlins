@@ -38,7 +38,7 @@ def it_warns_about_empty_operators_when_the_cli_names_none(pytester: pytest.Pyte
 
 
 @pytest.mark.medium
-def it_stops_with_exit_code_4_for_a_non_table_tool_entry_when_pytest_reads_another_config_file(
+def it_stops_with_exit_code_4_for_a_non_table_tool_entry_when_dash_c_points_at_another_config_file(
     pytester: pytest.Pytester,
 ) -> None:
     pytester.makepyprojecttoml('tool = 5\n')
