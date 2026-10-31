@@ -1742,13 +1742,15 @@ def _write_instrumented_sources(
                 origin,
             )
         spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
-        instrumented_sources[normalize_origin(str(origin))] = {
-            'source': ast.unparse(instrumented_tree),
-            **({} if encoded_tree is None else {'tree': encoded_tree}),
-            'origin': str(origin),
-            'identity': file_identity(str(origin)),
-            'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
-        }
+        entry = origin_finder.InstrumentedEntry(
+            source=ast.unparse(instrumented_tree),
+            origin=str(origin),
+            identity=file_identity(str(origin)),
+            file_names=sorted({Path(spelling).name.lower() for spelling in spellings}),
+        )
+        if encoded_tree is not None:
+            entry['tree'] = encoded_tree
+        instrumented_sources[normalize_origin(str(origin))] = entry
 
     sources_file = temp_dir / 'sources.json'
     sources_file.write_text(json.dumps(instrumented_sources))
