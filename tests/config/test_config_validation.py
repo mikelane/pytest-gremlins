@@ -198,7 +198,7 @@ class DescribeNonTableToolSection:
     """A ``tool`` entry that is not a table is a ValueError, not an AttributeError."""
 
     @pytest.mark.parametrize('toml_line', ['tool = 5', 'tool = "x"', 'tool = [1]'])
-    def it_rejects_a_non_table_tool_entry(self, tmp_path: Path, toml_line: str):
+    def it_rejects_a_non_table_tool_entry(self, tmp_path: Path, toml_line: str) -> None:
         (tmp_path / 'pyproject.toml').write_text(f'{toml_line}\n', encoding='utf-8')
 
         with pytest.raises(ValueError, match=r'\[tool\] must be a table of settings.*got'):
@@ -209,7 +209,7 @@ class DescribeNonTableToolSection:
 class DescribeEmptyOperatorsList:
     """``operators = []`` still means all operators, and says so."""
 
-    def it_warns_that_an_empty_list_means_all_operators(self, tmp_path: Path):
+    def it_warns_that_an_empty_list_means_all_operators(self, tmp_path: Path) -> None:
         _write(tmp_path, 'operators = []')
         warned: list[str] = []
 
@@ -221,7 +221,7 @@ class DescribeEmptyOperatorsList:
         assert 'operators = ["comparison", "boundary"]' in warned[0]
         assert config.operators == []
 
-    def it_does_not_warn_for_a_non_empty_operators_list(self, tmp_path: Path):
+    def it_does_not_warn_for_a_non_empty_operators_list(self, tmp_path: Path) -> None:
         _write(tmp_path, 'operators = ["comparison"]')
         warned: list[str] = []
 
