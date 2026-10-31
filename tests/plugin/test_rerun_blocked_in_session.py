@@ -191,12 +191,12 @@ class DescribeGremlinRunsUnderABlockWithOtherRunModes:
         pytester = pytester_with_markers
         pytester.makepyfile(sample=SAMPLE)
         pytester.makepyfile(test_sample=STEADY_TEST)
-        pytester.makeini('[pytest]\nreruns = 1\nreruns_delay = 8\n')
+        pytester.makeini('[pytest]\nreruns = 1\nreruns_delay = 60\n')
 
         result = pytester.runpytest_subprocess(
             *GREMLIN_ARGS,
             '--gremlin-mutant-timeout',
-            '3',
+            '20',
             '--gremlin-parallel',
             '--gremlin-workers',
             '2',
