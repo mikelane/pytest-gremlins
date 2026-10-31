@@ -663,6 +663,14 @@ When autoload is disabled for gremlin runs (by the environment, or by the flag i
 your session loaded pytest-cov, for example with `-p pytest_cov` on the command line, gremlins loads it in the gremlin
 runs under the name your session registered it with (`pytest_cov` or `pytest_cov.plugin`) and passes `--no-cov`.
 
+### pytest-xdist when plugin autoload is disabled
+
+Gremlin runs get `-n 0` only when they can parse it. With autoload disabled for gremlin runs (by the environment, or by
+the flag in `addopts` or `PYTEST_ADDOPTS`) and pytest-xdist loaded in your session, for example with `-p xdist` or
+`-p xdist.plugin` on the command line, gremlins loads it in the gremlin runs under the name your session registered it
+with (`xdist` or `xdist.plugin`) and passes `-n 0`. If your session did not load xdist, `-n 0` is left out. Earlier
+versions passed `-n 0` after `-p xdist` anyway, so every gremlin run failed with `unrecognized arguments: -n`.
+
 ---
 
 ### Using pytest-xdist with gremlins
