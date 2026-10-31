@@ -51,6 +51,7 @@ OPERATOR_CONFTEST = textwrap.dedent(
 TARGET = 'def limit():\n    return 41\n'
 TARGET_TEST = 'from target import limit\n\n\ndef test_limit():\n    assert limit() < 50\n'
 SIBLING_TEST = 'def test_unrelated():\n    assert True\n'
+PLAIN_CONFTEST = 'import pytest\n\n\n@pytest.fixture\ndef unrelated():\n    return 1\n'
 GREMLIN_ARGS = ('--gremlins', '--gremlin-targets=target.py', '--gremlin-operators=sibling-constant', '--gremlin-cache')
 
 
@@ -84,5 +85,17 @@ class DescribeSiblingConftestOperatorInCacheKey:
         operator_conftest.write_text(OPERATOR_CONFTEST.format(offset=100))
 
         edited = pytester.runpytest_subprocess(*GREMLIN_ARGS, 'a', 'b')
+
+        edited.stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])
+
+    @pytest.mark.parametrize('argument_order', [('a', 'b'), ('b', 'a')])
+    def it_misses_after_the_operator_conftest_is_edited_when_the_other_directory_has_its_own_conftest(
+        self, pytester: pytest.Pytester, operator_conftest: Path, argument_order: tuple[str, str]
+    ) -> None:
+        (pytester.path / 'b' / 'conftest.py').write_text(PLAIN_CONFTEST)
+        pytester.runpytest_subprocess(*GREMLIN_ARGS, *argument_order)
+        operator_conftest.write_text(OPERATOR_CONFTEST.format(offset=100))
+
+        edited = pytester.runpytest_subprocess(*GREMLIN_ARGS, *argument_order)
 
         edited.stdout.fnmatch_lines(['Cache: 0 hits, 1 misses (0% hit rate)'])

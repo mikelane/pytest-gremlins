@@ -17,7 +17,10 @@ import pytest
 from pytest_gremlins.cache.versions import installed_versions_fingerprint
 from pytest_gremlins.operators.comparison import ComparisonOperator
 
-OPERATOR_SOURCE = 'class HelperOperator:\n    name = "helper"\n    description = "x"\n    delta = {delta}\n'
+OPERATOR_SOURCE = (
+    'class HelperOperator:\n    name = "helper"\n    description = "x"\n    delta = {delta}\n\n'
+    '    def mutate(self, node):\n        return []\n'
+)
 
 
 def _load_operator(

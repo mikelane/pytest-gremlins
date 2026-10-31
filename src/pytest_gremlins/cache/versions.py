@@ -275,13 +275,31 @@ def _is_own_operator(operator_class: type) -> bool:
     return operator_class.__module__.partition('.')[0] == _OWN_PACKAGE
 
 
+def _function_code_file(member: object) -> str | None:
+    """The file a function, ``staticmethod``, ``classmethod`` or ``property`` in a class body was compiled from."""
+    function = getattr(member, '__func__', None) or getattr(member, 'fget', None) or member
+    code = getattr(function, '__code__', None)
+    return code.co_filename if code is not None else None
+
+
+def _class_defining_file(operator_class: type) -> Path | None:
+    """The one file every function in the class body was compiled from; ``None`` when no single file is proven.
+
+    ``sys.modules`` cannot name this file: pytest replaces ``sys.modules['conftest']`` for each rootless
+    ``conftest.py`` it loads, so the module entry can belong to a sibling directory's conftest (#899).
+    """
+    code_files = {_function_code_file(member) for member in vars(operator_class).values()}
+    files = [file for file in code_files if file is not None]
+    return Path(files[0]).resolve() if len(files) == 1 else None
+
+
 def _conftest_operator_file(operator_class: type, project_root: Path | None) -> Path | None:
     """The ``conftest.py`` that defines the operator, when it is at or under the rootdir (any, with no rootdir)."""
-    module_file = _module_file(operator_class)
-    if module_file is None or module_file.name != 'conftest.py':
+    defining_file = _class_defining_file(operator_class)
+    if defining_file is None or defining_file.name != 'conftest.py':
         return None
-    if project_root is None or module_file.is_relative_to(project_root.resolve()):
-        return module_file
+    if project_root is None or defining_file.is_relative_to(project_root.resolve()):
+        return defining_file
     return None
 
 

@@ -22,7 +22,10 @@ from pytest_gremlins.cache.versions import installed_versions_fingerprint
 if TYPE_CHECKING:
     from pytest_gremlins.operators.protocol import GremlinOperator
 
-OPERATOR_SOURCE = 'class HelperOperator:\n    name = "helper"\n    description = "v1"\n'
+OPERATOR_SOURCE = (
+    'class HelperOperator:\n    name = "helper"\n    description = "v1"\n\n'
+    '    def mutate(self, node):\n        return []\n'
+)
 
 
 @pytest.fixture

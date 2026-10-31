@@ -22,13 +22,24 @@ BASE = f'cache-version={CACHE_VERSION}'
 MODULE_NAME = 'nested_conftest_fake_module'
 
 
-def _operator_from(monkeypatch: pytest.MonkeyPatch, conftest: Path) -> GremlinOperator:
-    """Build an operator whose class claims to be defined in ``conftest``."""
+def _function_compiled_from(path: Path) -> types.FunctionType:
+    namespace: dict[str, types.FunctionType] = {}
+    exec(compile('def mutate(self, node):\n    return []\n', str(path), 'exec'), namespace)  # noqa: S102
+    return namespace['mutate']
+
+
+def _operator_from(monkeypatch: pytest.MonkeyPatch, conftest: Path, module_file: Path | None = None) -> GremlinOperator:
+    """Build an operator whose methods were compiled from ``conftest`` and whose module entry names ``module_file``."""
     module = types.ModuleType(MODULE_NAME)
-    module.__file__ = str(conftest)
+    module.__file__ = str(module_file or conftest)
     monkeypatch.setitem(sys.modules, MODULE_NAME, module)
-    operator_class = type('FakeOperator', (), {'__module__': MODULE_NAME, 'name': 'fake', 'description': 'x'})
-    operator: GremlinOperator = operator_class()
+    members = {
+        '__module__': MODULE_NAME,
+        'name': 'fake',
+        'description': 'x',
+        'mutate': _function_compiled_from(conftest),
+    }
+    operator: GremlinOperator = type('FakeOperator', (), members)()
     return operator
 
 
@@ -113,3 +124,52 @@ class DescribeNestedConftestOperatorLabel:
 
         assert f'|local-operator={MODULE_NAME}:unreadable-' in fingerprint
         assert 'nested-conftest-operator=' not in fingerprint
+
+
+@pytest.mark.medium
+class DescribeOperatorClassFile:
+    def it_names_the_file_the_class_body_was_compiled_from_not_the_module_entry(
+        self, tmp_path: Path, nested_conftest: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sibling = tmp_path / 'b' / 'conftest.py'
+        sibling.parent.mkdir()
+        sibling.write_text('X = 1\n')
+        operator = _operator_from(monkeypatch, nested_conftest, module_file=sibling)
+
+        fingerprint = installed_versions_fingerprint([operator], tmp_path)
+
+        assert fingerprint.startswith(f'{BASE}|nested-conftest-operator=a/conftest.py:')
+
+    def it_always_misses_when_the_class_has_no_function_to_prove_its_file(
+        self, tmp_path: Path, nested_conftest: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        module = types.ModuleType(MODULE_NAME)
+        module.__file__ = str(nested_conftest)
+        monkeypatch.setitem(sys.modules, MODULE_NAME, module)
+        operator_class = type('Bare', (), {'__module__': MODULE_NAME, 'name': 'fake', 'description': 'x'})
+
+        fingerprint = installed_versions_fingerprint([operator_class()], tmp_path)
+
+        assert f'|local-operator={MODULE_NAME}:unreadable-' in fingerprint
+
+    def it_always_misses_when_the_class_functions_come_from_two_files(
+        self, tmp_path: Path, nested_conftest: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        other = tmp_path / 'b' / 'conftest.py'
+        other.parent.mkdir()
+        other.write_text('X = 1\n')
+        module = types.ModuleType(MODULE_NAME)
+        module.__file__ = str(nested_conftest)
+        monkeypatch.setitem(sys.modules, MODULE_NAME, module)
+        members = {
+            '__module__': MODULE_NAME,
+            'name': 'fake',
+            'description': 'x',
+            'mutate': _function_compiled_from(nested_conftest),
+            'can_mutate': _function_compiled_from(other),
+        }
+        operator_class = type('Split', (), members)
+
+        fingerprint = installed_versions_fingerprint([operator_class()], tmp_path)
+
+        assert f'|local-operator={MODULE_NAME}:unreadable-' in fingerprint
