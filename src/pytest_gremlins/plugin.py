@@ -1355,9 +1355,10 @@ def _hash_sources_and_tests_for_cache(
 
 
 def _hash_test_file_with_conftests(hasher: ContentHasher, rootdir: Path, test_file: str) -> str:
-    """Hash a test file together with every ``conftest.py`` from rootdir down to its directory.
+    """Hash a test file with every ``conftest.py`` from rootdir down to it and the helper modules in its test root.
 
-    A fixture edited in a conftest changes what the test does, so it must change the key (#702).
+    A fixture edited in a conftest changes what the test does, so it must change the key (#702). So does an edit
+    to a helper module the test or a conftest imports (#760).
     """
     parts = [hasher.hash_file(rootdir / test_file)]
     directory = (rootdir / test_file).parent
