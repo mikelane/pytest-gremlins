@@ -7,20 +7,21 @@ import pytest
 from pytest_gremlins import plugin
 from pytest_gremlins.cache.hasher import ContentHasher
 
-NODE_ID = 'tests/test_a.py::test_a'
 TEST_FILE = 'tests/test_a.py'
 
 
-def _test_hash(rootdir: Path) -> str:
+def _test_hash(rootdir: Path, test_file: str = TEST_FILE) -> str:
+    node_id = f'{test_file}::test_a'
     session = plugin.GremlinSession(enabled=True, cache_enabled=True)
-    session.test_node_ids = {NODE_ID: NODE_ID}
+    session.test_node_ids = {node_id: node_id}
     plugin._hash_sources_and_tests_for_cache(session, {}, rootdir)
-    return session.test_hashes[TEST_FILE]
+    return session.test_hashes[test_file]
 
 
 def _write_project(root: Path) -> None:
     (root / 'tests' / 'support').mkdir(parents=True)
-    (root / 'tests' / 'test_a.py').write_text('def test_a(): pass\n')
+    (root / 'tests' / 'conftest.py').write_text("pytest_plugins = ['tests.support.fixtures']\n")
+    (root / 'tests' / 'test_a.py').write_text('from tests import helpers\n\n\ndef test_a(): assert helpers.Y == 1\n')
     (root / 'tests' / 'support' / 'fixtures.py').write_text('X = 1\n')
     (root / 'tests' / 'helpers.py').write_text('Y = 1\n')
     (root / 'other').mkdir()
@@ -29,7 +30,11 @@ def _write_project(root: Path) -> None:
 
 @pytest.mark.medium
 class DescribeHelperModulesFoldedIntoTestHash:
-    @pytest.mark.parametrize('helper', ['tests/support/fixtures.py', 'tests/helpers.py'])
+    @pytest.mark.parametrize(
+        'helper',
+        ['tests/support/fixtures.py', 'tests/helpers.py'],
+        ids=['pytest_plugins-module', 'imported-helper'],
+    )
     def it_misses_the_cache_after_a_fixture_helper_module_edit(self, tmp_path: Path, helper: str) -> None:
         _write_project(tmp_path)
         before = _test_hash(tmp_path)
@@ -84,3 +89,12 @@ class DescribeHelperModulesFoldedIntoTestHash:
         test_file.write_text('def test_a(): pass\n')
 
         assert _test_hash(tmp_path) == ContentHasher().hash_file(test_file)
+
+    def it_misses_the_cache_after_a_sibling_helper_edit_when_the_test_sits_in_rootdir(self, tmp_path: Path) -> None:
+        (tmp_path / 'test_a.py').write_text('import helpers\n\n\ndef test_a(): assert helpers.Y == 1\n')
+        (tmp_path / 'helpers.py').write_text('Y = 1\n')
+        before = _test_hash(tmp_path, 'test_a.py')
+
+        (tmp_path / 'helpers.py').write_text('Y = 2\n')
+
+        assert _test_hash(tmp_path, 'test_a.py') != before
