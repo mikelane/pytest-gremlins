@@ -6,7 +6,8 @@ This operator mutates return statements by replacing return values.
 from __future__ import annotations
 
 import ast
-import copy
+
+from pytest_gremlins.ast_copy import copy_ast
 
 
 class ReturnOperator:
@@ -77,13 +78,13 @@ class ReturnOperator:
 
     def _mutate_to_none(self, node: ast.Return) -> ast.Return:
         """Mutate return to return None."""
-        mutated = copy.deepcopy(node)
+        mutated = copy_ast(node)
         mutated.value = None
         return mutated
 
     def _mutate_bool(self, node: ast.Return) -> ast.Return:
         """Mutate return True/False to the opposite."""
-        mutated = copy.deepcopy(node)
+        mutated = copy_ast(node)
         if isinstance(mutated.value, ast.Constant) and isinstance(node.value, ast.Constant):  # pragma: no branch
             mutated.value.value = not node.value.value
         return mutated

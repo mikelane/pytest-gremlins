@@ -6,8 +6,9 @@ This operator mutates comparison operators (<, <=, >, >=, ==, !=).
 from __future__ import annotations
 
 import ast
-import copy
 from typing import ClassVar
+
+from pytest_gremlins.ast_copy import copy_ast
 
 
 class ComparisonOperator:
@@ -85,7 +86,7 @@ class ComparisonOperator:
             op_type = type(op)
             if op_type in self.MUTATIONS:
                 for replacement_op_type in self.MUTATIONS[op_type]:
-                    mutated = copy.deepcopy(node)
+                    mutated = copy_ast(node)
                     mutated.ops[i] = replacement_op_type()
                     mutations.append(mutated)
 

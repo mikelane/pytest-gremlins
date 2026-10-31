@@ -6,7 +6,8 @@ This operator mutates boundary conditions by shifting integer values by +/- 1.
 from __future__ import annotations
 
 import ast
-import copy
+
+from pytest_gremlins.ast_copy import copy_ast
 
 
 class BoundaryOperator:
@@ -94,7 +95,7 @@ class BoundaryOperator:
         mutations: list[ast.AST] = []
 
         for delta in [-1, 1]:
-            mutated = copy.deepcopy(node)
+            mutated = copy_ast(node)
             if isinstance(mutated.left, ast.Constant):  # pragma: no branch
                 mutated.left.value = value + delta
             mutations.append(mutated)
@@ -109,7 +110,7 @@ class BoundaryOperator:
             if isinstance(comp, ast.Constant) and isinstance(comp.value, int) and not isinstance(comp.value, bool):
                 value = comp.value
                 for delta in [-1, 1]:
-                    mutated = copy.deepcopy(node)
+                    mutated = copy_ast(node)
                     mutated_comp = mutated.comparators[i]
                     if isinstance(mutated_comp, ast.Constant):  # pragma: no branch
                         mutated_comp.value = value + delta
