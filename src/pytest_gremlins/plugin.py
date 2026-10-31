@@ -1629,8 +1629,16 @@ def _module_files(rootdir: Path, importer: Path, module: list[str], level: int, 
             bases = [*_directories_to_rootdir(rootdir, importer.parent, memo), *memo.pythonpath]
         stems = [base.joinpath(*module) for base in bases]
         candidates = [candidate for stem in stems for candidate in (stem.with_suffix('.py'), stem / '__init__.py')]
-        memo.module_files[key] = tuple(candidate for candidate in candidates if candidate.is_file())
+        memo.module_files[key] = tuple(candidate for candidate in candidates if _is_file(candidate))
     return memo.module_files[key]
+
+
+def _is_file(candidate: Path) -> bool:
+    """Return whether ``candidate`` is a file; a path Python's import system cannot probe is not one."""
+    try:
+        return candidate.is_file()
+    except OSError:
+        return False
 
 
 def _generate_gremlins(

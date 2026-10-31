@@ -178,3 +178,21 @@ class DescribeSourceEncodingsReadByTheImportWalk:
         (tmp_path / 'tests/test_b.py').write_bytes(b'def make(): return 2\n')
 
         assert _test_hash(tmp_path) != before
+
+
+@pytest.mark.medium
+class DescribeImportNamesThatMatchUnreadablePaths:
+    def it_computes_a_key_when_probing_an_import_name_raises_a_permission_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write(tmp_path, {'tests/test_a.py': b'import redis\n'})
+        real_is_file = Path.is_file
+
+        def is_file(self: Path) -> bool:
+            if 'redis' in self.parts:
+                raise PermissionError(13, 'Permission denied', str(self))
+            return real_is_file(self)
+
+        monkeypatch.setattr(Path, 'is_file', is_file)
+
+        assert len(_test_hash(tmp_path)) == 64
