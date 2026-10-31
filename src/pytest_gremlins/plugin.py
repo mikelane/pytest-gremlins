@@ -1778,19 +1778,26 @@ del _gremlin_os
 
 
 def _relocate_to_next_statement(header: list[ast.stmt], body: list[ast.stmt]) -> None:
-    """Move the injected ``header`` onto the line of the statement that follows it, in place.
+    """Move the injected ``header`` off the target file's real lines, in place.
 
-    The header is parsed from its own three-line text, so its nodes would claim lines 1 to 3 of the target
-    file. Were ``os.environ.get`` to raise during import, the traceback would point at those real lines. A header
-    with no statement after it keeps its own lines: no real statement can share them.
+    The header is parsed from its own three-line text, so its nodes would claim lines 1 to 3 and columns of the
+    target file. Were ``os.environ.get`` to raise during import, the traceback would point at those real lines and
+    underline unrelated text. The header takes the line of the statement that follows it; with none following, the
+    line after the last statement before it (line 1 for an empty module). Its columns are zeroed, so no carets
+    are drawn.
     """
-    following_index = body.index(header[-1]) + 1
-    if following_index == len(body):
-        return
-    line = body[following_index].lineno
+    first_index = body.index(header[0])
+    following_index = first_index + len(header)
+    if following_index < len(body):
+        line = body[following_index].lineno
+    elif first_index:
+        line = (body[first_index - 1].end_lineno or body[first_index - 1].lineno) + 1
+    else:
+        line = 1
     for node in (descendant for statement in header for descendant in ast.walk(statement)):
         if isinstance(node, (ast.stmt, ast.expr)):
             node.lineno = node.end_lineno = line
+            node.col_offset = node.end_col_offset = 0
 
 
 def _encode_tree(instrumented_tree: ast.Module) -> str | None:
