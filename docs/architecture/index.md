@@ -57,7 +57,8 @@ graph TB
 Instead of modifying files on disk for each mutation, we instrument the code once with all
 mutations embedded. An environment variable controls which mutation is active.
 
-**Impact:** Eliminates file I/O and module reloads - the slowest parts of traditional mutation testing.
+**Impact:** Avoids rewriting source files and regenerating mutations for each gremlin. Each gremlin
+that runs still starts a fresh pytest subprocess with its own imports and I/O.
 
 [Learn more about Mutation Switching](mutation-switching.md)
 
@@ -206,7 +207,7 @@ We hold ourselves to concrete performance targets:
 
 Dive deeper into each pillar:
 
-- [Mutation Switching](mutation-switching.md) - How we eliminate file I/O
+- [Mutation Switching](mutation-switching.md) - How instrumented mutations are reused
 - [Coverage Guidance](coverage-guidance.md) - How we reduce test executions by 10-100x
 - [Incremental Analysis](incremental-analysis.md) - How caching enables instant feedback
 - [Parallel Execution](parallelization.md) - How we scale across CPU cores
