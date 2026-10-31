@@ -370,9 +370,16 @@ class DescribeInjectedHeaderLocations:
         assert [statement.lineno for statement in header] == [4, 4, 4]
 
     def it_places_header_expressions_on_the_line_of_the_first_real_statement(self) -> None:
-        header_assignment = _injected_body(self.SOURCE)[1]
+        header = _injected_body(self.SOURCE)[:3]
 
-        assert header_assignment.value.lineno == 4  # type: ignore[attr-defined]
+        expression_spans = {
+            (node.lineno, node.end_lineno)
+            for statement in header
+            for node in ast.walk(statement)
+            if isinstance(node, ast.expr)
+        }
+
+        assert expression_spans == {(4, 4)}
 
     def it_keeps_the_real_statement_on_its_own_line(self) -> None:
         assert _injected_body(self.SOURCE)[3].lineno == 4
@@ -382,7 +389,12 @@ class DescribeInjectedHeaderLocations:
 
         assert [statement.lineno for statement in header] == [4, 4, 4]
 
+    def it_keeps_a_header_only_module_on_its_own_lines(self) -> None:
+        tree = _inject_gremlin_active(ast.parse(''))
+
+        assert [statement.lineno for statement in tree.body] == [1, 2, 3]
+
     def it_keeps_a_header_only_module_compilable(self) -> None:
         tree = _inject_gremlin_active(ast.parse(''))
 
-        assert compile(tree, 'empty.py', 'exec') is not None
+        assert isinstance(compile(tree, 'empty.py', 'exec'), types.CodeType)
