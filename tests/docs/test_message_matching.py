@@ -85,6 +85,11 @@ class DescribeWrappedValidationTemplates:
 
         assert wrapped_validation_templates(source) == []
 
+    def it_ignores_a_validation_message_that_is_only_a_placeholder(self):
+        source = "raise ValueError(f'{error}')"
+
+        assert wrapped_validation_templates(source) == []
+
 
 @pytest.mark.small
 class DescribeLineIsEmittable:
