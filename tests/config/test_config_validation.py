@@ -191,3 +191,40 @@ class DescribeNonTableSection:
 
         with pytest.raises(ValueError, match=r'\[tool\.pytest-gremlins\] must be a table'):
             load_config(tmp_path)
+
+
+@pytest.mark.medium
+class DescribeNonTableToolSection:
+    """A ``tool`` entry that is not a table is a ValueError, not an AttributeError."""
+
+    @pytest.mark.parametrize('toml_line', ['tool = 5', 'tool = "x"', 'tool = [1]'])
+    def it_rejects_a_non_table_tool_entry(self, tmp_path: Path, toml_line: str):
+        (tmp_path / 'pyproject.toml').write_text(f'{toml_line}\n', encoding='utf-8')
+
+        with pytest.raises(ValueError, match=r'\[tool\] must be a table of settings.*got'):
+            load_config(tmp_path)
+
+
+@pytest.mark.medium
+class DescribeEmptyOperatorsList:
+    """``operators = []`` still means all operators, and says so."""
+
+    def it_warns_that_an_empty_list_means_all_operators(self, tmp_path: Path):
+        _write(tmp_path, 'operators = []')
+        warned: list[str] = []
+
+        config = load_config(tmp_path, on_warning=warned.append)
+
+        assert len(warned) == 1
+        assert '[tool.pytest-gremlins].operators is empty' in warned[0]
+        assert 'all operators' in warned[0]
+        assert 'operators = ["comparison", "boundary"]' in warned[0]
+        assert config.operators == []
+
+    def it_does_not_warn_for_a_non_empty_operators_list(self, tmp_path: Path):
+        _write(tmp_path, 'operators = ["comparison"]')
+        warned: list[str] = []
+
+        load_config(tmp_path, on_warning=warned.append)
+
+        assert warned == []

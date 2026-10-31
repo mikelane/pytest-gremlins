@@ -334,6 +334,16 @@ use a list, not a bare string, got 'tests/*'
 - `operators`, `paths` and `exclude` must be lists of strings. A bare string is rejected, because it would otherwise
   be read one character at a time.
 - Each name in `operators` must be a registered operator. The error lists the valid names.
+- An empty `operators = []` still runs all operators, so it warns instead of stopping the run. The warning says so
+  and shows how to pick operators:
+
+    ```text
+    [tool.pytest-gremlins].operators is empty, which runs all operators. To run only some, name them
+    (e.g. operators = ["comparison", "boundary"]); to run all operators, remove the key.
+    ```
+
+- A `tool` entry in `pyproject.toml` that is not a table (`tool = 5`) stops the run with exit code 4, like any other
+  wrong-typed value: `[tool] must be a table of settings, got 5`.
 - A key pytest-gremlins does not know does not stop the run. A warning names the key and the closest valid key
   (`did you mean 'max-pardons-pct'?`), and the key is ignored. The warning also appears when the run skips mutation
   testing (`--collect-only`, a failing baseline). Key names are shown quoted, with control characters escaped. An
