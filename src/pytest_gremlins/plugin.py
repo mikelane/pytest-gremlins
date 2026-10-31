@@ -1593,10 +1593,25 @@ def _parse_import_targets(rootdir: Path, path: Path, memo: _KeyMemo) -> set[Path
     return targets
 
 
+def _module_level_statements(body: list[ast.stmt]) -> collections.abc.Iterator[ast.stmt]:
+    """Yield the statements that run at import time: the module body and the blocks ``try`` and ``if`` nest in it."""
+    for statement in body:
+        yield statement
+        if isinstance(statement, ast.If):
+            yield from _module_level_statements(statement.body)
+            yield from _module_level_statements(statement.orelse)
+        elif isinstance(statement, (ast.Try, ast.TryStar)):
+            yield from _module_level_statements(statement.body)
+            for handler in statement.handlers:
+                yield from _module_level_statements(handler.body)
+            yield from _module_level_statements(statement.orelse)
+            yield from _module_level_statements(statement.finalbody)
+
+
 def _pytest_plugins_modules(tree: ast.Module) -> list[str]:
     """Return the module names in a module-level ``pytest_plugins = 'x'`` or ``['x', 'y']`` assignment."""
     names: list[str] = []
-    for statement in tree.body:
+    for statement in _module_level_statements(tree.body):
         if isinstance(statement, ast.Assign):
             assigns_plugins = any(isinstance(t, ast.Name) and t.id == 'pytest_plugins' for t in statement.targets)
         elif isinstance(statement, ast.AnnAssign):

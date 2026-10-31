@@ -196,3 +196,58 @@ class DescribeImportNamesThatMatchUnreadablePaths:
         monkeypatch.setattr(Path, 'is_file', is_file)
 
         assert len(_test_hash(tmp_path)) == 64
+
+
+@pytest.mark.medium
+class DescribePytestPluginsInsideModuleLevelBlocks:
+    @pytest.mark.parametrize(
+        'conftest',
+        [
+            pytest.param(
+                b'try:\n    import xdist\nexcept ImportError:\n    pass\n'
+                b"else:\n    pytest_plugins = ['tests.test_utils']\n",
+                id='try-else',
+            ),
+            pytest.param(b"try:\n    pytest_plugins = ['tests.test_utils']\nfinally:\n    pass\n", id='try-body'),
+            pytest.param(
+                b"try:\n    pass\nexcept ImportError:\n    pytest_plugins = ['tests.test_utils']\n", id='except'
+            ),
+            pytest.param(
+                b"import sys\nif sys.platform == 'none':\n    pass\nelse:\n    pytest_plugins = ['tests.test_utils']\n",
+                id='if-else',
+            ),
+        ],
+    )
+    def it_misses_the_cache_after_editing_a_test_named_plugin_declared_in_the_block(
+        self, tmp_path: Path, conftest: bytes
+    ) -> None:
+        _write(
+            tmp_path,
+            {
+                'tests/__init__.py': b'',
+                'tests/conftest.py': conftest,
+                'tests/test_utils.py': _fixture_module(1),
+                'tests/test_a.py': b'def test_x(value): assert value == 1\n',
+            },
+        )
+        before = _test_hash(tmp_path)
+
+        (tmp_path / 'tests/test_utils.py').write_bytes(_fixture_module(2))
+
+        assert _test_hash(tmp_path) != before
+
+    def it_ignores_a_plugin_declared_inside_a_function_nested_in_a_module_level_block(self, tmp_path: Path) -> None:
+        _write(
+            tmp_path,
+            {
+                'tests/__init__.py': b'',
+                'tests/conftest.py': b"if True:\n    def configure():\n        pytest_plugins = ['tests.test_utils']\n",
+                'tests/test_utils.py': _fixture_module(1),
+                'tests/test_a.py': b'def test_x(): pass\n',
+            },
+        )
+        before = _test_hash(tmp_path)
+
+        (tmp_path / 'tests/test_utils.py').write_bytes(_fixture_module(2))
+
+        assert _test_hash(tmp_path) == before
