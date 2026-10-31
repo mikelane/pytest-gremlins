@@ -4958,10 +4958,9 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     )
 
     if not gremlin_session.gremlins:
-        if gremlin_session.skipped_files:
-            # Skipped files still get reports, so a stale score is overwritten. Write them first so
-            # their locations print before the empty-run report's closing separator.
-            _write_file_reports(terminalreporter, gremlin_session, config, score)
+        # A run with no gremlins still writes (zero-gremlin) reports, so a stale score is overwritten.
+        # Write them first so their locations print before the empty-run report's closing separator.
+        _write_file_reports(terminalreporter, gremlin_session, config, score)
         _write_empty_run_report(terminalreporter, gremlin_session)
         return
 
