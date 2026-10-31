@@ -83,10 +83,10 @@ class DescribeHelperModulesFoldedIntoTestHash:
         ['tests/test_utils.py', 'tests/testing/test_helpers.py', 'tests/fixtures_test.py'],
         ids=['test-prefixed', 'test-prefixed-subdir', 'test-suffixed'],
     )
-    def it_misses_the_cache_after_an_edit_to_a_test_named_helper_with_no_collected_tests(
-        self, tmp_path: Path, helper: str
-    ) -> None:
+    def it_misses_the_cache_after_an_edit_to_an_imported_test_named_module(self, tmp_path: Path, helper: str) -> None:
         _write_project(tmp_path)
+        module = helper.removesuffix('.py').replace('/', '.')
+        (tmp_path / 'tests' / 'test_a.py').write_text(f'import {module}\n')
         (tmp_path / helper).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / helper).write_text('V = 1\n')
         before = _test_hash(tmp_path)
