@@ -674,7 +674,9 @@ versions passed `-n 0` after `-p xdist` anyway, so every gremlin run failed with
 Earlier versions that saw `-p xdist.plugin` ran gremlins without xdist at all, so a test that uses an xdist fixture
 (`worker_id`, `testrun_uid`) errored under every gremlin and was reported as a kill, a false kill. Sessions whose
 gremlin runs now load xdist this way add an `xdist-668` part to the cache key, so the first run after upgrading
-re-tests them (one cache miss). Sessions that do not disable autoload keep their cache.
+re-tests them (one cache miss). Autoload can be disabled by the environment, by the flag in `addopts` or
+`PYTEST_ADDOPTS`, or by `--disable-plugin-autoload` given only on the command line. Sessions that keep autoload on,
+and sessions with autoload off but no xdist, keep their cache.
 
 ---
 
