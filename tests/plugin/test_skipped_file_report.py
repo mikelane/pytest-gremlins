@@ -17,10 +17,12 @@ pytest.importorskip('xdist')
 
 RunPytestIsolated = Callable[..., pytest.RunResult]
 
-CHAIN_TERMS = 130
-CHAIN_SOURCE = 'def big(x):\n    return ' + ' + '.join(['x'] * CHAIN_TERMS) + '\n'
+# A method-call chain nests one Call/Attribute pair per link; the transformer's iterative handling covers
+# left-leaning operator chains (#814) but not this shape, which still exhausts the recursion limit.
+CHAIN_LINKS = 400
+CHAIN_SOURCE = 'def big(x):\n    return x' + '.conjugate()' * CHAIN_LINKS + '\n'
 AGE_SOURCE = 'def is_adult(age):\n    return age >= 18\n'
-CHAIN_TEST = 'from demo.chain import big\n\n\ndef test_big():\n    assert big(1) == 130\n'
+CHAIN_TEST = 'from demo.chain import big\n\n\ndef test_big():\n    assert big(1) == 1\n'
 AGE_TEST = 'from demo.age import is_adult\n\n\ndef test_is_adult():\n    assert is_adult(20)\n'
 PYPROJECT = '[tool.pytest.ini_options]\npythonpath = ["src"]\n'
 # A non-editable install (tox) imports ``pytest_gremlins`` before pytest can mark it for assertion rewriting, so
