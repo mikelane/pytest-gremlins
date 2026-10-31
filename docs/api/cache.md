@@ -242,6 +242,11 @@ changes how verdicts are computed and raises the cache version (then the first r
 upgrading or downgrading an operator package invalidates it. Old entries stop matching; they remain in `results.db`
 until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 
+Two sessions add a part to the key so that only they miss once after an upgrade: one that loads the pytester plugin
+adds `pytester-615` (#891), and one whose gremlin runs load pytest-xdist themselves because plugin autoload is
+disabled adds `xdist-668` (#668). Earlier versions ran those gremlins without xdist, so tests using `worker_id` or
+`testrun_uid` could report false kills. Every other session keeps its key.
+
 ### Invalidation Rules
 
 | Change | Cache Effect |

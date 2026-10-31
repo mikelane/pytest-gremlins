@@ -671,6 +671,11 @@ the flag in `addopts` or `PYTEST_ADDOPTS`) and pytest-xdist loaded in your sessi
 with (`xdist` or `xdist.plugin`) and passes `-n 0`. If your session did not load xdist, `-n 0` is left out. Earlier
 versions passed `-n 0` after `-p xdist` anyway, so every gremlin run failed with `unrecognized arguments: -n`.
 
+Earlier versions that saw `-p xdist.plugin` ran gremlins without xdist at all, so a test that uses an xdist fixture
+(`worker_id`, `testrun_uid`) errored under every gremlin and was reported as a kill, a false kill. Sessions whose
+gremlin runs now load xdist this way add an `xdist-668` part to the cache key, so the first run after upgrading
+re-tests them (one cache miss). Sessions that do not disable autoload keep their cache.
+
 ---
 
 ### Using pytest-xdist with gremlins
