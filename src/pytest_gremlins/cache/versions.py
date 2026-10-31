@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 from urllib.request import url2pathname
 import uuid
 
+from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 
 if TYPE_CHECKING:
@@ -46,6 +47,7 @@ CACHE_VERSION = 1
 
 _LOCAL_OPERATOR_PREFIX = 'local-operator='
 _UNREADABLE_MARKER = ':unreadable-'
+_NESTED_CONFTEST_PREFIX = 'nested-conftest-operator='
 
 
 def _metadata_field(dist: Distribution, field: str) -> str | None:
@@ -269,18 +271,37 @@ def _installed_owner_labels(
     return declared or {entry.label for entry in installed if _is_editable_owner(entry, top_level, location)}
 
 
-def _is_exempt_from_classification(operator_class: type, project_root: Path | None) -> bool:
-    """pytest-gremlins' own operators are covered by ``CACHE_VERSION``; a conftest operator by the tests it covers.
+def _is_own_operator(operator_class: type) -> bool:
+    return operator_class.__module__.partition('.')[0] == _OWN_PACKAGE
 
-    Only conftests from the rootdir down to a test file are hashed into the test key, so a ``conftest.py`` outside
-    the rootdir is not exempt. With no rootdir known, every ``conftest.py`` is exempt.
-    """
-    if operator_class.__module__.partition('.')[0] == _OWN_PACKAGE:
-        return True
+
+def _conftest_operator_file(operator_class: type, project_root: Path | None) -> Path | None:
+    """The ``conftest.py`` that defines the operator, when it is at or under the rootdir (any, with no rootdir)."""
     module_file = _module_file(operator_class)
     if module_file is None or module_file.name != 'conftest.py':
-        return False
-    return project_root is None or module_file.is_relative_to(project_root.resolve())
+        return None
+    if project_root is None or module_file.is_relative_to(project_root.resolve()):
+        return module_file
+    return None
+
+
+def _is_rootdir_conftest(conftest: Path, project_root: Path | None) -> bool:
+    return project_root is not None and conftest.parent == project_root.resolve()
+
+
+def _nested_conftest_label(conftest: Path, project_root: Path | None) -> str | None:
+    """Label a below-rootdir ``conftest.py`` by its content hash; ``None`` when the file cannot be read.
+
+    The test key hashes only the conftests on the path from the rootdir to a covering test, so an operator in
+    ``a/conftest.py`` never reaches the key of a gremlin covered only by tests under ``b/`` (#899). Naming the
+    file's content in the versions part reaches every key, so editing the operator misses for every gremlin.
+    """
+    try:
+        content_hash = ContentHasher().hash_file(conftest)
+    except OSError:
+        return None
+    root = project_root.resolve() if project_root is not None else conftest.parent
+    return f'{_NESTED_CONFTEST_PREFIX}{conftest.relative_to(root).as_posix()}:{content_hash}'
 
 
 @dataclass(frozen=True)
@@ -300,13 +321,23 @@ def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root
     hashed: what it defines can come from other files, so no hash proves the class unchanged. Restoring cache
     hits for such operators is tracked in #887.
     """
-    classes = {
-        type(operator) for operator in operators if not _is_exempt_from_classification(type(operator), project_root)
-    }
+    candidates = {type(operator) for operator in operators if not _is_own_operator(type(operator))}
+    conftest_files = {cls: _conftest_operator_file(cls, project_root) for cls in candidates}
+    classes = {cls for cls in candidates if conftest_files[cls] is None}
+    nested_labels: set[str] = set()
+    unreadable_conftests: set[type] = set()
+    for cls, conftest in conftest_files.items():
+        if conftest is None or _is_rootdir_conftest(conftest, project_root):
+            continue
+        label = _nested_conftest_label(conftest, project_root)
+        if label is None:
+            unreadable_conftests.add(cls)
+        else:
+            nested_labels.add(label)
     importable = {cls for cls in classes if _is_importable(cls)}
     installed = _index_distributions() if importable else []
-    labels: set[str] = set()
-    unproven = classes - importable
+    labels: set[str] = set(nested_labels)
+    unproven = (classes - importable) | unreadable_conftests
     for operator_class in importable:
         owners = _installed_owner_labels(operator_class, installed, project_root)
         labels |= owners

@@ -253,7 +253,8 @@ until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 | pytest-gremlins upgraded | Hit, unless the release raised the cache version (then a miss for every gremlin) |
 | Distribution providing a `pytest_gremlins.operators` entry point installed, removed or changed version | Miss for every gremlin (old entries stop matching) |
 | Installed package (including a PEP 610 editable install) that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
-| Operator defined in a `conftest.py` on the hashed chain (from the pytest rootdir down to each test file, even if the project is installed editable) | No effect on the key; the source and conftest hashes cover it |
+| Operator defined in the rootdir `conftest.py` (even if the project is installed editable) | No effect on the key; the conftest hash on every test's path covers it |
+| Operator defined in a `conftest.py` below the rootdir, such as `a/conftest.py` | Miss for every gremlin when that file is edited. The test key hashes only the `conftest.py` files on the path to each covering test, so a gremlin covered only by tests in a sibling directory (`b/`) would not see the edit; the file's content is part of every key instead |
 | Operator that does not come from an installed distribution: a project-local helper module, a module loaded by file path or sharing a name with another module, a namespace-package module (unless an installed distribution in that namespace sits at the same top-level name), a class defined inside a function, a module with no file, or an editable install recorded only through a `.pth` file or a setuptools import finder | Every run misses the cache for every gremlin: the key carries a fresh random token, so the run is slower but never serves a stale verdict. The run also writes no results to the cache, since no later run could read them, so `results.db` does not grow. An operator keeps hits only when it is importable by its qualified name and an installed package owns its module. Restoring cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator from an installed distribution still keys on that distribution's version |
 | Helper module under the test root edited, added or removed: a `pytest_plugins` fixture module, or a module a test or `conftest.py` imports | Miss for every gremlin covered by any test file under that test root. The key folds in every `.py` file there that is not a collected test file, a `conftest.py` or under `__pycache__` |
 | Helper code inside a collected test file edited, imported by another test file | No effect on the importing test file's key: its cached verdicts are replayed. See [Helper modules under the test root](#helper-modules-under-the-test-root) |
@@ -270,8 +271,7 @@ misses. An editable install without `top_level.txt` (non-setuptools backends suc
 uv_build, flit and pdm) always misses, because its `.pth` directory can hold packages the wheel does not
 ship. Setuptools editables and normal wheels keep stable keys. An empty `RECORD` or `installed-files.txt` counts as
 no install record. A `.egg` install has no install record, so it misses; zip installs keep their version label. A
-`conftest.py` above the pytest rootdir misses too (one in a sibling directory under the rootdir is tracked in
-[#899](https://github.com/mikelane/pytest-gremlins/issues/899)).
+`conftest.py` above the pytest rootdir misses too.
 
 ### Usage Example
 
