@@ -1077,7 +1077,11 @@ def pytest_configure(config: pytest.Config) -> None:
     config_warnings: list[str] = []
     try:
         merged_config = merge_configs(
-            load_config(rootdir, on_warning=config_warnings.append),
+            load_config(
+                rootdir,
+                on_warning=config_warnings.append,
+                warn_when_operators_empty=not (config.option.gremlin_operators or '').strip(),
+            ),
             cli_operators=config.option.gremlin_operators,
             cli_targets=config.option.gremlin_targets,
             cli_exclude=config.option.gremlin_exclude,
@@ -1974,13 +1978,15 @@ def _write_instrumented_sources(
                 origin,
             )
         spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
-        instrumented_sources[normalize_origin(str(origin))] = {
-            'source': ast.unparse(instrumented_tree),
-            **({} if encoded_tree is None else {'tree': encoded_tree}),
-            'origin': str(origin),
-            'identity': file_identity(str(origin)),
-            'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
-        }
+        entry = origin_finder.InstrumentedEntry(
+            source=ast.unparse(instrumented_tree),
+            origin=str(origin),
+            identity=file_identity(str(origin)),
+            file_names=sorted({Path(spelling).name.lower() for spelling in spellings}),
+        )
+        if encoded_tree is not None:
+            entry['tree'] = encoded_tree
+        instrumented_sources[normalize_origin(str(origin))] = entry
 
     sources_file = temp_dir / 'sources.json'
     sources_file.write_text(json.dumps(instrumented_sources))
@@ -2001,8 +2007,33 @@ def _inject_gremlin_active(tree: ast.Module) -> ast.Module:
 __gremlin_active__ = _gremlin_os.environ.get('{ACTIVE_GREMLIN_ENV_VAR}')
 del _gremlin_os
 """
-    body = _prepend_injection(tree.body, ast.parse(activation_source).body)
+    header = ast.parse(activation_source).body
+    body = _prepend_injection(tree.body, header)
+    _relocate_to_next_statement(header, body)
     return ast.Module(body=body, type_ignores=tree.type_ignores)
+
+
+def _relocate_to_next_statement(header: list[ast.stmt], body: list[ast.stmt]) -> None:
+    """Move the injected ``header`` off the target file's real lines, in place.
+
+    The header is parsed from its own three-line text, so its nodes would claim lines 1 to 3 and columns of the
+    target file. Were ``os.environ.get`` to raise during import, the traceback would point at those real lines and
+    underline unrelated text. The header takes the line of the statement that follows it; with none following, the
+    line after the last statement before it (line 1 for an empty module). Its columns are zeroed, so no carets
+    are drawn.
+    """
+    first_index = body.index(header[0])
+    following_index = first_index + len(header)
+    if following_index < len(body):
+        line = body[following_index].lineno
+    elif first_index:
+        line = (body[first_index - 1].end_lineno or body[first_index - 1].lineno) + 1
+    else:
+        line = 1
+    for node in (descendant for statement in header for descendant in ast.walk(statement)):
+        if isinstance(node, (ast.stmt, ast.expr)):
+            node.lineno = node.end_lineno = line
+            node.col_offset = node.end_col_offset = 0
 
 
 def _encode_tree(instrumented_tree: ast.Module) -> str | None:
@@ -3665,6 +3696,13 @@ def _addopts_without_cov(raw_addopts: list[str]) -> str:
     return ' '.join(shlex.quote(token) for token in kept)
 
 
+# A non-editable install imports pytest_gremlins before pytest can mark it for assertion rewriting, and pytest 9.2
+# applies ini ``filterwarnings = error`` to that config-time warning. ``-W`` on the command line escapes the message
+# and matches it at the start, so this ignores only the warning for this module and nothing for the user's modules.
+ASSERT_REWRITE_WARNING_FILTER = (
+    'ignore:Module already imported so cannot be rewritten; pytest_gremlins:pytest.PytestAssertRewriteWarning'
+)
+
 # sysmon (the default core on Python 3.14+) silently drops contexts set through
 # Coverage.switch_context, crediting each line only to the first test that ran it.
 # ctrace supports them; the rc route degrades to pytrace if CTracer is unavailable.
@@ -3804,7 +3842,7 @@ def _run_tests_with_coverage(
         '-p',
         'no:gremlins',
         '-W',
-        'ignore::pytest.PytestAssertRewriteWarning',
+        ASSERT_REWRITE_WARNING_FILTER,
         '-o',
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
         *doctest_ini_overrides,

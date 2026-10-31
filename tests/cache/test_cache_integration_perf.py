@@ -13,6 +13,16 @@ from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 
 
+def _write_source_files(src_dir: Path, count: int) -> list[Path]:
+    """Write ``count`` small Python modules into ``src_dir`` and return their paths, sorted."""
+    src_dir.mkdir()
+    body = '\n'.join(f'def function_{j}(): return {j}' for j in range(100))
+    paths = sorted(src_dir / f'module_{i:02d}.py' for i in range(count))
+    for path in paths:
+        path.write_text(body)
+    return paths
+
+
 @pytest.mark.medium
 class DescribePluginCachePattern:
     """Tests that simulate the actual plugin cache usage pattern."""
@@ -104,26 +114,21 @@ class DescribePluginCachePattern:
         per_gremlin_ms = (elapsed / num_gremlins) * 1000
         assert per_gremlin_ms < 1.0, f'Cache overhead per gremlin: {per_gremlin_ms:.3f}ms (target: <1ms)'
 
-    def it_measures_file_hash_computation_cost(self, tmp_path: Path) -> None:
-        """File hash computation for 50 files takes under 50ms."""
-        # Create 50 simulated source files
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
+    def it_reads_each_source_file_once_when_hashing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Hashing 50 files costs one read per file; counting reads does not depend on machine load."""
+        paths = _write_source_files(tmp_path / 'src', count=50)
+        reads: list[Path] = []
+        real_read_bytes = Path.read_bytes
 
-        for i in range(50):
-            (src_dir / f'module_{i}.py').write_text('\n'.join([f'def function_{j}(): return {j}' for j in range(100)]))
+        def counting_read_bytes(self: Path) -> bytes:
+            reads.append(self)
+            return real_read_bytes(self)
 
-        hasher = ContentHasher()
+        monkeypatch.setattr(Path, 'read_bytes', counting_read_bytes)
 
-        # Time hashing all files
-        start = time.perf_counter()
-        hashes = {}
-        for source_file in src_dir.iterdir():
-            hashes[str(source_file)] = hasher.hash_file(source_file)
-        elapsed = time.perf_counter() - start
+        ContentHasher().hash_files(paths)
 
-        # 50 files should hash in under 50ms (1ms per file)
-        assert elapsed < 0.05, f'Hashing 50 files took {elapsed * 1000:.1f}ms (target: <50ms)'
+        assert sorted(reads) == paths
 
     def it_upfront_hashing_vs_lazy_hashing(self) -> None:
         """Lazy hashing (hash on demand) is faster when cache hit rate is high."""
