@@ -10,6 +10,7 @@ from pytest_gremlins.plugin import pytest_addoption as real_hook
 
 from . import docs_facts
 from .docs_facts import (
+    CONFIGURATION_PAGE,
     DocsFormatError,
     default_cells,
     pytest_gremlins_toml_blocks,
@@ -105,3 +106,30 @@ class DescribeTomlDefaultCommentAttribution:
         )
 
         assert toml_default_comments(page) == {}
+
+    def it_attributes_a_default_comment_that_more_comment_lines_follow(self, tmp_path: Path):
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: []\n# Test files are skipped.\nexclude = []\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {'exclude': '[]'}
+
+    def it_attributes_a_default_comment_that_wraps_onto_a_second_line(self, tmp_path: Path):
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: not set (one at a time unless\n'
+            '# -n N is passed)\nworkers = "auto"\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {'workers': 'not set (one at a time unless'}
+
+    def it_attributes_every_default_comment_on_the_real_configuration_page(self):
+        default_comment_count = sum(
+            line.lstrip().startswith('# Default:')
+            for line in CONFIGURATION_PAGE.read_text(encoding='utf-8').splitlines()
+        )
+
+        assert len(toml_default_comments(CONFIGURATION_PAGE)) == default_comment_count

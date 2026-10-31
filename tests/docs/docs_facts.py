@@ -258,9 +258,22 @@ def toml_default_comments(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
             elif assignment and stated is not None:
                 comments[assignment.group(1)] = stated
                 stated = None
-            elif line.strip():
+            elif _interrupts_default_comment(line):
                 stated = None
     return comments
+
+
+def _interrupts_default_comment(line: str) -> bool:
+    """Return whether ``line`` separates a ``# Default:`` comment from the assignment below it.
+
+    Explanatory comment lines continue the Default comment. A commented-out assignment does not.
+    """
+    text = line.strip()
+    if not text:
+        return False
+    if not text.startswith('#'):
+        return True
+    return _TOML_ASSIGNMENT.match(text.lstrip('#').lstrip()) is not None
 
 
 def keys_the_loader_ignores(workdir: Path, page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
