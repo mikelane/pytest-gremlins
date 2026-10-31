@@ -367,8 +367,10 @@ def _operator_supplier_labels(
     hits for such operators is tracked in #887.
 
     An operator defined in a ``conftest.py`` (see ``_is_conftest_defined``) adds one label hashing every loaded
-    ``conftest.py`` (#899). A class whose module is a loaded conftest is covered by that label alone; one that merely
-    borrows a conftest function is still classified by its own module as well.
+    ``conftest.py`` (#899). A class whose module is a loaded conftest is covered by that label alone, unless an
+    installed distribution owns that conftest (a plugin registered with ``-p pkg.conftest``): its version label is
+    kept too, since the package can change outside ``conftest.py``. A class that merely borrows a conftest function
+    is still classified by its own module as well.
     """
     classes_in_use = {type(operator) for operator in operators if not _is_own_operator(type(operator))}
     loaded_conftests = list(loaded_conftests)
@@ -376,7 +378,7 @@ def _operator_supplier_labels(
     conftest_defined = {cls for cls in classes_in_use if _is_conftest_defined(cls, loaded)}
     classes = {cls for cls in classes_in_use if not _is_module_defined_in(cls, loaded)}
     importable = {cls for cls in classes if _is_importable(cls)}
-    installed = _index_distributions() if importable else []
+    installed = _index_distributions() if importable or conftest_defined else []
     labels: set[str] = set()
     unproven = classes - importable
     if conftest_defined:
@@ -385,6 +387,9 @@ def _operator_supplier_labels(
             unproven.add(min(conftest_defined, key=lambda cls: cls.__module__))
         else:
             labels.add(conftest_label)
+        for conftest_class in conftest_defined:
+            if _is_importable(conftest_class):
+                labels |= _installed_owner_labels(conftest_class, installed, project_root)
     for operator_class in importable:
         owners = _installed_owner_labels(operator_class, installed, project_root)
         labels |= owners

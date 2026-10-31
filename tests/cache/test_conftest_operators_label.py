@@ -217,3 +217,69 @@ class DescribeInstalledPackageWithConftestNamedOperatorModule:
         after = installed_versions_fingerprint([installed_conftest_operator], rootdir, loaded_conftests=[])
 
         assert after != before
+
+
+def _write_installed_plugin_conftest(site: Path, version: str, offset: int) -> None:
+    """An installed package whose ``conftest.py`` is a plugin and whose operator base class lives in ``base.py``."""
+    conftest = 'from instpkg_r4.base import BaseOp\n\n\nclass Op(BaseOp):\n    name = "op"\n    description = "x"\n'
+    record = 'instpkg_r4/__init__.py,,\ninstpkg_r4/conftest.py,,\ninstpkg_r4/base.py,,\n'
+    files = {
+        site / 'instpkg_r4' / '__init__.py': '',
+        site / 'instpkg_r4' / 'conftest.py': conftest,
+        site / 'instpkg_r4' / 'base.py': f'class BaseOp:\n    OFFSET = {offset}\n',
+        site / f'instpkg_r4-{version}.dist-info' / 'METADATA': (
+            f'Metadata-Version: 2.1\nName: instpkg-r4\nVersion: {version}\n'
+        ),
+        site / f'instpkg_r4-{version}.dist-info' / 'RECORD': record,
+        site / f'instpkg_r4-{version}.dist-info' / 'top_level.txt': 'instpkg_r4\n',
+    }
+    for path, content in files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+
+
+@pytest.fixture
+def plugin_conftest_operator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
+    site = tmp_path / 'site'
+    _write_installed_plugin_conftest(site, '1.0', offset=1)
+    monkeypatch.syspath_prepend(str(site))
+    names = ('instpkg_r4', 'instpkg_r4.base', 'instpkg_r4.conftest')
+    for name in names:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    importlib.invalidate_caches()
+    operator = importlib.import_module('instpkg_r4.conftest').Op()
+    yield operator
+    for name in names:
+        sys.modules.pop(name, None)
+
+
+@pytest.mark.medium
+class DescribeInstalledPackageConftestRegisteredAsPlugin:
+    def it_keys_on_the_version_of_the_owning_distribution(
+        self, plugin_conftest_operator: object, rootdir: Path, tmp_path: Path
+    ) -> None:
+        loaded = [tmp_path / 'site' / 'instpkg_r4' / 'conftest.py']
+
+        fingerprint = installed_versions_fingerprint([plugin_conftest_operator], rootdir, loaded_conftests=loaded)
+
+        assert 'instpkg-r4==1.0' in fingerprint
+
+    def it_keeps_the_conftest_label(self, plugin_conftest_operator: object, rootdir: Path, tmp_path: Path) -> None:
+        loaded = [tmp_path / 'site' / 'instpkg_r4' / 'conftest.py']
+
+        fingerprint = installed_versions_fingerprint([plugin_conftest_operator], rootdir, loaded_conftests=loaded)
+
+        assert LABEL_PREFIX in fingerprint
+
+    def it_changes_when_the_package_is_upgraded_outside_the_conftest(
+        self, plugin_conftest_operator: object, rootdir: Path, tmp_path: Path
+    ) -> None:
+        site = tmp_path / 'site'
+        loaded = [site / 'instpkg_r4' / 'conftest.py']
+        before = installed_versions_fingerprint([plugin_conftest_operator], rootdir, loaded_conftests=loaded)
+        shutil.rmtree(site / 'instpkg_r4-1.0.dist-info')
+        _write_installed_plugin_conftest(site, '2.0', offset=100)
+
+        after = installed_versions_fingerprint([plugin_conftest_operator], rootdir, loaded_conftests=loaded)
+
+        assert after != before
