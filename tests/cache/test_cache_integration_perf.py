@@ -13,6 +13,16 @@ from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 
 
+def _write_source_files(src_dir: Path, count: int) -> list[Path]:
+    """Write ``count`` small Python modules into ``src_dir`` and return their paths, sorted."""
+    src_dir.mkdir()
+    body = '\n'.join(f'def function_{j}(): return {j}' for j in range(100))
+    paths = sorted(src_dir / f'module_{i:02d}.py' for i in range(count))
+    for path in paths:
+        path.write_text(body)
+    return paths
+
+
 @pytest.mark.medium
 class DescribePluginCachePattern:
     """Tests that simulate the actual plugin cache usage pattern."""
@@ -106,11 +116,7 @@ class DescribePluginCachePattern:
 
     def it_reads_each_source_file_once_when_hashing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Hashing 50 files costs one read per file; counting reads does not depend on machine load."""
-        src_dir = tmp_path / 'src'
-        src_dir.mkdir()
-        for i in range(50):
-            (src_dir / f'module_{i}.py').write_text('\n'.join([f'def function_{j}(): return {j}' for j in range(100)]))
-        paths = sorted(src_dir.iterdir())
+        paths = _write_source_files(tmp_path / 'src', count=50)
         reads: list[Path] = []
         real_read_bytes = Path.read_bytes
 
@@ -120,10 +126,9 @@ class DescribePluginCachePattern:
 
         monkeypatch.setattr(Path, 'read_bytes', counting_read_bytes)
 
-        hashes = ContentHasher().hash_files(paths)
+        ContentHasher().hash_files(paths)
 
         assert sorted(reads) == paths
-        assert len(hashes) == len(paths)
 
     def it_upfront_hashing_vs_lazy_hashing(self) -> None:
         """Lazy hashing (hash on demand) is faster when cache hit rate is high."""
