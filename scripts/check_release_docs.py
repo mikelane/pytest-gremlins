@@ -38,9 +38,9 @@ or missing site; the reason is printed on stderr). Exit 2 is never a pass.
 from __future__ import annotations
 
 import argparse
-import io
 from dataclasses import dataclass
 from html.parser import HTMLParser
+import io
 from pathlib import Path
 import posixpath
 import re
@@ -485,6 +485,30 @@ def find_problems(changelog: str, version: str, site: Site) -> list[str]:
     reader.read(entry.lines)
     bullet_problems = [problem for item in reader.items for problem in _bullet_problems(item, site)]
     return carriage_returns + entry.problems + reader.problems + bullet_problems
+
+
+def entry_preamble(changelog: str, version: str) -> str | None:
+    """Return the prose of the ``## vX.Y.Z`` entry before its first ``###`` heading, or ``None`` if it is missing.
+
+    HTML comments and fenced code are not part of it, as they are not part of the rendered entry.
+
+    Args:
+        changelog: The text of ``CHANGELOG.md``.
+        version: The release version, with or without the leading ``v``.
+
+    Returns:
+        The visible lines of the preamble joined with newlines, or ``None`` when the changelog has no such entry.
+    """
+    entry = _find_entry(changelog, version)
+    if entry is None:
+        return None
+    preamble: list[str] = []
+    for line in entry.lines:
+        if _structural_title(line.heading, SECTION_LEVEL) is not None:
+            break
+        if not line.opens_fence:
+            preamble.append(line.text)
+    return '\n'.join(preamble)
 
 
 def release_notes(changelog: str, version: str) -> str | None:

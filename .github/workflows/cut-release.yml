@@ -92,6 +92,8 @@ jobs:
           echo "Checking the changelog entry for v${next_version}"
           uv run mkdocs build --strict --site-dir "$RUNNER_TEMP/site"
           uv run python scripts/check_release_docs.py "$next_version" --site-dir "$RUNNER_TEMP/site"
+          # Guarded code changed since the previous release needs a raised cache marker or a "(cache kept: ...)" line.
+          uv run python scripts/check_cache_kept.py "$next_version"
 
       - name: Bump version and create tag
         id: bump

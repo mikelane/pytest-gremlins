@@ -100,7 +100,9 @@ so workers never recurse into xdist.
 **A worker is identifiable by `hasattr(config, 'workerinput')`.** This is how
 pytest-cov does it. Does not require xdist to be installed on the gremlins side.
 
-**`pytest_configure_node(node)` fires on the controller before each worker starts.**
+**`pytest_configure_node(node)` fires on the controller before each worker starts.** (xdist
+behavior, described here as design history. Whether gremlins itself keeps a hook of this
+name is tracked in #588.)
 `node.workerinput` is a dict that gets serialized and sent to the worker as
 `config.workerinput`. This is how pytest-cov passes coverage config to workers — it is
 the right injection point for anything a worker needs to know before collection starts.
