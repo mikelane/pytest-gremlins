@@ -332,7 +332,7 @@ pytest --gremlins --gremlin-clear-cache
 workers = 8
 
 # Or use "auto" to match your CPU count
-workers = "auto"
+# workers = "auto"
 ```
 
 Or from the command line:

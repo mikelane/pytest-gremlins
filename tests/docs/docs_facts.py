@@ -220,6 +220,17 @@ def keys_shown_in_toml_blocks(page: Path = CONFIGURATION_PAGE) -> frozenset[str]
     return frozenset(key for block in pytest_gremlins_toml_blocks(page) for key in block)
 
 
+def pages_showing_toml_keys_outside_configuration_page(docs_root: Path = DOCS_ROOT) -> dict[str, list[str]]:
+    """Map each ``[tool.pytest-gremlins]`` key in a TOML block on any other page under ``docs_root`` to its pages."""
+    pages_by_key: dict[str, set[str]] = {}
+    for page in sorted(docs_root.rglob('*.md')):
+        if page == CONFIGURATION_PAGE:
+            continue
+        for key in keys_shown_in_toml_blocks(page):
+            pages_by_key.setdefault(key, set()).add(str(page.relative_to(docs_root)))
+    return {key: sorted(pages) for key, pages in pages_by_key.items()}
+
+
 def keys_the_loader_ignores(workdir: Path, page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
     """Load each TOML example value on ``page`` from ``workdir`` and return the keys that did not reach the config."""
     ignored: set[str] = set()

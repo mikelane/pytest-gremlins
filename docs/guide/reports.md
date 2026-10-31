@@ -490,7 +490,7 @@ pytest --gremlins --gremlin-report=json --gremlin-report=html
 report = ["json", "html"]
 
 # Or comma-separated string
-report = "json,html"
+# report = "json,html"
 ```
 
 Console output always renders regardless of which formats you specify -- you do not need

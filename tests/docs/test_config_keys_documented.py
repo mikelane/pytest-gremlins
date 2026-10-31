@@ -16,6 +16,7 @@ from .docs_facts import (
     documented_keys,
     keys_shown_in_toml_blocks,
     keys_the_loader_ignores,
+    pages_showing_toml_keys_outside_configuration_page,
 )
 
 
@@ -44,6 +45,15 @@ class DescribeConfigKeyDocumentation:
         unknown = keys_shown_in_toml_blocks() - CONFIG_KEYS
 
         assert not unknown, f'TOML examples in configuration.md use keys config.py does not read: {sorted(unknown)}'
+
+    def it_shows_no_toml_key_the_loader_does_not_read_on_any_other_page(self):
+        unknown = {
+            key: pages
+            for key, pages in pages_showing_toml_keys_outside_configuration_page().items()
+            if key not in CONFIG_KEYS
+        }
+
+        assert not unknown, f'TOML examples on other pages use keys config.py does not read: {unknown}'
 
     def it_keeps_the_key_constant_in_step_with_the_config_fields(self):
         field_keys = {field.name for field in fields(GremlinConfig)}
