@@ -15,7 +15,22 @@ from .docs_facts import (
     registered_options,
 )
 
-UNSET_PHRASES: frozenset[str] = frozenset({'none', 'all', 'auto-discovered', 'not set', 'no limit', 'disabled', '[]'})
+# The phrase the docs use for each option or key that has no code default. Each name has exactly one, so a wrong
+# phrase fails even when it is valid for another option.
+UNSET_PHRASE_BY_NAME: dict[str, str] = {
+    '--gremlin-operators': 'all',
+    '--gremlin-targets': 'auto-discovered',
+    '--gremlin-exclude': 'none',
+    '--gremlin-explain': 'none',
+    '--gremlin-max-pardons-pct': 'disabled',
+    '--max-pardons': 'disabled',
+    'operators': 'all',
+    'paths': 'auto-discovered',
+    'exclude': '[]',
+    'workers': 'not set',
+    'max_pardons': 'no limit',
+    'max-pardons-pct': 'no limit',
+}
 
 CONFIG_KEY_TO_FLAG: dict[str, str] = {
     'operators': '--gremlin-operators',
@@ -66,9 +81,10 @@ def default_mismatches(documented: dict[str, str], expected_by_name: dict[str, s
         shown = normalize(cell)
         if expected is not None and shown != expected.lower():
             problems.append(f'{name}: documented {shown!r}, code default {expected!r}')
-        elif expected is None and shown not in UNSET_PHRASES:
+        elif expected is None and shown != UNSET_PHRASE_BY_NAME.get(name):
             problems.append(
-                f'{name}: documented {shown!r}, but the code has no default (use one of {sorted(UNSET_PHRASES)})'
+                f'{name}: documented {shown!r}, but the code has no default '
+                f'(use {UNSET_PHRASE_BY_NAME.get(name)!r}; register a phrase in UNSET_PHRASE_BY_NAME if none)'
             )
     return problems
 

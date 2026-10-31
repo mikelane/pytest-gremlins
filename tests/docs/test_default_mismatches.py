@@ -1,0 +1,33 @@
+"""Unit tests for the default comparison behind drift check 1c."""
+
+from __future__ import annotations
+
+import pytest
+
+from .default_facts import default_mismatches
+
+
+@pytest.mark.small
+class DescribeDefaultMismatches:
+    """An option with no code default must be documented with the phrase registered for that option."""
+
+    def it_accepts_the_phrase_registered_for_the_option(self):
+        assert default_mismatches({'--max-pardons': 'disabled'}, {'--max-pardons': None}) == []
+
+    def it_rejects_a_phrase_registered_for_a_different_option(self):
+        problems = default_mismatches({'--max-pardons': 'auto-discovered'}, {'--max-pardons': None})
+
+        assert len(problems) == 1
+
+    def it_rejects_an_option_with_no_registered_phrase(self):
+        problems = default_mismatches({'--invented': 'none'}, {'--invented': None})
+
+        assert len(problems) == 1
+
+    def it_accepts_a_documented_value_equal_to_the_code_default(self):
+        assert default_mismatches({'--gremlin-batch-size': '`10`'}, {'--gremlin-batch-size': '10'}) == []
+
+    def it_rejects_a_documented_value_that_differs_from_the_code_default(self):
+        problems = default_mismatches({'--gremlin-batch-size': '`11`'}, {'--gremlin-batch-size': '10'})
+
+        assert len(problems) == 1

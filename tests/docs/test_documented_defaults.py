@@ -3,7 +3,8 @@
 Format the docs must use in a ``Default`` cell:
 
 * a single backticked literal, such as ``10``, ``false`` or ``"console"``, when the code has a concrete default;
-* otherwise a plain phrase from ``UNSET_PHRASES`` (or the default the option's own help text states).
+* otherwise the one phrase ``UNSET_PHRASE_BY_NAME`` registers for that option (or the default the option's own help
+  text states).
 
 The code default comes from the parser (a non-``None`` argparse default), from a named constant or session field in
 ``plugin.py``, or, for options whose default is computed, from the ``(default: ...)`` in the option's help text.
