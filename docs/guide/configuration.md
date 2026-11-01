@@ -862,24 +862,27 @@ test command that selects the union of the tests covering any of them.
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
 ```
 
-Batch size tuning:
+Batch size sets how many gremlins one worker task covers. Results are reported only after every batch has
+finished, whatever the size, so a smaller batch does not give earlier feedback.
 
 | Batch Size | Tradeoff |
 |------------|----------|
-| Small (5-10) | More worker tasks, but faster feedback on failures |
+| Small (5-10) | More worker tasks, so the load spreads more evenly across workers |
 | Medium (20-50) | Balanced for most projects |
-| Large (100+) | Fewer worker tasks, but slower feedback |
+| Large (100+) | Fewer worker tasks; with fewer batches than workers, some workers sit idle |
+
+Batch mode takes precedence over parallel mode: with `--gremlin-batch`, `--gremlin-parallel` has no effect, and
+`--gremlin-workers` sets the number of batch workers. Because each gremlin runs the union of the covering tests,
+a batch run gains nothing over a parallel run with the same workers and is often slower.
 
 ### Combined Performance Options
 
-For maximum speed, combine all performance options:
+For the fastest runs, combine the cache with parallel execution and leave batch mode off:
 
 ```bash
 pytest --gremlins \
     --gremlin-cache \
-    --gremlin-parallel \
-    --gremlin-batch \
-    --gremlin-batch-size=20
+    --gremlin-parallel
 ```
 
 ## CI Integration

@@ -70,6 +70,10 @@ run_tests(tests_for_g005)
 Workers share the same instrumented code but set different environment variables. This is why
 mutation switching is essential - without it, workers would fight over file modifications.
 
+`run_tests` in the sketch starts a new pytest subprocess for each gremlin, with `ACTIVE_GREMLIN` set in its
+environment. A worker handed several gremlins, including a `--gremlin-batch` batch, still starts one subprocess per
+gremlin.
+
 ### Result Collection
 
 Results flow back to the main process:
