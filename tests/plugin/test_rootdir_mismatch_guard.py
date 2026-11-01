@@ -35,6 +35,16 @@ SCORED_VERDICTS = {'Zapped': 2, 'Survived': 0, 'Error': 0}
 SYS_PATH_CONFTEST = 'import sys\nsys.path.insert(0, "..")\n'
 
 
+@pytest.fixture(autouse=True)
+def utf8_child_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make child pytest processes write UTF-8 so the parent decodes their output on any platform.
+
+    pytest-test-categories prints bullet characters; on Windows the child would write them in the
+    locale code page (cp1252) and ``Pytester`` fails to decode that as UTF-8.
+    """
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+
+
 def _write_project(pytester: pytest.Pytester, *, tests_dir: str = '') -> Path:
     """Write ``sample.py`` and its test under the pytester path; return the directory holding the test."""
     test_directory = pytester.path / tests_dir
@@ -135,7 +145,7 @@ class DescribeArgumentFileLayoutsThatKeepWorking:
         sub = pytester_with_markers.mkdir('sub')
         absolute_file = sub / 'args.txt'
         absolute_file.write_text(ARGUMENT_FILE_CONTENT, encoding='utf-8')
-        pytester_with_markers.makeini(f'[pytest]\naddopts = @{absolute_file}\n')
+        pytester_with_markers.makeini(f'[pytest]\naddopts = @{absolute_file.as_posix()}\n')
         _write_project(pytester_with_markers)
         monkeypatch.chdir(sub)
 
