@@ -8,6 +8,7 @@ from __future__ import annotations
 import ast
 import collections
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -68,7 +69,7 @@ class DescribeTestFileHashingCost:
 
         def counting_parse(source: bytes, *args: object, **kwargs: object) -> ast.Module:
             parses[source] += 1
-            return real_parse(source, *args, **kwargs)
+            return cast('ast.Module', real_parse(source, *args, **kwargs))
 
         def counting_hash_file(self: ContentHasher, path: Path) -> str:
             hashes[path] += 1

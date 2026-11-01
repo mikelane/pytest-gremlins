@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import ast
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 from unittest.mock import (
     MagicMock,
     create_autospec,
@@ -67,7 +70,7 @@ def control(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> MagicMock:
     monkeypatch.setattr('pytest_gremlins.plugin._get_rootdir', lambda _config: tmp_path)
     stub = create_autospec(run_control, return_value=LOADS)
     monkeypatch.setattr('pytest_gremlins.plugin.run_control', stub)
-    return stub
+    return cast('MagicMock', stub)
 
 
 def _cache_hits(monkeypatch: pytest.MonkeyPatch, cached_ids: set[str]) -> None:

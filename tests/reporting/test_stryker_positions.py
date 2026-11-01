@@ -11,6 +11,7 @@ import json
 from typing import (
     TYPE_CHECKING,
     Any,
+    cast,
     get_type_hints,
 )
 
@@ -44,7 +45,7 @@ def _location_for(make_gremlin: Callable[..., Gremlin], source: str, **gremlin_a
     gremlin = make_gremlin(file_path=FILE_PATH, **gremlin_args)
     exporter = StrykerExporter(source_reader=lambda _path: source)
     score = MutationScore.from_results([GremlinResult(gremlin=gremlin, status=GremlinResultStatus.ZAPPED)])
-    return json.loads(exporter.to_json(score))['files'][FILE_PATH]['mutants'][0]['location']
+    return cast('dict[str, Any]', json.loads(exporter.to_json(score))['files'][FILE_PATH]['mutants'][0]['location'])
 
 
 @pytest.mark.small

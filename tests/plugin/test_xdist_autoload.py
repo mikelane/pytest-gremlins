@@ -24,7 +24,7 @@ from pytest_gremlins.plugin import (
 )
 
 AUTOLOAD_OFF_FLAG = '--disable-plugin-autoload'
-NO_XDIST = ([], False)
+NO_XDIST: tuple[list[str], bool] = ([], False)
 
 
 def _config(*, loaded: tuple[str, ...] = (), autoload_flag_in_addopts: bool = False) -> Any:

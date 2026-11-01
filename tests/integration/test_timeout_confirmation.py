@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import (
+    Any,
+    cast,
+)
 
 import pytest
 
@@ -64,7 +68,7 @@ _MODES = {
 
 
 def _json_report(pytester: pytest.Pytester) -> dict:
-    return json.loads(Path(pytester.path, 'coverage', 'gremlins', 'gremlins.json').read_text())
+    return cast('dict[Any, Any]', json.loads(Path(pytester.path, 'coverage', 'gremlins', 'gremlins.json').read_text()))
 
 
 @pytest.mark.parametrize(

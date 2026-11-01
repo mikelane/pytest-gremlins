@@ -1,7 +1,7 @@
 import pytest
 import sample
 
-_attempts_seen = []
+_attempts_seen: list[bool] = []
 
 
 def test_is_adult():

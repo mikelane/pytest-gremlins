@@ -10,7 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
 import pytest
 import yaml
@@ -27,7 +30,7 @@ POSIX_ONLY = pytest.mark.skipif(
 
 
 def _jobs() -> dict[str, Any]:
-    return yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))['jobs']
+    return cast('dict[str, Any]', yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))['jobs'])
 
 
 def _step_commands(job: str) -> str:
@@ -36,7 +39,7 @@ def _step_commands(job: str) -> str:
 
 def _verify_script() -> str:
     steps = _jobs()[AGGREGATE_JOB]['steps']
-    return next(step for step in steps if step['name'] == 'Verify all jobs succeeded')['run']
+    return cast('str', next(step for step in steps if step['name'] == 'Verify all jobs succeeded')['run'])
 
 
 def _run_verify_script(*, guarded: str, detect_result: str, check_result: str) -> int:

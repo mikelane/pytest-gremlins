@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from rerun_samples import (
     GREMLIN_ARGS,
@@ -38,7 +40,7 @@ def classify(n):
 def run_doctest_gremlins(pytester: pytest.Pytester, sample: str) -> dict[str, int]:
     pytester.makepyfile(sample=sample)
     result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '--doctest-modules')
-    return verdicts(result.stdout.str())
+    return cast('dict[str, int]', verdicts(result.stdout.str()))
 
 
 @pytest.mark.medium
@@ -126,7 +128,7 @@ LENIENT_FLAGS = ('-o', 'doctest_optionflags=NORMALIZE_WHITESPACE')  # pragma: al
 
 def run_cached_counts(pytester: pytest.Pytester, *extra_args: str) -> dict[str, int]:
     result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '--gremlin-cache', '--doctest-modules', *extra_args)
-    return verdicts(result.stdout.str())
+    return cast('dict[str, int]', verdicts(result.stdout.str()))
 
 
 @pytest.mark.medium

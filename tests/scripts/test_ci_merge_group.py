@@ -7,7 +7,10 @@ does not run on that event never reports, and the queued PR times out.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
 import pytest
 import yaml
@@ -19,7 +22,7 @@ PR_ONLY_CONTEXTS = ('github.event.pull_request', 'github.head_ref', 'github.base
 
 
 def _workflow() -> dict[Any, Any]:
-    return yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))
+    return cast('dict[Any, Any]', yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8')))
 
 
 def _triggers() -> dict[str, Any]:

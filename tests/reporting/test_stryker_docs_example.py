@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
 import jsonschema
 import pytest
@@ -18,7 +21,7 @@ def _documented_example() -> dict[str, Any]:
     guide = (REPO_ROOT / 'docs' / 'guide' / 'reports.md').read_text(encoding='utf-8')
     assert guide.count(EXAMPLE_MARKER) == 1, 'docs/guide/reports.md must mark exactly one Stryker example block'
     block = guide.split(EXAMPLE_MARKER, 1)[1]
-    return json.loads(block.split('```', 1)[0])
+    return cast('dict[str, Any]', json.loads(block.split('```', 1)[0]))
 
 
 @pytest.mark.medium
