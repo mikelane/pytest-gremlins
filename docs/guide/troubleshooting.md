@@ -218,11 +218,13 @@ If every target was skipped, the mutation report says `1 file(s) skipped and not
 and lists the files instead of `No gremlins found`. The HTML and JSON reports are still written, with a total of 0
 and the skipped files listed.
 
-**Cause:** Instrumenting the file raised an exception. A very long operator chain (about 120 `+` terms or
-about 245 `|` terms) exceeds Python's recursion limit. Any other exception from instrumentation is
-reported the same way. The other targets are still mutation tested, but the skipped file gets no gremlins,
-so the score says nothing about its tests. The exit code does not change, so a skipped file never fails
-CI on its own. Watch for this line in the output.
+**Cause:** Instrumenting the file raised an exception. Long operator chains are fine: a chain of 120 `+` terms
+or 245 `|` terms is instrumented normally. The usual trigger is a very long chain of method calls, such as
+`x.conjugate().conjugate()...` with about 160 links or more, whose instrumented tree is too deep for Python's
+recursion limit when it is written back out as source. Very long `+` (about 160 terms) and `|` (about 320 terms)
+chains hit the same limit. Any other exception from instrumentation is reported the same way. The other targets
+are still mutation tested, but the skipped file gets no gremlins, so the score says nothing about its tests.
+The exit code does not change, so a skipped file never fails CI on its own. Watch for this line in the output.
 
 **Solution:** Split the long expression, for example into a loop or a `sum(...)`. Run with
 `--log-cli-level=ERROR` to see the full traceback.
@@ -245,11 +247,13 @@ instead of failing.
 
 1. Validate your TOML syntax. Common mistakes:
 
-   ```toml
+   ```text
    # WRONG - missing quotes around string
    [tool.pytest-gremlins]
    operators = [comparison, arithmetic]
+   ```
 
+   ```toml
    # CORRECT
    [tool.pytest-gremlins]
    operators = ["comparison", "arithmetic"]
@@ -662,6 +666,27 @@ failed with `unrecognized arguments: --no-cov`, and the run had no usable verdic
 When autoload is disabled for gremlin runs (by the environment, or by the flag in `addopts` or `PYTEST_ADDOPTS`) and
 your session loaded pytest-cov, for example with `-p pytest_cov` on the command line, gremlins loads it in the gremlin
 runs under the name your session registered it with (`pytest_cov` or `pytest_cov.plugin`) and passes `--no-cov`.
+
+### pytest-xdist when plugin autoload is disabled
+
+Gremlin runs get `-n 0` only when they can parse it. With autoload disabled for gremlin runs (by the environment, or by
+the flag in `addopts` or `PYTEST_ADDOPTS`) and pytest-xdist loaded in your session, for example with `-p xdist` or
+`-p xdist.plugin` on the command line, gremlins loads it in the gremlin runs under the name your session registered it
+with (`xdist` or `xdist.plugin`) and passes `-n 0`. If your session did not load xdist, `-n 0` is left out. Earlier
+versions passed `-n 0` after `-p xdist` anyway, so every gremlin run failed with `unrecognized arguments: -n`.
+
+Earlier versions that saw `-p xdist.plugin` ran gremlins without xdist at all, so a test that uses an xdist fixture
+(`worker_id`, `testrun_uid`) errored under every gremlin and was reported as a kill, a false kill. Sessions whose
+gremlin runs now load xdist this way add an `xdist-668` part to the cache key, so the first run after upgrading
+re-tests them (one cache miss). Autoload can be disabled by the environment, by the flag in `addopts` or
+`PYTEST_ADDOPTS`, or by `--disable-plugin-autoload` given only on the command line. Sessions that keep autoload on,
+and sessions with autoload off but no xdist, keep their cache.
+
+Autoload can also stay on while `addopts` or `PYTEST_ADDOPTS` holds `-p no:xdist` and your command line loads xdist
+again with `-p xdist`. The command line does not reach gremlin runs, so they inherit the block and used to fail with
+`unrecognized arguments: -n` on every gremlin. They now get `-p xdist` (under the name your session registered it
+with) before `-n 0`, which overrides the block, and the same `xdist-668` cache key part applies to those sessions. A
+bare `PYTEST_PLUGINS=xdist` needed no change.
 
 ---
 

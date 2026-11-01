@@ -110,6 +110,13 @@ Every other project keeps the ``rf20`` key it had under v1.13.1.
 PYTESTER_KEY_PART = 'pytester-615'
 """Key part added only while the pytester plugin is loaded, so just those sessions retire #615 verdicts."""
 
+XDIST_KEY_PART = 'xdist-668'
+"""Key part added only to sessions whose gremlin runs load xdist themselves (plugin autoload disabled, #668).
+
+Before #668 those runs had no xdist, so a test using ``worker_id`` or ``testrun_uid`` errored and was cached as ZAPPED.
+Only those sessions miss once; every other session keeps its key.
+"""
+
 
 RerunBudget: TypeAlias = tuple[int, float]
 """``(reruns, reruns_delay)`` a gremlin run may use; see ``pytest_gremlins.rerun_options.session_rerun_budget``."""
@@ -119,10 +126,10 @@ NO_RERUNS: RerunBudget = (0, 0.0)
 
 
 def _never_loaded() -> bool:
-    """Report that pytester is not loaded; the default for caches opened outside a pytest session.
+    """Report that the plugin is not loaded; the default for caches opened outside a pytest session.
 
     Returns:
-        Always ``False``, so the key carries no ``PYTESTER_KEY_PART``.
+        Always ``False``, so the key carries no ``PYTESTER_KEY_PART`` or ``XDIST_KEY_PART``.
     """
     return False
 
@@ -248,6 +255,7 @@ class IncrementalCache:
     - rerun_settings: the other resolved rerun settings (backoff factor, filters, mode, exclusions, suite cap)
     - versions: ``CACHE_VERSION`` and operator-package versions (any change retires the whole cache)
     - PYTESTER_KEY_PART: present only while the session loads the pytester plugin (#891)
+    - XDIST_KEY_PART: present only when gremlin runs load xdist themselves because autoload is disabled (#668)
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
 
@@ -271,7 +279,9 @@ class IncrementalCache:
         operators: Iterable[GremlinOperator] = (),
         project_root: Path | None = None,
         pytester_loaded: Callable[[], bool] = _never_loaded,
+        *,
         loaded_conftests: Iterable[Path] = (),
+        xdist_loader_loaded: Callable[[], bool] = _never_loaded,
     ) -> None:
         """Initialize the incremental cache.
 
@@ -289,8 +299,11 @@ class IncrementalCache:
             loaded_conftests: The ``conftest.py`` files the session has loaded when the cache opens. When an operator
                 is defined in a conftest, all of them are hashed into the versions part of every key (#899). A
                 conftest pytest loads later, during collection, is not included.
+            xdist_loader_loaded: Reports whether gremlin runs load xdist themselves (plugin autoload disabled and
+                xdist loaded in the session); such sessions add ``XDIST_KEY_PART`` (#668).
         """
         self._pytester_loaded = pytester_loaded
+        self._xdist_loader_loaded = xdist_loader_loaded
         self._cache_dir = cache_dir
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
@@ -341,10 +354,11 @@ class IncrementalCache:
 
         reruns, reruns_delay = _effective_rerun_budget(rerun_budget)
         pytester_part = f':{PYTESTER_KEY_PART}' if self._pytester_loaded() else ''
+        xdist_part = f':{XDIST_KEY_PART}' if self._xdist_loader_loaded() else ''
         return (
             f'{gremlin_id}:{source_hash}:{combined_test_hash}'
             f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}'
-            f':v={self._versions_hash}{pytester_part}:{RUNNER_FIDELITY_VERSION}'
+            f':v={self._versions_hash}{pytester_part}{xdist_part}:{RUNNER_FIDELITY_VERSION}'
         )
 
     def get_cached_result(

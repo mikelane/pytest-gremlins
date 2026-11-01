@@ -21,6 +21,7 @@ from dataclasses import (
 from dataclasses import replace as dataclass_replace
 import difflib
 from enum import Enum
+import fnmatch
 import functools
 import importlib.util
 import inspect
@@ -168,6 +169,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.operators import GremlinOperator
 
 
+DEFAULT_TEST_FILE_PATTERNS = ('test_*.py', '*_test.py')
 _XDIST_AVAILABLE = importlib.util.find_spec('xdist') is not None
 
 
@@ -360,6 +362,7 @@ class GremlinSession:
     unmutated_timeout_checks: dict[tuple[str, ...], UnmutatedRunOutcome] = field(default_factory=dict)
     xdist_active: bool = False
     xdist_loaded: bool = False
+    xdist_loader_options: list[str] = field(default_factory=list)
     xdist_workers: int | None = None
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
     exclude_patterns: list[str] = field(default_factory=list)
@@ -831,9 +834,10 @@ def _init_cache(
     cache_enabled: bool,
     clear_cache: bool,
     operators: Sequence[GremlinOperator],
-    pytester_loaded: Callable[[], bool] = lambda: False,
     *,
+    pytester_loaded: Callable[[], bool] = lambda: False,
     loaded_conftests: Sequence[Path] = (),
+    xdist_loader_loaded: Callable[[], bool] = lambda: False,
 ) -> IncrementalCache | None:
     """Initialise the incremental cache when enabled, optionally clearing it first.
 
@@ -846,6 +850,8 @@ def _init_cache(
         pytester_loaded: Reports whether the session loads the pytester plugin; such sessions get their own key part.
         loaded_conftests: The ``conftest.py`` files the session has loaded; hashed into the key when an operator is
             defined in a conftest.
+        xdist_loader_loaded: Reports whether gremlin runs load xdist themselves (autoload disabled, #668); such
+            sessions get their own key part.
 
     Returns:
         An open IncrementalCache, or None when caching is disabled.
@@ -859,6 +865,7 @@ def _init_cache(
         project_root=rootdir,
         pytester_loaded=pytester_loaded,
         loaded_conftests=loaded_conftests,
+        xdist_loader_loaded=xdist_loader_loaded,
     )
     if clear_cache:
         cache.clear()
@@ -1141,6 +1148,8 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # Cache: merge_configs already resolved CLI-beats-TOML; default False
     cache_enabled: bool = bool(toml_cache)
+    rerun_options = _rerun_options_for(config)
+    xdist_loader_options, xdist_loaded = _xdist_options_for(config, rerun_options)
     cache: IncrementalCache | None = _init_cache(
         rootdir,
         cache_enabled,
@@ -1148,10 +1157,10 @@ def pytest_configure(config: pytest.Config) -> None:
         operators,
         pytester_loaded=lambda: _pytester_loaded(config),
         loaded_conftests=_loaded_conftests(config),
+        xdist_loader_loaded=lambda: bool(xdist_loader_options),
     )
 
     xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
-    rerun_options = _rerun_options_for(config)
     xdist_workers_for_parallel = xdist_worker_int if xdist_active else None
     parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers=xdist_workers_for_parallel)
     merged_workers = toml_workers if isinstance(toml_workers, int) else None
@@ -1189,7 +1198,8 @@ def pytest_configure(config: pytest.Config) -> None:
             no_coverage_filter=bool(getattr(config.option, 'gremlin_no_coverage_filter', False)),
             explain_gremlin_id=getattr(config.option, 'gremlin_explain', None),
             xdist_active=xdist_active,
-            xdist_loaded=config.pluginmanager.hasplugin('xdist'),
+            xdist_loaded=xdist_loaded,
+            xdist_loader_options=xdist_loader_options,
             xdist_workers=xdist_worker_int if xdist_active else None,
             preserved_addopts=_addopts_for_gremlin_runs(config),
             doctest_ini_overrides=_doctest_ini_overrides(config),
@@ -1354,7 +1364,13 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
 
-    _hash_sources_and_tests_for_cache(gremlin_session, source_files, rootdir)
+    _hash_sources_and_tests_for_cache(
+        gremlin_session,
+        source_files,
+        rootdir,
+        _test_file_patterns(gremlin_session, session.config),
+        _pythonpath_entries(gremlin_session, session.config),
+    )
 
     if gremlin_session.xdist_active and not session.items:
         logger.debug(
@@ -1367,13 +1383,19 @@ def pytest_collection_finish(session: pytest.Session) -> None:
 
 
 def _hash_sources_and_tests_for_cache(
-    gremlin_session: GremlinSession, source_files: dict[str, str], rootdir: Path
+    gremlin_session: GremlinSession,
+    source_files: dict[str, str],
+    rootdir: Path,
+    test_file_patterns: tuple[str, ...] = DEFAULT_TEST_FILE_PATTERNS,
+    pythonpath: tuple[Path, ...] = (),
 ) -> None:
     """Record content hashes of the source and test files that key the incremental cache.
 
     Without these hashes the cache can neither store nor replay a verdict, so every gremlin runs again.
     Test hashes are keyed by the file part of the normalized node ids, so a test binds to its own file's
-    hash by exact lookup and the keys are the same with or without xdist.
+    hash by exact lookup and the keys are the same with or without xdist. ``test_file_patterns`` are the
+    ``python_files`` globs that tell a test file from a helper; ``pythonpath`` holds the directories the ini
+    ``pythonpath`` setting puts on ``sys.path``, where an import can resolve.
     """
     if not gremlin_session.cache_enabled:
         return
@@ -1381,45 +1403,104 @@ def _hash_sources_and_tests_for_cache(
     for file_path, source in source_files.items():
         gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
     test_files = {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}
-    collected_paths = frozenset(rootdir / test_file for test_file in test_files if test_file)
-    helper_parts_by_sweep: dict[tuple[Path, bool], list[str]] = {}
+    memo = _KeyMemo(pythonpath=tuple(Path(os.path.normpath(entry)) for entry in pythonpath))
     for test_file in test_files:
         # A file part pytest left empty (a test outside rootdir) cannot say which file the test lives in.
         if test_file and (rootdir / test_file).is_file():
             gremlin_session.test_hashes[test_file] = _hash_test_file_with_conftests(
-                hasher, rootdir, test_file, collected_paths, helper_parts_by_sweep
+                hasher, rootdir, test_file, test_file_patterns, memo
             )
+
+
+def _test_file_patterns(gremlin_session: GremlinSession, config: pytest.Config) -> tuple[str, ...]:
+    """Return the ``python_files`` globs pytest uses to collect test files; only the cache key needs them."""
+    if not gremlin_session.cache_enabled:
+        return DEFAULT_TEST_FILE_PATTERNS
+    configured = config.getini('python_files')
+    return tuple(configured) if configured else DEFAULT_TEST_FILE_PATTERNS
+
+
+def _pythonpath_entries(gremlin_session: GremlinSession, config: pytest.Config) -> tuple[Path, ...]:
+    """Return the ini ``pythonpath`` directories, resolved against rootdir; only the cache key needs them."""
+    if not gremlin_session.cache_enabled:
+        return ()
+    return tuple(config.rootpath / entry for entry in config.getini('pythonpath'))
+
+
+@dataclass
+class _KeyMemo:
+    """Per-run memo: each test root is swept once, each file is parsed and hashed once, each import resolved once."""
+
+    pythonpath: tuple[Path, ...] = ()
+    helper_parts_by_sweep: dict[tuple[Path, bool], list[str]] = field(default_factory=dict)
+    import_targets_by_file: dict[Path, frozenset[Path]] = field(default_factory=dict)
+    import_targets_under_root: dict[tuple[Path, Path], frozenset[Path]] = field(default_factory=dict)
+    reachable_from: dict[tuple[Path, Path], frozenset[Path]] = field(default_factory=dict)
+    test_file_names: dict[Path, bool] = field(default_factory=dict)
+    module_files: dict[tuple[Path, tuple[str, ...], int], tuple[Path, ...]] = field(default_factory=dict)
+    directories_to_rootdir: dict[Path, tuple[Path, ...]] = field(default_factory=dict)
+    conftests_by_directory: dict[Path, tuple[Path, ...]] = field(default_factory=dict)
+    file_hashes: dict[Path, str] = field(default_factory=dict)
+    hash_parts: dict[Path, str] = field(default_factory=dict)
+
+
+def _file_hash(hasher: ContentHasher, path: Path, memo: _KeyMemo) -> str:
+    if path not in memo.file_hashes:
+        memo.file_hashes[path] = hasher.hash_file(path)
+    return memo.file_hashes[path]
+
+
+def _hash_part(hasher: ContentHasher, rootdir: Path, path: Path, memo: _KeyMemo) -> str:
+    if path not in memo.hash_parts:
+        memo.hash_parts[path] = f'{path.relative_to(rootdir).as_posix()}:{_file_hash(hasher, path, memo)}'
+    return memo.hash_parts[path]
+
+
+def _directories_to_rootdir(rootdir: Path, directory: Path, memo: _KeyMemo) -> tuple[Path, ...]:
+    """Return ``directory`` and each parent up to rootdir, nearest first; empty when it is outside rootdir."""
+    if directory not in memo.directories_to_rootdir:
+        chain: list[Path] = []
+        if directory.is_relative_to(rootdir):
+            current = directory
+            while current != rootdir:
+                chain.append(current)
+                current = current.parent
+            chain.append(rootdir)
+        memo.directories_to_rootdir[directory] = tuple(chain)
+    return memo.directories_to_rootdir[directory]
+
+
+def _conftests_on_path(rootdir: Path, directory: Path, memo: _KeyMemo) -> tuple[Path, ...]:
+    if directory not in memo.conftests_by_directory:
+        candidates = (d / 'conftest.py' for d in _directories_to_rootdir(rootdir, directory, memo))
+        memo.conftests_by_directory[directory] = tuple(path for path in candidates if path.is_file())
+    return memo.conftests_by_directory[directory]
 
 
 def _hash_test_file_with_conftests(
     hasher: ContentHasher,
     rootdir: Path,
     test_file: str,
-    collected_paths: frozenset[Path] | None = None,
-    helper_parts_by_sweep: dict[tuple[Path, bool], list[str]] | None = None,
+    test_file_patterns: tuple[str, ...] = DEFAULT_TEST_FILE_PATTERNS,
+    memo: _KeyMemo | None = None,
 ) -> str:
-    """Hash a test file with every ``conftest.py`` from rootdir down to it and the helper modules in its test root.
+    """Hash a test file with its conftests, the helper modules in its test root and the test files it imports.
 
     A fixture edited in a conftest changes what the test does, so it must change the key (#702). So does an edit
-    to a helper module the test or a conftest imports (#760). ``helper_parts_by_sweep`` memoizes the helper
-    sweep so each test root is read once per run, not once per test file. ``collected_paths`` defaults to the
-    test file alone.
+    to a helper module the test or a conftest imports (#760), or to another test file they import (#910).
+    ``memo`` lets a run read each test root once, not once per test file.
     """
-    parts = [hasher.hash_file(rootdir / test_file)]
-    directory = (rootdir / test_file).parent
-    while directory == rootdir or rootdir in directory.parents:
-        conftest = directory / 'conftest.py'
-        if conftest.is_file():
-            parts.append(f'{conftest.relative_to(rootdir).as_posix()}:{hasher.hash_file(conftest)}')
-        if directory == rootdir:
-            break
-        directory = directory.parent
-    collected = collected_paths if collected_paths is not None else frozenset({rootdir / test_file})
-    memo = helper_parts_by_sweep if helper_parts_by_sweep is not None else {}
+    memo = memo if memo is not None else _KeyMemo()
+    test_path = rootdir / test_file
+    parts = [_file_hash(hasher, test_path, memo)]
+    conftests = _conftests_on_path(rootdir, test_path.parent, memo)
+    parts.extend(_hash_part(hasher, rootdir, conftest, memo) for conftest in conftests)
     sweep = _helper_sweep(rootdir, test_file)
-    if sweep not in memo:
-        memo[sweep] = _helper_module_hash_parts(hasher, rootdir, sweep, collected)
-    parts.extend(memo[sweep])
+    if sweep not in memo.helper_parts_by_sweep:
+        memo.helper_parts_by_sweep[sweep] = _helper_module_hash_parts(hasher, rootdir, sweep, test_file_patterns)
+    parts.extend(memo.helper_parts_by_sweep[sweep])
+    imported = _imported_test_files(rootdir, sweep[0], [test_path, *conftests], test_file_patterns, memo)
+    parts.extend(sorted(_hash_part(hasher, rootdir, path, memo) for path in imported - {test_path}))
     return hasher.hash_string('|'.join(parts)) if len(parts) > 1 else parts[0]
 
 
@@ -1437,23 +1518,182 @@ def _helper_sweep(rootdir: Path, test_file: str) -> tuple[Path, bool]:
 
 
 def _helper_module_hash_parts(
-    hasher: ContentHasher, rootdir: Path, sweep: tuple[Path, bool], collected_paths: frozenset[Path]
+    hasher: ContentHasher, rootdir: Path, sweep: tuple[Path, bool], test_file_patterns: tuple[str, ...]
 ) -> list[str]:
-    """Hash every non-test ``.py`` file in the swept directory, in sorted path order (#760).
+    """Hash every helper ``.py`` file in the swept directory, in sorted path order (#760).
 
     A ``pytest_plugins`` module or a helper a test or conftest imports is not named by the test file, so the
     coarse rule hashes every helper there: an edit re-runs gremlins for every test file under that root, never
-    replays a stale verdict. A helper is any Python file that is not a collected test file, a ``conftest.py``
-    or under ``__pycache__``. The file name decides nothing: ``test_utils.py`` with no tests is a helper.
+    replays a stale verdict. A helper is any Python file whose name matches no ``python_files`` pattern, that is
+    not a ``conftest.py`` and is not under ``__pycache__``. Which files pytest collected in this run decides
+    nothing (#910); test files reach a key only through the imports that name them.
     """
     directory, recursive = sweep
     candidates = directory.rglob('*.py') if recursive else directory.glob('*.py')
-    helpers = sorted(path for path in candidates if path.is_file() and _is_helper_module(path, collected_paths))
+    helpers = sorted(path for path in candidates if path.is_file() and _is_helper_module(path, test_file_patterns))
     return [f'{path.relative_to(rootdir).as_posix()}:{hasher.hash_file(path)}' for path in helpers]
 
 
-def _is_helper_module(path: Path, collected_paths: frozenset[Path]) -> bool:
-    return path not in collected_paths and path.name != 'conftest.py' and '__pycache__' not in path.parts
+def _is_test_file_name(path: Path, test_file_patterns: tuple[str, ...]) -> bool:
+    return any(fnmatch.fnmatch(path.name, pattern) for pattern in test_file_patterns)
+
+
+def _is_helper_module(path: Path, test_file_patterns: tuple[str, ...]) -> bool:
+    return (
+        not _is_test_file_name(path, test_file_patterns)
+        and path.name != 'conftest.py'
+        and '__pycache__' not in path.parts
+    )
+
+
+def _imported_test_files(
+    rootdir: Path,
+    test_root: Path,
+    entry_points: list[Path],
+    test_file_patterns: tuple[str, ...],
+    memo: _KeyMemo,
+) -> frozenset[Path]:
+    """Return the test files reachable from ``entry_points`` through static imports under ``test_root`` (#910).
+
+    Imports that only run at call time (``importlib.import_module`` with a computed name) are not followed.
+    """
+    reachable: set[Path] = set()
+    for entry_point in entry_points:
+        reachable |= _reachable_from(rootdir, test_root, entry_point, memo)
+    return frozenset(path for path in reachable if _is_known_test_file(path, test_file_patterns, memo))
+
+
+def _reachable_from(rootdir: Path, test_root: Path, start: Path, memo: _KeyMemo) -> frozenset[Path]:
+    """Return ``start`` and every file it reaches through imports under ``test_root``.
+
+    A file whose own reach is already known contributes it whole, so a long import chain is walked once.
+    """
+    key = (start, test_root)
+    if key not in memo.reachable_from:
+        visited: set[Path] = {start}
+        pending = [start]
+        while pending:
+            current = pending.pop()
+            for target in _import_targets_under(rootdir, test_root, current, memo):
+                if target in visited:
+                    continue
+                known = memo.reachable_from.get((target, test_root))
+                if known is None:
+                    visited.add(target)
+                    pending.append(target)
+                else:
+                    visited |= known
+        memo.reachable_from[key] = frozenset(visited)
+    return memo.reachable_from[key]
+
+
+def _is_known_test_file(path: Path, test_file_patterns: tuple[str, ...], memo: _KeyMemo) -> bool:
+    if path not in memo.test_file_names:
+        memo.test_file_names[path] = _is_test_file_name(path, test_file_patterns)
+    return memo.test_file_names[path]
+
+
+def _import_targets_under(rootdir: Path, test_root: Path, path: Path, memo: _KeyMemo) -> frozenset[Path]:
+    key = (path, test_root)
+    if key not in memo.import_targets_under_root:
+        memo.import_targets_under_root[key] = frozenset(
+            target for target in _import_targets(rootdir, path, memo) if target.is_relative_to(test_root)
+        )
+    return memo.import_targets_under_root[key]
+
+
+def _import_targets(rootdir: Path, path: Path, memo: _KeyMemo) -> frozenset[Path]:
+    if path not in memo.import_targets_by_file:
+        memo.import_targets_by_file[path] = frozenset(_parse_import_targets(rootdir, path, memo))
+    return memo.import_targets_by_file[path]
+
+
+def _parse_import_targets(rootdir: Path, path: Path, memo: _KeyMemo) -> set[Path]:
+    """Resolve every import in ``path`` to the ``.py`` files it names; unreadable source yields none.
+
+    A string in a module-level ``pytest_plugins`` assignment names a module pytest imports, so it counts as an
+    import. Parsing the raw bytes lets ``ast`` honor a BOM or a ``coding:`` declaration.
+    """
+    try:
+        tree = ast.parse(path.read_bytes())
+    except (SyntaxError, OSError, ValueError):
+        return set()
+    targets: set[Path] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                targets.update(_module_files(rootdir, path, alias.name.split('.'), 0, memo))
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module.split('.') if node.module else []
+            targets.update(_module_files(rootdir, path, module, node.level, memo))
+            for alias in node.names:
+                targets.update(_module_files(rootdir, path, [*module, alias.name], node.level, memo))
+    for plugin_module in _pytest_plugins_modules(tree):
+        targets.update(_module_files(rootdir, path, plugin_module.split('.'), 0, memo))
+    return targets
+
+
+def _module_level_statements(body: list[ast.stmt]) -> collections.abc.Iterator[ast.stmt]:
+    """Yield the statements that run at import time: the module body and the blocks ``try`` and ``if`` nest in it."""
+    for statement in body:
+        yield statement
+        if isinstance(statement, ast.If):
+            yield from _module_level_statements(statement.body)
+            yield from _module_level_statements(statement.orelse)
+        elif isinstance(statement, (ast.Try, ast.TryStar)):
+            yield from _module_level_statements(statement.body)
+            for handler in statement.handlers:
+                yield from _module_level_statements(handler.body)
+            yield from _module_level_statements(statement.orelse)
+            yield from _module_level_statements(statement.finalbody)
+
+
+def _pytest_plugins_modules(tree: ast.Module) -> list[str]:
+    """Return the module names in a module-level ``pytest_plugins = 'x'`` or ``['x', 'y']`` assignment."""
+    names: list[str] = []
+    for statement in _module_level_statements(tree.body):
+        if isinstance(statement, ast.Assign):
+            assigns_plugins = any(isinstance(t, ast.Name) and t.id == 'pytest_plugins' for t in statement.targets)
+        elif isinstance(statement, ast.AnnAssign):
+            assigns_plugins = isinstance(statement.target, ast.Name) and statement.target.id == 'pytest_plugins'
+        else:
+            continue
+        value = statement.value
+        if assigns_plugins and value is not None:
+            elements = value.elts if isinstance(value, (ast.List, ast.Tuple)) else [value]
+            names.extend(e.value for e in elements if isinstance(e, ast.Constant) and isinstance(e.value, str))
+    return names
+
+
+def _module_files(rootdir: Path, importer: Path, module: list[str], level: int, memo: _KeyMemo) -> tuple[Path, ...]:
+    """Return the existing files a dotted module path can name, looked up from where Python could start.
+
+    A relative import starts at the importer's package. An absolute one may start at rootdir, at any directory
+    between the importer and rootdir (pytest puts a test file's own directory on ``sys.path``) or at an ini
+    ``pythonpath`` entry. Answers are memoized per importer directory, so a directory of test files resolves
+    each import once.
+    """
+    if not module:
+        return ()
+    key = (importer.parent, tuple(module), level)
+    if key not in memo.module_files:
+        if level:
+            ancestors = [importer.parent, *importer.parent.parents]
+            bases: list[Path] = ancestors[level - 1 : level]
+        else:
+            bases = [*_directories_to_rootdir(rootdir, importer.parent, memo), *memo.pythonpath]
+        stems = [base.joinpath(*module) for base in bases]
+        candidates = [candidate for stem in stems for candidate in (stem.with_suffix('.py'), stem / '__init__.py')]
+        memo.module_files[key] = tuple(candidate for candidate in candidates if _is_file(candidate))
+    return memo.module_files[key]
+
+
+def _is_file(candidate: Path) -> bool:
+    """Return whether ``candidate`` is a file; a path Python's import system cannot probe is not one."""
+    try:
+        return candidate.is_file()
+    except OSError:
+        return False
 
 
 def _generate_gremlins(
@@ -1482,21 +1722,30 @@ def _generate_gremlins(
             gremlins, instrumented_tree = transform_source(source, file_path, gremlin_session.operators)
         except Exception as exc:
             logger.exception('Failed to transform %s; skipping file', file_path)
-            reason = _describe_exception(exc)
-            gremlin_session.skipped_files[file_path] = reason
-            displayed_path = _neutralize_control_characters(file_path)
-            _queue_terminal_notice(
-                gremlin_session, f'pytest-gremlins: skipped {displayed_path}: could not instrument ({reason})'
-            )
+            _skip_file(gremlin_session, file_path, _describe_exception(exc))
             continue
         all_gremlins.extend(gremlins)
         instrumented_asts[file_path] = instrumented_tree
 
+    if all_gremlins:
+        unwritable: dict[str, str] = {}
+        instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir, duplicates, unwritable)
+        gremlin_session.instrumented_dir = instrumented_dir
+        for file_path, reason in unwritable.items():
+            logger.warning('Instrumented tree for %s is too deep to write; skipping file', file_path)
+            _skip_file(gremlin_session, file_path, reason)
+        all_gremlins = [gremlin for gremlin in all_gremlins if gremlin.file_path not in unwritable]
+
     gremlin_session.gremlins = all_gremlins
 
-    if all_gremlins:
-        instrumented_dir = _write_instrumented_sources(instrumented_asts, rootdir, duplicates)
-        gremlin_session.instrumented_dir = instrumented_dir
+
+def _skip_file(gremlin_session: GremlinSession, file_path: str, reason: str) -> None:
+    """Record ``file_path`` as not mutation tested and queue the terminal notice naming it and the reason."""
+    gremlin_session.skipped_files[file_path] = reason
+    displayed_path = _neutralize_control_characters(file_path)
+    _queue_terminal_notice(
+        gremlin_session, f'pytest-gremlins: skipped {displayed_path}: could not instrument ({reason})'
+    )
 
 
 def _neutralize_control_characters(text: str) -> str:
@@ -1732,6 +1981,7 @@ def _write_instrumented_sources(
     instrumented_asts: dict[str, ast.Module],
     rootdir: Path,
     duplicates: dict[str, list[str]] | None = None,
+    unwritable: dict[str, str] | None = None,
 ) -> Path:
     """Write instrumented sources to a JSON file for import hook injection.
 
@@ -1757,6 +2007,8 @@ def _write_instrumented_sources(
         rootdir: Root directory of the project; a relative path is taken from it.
         duplicates: For a path in ``instrumented_asts``, the other spellings of the same file that
             were dropped as targets; imported through one of them, the file is still served.
+        unwritable: Filled with each file whose tree is too deep to unparse (``RecursionError``), mapped to the
+            reason; such a file is left out of the sources. When ``None`` the ``RecursionError`` propagates.
 
     Returns:
         Path to the temporary directory containing the bootstrap infrastructure.
@@ -1765,22 +2017,14 @@ def _write_instrumented_sources(
 
     instrumented_sources: origin_finder.InstrumentedSources = {}
     for original_path, tree in instrumented_asts.items():
-        origin = (rootdir / original_path).absolute()
-        instrumented_tree = _inject_gremlin_active(tree)
-        encoded_tree = _encode_tree(instrumented_tree)
-        if encoded_tree is None:
-            logger.debug(
-                'Instrumented tree for %s too deep to pickle; shipping unparsed source (reflowed line numbers)',
-                origin,
-            )
-        spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
-        instrumented_sources[normalize_origin(str(origin))] = {
-            'source': ast.unparse(instrumented_tree),
-            **({} if encoded_tree is None else {'tree': encoded_tree}),
-            'origin': str(origin),
-            'identity': file_identity(str(origin)),
-            'file_names': sorted({Path(spelling).name.lower() for spelling in spellings}),
-        }
+        try:
+            entry = _instrumented_source_entry(original_path, tree, rootdir, duplicates)
+        except RecursionError as error:
+            if unwritable is None:
+                raise
+            unwritable[original_path] = _describe_exception(error)
+            continue
+        instrumented_sources[entry[0]] = entry[1]
 
     sources_file = temp_dir / 'sources.json'
     sources_file.write_text(json.dumps(instrumented_sources))
@@ -1795,14 +2039,63 @@ def _write_instrumented_sources(
     return temp_dir
 
 
+def _instrumented_source_entry(
+    original_path: str, tree: ast.Module, rootdir: Path, duplicates: dict[str, list[str]] | None
+) -> tuple[str, origin_finder.InstrumentedEntry]:
+    """Return the ``sources.json`` key and entry for one file; ``RecursionError`` if its tree is too deep to unparse."""
+    origin = (rootdir / original_path).absolute()
+    instrumented_tree = _inject_gremlin_active(tree)
+    encoded_tree = _encode_tree(instrumented_tree)
+    if encoded_tree is None:
+        logger.debug(
+            'Instrumented tree for %s too deep to pickle; shipping unparsed source (reflowed line numbers)',
+            origin,
+        )
+    spellings = [str(origin), os.path.realpath(origin), *(duplicates or {}).get(original_path, [])]
+    entry = origin_finder.InstrumentedEntry(
+        source=ast.unparse(instrumented_tree),
+        origin=str(origin),
+        identity=file_identity(str(origin)),
+        file_names=sorted({Path(spelling).name.lower() for spelling in spellings}),
+    )
+    if encoded_tree is not None:
+        entry['tree'] = encoded_tree
+    return normalize_origin(str(origin)), entry
+
+
 def _inject_gremlin_active(tree: ast.Module) -> ast.Module:
     """Return ``tree`` with the ``__gremlin_active__`` assignment placed where the module may legally hold it."""
     activation_source = f"""import os as _gremlin_os
 __gremlin_active__ = _gremlin_os.environ.get('{ACTIVE_GREMLIN_ENV_VAR}')
 del _gremlin_os
 """
-    body = _prepend_injection(tree.body, ast.parse(activation_source).body)
+    header = ast.parse(activation_source).body
+    body = _prepend_injection(tree.body, header)
+    _relocate_to_next_statement(header, body)
     return ast.Module(body=body, type_ignores=tree.type_ignores)
+
+
+def _relocate_to_next_statement(header: list[ast.stmt], body: list[ast.stmt]) -> None:
+    """Move the injected ``header`` off the target file's real lines, in place.
+
+    The header is parsed from its own three-line text, so its nodes would claim lines 1 to 3 and columns of the
+    target file. Were ``os.environ.get`` to raise during import, the traceback would point at those real lines and
+    underline unrelated text. The header takes the line of the statement that follows it; with none following, the
+    line after the last statement before it (line 1 for an empty module). Its columns are zeroed, so no carets
+    are drawn.
+    """
+    first_index = body.index(header[0])
+    following_index = first_index + len(header)
+    if following_index < len(body):
+        line = body[following_index].lineno
+    elif first_index:
+        line = (body[first_index - 1].end_lineno or body[first_index - 1].lineno) + 1
+    else:
+        line = 1
+    for node in (descendant for statement in header for descendant in ast.walk(statement)):
+        if isinstance(node, (ast.stmt, ast.expr)):
+            node.lineno = node.end_lineno = line
+            node.col_offset = node.end_col_offset = 0
 
 
 def _encode_tree(instrumented_tree: ast.Module) -> str | None:
@@ -2349,6 +2642,7 @@ def _unmutated_command_and_env(gremlin_session: GremlinSession, rootdir: Path) -
         instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
@@ -2635,7 +2929,13 @@ def _rebuild_state_from_xdist_workers(
     logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
-    _hash_sources_and_tests_for_cache(gremlin_session, source_files, rootdir)
+    _hash_sources_and_tests_for_cache(
+        gremlin_session,
+        source_files,
+        rootdir,
+        _test_file_patterns(gremlin_session, session.config),
+        _pythonpath_entries(gremlin_session, session.config),
+    )
     logger.debug('pytest_sessionfinish: xdist Phase 2 discovered %d source files', len(source_files))
     _generate_gremlins(gremlin_session, source_files, rootdir)
     logger.debug('pytest_sessionfinish: xdist Phase 2 generated %d gremlins', len(gremlin_session.gremlins))
@@ -3196,6 +3496,63 @@ def _pytest_cov_options_for(config: pytest.Config, rerun_options: Sequence[str])
     return [*_loader_options_for(config, autoloaded_names), _NO_COV_OPTION]
 
 
+_XDIST_PLUGIN_NAMES: tuple[str, ...] = ('xdist.plugin', 'xdist')
+_XDIST_ENTRY_POINT_NAME = 'xdist'
+
+
+_XDIST_DECISION_NAMES = frozenset({'no:xdist', *_XDIST_PLUGIN_NAMES})
+
+
+def _gremlin_runs_inherit_an_xdist_block(config: pytest.Config) -> bool:
+    """Return whether the last inherited ``-p`` naming xdist blocks it: ``-p no:xdist``.
+
+    The attached spelling (``-pno:xdist``) counts too.  A later ``-p xdist`` or ``-p xdist.plugin`` lifts an
+    earlier block, and ``-p no:xdist.plugin`` leaves the autoloaded ``xdist`` entry point registered, so it is ignored.
+    """
+    tokens = _arguments_gremlin_runs_inherit(config)
+    named: list[str] = []
+    for index, argument in enumerate(tokens):
+        if argument == '-p' and index + 1 < len(tokens):
+            named.append(tokens[index + 1].strip())
+        elif argument.startswith('-p') and argument != '-p':
+            named.append(argument.removeprefix('-p').strip())
+    return [name for name in named if name in _XDIST_DECISION_NAMES][-1:] == ['no:xdist']
+
+
+def _xdist_options_for(config: pytest.Config, rerun_options: Sequence[str]) -> tuple[list[str], bool]:
+    """Return the ``-p`` loader for gremlin runs and whether they get ``-n 0`` (issue #668).
+
+    ``-n`` exists only where pytest-xdist is registered.  With autoload on, gremlin runs register it through its
+    entry point, so ``-n 0`` goes out when the session registered ``xdist`` and no loader is added (a second name
+    would register the module twice).  Gremlin runs that start with autoload disabled (see
+    :func:`_gremlin_runs_have_autoload_disabled`, or the flag the rerun options forward) register nothing
+    themselves, so they get ``-p`` and the name the session registered it under, and ``-n 0`` goes out only then.
+    Gremlin runs that autoload still do not register xdist when the inherited ``addopts`` or ``PYTEST_ADDOPTS``
+    hold ``-p no:xdist`` (see :func:`_gremlin_runs_inherit_an_xdist_block`) and only the session's own command
+    line, which is not passed on, loaded it again (issue #685).  They get the same loader as runs without
+    autoload, and the later ``-p`` overrides the inherited block.  A block that hides xdist from the session too
+    leaves nothing registered, so nothing is forwarded.
+    A session whose xdist is registered under an unknown name gets neither, which errs toward a missed kill.
+
+    Args:
+        config: The session's pytest config, read for the registered plugins and the inherited ``addopts``.
+        rerun_options: The options forwarded to gremlin runs by :func:`_rerun_options_for`, checked for
+            ``--disable-plugin-autoload``.
+
+    Returns:
+        The loader options and whether to forward ``-n 0``.
+    """
+    gremlin_runs_skip_xdist = (
+        _gremlin_runs_have_autoload_disabled(config)
+        or _DISABLE_PLUGIN_AUTOLOAD_FLAG in rerun_options
+        or _gremlin_runs_inherit_an_xdist_block(config)
+    )
+    if gremlin_runs_skip_xdist:
+        loader_options = _loader_options_for(config, _XDIST_PLUGIN_NAMES)
+        return loader_options, bool(loader_options)
+    return [], config.pluginmanager.hasplugin(_XDIST_ENTRY_POINT_NAME)
+
+
 def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
     """Return whether the rerun ini settings are passed to gremlin runs: only when a ``-c`` file holds them.
 
@@ -3700,6 +4057,7 @@ def _run_batch_mutation_testing(  # pragma: no cover
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
@@ -3833,6 +4191,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
@@ -4201,6 +4560,7 @@ def _run_mutation_testing(
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
@@ -4652,6 +5012,7 @@ def _build_test_command(
     preserved_addopts: str = '',
     *,
     xdist_loaded: bool = False,
+    xdist_loader_options: Sequence[str] = (),
     doctest_ini_overrides: Sequence[str] = (),
     rerun_options: Sequence[str] = (),
     pytest_cov_options: Sequence[str] = (),
@@ -4680,6 +5041,8 @@ def _build_test_command(
             token stripper does not recognise) can distribute the run.  xdist itself stays
             loaded, so ``worker_id`` still works.  Without xdist the flag would be rejected as
             unrecognized, so it is omitted.
+        xdist_loader_options: The ``-p`` loader for gremlin runs that start with autoload disabled (see
+            :func:`_xdist_options_for`), placed before ``-n 0`` so the option has a plugin to parse it.
         doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs
             (see :func:`_doctest_ini_overrides`), kept outside ``addopts`` because pytest before 9.1 ignores a
             ``-o`` nested in an ``addopts`` value (issue #719).
@@ -4722,7 +5085,7 @@ def _build_test_command(
     command.extend(pytest_cov_options)
 
     if xdist_loaded:
-        command.extend(['-n', '0'])
+        command.extend([*xdist_loader_options, '-n', '0'])
 
     command.extend(rerun_options)
 
