@@ -67,12 +67,11 @@ class DescribeLocalOperatorHelperInFingerprint:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         conftest = tmp_path / 'conftest.py'
-        before = _load_operator(monkeypatch, conftest, 'conftest_mod', OPERATOR_SOURCE.format(delta=1))
-        fingerprint_before = installed_versions_fingerprint([before], tmp_path)
+        operator = _load_operator(monkeypatch, conftest, 'conftest', OPERATOR_SOURCE.format(delta=1))
 
-        after = _load_operator(monkeypatch, conftest, 'conftest_mod', OPERATOR_SOURCE.format(delta=0))
+        fingerprint = installed_versions_fingerprint([operator], tmp_path, [conftest])
 
-        assert installed_versions_fingerprint([after], tmp_path) == fingerprint_before
+        assert 'local-operator=' not in fingerprint
 
     def it_adds_nothing_for_a_built_in_operator(self, tmp_path: Path) -> None:
         assert installed_versions_fingerprint([ComparisonOperator()], tmp_path) == installed_versions_fingerprint(

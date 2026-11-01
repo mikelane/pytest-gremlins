@@ -279,6 +279,8 @@ class IncrementalCache:
         operators: Iterable[GremlinOperator] = (),
         project_root: Path | None = None,
         pytester_loaded: Callable[[], bool] = _never_loaded,
+        *,
+        loaded_conftests: Iterable[Path] = (),
         xdist_loader_loaded: Callable[[], bool] = _never_loaded,
     ) -> None:
         """Initialize the incremental cache.
@@ -294,6 +296,9 @@ class IncrementalCache:
                 no later run could read them.
             pytester_loaded: Reports whether the session loads the pytester plugin. It is asked each time a key is
                 built, because a nested ``conftest.py`` can enable pytester after the cache opens.
+            loaded_conftests: The ``conftest.py`` files the session has loaded when the cache opens. When an operator
+                is defined in a conftest, all of them are hashed into the versions part of every key (#899). A
+                conftest pytest loads later, during collection, is not included.
             xdist_loader_loaded: Reports whether gremlin runs load xdist themselves (plugin autoload disabled and
                 xdist loaded in the session); such sessions add ``XDIST_KEY_PART`` (#668).
         """
@@ -303,7 +308,7 @@ class IncrementalCache:
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
         self._store.delete_keys_not_ending_with(f':{RUNNER_FIDELITY_VERSION}')
-        fingerprint = versions_fingerprint(operators, project_root)
+        fingerprint = versions_fingerprint(operators, project_root, loaded_conftests)
         self._versions_hash = self._hasher.hash_string(fingerprint.text)
         self._writes_are_readable = fingerprint.writes_are_readable
         self._hits = 0
