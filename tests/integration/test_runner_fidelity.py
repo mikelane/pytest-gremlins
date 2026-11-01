@@ -12,9 +12,10 @@ fidelity tests in PR #522 by fwilkerson-cn.
 from __future__ import annotations
 
 from pathlib import Path
-import re
 
 import pytest
+
+from . import _helpers
 
 _TARGET = """
 def plain_flag(code):
@@ -130,26 +131,12 @@ def test_covers(tmp_path):
 
 _COMMON_ARGS = ('--gremlins', '--gremlin-targets=sample.py', '--gremlin-operators=comparison', '-p', 'no:cacheprovider')
 
-_EXECUTION_MODES = {
-    'default': (),
-    'parallel': ('--gremlin-parallel', '--gremlin-workers=2'),
-    'batch': ('--gremlin-batch',),
-}
-
-
-def _verdicts(output: str) -> dict[str, int]:
-    def count(label: str) -> int:
-        match = re.search(rf'{label}: (\d+) gremlins', output)
-        return int(match.group(1)) if match else 0
-
-    return {label: count(label) for label in ('Zapped', 'Survived', 'Timeout', 'Error')}
-
 
 def _run(pytester: pytest.Pytester, target: str, tests: str, *extra_args: str) -> dict[str, int]:
     pytester.makepyfile(sample=target)
     pytester.makepyfile(test_sample=tests)
     result = pytester.runpytest_subprocess(*_COMMON_ARGS, *extra_args)
-    return _verdicts(result.stdout.str())
+    return _helpers.verdicts(result.stdout.str())
 
 
 def _styles_run_against_a_mutant(log: Path) -> set[str]:
@@ -168,7 +155,7 @@ def pytester_running_coroutines(pytester_with_markers: pytest.Pytester) -> pytes
 class DescribeFourStyleFidelity:
     """Identical targets covered by plain, async, parametrized and fixture tests are all genuinely zapped."""
 
-    @pytest.mark.parametrize('mode', list(_EXECUTION_MODES))
+    @pytest.mark.parametrize('mode', list(_helpers.EXECUTION_MODES))
     def it_zaps_every_mutant_whatever_the_test_style(
         self,
         pytester_running_coroutines: pytest.Pytester,
@@ -177,7 +164,7 @@ class DescribeFourStyleFidelity:
         log = pytester_running_coroutines.path / 'ran.log'
         tests = _FOUR_STYLE_TESTS.replace('__LOG__', log.as_posix())
 
-        verdicts = _run(pytester_running_coroutines, _TARGET, tests, *_EXECUTION_MODES[mode])
+        verdicts = _run(pytester_running_coroutines, _TARGET, tests, *_helpers.EXECUTION_MODES[mode])
 
         assert verdicts['Survived'] == 0
         assert verdicts['Error'] == 0
