@@ -267,6 +267,11 @@ disallow_untyped_decorators = false
 # =============================================================================
 # Pytest
 # =============================================================================
+[tool.uv]
+# uv older than 0.13.0 rewrites the uv.lock header "revision = 5" to "revision = 3" on every `uv lock`.
+# The setup-uv steps in .github/workflows pin the same range (tests/scripts/test_uv_version_pin.py).
+required-version = ">=0.13.0"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]
