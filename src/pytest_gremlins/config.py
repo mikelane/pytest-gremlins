@@ -196,7 +196,12 @@ def _read_string_list(settings: dict[str, object], key: str, example: str) -> li
 
 
 def _check_operator_names(names: list[str], source: str = '[tool.pytest-gremlins].operators') -> None:
-    """Raise ValueError naming the first operator that is not registered, listing the valid ones."""
+    """Raise ValueError naming the first operator that is not registered, listing the valid ones.
+
+    Args:
+        names: Operator names to check against the default registry.
+        source: Where the names came from (a TOML key or a CLI flag), used in the error message.
+    """
     from pytest_gremlins.instrumentation.transformer import (  # noqa: PLC0415 — avoids an import cycle
         get_default_registry,
     )
@@ -209,6 +214,13 @@ def _check_operator_names(names: list[str], source: str = '[tool.pytest-gremlins
 
 def _split_cli_list(raw: str, flag: str) -> list[str]:
     """Split a comma-separated CLI value into trimmed entries.
+
+    Args:
+        raw: The raw option value, such as ``'comparison, boolean'``.
+        flag: The CLI flag the value came from, used in the error message.
+
+    Returns:
+        The entries with surrounding whitespace removed.
 
     Raises:
         ValueError: If any entry is empty, naming the flag and the value.

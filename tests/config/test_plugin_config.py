@@ -125,22 +125,22 @@ class DescribeMergeConfigs:
 class DescribeMergeConfigsCliValidation:
     """Tests that CLI list options are validated like the TOML keys."""
 
-    def it_rejects_an_unknown_cli_operator_listing_the_valid_names(self):
+    def it_rejects_an_unknown_cli_operator_listing_the_valid_names(self) -> None:
         with pytest.raises(ValueError, match=r"--gremlin-operators has unknown operator 'bogus'.*comparison"):
             merge_configs(GremlinConfig(), cli_operators='bogus')
 
-    def it_rejects_an_unknown_operator_among_valid_ones(self):
+    def it_rejects_an_unknown_operator_among_valid_ones(self) -> None:
         with pytest.raises(ValueError, match="unknown operator 'bogus'"):
             merge_configs(GremlinConfig(), cli_operators='comparison,bogus')
 
     @pytest.mark.parametrize(
         'cli_operators', ['comparison,,boolean', 'comparison,', ',comparison', 'comparison, ,boolean']
     )
-    def it_rejects_empty_cli_operator_entries(self, cli_operators):
+    def it_rejects_empty_cli_operator_entries(self, cli_operators: str) -> None:
         with pytest.raises(ValueError, match=r'--gremlin-operators has an empty entry.*got'):
             merge_configs(GremlinConfig(), cli_operators=cli_operators)
 
     @pytest.mark.parametrize('cli_targets', ['src,,lib', 'src,', ',src', 'src, ,lib'])
-    def it_rejects_empty_cli_target_entries(self, cli_targets):
+    def it_rejects_empty_cli_target_entries(self, cli_targets: str) -> None:
         with pytest.raises(ValueError, match=r'--gremlin-targets has an empty entry.*got'):
             merge_configs(GremlinConfig(), cli_targets=cli_targets)
