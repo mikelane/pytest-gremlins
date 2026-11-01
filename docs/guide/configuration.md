@@ -550,7 +550,8 @@ When source or test files change, affected gremlins are re-tested.
 When a source file changes, the rows cached for its old content cannot hit while the file keeps its current content,
 so each run deletes them at start. `results.db` keeps one version of each file instead of growing with every edit.
 This needs no option. Because the older version's rows are gone, switching to a branch with a different version of a
-file and back costs hits for that file: its gremlins are re-tested once. See [Pruning stranded rows](../api/cache.md#pruning-stranded-rows).
+file and back costs hits for that file: its gremlins are re-tested once. See
+[Pruning stranded rows](../api/cache.md#pruning-stranded-rows).
 
 **Clear the cache:**
 
@@ -878,7 +879,7 @@ finished, whatever the size.
 
 Batch mode takes precedence over parallel mode: with `--gremlin-batch`, `--gremlin-parallel` has no effect, and
 `--gremlin-workers` sets the number of batch workers. Because each gremlin runs the union of the covering tests,
-a batch run gains nothing over a parallel run with the same workers and is often slower.
+a batch run has no speed advantage over a parallel run with the same workers, and can be slower.
 
 ### Combined Performance Options
 
