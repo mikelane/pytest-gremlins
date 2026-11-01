@@ -10,25 +10,12 @@ from __future__ import annotations
 
 import pytest
 from rerun_samples import (  # type: ignore[import-not-found]
+    FLAKY_UNDER_GREMLINS_TEST,
     GREMLIN_ARGS,
     SAMPLE,
     verdicts,
 )
 
-FLAKY_UNDER_GREMLINS_TEST = """
-import os
-
-from sample import classify
-
-calls = []
-
-
-def test_big():
-    calls.append(1)
-    in_gremlin_run = 'ACTIVE_GREMLIN' in os.environ
-    assert len(calls) > 1 or not in_gremlin_run, 'flaky inside gremlin runs'
-    assert classify(11) == 'big'
-"""
 SESSION_ARGS = ('--disable-plugin-autoload', '-p', 'gremlins', '-p', 'pytest_rerunfailures')
 EXPECTED = {'Zapped': 1, 'Survived': 1, 'Error': 0}
 COMMA_SEPARATED_LOADER = "pytest_plugins = 'otherplug,pytest_rerunfailures'\n"
