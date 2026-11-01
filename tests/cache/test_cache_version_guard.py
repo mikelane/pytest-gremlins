@@ -58,6 +58,8 @@ RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
 # One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
 # between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
 RECORDED_DIGESTS: dict[str, str] = {
+    'argument_files.py': '51f410675614800dad41f0777b0e10cd5f708f4c405abbe22369c0f3ff29f320',  # pragma: allowlist secret
+    # --
     'ast_copy.py': 'f94a3572585f293c0798490a1685f4d77eb970f67c0f53556dcef29826998832',  # pragma: allowlist secret
     # --
     'cache/__init__.py': '62df21d4f76d4423b6066843acd9402dc17a026cadba50937fa4efe3841ae428',  # pragma: allowlist secret
@@ -72,7 +74,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/versions.py': '8c85f3ac61a0bdf7d0a3fc71c24808e0c4e668db5ddef4ac85fc199eddbe90a4',  # pragma: allowlist secret
     # --
-    'config.py': '2cb1a04ee48ed07a7e519f0ac69dc39ab7e55ece8351f7eabc2b94767e34cf87',  # pragma: allowlist secret
+    'config.py': 'c02fe1b538cb745d7e4606bebca0162da641065acc18465e568e17898297c5e8',  # pragma: allowlist secret
     # --
     'control_run.py': '95174e647a5cea01a3bfb54a0498df39c92f7c57168bf2dbaea3ddcbc0584270',  # pragma: allowlist secret
     # --
@@ -160,7 +162,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'f57474c2c66dc5a036b53601adeae0cf8ed38929610a5f8ee7a82090ca070190',  # pragma: allowlist secret
+    'plugin.py': '7d00c24f4affd6025304dd212676e823df8bb327078c8e67b08a1b4114690272',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -170,7 +172,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'reporting/types.py': 'f732c4d57c6173836ac0244f4176fded3e86da043c768d9b55386f42a57d0492',  # pragma: allowlist secret  # noqa: E501
     # --
-    'rerun_options.py': '988743f054ce69cdeec2be71ffc4e906cb5b0fb9f362046fcbbfdb78513ec415',  # pragma: allowlist secret
+    'rerun_options.py': '4ff81ee1b119e41b6904e8e8b22b2d2bc54e6ec80a467056314579df2e9abf0c',  # pragma: allowlist secret
     # --
     'verdicts.py': '5f9b4248f4661ba311243b9bc37fc0d2255e7fdef18646aaee362ffbed8f1383',  # pragma: allowlist secret
     # --

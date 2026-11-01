@@ -747,7 +747,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v10
       - run: uv sync
-      - run: uv run mypy src
+      - run: uv run mypy
 
   test:
     strategy:

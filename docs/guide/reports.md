@@ -169,7 +169,7 @@ tested", with the reason for each file.
 
 **Runs with no gremlins:**
 
-A run that finds no gremlins still writes the HTML and JSON reports, with a total of 0. This covers
+A run that finds no gremlins still writes the requested HTML and JSON reports, with a total of 0. This covers
 every target being skipped, nothing found in the searched paths, and no source paths being discovered.
 A stale report from an earlier run is replaced, never left behind to look current.
 
@@ -414,7 +414,8 @@ Present only when a source file could not be instrumented. It maps each skipped 
 reason in the form `ExceptionType: message`; these files are not counted in `summary` or `files`.
 The HTML report also lists them above the charts, so a high mutation score is not mistaken
 for full source coverage. When every target was skipped, `summary.total` is 0 and `skipped_files` lists them all.
-A run with no gremlins at all writes the same file with `summary.total` of 0 and no `skipped_files`.
+When the JSON report is requested, a run with no gremlins at all writes it with `summary.total` of 0 and no
+`skipped_files`.
 
 **Results Array (Gremlin Objects):**
 
@@ -428,7 +429,7 @@ A run with no gremlins at all writes the same file with `summary.total` of 0 and
 | `description` | string | Human-readable mutation description |
 | `killing_test` | string | Present when a killing test was recorded (normally on zapped gremlins). The test that caught the mutation when it is known; `unknown` when the gremlin run failed without naming a test. `<collection>` means the mutant stopped the suite from loading, so no test ran. If the unmutated suite cannot load in the gremlin subprocess, such load failures are reported with status `error` instead |
 | `error_output` | string | Present only when the run produced error output, usually for status `error`: the captured stderr or error message, such as a timeout that was downgraded or a crash outside a test |
-| `execution_time_ms` | float | Present only when the run was timed: wall-clock milliseconds for this gremlin's test run. `--gremlin-parallel` and `--gremlin-batch` runs record it; sequential runs don't |
+| `execution_time_ms` | float | Wall-clock milliseconds for this gremlin's test run, including any pytest-rerunfailures attempts inside it. Sequential, `--gremlin-parallel` and `--gremlin-batch` runs all record it. A verdict reused from the incremental cache carries the time stored with it. Absent when no time is known: a pardoned gremlin, a gremlin that errored before its run started, or a cached verdict stored without a time |
 | `selected_tests` | list[string] | Present only when tests were selected: the pytest node ids run against this gremlin |
 
 ### Processing JSON Reports
@@ -976,6 +977,9 @@ jobs:
   }
 }
 ```
+
+A mutant's **`duration`** is the gremlin's `execution_time_ms` truncated to whole milliseconds. It is absent when
+`execution_time_ms` is (see the JSON field table above). Sequential, parallel and batch runs all set it.
 
 **`config.pytestGremlins`** holds pytest-gremlins' own score (`mutationScore`, identical to
 `MutationScore.percentage`) and the counts behind it. The schema defines `config` as a free-form
