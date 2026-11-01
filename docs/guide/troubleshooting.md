@@ -688,6 +688,12 @@ again with `-p xdist`. The command line does not reach gremlin runs, so they inh
 with) before `-n 0`, which overrides the block, and the same `xdist-668` cache key part applies to those sessions. A
 bare `PYTEST_PLUGINS=xdist` needed no change.
 
+In both setups the coverage pre-scan gets the same `-p xdist` loader. Earlier versions left it out, so a test that uses
+an xdist fixture (`worker_id`, `testrun_uid`) errored in the pre-scan and its coverage was lost. A gremlin only such a
+test catches was then reported as survived, and when every covering test used such a fixture the pre-scan recorded
+nothing and printed the `--cov in addopts` hint. These sessions already carry the `xdist-668` cache key part, so no
+further cache change applies.
+
 ---
 
 ### Using pytest-xdist with gremlins

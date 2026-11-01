@@ -3153,6 +3153,7 @@ def _run_prescan_reporting_problems(
             preserved_addopts=gremlin_session.preserved_addopts,
             doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
             rerun_options=gremlin_session.rerun_options,
+            xdist_loader_options=gremlin_session.xdist_loader_options,
             timeout=prescan_timeout,
         )
     except CoveragePrescanTimeoutError as timeout_error:
@@ -3882,6 +3883,7 @@ def _run_tests_with_coverage(
     preserved_addopts: str = '',
     doctest_ini_overrides: Sequence[str] = (),
     rerun_options: Sequence[str] = (),
+    xdist_loader_options: Sequence[str] = (),
     timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS,
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
@@ -3923,6 +3925,9 @@ def _run_tests_with_coverage(
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended so a test that flakes
             before reaching the code under test is rerun, as in the baseline, and still lands in the
             coverage map.
+        xdist_loader_options: The ``-p`` loader gremlin runs get (see :func:`_xdist_options_for`), so a test that
+            uses an xdist fixture such as ``worker_id`` still runs, and is recorded, in the pre-scan (issue #927).
+            Empty for sessions whose pre-scan already has xdist, which keeps their arguments unchanged.
         timeout: Seconds the pre-scan subprocess may run (default 120).
 
     Returns:
@@ -3969,6 +3974,7 @@ def _run_tests_with_coverage(
         '--tb=no',
         '-q',
         *rerun_options,
+        *xdist_loader_options,
     ]
 
     try:
