@@ -38,11 +38,17 @@ GIT = shutil.which('git') or 'git'
 PACKAGE_ROOT = Path(__file__).resolve().parents[2] / 'src' / 'pytest_gremlins'
 
 # Keys are package-relative POSIX paths: a file, or a directory prefix ending in "/".
-# Only renderers that run after every verdict is decided belong here. Nothing on the verdict path imports them:
-# the parallel executors and plugin.py import only reporting/results.py (GremlinResultStatus), and
-# reporting/score.py, reporting/types.py and reporting/__init__.py stay guarded.
+# Renderers that run after every verdict is decided belong here, and so does plugin.py: the code there that
+# assigns or changes a verdict (outcome-to-verdict mapping, collection-kill and timeout confirmation) lives in
+# verdicts.py, which stays guarded. Nothing on the verdict path imports the renderers: the parallel executors
+# and verdicts.py import only reporting/results.py (GremlinResultStatus), and reporting/score.py,
+# reporting/types.py and reporting/__init__.py stay guarded. Do not move verdict-deciding code back into
+# plugin.py: it is unguarded.
 EXCLUDED_FROM_GUARD: dict[str, str] = {
     '__init__.py': 'Holds only __version__, which cz bump rewrites each release; decides no verdict.',
+    'plugin.py': (
+        'Pytest hooks, CLI options and orchestration; every verdict it applies is decided in verdicts.py (#875).'
+    ),
     'reporting/console.py': 'Formats finished results for the terminal; decides no verdict.',
     'reporting/diff.py': 'Renders the original-versus-mutated diff shown in reports; decides no verdict.',
     'reporting/history.py': 'Persists per-run scores for trend charts after the run; decides no verdict.',
@@ -159,8 +165,6 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '37cbf72b220e5e911d1f64392003eef6851057bf912a60cdface7575cedb3341',  # pragma: allowlist secret
-    # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
     'reporting/results.py': '82505d9a8978c5193f13e2f53876a963d10ed1a314a22117dd8a286b21530fd6',  # pragma: allowlist secret  # noqa: E501
@@ -170,6 +174,8 @@ RECORDED_DIGESTS: dict[str, str] = {
     'reporting/types.py': 'f732c4d57c6173836ac0244f4176fded3e86da043c768d9b55386f42a57d0492',  # pragma: allowlist secret  # noqa: E501
     # --
     'rerun_options.py': '988743f054ce69cdeec2be71ffc4e906cb5b0fb9f362046fcbbfdb78513ec415',  # pragma: allowlist secret
+    # --
+    'verdicts.py': 'cbb08ce756cecf8e85b6369305c91c54961dd729355e75e140f1b980df119076',  # pragma: allowlist secret
     # --
     'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }
@@ -443,4 +449,36 @@ class DescribeCacheVersionGuard:
     def it_excludes_nothing_that_the_verdict_path_imports(self) -> None:
         guarded = {source.relative_to(PACKAGE_ROOT).as_posix() for source in guarded_sources()}
 
-        assert {'config.py', 'gremlins_options.py', 'plugin.py', 'reporting/results.py'} <= guarded
+        assert {'config.py', 'gremlins_options.py', 'verdicts.py', 'reporting/results.py'} <= guarded
+
+    def it_does_not_guard_plugin_py_so_orchestration_edits_leave_the_digests_alone(self) -> None:
+        guarded = {source.relative_to(PACKAGE_ROOT).as_posix() for source in guarded_sources()}
+
+        assert 'plugin.py' not in guarded
+
+    def it_ignores_a_help_text_edit_in_plugin_py(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        package_copy = _copy_package(tmp_path, monkeypatch)
+        before = _guarded_digests()
+
+        plugin_source = package_copy / 'plugin.py'
+        plugin_source.write_text(plugin_source.read_text() + "\n_HELP_TEXT = 'a reworded --gremlins help'\n")
+
+        assert _guarded_digests() == before
+
+    def it_catches_an_edit_to_the_collection_kill_confirmation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        package_copy = _copy_package(tmp_path, monkeypatch)
+        before = _guarded_digests()
+
+        verdicts_source = package_copy / 'verdicts.py'
+        original = 'if result.status != GremlinResultStatus.ZAPPED or result.killing_test != COLLECTION_KILLING_TEST:'
+        assert original in verdicts_source.read_text()
+        verdicts_source.write_text(verdicts_source.read_text().replace(original, 'if True:'))
+
+        assert _guarded_digests() != before
+
+    def it_keeps_the_collection_kill_confirmation_out_of_plugin_py(self) -> None:
+        plugin_source = (PACKAGE_ROOT / 'plugin.py').read_text(encoding='utf-8')
+
+        assert 'def _confirm_collection_kill' not in plugin_source

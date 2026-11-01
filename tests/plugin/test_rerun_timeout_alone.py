@@ -27,12 +27,14 @@ from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
     GremlinSession,
     _cache_gremlin_result,
-    _confirm_pooled_result,
-    _test_gremlin,
 )
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
+)
+from pytest_gremlins.verdicts import (
+    _confirm_pooled_result,
+    _test_gremlin,
 )
 
 if TYPE_CHECKING:
@@ -70,14 +72,14 @@ def session(tmp_path: Path) -> GremlinSession:
 @pytest.fixture
 def fake_solo_run(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     solo_run = create_autospec(_test_gremlin, return_value=_pooled(GremlinResultStatus.SURVIVED))
-    monkeypatch.setattr('pytest_gremlins.plugin._test_gremlin', solo_run)
+    monkeypatch.setattr('pytest_gremlins.verdicts._test_gremlin', solo_run)
     return cast('MagicMock', solo_run)
 
 
 @pytest.fixture
 def fake_unmutated_run(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     unmutated_run = create_autospec(run_unmutated, return_value=FINISHES_QUICKLY)
-    monkeypatch.setattr('pytest_gremlins.plugin.run_unmutated', unmutated_run)
+    monkeypatch.setattr('pytest_gremlins.verdicts.run_unmutated', unmutated_run)
     return cast('MagicMock', unmutated_run)
 
 

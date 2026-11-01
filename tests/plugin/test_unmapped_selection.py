@@ -17,6 +17,7 @@ import warnings
 import pytest
 
 from pytest_gremlins import plugin as plugin_module
+from pytest_gremlins import verdicts as verdicts_module
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.control_run import (
     ControlRunOutcome,
@@ -25,7 +26,6 @@ from pytest_gremlins.control_run import (
 from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
-    MAX_SELECTION_IDS_IN_MESSAGE,
     UNMAPPED_SELECTION_PREFIX,
     GremlinSession,
     _build_filtered_test_command,
@@ -44,6 +44,9 @@ from pytest_gremlins.reporting.results import (
     GremlinResultStatus,
 )
 from pytest_gremlins.reporting.score import MutationScore
+from pytest_gremlins.verdicts import (
+    MAX_SELECTION_IDS_IN_MESSAGE,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -285,7 +288,7 @@ class DescribeControlRunIgnoresUnrunnableGremlins:
         control = create_autospec(
             run_control, return_value=ControlRunOutcome(loads_cleanly=True, output='', seconds=0.1)
         )
-        monkeypatch.setattr(plugin_module, 'run_control', control)
+        monkeypatch.setattr(verdicts_module, 'run_control', control)
         monkeypatch.setattr(plugin_module, '_get_rootdir', lambda _: tmp_path)
         session = _session([UNMAPPED])
         session.instrumented_dir = tmp_path

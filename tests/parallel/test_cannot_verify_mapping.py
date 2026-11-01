@@ -18,8 +18,10 @@ from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
     describe_runner_error,
 )
-from pytest_gremlins.plugin import _test_gremlin
 from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.verdicts import (
+    _test_gremlin,
+)
 
 REASON = 'test requires arguments (fixtures or parametrization)'
 EXIT_WITH_REASON = [

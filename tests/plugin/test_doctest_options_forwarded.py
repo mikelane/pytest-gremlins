@@ -7,7 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from pytest_gremlins import plugin
+from pytest_gremlins import (
+    plugin,
+    verdicts,
+)
 
 
 def _session(
@@ -101,14 +104,14 @@ class DescribeDoctestIniValuesAsTopLevelGremlinRunArguments:
         assert plugin._doctest_ini_overrides(config) == ['-o', 'doctest_optionflags=']  # type: ignore[arg-type]
 
     def it_puts_the_overrides_in_the_test_command_outside_the_addopts_value(self) -> None:
-        command = plugin._build_test_command(None, '-q', doctest_ini_overrides=['-o', 'doctest_optionflags=ELLIPSIS'])
+        command = verdicts._build_test_command(None, '-q', doctest_ini_overrides=['-o', 'doctest_optionflags=ELLIPSIS'])
 
         assert command[command.index('doctest_optionflags=ELLIPSIS') - 1] == '-o'
         assert 'addopts=-q' in command
         assert not any(token.startswith('addopts=') and 'doctest_' in token for token in command)
 
     def it_puts_the_overrides_in_the_bootstrapped_test_command_too(self, tmp_path: Path) -> None:
-        command = plugin._build_test_command(tmp_path, '', doctest_ini_overrides=['-o', 'doctest_encoding=latin-1'])
+        command = verdicts._build_test_command(tmp_path, '', doctest_ini_overrides=['-o', 'doctest_encoding=latin-1'])
 
         assert command[command.index('doctest_encoding=latin-1') - 1] == '-o'
         assert 'addopts=' in command

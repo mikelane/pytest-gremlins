@@ -21,10 +21,12 @@ import pytest
 import pytest_gremlins.plugin as plugin_module
 from pytest_gremlins.plugin import (
     _addopts_without_cov,
-    _build_test_command,
     _get_session,
     _run_tests_with_coverage,
     pytest_configure,
+)
+from pytest_gremlins.verdicts import (
+    _build_test_command,
 )
 
 if TYPE_CHECKING:
