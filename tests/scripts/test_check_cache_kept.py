@@ -74,7 +74,16 @@ class DescribeCheckCacheKept:
         assert len(problems) == 1
         assert 'empty' in problems[0]
 
-    @pytest.mark.parametrize('line', ['    (cache kept: x)', '\t(cache kept: x)'])
+    @pytest.mark.parametrize(
+        'line',
+        [
+            '    (cache kept: x)',
+            '\t(cache kept: x)',
+            ' \t(cache kept: x)',
+            '  \t(cache kept: x)',
+            '   \t(cache kept: x)',
+        ],
+    )
     def it_ignores_a_line_inside_an_indented_code_block(self, line: str) -> None:
         preamble = f'Intro.\n\n{line}\n'
 

@@ -261,7 +261,7 @@ def check_verdicts(
         if not diff.is_empty:
             message = '\n'.join([message, 'Gremlin verdicts on the sample project also changed:', *_change_lines(diff)])
         if released is None:
-            return f'{message} {NO_RELEASE_MESSAGE}'
+            return f'{message}\n{NO_RELEASE_MESSAGE}'
         below_release = head_markers.lowered_from(released)
         return message if below_release or not diff.is_empty else None
     if diff.is_empty or base_markers != head_markers:

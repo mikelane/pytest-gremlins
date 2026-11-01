@@ -63,7 +63,7 @@ PROBLEM_PREFIX = 'PROBLEM: '
 CACHE_KEPT = re.compile(r'\(cache kept:([^)]*)\)')
 LINE_FORMAT = '(cache kept: <reason>)'
 CACHE_KEPT_ANY_CASE = re.compile(r'\(cache kept:', re.IGNORECASE)
-INDENTED_CODE_LINE = re.compile(r'^(?: {4}|\t).*$', re.MULTILINE)
+INDENTED_CODE_LINE = re.compile(r'^(?: {0,3}\t| {4}).*$', re.MULTILINE)
 
 __all__ = ['GIT', 'cache_kept_reasons', 'check_cache_kept', 'main', 'needs_cache_kept_line', 'previous_release_tag']
 

@@ -195,7 +195,7 @@ class DescribeMarkerLoweredToTheReleasedValue:
         failure = checker.check_verdicts(ZAPPED, ZAPPED, UNRELEASED_BASE, lowered, released=None)
 
         assert failure == (
-            checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION') + ' ' + checker.NO_RELEASE_MESSAGE
+            checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION') + '\n' + checker.NO_RELEASE_MESSAGE
         )
 
     def it_appends_the_no_release_message_to_the_change_list_when_a_verdict_changed(self) -> None:
@@ -207,7 +207,8 @@ class DescribeMarkerLoweredToTheReleasedValue:
             [
                 checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION'),
                 'Gremlin verdicts on the sample project also changed:',
-                f'changed: sample.py:10 comparison: >= to >: zapped -> survived {checker.NO_RELEASE_MESSAGE}',
+                'changed: sample.py:10 comparison: >= to >: zapped -> survived',
+                checker.NO_RELEASE_MESSAGE,
             ]
         )
 
