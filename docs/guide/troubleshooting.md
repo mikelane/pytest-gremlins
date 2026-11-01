@@ -665,6 +665,21 @@ When autoload is disabled for gremlin runs (by the environment, or by the flag i
 your session loaded pytest-cov, for example with `-p pytest_cov` on the command line, gremlins loads it in the gremlin
 runs under the name your session registered it with (`pytest_cov` or `pytest_cov.plugin`) and passes `--no-cov`.
 
+### pytest-xdist when plugin autoload is disabled
+
+Gremlin runs get `-n 0` only when they can parse it. With autoload disabled for gremlin runs (by the environment, or by
+the flag in `addopts` or `PYTEST_ADDOPTS`) and pytest-xdist loaded in your session, for example with `-p xdist` or
+`-p xdist.plugin` on the command line, gremlins loads it in the gremlin runs under the name your session registered it
+with (`xdist` or `xdist.plugin`) and passes `-n 0`. If your session did not load xdist, `-n 0` is left out. Earlier
+versions passed `-n 0` after `-p xdist` anyway, so every gremlin run failed with `unrecognized arguments: -n`.
+
+Earlier versions that saw `-p xdist.plugin` ran gremlins without xdist at all, so a test that uses an xdist fixture
+(`worker_id`, `testrun_uid`) errored under every gremlin and was reported as a kill, a false kill. Sessions whose
+gremlin runs now load xdist this way add an `xdist-668` part to the cache key, so the first run after upgrading
+re-tests them (one cache miss). Autoload can be disabled by the environment, by the flag in `addopts` or
+`PYTEST_ADDOPTS`, or by `--disable-plugin-autoload` given only on the command line. Sessions that keep autoload on,
+and sessions with autoload off but no xdist, keep their cache.
+
 ---
 
 ### Using pytest-xdist with gremlins

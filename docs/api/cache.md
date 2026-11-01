@@ -250,6 +250,13 @@ changes how verdicts are computed and raises the cache version (then the first r
 upgrading or downgrading an operator package invalidates it. Old entries stop matching; they remain in `results.db`
 until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 
+Two sessions add a part to the key so that only they miss once after an upgrade: one that loads the pytester plugin
+adds `pytester-615` (#891), and one whose gremlin runs load pytest-xdist themselves because plugin autoload is
+disabled adds `xdist-668` (#668). Earlier versions could report false kills for tests using `worker_id` or
+`testrun_uid` when xdist was loaded with `-p xdist.plugin` (spaced or joined) on the command line, or when
+`--disable-plugin-autoload` came with `-p pytest_rerunfailures` in `addopts`, because the gremlin runs went without
+xdist. Other sessions with the part just re-test once. Every other session keeps its key.
+
 ### Invalidation Rules
 
 | Change | Cache Effect |

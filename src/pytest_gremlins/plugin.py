@@ -362,6 +362,7 @@ class GremlinSession:
     unmutated_timeout_checks: dict[tuple[str, ...], UnmutatedRunOutcome] = field(default_factory=dict)
     xdist_active: bool = False
     xdist_loaded: bool = False
+    xdist_loader_options: list[str] = field(default_factory=list)
     xdist_workers: int | None = None
     coverage_mode: CoverageMode = CoverageMode.PRIVATE
     exclude_patterns: list[str] = field(default_factory=list)
@@ -833,7 +834,9 @@ def _init_cache(
     cache_enabled: bool,
     clear_cache: bool,
     operators: Sequence[GremlinOperator],
+    *,
     pytester_loaded: Callable[[], bool] = lambda: False,
+    xdist_loader_loaded: Callable[[], bool] = lambda: False,
 ) -> IncrementalCache | None:
     """Initialise the incremental cache when enabled, optionally clearing it first.
 
@@ -844,6 +847,8 @@ def _init_cache(
         operators: The operators registered for the run, after conftest registration; their owning
             distributions are part of the cache key.
         pytester_loaded: Reports whether the session loads the pytester plugin; such sessions get their own key part.
+        xdist_loader_loaded: Reports whether gremlin runs load xdist themselves (autoload disabled, #668); such
+            sessions get their own key part.
 
     Returns:
         An open IncrementalCache, or None when caching is disabled.
@@ -851,7 +856,13 @@ def _init_cache(
     if not cache_enabled:
         return None
     cache_dir = rootdir / '.gremlins_cache'
-    cache = IncrementalCache(cache_dir, operators, project_root=rootdir, pytester_loaded=pytester_loaded)
+    cache = IncrementalCache(
+        cache_dir,
+        operators,
+        project_root=rootdir,
+        pytester_loaded=pytester_loaded,
+        xdist_loader_loaded=xdist_loader_loaded,
+    )
     if clear_cache:
         cache.clear()
         print('pytest-gremlins: cache cleared')
@@ -1116,16 +1127,18 @@ def pytest_configure(config: pytest.Config) -> None:
 
     # Cache: merge_configs already resolved CLI-beats-TOML; default False
     cache_enabled: bool = bool(toml_cache)
+    rerun_options = _rerun_options_for(config)
+    xdist_loader_options, xdist_loaded = _xdist_options_for(config, rerun_options)
     cache: IncrementalCache | None = _init_cache(
         rootdir,
         cache_enabled,
         config.option.gremlin_clear_cache,
         operators,
         pytester_loaded=lambda: _pytester_loaded(config),
+        xdist_loader_loaded=lambda: bool(xdist_loader_options),
     )
 
     xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
-    rerun_options = _rerun_options_for(config)
     xdist_workers_for_parallel = xdist_worker_int if xdist_active else None
     parallel_enabled, parallel_workers = _read_parallel_config(config, xdist_workers=xdist_workers_for_parallel)
     merged_workers = toml_workers if isinstance(toml_workers, int) else None
@@ -1163,7 +1176,8 @@ def pytest_configure(config: pytest.Config) -> None:
             no_coverage_filter=bool(getattr(config.option, 'gremlin_no_coverage_filter', False)),
             explain_gremlin_id=getattr(config.option, 'gremlin_explain', None),
             xdist_active=xdist_active,
-            xdist_loaded=config.pluginmanager.hasplugin('xdist'),
+            xdist_loaded=xdist_loaded,
+            xdist_loader_options=xdist_loader_options,
             xdist_workers=xdist_worker_int if xdist_active else None,
             preserved_addopts=_addopts_for_gremlin_runs(config),
             doctest_ini_overrides=_doctest_ini_overrides(config),
@@ -2580,6 +2594,7 @@ def _unmutated_command_and_env(gremlin_session: GremlinSession, rootdir: Path) -
         instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
@@ -3433,6 +3448,29 @@ def _pytest_cov_options_for(config: pytest.Config, rerun_options: Sequence[str])
     return [*_loader_options_for(config, autoloaded_names), _NO_COV_OPTION]
 
 
+_XDIST_PLUGIN_NAMES: tuple[str, ...] = ('xdist.plugin', 'xdist')
+_XDIST_ENTRY_POINT_NAME = 'xdist'
+
+
+def _xdist_options_for(config: pytest.Config, rerun_options: Sequence[str]) -> tuple[list[str], bool]:
+    """Return the ``-p`` loader for gremlin runs and whether they get ``-n 0`` (issue #668).
+
+    ``-n`` exists only where pytest-xdist is registered.  With autoload on, gremlin runs register it through its
+    entry point, so ``-n 0`` goes out when the session registered ``xdist`` and no loader is added (a second name
+    would register the module twice).  Gremlin runs that start with autoload disabled (see
+    :func:`_gremlin_runs_have_autoload_disabled`, or the flag the rerun options forward) register nothing
+    themselves, so they get ``-p`` and the name the session registered it under, and ``-n 0`` goes out only then.
+    A session whose xdist is registered under an unknown name gets neither, which errs toward a missed kill.
+
+    Returns:
+        The loader options and whether to forward ``-n 0``.
+    """
+    if _gremlin_runs_have_autoload_disabled(config) or _DISABLE_PLUGIN_AUTOLOAD_FLAG in rerun_options:
+        loader_options = _loader_options_for(config, _XDIST_PLUGIN_NAMES)
+        return loader_options, bool(loader_options)
+    return [], config.pluginmanager.hasplugin(_XDIST_ENTRY_POINT_NAME)
+
+
 def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
     """Return whether the rerun ini settings are passed to gremlin runs: only when a ``-c`` file holds them.
 
@@ -3937,6 +3975,7 @@ def _run_batch_mutation_testing(  # pragma: no cover
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
@@ -4070,6 +4109,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
@@ -4438,6 +4478,7 @@ def _run_mutation_testing(
         gremlin_session.instrumented_dir,
         gremlin_session.preserved_addopts,
         xdist_loaded=gremlin_session.xdist_loaded,
+        xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
@@ -4889,6 +4930,7 @@ def _build_test_command(
     preserved_addopts: str = '',
     *,
     xdist_loaded: bool = False,
+    xdist_loader_options: Sequence[str] = (),
     doctest_ini_overrides: Sequence[str] = (),
     rerun_options: Sequence[str] = (),
     pytest_cov_options: Sequence[str] = (),
@@ -4917,6 +4959,8 @@ def _build_test_command(
             token stripper does not recognise) can distribute the run.  xdist itself stays
             loaded, so ``worker_id`` still works.  Without xdist the flag would be rejected as
             unrecognized, so it is omitted.
+        xdist_loader_options: The ``-p`` loader for gremlin runs that start with autoload disabled (see
+            :func:`_xdist_options_for`), placed before ``-n 0`` so the option has a plugin to parse it.
         doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs
             (see :func:`_doctest_ini_overrides`), kept outside ``addopts`` because pytest before 9.1 ignores a
             ``-o`` nested in an ``addopts`` value (issue #719).
@@ -4959,7 +5003,7 @@ def _build_test_command(
     command.extend(pytest_cov_options)
 
     if xdist_loaded:
-        command.extend(['-n', '0'])
+        command.extend([*xdist_loader_options, '-n', '0'])
 
     command.extend(rerun_options)
 
