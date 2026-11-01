@@ -11,6 +11,8 @@ from pytest_gremlins.cache.incremental import (
     IncrementalCache,
 )
 
+from .cached_entries import partial_entry
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -25,15 +27,15 @@ class DescribeRunnerFidelityCacheKey:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
             legacy_key = current_key.removesuffix(f':{RUNNER_FIDELITY_VERSION}')
-            cache._store.put(legacy_key, {'status': 'zapped'})
+            cache._store.put(legacy_key, partial_entry(status='zapped'))
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
     def it_hits_a_result_stored_under_the_current_key(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
-            cache.cache_result('g001', 'src_hash', TEST_HASHES, {'status': 'zapped'})
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, partial_entry(status='zapped'))
 
-            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == {'status': 'zapped'}
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == partial_entry(status='zapped')
 
     def it_ends_the_key_with_the_version(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
@@ -45,7 +47,7 @@ class DescribeRunnerFidelityCacheKey:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
             previous_key = current_key.rsplit(':', 1)[0] + ':rf4'
-            cache._store.put(previous_key, {'status': 'error'})
+            cache._store.put(previous_key, partial_entry(status='error'))
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
@@ -53,7 +55,7 @@ class DescribeRunnerFidelityCacheKey:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
             unconfirmed_key = current_key.rsplit(':', 1)[0] + ':rf5'
-            cache._store.put(unconfirmed_key, {'status': 'timeout'})
+            cache._store.put(unconfirmed_key, partial_entry(status='timeout'))
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
@@ -61,7 +63,7 @@ class DescribeRunnerFidelityCacheKey:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
             fileless_key = current_key.rsplit(':', 1)[0] + ':rf6'
-            cache._store.put(fileless_key, {'status': 'zapped'})
+            cache._store.put(fileless_key, partial_entry(status='zapped'))
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
@@ -69,7 +71,7 @@ class DescribeRunnerFidelityCacheKey:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
             unactivated_key = current_key.rsplit(':', 1)[0] + ':rf7'
-            cache._store.put(unactivated_key, {'status': 'survived'})
+            cache._store.put(unactivated_key, partial_entry(status='survived'))
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
@@ -79,7 +81,7 @@ class DescribeRunnerFidelityCacheKey:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
             misnamed_key = current_key.rsplit(':', 1)[0] + ':rf8'
-            cache._store.put(misnamed_key, {'status': 'survived'})
+            cache._store.put(misnamed_key, partial_entry(status='survived'))
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
@@ -88,6 +90,6 @@ class DescribeRunnerFidelityCacheKey:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
             rf17_key = current_key.rsplit(':', 1)[0] + ':rf17'
-            cache._store.put(rf17_key, {'status': 'error'})
+            cache._store.put(rf17_key, partial_entry(status='error'))
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None

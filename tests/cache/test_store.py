@@ -11,6 +11,8 @@ import pytest
 from pytest_gremlins.cache.store import ResultStore
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
+from .cached_entries import partial_entry
+
 
 @pytest.mark.medium
 class DescribeResultStore:
@@ -44,11 +46,7 @@ class DescribeResultStore:
     def it_put_and_get_retrieves_stored_result(self, tmp_path):
         """put stores result that can be retrieved with get."""
         cache_key = 'abc123'
-        result = {
-            'gremlin_id': 'g001',
-            'status': GremlinResultStatus.ZAPPED.value,
-            'killing_test': 'test_foo',
-        }
+        result = partial_entry(gremlin_id='g001', status=GremlinResultStatus.ZAPPED.value, killing_test='test_foo')
 
         with ResultStore(tmp_path / 'results.db') as store:
             store.put(cache_key, result)
@@ -59,8 +57,8 @@ class DescribeResultStore:
     def it_put_overwrites_existing_entry(self, tmp_path):
         """put replaces existing entry with same key."""
         cache_key = 'abc123'
-        original = {'gremlin_id': 'g001', 'status': 'zapped'}
-        updated = {'gremlin_id': 'g001', 'status': 'survived'}
+        original = partial_entry(gremlin_id='g001', status='zapped')
+        updated = partial_entry(gremlin_id='g001', status='survived')
 
         with ResultStore(tmp_path / 'results.db') as store:
             store.put(cache_key, original)
@@ -73,7 +71,7 @@ class DescribeResultStore:
         """Data persists when store is reopened."""
         db_path = tmp_path / 'results.db'
         cache_key = 'persistent_key'
-        result = {'gremlin_id': 'g001', 'status': 'zapped'}
+        result = partial_entry(gremlin_id='g001', status='zapped')
 
         with ResultStore(db_path) as store1:
             store1.put(cache_key, result)
@@ -86,7 +84,7 @@ class DescribeResultStore:
     def it_delete_removes_entry(self, tmp_path):
         """delete removes entry from cache."""
         cache_key = 'to_delete'
-        result = {'gremlin_id': 'g001', 'status': 'zapped'}
+        result = partial_entry(gremlin_id='g001', status='zapped')
 
         with ResultStore(tmp_path / 'results.db') as store:
             store.put(cache_key, result)
@@ -103,8 +101,8 @@ class DescribeResultStore:
     def it_clear_removes_all_entries(self, tmp_path):
         """clear removes all cached entries."""
         with ResultStore(tmp_path / 'results.db') as store:
-            store.put('key1', {'status': 'zapped'})
-            store.put('key2', {'status': 'survived'})
+            store.put('key1', partial_entry(status='zapped'))
+            store.put('key2', partial_entry(status='survived'))
             store.clear()
             result1 = store.get('key1')
             result2 = store.get('key2')
@@ -115,7 +113,7 @@ class DescribeResultStore:
     def it_has_returns_true_for_existing_key(self, tmp_path):
         """has returns True when key exists in cache."""
         with ResultStore(tmp_path / 'results.db') as store:
-            store.put('exists', {'status': 'zapped'})
+            store.put('exists', partial_entry(status='zapped'))
             result = store.has('exists')
 
         assert result is True
@@ -130,9 +128,9 @@ class DescribeResultStore:
     def it_keys_returns_all_cache_keys(self, tmp_path):
         """keys returns list of all cached keys."""
         with ResultStore(tmp_path / 'results.db') as store:
-            store.put('alpha', {'status': 'zapped'})
-            store.put('beta', {'status': 'survived'})
-            store.put('gamma', {'status': 'timeout'})
+            store.put('alpha', partial_entry(status='zapped'))
+            store.put('beta', partial_entry(status='survived'))
+            store.put('gamma', partial_entry(status='timeout'))
             keys = store.keys()
 
         assert set(keys) == {'alpha', 'beta', 'gamma'}
@@ -147,8 +145,8 @@ class DescribeResultStore:
     def it_returns_number_of_entries(self, tmp_path):
         """count returns total number of cached entries."""
         with ResultStore(tmp_path / 'results.db') as store:
-            store.put('key1', {'status': 'zapped'})
-            store.put('key2', {'status': 'survived'})
+            store.put('key1', partial_entry(status='zapped'))
+            store.put('key2', partial_entry(status='survived'))
             count = store.count()
 
         assert count == 2
@@ -165,28 +163,28 @@ class DescribeResultStore:
         db_path = tmp_path / 'results.db'
 
         with ResultStore(db_path) as store:
-            store.put('key', {'status': 'zapped'})
+            store.put('key', partial_entry(status='zapped'))
 
         # Reopening should work (connection was closed properly)
         with ResultStore(db_path) as store2:
             result = store2.get('key')
 
-        assert result == {'status': 'zapped'}
+        assert result == partial_entry(status='zapped')
 
     def it_stores_complex_nested_data(self, tmp_path):
         """Store handles complex nested data structures."""
-        complex_result = {
-            'gremlin_id': 'g001',
-            'file_path': '/path/to/file.py',
-            'line_number': 42,
-            'status': 'survived',
-            'tests_run': ['test_a', 'test_b', 'test_c'],
-            'metadata': {
+        complex_result = partial_entry(
+            gremlin_id='g001',
+            file_path='/path/to/file.py',
+            line_number=42,
+            status='survived',
+            tests_run=['test_a', 'test_b', 'test_c'],
+            metadata={
                 'operator': 'comparison',
                 'original': '<',
                 'mutated': '<=',
             },
-        }
+        )
 
         with ResultStore(tmp_path / 'results.db') as store:
             store.put('complex', complex_result)
@@ -197,9 +195,9 @@ class DescribeResultStore:
     def it_delete_by_prefix_removes_matching_keys(self, tmp_path):
         """delete_by_prefix removes all keys with given prefix."""
         with ResultStore(tmp_path / 'results.db') as store:
-            store.put('file1:g001', {'status': 'zapped'})
-            store.put('file1:g002', {'status': 'survived'})
-            store.put('file2:g001', {'status': 'zapped'})
+            store.put('file1:g001', partial_entry(status='zapped'))
+            store.put('file1:g002', partial_entry(status='survived'))
+            store.put('file2:g001', partial_entry(status='zapped'))
             store.delete_by_prefix('file1:')
             file1_g001 = store.get('file1:g001')
             file1_g002 = store.get('file1:g002')
@@ -207,7 +205,7 @@ class DescribeResultStore:
 
         assert file1_g001 is None
         assert file1_g002 is None
-        assert file2_g001 == {'status': 'zapped'}
+        assert file2_g001 == partial_entry(status='zapped')
 
     def test_flush_with_no_pending_writes_is_noop(self, tmp_path: Path) -> None:
         """flush() when no deferred writes are pending does not raise."""
@@ -217,8 +215,8 @@ class DescribeResultStore:
     def test_delete_by_prefix_with_no_matching_keys_is_noop(self, tmp_path: Path) -> None:
         """delete_by_prefix with a prefix matching nothing leaves cache unchanged."""
         with ResultStore(tmp_path / 'results.db') as store:
-            store.put('key1', {'status': 'zapped'})
-            store.put('key2', {'status': 'survived'})
+            store.put('key1', partial_entry(status='zapped'))
+            store.put('key2', partial_entry(status='survived'))
 
             store.delete_by_prefix('nonexistent_prefix:')
 
@@ -227,9 +225,9 @@ class DescribeResultStore:
     def test_delete_by_prefix_with_empty_string_deletes_all_entries(self, tmp_path: Path) -> None:
         """delete_by_prefix('') matches every key and deletes the entire cache."""
         with ResultStore(tmp_path / 'results.db') as store:
-            store.put('key1', {'status': 'zapped'})
-            store.put('key2', {'status': 'survived'})
-            store.put('key3', {'status': 'timeout'})
+            store.put('key1', partial_entry(status='zapped'))
+            store.put('key2', partial_entry(status='survived'))
+            store.put('key3', partial_entry(status='timeout'))
 
             store.delete_by_prefix('')
 
@@ -241,8 +239,8 @@ class DescribeResultStore:
         db_path.write_bytes(b'not a valid sqlite database')
 
         with ResultStore(db_path) as store:
-            store.put('key1', {'status': 'zapped'})
+            store.put('key1', partial_entry(status='zapped'))
             retrieved = store.get('key1')
 
-        assert retrieved == {'status': 'zapped'}
+        assert retrieved == partial_entry(status='zapped')
         assert 'corrupted' in caplog.text.lower()

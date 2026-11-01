@@ -16,6 +16,8 @@ from pytest_gremlins.plugin import (
     _check_cache_for_gremlin,
 )
 
+from .cached_entries import partial_entry
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -64,15 +66,17 @@ class DescribeOptimizeLevelCacheKey:
 
     def it_misses_a_result_cached_under_another_level(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
-            cache.cache_result('g001', 'src_hash', TEST_HASHES, {'status': 'zapped'}, optimize_level=0)
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, partial_entry(status='zapped'), optimize_level=0)
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES, optimize_level=1) is None
 
     def it_hits_a_result_cached_under_the_same_level(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
-            cache.cache_result('g001', 'src_hash', TEST_HASHES, {'status': 'survived'}, optimize_level=1)
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, partial_entry(status='survived'), optimize_level=1)
 
-            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES, optimize_level=1) == {'status': 'survived'}
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES, optimize_level=1) == partial_entry(
+                status='survived'
+            )
 
     def it_keeps_levels_1_and_2_apart(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
@@ -84,7 +88,7 @@ class DescribeOptimizeLevelCacheKey:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             current_key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
             legacy_key = current_key.replace(':opt=0', '').rsplit(':', 1)[0] + ':rf12'
-            cache._store.put(legacy_key, {'status': 'zapped'})
+            cache._store.put(legacy_key, partial_entry(status='zapped'))
 
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
 
@@ -104,7 +108,7 @@ class DescribePluginCacheLookup:
                 'pytest_gremlins.plugin._build_test_hashes_for_gremlin', lambda _tests, _session: TEST_HASHES
             )
             cache.cache_result(
-                'g001', 'src_hash', TEST_HASHES, {'status': 'zapped'}, mutant_timeout=session.mutant_timeout
+                'g001', 'src_hash', TEST_HASHES, partial_entry(status='zapped'), mutant_timeout=session.mutant_timeout
             )
 
             monkeypatch.delenv('PYTHONOPTIMIZE', raising=False)

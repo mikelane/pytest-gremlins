@@ -12,6 +12,8 @@ from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.store import ResultStore
 
+from .cached_entries import partial_entry
+
 
 @pytest.mark.medium
 class DescribeUpfrontHashingOverhead:
@@ -71,7 +73,7 @@ class DescribeSqliteCommitOverhead:
         with ResultStore(db_path) as store:
             start = time.perf_counter()
             for i in range(100):
-                store.put(f'key_{i}', {'status': 'zapped', 'test': f'test_{i}'})
+                store.put(f'key_{i}', partial_entry(status='zapped', test=f'test_{i}'))
             individual_time = time.perf_counter() - start
 
         # Note: Windows filesystem I/O is significantly slower than macOS/Linux.
@@ -154,7 +156,7 @@ class DescribeTotalCacheOverhead:
                     f'gremlin_{i}',
                     source_hash,
                     test_hashes,
-                    {'status': 'zapped', 'killing_test': 'test_0'},
+                    partial_entry(status='zapped', killing_test='test_0'),
                 )
 
         # WARM RUN: Measure cache hit overhead
@@ -201,7 +203,7 @@ class DescribeCacheWithBatchOperations:
         # Populate cache
         with IncrementalCache(cache_dir) as cache:
             for i in range(num_gremlins):
-                cache.cache_result(f'g_{i}', source_hash, test_hashes, {'status': 'zapped'})
+                cache.cache_result(f'g_{i}', source_hash, test_hashes, partial_entry(status='zapped'))
 
         # Measure individual gets (current behavior)
         with IncrementalCache(cache_dir) as cache:
