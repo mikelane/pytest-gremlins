@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
 import sys
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -14,6 +14,9 @@ from pytest_gremlins.node_id_file import (
     NODE_IDS_FILE_OPTION,
     write_node_ids_file,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 LOCAL_TESTS = """
 import localmod
@@ -35,7 +38,7 @@ def _record_pytest_main(monkeypatch: pytest.MonkeyPatch, exit_code: int = 0) -> 
         received.append(list(args))
         return exit_code
 
-    monkeypatch.setattr(prescan_main.pytest, 'main', fake_main)
+    monkeypatch.setattr(prescan_main.pytest, 'main', fake_main)  # type: ignore[attr-defined]
     return received
 
 

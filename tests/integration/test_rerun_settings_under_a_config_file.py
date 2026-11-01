@@ -9,7 +9,7 @@ restricts reruns more than the baseline did, a flaky test is not rerun and greml
 from __future__ import annotations
 
 import pytest
-from rerun_samples import (
+from rerun_samples import (  # type: ignore[import-not-found]
     run_gremlins,
     survivor_count,
 )

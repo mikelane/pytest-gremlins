@@ -16,10 +16,10 @@ from typing import Any
 
 # These imports couple the test to pre-commit internals (it has no public file-classification API);
 # tox pins pre-commit below 5 so a major release cannot break tox runs unnoticed.
-from pre_commit.clientlib import load_config
-from pre_commit.commands.run import Classifier
-from pre_commit.hook import Hook
-from pre_commit.prefix import Prefix
+from pre_commit.clientlib import load_config  # type: ignore[import-untyped]
+from pre_commit.commands.run import Classifier  # type: ignore[import-untyped]
+from pre_commit.hook import Hook  # type: ignore[import-untyped]
+from pre_commit.prefix import Prefix  # type: ignore[import-untyped]
 import pytest
 
 PRE_COMMIT_CONFIG_PATH = Path(__file__).resolve().parents[2] / '.pre-commit-config.yaml'
@@ -59,8 +59,10 @@ def _selected_filenames(hook_id: str, filename: str, workdir: Path, monkeypatch:
 @pytest.mark.medium
 class DescribeCommitStageUvHooks:
     @pytest.mark.parametrize('hook_id', ALL_COMMIT_HOOK_IDS)
-    @pytest.mark.parametrize('filename', ['src/pytest_gremlins/_mod.py', 'src/pytest_gremlins/_stub.pyi'])
-    def it_selects_python_and_stub_sources(
+    @pytest.mark.parametrize(
+        'filename', ['src/pytest_gremlins/_mod.py', 'src/pytest_gremlins/_stub.pyi', 'tests/test_x.py']
+    )
+    def it_selects_python_and_stub_sources_under_src_and_tests(
         self, hook_id: str, filename: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         assert _selected_filenames(hook_id, filename, tmp_path, monkeypatch) == [filename]
@@ -76,7 +78,7 @@ class DescribeCommitStageUvHooks:
     ) -> None:
         assert _selected_filenames(hook_id, filename, tmp_path, monkeypatch) == []
 
-    @pytest.mark.parametrize('filename', ['tests/test_x.py', 'src/pytest_gremlins/notes.md'])
+    @pytest.mark.parametrize('filename', ['src/pytest_gremlins/notes.md', 'docs/conf.py'])
     def it_skips_files_mypy_does_not_check(
         self, filename: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

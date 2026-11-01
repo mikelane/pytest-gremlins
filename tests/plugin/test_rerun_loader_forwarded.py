@@ -14,7 +14,7 @@ from typing import (
 )
 
 import pytest
-from rerun_samples import (
+from rerun_samples import (  # type: ignore[import-not-found]
     AUTOLOAD_ENV_VAR,
     FLAKY_UNDER_GREMLINS_TEST,
     GREMLIN_ARGS,

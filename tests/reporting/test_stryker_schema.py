@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
-import jsonschema
+import jsonschema  # type: ignore[import-untyped]
 import pytest
 
 from pytest_gremlins.reporting.results import (
@@ -27,7 +30,7 @@ SCHEMA = json.loads((Path(__file__).parent / 'data' / 'mutation-testing-report-s
 
 def _export(*results: GremlinResult, exporter: StrykerExporter | None = None) -> dict[str, Any]:
     exporter = exporter or StrykerExporter(source_reader=lambda _path: '')
-    return json.loads(exporter.to_json(MutationScore.from_results(list(results))))
+    return cast('dict[str, Any]', json.loads(exporter.to_json(MutationScore.from_results(list(results)))))
 
 
 def _export_reading_disk(result: GremlinResult) -> dict[str, Any]:

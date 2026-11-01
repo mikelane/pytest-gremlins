@@ -10,6 +10,10 @@ import importlib
 import importlib.util
 from pathlib import Path
 import sys
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 
 import pluggy
 import pytest
@@ -17,12 +21,15 @@ import pytest
 from pytest_gremlins.cache.versions import installed_versions_fingerprint
 from pytest_gremlins.operators.comparison import ComparisonOperator
 
+if TYPE_CHECKING:
+    from pytest_gremlins.operators.protocol import GremlinOperator
+
 OPERATOR_SOURCE = 'class HelperOperator:\n    name = "helper"\n    description = "x"\n    delta = {delta}\n'
 
 
 def _load_operator(
     monkeypatch: pytest.MonkeyPatch, path: Path, module_name: str = 'helper_mod', source: str | None = None
-) -> object:
+) -> GremlinOperator:
     if source is not None:
         path.write_text(source)
     spec = importlib.util.spec_from_file_location(module_name, path)
@@ -31,7 +38,8 @@ def _load_operator(
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
-    return module.HelperOperator()
+    operator: GremlinOperator = module.HelperOperator()
+    return operator
 
 
 @pytest.mark.medium
@@ -110,7 +118,8 @@ class DescribeLocalOperatorHelperInFingerprint:
 
 
 def _always_misses(operator: object, root: Path) -> bool:
-    return installed_versions_fingerprint([operator], root) != installed_versions_fingerprint([operator], root)
+    operators = cast('list[GremlinOperator]', [operator])
+    return installed_versions_fingerprint(operators, root) != installed_versions_fingerprint(operators, root)
 
 
 @pytest.mark.medium
@@ -182,11 +191,12 @@ class DescribeHelperClassification:
         assert not _always_misses(operator, directory_holding_the_venv)
 
 
-def _load_operator_unregistered(path: Path, module_name: str) -> object:
+def _load_operator_unregistered(path: Path, module_name: str) -> GremlinOperator:
     path.write_text(OPERATOR_SOURCE.format(delta=1))
     spec = importlib.util.spec_from_file_location(module_name, path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.HelperOperator()
+    operator: GremlinOperator = module.HelperOperator()
+    return operator

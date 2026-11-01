@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
-from cov_samples import (
+from cov_samples import (  # type: ignore[import-not-found]
     SESSION_ARGS,
     assert_gremlins_ran_cleanly,
     write_project,
@@ -24,7 +24,7 @@ from pytest_gremlins.plugin import (
 )
 
 AUTOLOAD_OFF_FLAG = '--disable-plugin-autoload'
-NO_XDIST = ([], False)
+NO_XDIST: tuple[list[str], bool] = ([], False)
 
 
 def _config(*, loaded: tuple[str, ...] = (), autoload_flag_in_addopts: bool = False) -> Any:

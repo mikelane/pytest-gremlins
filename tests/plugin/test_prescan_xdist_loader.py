@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cov_samples import (
+from cov_samples import (  # type: ignore[import-not-found]
     SESSION_ARGS,
     assert_gremlins_ran_cleanly,
 )
 import pytest
-from rerun_samples import SAMPLE
+from rerun_samples import SAMPLE  # type: ignore[import-not-found]
 
 from pytest_gremlins import plugin
 

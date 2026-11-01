@@ -23,6 +23,7 @@ from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.reporting.stryker_export import StrykerExporter
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 
@@ -238,7 +239,7 @@ class DescribeStrykerExporterOptionalFields:
 class DescribeStrykerExporterFileOutput:
     """Tests for writing Stryker format to file."""
 
-    def it_writes_to_file(self, make_result, tmp_path: Path):
+    def it_writes_to_file(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         exporter = StrykerExporter()

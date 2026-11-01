@@ -173,7 +173,7 @@ def get_environment_info() -> EnvironmentInfo:
     Returns:
         EnvironmentInfo with system details.
     """
-    import psutil
+    import psutil  # type: ignore[import-untyped]
 
     # Get mutmut version
     mutmut_version = 'not installed'

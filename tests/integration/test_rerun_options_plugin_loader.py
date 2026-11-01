@@ -18,7 +18,7 @@ the baseline (#679).
 from __future__ import annotations
 
 import pytest
-from rerun_samples import (
+from rerun_samples import (  # type: ignore[import-not-found]
     FLAKY_WEAK_TEST,
     SAMPLE,
     survivor_count,

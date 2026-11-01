@@ -36,7 +36,7 @@ class DescribeLightweightRunnerDisabled:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         commands: list[list[str] | None] = []
-        real_build = plugin.build_lightweight_command
+        real_build = plugin.build_lightweight_command  # type: ignore[attr-defined]
 
         def spy(test_command: list[str], env_vars: dict[str, str]) -> list[str] | None:
             command = real_build(test_command, env_vars)

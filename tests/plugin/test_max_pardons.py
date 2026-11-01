@@ -227,7 +227,7 @@ class DescribeMaxPardonsFileIO:
 
         config = make_pytest_config(tmp_path)  # type: ignore[operator]
 
-        pytest_configure(config)  # type: ignore[arg-type]
+        pytest_configure(config)
 
         session = plugin._get_session()
         assert session is not None
@@ -298,7 +298,7 @@ class DescribeMaxPardonsFileIO:
         config = make_pytest_config(tmp_path, max_pardons=-1)  # type: ignore[operator]
 
         with patch('pytest_gremlins.plugin.pytest') as mock_pytest:
-            pytest_configure(config)  # type: ignore[arg-type]
+            pytest_configure(config)
 
         mock_pytest.exit.assert_called_once()
         assert mock_pytest.exit.call_args.kwargs.get('returncode') == 4

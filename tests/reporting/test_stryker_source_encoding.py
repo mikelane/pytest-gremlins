@@ -10,11 +10,11 @@ from __future__ import annotations
 import ast
 import json
 import logging
-from pathlib import Path
 import tokenize
 from typing import (
     TYPE_CHECKING,
     Any,
+    cast,
 )
 
 import pytest
@@ -31,6 +31,8 @@ from pytest_gremlins.reporting.stryker_export import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from pytest_gremlins.instrumentation.gremlin import Gremlin
 
 UTF8_BOM = b'\xef\xbb\xbf'
@@ -46,13 +48,15 @@ def _instrument(path: Path) -> tuple[str, list[Gremlin]]:
 
 def _export_file(path: Path, gremlins: list[Gremlin]) -> dict[str, Any]:
     results = [GremlinResult(gremlin=g, status=GremlinResultStatus.SURVIVED) for g in gremlins]
-    return json.loads(StrykerExporter().to_json(MutationScore.from_results(results)))['files'][str(path)]
+    return cast(
+        'dict[str, Any]', json.loads(StrykerExporter().to_json(MutationScore.from_results(results)))['files'][str(path)]
+    )
 
 
 def _exported_text(file_report: dict[str, Any], mutant: dict[str, Any]) -> str:
     start, end = mutant['location']['start'], mutant['location']['end']
     line = file_report['source'].splitlines()[start['line'] - 1]
-    return line[start['column'] - 1 : end['column'] - 1]
+    return cast('str', line[start['column'] - 1 : end['column'] - 1])
 
 
 @pytest.mark.medium

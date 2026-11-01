@@ -211,8 +211,8 @@ class DescribeGenerateMarkdownReport:
             mutmut_version='2.4.5',
             gremlins_version='0.1.0',
         )
-        summaries = []
-        results = []
+        summaries: list[BenchmarkSummary] = []
+        results: list[BenchmarkResult] = []
 
         report = generate_markdown_report(env_info, summaries, results)
 
@@ -246,7 +246,7 @@ class DescribeGenerateMarkdownReport:
                 runs=3,
             ),
         ]
-        results = []
+        results: list[BenchmarkResult] = []
 
         report = generate_markdown_report(env_info, summaries, results)
 
@@ -290,7 +290,7 @@ class DescribeGenerateMarkdownReport:
                 runs=3,
             ),
         ]
-        results = []
+        results: list[BenchmarkResult] = []
 
         report = generate_markdown_report(env_info, summaries, results)
 

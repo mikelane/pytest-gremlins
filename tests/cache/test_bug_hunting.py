@@ -12,6 +12,8 @@ from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.store import ResultStore
 
+from .cached_entries import partial_entry
+
 
 @pytest.mark.medium
 class DescribeHasherBugs:
@@ -59,9 +61,9 @@ class DescribeResultStoreBugs:
         """
         with ResultStore(tmp_path / 'results.db') as store:
             # Store some entries - % in middle of prefix
-            store.put('fi%le:g001', {'status': 'zapped'})
-            store.put('fiXXXle:g001', {'status': 'survived'})
-            store.put('another:g001', {'status': 'timeout'})
+            store.put('fi%le:g001', partial_entry(status='zapped'))
+            store.put('fiXXXle:g001', partial_entry(status='survived'))
+            store.put('another:g001', partial_entry(status='timeout'))
 
             # Try to delete only keys starting with 'fi%le:'
             # BUG: The % in the prefix will match ANY characters
@@ -72,10 +74,10 @@ class DescribeResultStoreBugs:
 
             # fiXXXle:g001 should NOT be deleted - but due to the bug it will be
             # because % matches any characters in LIKE
-            assert store.get('fiXXXle:g001') == {'status': 'survived'}
+            assert store.get('fiXXXle:g001') == partial_entry(status='survived')
 
             # another:g001 should not be deleted
-            assert store.get('another:g001') == {'status': 'timeout'}
+            assert store.get('another:g001') == partial_entry(status='timeout')
 
     def it_delete_by_prefix_with_underscore_metacharacter(self, tmp_path):
         """delete_by_prefix handles LIKE metacharacter _ correctly.
@@ -84,8 +86,8 @@ class DescribeResultStoreBugs:
         If prefix contains _, it will match single characters.
         """
         with ResultStore(tmp_path / 'results.db') as store:
-            store.put('file_a:g001', {'status': 'zapped'})
-            store.put('fileXa:g001', {'status': 'survived'})
+            store.put('file_a:g001', partial_entry(status='zapped'))
+            store.put('fileXa:g001', partial_entry(status='survived'))
 
             # Try to delete only 'file_a:' prefixed keys
             # BUG: _ matches any single character, so 'fileXa:' will also match
@@ -93,7 +95,7 @@ class DescribeResultStoreBugs:
 
             assert store.get('file_a:g001') is None
             # fileXa:g001 should NOT be deleted - but may be due to _ metachar
-            assert store.get('fileXa:g001') == {'status': 'survived'}
+            assert store.get('fileXa:g001') == partial_entry(status='survived')
 
     def it_delete_by_prefix_with_backslash(self, tmp_path):
         """delete_by_prefix handles backslashes correctly.
@@ -103,13 +105,13 @@ class DescribeResultStoreBugs:
         """
         with ResultStore(tmp_path / 'results.db') as store:
             # Windows-style paths have backslashes
-            store.put('C:\\path\\file:g001', {'status': 'zapped'})
-            store.put('C:\\other\\file:g001', {'status': 'survived'})
+            store.put('C:\\path\\file:g001', partial_entry(status='zapped'))
+            store.put('C:\\other\\file:g001', partial_entry(status='survived'))
 
             store.delete_by_prefix('C:\\path\\file:')
 
             assert store.get('C:\\path\\file:g001') is None
-            assert store.get('C:\\other\\file:g001') == {'status': 'survived'}
+            assert store.get('C:\\other\\file:g001') == partial_entry(status='survived')
 
     def it_connection_closed_on_schema_init_failure(self, tmp_path):
         """Connection is properly closed if schema initialization fails.
@@ -135,18 +137,18 @@ class DescribeResultStoreBugs:
 
         # Create initial store
         with ResultStore(db_path) as store1:
-            store1.put('key1', {'status': 'zapped'})
+            store1.put('key1', partial_entry(status='zapped'))
 
             # Open another connection (simulating concurrent process)
             with ResultStore(db_path) as store2:
                 # Both should be able to write without SQLITE_BUSY
-                store1.put('key2', {'status': 'survived'})
-                store2.put('key3', {'status': 'timeout'})
+                store1.put('key2', partial_entry(status='survived'))
+                store2.put('key3', partial_entry(status='timeout'))
 
                 # Verify all writes succeeded
-                assert store1.get('key1') == {'status': 'zapped'}
-                assert store1.get('key2') == {'status': 'survived'}
-                assert store2.get('key3') == {'status': 'timeout'}
+                assert store1.get('key1') == partial_entry(status='zapped')
+                assert store1.get('key2') == partial_entry(status='survived')
+                assert store2.get('key3') == partial_entry(status='timeout')
 
 
 @pytest.mark.medium
@@ -165,7 +167,7 @@ class DescribeIncrementalCacheBugs:
                 gremlin_id='g001',
                 source_hash='src_hash',
                 test_hashes={},
-                result={'status': 'survived'},
+                result=partial_entry(status='survived'),
             )
 
             # Try to retrieve with a single test that has empty hash
@@ -193,7 +195,7 @@ class DescribeIncrementalCacheBugs:
                 gremlin_id=gremlin_id,
                 source_hash='src_hash',
                 test_hashes={'test_foo': 'test_hash'},
-                result={'status': 'zapped'},
+                result=partial_entry(status='zapped'),
             )
 
             result = cache.get_cached_result(
@@ -202,7 +204,7 @@ class DescribeIncrementalCacheBugs:
                 test_hashes={'test_foo': 'test_hash'},
             )
 
-            assert result == {'status': 'zapped'}
+            assert result == partial_entry(status='zapped')
 
     def it_computes_cache_key_with_unicode_gremlin_id(self, tmp_path):
         """Cache retrieves results for gremlin IDs containing Unicode characters.
@@ -217,7 +219,7 @@ class DescribeIncrementalCacheBugs:
                 gremlin_id=gremlin_id,
                 source_hash='src_hash',
                 test_hashes={'test_foo': 'test_hash'},
-                result={'status': 'zapped'},
+                result=partial_entry(status='zapped'),
             )
 
             result = cache.get_cached_result(
@@ -226,7 +228,7 @@ class DescribeIncrementalCacheBugs:
                 test_hashes={'test_foo': 'test_hash'},
             )
 
-            assert result == {'status': 'zapped'}
+            assert result == partial_entry(status='zapped')
 
     def it_stats_reset_after_clear(self, tmp_path):
         """get_stats shows zeroed hit/miss counts after clear().
@@ -238,7 +240,7 @@ class DescribeIncrementalCacheBugs:
                 gremlin_id='g001',
                 source_hash='hash',
                 test_hashes={},
-                result={'status': 'zapped'},
+                result=partial_entry(status='zapped'),
             )
 
             # Generate some hits/misses
@@ -268,7 +270,7 @@ class DescribeIncrementalCacheBugs:
                 gremlin_id='g001',
                 source_hash='src_hash',
                 test_hashes={'test_a': 'hash_a', 'test_b': 'hash_b'},
-                result={'status': 'zapped'},
+                result=partial_entry(status='zapped'),
             )
 
             # Retrieve with tests in different dict construction order
@@ -282,4 +284,4 @@ class DescribeIncrementalCacheBugs:
             )
 
             # Should still find the cached result due to sorted ordering
-            assert result == {'status': 'zapped'}
+            assert result == partial_entry(status='zapped')

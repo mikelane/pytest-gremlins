@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
-from cov_samples import (
+from cov_samples import (  # type: ignore[import-not-found]
     SESSION_ARGS,
     assert_gremlins_ran_cleanly,
     write_project,

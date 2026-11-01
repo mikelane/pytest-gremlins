@@ -104,7 +104,7 @@ class DescribeSelectorSelectTestsForLocation:
 class DescribeSelectorBatchSelectionEmpty:
     """Test batch selection with empty input."""
 
-    def it_select_tests_for_gremlins_with_empty_list_returns_empty_set(self, selector) -> None:
+    def it_select_tests_for_gremlins_with_empty_list_returns_empty_set(self, selector: Selector) -> None:
         """select_tests_for_gremlins([]) returns set()."""
         result = selector.select_tests_for_gremlins([])
 

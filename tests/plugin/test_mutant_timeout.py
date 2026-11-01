@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 from unittest.mock import MagicMock
 
 from _pytest.config.argparsing import (
@@ -25,6 +28,8 @@ from pytest_gremlins.plugin import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from pytest_gremlins.cache.types import CachedGremlinResult
 
 DEFAULT_TIMEOUT_SECONDS = 30
 
@@ -120,7 +125,9 @@ class DescribeMutantTimeoutCacheKey:
 
     def it_misses_when_the_timeout_differs(self, tmp_path: Path) -> None:
         cache = IncrementalCache(tmp_path / 'cache')
-        cache.cache_result('g001', 'src', {'test_a': 'h'}, {'status': 'timeout'}, mutant_timeout=1)
+        cache.cache_result(
+            'g001', 'src', {'test_a': 'h'}, cast('CachedGremlinResult', {'status': 'timeout'}), mutant_timeout=1
+        )
 
         try:
             assert cache.get_cached_result('g001', 'src', {'test_a': 'h'}, mutant_timeout=60) is None
@@ -129,10 +136,14 @@ class DescribeMutantTimeoutCacheKey:
 
     def it_hits_when_the_timeout_matches(self, tmp_path: Path) -> None:
         cache = IncrementalCache(tmp_path / 'cache')
-        cache.cache_result('g001', 'src', {'test_a': 'h'}, {'status': 'timeout'}, mutant_timeout=1)
+        cache.cache_result(
+            'g001', 'src', {'test_a': 'h'}, cast('CachedGremlinResult', {'status': 'timeout'}), mutant_timeout=1
+        )
 
         try:
-            assert cache.get_cached_result('g001', 'src', {'test_a': 'h'}, mutant_timeout=1) == {'status': 'timeout'}
+            assert cache.get_cached_result('g001', 'src', {'test_a': 'h'}, mutant_timeout=1) == cast(
+                'CachedGremlinResult', {'status': 'timeout'}
+            )
         finally:
             cache.close()
 

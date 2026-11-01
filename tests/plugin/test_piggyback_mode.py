@@ -35,7 +35,7 @@ class DescribeCoverageModeEnum:
 
     def it_treats_piggyback_and_private_as_distinct_modes(self) -> None:
         """PIGGYBACK and PRIVATE are distinct values - rules out both returning same."""
-        assert CoverageMode.PIGGYBACK != CoverageMode.PRIVATE
+        assert CoverageMode.PIGGYBACK != CoverageMode.PRIVATE  # type: ignore[comparison-overlap]
 
 
 @pytest.mark.small
