@@ -41,8 +41,8 @@ class InstrumentedEntry(TypedDict):
     source: str
     tree: NotRequired[str]
     origin: str
-    identity: str | None
-    file_names: list[str]
+    identity: NotRequired[str | None]
+    file_names: NotRequired[list[str]]
 
 
 InstrumentedSources = dict[str, InstrumentedEntry]
@@ -220,15 +220,16 @@ class GremlinLoader(importlib.abc.Loader):
         self._encoded_tree = encoded_tree
         self._original_loader = original_loader
         self._source = source
+        # pkgutil.get_data reads package data through the loader and answers None when the loader has no get_data,
+        # so the method only exists when the loader that located the file has one.
+        original_get_data = getattr(original_loader, 'get_data', None)
+        if original_get_data is not None:
+            self.get_data = original_get_data
 
     def get_resource_reader(self, fullname: str) -> object:  # noqa: D102
         # Package data (importlib.resources) is found through the loader that located the file.
         get_reader = getattr(self._original_loader, 'get_resource_reader', None)
         return None if get_reader is None else get_reader(fullname)
-
-    def get_data(self, path: str) -> bytes:  # noqa: D102
-        # pkgutil.get_data reads package data through the loader and gives up when it has no get_data.
-        return cast('importlib.abc.ResourceLoader', self._original_loader).get_data(path)
 
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> None:  # noqa: ARG002, D102
         return None
