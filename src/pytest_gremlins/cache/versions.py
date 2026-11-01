@@ -340,7 +340,13 @@ def _relative_import_candidates(importer: Path, node: ast.ImportFrom) -> list[Pa
     names = [alias.name for alias in node.names]
     paths = [stem.with_suffix('.py'), stem / '__init__.py'] if node.module else [stem / '__init__.py']
     paths += [path for name in names for path in (stem / f'{name}.py', stem / name / '__init__.py')]
-    return paths
+    return [*paths, *_parent_package_inits(base, node.module)]
+
+
+def _parent_package_inits(base: Path, dotted_module: str | None) -> list[Path]:
+    """``from .sub.deep import z`` runs ``base/__init__.py`` and ``base/sub/__init__.py`` before ``sub/deep.py``."""
+    parts = dotted_module.split('.') if dotted_module else []
+    return [base.joinpath(*parts[:depth]) / '__init__.py' for depth in range(len(parts))]
 
 
 def _dotted_prefixes(dotted_name: str) -> list[str]:
