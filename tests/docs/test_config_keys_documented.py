@@ -10,12 +10,15 @@ import pytest
 from pytest_gremlins.config import (
     CONFIG_KEYS,
     GremlinConfig,
+    load_config,
 )
 
 from .docs_facts import (
     documented_keys,
     keys_shown_in_toml_blocks,
     keys_the_loader_ignores,
+    pages_showing_toml_keys_outside_configuration_page,
+    toml_keys_the_loader_does_not_read,
 )
 
 
@@ -45,6 +48,12 @@ class DescribeConfigKeyDocumentation:
 
         assert not unknown, f'TOML examples in configuration.md use keys config.py does not read: {sorted(unknown)}'
 
+    def it_shows_no_toml_key_the_loader_does_not_read_on_any_other_page(self):
+        shown = pages_showing_toml_keys_outside_configuration_page()
+        unknown = {key: shown[key] for key in toml_keys_the_loader_does_not_read(shown)}
+
+        assert not unknown, f'TOML examples on other pages use keys config.py does not read: {unknown}'
+
     def it_keeps_the_key_constant_in_step_with_the_config_fields(self):
         field_keys = {field.name for field in fields(GremlinConfig)}
 
@@ -54,3 +63,17 @@ class DescribeConfigKeyDocumentation:
         ignored = keys_the_loader_ignores(tmp_path)
 
         assert not ignored, f'The loader accepts but drops these documented keys: {sorted(ignored)}'
+
+
+@pytest.mark.medium
+class DescribeOtherPageKeySpelling:
+    """A key spelling the loader accepts is not reported as unknown on other pages."""
+
+    def it_accepts_the_hyphenated_spelling_of_batch_size(self, tmp_path: Path):
+        (tmp_path / 'pyproject.toml').write_text('[tool.pytest-gremlins]\nbatch-size = 5\n', encoding='utf-8')
+        assert load_config(tmp_path).batch_size == 5
+
+        assert toml_keys_the_loader_does_not_read({'batch-size'}) == frozenset()
+
+    def it_still_reports_a_key_the_loader_does_not_read(self):
+        assert toml_keys_the_loader_does_not_read({'batch-sizes'}) == {'batch-sizes'}
