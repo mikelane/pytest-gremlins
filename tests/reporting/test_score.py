@@ -269,6 +269,19 @@ class DescribeMutationScoreWithDowngradedTimeouts:
         assert 'The limit is capped at 86400s; lower --reruns or --reruns-delay, or speed up those tests.' in warning
         assert 'Raise' not in warning
 
+    @pytest.mark.parametrize('attempt_timeout', [86400, None])
+    def it_does_not_advise_raising_a_limit_configured_at_the_maximum(self, make_result, attempt_timeout):
+        score = MutationScore.from_results(
+            [self._downgraded(make_result)], mutant_timeout=86400, mutant_attempt_timeout=attempt_timeout
+        )
+
+        warning = score.timeout_warning
+
+        assert warning is not None
+        assert warning.endswith(
+            'half the 86400s timeout. The limit is already at the 86400s maximum, so speed up those tests.'
+        )
+
     def it_names_the_mutant_timeout_generically_when_the_limit_is_unknown(self, make_result):
         warning = MutationScore.from_results([self._downgraded(make_result)]).timeout_warning
 

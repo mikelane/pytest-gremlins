@@ -70,7 +70,7 @@ score; see [Understanding Mutation Score](#understanding-mutation-score).
 | Survived | Number and percentage of gremlins that escaped tests |
 | Timeout | Number and percentage of gremlins that caused test timeouts and whose tests finish in time without the mutant (shown when > 0); these count as kills |
 | Error | Number and percentage of gremlins that caused errors, including timeouts whose unmutated tests do not finish within half the timeout (shown when > 0) |
-| Warning | One line giving how many timeouts were counted as errors because the unmutated tests did not finish within half the timeout, and how to raise it (shown when > 0) |
+| Warning | One line giving how many timeouts were counted as errors because the unmutated tests did not finish within half the timeout, and what to do about it (shown when > 0) |
 | Pardoned | Number of gremlins pardoned via inline pragma, excluded from score (shown when > 0) |
 
 **Top Surviving Gremlins:**
@@ -395,7 +395,7 @@ unmutated tests did not finish within half the timeout.
 |-------|------|-------------|
 | `downgraded` | integer | Number of timeouts counted as errors instead of kills |
 | `mutant_timeout` | integer | The effective per-gremlin timeout in seconds, scaled up by the rerun budget when pytest-rerunfailures is active |
-| `message` | string | The explanation, including the option to raise the timeout |
+| `message` | string | The explanation, including what to do about it (the option to raise the timeout, unless it is at the 86400-second cap) |
 
 **Files Object:**
 

@@ -129,11 +129,11 @@ from pytest_gremlins.reporting.html import (
 )
 from pytest_gremlins.reporting.json_reporter import JsonReporter
 from pytest_gremlins.reporting.results import (
-    CAPPED_LIMIT_ADVICE,
     TIMEOUT_NOT_CONFIRMED_PREFIX,
     GremlinResult,
     GremlinResultStatus,
-    limit_is_capped,
+    limit_advice,
+    mutant_timeout_advice,
     scaled_limit_note,
 )
 from pytest_gremlins.reporting.score import MutationScore
@@ -2837,7 +2837,7 @@ def _timeout_not_confirmed_message(
     unmutated_outcome: UnmutatedRunOutcome,
     attempt_timeout: int | None = None,
 ) -> str:
-    """Explain a downgraded timeout: the selection, how the unmutated run went, the limit, and how to raise it."""
+    """Explain a downgraded timeout: the selection, how the unmutated run went, the limit, and what to do."""
     shown_ids = ', '.join(selection[:MAX_SELECTION_IDS_IN_MESSAGE]) or 'the whole suite'
     hidden_count = len(selection) - MAX_SELECTION_IDS_IN_MESSAGE
     if hidden_count > 0:
@@ -2852,17 +2852,8 @@ def _timeout_not_confirmed_message(
             f'{scaled_note}'
         )
     )
-    raised_limit = 'the per-attempt limit' if scaled_note else 'the limit'
-    is_capped = bool(scaled_note) and limit_is_capped(mutant_timeout)
-    advice = (
-        f'{CAPPED_LIMIT_ADVICE[0].upper()}{CAPPED_LIMIT_ADVICE[1:]}'
-        if is_capped
-        else f'Raise {raised_limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout'
-    )
-    return (
-        f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (selection: {shown_ids}; unmutated run {unmutated_run_summary}). '
-        f'{advice}, or speed up these tests.'
-    )
+    advice = mutant_timeout_advice(mutant_timeout, attempt_timeout, unscaled_name='the limit', tests='these tests')
+    return f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (selection: {shown_ids}; unmutated run {unmutated_run_summary}). {advice}'
 
 
 def _rerun_timeout_alone(
@@ -3119,11 +3110,11 @@ def _report_diagnostic(message: str) -> None:
 def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> None:
     """Warn that the pre-scan timed out, which is a different cause from "no data" (issues #503, #673)."""
     scaled_note = scaled_limit_note(attempt_timeout, seconds)
-    raised_limit = 'the per-attempt limit' if scaled_note else 'it'
-    advice = (
-        CAPPED_LIMIT_ADVICE
-        if scaled_note and limit_is_capped(seconds)
-        else f'set coverage_timeout / --gremlin-coverage-timeout to raise {raised_limit}'
+    advice = limit_advice(
+        seconds,
+        attempt_timeout,
+        unscaled_name='it',
+        raise_advice='set coverage_timeout / --gremlin-coverage-timeout to raise {limit}',
     )
     _report_diagnostic(
         f'pytest-gremlins: coverage pre-scan exceeded {seconds}s{scaled_note}; '
