@@ -73,7 +73,7 @@ class DescribeRerunfailuresLoaderKeptInAnArgumentFileWithAutoload:
             '@args.txt',
         )
 
-        assert survivor_count(result.stdout.str()) > 0
+        assert survivor_count(result.stdout.str()) == 1
 
 
 @pytest.mark.medium
@@ -101,4 +101,4 @@ class DescribeRerunfailuresLoaderWithAutoloadDisabledByFlag:
             'no:cacheprovider',
         )
 
-        assert survivor_count(result.stdout.str()) > 0
+        assert survivor_count(result.stdout.str()) == 1
