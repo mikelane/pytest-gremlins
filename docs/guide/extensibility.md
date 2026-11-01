@@ -89,6 +89,11 @@ called for those nodes, and a run reports no gremlins for it.
 For the six expression types, `mutate()` must return expression nodes. For `ast.Return`, it
 must return `ast.Return` statements.
 
+Keep `mutate()` free of side effects such as counters or logging. It is called once for an expression node, but
+twice for an `ast.Return` node: once on the statement to build the gremlins, and once on an unmodified copy of it to
+build the report descriptions. If the second call raises or returns a different number of nodes, the descriptions
+come from the first call's nodes instead.
+
 ## Creating Your First Operator
 
 Let's create a simple operator that flips string literals to empty strings - useful for catching untested display logic.

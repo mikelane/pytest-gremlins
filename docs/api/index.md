@@ -35,6 +35,8 @@ pytest_gremlins/
 │   ├── transformer.py    # AST transformer
 │   ├── switcher.py       # Environment-based switching
 │   ├── finder.py         # Mutation point finder
+│   ├── origin_finder.py  # Import hook that serves instrumented source
+│   ├── spawn_hook.py     # Gives spawned child interpreters the import hook
 │   └── pragma.py         # Pardon pragma parsing
 │
 ├── coverage/             # Coverage-guided selection
