@@ -328,15 +328,15 @@ def _conftest_name(conftest: Path, project_root: Path | None) -> str:
     return resolved.as_posix()
 
 
-def _relative_import_candidates(importer: Path, node: ast.ImportFrom) -> list[str]:
+def _relative_import_candidates(importer: Path, node: ast.ImportFrom) -> list[Path]:
     base = importer.parent
     for _ in range(node.level - 1):
         base = base.parent
-    stem = base.joinpath(*(node.module or '').split('.')) if node.module else base
+    stem = base.joinpath(*node.module.split('.')) if node.module else base
     names = [alias.name for alias in node.names]
     paths = [stem.with_suffix('.py'), stem / '__init__.py']
-    paths += [stem / f'{name}{suffix}' for name in names for suffix in ('.py', '/__init__.py')]
-    return [str(path) for path in paths]
+    paths += [path for name in names for path in (stem / f'{name}.py', stem / name / '__init__.py')]
+    return paths
 
 
 def _absolute_import_module_names(node: ast.Import | ast.ImportFrom) -> list[str]:
@@ -351,7 +351,7 @@ def _imported_files(importer: Path, tree: ast.AST) -> set[Path]:
     files: set[Path] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.level:
-            files |= {Path(c) for c in _relative_import_candidates(importer, node) if Path(c).is_file()}
+            files |= {path for path in _relative_import_candidates(importer, node) if path.is_file()}
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             origins = (getattr(sys.modules.get(name), '__file__', None) for name in _absolute_import_module_names(node))
             files |= {Path(origin) for origin in origins if origin is not None}
@@ -394,9 +394,9 @@ def _conftest_operators_label(loaded_conftests: Iterable[Path], project_root: Pa
     by version. A conftest with no local import yields the same label as before.
     """
     hasher = ContentHasher()
-    loaded_conftests = list(loaded_conftests)
+    conftests = list(loaded_conftests)
     try:
-        modules = {*loaded_conftests, *_local_modules_imported_by(loaded_conftests, project_root)}
+        modules = {*conftests, *_local_modules_imported_by(conftests, project_root)}
         entries = sorted({(_conftest_name(module, project_root), hasher.hash_file(module)) for module in modules})
     except (OSError, SyntaxError, ValueError):
         return None
