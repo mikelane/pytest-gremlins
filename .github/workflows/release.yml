@@ -59,6 +59,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          prune-cache: true
 
       - name: Verify release tag name
         run: uv run --no-project --python 3.12 python scripts/verify_release_tag.py --name-only "$RELEASE_TAG"
@@ -345,6 +347,8 @@ jobs:
     steps:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -391,6 +395,8 @@ jobs:
     steps:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          prune-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -476,6 +482,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          prune-cache: true
 
       # The release notes are the exact entry the release docs gate checks: the checker writes them with
       # --notes-out only when the entry passes, so no second parser can pick a different span of CHANGELOG.md.
