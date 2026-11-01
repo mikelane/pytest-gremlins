@@ -141,12 +141,17 @@ from pytest_gremlins.rerun_options import (
     unforwarded_rerun_key_warning,
 )
 from pytest_gremlins.verdicts import (
-    MAX_SELECTION_IDS_IN_MESSAGE,
     _build_test_command,
     _collect_unmutated,
     _confirm_kill,
     _confirm_pooled_result,
+    _immediate_result_if_pardoned,
+    _immediate_result_if_selection_unrunnable,
+    _launch_failure_result,
+    _node_ids_write_failure_output,
     _prefill_collection_kill_confirmations,
+    _result_from_cached_row,
+    _result_from_worker,
     _test_gremlin,
 )
 from pytest_gremlins.xdist_options import (
@@ -228,8 +233,6 @@ DEFAULT_COVERAGE_TIMEOUT_SECONDS = 120
 DEFAULT_MUTANT_TIMEOUT_SECONDS = 30
 DEFAULT_BATCH_SIZE = 10
 DEFAULT_REPORT_FORMATS: tuple[str, ...] = ('console',)
-UNMAPPED_SELECTION_PREFIX = 'no verdict: the gremlin has no test to run'
-"""Start of the error for a gremlin whose whole selection has no pytest node id (issue #571)."""
 
 
 class CoveragePrescanTimeoutError(Exception):
@@ -3857,12 +3860,7 @@ def _run_batch_mutation_testing(  # pragma: no cover
     except OSError as write_error:
         logger.warning('Cannot launch the gremlin batch: %s', write_error)
         return cached_results + [
-            GremlinResult(
-                gremlin=gremlin,
-                status=GremlinResultStatus.ERROR,
-                error_output=_node_ids_write_failure_output(write_error),
-                selected_tests=gremlin_tests[gremlin.gremlin_id],
-            )
+            _launch_failure_result(gremlin, write_error, gremlin_tests[gremlin.gremlin_id])
             for gremlin in uncached_gremlins
         ]
 
@@ -3891,16 +3889,7 @@ def _run_batch_mutation_testing(  # pragma: no cover
         if gremlin_id not in gremlin_by_id:
             continue
 
-        unconfirmed.append(
-            GremlinResult(
-                gremlin=gremlin_by_id[gremlin_id],
-                status=worker_result.status,
-                killing_test=worker_result.killing_test,
-                execution_time_ms=worker_result.execution_time_ms,
-                error_output=worker_result.error_output,
-                selected_tests=gremlin_tests[gremlin_id],
-            )
-        )
+        unconfirmed.append(_result_from_worker(gremlin_by_id[gremlin_id], worker_result, gremlin_tests[gremlin_id]))
 
     # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
     _prefill_collection_kill_confirmations([(r, batch_node_ids) for r in unconfirmed], gremlin_session, rootdir)
@@ -4022,14 +4011,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         if gremlin_id not in gremlin_by_id:
             continue
 
-        gremlin_result = GremlinResult(
-            gremlin=gremlin_by_id[gremlin_id],
-            status=worker_result.status,
-            killing_test=worker_result.killing_test,
-            execution_time_ms=worker_result.execution_time_ms,
-            error_output=worker_result.error_output,
-            selected_tests=gremlin_tests[gremlin_id],
-        )
+        gremlin_result = _result_from_worker(gremlin_by_id[gremlin_id], worker_result, gremlin_tests[gremlin_id])
         if gremlin_id in launch_failed_ids:
             results.append(gremlin_result)
             continue
@@ -4347,14 +4329,7 @@ def _run_mutation_testing(
             )
         except OSError as write_error:
             logger.warning('Cannot launch gremlin %s: %s', gremlin.gremlin_id, write_error)
-            results.append(
-                GremlinResult(
-                    gremlin=gremlin,
-                    status=GremlinResultStatus.ERROR,
-                    error_output=_node_ids_write_failure_output(write_error),
-                    selected_tests=selected_tests,
-                )
-            )
+            results.append(_launch_failure_result(gremlin, write_error, selected_tests))
             continue
         gremlin_result = _test_gremlin(
             gremlin,
@@ -4477,14 +4452,7 @@ def _check_cache_for_gremlin(
     if cached is None:
         return None
 
-    status = GremlinResultStatus(cached['status'])
-    return GremlinResult(
-        gremlin=gremlin,
-        status=status,
-        killing_test=cached.get('killing_test'),
-        execution_time_ms=cached.get('execution_time_ms'),
-        error_output=cached.get('error_output', ''),
-    )
+    return _result_from_cached_row(gremlin, cached)
 
 
 def _cache_gremlin_result(
@@ -4650,39 +4618,6 @@ def _select_tests_for_gremlin_prioritized(
     return runnable
 
 
-def _immediate_result_if_selection_unrunnable(
-    gremlin: Gremlin,
-    gremlin_session: GremlinSession,
-) -> GremlinResult | None:
-    """Return an ERROR result when every test selected for the gremlin lacks a node id, else None.
-
-    Called at the top of every execution loop, right after the pardon check and once the gremlin's
-    selection has been made. Such a gremlin has no command to run, so no verdict can be backed by a
-    test: it abstains with an error naming the dropped tests.
-
-    Args:
-        gremlin: The gremlin to check.
-        gremlin_session: The current gremlin session, holding the dropped selections.
-
-    Returns:
-        A GremlinResult with ERROR status when the whole selection was dropped, otherwise None.
-    """
-    if gremlin.gremlin_id not in gremlin_session.unrunnable_gremlin_ids:
-        return None
-    dropped = gremlin_session.unmapped_selections[gremlin.gremlin_id]
-    shown_ids = ', '.join(dropped[:MAX_SELECTION_IDS_IN_MESSAGE])
-    hidden_count = len(dropped) - MAX_SELECTION_IDS_IN_MESSAGE
-    overflow_note = f' (and {hidden_count} more)' if hidden_count > 0 else ''
-    return GremlinResult(
-        gremlin=gremlin,
-        status=GremlinResultStatus.ERROR,
-        error_output=(
-            f'{UNMAPPED_SELECTION_PREFIX}: {len(dropped)} selected test(s) have no pytest node id, '
-            f'so none could run: {shown_ids}{overflow_note}'
-        ),
-    )
-
-
 def _report_unmapped_selections(gremlin_session: GremlinSession) -> None:
     """Report once per run that coverage-selected tests were not run because they have no node id.
 
@@ -4721,11 +4656,6 @@ def _report_gremlin_progress(
     print(f'{prefix} - running {test_count}/{total_tests} tests')
 
 
-def _node_ids_write_failure_output(error: OSError) -> str:
-    """Describe a failed write of the node-ids file for a gremlin's ``error_output``."""
-    return f'Could not write the node ids file for the gremlin test command: {error}'[:2000]
-
-
 def _build_filtered_test_command(
     base_command: list[str],
     selected_tests: Sequence[str],
@@ -4751,23 +4681,6 @@ def _build_filtered_test_command(
         _node_ids_for_tests(selected_tests, gremlin_session),
         gremlin_session.instrumented_dir,
     )
-
-
-def _immediate_result_if_pardoned(gremlin: Gremlin) -> GremlinResult | None:
-    """Return a PARDONED result immediately if the gremlin is pardoned, else None.
-
-    Called at the top of every execution loop. Pardoned gremlins must never
-    have subprocess tests run against them — they exit the loop here.
-
-    Args:
-        gremlin: The gremlin to check.
-
-    Returns:
-        A GremlinResult with PARDONED status if pardoned, otherwise None.
-    """
-    if gremlin.pardoned:
-        return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.PARDONED)
-    return None
 
 
 def _write_html_report(

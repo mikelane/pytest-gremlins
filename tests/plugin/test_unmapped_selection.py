@@ -26,11 +26,9 @@ from pytest_gremlins.control_run import (
 from pytest_gremlins.coverage.prioritized_selector import PrioritizedSelector
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
-    UNMAPPED_SELECTION_PREFIX,
     GremlinSession,
     _build_filtered_test_command,
     _build_test_hashes_for_gremlin,
-    _immediate_result_if_selection_unrunnable,
     _node_ids_for_tests,
     _report_unmapped_selections,
     _run_batch_mutation_testing,
@@ -46,6 +44,8 @@ from pytest_gremlins.reporting.results import (
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.verdicts import (
     MAX_SELECTION_IDS_IN_MESSAGE,
+    UNMAPPED_SELECTION_PREFIX,
+    _immediate_result_if_selection_unrunnable,
 )
 
 if TYPE_CHECKING:

@@ -53,11 +53,15 @@ from pytest_gremlins.xdist_options import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from pytest_gremlins.cache.types import CachedGremlinResult
     from pytest_gremlins.instrumentation.gremlin import Gremlin
+    from pytest_gremlins.parallel.pool import WorkerResult
     from pytest_gremlins.plugin import GremlinSession
 
 logger = logging.getLogger(__name__)
 
+UNMAPPED_SELECTION_PREFIX = 'no verdict: the gremlin has no test to run'
+"""Start of the error for a gremlin whose whole selection has no pytest node id (issue #571)."""
 MAX_SELECTION_IDS_IN_MESSAGE = 5
 """Node ids named in a downgraded-timeout message before the rest are summarised as ``(and N more)``."""
 TIMEOUT_CONFIRMATION_HEADROOM = 0.5
@@ -537,3 +541,92 @@ def _run_gremlin_subprocess(
             status=GremlinResultStatus.ERROR,
             error_output=str(exc)[:2000],
         )
+
+
+def _immediate_result_if_selection_unrunnable(
+    gremlin: Gremlin,
+    gremlin_session: GremlinSession,
+) -> GremlinResult | None:
+    """Return an ERROR result when every test selected for the gremlin lacks a node id, else None.
+
+    Called at the top of every execution loop, right after the pardon check and once the gremlin's
+    selection has been made. Such a gremlin has no command to run, so no verdict can be backed by a
+    test: it abstains with an error naming the dropped tests.
+
+    Args:
+        gremlin: The gremlin to check.
+        gremlin_session: The current gremlin session, holding the dropped selections.
+
+    Returns:
+        A GremlinResult with ERROR status when the whole selection was dropped, otherwise None.
+    """
+    if gremlin.gremlin_id not in gremlin_session.unrunnable_gremlin_ids:
+        return None
+    dropped = gremlin_session.unmapped_selections[gremlin.gremlin_id]
+    shown_ids = ', '.join(dropped[:MAX_SELECTION_IDS_IN_MESSAGE])
+    hidden_count = len(dropped) - MAX_SELECTION_IDS_IN_MESSAGE
+    overflow_note = f' (and {hidden_count} more)' if hidden_count > 0 else ''
+    return GremlinResult(
+        gremlin=gremlin,
+        status=GremlinResultStatus.ERROR,
+        error_output=(
+            f'{UNMAPPED_SELECTION_PREFIX}: {len(dropped)} selected test(s) have no pytest node id, '
+            f'so none could run: {shown_ids}{overflow_note}'
+        ),
+    )
+
+
+def _node_ids_write_failure_output(error: OSError) -> str:
+    """Describe a failed write of the node-ids file for a gremlin's ``error_output``."""
+    return f'Could not write the node ids file for the gremlin test command: {error}'[:2000]
+
+
+def _immediate_result_if_pardoned(gremlin: Gremlin) -> GremlinResult | None:
+    """Return a PARDONED result immediately if the gremlin is pardoned, else None.
+
+    Called at the top of every execution loop. Pardoned gremlins must never
+    have subprocess tests run against them — they exit the loop here.
+
+    Args:
+        gremlin: The gremlin to check.
+
+    Returns:
+        A GremlinResult with PARDONED status if pardoned, otherwise None.
+    """
+    if gremlin.pardoned:
+        return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.PARDONED)
+    return None
+
+
+def _launch_failure_result(gremlin: Gremlin, write_error: OSError, selected_tests: list[str]) -> GremlinResult:
+    """Return the ERROR result of a gremlin whose node-ids file could not be written, so it never ran."""
+    return GremlinResult(
+        gremlin=gremlin,
+        status=GremlinResultStatus.ERROR,
+        error_output=_node_ids_write_failure_output(write_error),
+        selected_tests=selected_tests,
+    )
+
+
+def _result_from_worker(gremlin: Gremlin, worker_result: WorkerResult, selected_tests: list[str]) -> GremlinResult:
+    """Return the gremlin's result as its worker reported it, with the tests that were selected for it."""
+    return GremlinResult(
+        gremlin=gremlin,
+        status=worker_result.status,
+        killing_test=worker_result.killing_test,
+        execution_time_ms=worker_result.execution_time_ms,
+        error_output=worker_result.error_output,
+        selected_tests=selected_tests,
+    )
+
+
+def _result_from_cached_row(gremlin: Gremlin, cached: CachedGremlinResult) -> GremlinResult:
+    """Return the result a cached row recorded for the gremlin."""
+    status = GremlinResultStatus(cached['status'])
+    return GremlinResult(
+        gremlin=gremlin,
+        status=status,
+        killing_test=cached.get('killing_test'),
+        execution_time_ms=cached.get('execution_time_ms'),
+        error_output=cached.get('error_output', ''),
+    )
