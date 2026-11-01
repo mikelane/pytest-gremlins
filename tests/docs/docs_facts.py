@@ -37,7 +37,6 @@ FLAG_MENTION = re.compile(r'(?<![\w-])(--(?:gremlins?|strict-pardons|max-pardons
 DEFAULT_COLUMN_HEADER = 'Default'
 
 _HELP_DEFAULT = re.compile(r'\(default: ([^,)]+)')
-_TABLE_ROW_FLAG = re.compile(r'^\|\s*`(--[a-z0-9-]+)`\s*\|')
 _DEFAULT_COMMENT = re.compile(r'^#\s*Default:\s*(.+)$')
 _TOML_ASSIGNMENT = re.compile(r'^([A-Za-z0-9_-]+)\s*=')
 _FENCE = re.compile(r'^\s*(```|~~~)\s*(\w*)')
@@ -138,9 +137,12 @@ def hidden_flags() -> frozenset[str]:
 
 
 def documented_flags(page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
-    """Return the flags that start a row of an options table on ``page``."""
-    rows = (_TABLE_ROW_FLAG.match(line) for line in page.read_text(encoding='utf-8').splitlines())
-    return frozenset(row.group(1) for row in rows if row)
+    """Return the flags that start a row of a ``Default`` table on ``page``.
+
+    A flag listed only in a table without a ``Default`` column does not count, so every documented flag has a
+    default the drift checks compare with the code.
+    """
+    return frozenset(name for name in default_cells(page) if name.startswith('--'))
 
 
 def flags_mentioned_in_docs(docs_root: Path = DOCS_ROOT) -> dict[str, list[str]]:
@@ -203,9 +205,10 @@ def _cells(line: str) -> list[str]:
 def default_cells(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
     """Map each name in the first column of a ``Default`` table on ``page`` to its raw Default cell.
 
-    The Default column is the one whose header is ``Default``, wherever it sits.
+    The Default column is the one whose header is ``Default``, wherever it sits. A name may have only one row.
     """
     cells: dict[str, str] = {}
+    line_by_name: dict[str, int] = {}
     default_column: int | None = None
     for number, line in enumerate(page.read_text(encoding='utf-8').splitlines(), start=1):
         columns = _cells(line)
@@ -217,7 +220,13 @@ def default_cells(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
             if default_column >= len(columns):
                 msg = f'{_location(page, number)}: row has no {DEFAULT_COLUMN_HEADER} cell: {line.strip()}'
                 raise DocsFormatError(msg)
-            cells[columns[0].strip('`')] = columns[default_column]
+            name = columns[0].strip('`')
+            if name in line_by_name:
+                first_row = line_by_name[name]
+                msg = f'{_location(page, number)}: {name} already has a {DEFAULT_COLUMN_HEADER} row at line {first_row}'
+                raise DocsFormatError(msg)
+            line_by_name[name] = number
+            cells[name] = columns[default_column]
     return cells
 
 

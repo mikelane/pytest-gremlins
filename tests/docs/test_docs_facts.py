@@ -13,6 +13,7 @@ from .docs_facts import (
     CONFIGURATION_PAGE,
     DocsFormatError,
     default_cells,
+    documented_flags,
     pytest_gremlins_toml_blocks,
     quoted_messages,
     registered_flags,
@@ -117,6 +118,37 @@ class DescribeDefaultCells:
 
         with pytest.raises(DocsFormatError, match=r'configuration\.md:3: .*Default'):
             default_cells(page)
+
+    def it_names_the_page_and_line_of_a_name_in_two_default_tables(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '| Key | Default |\n|---|---|\n| `batch_size` | `10` |\n\n'
+            '| Key | Default |\n|---|---|\n| `batch_size` | `20` |\n',
+            encoding='utf-8',
+        )
+
+        with pytest.raises(DocsFormatError, match=r'configuration\.md:7: .*batch_size.*line 3'):
+            default_cells(page)
+
+
+@pytest.mark.medium
+class DescribeDocumentedFlags:
+    """A flag counts as documented only in a table that states its default."""
+
+    def it_does_not_count_a_flag_in_a_table_without_a_default_column(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text('| Flag | Description |\n|---|---|\n| `--gremlin-example` | an example |\n', encoding='utf-8')
+
+        assert documented_flags(page) == frozenset()
+
+    def it_counts_a_flag_in_a_table_with_a_default_column(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '| Flag | Default | Description |\n|---|---|---|\n| `--gremlin-example` | `false` | an example |\n',
+            encoding='utf-8',
+        )
+
+        assert documented_flags(page) == frozenset({'--gremlin-example'})
 
 
 @pytest.mark.medium
