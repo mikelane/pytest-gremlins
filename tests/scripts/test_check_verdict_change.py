@@ -110,7 +110,8 @@ class DescribeVerdictCheck:
     def it_fails_when_a_marker_was_lowered_with_a_verdict_change(self, head_markers: object, lowered: str) -> None:
         failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, head_markers, released=RELEASED_MARKERS)
 
-        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered)
+        assert failure is not None
+        assert failure.startswith(checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered))
 
     def it_fails_when_a_marker_was_lowered_even_if_no_verdict_changed(self) -> None:
         lowered = checker.Markers(cache_version='0', runner_fidelity_version='rf21')
@@ -124,7 +125,9 @@ class DescribeVerdictCheck:
 
         failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, mixed, released=RELEASED_MARKERS)
 
-        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION')
+        assert failure is not None
+        assert failure.startswith(checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION'))
+        assert 'changed: sample.py:10 comparison: >= to >: zapped -> survived' in failure
 
 
 UNRELEASED_BASE = checker.Markers(cache_version='3', runner_fidelity_version='rf21')
@@ -170,7 +173,8 @@ class DescribeMarkerLoweredToTheReleasedValue:
     ) -> None:
         failure = checker.check_verdicts(ZAPPED, SURVIVED, UNRELEASED_BASE, candidate, released=RELEASED_AT_2_RF20)
 
-        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered)
+        assert failure is not None
+        assert failure.startswith(checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered))
 
     def it_fails_closed_and_says_why_when_no_release_is_known(self) -> None:
         lowered = checker.Markers(cache_version='3', runner_fidelity_version='rf20')
@@ -265,6 +269,19 @@ class DescribeReleasedMarkers:
         _git(repo, 'tag', 'not-a-release')
 
         assert checker.released_markers('HEAD', repo=repo) is None
+
+    @pytest.mark.parametrize('tag', ['v1-wip', 'v2'])
+    def it_ignores_tags_that_are_not_three_part_release_versions(self, repo: Path, tag: str) -> None:
+        _commit_markers(repo, '1', 'rf19')
+        _git(repo, 'tag', tag)
+
+        assert checker.released_markers('HEAD', repo=repo) is None
+
+    def it_returns_nothing_for_a_ref_that_looks_like_a_git_option(self, repo: Path) -> None:
+        _commit_markers(repo, '1', 'rf19')
+        _git(repo, 'tag', 'v1.0.0')
+
+        assert checker.released_markers('--all', repo=repo) is None
 
     def it_returns_nothing_when_the_tag_has_no_marker_sources(self, repo: Path) -> None:
         (repo / 'README.md').write_text('hi\n', encoding='utf-8')
@@ -400,8 +417,8 @@ def repo_with_module_moved_out_of_the_package(tmp_path: Path, monkeypatch: pytes
 class DescribeModuleMovedOutOfThePackage:
     @pytest.mark.usefixtures('repo_with_module_moved_out_of_the_package')
     def it_counts_the_old_path_like_a_deleted_package_module(self) -> None:
-        changed = checker._git_diff_names('HEAD~1')
-        deleted = checker._git_diff_names('HEAD~1', '--diff-filter=D')
+        changed = checker.git_diff_names('HEAD~1')
+        deleted = checker.git_diff_names('HEAD~1', '--diff-filter=D')
 
         changes = checker.guarded_changes(changed, deleted, set())
 

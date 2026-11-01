@@ -51,8 +51,8 @@ from check_verdict_change import (
     REPO_ROOT,
     VERSIONS_PATH,
     Markers,
-    _git_diff_names,
-    _git_output,
+    git_diff_names,
+    git_output,
     guarded_changes,
     guarded_repo_paths,
     parse_markers,
@@ -123,13 +123,13 @@ def previous_release_tag(version: str | None, repo: Path = REPO_ROOT) -> str | N
         The tag name, or ``None`` when no release tag is reachable.
     """
     excluded = ['--exclude', f'v{version.removeprefix("v")}'] if version else []
-    tag = _git_output(repo, 'describe', '--tags', '--abbrev=0', '--match', RELEASE_TAG_PATTERN, *excluded, 'HEAD')
+    tag = git_output(repo, 'describe', '--tags', '--abbrev=0', '--match', RELEASE_TAG_PATTERN, *excluded, 'HEAD')
     return tag.strip() if tag else None
 
 
 def _is_tagged(version: str, repo: Path = REPO_ROOT) -> bool:
     """Return whether the release tag ``v<version>`` exists, so that version is already released."""
-    return _git_output(repo, 'rev-parse', '-q', '--verify', f'refs/tags/v{version}^{{commit}}') is not None
+    return git_output(repo, 'rev-parse', '-q', '--verify', f'refs/tags/v{version}^{{commit}}') is not None
 
 
 def _head_markers() -> Markers:
@@ -144,8 +144,8 @@ def _head_markers() -> Markers:
 
 def _changed_guarded_files(previous_tag: str) -> list[str]:
     """Return the guarded files that differ between ``previous_tag`` and the working tree."""
-    changed = _git_diff_names(previous_tag)
-    deleted = _git_diff_names(previous_tag, '--diff-filter=D')
+    changed = git_diff_names(previous_tag)
+    deleted = git_diff_names(previous_tag, '--diff-filter=D')
     return guarded_changes(changed, deleted, guarded_repo_paths())
 
 
