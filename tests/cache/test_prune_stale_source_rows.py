@@ -9,6 +9,7 @@ import pytest
 from pytest_gremlins.cache.store import ResultStore
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from pytest_gremlins.cache.types import CachedGremlinResult
@@ -22,7 +23,7 @@ def _key(gremlin_id: str, source_hash: str, tail: str = KEY_TAIL) -> str:
 
 
 @pytest.fixture
-def store(tmp_path: Path):
+def store(tmp_path: Path) -> Iterator[ResultStore]:
     with ResultStore(tmp_path / 'results.db') as opened:
         yield opened
 

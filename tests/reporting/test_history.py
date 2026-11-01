@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -11,24 +11,31 @@ from pytest_gremlins.reporting.history import (
     append_history_entry,
     load_history,
 )
-from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 
 @pytest.mark.medium
 class DescribeLoadHistory:
-    def it_returns_empty_list_when_file_does_not_exist(self, tmp_path: Path):
+    def it_returns_empty_list_when_file_does_not_exist(self, tmp_path: Path) -> None:
         assert load_history(tmp_path / 'missing.json') == []
 
 
 @pytest.mark.medium
 class DescribeLoadHistoryFileIO:
-    def it_returns_entries_from_valid_file(self, tmp_path: Path):
+    def it_returns_entries_from_valid_file(self, tmp_path: Path) -> None:
         history_file = tmp_path / 'history.json'
         history_file.write_text(json.dumps([{'score': 100.0}]), encoding='utf-8')
         assert load_history(history_file) == [{'score': 100.0}]
 
-    def it_returns_empty_list_when_file_is_corrupt(self, tmp_path: Path):
+    def it_returns_empty_list_when_file_is_corrupt(self, tmp_path: Path) -> None:
         corrupt = tmp_path / 'history.json'
         corrupt.write_text('not valid json', encoding='utf-8')
         assert load_history(corrupt) == []
@@ -36,7 +43,9 @@ class DescribeLoadHistoryFileIO:
 
 @pytest.mark.medium
 class DescribeAppendHistoryEntryCorruptRecovery:
-    def it_starts_fresh_when_existing_file_is_corrupt(self, make_result, tmp_path: Path):
+    def it_starts_fresh_when_existing_file_is_corrupt(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         corrupt = tmp_path / 'history.json'
         corrupt.write_text('not valid json', encoding='utf-8')
         results = [make_result(GremlinResultStatus.ZAPPED)]

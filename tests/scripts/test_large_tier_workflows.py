@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
 import pytest
 import yaml
@@ -12,7 +15,7 @@ WORKFLOWS_DIR = Path(__file__).resolve().parents[2] / '.github' / 'workflows'
 
 
 def _jobs(workflow_name: str) -> dict[str, Any]:
-    return yaml.safe_load((WORKFLOWS_DIR / workflow_name).read_text(encoding='utf-8'))['jobs']
+    return cast('dict[str, Any]', yaml.safe_load((WORKFLOWS_DIR / workflow_name).read_text(encoding='utf-8'))['jobs'])
 
 
 @pytest.mark.medium

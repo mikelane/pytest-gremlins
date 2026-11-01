@@ -20,11 +20,14 @@ from pytest_gremlins.operators.boundary import BoundaryOperator
 from pytest_gremlins.operators.comparison import ComparisonOperator
 from pytest_gremlins.operators.registry import OperatorRegistry
 
+from .cached_entries import partial_entry
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     from pytest_gremlins.cache.types import CachedGremlinResult
+    from pytest_gremlins.operators.protocol import GremlinOperator
 
 TEST_HASHES = {'tests/test_x.py::test_a': 'hash_a'}
 ZAPPED: CachedGremlinResult = {'status': 'zapped', 'killing_test': 'tests/test_x.py::test_a', 'execution_time_ms': 1.0}
@@ -135,7 +138,7 @@ class DescribeVersionsInCacheKey:
             assert installed_versions_fingerprint(surviving) == installed_versions_fingerprint(healthy)
             with IncrementalCache(cache_dir, operators=surviving) as cache:
                 assert cache.get_cached_result(gremlin_id, 'same_source', TEST_HASHES) is None
-                cache.cache_result(gremlin_id, 'same_source', TEST_HASHES, {'status': 'survived'})
+                cache.cache_result(gremlin_id, 'same_source', TEST_HASHES, partial_entry(status='survived'))
 
         recovered = registry.get_all()
         assert installed_versions_fingerprint(recovered) == installed_versions_fingerprint(healthy)
@@ -143,7 +146,7 @@ class DescribeVersionsInCacheKey:
             assert cache.get_cached_result(gremlin_id, 'same_source', TEST_HASHES) == ZAPPED
 
     def it_misses_when_active_operator_order_changes(self, tmp_path: Path) -> None:
-        operators = [ComparisonOperator(), ArithmeticOperator()]
+        operators: list[GremlinOperator] = [ComparisonOperator(), ArithmeticOperator()]
         cache_dir = tmp_path / '.gremlins_cache'
         with IncrementalCache(cache_dir, operators=operators) as cache:
             cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
@@ -205,7 +208,8 @@ class DescribeVersionsInCacheKey:
         with IncrementalCache(cache_dir, operators=[ComparisonOperator(), ArithmeticOperator()]) as cache:
             cache.cache_result('g001', 'src_hash', TEST_HASHES, ZAPPED)
 
-        with IncrementalCache(cache_dir, operators=iter([ComparisonOperator(), ArithmeticOperator()])) as cache:
+        fresh_operators: list[GremlinOperator] = [ComparisonOperator(), ArithmeticOperator()]
+        with IncrementalCache(cache_dir, operators=iter(fresh_operators)) as cache:
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == ZAPPED
 
 

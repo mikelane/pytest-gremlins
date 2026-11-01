@@ -9,7 +9,7 @@ module again as ``pytest_rerunfailures``, which pluggy rejects, so every gremlin
 from __future__ import annotations
 
 import pytest
-from rerun_samples import (
+from rerun_samples import (  # type: ignore[import-not-found]
     GREMLIN_ARGS,
     SAMPLE,
     verdicts,

@@ -13,6 +13,7 @@ import pytest
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.store import ResultStore
 
+from .cached_entries import partial_entry
 from .commit_counter import record_commits
 
 
@@ -31,7 +32,7 @@ class DescribeCachePerformance:
                     gremlin_id=f'gremlin_{i}',
                     source_hash='source_hash',
                     test_hashes={'test_foo': 'test_hash'},
-                    result={'status': 'zapped', 'killing_test': 'test_foo'},
+                    result=partial_entry(status='zapped', killing_test='test_foo'),
                 )
 
             # Time 100 cache lookups
@@ -59,7 +60,7 @@ class DescribeCachePerformance:
                     gremlin_id=f'gremlin_{i}',
                     source_hash='source_hash',
                     test_hashes={'test_foo': 'test_hash'},
-                    result={'status': 'zapped', 'killing_test': 'test_foo'},
+                    result=partial_entry(status='zapped', killing_test='test_foo'),
                 )
 
         assert len(commits) == 100
@@ -99,14 +100,14 @@ class DescribeStorePerformance:
         with ResultStore(tmp_path / 'individual.db') as store:
             individual_commits.clear()
             for i in range(100):
-                store.put(f'key_{i}', {'value': i})
+                store.put(f'key_{i}', partial_entry(value=i))
         individual_commit_count = len(individual_commits)
 
         batch_commits = record_commits(monkeypatch)
         with ResultStore(tmp_path / 'batch.db') as store:
             batch_commits.clear()
             for i in range(100):
-                store.put_deferred(f'key_{i}', {'value': i})
+                store.put_deferred(f'key_{i}', partial_entry(value=i))
             store.flush()
 
         assert (individual_commit_count, len(batch_commits)) == (100, 1)
@@ -118,7 +119,7 @@ class DescribeStorePerformance:
         with ResultStore(db_path) as store:
             # Populate with 1000 entries
             for i in range(1000):
-                store.put(f'key_{i}', {'value': i})
+                store.put(f'key_{i}', partial_entry(value=i))
 
             # Time lookups (should use PRIMARY KEY index)
             start = time.perf_counter()

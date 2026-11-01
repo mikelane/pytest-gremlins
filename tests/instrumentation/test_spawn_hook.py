@@ -4,20 +4,27 @@ from __future__ import annotations
 
 import ast
 import base64
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 import inspect
 import json
 import os
-from pathlib import Path
 import pickle
 import subprocess
 import sys
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 import zlib
 
 import pytest
 
 from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.origin_finder import (
+    InstrumentedEntry,
     install,
     normalize_origin,
 )
@@ -29,6 +36,9 @@ from pytest_gremlins.instrumentation.spawn_hook import (
     write_spawn_hook,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 INSTRUMENTED = 'VALUE = "instrumented"\n'
 ORIGINAL = 'VALUE = "original"\n'
 CHILD_TIMEOUT_SECONDS = 60
@@ -36,12 +46,13 @@ CHILD_TIMEOUT_SECONDS = 60
 RunChild = Callable[..., subprocess.CompletedProcess[str]]
 
 
-def _sources_for(origin: Path, source: str = INSTRUMENTED) -> dict[str, dict[str, object]]:
+def _sources_for(origin: Path, source: str = INSTRUMENTED) -> dict[str, InstrumentedEntry]:
     tree = base64.b64encode(zlib.compress(pickle.dumps(ast.parse(source)))).decode('ascii')
-    return {normalize_origin(str(origin)): {'tree': tree, 'source': source, 'origin': str(origin)}}
+    entry = {'tree': tree, 'source': source, 'origin': str(origin)}
+    return {normalize_origin(str(origin)): cast('InstrumentedEntry', entry)}
 
 
-def _finders_in(meta_path: list[object]) -> list[object]:
+def _finders_in(meta_path: Sequence[object]) -> list[object]:
     return [finder for finder in meta_path if getattr(finder, 'is_gremlin_finder', False)]
 
 

@@ -437,9 +437,15 @@ pytest --gremlins --gremlin-batch
 # Customize batch size
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
 
-# Combine for maximum speed
-pytest --gremlins --gremlin-parallel --gremlin-batch --gremlin-workers=8 --gremlin-batch-size=20
+# Batch mode with 8 workers
+pytest --gremlins --gremlin-batch --gremlin-workers=8 --gremlin-batch-size=20
 ```
+
+Batch mode takes precedence over parallel mode. With `--gremlin-batch`, `--gremlin-parallel` has no effect, and
+`--gremlin-workers` sets how many batch workers run at once (the default is the CPU count). Batch mode runs every
+gremlin against the union of the tests covering any gremlin in the run, while parallel mode runs each gremlin against
+only its own covering tests. Adding `--gremlin-batch` to a parallel run therefore does not make it faster and can
+make it slower.
 
 ---
 
@@ -449,21 +455,22 @@ pytest --gremlins --gremlin-parallel --gremlin-batch --gremlin-workers=8 --greml
 |------|-----------------|----------|----------|
 | Sequential | 1 per gremlin | High | Small projects |
 | Parallel | 1 per gremlin | High (but concurrent) | Multi-core, many gremlins |
-| Batch | 1 per gremlin | High (same as parallel) | Fewer, larger worker tasks |
-| Parallel + Batch | 1 per gremlin | High (but concurrent) | Fewer, larger worker tasks |
+| Batch | 1 per gremlin | High (but concurrent) | Fewer, larger worker tasks |
+| Parallel + Batch | Same as Batch | Same as Batch | Nothing: batch mode runs and `--gremlin-parallel` is ignored |
 
 ### Example Timings
 
 ```text
-Project: 1000 gremlins, 8 CPU cores
+Project: 1000 gremlins, 8 CPU cores, 600ms per gremlin run
 
-Sequential:           1000 x 600ms = 600 seconds
-Parallel (8 workers): 1000 x 600ms / 8 = 75 seconds
-Batch (size=10):      still 1000 subprocesses, so about the same time as the mode it runs in
+Sequential:                     1000 x 600ms = 600 seconds
+Parallel (8 workers):           1000 x 600ms / 8 = 75 seconds
+Batch (size=10, 8 workers):     1000 x 600ms / 8 = 75 seconds, usually more
 ```
 
-Batching groups gremlins into worker tasks. It does not cut the subprocess count; the speedup comes from
-parallel workers.
+Batch mode starts the same 1000 subprocesses as parallel mode on the same 8 workers, so at 600ms per run it also
+takes about 75 seconds, and usually longer: every gremlin runs the union of the tests covering any gremlin in the run,
+not just its own covering tests.
 
 ---
 
@@ -471,6 +478,8 @@ parallel workers.
 
 1. **Use forkserver on Unix** - Fastest subprocess creation
 2. **Enable warmup** - Reduces latency on first batch
-3. **Tune batch size** - Balance worker task size against early termination
-4. **Match workers to cores** - No benefit beyond physical cores
-5. **Monitor timeouts** - Increase if legitimate tests are timing out
+3. **Prefer parallel mode to batch mode** - Batch mode runs each gremlin against the union of covering tests
+4. **Tune batch size** - It sets how many gremlins one worker task covers; keep at least as many batches as
+   workers so no worker sits idle. All results arrive together when the last batch finishes, whatever the size
+5. **Match workers to cores** - No benefit beyond physical cores
+6. **Monitor timeouts** - Increase if legitimate tests are timing out

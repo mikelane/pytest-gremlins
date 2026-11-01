@@ -195,8 +195,13 @@ def _read_string_list(settings: dict[str, object], key: str, example: str) -> li
     return list(raw)
 
 
-def _check_operator_names(names: list[str]) -> None:
-    """Raise ValueError naming the first operator that is not registered, listing the valid ones."""
+def _check_operator_names(names: list[str], source: str = '[tool.pytest-gremlins].operators') -> None:
+    """Raise ValueError naming the first operator that is not registered, listing the valid ones.
+
+    Args:
+        names: Operator names to check against the default registry.
+        source: Where the names came from (a TOML key or a CLI flag), used in the error message.
+    """
     from pytest_gremlins.instrumentation.transformer import (  # noqa: PLC0415 — avoids an import cycle
         get_default_registry,
     )
@@ -204,9 +209,23 @@ def _check_operator_names(names: list[str]) -> None:
     valid = sorted(get_default_registry().available())
     for name in names:
         if name not in valid:
-            raise ValueError(
-                f'[tool.pytest-gremlins].operators has unknown operator {name!r}. Valid operators: {", ".join(valid)}'
-            )
+            raise ValueError(f'{source} has unknown operator {name!r}. Valid operators: {", ".join(valid)}')
+
+
+def _split_cli_list(raw: str) -> list[str]:
+    """Split a comma-separated CLI value into trimmed entries, dropping empty ones.
+
+    A trailing comma is legitimate (the pre-commit recipe builds one), so empty entries are dropped. A value made
+    only of commas keeps its empty entries, as it did before validation existed.
+
+    Args:
+        raw: The raw option value, such as ``'comparison, boolean'``.
+
+    Returns:
+        The non-empty entries with surrounding whitespace removed.
+    """
+    entries = [entry.strip() for entry in raw.split(',')]
+    return [entry for entry in entries if entry] or entries
 
 
 def _read_workers(tool_config: dict[str, Any], pyproject_path: Path) -> int | str | None:
@@ -722,16 +741,20 @@ def merge_configs(
 
     Returns:
         GremlinConfig with CLI values overriding file config where provided.
+
+    Raises:
+        ValueError: If ``cli_operators`` names an unregistered operator.
     """
     operators: list[str] | None = None
     if cli_operators and cli_operators.strip():
-        operators = [op.strip() for op in cli_operators.split(',')]
+        operators = _split_cli_list(cli_operators)
+        _check_operator_names([name for name in operators if name], '--gremlin-operators')
     elif file_config.operators is not None:
         operators = file_config.operators
 
     paths: list[str] | None = None
     if cli_targets and cli_targets.strip():
-        paths = [p.strip() for p in cli_targets.split(',')]
+        paths = _split_cli_list(cli_targets)
     elif file_config.paths is not None:
         paths = file_config.paths
 

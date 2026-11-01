@@ -6,6 +6,7 @@ import pytest
 
 from pytest_gremlins.cache.incremental import IncrementalCache
 
+from .cached_entries import partial_entry
 from .commit_counter import record_commits
 
 
@@ -26,7 +27,7 @@ class DescribeIncrementalCacheBatchOperations:
                     f'gremlin_{i}',
                     'source_hash',
                     {'test': 'hash'},
-                    {'status': 'zapped'},
+                    partial_entry(status='zapped'),
                 )
             commits_before_flush = len(commits)
             cache.flush()
@@ -40,17 +41,17 @@ class DescribeIncrementalCacheBatchOperations:
                 cache.get_cached_result(f'gremlin_{i}', 'source_hash', {'test': 'hash'}) for i in range(num_gremlins)
             ]
 
-        assert results == [{'status': 'zapped'}] * num_gremlins
+        assert results == [partial_entry(status='zapped')] * num_gremlins
 
     def it_close_flushes_deferred_writes(self, tmp_path: Path) -> None:
         """Closing the cache flushes any pending deferred writes."""
         cache_dir = tmp_path / '.gremlins_cache'
 
         with IncrementalCache(cache_dir) as cache:
-            cache.cache_result_deferred('g1', 'src', {'t': 'h'}, {'status': 'zapped'})
+            cache.cache_result_deferred('g1', 'src', {'t': 'h'}, partial_entry(status='zapped'))
             # No explicit flush
 
         # Data should be persisted
         with IncrementalCache(cache_dir) as cache:
             result = cache.get_cached_result('g1', 'src', {'t': 'h'})
-            assert result == {'status': 'zapped'}
+            assert result == partial_entry(status='zapped')

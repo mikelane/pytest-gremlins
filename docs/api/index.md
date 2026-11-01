@@ -15,14 +15,24 @@ pytest-gremlins achieves speed through four architectural pillars:
 
 ## Module Map
 
+<!-- cspell:ignore prescan -->
+
 ```text
 pytest_gremlins/
 ├── __init__.py           # Package info, version
 ├── config.py             # Configuration loading
 ├── plugin.py             # pytest plugin hooks
+├── ast_copy.py           # Iterative AST copy of any depth
+├── control_run.py        # Unmutated control run of the gremlin subprocess
+├── gremlins_options.py   # Strips plugin options from the pre-scan
+├── node_id_args.py       # Reads node ids from a file in the child
+├── node_id_file.py       # Hands node ids to a child through a file
+├── rerun_options.py      # Carries rerunfailures settings to subprocesses
+├── xdist_options.py      # Strips xdist options from subprocesses
 │
 ├── operators/            # Mutation operators
 │   ├── protocol.py       # GremlinOperator protocol
+│   ├── entry_points.py   # Third-party operators from entry points
 │   ├── registry.py       # Operator registration
 │   ├── arithmetic.py     # +, -, *, / mutations
 │   ├── boolean.py        # and/or, True/False mutations
@@ -35,12 +45,17 @@ pytest_gremlins/
 │   ├── transformer.py    # AST transformer
 │   ├── switcher.py       # Environment-based switching
 │   ├── finder.py         # Mutation point finder
+│   ├── origin_finder.py  # Import hook that serves instrumented source
+│   ├── spawn_hook.py     # Gives spawned child interpreters the import hook
 │   └── pragma.py         # Pardon pragma parsing
 │
 ├── coverage/             # Coverage-guided selection
 │   ├── mapper.py         # Line-to-test mapping
 │   ├── collector.py      # Coverage data collection
 │   ├── context_plugin.py # Coverage.py dynamic context plugin
+│   ├── nodeid_markers.py # Strips size markers from node IDs
+│   ├── prescan_main.py   # Entry point of the coverage pre-scan
+│   ├── subprocess_bootstrap.py# Self-bootstrapping context plugin
 │   ├── selector.py       # Test selection
 │   ├── prioritized_selector.py  # Prioritized selection
 │   └── types.py          # Coverage type definitions
@@ -49,6 +64,7 @@ pytest_gremlins/
 │   ├── hasher.py         # Content hashing
 │   ├── store.py          # SQLite result cache
 │   ├── incremental.py    # Cache coordinator
+│   ├── versions.py       # Fingerprint of the installed code
 │   └── types.py          # Cache type definitions
 │
 ├── parallel/             # Parallel execution
@@ -57,6 +73,11 @@ pytest_gremlins/
 │   ├── persistent_pool.py # Persistent workers
 │   ├── batch_executor.py # Batch execution
 │   ├── distribution.py   # Work distribution
+│   ├── exit_codes.py     # Bootstrap subprocess exit codes
+│   ├── fork_executor.py  # Fork-per-batch executor
+│   ├── inprocess_executor.py# In-process executor via toggling
+│   ├── lightweight.py    # Lightweight runner command builder
+│   ├── runner_eligibility.py# Which tests the lightweight runner judges
 │   └── aggregator.py     # Result aggregation
 │
 └── reporting/            # Result reporting

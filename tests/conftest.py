@@ -6,22 +6,27 @@ This file is for test-specific fixtures only.
 
 from __future__ import annotations
 
-from collections.abc import (
-    Callable,
-    Generator,
-)
 import os
 from pathlib import Path
 import sys
-from typing import Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 from unittest.mock import MagicMock
 
 import pytest
-from secret_env_scrub import scrub_secret_env
+from secret_env_scrub import scrub_secret_env  # type: ignore[import-not-found]
 
 from pytest_gremlins.instrumentation.transformer import get_default_registry
 from pytest_gremlins.operators import entry_points as loader
 from pytest_gremlins.plugin import _set_session
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+        Generator,
+    )
 
 # Enable pytester fixture for plugin testing
 pytest_plugins = ['pytester']

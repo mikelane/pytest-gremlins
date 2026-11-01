@@ -19,7 +19,7 @@ WORKFLOWS_DIR = ROOT / '.github' / 'workflows'
 
 def _required_version() -> str:
     pyproject = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
-    return pyproject['tool']['uv']['required-version']
+    return str(pyproject['tool']['uv']['required-version'])
 
 
 def _setup_uv_steps() -> list[tuple[str, dict[str, Any]]]:

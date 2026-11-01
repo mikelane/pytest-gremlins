@@ -14,6 +14,8 @@ from pytest_gremlins.instrumentation.transformer import (
 )
 from pytest_gremlins.operators.comparison import ComparisonOperator
 
+from .cached_entries import partial_entry
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -49,12 +51,12 @@ class DescribeDefaultOperatorCacheKey:
         expected = LEGACY_DEFAULT_KEY.replace(':rf20', ':pytester-615:rf20') if pytester_loaded else LEGACY_DEFAULT_KEY
         cache_dir = tmp_path / '.gremlins_cache'
         with ResultStore(cache_dir / 'results.db') as store:
-            store.put(expected, {'status': 'zapped'})
+            store.put(expected, partial_entry(status='zapped'))
 
         with IncrementalCache(cache_dir, iter(operators), pytester_loaded=lambda: pytester_loaded) as cache:
             assert cache._build_cache_key('g001', 'src_hash', TEST_HASHES) == expected
-            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == {'status': 'zapped'}
-            cache.cache_result('g002', 'src_hash', TEST_HASHES, {'status': 'survived'})
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == partial_entry(status='zapped')
+            cache.cache_result('g002', 'src_hash', TEST_HASHES, partial_entry(status='survived'))
 
         with ResultStore(cache_dir / 'results.db') as store:
             assert store.get(expected.replace('g001:', 'g002:', 1)) == {'status': 'survived', '_mutant_timeout': None}
@@ -63,18 +65,18 @@ class DescribeDefaultOperatorCacheKey:
         operators = get_default_registry().get_all()
         cache_dir = tmp_path / '.gremlins_cache'
         with ResultStore(cache_dir / 'results.db') as store:
-            store.put(LEGACY_DEFAULT_KEY, {'status': 'zapped'})
+            store.put(LEGACY_DEFAULT_KEY, partial_entry(status='zapped'))
 
         with IncrementalCache(cache_dir, reversed(operators)) as cache:
             key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
             assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) is None
-            cache.cache_result('g001', 'src_hash', TEST_HASHES, {'status': 'survived'})
+            cache.cache_result('g001', 'src_hash', TEST_HASHES, partial_entry(status='survived'))
 
         assert key != LEGACY_DEFAULT_KEY
         assert ':ops=' in key
 
         with IncrementalCache(cache_dir, reversed(operators)) as cache:
-            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == {'status': 'survived'}
+            assert cache.get_cached_result('g001', 'src_hash', TEST_HASHES) == partial_entry(status='survived')
 
     def it_separates_a_skipped_constructor_then_restores_the_default_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -129,9 +131,9 @@ class DescribePruningOperatorSequenceKeys:
                 pytester_loaded=lambda: pytester_loaded,
                 xdist_loader_loaded=lambda: xdist_loaded,
             ) as cache:
-                cache.cache_result(gremlin_id, 'old', TEST_HASHES, {'status': status})
-                cache.cache_result(gremlin_id, 'current', TEST_HASHES, {'status': status})
-                cache.cache_result(other_id, 'old', TEST_HASHES, {'status': status})
+                cache.cache_result(gremlin_id, 'old', TEST_HASHES, partial_entry(status=status))
+                cache.cache_result(gremlin_id, 'current', TEST_HASHES, partial_entry(status=status))
+                cache.cache_result(other_id, 'old', TEST_HASHES, partial_entry(status=status))
         with IncrementalCache(cache_dir, operators) as cache:
             cache.prune_stale_sources({prefix: {'current'}})
         for active, status in [(operators, 'zapped'), (selected, 'survived')]:
@@ -142,8 +144,8 @@ class DescribePruningOperatorSequenceKeys:
                 xdist_loader_loaded=lambda: xdist_loaded,
             ) as cache:
                 assert cache.get_cached_result(gremlin_id, 'old', TEST_HASHES) is None
-                assert cache.get_cached_result(gremlin_id, 'current', TEST_HASHES) == {'status': status}
-                assert cache.get_cached_result(other_id, 'old', TEST_HASHES) == {'status': status}
+                assert cache.get_cached_result(gremlin_id, 'current', TEST_HASHES) == partial_entry(status=status)
+                assert cache.get_cached_result(other_id, 'old', TEST_HASHES) == partial_entry(status=status)
 
     @pytest.mark.parametrize('pytester_loaded', [False, True])
     @pytest.mark.parametrize('xdist_loaded', [False, True])
@@ -168,8 +170,8 @@ class DescribePruningOperatorSequenceKeys:
                 pytester_loaded=lambda: pytester_loaded,
                 xdist_loader_loaded=lambda: xdist_loaded,
             ) as cache:
-                cache.cache_result(gremlin_id, 'old', TEST_HASHES, {'status': 'survived'})
-                cache.cache_result(gremlin_id, 'current', TEST_HASHES, {'status': 'survived'})
+                cache.cache_result(gremlin_id, 'old', TEST_HASHES, partial_entry(status='survived'))
+                cache.cache_result(gremlin_id, 'current', TEST_HASHES, partial_entry(status='survived'))
 
         with IncrementalCache(
             cache_dir,
@@ -179,7 +181,7 @@ class DescribePruningOperatorSequenceKeys:
         ) as cache:
             cache.prune_stale_sources({prefix: {'current'}})
             assert cache.get_cached_result(gremlin_id, 'current', TEST_HASHES) is None
-            cache.cache_result(gremlin_id, 'current', TEST_HASHES, {'status': 'zapped'})
+            cache.cache_result(gremlin_id, 'current', TEST_HASHES, partial_entry(status='zapped'))
         with IncrementalCache(
             cache_dir,
             surviving,
@@ -187,4 +189,4 @@ class DescribePruningOperatorSequenceKeys:
             xdist_loader_loaded=lambda: xdist_loaded,
         ) as cache:
             assert cache.get_cached_result(gremlin_id, 'old', TEST_HASHES) is None
-            assert cache.get_cached_result(gremlin_id, 'current', TEST_HASHES) == {'status': 'survived'}
+            assert cache.get_cached_result(gremlin_id, 'current', TEST_HASHES) == partial_entry(status='survived')

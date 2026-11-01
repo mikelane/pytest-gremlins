@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -20,6 +20,9 @@ from .docs_facts import (
     pages_showing_toml_keys_outside_configuration_page,
     toml_keys_the_loader_does_not_read,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.medium
@@ -59,7 +62,7 @@ class DescribeConfigKeyDocumentation:
 
         assert {key.replace('-', '_') for key in CONFIG_KEYS} == field_keys
 
-    def it_loads_every_documented_example_value(self, tmp_path: Path):
+    def it_loads_every_documented_example_value(self, tmp_path: Path) -> None:
         ignored = keys_the_loader_ignores(tmp_path)
 
         assert not ignored, f'The loader accepts but drops these documented keys: {sorted(ignored)}'
@@ -69,7 +72,7 @@ class DescribeConfigKeyDocumentation:
 class DescribeOtherPageKeySpelling:
     """A key spelling the loader accepts is not reported as unknown on other pages."""
 
-    def it_accepts_the_hyphenated_spelling_of_batch_size(self, tmp_path: Path):
+    def it_accepts_the_hyphenated_spelling_of_batch_size(self, tmp_path: Path) -> None:
         (tmp_path / 'pyproject.toml').write_text('[tool.pytest-gremlins]\nbatch-size = 5\n', encoding='utf-8')
         assert load_config(tmp_path).batch_size == 5
 

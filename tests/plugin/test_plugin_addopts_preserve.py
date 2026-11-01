@@ -12,8 +12,8 @@ See: https://github.com/mikelane/pytest-gremlins/issues/113
 
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -26,6 +26,9 @@ from pytest_gremlins.plugin import (
     _run_tests_with_coverage,
     pytest_configure,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.small
@@ -194,9 +197,11 @@ class DescribePytestConfigureStoresPreservedAddopts:
             addopts=['--cov=mypkg', '--import-mode=importlib'],
         )
 
-        pytest_configure(config)  # type: ignore[arg-type]
+        pytest_configure(config)
 
-        assert _get_session().preserved_addopts == '--import-mode=importlib'
+        session = _get_session()
+        assert session is not None
+        assert session.preserved_addopts == '--import-mode=importlib'
 
 
 @pytest.mark.medium

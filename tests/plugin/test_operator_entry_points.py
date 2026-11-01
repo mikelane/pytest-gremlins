@@ -16,6 +16,7 @@ import pytest
 Installer = Callable[..., Path]
 
 UNKNOWN_OPERATOR = 'Unknown operator'
+UNKNOWN_OPERATOR_ERROR = 'has unknown operator'
 
 EP_CONSTANT_MODULE = textwrap.dedent(
     """
@@ -198,13 +199,16 @@ class DescribeInstalledOperatorPackage:
 
         assert 'ep-constant' in {name for name, _ in _operators_in_report(pytester)}
         assert UNKNOWN_OPERATOR not in _output(result)
+        assert UNKNOWN_OPERATOR_ERROR not in _output(result)
 
     def it_accepts_the_operator_name_with_collect_only(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester)
 
         result = _run(pytester, '--collect-only', '--gremlin-operators=ep-constant')
 
+        assert result.ret == pytest.ExitCode.OK
         assert UNKNOWN_OPERATOR not in _output(result)
+        assert UNKNOWN_OPERATOR_ERROR not in _output(result)
 
     def it_selects_the_operator_on_the_command_line(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester)
@@ -213,6 +217,7 @@ class DescribeInstalledOperatorPackage:
 
         assert {name for name, _ in _operators_in_report(pytester)} == {'ep-constant'}
         assert UNKNOWN_OPERATOR not in _output(result)
+        assert UNKNOWN_OPERATOR_ERROR not in _output(result)
 
     def it_selects_the_operator_from_pyproject(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester, pyproject="[tool.pytest-gremlins]\noperators = ['ep-constant']\n")
@@ -314,7 +319,7 @@ class DescribeBrokenEntryPoints:
 
         assert _count(result, "entry point 'broken-ep'") == 1
 
-    def it_discards_operators_from_a_callable_that_fails_partway(
+    def it_rejects_operators_from_a_callable_that_fails_partway(
         self, install_entry_point_dist: Installer, pytester: pytest.Pytester
     ) -> None:
         source = (
@@ -325,8 +330,8 @@ class DescribeBrokenEntryPoints:
 
         result = _run(pytester, '--gremlin-operators=ep-constant,comparison')
 
-        assert 'ep-constant' not in {name for name, _ in _operators_in_report(pytester)}
-        assert f"{UNKNOWN_OPERATOR} 'ep-constant'" in _output(result)
+        assert result.ret == pytest.ExitCode.USAGE_ERROR
+        assert f"{UNKNOWN_OPERATOR_ERROR} 'ep-constant'" in _output(result)
 
     def it_does_not_let_an_entry_point_replace_a_built_in(
         self, install_entry_point_dist: Installer, pytester: pytest.Pytester

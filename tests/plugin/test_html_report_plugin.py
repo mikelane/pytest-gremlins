@@ -5,14 +5,19 @@ References: #155, #156, #157
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import pytest
 
 from pytest_gremlins import plugin
 from pytest_gremlins.plugin import _write_html_report
 from pytest_gremlins.reporting.score import MutationScore
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _empty_score() -> MutationScore:
@@ -26,7 +31,7 @@ class DescribeWriteHtmlReportDefaultOutputPath:
     References: #155, #156
     """
 
-    def it_writes_to_coverage_gremlins_index_html_by_default(self, tmp_path: Path):
+    def it_writes_to_coverage_gremlins_index_html_by_default(self, tmp_path: Path) -> None:
         # The old hardcoded path was rootdir/gremlin-report.html.
         # This test fails if that path is still used.
         score = _empty_score()
@@ -36,7 +41,7 @@ class DescribeWriteHtmlReportDefaultOutputPath:
         assert result_path == tmp_path / 'coverage' / 'gremlins' / 'index.html'
         assert result_path.exists()
 
-    def it_creates_coverage_gremlins_directory_automatically(self, tmp_path: Path):
+    def it_creates_coverage_gremlins_directory_automatically(self, tmp_path: Path) -> None:
         # The directory does not exist before the call.
         # Fails if mkdir is absent.
         score = _empty_score()
@@ -47,7 +52,7 @@ class DescribeWriteHtmlReportDefaultOutputPath:
 
         assert expected_dir.is_dir()
 
-    def it_does_not_write_to_the_old_gremlin_report_html_path(self, tmp_path: Path):
+    def it_does_not_write_to_the_old_gremlin_report_html_path(self, tmp_path: Path) -> None:
         # Regression guard: old path must not exist after a default run.
         score = _empty_score()
 
@@ -63,7 +68,7 @@ class DescribeWriteHtmlReportCustomDir:
     References: #156, #157
     """
 
-    def it_writes_to_custom_dir_slash_index_html_when_html_dir_given(self, tmp_path: Path):
+    def it_writes_to_custom_dir_slash_index_html_when_html_dir_given(self, tmp_path: Path) -> None:
         score = _empty_score()
         custom = tmp_path / 'my-reports'
 
@@ -72,7 +77,7 @@ class DescribeWriteHtmlReportCustomDir:
         assert result_path == custom / 'index.html'
         assert result_path.exists()
 
-    def it_does_not_write_under_coverage_gremlins_when_custom_dir_given(self, tmp_path: Path):
+    def it_does_not_write_under_coverage_gremlins_when_custom_dir_given(self, tmp_path: Path) -> None:
         # When html_dir is provided, the report must NOT land in coverage/gremlins/.
         score = _empty_score()
         custom = tmp_path / 'out'
@@ -87,7 +92,7 @@ def _argparse_parser(parser: pytest.Parser) -> Any:
     optparser = getattr(parser, 'optparser', None)
     # TODO(#721): pytest 8 has no public accessor, so this falls back to the private _getparser().
     # Remove the fallback once the pytest floor reaches 9.x.
-    return optparser if optparser is not None else parser._getparser()
+    return optparser if optparser is not None else parser._getparser()  # type: ignore[attr-defined]
 
 
 @pytest.mark.small

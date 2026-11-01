@@ -68,7 +68,9 @@ def _install_script() -> str:
     return str(step['run'])
 
 
-def _run_install_step(tmp_path: Path, *, test_pypi_versions: dict[str, tuple[str, ...]], tag: str):
+def _run_install_step(
+    tmp_path: Path, *, test_pypi_versions: dict[str, tuple[str, ...]], tag: str
+) -> subprocess.CompletedProcess[str]:
     uv = shutil.which('uv')
     assert uv is not None
     test_pypi = tmp_path / 'test-pypi'

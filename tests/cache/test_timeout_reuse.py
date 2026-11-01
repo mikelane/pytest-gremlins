@@ -10,6 +10,8 @@ from pytest_gremlins.cache import incremental
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.types import CachedGremlinResult
 
+from .cached_entries import partial_entry
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
@@ -70,9 +72,9 @@ class DescribeNonTimeoutReuse:
         assert cache.get_cached_result('g1', 'src', TESTS, mutant_timeout=31) == _result('zapped', 5.0)
 
     def it_returns_the_result_without_bookkeeping_fields(self, cache: IncrementalCache) -> None:
-        cache.cache_result('g1', 'src', TESTS, {'status': 'zapped'}, mutant_timeout=30)
+        cache.cache_result('g1', 'src', TESTS, partial_entry(status='zapped'), mutant_timeout=30)
 
-        assert cache.get_cached_result('g1', 'src', TESTS, mutant_timeout=30) == {'status': 'zapped'}
+        assert cache.get_cached_result('g1', 'src', TESTS, mutant_timeout=30) == partial_entry(status='zapped')
 
 
 @pytest.mark.medium

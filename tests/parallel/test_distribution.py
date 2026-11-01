@@ -127,7 +127,7 @@ class DescribeRoundRobinDistribution:
         gremlins = [make_gremlin(f'g{i:03d}') for i in range(10)]
         result = strategy.distribute(gremlins, num_workers=3)
 
-        all_ids = []
+        all_ids: list[str] = []
         for bucket in result:
             all_ids.extend(g.gremlin_id for g in bucket)
 
@@ -190,7 +190,7 @@ class DescribeWeightedDistribution:
         test_counts = {f'g{i:03d}': (i + 1) * 10 for i in range(10)}
         result = strategy.distribute(gremlins, num_workers=3, test_counts=test_counts)
 
-        all_ids = []
+        all_ids: list[str] = []
         for bucket in result:
             all_ids.extend(g.gremlin_id for g in bucket)
 
@@ -209,7 +209,7 @@ class DescribeWeightedDistribution:
 
         result = strategy.distribute(gremlins, num_workers=2, test_counts=test_counts)
 
-        all_ids = []
+        all_ids: list[str] = []
         for bucket in result:
             all_ids.extend(g.gremlin_id for g in bucket)
 
