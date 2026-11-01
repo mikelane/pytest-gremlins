@@ -210,9 +210,13 @@ def _site_directories() -> list[Path]:
 
 def _is_project_local(location: Path, project_root: Path | None) -> bool:
     """Whether ``location`` is project code: under the pytest rootdir and not in an installed-packages directory."""
-    if project_root is None or not location.is_relative_to(project_root.resolve()):
+    if project_root is None:
         return False
-    return not any(location.is_relative_to(site) for site in _site_directories())
+    roots = (project_root, project_root.resolve())
+    if not any(location.is_relative_to(root) for root in roots):
+        return False
+    sites = _site_directories()
+    return not any(location.is_relative_to(site) for site in sites)
 
 
 def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
@@ -334,20 +338,26 @@ def _relative_import_candidates(importer: Path, node: ast.ImportFrom) -> list[Pa
         base = base.parent
     stem = base.joinpath(*node.module.split('.')) if node.module else base
     names = [alias.name for alias in node.names]
-    paths = [stem.with_suffix('.py'), stem / '__init__.py']
+    paths = [stem.with_suffix('.py'), stem / '__init__.py'] if node.module else [stem / '__init__.py']
     paths += [path for name in names for path in (stem / f'{name}.py', stem / name / '__init__.py')]
     return paths
 
 
+def _dotted_prefixes(dotted_name: str) -> list[str]:
+    """``pkg.sub.mod`` -> ``pkg``, ``pkg.sub``, ``pkg.sub.mod``: importing a module runs every parent package."""
+    parts = dotted_name.split('.')
+    return ['.'.join(parts[: end + 1]) for end in range(len(parts))]
+
+
 def _absolute_import_module_names(node: ast.Import | ast.ImportFrom) -> list[str]:
     if isinstance(node, ast.Import):
-        return [alias.name for alias in node.names]
+        return [prefix for alias in node.names for prefix in _dotted_prefixes(alias.name)]
     module = node.module or ''
-    return [module, *(f'{module}.{alias.name}' for alias in node.names)]
+    return [*_dotted_prefixes(module), *(f'{module}.{alias.name}' for alias in node.names)]
 
 
 def _imported_files(importer: Path, tree: ast.AST) -> set[Path]:
-    """The files of the modules ``tree`` imports statically; an import the session never loaded names no file."""
+    """The files of the modules ``tree`` imports statically; an absolute import never loaded names no file."""
     files: set[Path] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.level:
@@ -355,7 +365,7 @@ def _imported_files(importer: Path, tree: ast.AST) -> set[Path]:
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             origins = (getattr(sys.modules.get(name), '__file__', None) for name in _absolute_import_module_names(node))
             files |= {Path(origin) for origin in origins if origin is not None}
-    return {file.resolve() for file in files if file.suffix == '.py'}
+    return {file for file in files if file.suffix == '.py'}
 
 
 def _local_modules_imported_by(conftests: Iterable[Path], project_root: Path | None) -> set[Path]:
@@ -364,6 +374,8 @@ def _local_modules_imported_by(conftests: Iterable[Path], project_root: Path | N
     Raises:
         OSError: A module in the chain cannot be read.
         SyntaxError: A module in the chain cannot be parsed.
+        MemoryError: A module in the chain is too deeply nested for the parser.
+        RecursionError: A module in the chain is too deeply nested for the compiler.
     """
     pending = [conftest.resolve() for conftest in conftests]
     seen = set(pending)
@@ -372,9 +384,9 @@ def _local_modules_imported_by(conftests: Iterable[Path], project_root: Path | N
         importer = pending.pop()
         tree = ast.parse(importer.read_bytes(), filename=str(importer))
         for imported in _imported_files(importer, tree):
-            if imported in seen or not _is_project_local(imported, project_root):
+            if imported.resolve() in seen or not _is_project_local(imported, project_root):
                 continue
-            seen.add(imported)
+            seen.add(imported.resolve())
             local.add(imported)
             pending.append(imported)
     return local
@@ -398,7 +410,7 @@ def _conftest_operators_label(loaded_conftests: Iterable[Path], project_root: Pa
     try:
         modules = {*conftests, *_local_modules_imported_by(conftests, project_root)}
         entries = sorted({(_conftest_name(module, project_root), hasher.hash_file(module)) for module in modules})
-    except (OSError, SyntaxError, ValueError):
+    except (OSError, SyntaxError, ValueError, MemoryError, RecursionError):
         return None
     return f'{_CONFTEST_OPERATORS_PREFIX}{hasher.hash_string("|".join(f"{name}:{digest}" for name, digest in entries))}'
 
