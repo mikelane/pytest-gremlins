@@ -84,7 +84,16 @@ def cache_kept_reasons(preamble: str) -> list[str]:
 
 
 def needs_cache_kept_line(changed: Sequence[str], previous: Markers, head: Markers) -> bool:
-    """Return whether the release needs a ``(cache kept: ...)`` line: guarded code changed and no marker was raised."""
+    """Return whether the release needs a ``(cache kept: ...)`` line: guarded code changed and no marker was raised.
+
+    Args:
+        changed: The guarded repository paths that changed since the previous release.
+        previous: The cache markers at the previous release tag.
+        head: The cache markers in the code being released.
+
+    Returns:
+        True when guarded code changed and both markers equal their values at the previous release.
+    """
     return bool(changed) and head == previous
 
 

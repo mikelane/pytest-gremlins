@@ -40,6 +40,15 @@ def _load() -> ModuleType:
     return module
 
 
+def _packaging_says_prerelease(tag: str) -> bool:
+    """Return packaging's pre-release verdict for ``tag``; a tag packaging cannot parse is not a pre-release."""
+    packaging_version = pytest.importorskip('packaging.version')
+    try:
+        return bool(packaging_version.Version(tag).is_prerelease)
+    except packaging_version.InvalidVersion:
+        return False
+
+
 def _release_steps() -> list[dict[str, Any]]:
     workflow = yaml.safe_load(RELEASE_WORKFLOW.read_text())
     return list(workflow['jobs']['github-release']['steps'])
@@ -59,14 +68,7 @@ class DescribeIsPrerelease:
         'tag', PRERELEASE_TAGS + EXTENDED_PRERELEASE_TAGS + FINAL_TAGS + VERIFY_ACCEPTED_NON_PRERELEASE_TAGS
     )
     def it_agrees_with_packaging_on_every_tag(self, tag: str) -> None:
-        packaging_version = pytest.importorskip('packaging.version')
-
-        try:
-            expected = packaging_version.Version(tag).is_prerelease
-        except packaging_version.InvalidVersion:
-            expected = False
-
-        assert _load().is_prerelease(tag) is expected
+        assert _load().is_prerelease(tag) is _packaging_says_prerelease(tag)
 
     @pytest.mark.parametrize('tag', FINAL_TAGS)
     def it_marks_final_tags_as_not_prerelease(self, tag: str) -> None:

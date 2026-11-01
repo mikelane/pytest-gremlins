@@ -34,14 +34,14 @@ def _caching_setup_uv_steps() -> list[tuple[str, dict[str, Any]]]:
     return found
 
 
-CACHED_STEPS = _caching_setup_uv_steps()
+CACHING_STEPS = _caching_setup_uv_steps()
 
 
 @pytest.mark.small
 class DescribeSetupUvCachePruning:
     def it_finds_caching_setup_uv_steps(self) -> None:
-        assert len(CACHED_STEPS) > 0
+        assert len(CACHING_STEPS) > 0
 
-    @pytest.mark.parametrize(('step_id', 'inputs'), CACHED_STEPS, ids=[step_id for step_id, _ in CACHED_STEPS])
+    @pytest.mark.parametrize(('step_id', 'inputs'), CACHING_STEPS, ids=[step_id for step_id, _ in CACHING_STEPS])
     def it_prunes_the_uv_cache_before_saving_it(self, step_id: str, inputs: dict[str, Any]) -> None:
         assert inputs.get('prune-cache') is True, f'{step_id} saves an unpruned uv cache'

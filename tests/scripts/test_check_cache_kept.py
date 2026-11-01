@@ -33,6 +33,7 @@ finally:
 
 PREVIOUS = checker.Markers(cache_version='3', runner_fidelity_version='rf21')
 CHANGED = ['src/pytest_gremlins/cache/key.py', 'src/pytest_gremlins/plugin.py']
+RAISED = checker.Markers(cache_version='9', runner_fidelity_version=PREVIOUS.runner_fidelity_version)
 
 
 def _entry(preamble: str = '', body: str = '### Fix\n\n- **A fix.** (no docs: test)\n') -> str:
@@ -83,14 +84,22 @@ class DescribeCheckCacheKept:
     def it_hints_at_the_expected_spelling_when_the_case_differs(self, line: str) -> None:
         problems = checker.check_cache_kept(CHANGED, PREVIOUS, PREVIOUS, preamble=f'Intro.\n\n{line}\n')
 
+        assert len(problems) == 1
         assert 'lowercase' in problems[0]
 
-    def it_needs_a_line_only_when_guarded_code_changed_and_no_marker_was_raised(self) -> None:
-        raised = checker.Markers(cache_version='9', runner_fidelity_version=PREVIOUS.runner_fidelity_version)
-
-        assert checker.needs_cache_kept_line(CHANGED, PREVIOUS, PREVIOUS) is True
-        assert checker.needs_cache_kept_line([], PREVIOUS, PREVIOUS) is False
-        assert checker.needs_cache_kept_line(CHANGED, PREVIOUS, raised) is False
+    @pytest.mark.parametrize(
+        ('changed', 'head', 'expected'),
+        [
+            (CHANGED, PREVIOUS, True),
+            ([], PREVIOUS, False),
+            (CHANGED, RAISED, False),
+        ],
+        ids=['guarded-change-no-raise', 'no-guarded-change', 'marker-raised'],
+    )
+    def it_needs_a_line_only_when_guarded_code_changed_and_no_marker_was_raised(
+        self, changed: list[str], head: object, expected: bool
+    ) -> None:
+        assert checker.needs_cache_kept_line(changed, PREVIOUS, head) is expected
 
     def it_passes_when_one_of_two_lines_has_a_reason(self) -> None:
         preamble = '(cache kept:)\n(cache kept: logging only)\n'
