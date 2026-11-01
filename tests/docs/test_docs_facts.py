@@ -271,6 +271,30 @@ class DescribeTomlDefaultCommentAttribution:
 
         assert toml_default_comments(page) == {}
 
+    def it_does_not_carry_a_comment_past_a_multi_line_array_opener_with_a_trailing_comment(
+        self, tmp_path: Path
+    ) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: all\n# operators = [  # any of the names below\n'
+            '#   "comparison",\n# ]\nbatch_size = 10\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {}
+
+    def it_does_not_carry_a_comment_past_a_multi_line_array_with_its_first_item_on_the_opening_line(
+        self, tmp_path: Path
+    ) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: all\n# operators = ["comparison",\n'
+            '#   "boolean",\n# ]\nbatch_size = 10\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {}
+
     def it_does_not_carry_a_comment_past_a_commented_out_multi_line_string(self, tmp_path: Path) -> None:
         page = tmp_path / 'configuration.md'
         page.write_text(
