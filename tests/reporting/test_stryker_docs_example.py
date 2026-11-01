@@ -9,7 +9,7 @@ from typing import (
     cast,
 )
 
-import jsonschema
+import jsonschema  # type: ignore[import-untyped]
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

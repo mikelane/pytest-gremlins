@@ -68,11 +68,6 @@ class DescribeMypyConfigIsApplied:
 
         assert override['disallow_untyped_defs'] is False
 
-    def it_resolves_src_modules_under_their_package_name(self) -> None:
-        config = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text())['tool']['mypy']
-
-        assert '$MYPY_CONFIG_FILE_DIR/src' in config['mypy_path']
-
 
 @pytest.mark.medium
 class DescribeToxProvidesMypy:

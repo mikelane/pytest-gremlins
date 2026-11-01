@@ -1,5 +1,5 @@
 import pytest
-import sample
+import sample  # type: ignore[import-not-found]
 
 _attempts_seen: list[bool] = []
 

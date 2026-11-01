@@ -9,7 +9,7 @@ catch.  The test is deliberately weak: it leaves some mutants of ``classify`` al
 from __future__ import annotations
 
 import pytest
-from rerun_samples import (
+from rerun_samples import (  # type: ignore[import-not-found]
     FLAKY_STRONG_TEST,
     FLAKY_WEAK_TEST,
     GREMLIN_ARGS,

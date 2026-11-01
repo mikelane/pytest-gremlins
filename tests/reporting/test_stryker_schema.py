@@ -15,7 +15,7 @@ from typing import (
     cast,
 )
 
-import jsonschema
+import jsonschema  # type: ignore[import-untyped]
 import pytest
 
 from pytest_gremlins.reporting.results import (

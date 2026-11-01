@@ -16,10 +16,10 @@ from typing import Any
 
 # These imports couple the test to pre-commit internals (it has no public file-classification API);
 # tox pins pre-commit below 5 so a major release cannot break tox runs unnoticed.
-from pre_commit.clientlib import load_config
-from pre_commit.commands.run import Classifier
-from pre_commit.hook import Hook
-from pre_commit.prefix import Prefix
+from pre_commit.clientlib import load_config  # type: ignore[import-untyped]
+from pre_commit.commands.run import Classifier  # type: ignore[import-untyped]
+from pre_commit.hook import Hook  # type: ignore[import-untyped]
+from pre_commit.prefix import Prefix  # type: ignore[import-untyped]
 import pytest
 
 PRE_COMMIT_CONFIG_PATH = Path(__file__).resolve().parents[2] / '.pre-commit-config.yaml'

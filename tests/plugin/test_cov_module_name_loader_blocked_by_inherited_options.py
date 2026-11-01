@@ -8,7 +8,7 @@ the gremlin runs are given the bare flag.
 
 from __future__ import annotations
 
-from cov_samples import (
+from cov_samples import (  # type: ignore[import-not-found]
     SESSION_ARGS,
     assert_gremlins_ran_cleanly,
     write_project,
