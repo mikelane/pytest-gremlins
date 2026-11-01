@@ -113,10 +113,10 @@ class DescribeColocatedModuleNames:
         scripts = pytester_with_markers.mkdir('scripts')
         scripts.joinpath('tool.py').write_text(_CORE)
         scripts.joinpath('test_tool.py').write_text(_SHORT_NAME_TESTS)
-        targets = '--gremlin-targets=scripts/tool.py'
+        targets_option = '--gremlin-targets=scripts/tool.py'
 
-        serial = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, targets)
-        distributed = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, targets, '-n', '2')
+        serial = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, targets_option)
+        distributed = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, targets_option, '-n', '2')
 
         # Pinning the score keeps two runs that both crash before reporting from agreeing on (0, 0, 0).
         assert (verdicts(serial.stdout.str()), verdicts(distributed.stdout.str())) == ((2, 0, 0), (2, 0, 0))

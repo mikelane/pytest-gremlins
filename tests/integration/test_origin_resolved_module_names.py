@@ -81,16 +81,6 @@ def positive(n):
     return True
 """
 
-_SRC_TESTS = """
-from mypkg.core import positive
-
-
-def test_positive():
-    assert positive(1)
-    assert not positive(0)
-"""
-
-
 _SYMLINK_ALIAS_TESTS = """
 from mypkg.alias import positive as aliased_positive
 from mypkg.core import positive
@@ -214,7 +204,7 @@ class DescribeOriginResolvedModuleNames:
 
         assert verdicts(result.stdout.str()) == (2, 0, 0)
 
-    def it_names_modules_the_same_when_a_virtualenv_lives_inside_the_project(
+    def it_zaps_a_target_when_a_virtualenv_with_a_stale_copy_lives_inside_the_project(
         self, pytester_with_markers: pytest.Pytester
     ) -> None:
         site_packages = pytester_with_markers.path / '.venv' / 'lib' / 'python3' / 'site-packages'
@@ -227,7 +217,7 @@ class DescribeOriginResolvedModuleNames:
         package.mkdir(parents=True)
         package.joinpath('__init__.py').write_text('')
         package.joinpath('core.py').write_text(_POSITIVE)
-        pytester_with_markers.mkdir('tests').joinpath('test_core.py').write_text(_SRC_TESTS)
+        pytester_with_markers.mkdir('tests').joinpath('test_core.py').write_text(_CORE_TESTS)
 
         result = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, '--gremlin-targets=src/mypkg')
 

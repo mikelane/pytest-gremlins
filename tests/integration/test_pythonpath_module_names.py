@@ -57,8 +57,8 @@ def test_small():
 """
 
 
-def _write_util_package(pytester: pytest.Pytester, entry: str) -> None:
-    package = pytester.path / entry / 'util'
+def _write_util_package(pytester: pytest.Pytester, pythonpath_entry: str) -> None:
+    package = pytester.path / pythonpath_entry / 'util'
     package.mkdir(parents=True)
     package.joinpath('__init__.py').write_text(_UTIL_INIT)
     package.joinpath('core.py').write_text(_UTIL_CORE)
