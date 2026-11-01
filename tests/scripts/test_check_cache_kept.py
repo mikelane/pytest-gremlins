@@ -33,6 +33,7 @@ finally:
 
 PREVIOUS = checker.Markers(cache_version='3', runner_fidelity_version='rf21')
 CHANGED = ['src/pytest_gremlins/cache/key.py', 'src/pytest_gremlins/plugin.py']
+RAISED = checker.Markers(cache_version='9', runner_fidelity_version=PREVIOUS.runner_fidelity_version)
 
 
 def _entry(preamble: str = '', body: str = '### Fix\n\n- **A fix.** (no docs: test)\n') -> str:
@@ -72,6 +73,60 @@ class DescribeCheckCacheKept:
 
         assert len(problems) == 1
         assert 'empty' in problems[0]
+
+    @pytest.mark.parametrize(
+        'line',
+        [
+            '    (cache kept: x)',
+            '\t(cache kept: x)',
+            ' \t(cache kept: x)',
+            '  \t(cache kept: x)',
+            '   \t(cache kept: x)',
+        ],
+    )
+    def it_ignores_a_line_inside_an_indented_code_block(self, line: str) -> None:
+        preamble = f'Intro.\n\n{line}\n'
+
+        assert checker.cache_kept_reasons(preamble) == []
+
+    def it_reads_a_line_indented_by_three_spaces_as_prose(self) -> None:
+        assert checker.cache_kept_reasons('Intro.\n\n   (cache kept: x)\n') == ['x']
+
+    @pytest.mark.parametrize('line', ['(Cache kept: x)', '(CACHE KEPT: x)'])
+    def it_hints_at_the_expected_spelling_when_the_case_differs(self, line: str) -> None:
+        problems = checker.check_cache_kept(CHANGED, PREVIOUS, PREVIOUS, preamble=f'Intro.\n\n{line}\n')
+
+        assert problems == [
+            'the (cache kept: <reason>) line must be spelled in lowercase, exactly as shown, to be recognized'
+        ]
+
+    @pytest.mark.parametrize(
+        'preamble',
+        ['Intro.\n\n    (cache kept: x)\n', 'Intro `(cache kept: x)` here\n', 'Intro.\n\n    (Cache kept: x)\n'],
+    )
+    def it_gives_the_generic_problem_when_the_line_is_only_inside_code(self, preamble: str) -> None:
+        problems = checker.check_cache_kept(CHANGED, PREVIOUS, PREVIOUS, preamble=preamble)
+
+        assert problems == [
+            'guarded code changed since the previous release (src/pytest_gremlins/cache/key.py, '
+            'src/pytest_gremlins/plugin.py), but neither CACHE_VERSION nor RUNNER_FIDELITY_VERSION was raised. '
+            'Raise one, or keep the cache on purpose with a line (cache kept: <reason>) in the changelog entry, '
+            'before its first "###" heading.'
+        ]
+
+    @pytest.mark.parametrize(
+        ('changed', 'head', 'expected'),
+        [
+            (CHANGED, PREVIOUS, True),
+            ([], PREVIOUS, False),
+            (CHANGED, RAISED, False),
+        ],
+        ids=['guarded-change-no-raise', 'no-guarded-change', 'marker-raised'],
+    )
+    def it_needs_a_line_only_when_guarded_code_changed_and_no_marker_was_raised(
+        self, changed: list[str], head: object, expected: bool
+    ) -> None:
+        assert checker.needs_cache_kept_line(changed, PREVIOUS, head) is expected
 
     def it_passes_when_one_of_two_lines_has_a_reason(self) -> None:
         preamble = '(cache kept:)\n(cache kept: logging only)\n'
