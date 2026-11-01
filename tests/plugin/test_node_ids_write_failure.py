@@ -16,6 +16,7 @@ from unittest.mock import (
 import pytest
 
 from pytest_gremlins import plugin as plugin_module
+from pytest_gremlins import verdicts as verdicts_module
 from pytest_gremlins.control_run import (
     ControlRunOutcome,
     run_control,
@@ -204,7 +205,7 @@ class DescribeUnattributableMarkerWriteFailure:
         self, session: GremlinSession, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         monkeypatch.setattr(
-            plugin_module,
+            verdicts_module,
             'run_control',
             create_autospec(
                 run_control, return_value=ControlRunOutcome(loads_cleanly=False, output='ImportError', seconds=0.1)

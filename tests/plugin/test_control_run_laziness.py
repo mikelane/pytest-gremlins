@@ -69,7 +69,7 @@ def control(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> MagicMock:
     )
     monkeypatch.setattr('pytest_gremlins.plugin._get_rootdir', lambda _config: tmp_path)
     stub = create_autospec(run_control, return_value=LOADS)
-    monkeypatch.setattr('pytest_gremlins.plugin.run_control', stub)
+    monkeypatch.setattr('pytest_gremlins.verdicts.run_control', stub)
     return cast('MagicMock', stub)
 
 

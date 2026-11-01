@@ -23,12 +23,14 @@ from pytest_gremlins.node_id_file import NODE_IDS_FILE_OPTION
 from pytest_gremlins.plugin import (
     GremlinSession,
     _build_filtered_test_command,
-    _collect_unmutated,
-    _confirm_timeout_kill,
 )
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
+)
+from pytest_gremlins.verdicts import (
+    _collect_unmutated,
+    _confirm_timeout_kill,
 )
 
 WINDOWS_MAX_CMDLINE = 32_767

@@ -18,8 +18,10 @@ from pytest_gremlins.parallel.exit_codes import (
     COLLECTION_KILLING_TEST,
     GREMLIN_COLLECTION_FAILED_EXIT_CODE,
 )
-from pytest_gremlins.plugin import _test_gremlin
 from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.verdicts import (
+    _test_gremlin,
+)
 
 EXIT_COLLECTION_FAILED = [
     sys.executable,

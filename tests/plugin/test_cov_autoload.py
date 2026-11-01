@@ -18,8 +18,10 @@ from cov_samples import (  # type: ignore[import-not-found]
 import pytest
 
 from pytest_gremlins.plugin import (
-    _build_test_command,
     _pytest_cov_options_for,
+)
+from pytest_gremlins.verdicts import (
+    _build_test_command,
 )
 
 AUTOLOAD_OFF_FLAG = '--disable-plugin-autoload'
