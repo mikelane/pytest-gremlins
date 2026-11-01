@@ -15,12 +15,16 @@ from pathlib import Path
 import re
 import sys
 
-# ``uv run --no-project`` has no ``packaging``, so the pre-release rule is spelled out. It covers every tag that
-# ``verify_release_tag.py`` accepts and PEP 440 treats as a pre-release: a pre-release segment, a dev segment, or both.
+# ``uv run --no-project`` has no ``packaging``, so the pre-release rule is spelled out the way PEP 440 normalizes it:
+# optional ``.``/``-``/``_`` separators, optional numbers, and a ``dev`` segment with no leading dot. A tag is a
+# pre-release when it has a pre-release segment, a dev segment, or both.
+_SEPARATOR = r'[-_.]?'
+_PRE_SEGMENT = rf'{_SEPARATOR}(?:alpha|beta|preview|pre|rc|a|b|c){_SEPARATOR}[0-9]*'
+_POST_SEGMENT = rf'(?:-[0-9]+|{_SEPARATOR}(?:post|rev|r){_SEPARATOR}[0-9]*)'
+_DEV_SEGMENT = rf'{_SEPARATOR}dev{_SEPARATOR}[0-9]*'
 PRERELEASE_TAG_PATTERN = re.compile(
-    r'v[0-9]+\.[0-9]+\.[0-9]+'
-    r'(?:(?:alpha|beta|preview|pre|rc|a|b|c)[0-9]*(?:\.post[0-9]+)?(?:\.dev[0-9]+)?'
-    r'|(?:\.post[0-9]+)?\.dev[0-9]+)'
+    rf'v[0-9]+\.[0-9]+\.[0-9]+(?:{_PRE_SEGMENT}{_POST_SEGMENT}?(?:{_DEV_SEGMENT})?|{_POST_SEGMENT}?{_DEV_SEGMENT})',
+    re.IGNORECASE,
 )
 
 

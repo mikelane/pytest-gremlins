@@ -26,9 +26,21 @@ EXTENDED_PRERELEASE_TAGS = [
     'v1.9.0alpha1',
     'v1.9.0b',
     'v1.9.0.post1.dev1',
+    'v1.9.0.dev',
+    'v1.9.0dev1',
+    'v1.9.0.rc1',
+    'v1.9.0.b1',
+    'v1.9.0.a.1',
+    'v1.9.0rc1.post',
+    'v1.9.0b1dev2',
+    'v1.9.0a1.post1.dev',
+    'v1.9.0beta1',
+    'v1.9.0preview1',
+    'v1.9.0pre1',
+    'v1.9.0-beta.1',
 ]
 VERIFY_ACCEPTED_NON_PRERELEASE_TAGS = ['v1.9.0src', 'v1.9.0post1', 'v1.9.0.post1', 'v1.9.0.']
-NON_PEP440_TAGS = ['v1.9.0-beta.1', 'v1.9.0src', 'v1.9.0post1', 'v1.9.0.post1', 'v1.9.0.']
+NON_PEP440_TAGS = ['v1.9.0src', 'v1.9.0post1', 'v1.9.0.post1', 'v1.9.0.']
 
 
 def _load() -> ModuleType:

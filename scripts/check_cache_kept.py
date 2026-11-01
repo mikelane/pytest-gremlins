@@ -68,6 +68,11 @@ INDENTED_CODE_LINE = re.compile(r'^(?: {4}|\t).*$', re.MULTILINE)
 __all__ = ['GIT', 'cache_kept_reasons', 'check_cache_kept', 'main', 'needs_cache_kept_line', 'previous_release_tag']
 
 
+def _prose_only(preamble: str) -> str:
+    """Return ``preamble`` without indented code blocks and code spans."""
+    return CODE_SPAN.sub('', INDENTED_CODE_LINE.sub('', preamble))
+
+
 def cache_kept_reasons(preamble: str) -> list[str]:
     """Return the stripped reason of every ``(cache kept: ...)`` line in ``preamble``.
 
@@ -79,7 +84,7 @@ def cache_kept_reasons(preamble: str) -> list[str]:
     Returns:
         One reason per ``(cache kept: ...)`` line, in order; a line with no reason gives an empty string.
     """
-    visible = CODE_SPAN.sub('', INDENTED_CODE_LINE.sub('', preamble))
+    visible = _prose_only(preamble)
     return [match.group(1).strip() for match in CACHE_KEPT.finditer(visible)]
 
 
@@ -120,7 +125,7 @@ def check_cache_kept(changed: Sequence[str], previous: Markers, head: Markers, p
             f'the {LINE_FORMAT} line has an empty reason; say why the cached verdicts stay valid after changes to '
             f'{files}'
         ]
-    if CACHE_KEPT_ANY_CASE.search(preamble):
+    if CACHE_KEPT_ANY_CASE.search(_prose_only(preamble)):
         return [f'the {LINE_FORMAT} line must be spelled in lowercase, exactly as shown, to be recognized']
     return [
         f'guarded code changed since the previous release ({files}), but neither CACHE_VERSION nor '
