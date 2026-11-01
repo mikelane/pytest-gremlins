@@ -9,11 +9,9 @@ gremlin records from the instrumented tree.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
 import copy
 import hashlib
 import json
-import sys
 from typing import Any
 
 import pytest
@@ -25,6 +23,7 @@ from pytest_gremlins.instrumentation.transformer import (
 
 # Doubling a chain may at most quintuple the copy work: linear is 2x, the quadratic output is 4x, cubic is 8x.
 MAX_DOUBLING_RATIO = 5
+DEEP_CHAIN_TERMS = 500
 
 
 def _chain(terms: int) -> str:
@@ -35,47 +34,38 @@ def _nested_comparison(levels: int) -> str:
     return 'def f(x):\n    y = ' + '(' * levels + 'x' + ''.join(f' < {i})' for i in range(levels)) + '\n    return y\n'
 
 
-def _count_nodes_deep_copied(monkeypatch: pytest.MonkeyPatch, source: str) -> int:
-    """Count the AST nodes ``copy.deepcopy`` is asked to copy while instrumenting ``source``."""
+def _count_nodes_copied(monkeypatch: pytest.MonkeyPatch, source: str) -> int:
+    """Count the AST nodes ``copy_ast`` copies while instrumenting ``source``; it copies one node per call."""
     nodes_copied = 0
-    copying = False
-    real_deepcopy = copy.deepcopy
+    real_copy = copy.copy
 
-    def counting_deepcopy(node: Any, *args: Any) -> Any:
-        nonlocal nodes_copied, copying
-        if copying or not isinstance(node, ast.AST):
-            return real_deepcopy(node, *args)
-        nodes_copied += sum(1 for _ in ast.walk(node))
-        copying = True
-        try:
-            return real_deepcopy(node, *args)
-        finally:
-            copying = False
+    def counting_copy(node: Any) -> Any:
+        nonlocal nodes_copied
+        nodes_copied += isinstance(node, ast.AST)
+        return real_copy(node)
 
     with monkeypatch.context() as patch:
-        patch.setattr(copy, 'deepcopy', counting_deepcopy)
+        patch.setattr(copy, 'copy', counting_copy)
         transform_source(source, 'm.py')
     return nodes_copied
 
 
-@pytest.fixture
-def roomy_recursion_limit() -> Iterator[None]:
-    """A 120-term chain is deeper than pytest's frames leave room for; the RecursionError ceiling is out of scope."""
-    previous = sys.getrecursionlimit()
-    sys.setrecursionlimit(max(previous, 5000))
-    yield
-    sys.setrecursionlimit(previous)
-
-
 @pytest.mark.medium
-@pytest.mark.usefixtures('roomy_recursion_limit')
 class DescribeInstrumentationCopyCost:
     def it_does_not_more_than_quintuple_the_nodes_copied_when_the_chain_doubles(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        assert _count_nodes_deep_copied(monkeypatch, _chain(120)) <= MAX_DOUBLING_RATIO * _count_nodes_deep_copied(
+        assert _count_nodes_copied(monkeypatch, _chain(120)) <= MAX_DOUBLING_RATIO * _count_nodes_copied(
             monkeypatch, _chain(60)
         )
+
+
+@pytest.mark.medium
+class DescribeDeepChains:
+    def it_instruments_a_500_term_chain_at_the_default_recursion_limit(self) -> None:
+        gremlins, _ = transform_source(_chain(DEEP_CHAIN_TERMS), 'm.py')
+
+        assert len(gremlins) == DEEP_CHAIN_TERMS  # 499 additions and the return
 
 
 def _construct_sources() -> dict[str, str]:

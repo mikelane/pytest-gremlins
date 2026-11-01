@@ -6,7 +6,8 @@ This operator mutates boolean operators and values (and/or, True/False, not).
 from __future__ import annotations
 
 import ast
-import copy
+
+from pytest_gremlins.ast_copy import copy_ast
 
 
 class BooleanOperator:
@@ -71,7 +72,7 @@ class BooleanOperator:
 
     def _mutate_boolop(self, node: ast.BoolOp) -> list[ast.AST]:
         """Mutate a boolean operator (and/or)."""
-        mutated = copy.deepcopy(node)
+        mutated = copy_ast(node)
         if isinstance(node.op, ast.And):
             mutated.op = ast.Or()
         else:
@@ -80,10 +81,10 @@ class BooleanOperator:
 
     def _mutate_not(self, node: ast.UnaryOp) -> list[ast.AST]:
         """Mutate a not operation by removing the not."""
-        return [copy.deepcopy(node.operand)]
+        return [copy_ast(node.operand)]
 
     def _mutate_bool_constant(self, node: ast.Constant) -> list[ast.AST]:
         """Mutate a boolean constant (True/False)."""
-        mutated = copy.deepcopy(node)
+        mutated = copy_ast(node)
         mutated.value = not node.value
         return [mutated]

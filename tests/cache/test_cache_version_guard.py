@@ -57,6 +57,8 @@ RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
 # One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
 # between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
 RECORDED_DIGESTS: dict[str, str] = {
+    'ast_copy.py': 'f94a3572585f293c0798490a1685f4d77eb970f67c0f53556dcef29826998832',  # pragma: allowlist secret
+    # --
     'cache/__init__.py': '62df21d4f76d4423b6066843acd9402dc17a026cadba50937fa4efe3841ae428',  # pragma: allowlist secret
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
@@ -109,7 +111,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'instrumentation/switcher.py': '602bef0ec33b9e4f0edbb24db1497f2d9fbf57952662a5f11ec51dee262cff0e',  # pragma: allowlist secret  # noqa: E501
     # --
-    'instrumentation/transformer.py': '70ae060ee3f27d47eadd324ce2173ec4fd3ae244b80f92ea8c267990c02287e9',  # pragma: allowlist secret  # noqa: E501
+    'instrumentation/transformer.py': 'fd39499cb93ebfd9efa068c9f7f71dcd005f1d47cb361f0955d3682d4116d2c2',  # pragma: allowlist secret  # noqa: E501
     # --
     'node_id_args.py': 'd8a6f83045811ffe0c9513e74a15278966c62071db6f3722b1ebc5359c073bb9',  # pragma: allowlist secret
     # --
@@ -117,13 +119,13 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'operators/__init__.py': '95127c7b9b0e9bf0a142c29b7715bce2ea44da38864a26961e6e37855b6f7598',  # pragma: allowlist secret  # noqa: E501
     # --
-    'operators/arithmetic.py': '222d4c8b864303e7d883407e0996bac191d03054a197c046fb8ac1d80669cd5a',  # pragma: allowlist secret  # noqa: E501
+    'operators/arithmetic.py': '1ef004e9376f66193a7f5f6cb36e8fe31a82b0a7045badea2bb5ebb968af01e8',  # pragma: allowlist secret  # noqa: E501
     # --
-    'operators/boolean.py': 'a7db9c8a221f21021450c126890125b384bba56b6351ddb26f419009fdcab7be',  # pragma: allowlist secret  # noqa: E501
+    'operators/boolean.py': '3c5f771ae8ee74cf96c281aebca8d07d8607f79c4e911d290cd75f46df8a3f3b',  # pragma: allowlist secret  # noqa: E501
     # --
-    'operators/boundary.py': '15d660650c565532be8e39a1a4d09cc58cf50dc53a3890bad69656419d565c49',  # pragma: allowlist secret  # noqa: E501
+    'operators/boundary.py': '129242e8477589d308263a17ec424095c44a3625c049dcc803e2831594bd1ddb',  # pragma: allowlist secret  # noqa: E501
     # --
-    'operators/comparison.py': 'c17be7152001c60806e524c37cffd6f6994af35cd658e598a24cc77570805a73',  # pragma: allowlist secret  # noqa: E501
+    'operators/comparison.py': '74836039af65414b57ddfd693030b3b40c07ae1e675441e4e4fd4b32f923ddac',  # pragma: allowlist secret  # noqa: E501
     # --
     'operators/entry_points.py': 'a573e99cb07764a845d95341d53b67748e5113d0679b26c86821943347e4c4ed',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -131,7 +133,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'operators/registry.py': 'd080086690b1d631cbf8d7c8b0c3a98f0c9e48309778c98bf148df9d0b897625',  # pragma: allowlist secret  # noqa: E501
     # --
-    'operators/return_value.py': 'c38d8601fa6a360995fa0fde826316f89084a518bd1829ab57c3e7f65bf97070',  # pragma: allowlist secret  # noqa: E501
+    'operators/return_value.py': 'f99d68ef54470480f5c5615708e267e4812f0a9bdc32d04abcf29c30de569568',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/__init__.py': 'e8924a340f82b43586372f919c082e74931c371cc38298db53113ae38093a69b',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -157,7 +159,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '2b55495718732c7fa786e4a9053db0043a9405e2c5a991c5f0899452950c73c9',  # pragma: allowlist secret
+    'plugin.py': '45b681741b202cf15c419c401bcb0df564999355837c4bc8a70bc7fa28e0d160',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
