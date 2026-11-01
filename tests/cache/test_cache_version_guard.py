@@ -38,17 +38,12 @@ GIT = shutil.which('git') or 'git'
 PACKAGE_ROOT = Path(__file__).resolve().parents[2] / 'src' / 'pytest_gremlins'
 
 # Keys are package-relative POSIX paths: a file, or a directory prefix ending in "/".
-# Renderers that run after every verdict is decided belong here, and so does plugin.py: the code there that
-# assigns or changes a verdict (outcome-to-verdict mapping, collection-kill and timeout confirmation) lives in
-# verdicts.py, which stays guarded. Nothing on the verdict path imports the renderers: the parallel executors
-# and verdicts.py import only reporting/results.py (GremlinResultStatus), and reporting/score.py,
-# reporting/types.py and reporting/__init__.py stay guarded. Do not move verdict-deciding code back into
-# plugin.py: it is unguarded.
+# Only renderers that run after every verdict is decided belong here. Nothing on the verdict path imports them:
+# the parallel executors and plugin.py import only reporting/results.py (GremlinResultStatus), and
+# reporting/score.py, reporting/types.py and reporting/__init__.py stay guarded. plugin.py stays guarded too: it
+# still holds the bootstrap exit-code mapping, the cache-key test hashing and the attributability marker.
 EXCLUDED_FROM_GUARD: dict[str, str] = {
     '__init__.py': 'Holds only __version__, which cz bump rewrites each release; decides no verdict.',
-    'plugin.py': (
-        'Pytest hooks, CLI options and orchestration; every verdict it applies is decided in verdicts.py (#875).'
-    ),
     'reporting/console.py': 'Formats finished results for the terminal; decides no verdict.',
     'reporting/diff.py': 'Renders the original-versus-mutated diff shown in reports; decides no verdict.',
     'reporting/history.py': 'Persists per-run scores for trend charts after the run; decides no verdict.',
@@ -164,6 +159,8 @@ RECORDED_DIGESTS: dict[str, str] = {
     'parallel/pool_config.py': '7af64e5f01674965d50a40aea73547967316c01c10258aa6e800f7eaa90cae20',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
+    # --
+    'plugin.py': 'f57474c2c66dc5a036b53601adeae0cf8ed38929610a5f8ee7a82090ca070190',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -388,7 +385,7 @@ class DescribeCacheVersionGuard:
         )
 
     @pytest.mark.parametrize(
-        'guarded_file', ['node_id_args.py', 'rerun_options.py', 'config.py', 'gremlins_options.py']
+        'guarded_file', ['node_id_args.py', 'rerun_options.py', 'config.py', 'gremlins_options.py', 'verdicts.py']
     )
     def it_changes_the_digest_when_a_guarded_file_changes(
         self, guarded_file: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -449,21 +446,7 @@ class DescribeCacheVersionGuard:
     def it_excludes_nothing_that_the_verdict_path_imports(self) -> None:
         guarded = {source.relative_to(PACKAGE_ROOT).as_posix() for source in guarded_sources()}
 
-        assert {'config.py', 'gremlins_options.py', 'verdicts.py', 'reporting/results.py'} <= guarded
-
-    def it_does_not_guard_plugin_py_so_orchestration_edits_leave_the_digests_alone(self) -> None:
-        guarded = {source.relative_to(PACKAGE_ROOT).as_posix() for source in guarded_sources()}
-
-        assert 'plugin.py' not in guarded
-
-    def it_ignores_a_help_text_edit_in_plugin_py(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        package_copy = _copy_package(tmp_path, monkeypatch)
-        before = _guarded_digests()
-
-        plugin_source = package_copy / 'plugin.py'
-        plugin_source.write_text(plugin_source.read_text() + "\n_HELP_TEXT = 'a reworded --gremlins help'\n")
-
-        assert _guarded_digests() == before
+        assert {'config.py', 'gremlins_options.py', 'plugin.py', 'verdicts.py', 'reporting/results.py'} <= guarded
 
     def it_catches_an_edit_to_the_collection_kill_confirmation(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
