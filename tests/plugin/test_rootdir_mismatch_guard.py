@@ -198,6 +198,27 @@ class DescribeTestsWhoseNodeIdsDoNotResolveFromTheRootdir:
         assert 'test_sample.py::test_big' in message
         assert '--rootdir' in message
 
+    def it_stops_when_xdist_distributes_the_tests(
+        self, pytester_with_markers: pytest.Pytester, absolute_target: str
+    ) -> None:
+        result = pytester_with_markers.runpytest_subprocess(
+            *GREMLIN_ARGS, absolute_target, '-c', 'cfg/pytest.ini', '-n', '2', '.'
+        )
+
+        _assert_stopped_before_any_gremlin(result)
+
+    def it_leaves_an_xdist_run_that_finds_no_sources_to_report_that_instead(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        _write_project(pytester_with_markers)
+        pytester_with_markers.mkdir('cfg')
+        (pytester_with_markers.path / 'cfg' / 'pytest.ini').write_text('[pytest]\n', encoding='utf-8')
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '-c', 'cfg/pytest.ini', '-n', '2', '.')
+
+        assert result.ret == 0
+        assert ROOTDIR_PHRASE not in result.stderr.str() + result.stdout.str()
+
 
 @pytest.mark.medium
 class DescribeNodeIdLayoutsThatKeepWorking:

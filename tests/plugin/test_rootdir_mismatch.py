@@ -55,6 +55,16 @@ class DescribeArgumentFilesOnlyTheSessionCanRead:
 
         assert argument_files_only_the_session_can_read(['@loop.txt'], tmp_path, tmp_path / 'root') == ['@loop.txt']
 
+    def it_names_a_file_once_when_addopts_and_pytest_addopts_both_name_it(self, tmp_path: Path) -> None:
+        session_dir, rootdir = tmp_path / 'session', tmp_path / 'root'
+        session_dir.mkdir()
+        rootdir.mkdir()
+        (session_dir / 'args.txt').write_text('-q\n', encoding='utf-8')
+
+        assert argument_files_only_the_session_can_read(['@args.txt', '@args.txt'], session_dir, rootdir) == [
+            '@args.txt'
+        ]
+
 
 @pytest.mark.medium
 class DescribeNodeIdsThatDoNotResolve:

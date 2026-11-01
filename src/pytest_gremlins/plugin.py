@@ -1372,7 +1372,8 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
     if source_files:
-        _reject_node_ids_gremlin_runs_cannot_resolve(session.items, normalized_node_ids, rootdir)
+        tests = [(item.path, node_id) for item, node_id in zip(session.items, normalized_node_ids, strict=True)]
+        _reject_node_ids_gremlin_runs_cannot_resolve(tests, rootdir)
 
     _hash_sources_and_tests_for_cache(
         gremlin_session,
@@ -1392,11 +1393,11 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     _generate_gremlins(gremlin_session, source_files, rootdir)
 
 
-def _reject_node_ids_gremlin_runs_cannot_resolve(
-    items: Sequence[pytest.Item], normalized_node_ids: Sequence[str], rootdir: Path
-) -> None:
-    """Stop a run that has sources to mutate when no test has a node id naming its file from the rootdir (#690)."""
-    tests = [(item.path, node_id) for item, node_id in zip(items, normalized_node_ids, strict=True)]
+def _reject_node_ids_gremlin_runs_cannot_resolve(tests: Sequence[tuple[Path, str]], rootdir: Path) -> None:
+    """Stop a run that has sources to mutate when no test has a node id naming its file from the rootdir (#690).
+
+    ``tests`` pairs each test's file with the node id gremlin runs are given for it.
+    """
     unresolved = node_ids_that_do_not_resolve(rootdir, tests)
     if tests and len(unresolved) == len(tests):
         raise pytest.UsageError(node_id_mismatch_message(unresolved, rootdir))
@@ -2940,6 +2941,15 @@ def _node_ids_for_tests(selected_tests: Sequence[str], gremlin_session: GremlinS
     ]
 
 
+def _xdist_tests_by_claimed_file(node_ids: Sequence[str], rootdir: Path) -> list[tuple[Path, str]]:
+    """Pair each worker-reported node id with the file it names from ``rootdir``.
+
+    The controller has no items, so no test file is known independently of the node id.  An id whose file part
+    is empty or names a missing file still fails the check.
+    """
+    return [(rootdir / node_id.split('::', maxsplit=1)[0], node_id) for node_id in node_ids]
+
+
 def _rebuild_state_from_xdist_workers(
     session: pytest.Session,
     gremlin_session: GremlinSession,
@@ -2963,6 +2973,8 @@ def _rebuild_state_from_xdist_workers(
     logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
+    if source_files:
+        _reject_node_ids_gremlin_runs_cannot_resolve(_xdist_tests_by_claimed_file(normalized, rootdir), rootdir)
     _hash_sources_and_tests_for_cache(
         gremlin_session,
         source_files,

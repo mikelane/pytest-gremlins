@@ -161,7 +161,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'de620f8ca62d12d5dae96830506ecaa0dbd1483e839ebd5a4d4d760c4effd5df',  # pragma: allowlist secret
+    'plugin.py': '35849d68f023f64fa060e052d3209d06d61336b3f11a0b5cffcd56c6f5c09cef',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -173,7 +173,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rerun_options.py': '4ff81ee1b119e41b6904e8e8b22b2d2bc54e6ec80a467056314579df2e9abf0c',  # pragma: allowlist secret
     # --
-    'rootdir_mismatch.py': '4326966179c9c20eb545d72798a88599d47204eb4155e6a75bbe5b774a3b2bf8',  # pragma: allowlist secret  # noqa: E501
+    'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
     # --
     'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }

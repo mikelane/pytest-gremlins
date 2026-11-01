@@ -53,7 +53,7 @@ def argument_files_only_the_session_can_read(
         unreadable_from_rootdir.extend(
             argument_files_only_the_session_can_read(lines, session_dir, rootdir, (*files_being_read, session_file))
         )
-    return unreadable_from_rootdir
+    return list(dict.fromkeys(unreadable_from_rootdir))
 
 
 def argument_file_mismatch_message(files: Sequence[str], session_dir: Path, rootdir: Path) -> str:
