@@ -134,6 +134,22 @@ class DescribeConfirmTimeoutKill:
         assert 'The limit is capped at 86400s; lower --reruns or --reruns-delay, or speed up these tests.' in message
         assert 'Raise' not in message
 
+    def it_does_not_advise_raising_a_limit_configured_at_the_maximum(
+        self, tmp_path: Path, fake_unmutated_run: MagicMock
+    ) -> None:
+        fake_unmutated_run.return_value = HANGS
+        session_at_maximum = GremlinSession(
+            enabled=True, instrumented_dir=tmp_path, mutant_timeout=86400, mutant_attempt_timeout=86400
+        )
+
+        message = _confirm_timeout_kill(_timeout(), ['t.py::test_a'], session_at_maximum, tmp_path).error_output
+
+        assert message is not None
+        assert message.endswith(
+            'unmutated run did not finish in 86400s). '
+            'The limit is already at the 86400s maximum, so speed up these tests.'
+        )
+
     def it_runs_the_exact_node_ids_under_the_session_timeout(
         self, session: GremlinSession, fake_unmutated_run: MagicMock, tmp_path: Path
     ) -> None:

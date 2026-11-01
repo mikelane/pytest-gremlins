@@ -749,6 +749,9 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
   only turns coverage-guided test selection off, so every gremlin runs the full suite; it never changes a verdict.
 - When rerun scaling has already pushed a limit to the 86400-second cap, the timeout messages say to lower
   `--reruns` or `--reruns-delay` instead of advising a higher per-attempt limit, which could not help.
+- When you set a limit to 86400 yourself, it cannot go higher and lowering the reruns would not change it, so the
+  timeout messages say it is already at the maximum instead of advising a higher limit. The timeout-downgrade messages
+  then leave speeding up the tests as the remedy.
 - The incremental cache keys each verdict on the rerun budget itself (the rerun count, including `--force-reruns`,
   and the delay), so cached verdicts are judged again when it changes. A changed effective timeout judges again only
   the verdicts it could change (see the timeout option above). Two settings
