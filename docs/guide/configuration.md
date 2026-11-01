@@ -343,9 +343,9 @@ use a list, not a bare string, got 'tests/*'
     ```
 
 - The command-line flags are checked the same way. `--gremlin-operators` and `--gremlin-targets` take a
-  comma-separated list, and an empty entry (`comparison,,boolean`, `src,`) stops the run with exit code 4 and a
-  message that names the flag and the value. Each name in `--gremlin-operators` must be a registered operator, and
-  the error lists the valid names. `--gremlin-exclude` takes one glob pattern per use and is repeatable.
+  comma-separated list. Empty entries (`comparison,,boolean`, `src,`) are dropped, so a trailing comma is fine.
+  Each name in `--gremlin-operators` must be a registered operator, and the error lists the valid names.
+  `--gremlin-exclude` takes one glob pattern per use and is repeatable.
 - A `tool` entry in `pyproject.toml` that is not a table (`tool = 5`) is rejected with `[tool] must be a table of
   settings, got 5` and exit code 4, like any other wrong-typed value. You see this message only when you pass `-c`
   pointing at another config file (for example `-c other.ini`). A `pytest.ini`, `tox.ini` or `setup.cfg` next to
@@ -1045,11 +1045,11 @@ Each kind of problem is handled differently:
     ERROR: pytest-gremlins: [tool.pytest-gremlins].cache must be a boolean (e.g. cache = true), got 'yes'
     ```
 
-- **An unknown operator name** in `operators` or `--gremlin-operators` is skipped with a
-  `UserWarning`, and the run goes on with the operators that do exist:
+- **An unknown operator name** in `operators` or `--gremlin-operators` stops the run with a usage
+  error and exit code 4. The message names the key or flag and lists the valid operators:
 
     ```text
-    UserWarning: Unknown operator 'typo' requested, ignoring
+    ERROR: pytest-gremlins: --gremlin-operators has unknown operator 'typo'. Valid operators: ...
     ```
 
 - **A path in `paths` that doesn't exist** is dropped without a message. If no configured
