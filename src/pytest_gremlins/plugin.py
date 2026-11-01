@@ -1361,7 +1361,6 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     rootdir = _get_rootdir(session.config)
     node_ids = [item.nodeid for item in session.items]
     normalized_node_ids = _make_node_ids_relative(node_ids, rootdir)
-    _reject_node_ids_gremlin_runs_cannot_resolve(session.items, normalized_node_ids, rootdir)
     gremlin_session.test_node_ids = {node_id: node_id for node_id in normalized_node_ids}
 
     name_to_nodes: dict[str, list[str]] = {}
@@ -1372,6 +1371,8 @@ def pytest_collection_finish(session: pytest.Session) -> None:
 
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
+    if source_files:
+        _reject_node_ids_gremlin_runs_cannot_resolve(session.items, normalized_node_ids, rootdir)
 
     _hash_sources_and_tests_for_cache(
         gremlin_session,
@@ -1394,7 +1395,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
 def _reject_node_ids_gremlin_runs_cannot_resolve(
     items: Sequence[pytest.Item], normalized_node_ids: Sequence[str], rootdir: Path
 ) -> None:
-    """Stop the run when no collected test has a node id that names its file from the rootdir (#690)."""
+    """Stop a run that has sources to mutate when no test has a node id naming its file from the rootdir (#690)."""
     tests = [(item.path, node_id) for item, node_id in zip(items, normalized_node_ids, strict=True)]
     unresolved = node_ids_that_do_not_resolve(rootdir, tests)
     if tests and len(unresolved) == len(tests):

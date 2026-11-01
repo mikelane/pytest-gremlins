@@ -189,15 +189,6 @@ class DescribeTestsWhoseNodeIdsDoNotResolveFromTheRootdir:
 
         _assert_stopped_before_any_gremlin(result)
 
-    def it_stops_when_the_default_targets_are_not_found_either(
-        self, pytester_with_markers: pytest.Pytester, absolute_target: str
-    ) -> None:
-        del absolute_target
-
-        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '-c', 'cfg/pytest.ini', '.')
-
-        _assert_stopped_before_any_gremlin(result)
-
     def it_names_the_cause_and_the_fix(self, pytester_with_markers: pytest.Pytester, absolute_target: str) -> None:
         result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, absolute_target, '--rootdir=sub', '.')
 
@@ -228,6 +219,19 @@ class DescribeNodeIdLayoutsThatKeepWorking:
         )
 
         _assert_scored_normally(result)
+
+    def it_leaves_a_run_that_finds_no_sources_to_report_that_instead(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        _write_project(pytester_with_markers)
+        pytester_with_markers.mkdir('cfg')
+        (pytester_with_markers.path / 'cfg' / 'pytest.ini').write_text('[pytest]\n', encoding='utf-8')
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '-c', 'cfg/pytest.ini', '.')
+
+        assert result.ret == 0
+        assert 'No gremlins found' in result.stdout.str()
+        assert ROOTDIR_PHRASE not in result.stderr.str() + result.stdout.str()
 
     def it_scores_when_the_config_file_sits_in_a_subdirectory_that_holds_the_project(
         self, pytester_with_markers: pytest.Pytester
