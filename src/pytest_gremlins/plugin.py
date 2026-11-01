@@ -3452,18 +3452,23 @@ _XDIST_PLUGIN_NAMES: tuple[str, ...] = ('xdist.plugin', 'xdist')
 _XDIST_ENTRY_POINT_NAME = 'xdist'
 
 
-_XDIST_BLOCKS = frozenset({'no:xdist', 'no:xdist.plugin'})
+_XDIST_DECISION_NAMES = frozenset({'no:xdist', *_XDIST_PLUGIN_NAMES})
 
 
 def _gremlin_runs_inherit_an_xdist_block(config: pytest.Config) -> bool:
-    """Return whether ``addopts`` or ``PYTEST_ADDOPTS`` block xdist: ``-p no:xdist`` or ``-p no:xdist.plugin``.
+    """Return whether the last inherited ``-p`` naming xdist blocks it: ``-p no:xdist``.
 
-    The attached spelling (``-pno:xdist``) counts too.
+    The attached spelling (``-pno:xdist``) counts too.  A later ``-p xdist`` or ``-p xdist.plugin`` lifts an
+    earlier block, and ``-p no:xdist.plugin`` leaves the autoloaded ``xdist`` entry point registered, so it is ignored.
     """
     tokens = _arguments_gremlin_runs_inherit(config)
-    blocked = {value for flag, value in pairwise(tokens) if flag == '-p'}
-    blocked |= {argument.removeprefix('-p') for argument in tokens if argument.startswith('-p')}
-    return not _XDIST_BLOCKS.isdisjoint(name.strip() for name in blocked)
+    named: list[str] = []
+    for index, argument in enumerate(tokens):
+        if argument == '-p' and index + 1 < len(tokens):
+            named.append(tokens[index + 1].strip())
+        elif argument.startswith('-p') and argument != '-p':
+            named.append(argument.removeprefix('-p').strip())
+    return [name for name in named if name in _XDIST_DECISION_NAMES][-1:] == ['no:xdist']
 
 
 def _xdist_options_for(config: pytest.Config, rerun_options: Sequence[str]) -> tuple[list[str], bool]:
