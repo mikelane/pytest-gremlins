@@ -52,7 +52,6 @@ from pytest_gremlins.cache.incremental import (
     RerunBudget,
     subprocess_optimize_level,
 )
-from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.config import (
     MAX_TIMEOUT_SECONDS,
     VALID_REPORT_FORMATS,
@@ -65,8 +64,6 @@ from pytest_gremlins.config import (
     merge_configs,
 )
 from pytest_gremlins.control_run import (
-    SELECTION_FAILS_TO_LOAD_PREFIX,
-    TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX,
     UNATTRIBUTABLE_MARKER,
     ControlRunOutcome,
     UnmutatedRunOutcome,
@@ -108,7 +105,6 @@ from pytest_gremlins.parallel.exit_codes import (
 )
 from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
-    REWRITE_API_BROKEN_PREFIX,
 )
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.reporting.html import (
@@ -118,7 +114,6 @@ from pytest_gremlins.reporting.html import (
 from pytest_gremlins.reporting.json_reporter import JsonReporter
 from pytest_gremlins.reporting.results import (
     CAPPED_LIMIT_ADVICE,
-    TIMEOUT_NOT_CONFIRMED_PREFIX,
     GremlinResult,
     GremlinResultStatus,
     limit_is_capped,
@@ -142,11 +137,13 @@ from pytest_gremlins.rerun_options import (
 )
 from pytest_gremlins.verdicts import (
     _build_test_command,
+    _cache_row_from_result,
     _collect_unmutated,
     _confirm_kill,
     _confirm_pooled_result,
     _immediate_result_if_pardoned,
     _immediate_result_if_selection_unrunnable,
+    _is_cacheable,
     _launch_failure_result,
     _node_ids_write_failure_output,
     _prefill_collection_kill_confirmations,
@@ -3879,7 +3876,6 @@ def _run_batch_mutation_testing(  # pragma: no cover
         env_vars={},
     )
 
-    # Convert WorkerResults to GremlinResults
     results: list[GremlinResult] = list(cached_results)
 
     batch_node_ids = _node_ids_for_tests(all_covering_tests, gremlin_session)
@@ -4003,7 +3999,6 @@ def _run_parallel_mutation_testing(  # pragma: no cover
 
     print()  # New line after progress
 
-    # Convert WorkerResults to GremlinResults and cache them
     results: list[GremlinResult] = list(cached_results)
     unconfirmed: list[GremlinResult] = []
     for worker_result in aggregator.get_results():
@@ -4472,19 +4467,7 @@ def _cache_gremlin_result(
     if not gremlin_session.cache_enabled or gremlin_session.cache is None:
         return
 
-    # A verdict scored while load failures were unattributable, or downgraded because the unmutated
-    # selection does not load, is too slow without a mutant, or cannot be launched to confirm a timeout,
-    # or was aborted because pytest's assertion-rewrite API changed (#617), depends on a harness or config problem
-    # the user is told to fix; replaying it from a warm cache after the fix would keep reporting stale errors.
-    if not gremlin_session.load_failures_attributable:
-        return
-    uncacheable_error_prefixes = (
-        SELECTION_FAILS_TO_LOAD_PREFIX,
-        TIMEOUT_NOT_CONFIRMED_PREFIX,
-        TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX,
-        REWRITE_API_BROKEN_PREFIX,
-    )
-    if (result.error_output or '').startswith(uncacheable_error_prefixes):
+    if not _is_cacheable(result, load_failures_attributable=gremlin_session.load_failures_attributable):
         return
 
     source_hash = gremlin_session.source_hashes.get(gremlin.file_path, '')
@@ -4501,12 +4484,7 @@ def _cache_gremlin_result(
         gremlin_id=gremlin.gremlin_id,
         source_hash=source_hash,
         test_hashes=test_hashes,
-        result=CachedGremlinResult(
-            status=result.status.value,
-            killing_test=result.killing_test,
-            execution_time_ms=result.execution_time_ms,
-            error_output=result.error_output,
-        ),
+        result=_cache_row_from_result(result),
         mutant_timeout=gremlin_session.mutant_timeout,
         optimize_level=subprocess_optimize_level(os.environ),
         rerun_budget=gremlin_session.rerun_budget,

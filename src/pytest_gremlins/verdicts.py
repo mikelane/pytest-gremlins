@@ -17,6 +17,7 @@ import time
 from typing import TYPE_CHECKING
 
 from pytest_gremlins.cache.incremental import MILLISECONDS_PER_SECOND
+from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.control_run import (
     MAX_SELECTION_FAILURE_OUTPUT_CHARS,
     SELECTION_FAILS_TO_LOAD_PREFIX,
@@ -34,6 +35,7 @@ from pytest_gremlins.parallel.exit_codes import (
     GREMLIN_COLLECTION_FAILED_EXIT_CODE,
 )
 from pytest_gremlins.parallel.lightweight import (
+    REWRITE_API_BROKEN_PREFIX,
     build_lightweight_command,
     describe_runner_error,
 )
@@ -53,7 +55,6 @@ from pytest_gremlins.xdist_options import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from pytest_gremlins.cache.types import CachedGremlinResult
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.parallel.pool import WorkerResult
     from pytest_gremlins.plugin import GremlinSession
@@ -629,4 +630,33 @@ def _result_from_cached_row(gremlin: Gremlin, cached: CachedGremlinResult) -> Gr
         killing_test=cached.get('killing_test'),
         execution_time_ms=cached.get('execution_time_ms'),
         error_output=cached.get('error_output', ''),
+    )
+
+
+def _is_cacheable(result: GremlinResult, load_failures_attributable: bool) -> bool:
+    """Return whether the result may be written to the cache.
+
+    A verdict scored while load failures were unattributable, or downgraded because the unmutated
+    selection does not load, is too slow without a mutant, or cannot be launched to confirm a timeout,
+    or was aborted because pytest's assertion-rewrite API changed (#617), depends on a harness or config problem
+    the user is told to fix; replaying it from a warm cache after the fix would keep reporting stale errors.
+    """
+    if not load_failures_attributable:
+        return False
+    uncacheable_error_prefixes = (
+        SELECTION_FAILS_TO_LOAD_PREFIX,
+        TIMEOUT_NOT_CONFIRMED_PREFIX,
+        TIMEOUT_CONFIRMATION_LAUNCH_ERROR_PREFIX,
+        REWRITE_API_BROKEN_PREFIX,
+    )
+    return not (result.error_output or '').startswith(uncacheable_error_prefixes)
+
+
+def _cache_row_from_result(result: GremlinResult) -> CachedGremlinResult:
+    """Return the row the cache stores for the result; :func:`_result_from_cached_row` reads it back."""
+    return CachedGremlinResult(
+        status=result.status.value,
+        killing_test=result.killing_test,
+        execution_time_ms=result.execution_time_ms,
+        error_output=result.error_output,
     )

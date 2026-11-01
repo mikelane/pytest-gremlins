@@ -175,7 +175,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rerun_options.py': '988743f054ce69cdeec2be71ffc4e906cb5b0fb9f362046fcbbfdb78513ec415',  # pragma: allowlist secret
     # --
-    'verdicts.py': 'bb9880bbab479e9152afb5872dae820f7f1d6bffb3013f295c885dec3c86a7ad',  # pragma: allowlist secret
+    'verdicts.py': '5f9b4248f4661ba311243b9bc37fc0d2255e7fdef18646aaee362ffbed8f1383',  # pragma: allowlist secret
     # --
     'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }
