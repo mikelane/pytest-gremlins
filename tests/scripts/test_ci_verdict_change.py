@@ -81,6 +81,17 @@ class DescribeVerdictChangeJobs:
 
         assert (commands.count(f'{SCRIPT} run'), f'{SCRIPT} compare' in commands) == (2, True)
 
+    def it_compares_against_the_release_tag_reachable_from_the_base(self) -> None:
+        compare = next(step for step in _jobs()[CHECK_JOB]['steps'] if step.get('name') == 'Compare verdicts')
+
+        assert '--released-ref "$BASE_SHA"' in compare['run']
+        assert compare['env']['BASE_SHA'] == f'${{{{ needs.{DETECT_JOB}.outputs.base-sha }}}}'
+
+    def it_fetches_tags_so_the_release_markers_can_be_read(self) -> None:
+        checkout = _jobs()[CHECK_JOB]['steps'][0]
+
+        assert (checkout['with']['fetch-depth'], checkout['with']['fetch-tags']) == (0, True)
+
     def it_disables_the_gremlin_cache_for_both_runs(self) -> None:
         assert '--gremlin-cache' not in _step_commands(CHECK_JOB)
 

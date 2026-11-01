@@ -53,6 +53,38 @@ Produces deterministic SHA-256 hashes for files and strings.
 | `hash_files(paths)` | `dict[str, str]` | Hash multiple files |
 | `hash_combined(hashes)` | `str` | Combine multiple hashes |
 
+### Helper modules under the test root
+
+A test's verdict can depend on code the test file never names: a fixture module loaded through `pytest_plugins`, a
+helper that a test or a `conftest.py` imports, or a helper defined inside another test file. The cache key covers all
+three.
+
+**Helper modules.** pytest-gremlins hashes every Python file under the test root that is not a test file into the cache
+key of each test file there. The test root is the top-level directory under the pytest rootdir that holds the test file
+(for example `tests/`). A test file that sits directly in the rootdir has no directory to sweep, so only the `.py` files
+beside it count. A file is a test file when its name matches the `python_files` setting (default `test_*.py` and
+`*_test.py`); that is decided by the name alone, never by what pytest collected in the run. So a test file has the same
+key whether you run it alone or with the whole suite. `conftest.py` files (hashed separately along the path to each
+test) and `__pycache__` are skipped.
+
+The trade-off is coarse on purpose: **editing any helper under the test root re-runs gremlins for every test file
+under that root.** The cost is extra misses after a helper edit. Python files outside the test root do not affect the
+key.
+
+**Imported test files.** Other test files that a test, or a `conftest.py` on its path, imports are hashed into its key
+too, so editing `make()` in `tests/test_b.py` re-runs the gremlins of a `tests/test_a.py` that imports it. pytest-gremlins
+reads each file's `import x`, `from x import y` and relative imports with `ast`, resolves them to `.py` files under the
+test root, and follows them transitively (import cycles are safe). A module named in a module-level `pytest_plugins`
+assignment (a string, or a list or tuple of strings) counts as an import, so a test-named fixture module loaded that way
+is in the key. An absolute import is looked up from rootdir, from each directory between the importing file and
+rootdir, and from each `pythonpath` entry in your pytest ini (resolved against rootdir). Source with a byte-order mark
+or a `coding:` declaration is read correctly. A file that cannot be parsed contributes nothing.
+A test file that nothing imports does not affect other files' keys.
+
+**Limit: dynamic imports are not followed.** A test file reached only through `importlib.import_module` with a computed
+name, or any other import resolved at run time, is not in the key. Editing it replays the cached verdicts of the files
+that load it. Import it statically, or clear the cache with `--gremlin-clear-cache` after editing one.
+
 ### Usage Example
 
 ```python
@@ -218,6 +250,14 @@ changes how verdicts are computed and raises the cache version (then the first r
 upgrading or downgrading an operator package invalidates it. Old entries stop matching; they remain in `results.db`
 until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 
+Two sessions add a part to the key so that only they miss once after an upgrade: one that loads the pytester plugin
+adds `pytester-615` (#891), and one whose gremlin runs load pytest-xdist themselves because plugin autoload is
+disabled adds `xdist-668` (#668). Earlier versions could report false kills for tests using `worker_id` or
+`testrun_uid` when xdist was loaded with `-p xdist.plugin` (spaced or joined) on the command line, or when
+`--disable-plugin-autoload` came with `-p pytest_rerunfailures` in `addopts`, because the gremlin runs went without
+xdist. A session that keeps autoload on but inherits `-p no:xdist` and loads xdist on its command line gets the part as
+well (#685). Other sessions with the part just re-test once. Every other session keeps its key.
+
 ### Invalidation Rules
 
 | Change | Cache Effect |
@@ -229,21 +269,23 @@ until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
 | pytest-gremlins upgraded | Hit, unless the release raised the cache version (then a miss for every gremlin) |
 | Distribution providing a `pytest_gremlins.operators` entry point installed, removed or changed version | Miss for every gremlin (old entries stop matching) |
 | Installed package (including a PEP 610 editable install) that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
-| Operator defined in a `conftest.py` on the hashed chain (from the pytest rootdir down to each test file, even if the project is installed editable) | No effect on the key; the source and conftest hashes cover it |
+| Operator defined in a `conftest.py` that is registered as a plugin (its module is named `conftest` or ends in `.conftest` and its file is such a `conftest.py`, or a function in its class body comes from one). An operator from an installed package whose module is merely named `conftest` is not one: it is keyed by the package version, including one that subclasses the `GremlinOperator` protocol or is a dataclass | Hits stay intact while no loaded `conftest.py` changes. The versions part of every key gets one `conftest-operators=` label that hashes every `conftest.py` registered as a plugin when the cache opens (the rootdir's and those of the command-line arguments, such as `a/` and `b/` in `pytest a b`): its path, relative to the rootdir or absolute outside it, and its content. Editing any of them is a miss for every gremlin, wherever the operator's code comes from (a decorator or a method borrowed from another `conftest.py`). The test key alone hashes only the `conftest.py` files on the path to each covering test, so a gremlin covered only by tests in a sibling directory would otherwise replay a stale verdict. A loaded `conftest.py` that cannot be read misses on every run. A `conftest.py` pytest loads later, during collection, is not in the label. Helper modules a `conftest.py` imports are not in it either ([#924](https://github.com/mikelane/pytest-gremlins/issues/924)). An operator in a `conftest.py` that an installed package ships and registers as a plugin (`-p pkg.conftest`, a `pytest11` entry point or `pytest_plugins`) also keeps its `pkg==<version>` label, so an upgrade that changes only another file of the package is a miss. A project with no such operator gets the same keys as before |
 | Operator that does not come from an installed distribution: a project-local helper module, a module loaded by file path or sharing a name with another module, a namespace-package module (unless an installed distribution in that namespace sits at the same top-level name), a class defined inside a function, a module with no file, or an editable install recorded only through a `.pth` file or a setuptools import finder | Every run misses the cache for every gremlin: the key carries a fresh random token, so the run is slower but never serves a stale verdict. The run also writes no results to the cache, since no later run could read them, so `results.db` does not grow. An operator keeps hits only when it is importable by its qualified name and an installed package owns its module. Restoring cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator from an installed distribution still keys on that distribution's version |
+| Helper module under the test root edited, added or removed: a `pytest_plugins` fixture module, or a module a test or `conftest.py` imports | Miss for every gremlin covered by any test file under that test root. The key folds in every `.py` file there whose name matches no `python_files` pattern, other than a `conftest.py` or a file under `__pycache__` |
+| Helper code inside a test file edited, imported (statically) by another test file or its `conftest.py` | Miss for every gremlin covered by the importing test file. A test file imported only dynamically is not followed. See [Helper modules under the test root](#helper-modules-under-the-test-root) |
+| Python file outside the test root edited, and not a source file a gremlin mutates | No effect on the key |
 | Nothing changed | Hit (return cached result) |
 
-Some cases still keep a stable key when the operator's code has changed. These are not tracked by the key yet
-([#890](https://github.com/mikelane/pytest-gremlins/issues/890)):
-
-- A source checkout on `sys.path` with a leftover `<pkg>.egg-info` keys on that egg-info's name and version.
-- A file in a shared namespace package that no `RECORD` lists takes the label of a sibling distribution that owns
-  another part of the namespace.
-- A file under a PEP 610 editable project directory that is not part of the distribution's package (for example a
-  monorepo `tools/` helper) takes the editable distribution's label.
-- A `conftest.py` outside the hashed conftest chain keeps a stable key.
-
-After editing code in one of these, run with `--gremlin-clear-cache`.
+A regular installed distribution owns an operator's module only when the distribution's install record (`RECORD` or
+`installed-files.txt`) lists the module's file. A source checkout's `SOURCES.txt` is not an install record, so a
+checkout on `sys.path` with a leftover `<pkg>.egg-info` and an unrecorded file in a shared namespace package both miss.
+A PEP 660 editable install's `RECORD` lists only a `.pth` or finder file, so an editable install (PEP 610
+`direct_url.json`) owns a module instead when the module's file is under the editable project directory and the
+module's top-level name is in the install's `top_level.txt`. A helper elsewhere under an editable project directory
+misses. An editable install without `top_level.txt` (non-setuptools backends such as hatchling,
+uv_build, flit and pdm) always misses, because its `.pth` directory can hold packages the wheel does not
+ship. Setuptools editables and normal wheels keep stable keys. An empty `RECORD` or `installed-files.txt` counts as
+no install record. A `.egg` install has no install record, so it misses; zip installs keep their version label.
 
 ### Usage Example
 

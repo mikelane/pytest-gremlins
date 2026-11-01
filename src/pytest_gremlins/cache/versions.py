@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+from functools import cached_property
 from importlib.metadata import (
     Distribution,
+    PackagePath,
     distributions,
     entry_points,
 )
+import inspect
 import json
 from pathlib import Path
+import posixpath
 import re
 import sys
 import sysconfig
@@ -18,6 +23,7 @@ from urllib.parse import urlparse
 from urllib.request import url2pathname
 import uuid
 
+from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.operators.entry_points import ENTRY_POINT_GROUP
 
 if TYPE_CHECKING:
@@ -30,19 +36,20 @@ _OWN_PACKAGE = 'pytest_gremlins'
 
 # A distribution with unreadable or malformed metadata is skipped; it must never break pytest_configure.
 # UnicodeDecodeError and json.JSONDecodeError are ValueErrors; importlib.metadata raises TypeError for a RECORD row
-# with too many fields. Shape problems in direct_url.json are checked
-# explicitly in _editable_project_directory, so a bad editable marker never costs a distribution its label.
-_UNREADABLE_METADATA = (OSError, ValueError, TypeError)
+# with too many fields; csv.Error is a RECORD field over the csv size limit. Shape problems in direct_url.json are
+# checked explicitly in _editable_project_directory, so a bad editable marker never costs a distribution its label.
+_UNREADABLE_METADATA = (OSError, ValueError, TypeError, csv.Error)
 
 # Raise this on any change that could alter a verdict, or which gremlins exist, for the same source and tests.
 # tests/cache/test_cache_version_guard.py fails until you decide. It guards every .py file in the package except a
 # reviewed exclusion list, so a new file is covered without editing a list. CACHE_VERSION covers what gets mutated;
 # RUNNER_FIDELITY_VERSION in incremental.py covers test execution and outcome-to-verdict mapping.
-# Version 2 retires verdicts from before the active operator sequence was included in the key.
-CACHE_VERSION = 2
+CACHE_VERSION = 1
 
 _LOCAL_OPERATOR_PREFIX = 'local-operator='
 _UNREADABLE_MARKER = ':unreadable-'
+_CONFTEST_OPERATORS_PREFIX = 'conftest-operators='
+_CONFTEST_FILE_NAME = 'conftest.py'
 
 
 def _metadata_field(dist: Distribution, field: str) -> str | None:
@@ -68,16 +75,75 @@ def _is_own_distribution(dist: Distribution) -> bool:
     return name is not None and _normalized(name) == _OWN_DISTRIBUTION
 
 
-def _declared_top_level_modules(dist: Distribution) -> set[str]:
-    """Return the top-level modules a distribution installs, from ``top_level.txt`` else its RECORD."""
+def _is_editable_stub(name: str) -> bool:
+    """Whether a top-level RECORD entry is a PEP 660 ``.pth`` or ``__editable__`` finder file, not a module."""
+    return name.endswith('.pth') or name.startswith('__editable__')
+
+
+def _top_level_modules_from_record(files: Iterable[PackagePath]) -> set[str]:
+    modules: set[str] = set()
+    for file in files:
+        root = file.parts[0] if file.parts else ''
+        if _is_editable_stub(root):
+            continue
+        modules.add(root.split('.')[0] if len(file.parts) == 1 else root)
+    return modules
+
+
+class _InstallRecord:
+    """A distribution's install record (``RECORD`` or ``installed-files.txt``), read at most once.
+
+    ``SOURCES.txt`` of a source checkout's ``.egg-info`` is not an install record, so it never counts. An empty or
+    blank record is no install record either: ``Distribution.files`` would fall back to ``SOURCES.txt`` for it.
+    """
+
+    def __init__(self, dist: Distribution) -> None:
+        self._dist = dist
+
+    @cached_property
+    def files(self) -> tuple[PackagePath, ...]:
+        record = self._dist.read_text('RECORD')
+        if record is not None and record.strip():
+            return tuple(PackagePath(row[0]) for row in csv.reader(record.splitlines()) if row)
+        installed_files = self._dist.read_text('installed-files.txt')
+        if installed_files is None or not installed_files.strip():
+            return ()
+        return self._installed_files_entries(installed_files)
+
+    def _installed_files_entries(self, installed_files: str) -> tuple[PackagePath, ...]:
+        """Parse ``installed-files.txt``: each line is relative to the ``.egg-info`` directory that holds it."""
+        egg_info = getattr(self._dist, '_path', None)
+        if egg_info is None:
+            return ()
+        return tuple(
+            PackagePath(posixpath.join(Path(str(egg_info)).name, line))
+            for line in installed_files.splitlines()
+            if line.strip()
+        )
+
+    @cached_property
+    def paths(self) -> frozenset[Path]:
+        """The resolved location of every listed file; empty when the record cannot be read."""
+        try:
+            files = self.files
+        except _UNREADABLE_METADATA:
+            return frozenset()
+        return frozenset(path for file in files if (path := self._resolved(file)) is not None)
+
+    def _resolved(self, file: PackagePath) -> Path | None:
+        """Resolve one listed file; ``None`` when its location is unreadable or loops (``RuntimeError`` before 3.13)."""
+        try:
+            return Path(str(self._dist.locate_file(file))).resolve()
+        except (*_UNREADABLE_METADATA, RuntimeError):
+            return None
+
+
+def _declared_modules(dist: Distribution, record: _InstallRecord) -> set[str]:
+    """Return the top-level modules a distribution installs, from ``top_level.txt`` else from its install record."""
     top_level = dist.read_text('top_level.txt')
     if top_level is not None:
         return set(top_level.split())
-    modules: set[str] = set()
-    for file in dist.files or ():
-        root = file.parts[0] if file.parts else ''
-        modules.add(root.split('.')[0] if len(file.parts) == 1 else root)
-    return modules
+    return _top_level_modules_from_record(record.files)
 
 
 def _editable_project_directory(dist: Distribution) -> Path | None:
@@ -108,6 +174,7 @@ class _IndexedDistribution:
     root: Path
     modules: frozenset[str]
     editable_project: Path | None
+    record: _InstallRecord
 
 
 def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
@@ -115,11 +182,15 @@ def _index_distribution(dist: Distribution) -> _IndexedDistribution | None:
     try:
         if _is_own_distribution(dist):
             return None
+        record = _InstallRecord(dist)
+        editable_project = _editable_project_directory(dist)
+        modules = _declared_modules(dist, record)
         return _IndexedDistribution(
             label=_distribution_label(dist),
             root=Path(str(dist.locate_file(''))).resolve(),
-            modules=frozenset(_declared_top_level_modules(dist)),
-            editable_project=_editable_project_directory(dist),
+            modules=frozenset(modules),
+            editable_project=editable_project,
+            record=record,
         )
     except _UNREADABLE_METADATA:
         return None
@@ -144,19 +215,31 @@ def _is_project_local(location: Path, project_root: Path | None) -> bool:
 
 
 def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
-    """Whether ``location`` is inside the ``top_level`` package or module the distribution installed."""
+    """Whether ``location`` is a file the distribution installed: in the ``top_level`` module and its install record."""
     if top_level not in entry.modules or not location.is_relative_to(entry.root):
         return False
-    return location.relative_to(entry.root).parts[0].partition('.')[0] == top_level
+    if location.relative_to(entry.root).parts[0].partition('.')[0] != top_level:
+        return False
+    return location in entry.record.paths
 
 
-def _is_editable_owner(entry: _IndexedDistribution, location: Path) -> bool:
+def _is_editable_owner(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
     """Whether a PEP 610 editable install (``direct_url.json`` with ``dir_info.editable``) put ``location`` on the path.
+
+    The module's top-level name must also belong to the distribution, so a helper elsewhere under the editable
+    project directory (a monorepo's ``tools/``) is not claimed. A PEP 660 editable lists a ``.pth`` or finder
+    file in its RECORD instead of the package, so those entries are ignored when reading the declared modules.
+    An editable without a ``top_level.txt`` (hatchling, uv_build, flit, pdm) declares no names and owns nothing:
+    its ``.pth`` directory may hold children the wheel does not ship, and no metadata says which do.
 
     Editable installs recorded only through a ``.pth`` file, or through a setuptools import finder, leave no
     ``direct_url.json`` marker and are not recognized.
     """
-    return entry.editable_project is not None and location.is_relative_to(entry.editable_project)
+    return (
+        entry.editable_project is not None
+        and location.is_relative_to(entry.editable_project)
+        and top_level in entry.modules
+    )
 
 
 def _is_importable(operator_class: type) -> bool:
@@ -187,15 +270,79 @@ def _installed_owner_labels(
         return set()
     top_level = operator_class.__module__.partition('.')[0]
     declared = {entry.label for entry in installed if _is_installed_module_file(entry, top_level, location)}
-    return declared or {entry.label for entry in installed if _is_editable_owner(entry, location)}
+    return declared or {entry.label for entry in installed if _is_editable_owner(entry, top_level, location)}
 
 
-def _is_exempt_from_classification(operator_class: type) -> bool:
-    """pytest-gremlins' own operators are covered by ``CACHE_VERSION``; a conftest operator by the tests it covers."""
+def _is_own_operator(operator_class: type) -> bool:
+    return operator_class.__module__.partition('.')[0] == _OWN_PACKAGE
+
+
+def _has_conftest_module_name(operator_class: type) -> bool:
+    module_name = operator_class.__module__
+    return module_name == 'conftest' or module_name.endswith('.conftest')
+
+
+def _member_code_file(member: object) -> str | None:
+    """The file a function, ``staticmethod``, ``classmethod`` or ``property`` in a class body was compiled from.
+
+    A ``functools.wraps`` decorator is looked through, so the file named is the decorated function's.
+    """
+    function = getattr(member, '__func__', None) or getattr(member, 'fget', None) or member
+    function = inspect.unwrap(function) if callable(function) else function
+    code = getattr(function, '__code__', None)
+    return code.co_filename if code is not None else None
+
+
+def _conftest_function_files(operator_class: type) -> list[Path]:
+    files = (_member_code_file(member) for member in vars(operator_class).values())
+    return [Path(file) for file in files if file is not None and Path(file).name == _CONFTEST_FILE_NAME]
+
+
+def _resolved(paths: Iterable[Path]) -> set[Path]:
+    return {path.resolve() for path in paths}
+
+
+def _is_module_defined_in(operator_class: type, loaded: set[Path]) -> bool:
+    """Whether the class's module is named like a conftest and its file is one of the loaded conftests."""
     module_file = _module_file(operator_class)
-    return operator_class.__module__.partition('.')[0] == _OWN_PACKAGE or (
-        module_file is not None and module_file.name == 'conftest.py'
+    return _has_conftest_module_name(operator_class) and module_file is not None and module_file in loaded
+
+
+def _is_conftest_defined(operator_class: type, loaded: set[Path]) -> bool:
+    """Whether the class is defined in a loaded ``conftest.py``, or a function in its body comes from one (#899).
+
+    The module name and the functions' ``co_filename`` only nominate candidates: an operator from an installed
+    package whose module happens to be called ``conftest`` is not a conftest operator, so the file must be one
+    of the conftests registered as plugins.
+    """
+    return _is_module_defined_in(operator_class, loaded) or bool(
+        _resolved(_conftest_function_files(operator_class)) & loaded
     )
+
+
+def _conftest_name(conftest: Path, project_root: Path | None) -> str:
+    resolved = conftest.resolve()
+    if project_root is not None and resolved.is_relative_to(project_root.resolve()):
+        return resolved.relative_to(project_root.resolve()).as_posix()
+    return resolved.as_posix()
+
+
+def _conftest_operators_label(loaded_conftests: Iterable[Path], project_root: Path | None) -> str | None:
+    """Label the content of every loaded ``conftest.py``; ``None`` when one cannot be read.
+
+    The test key hashes only the conftests on the path from the rootdir to a covering test, so an operator in
+    ``a/conftest.py`` never reaches the key of a gremlin covered only by tests under ``b/`` (#899). Which
+    conftest defines the operator is not worked out: its code can come from another conftest, a decorator or a
+    base class. Hashing them all makes an edit to any loaded conftest a miss for every gremlin.
+    """
+    hasher = ContentHasher()
+    try:
+        entries = sorted(
+            {(_conftest_name(conftest, project_root), hasher.hash_file(conftest)) for conftest in loaded_conftests}
+        )
+    except OSError:
+        return None
+    return f'{_CONFTEST_OPERATORS_PREFIX}{hasher.hash_string("|".join(f"{name}:{digest}" for name, digest in entries))}'
 
 
 @dataclass(frozen=True)
@@ -206,7 +353,11 @@ class _SupplierLabels:
     has_always_miss_token: bool
 
 
-def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root: Path | None) -> _SupplierLabels:
+def _operator_supplier_labels(
+    operators: Iterable[GremlinOperator],
+    project_root: Path | None,
+    loaded_conftests: Iterable[Path] = (),
+) -> _SupplierLabels:
     """Label each operator by the installed distribution that provably owns it, else by an always-miss token.
 
     An operator class keeps a stable key only when it is importable (see ``_is_importable``) and an installed
@@ -214,12 +365,31 @@ def _operator_supplier_labels(operators: Iterable[GremlinOperator], project_root
     which differs on every run, so its verdicts are recomputed and never served stale. A helper's file is never
     hashed: what it defines can come from other files, so no hash proves the class unchanged. Restoring cache
     hits for such operators is tracked in #887.
+
+    An operator defined in a ``conftest.py`` (see ``_is_conftest_defined``) adds one label hashing every loaded
+    ``conftest.py`` (#899). A class whose module is a loaded conftest is covered by that label alone, unless an
+    installed distribution owns that conftest (a plugin registered with ``-p pkg.conftest``): its version label is
+    kept too, since the package can change outside ``conftest.py``. A class that merely borrows a conftest function
+    is still classified by its own module as well.
     """
-    classes = {type(operator) for operator in operators if not _is_exempt_from_classification(type(operator))}
+    classes_in_use = {type(operator) for operator in operators if not _is_own_operator(type(operator))}
+    loaded_conftests = list(loaded_conftests)
+    loaded = _resolved(loaded_conftests)
+    conftest_defined = {cls for cls in classes_in_use if _is_conftest_defined(cls, loaded)}
+    classes = {cls for cls in classes_in_use if not _is_module_defined_in(cls, loaded)}
     importable = {cls for cls in classes if _is_importable(cls)}
-    installed = _index_distributions() if importable else []
+    installed = _index_distributions() if importable or conftest_defined else []
     labels: set[str] = set()
     unproven = classes - importable
+    if conftest_defined:
+        conftest_label = _conftest_operators_label(loaded_conftests, project_root)
+        if conftest_label is None:
+            unproven.add(min(conftest_defined, key=lambda cls: cls.__module__))
+        else:
+            labels.add(conftest_label)
+        for conftest_class in conftest_defined:
+            if _is_importable(conftest_class):
+                labels |= _installed_owner_labels(conftest_class, installed, project_root)
     for operator_class in importable:
         owners = _installed_owner_labels(operator_class, installed, project_root)
         labels |= owners
@@ -248,6 +418,7 @@ class VersionsFingerprint:
 def versions_fingerprint(
     operators: Iterable[GremlinOperator] = (),
     project_root: Path | None = None,
+    loaded_conftests: Iterable[Path] = (),
 ) -> VersionsFingerprint:
     """Return the fingerprint of ``installed_versions_fingerprint`` together with whether writes under it are readable.
 
@@ -257,6 +428,8 @@ def versions_fingerprint(
     Args:
         operators: The operators registered for this run.
         project_root: The pytest rootdir.
+        loaded_conftests: The ``conftest.py`` files the session has loaded; hashed into one label when an
+            operator is defined in a conftest (#899).
 
     Returns:
         The fingerprint and its readability.
@@ -270,7 +443,7 @@ def versions_fingerprint(
         for entry_point in entry_points(group=ENTRY_POINT_GROUP)
         if entry_point.dist is not None
     }
-    operator_suppliers = _operator_supplier_labels(operators, project_root)
+    operator_suppliers = _operator_supplier_labels(operators, project_root, loaded_conftests)
     suppliers |= operator_suppliers.labels
     return VersionsFingerprint(
         text='|'.join([f'cache-version={CACHE_VERSION}', *sorted(suppliers)]),
@@ -281,6 +454,7 @@ def versions_fingerprint(
 def installed_versions_fingerprint(
     operators: Iterable[GremlinOperator] = (),
     project_root: Path | None = None,
+    loaded_conftests: Iterable[Path] = (),
 ) -> str:
     """Return a string naming the cache version and each distribution that supplies operators.
 
@@ -294,6 +468,9 @@ def installed_versions_fingerprint(
             distribution. An operator keeps a stable key only when it is importable by its qualified name and an
             installed distribution owns its module; every other operator, a ``conftest.py`` operator excepted,
             makes every run miss the cache (#887 tracks restoring hits).
+        loaded_conftests: The ``conftest.py`` files the session has loaded. When an operator is defined in a
+            conftest, their paths (rootdir-relative, or absolute outside the rootdir) and contents are hashed
+            into one ``conftest-operators=`` label, so an edit to any of them misses for every gremlin (#899).
 
     Raising ``CACHE_VERSION`` or any upgrade, downgrade, install or removal of an operator distribution
     changes the string, so verdicts cached under an older string are never reused. A pytest-gremlins
@@ -303,4 +480,4 @@ def installed_versions_fingerprint(
     Returns:
         A deterministic fingerprint, independent of entry-point discovery order.
     """
-    return versions_fingerprint(operators, project_root).text
+    return versions_fingerprint(operators, project_root, loaded_conftests).text

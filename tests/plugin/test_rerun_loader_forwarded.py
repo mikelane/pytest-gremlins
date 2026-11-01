@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 
 import pytest
 from rerun_samples import (
@@ -17,7 +21,11 @@ from rerun_samples import (
 )
 
 from pytest_gremlins import plugin
-from pytest_gremlins.cache.incremental import RUNNER_FIDELITY_VERSION
+from pytest_gremlins.cache import incremental
+from pytest_gremlins.cache.incremental import IncrementalCache
+
+if TYPE_CHECKING:
+    from pytest_gremlins.cache.types import CachedGremlinResult
 
 AUTOLOAD_ENV_VAR = 'PYTEST_DISABLE_PLUGIN_AUTOLOAD'
 LOAD_PLUGINS = ('-p', 'gremlins', '-p', 'pytest_rerunfailures')
@@ -145,10 +153,28 @@ class DescribeRerunOptionsWhenGremlinRunsInheritTheAutoloadFlag:
         assert plugin._rerun_options_for(config) == []  # type: ignore[arg-type]
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeFidelityVersionAfterTheLoaderIsForwarded:
-    def it_retires_verdicts_cached_while_gremlin_runs_never_reran(self) -> None:
-        assert RUNNER_FIDELITY_VERSION == 'rf21'
+    """Verdicts cached while gremlin runs never reran belong to an older fidelity version and must miss."""
+
+    TEST_HASHES = {'tests/test_x.py::test_a': 'hash_a'}  # noqa: RUF012
+    VERDICT = cast('CachedGremlinResult', {'status': 'survived'})
+
+    def it_misses_a_verdict_cached_under_a_previous_fidelity_version(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            with monkeypatch.context() as previous:
+                previous.setattr(incremental, 'RUNNER_FIDELITY_VERSION', f'{incremental.RUNNER_FIDELITY_VERSION}-old')
+                cache.cache_result('g001', 'src_hash', self.TEST_HASHES, self.VERDICT)
+
+            assert cache.get_cached_result('g001', 'src_hash', self.TEST_HASHES) is None
+
+    def it_hits_a_verdict_cached_under_the_current_fidelity_version(self, tmp_path: Path) -> None:
+        with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
+            cache.cache_result('g001', 'src_hash', self.TEST_HASHES, self.VERDICT)
+
+            assert cache.get_cached_result('g001', 'src_hash', self.TEST_HASHES) == self.VERDICT
 
 
 def _write_flaky_project(pytester: pytest.Pytester) -> None:

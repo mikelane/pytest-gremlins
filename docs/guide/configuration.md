@@ -215,6 +215,13 @@ with close matches among the collected tests. A short id like `g001` doesn't mat
 ```
 <!-- markdownlint-enable MD013 -->
 
+**Test order and early exit.** Every covering test of a gremlin runs in priority order, with the
+most specific tests first (tests that cover fewer lines rank higher). The run stops at the
+first failing test, and that failure is the kill. A survivor ran all of its covering tests that
+have a pytest node id and none failed. If a survivor looks wrong, run it with
+`--gremlin-explain=<id>`, or with `--gremlin-no-coverage-filter` to rule out test selection. See
+[Coverage-Guided Test Selection](../architecture/coverage-guidance.md#order-and-early-exit).
+
 **Combine multiple options:**
 
 ```bash
@@ -327,6 +334,19 @@ use a list, not a bare string, got 'tests/*'
 - `operators`, `paths` and `exclude` must be lists of strings. A bare string is rejected, because it would otherwise
   be read one character at a time.
 - Each name in `operators` must be a registered operator. The error lists the valid names.
+- An empty `operators = []` still runs all operators, so it warns instead of stopping the run. The warning says so
+  and shows how to pick operators:
+
+    ```text
+    [tool.pytest-gremlins].operators is empty, which runs all operators. To run only some, name them
+    (e.g. operators = ["comparison", "boundary"]); to run all operators, remove the key.
+    ```
+
+- A `tool` entry in `pyproject.toml` that is not a table (`tool = 5`) is rejected with `[tool] must be a table of
+  settings, got 5` and exit code 4, like any other wrong-typed value. You see this message only when you pass `-c`
+  pointing at another config file (for example `-c other.ini`). A `pytest.ini`, `tox.ini` or `setup.cfg` next to
+  `pyproject.toml` does not avoid pytest's own crash: pytest still parses `pyproject.toml` during config discovery, so
+  it crashes on the malformed `tool` entry before pytest-gremlins loads, with an `AttributeError` and exit code 1.
 - A key pytest-gremlins does not know does not stop the run. A warning names the key and the closest valid key
   (`did you mean 'max-pardons-pct'?`), and the key is ignored. The warning also appears when the run skips mutation
   testing (`--collect-only`, a failing baseline). Key names are shown quoted, with control characters escaped. An
@@ -885,7 +905,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10
 
       - name: Set up Python
         uses: actions/setup-python@v5

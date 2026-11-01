@@ -55,7 +55,10 @@ the marker to raise:
 
 Raise the marker, update `RECORDED_CACHE_VERSION` or `RECORDED_RUNNER_FIDELITY_VERSION` and
 `RECORDED_DIGESTS` in the guard test, and push. The job passes once a marker is raised above the
-base branch's. Markers only go up: lowering one fails the job. If the verdict change is a bug,
+base branch's. Markers only go up: lowering one fails the job, with one exception. A marker that landed after
+the latest release was never written to a user's cache, so it may go back down to the value at the newest release tag
+reachable from the base, as long as no sample verdict changed. Lowering below the released value always fails, and
+so does lowering when no release tag can be found. If the verdict change is a bug,
 fix the code instead. A change that alters no verdict, such as a refactor or a docstring edit,
 passes without a bump, so users keep a warm cache.
 
@@ -66,8 +69,48 @@ uv run python scripts/check_verdict_change.py guarded-changes "$(git merge-base 
 uv run python scripts/check_verdict_change.py run --out head.json
 # Install the base package (uv pip install --no-deps --reinstall <checkout of main>), then:
 uv run --no-sync python scripts/check_verdict_change.py run --out base.json
-uv run --no-sync python scripts/check_verdict_change.py compare base.json head.json
+uv run --no-sync python scripts/check_verdict_change.py compare base.json head.json \
+  --released-ref "$(git merge-base origin/main HEAD)"
 ```
+
+## Release Cache Check
+
+The per-PR check above only sees verdict changes that its sample project exercises. At release time a second check
+covers the rest: `scripts/check_cache_kept.py` compares the guarded code (the same file set as above, computed by the
+guard test's own function) at the previous release with the code being released. The previous release is the newest
+`v*` tag reachable from the commit being released, not counting the tag being released. In the `CHANGELOG.md` check
+of a PR (`--newest`), a topmost entry that is already released passes: the release gates checked it when it shipped,
+and later changes are checked once the next entry is added.
+
+The release passes when any of these holds:
+
+- No guarded file changed since the previous release.
+- `CACHE_VERSION` or `RUNNER_FIDELITY_VERSION` differs from its value at the previous release.
+- The release's `CHANGELOG.md` entry has a `(cache kept: <reason>)` line.
+
+Otherwise the check exits 1 and names the changed files. Use the line when guarded code changed but no cached verdict
+can be wrong, for example `(cache kept: only log wording and type hints changed)`. The reason must not be empty. It is
+public and is reviewed in the changelog PR, so keeping the cache across a change to verdict code is one visible
+decision per release. If a verdict could change, raise a marker instead.
+
+Put the line in the entry's prose, before its first `###` heading. It counts nowhere else, because the release docs
+gate allows only list items under `### Upgrade notes`, `### Feature` and `### Fix`. A line in an HTML comment,
+a code fence or a code span does not count.
+
+```markdown
+## vX.Y.Z (YYYY-MM-DD)
+
+**One sentence on what changes for users.**
+
+(cache kept: only log wording and type hints changed)
+
+### Fix
+```
+
+The check runs in the same three places as the release docs gate: the `CHANGELOG.md` check in `ci.yml`, `cut-release.yml`
+before the tag is created, and the `verify-tag` job of `release.yml`. There is no bypass: no flag, environment
+variable or workflow input skips it. To run it locally, fetch the tags and run
+`uv run python scripts/check_cache_kept.py --newest`. A lowered marker is rejected by the per-PR check, not by this one.
 
 ## Code of Conduct
 

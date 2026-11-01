@@ -53,7 +53,7 @@ cache_key = hash(
     + test_file_contents  # Tests that cover this mutation
     + cache_version  # Raised when a change can alter a verdict
     + operator_dist_versions  # Versions of packages that supply operators
-    + active_operator_identities  # Ordered (module, qualified class name, operator name) tuples
+    + nondefault_operator_identities  # Ordered identities; absent for the built-in default sequence
 )
 ```
 
@@ -88,14 +88,18 @@ The cache is smart about what needs re-analysis. An operator package is any dist
 | Active operator identities, order or multiplicity changed | Entries for a different operator sequence stop matching |
 | Nothing changed | Nothing (instant results) |
 
-The active sequence contains only successfully instantiated, selected operators. Skipping a constructor
+The active sequence contains only successfully instantiated, selected operators. The five built-in operators
+in their default registry order retain the existing cache key byte for byte; the identity component is
+absent for that sequence, and cache version 1 is unchanged. Other sequences add ordered
+`(module, qualified class name, operator name)` identities, including duplicates. Skipping a constructor
 that raises an exception can shift sequential gremlin IDs; the operator-identity component prevents those
 IDs from matching verdicts for a different mutation. Restoring the same sequence can reuse its own cached
 verdicts when the other key components also match and the operator suppliers allow cache reuse. Except
 for supported `conftest.py` operators, an operator that is unowned by an installed distribution or not
 importable by its qualified name always misses the cache, and its run writes no results. Stable operator
-identities do not override that rule. Cache version 2 retires older entries once. Operator identity does
-not include arbitrary mutable instance settings.
+identities do not override that rule. A cacheable non-default sequence misses its older keys once, then
+reuses its own results when nothing else changes. Operator identity does not include arbitrary mutable
+instance settings.
 
 ### Source File Changed
 
@@ -335,6 +339,13 @@ If cache invalidation has bugs, results could be stale. Mitigations:
 
 The cache uses disk space. For most projects, this is negligible (< 10 MB). The
 `.gremlins_cache/` directory can be deleted at any time to reclaim space.
+
+### Line Endings
+
+Test files are hashed byte for byte, so CRLF and LF copies of one file hash differently. On Windows with
+`core.autocrlf=true` the cache can miss after every checkout and never warm across platforms. Correctness is
+unaffected (a miss only re-runs work). See
+[Cache never warms across checkouts on Windows](../guide/troubleshooting.md#cache-never-warms-across-checkouts-on-windows).
 
 ### Cache Warming
 

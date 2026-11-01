@@ -493,7 +493,7 @@ repos:
         stages: [pre-commit]
 
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.13.7
+    rev: v4.19.3
     hooks:
       - id: commitizen
         stages: [commit-msg]
@@ -736,7 +736,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -745,7 +745,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync
       - run: uv run mypy src
 
@@ -757,7 +757,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: ${{ matrix.python-version }}
       - run: uv sync
@@ -768,7 +768,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync
       - run: uv run pytest --doctest-modules src/pytest_gremlins
       - run: uv run mkdocs build --strict
@@ -777,7 +777,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync
       - run: uv run pip-audit
 ```
@@ -797,7 +797,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv build
       - run: uv publish --index-url https://test.pypi.org/simple/
 
@@ -813,7 +813,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv build
       - run: uv publish
 
@@ -949,6 +949,16 @@ or anchor that is not in the site. It exits 2 when it could not run. It runs in 
 **There is no bypass.** No workflow input, environment variable or flag skips the check, and `skip_test_pypi` does
 not affect it. To ship a change without docs, write a `(no docs: <reason>)` exemption in the changelog PR, where the
 reason is public and gets reviewed.
+
+**Cache markers at release time.** `scripts/check_cache_kept.py` compares the guarded code (the cache-version guard's
+own file set) at the newest `v*` tag reachable from the release, not counting the tag being released, with the code
+being released. If it changed and neither `CACHE_VERSION` nor `RUNNER_FIDELITY_VERSION` differs from its value at that
+tag, the release fails unless the entry has a `(cache kept: <reason>)` line with a non-empty reason. Put the line in the
+entry's prose before its first `###` heading; it is accepted nowhere else, because the docs gate allows only list items
+under the gated headings. The reason is public and is reviewed in the changelog PR. It runs in the same three places as
+the docs gate (`ci.yml` on a `CHANGELOG.md` change with `--newest`, `cut-release.yml`, and `verify-tag`), exits 1 naming
+the changed files, exits 2 when it could not run, and has no bypass. With `--newest`, a topmost entry that is already
+tagged passes; the changes after it are checked once the next entry is added.
 
 ### When to Release
 

@@ -180,6 +180,7 @@ class DescribeVersionsInCacheKey:
             dist_name='gremlin_same_name_ops_dist',
         )
         (site / 'gremlin_same_name_ops_dist-1.0.dist-info' / 'top_level.txt').write_text('gremlin_same_name_ops\n')
+        (site / 'gremlin_same_name_ops_dist-1.0.dist-info' / 'RECORD').write_text('gremlin_same_name_ops.py,,\n')
         module = importlib.import_module('gremlin_same_name_ops')
         first = module.FirstComparison()
         alternate = module.AlternateComparison()

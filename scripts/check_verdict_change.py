@@ -10,12 +10,16 @@ compares the per-gremlin verdicts:
 
 ``compare`` exits 1 when a verdict changed and neither marker was raised, naming every changed gremlin and the
 marker to raise. It also exits 1 when neither run produced a gremlin or a marker was lowered: markers only go up.
+A marker lowered relative to the base passes only when it is still at least the value at the newest release tag
+reachable from ``--released-ref`` and no verdict changed (an unreleased marker may go back to the released value).
+Without a release tag, any lowering fails.
 ``run`` exits 2 when pytest-gremlins wrote no report or the report has no results.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 from collections import Counter
 from collections.abc import (
     Callable,
@@ -64,6 +68,13 @@ LOWERED_MARKER_MESSAGE = (
     'A cache marker was lowered ({lowered}). Markers only go up: lowering one revives verdicts that an older '
     'release cached. Restore the base value or raise it.'
 )
+NO_RELEASE_MESSAGE = (
+    'No release tag with readable cache markers was found from the base, so a lowered marker cannot be compared '
+    'with a released value. Fetch tags (fetch-depth: 0) or restore the base value.'
+)
+RELEASE_TAG_PATTERN = 'v[0-9]*.[0-9]*.[0-9]*'
+VERSIONS_PATH = 'src/pytest_gremlins/cache/versions.py'
+INCREMENTAL_PATH = 'src/pytest_gremlins/cache/incremental.py'
 
 
 @dataclass(frozen=True)
@@ -81,6 +92,62 @@ class Markers:
         if _rank(self.runner_fidelity_version) < _rank(base.runner_fidelity_version):
             lowered.append('RUNNER_FIDELITY_VERSION')
         return lowered
+
+
+def _marker_value(source: str, name: str) -> str | None:
+    """Return the literal a module-level assignment gives ``name``, or None when there is none or it is not literal.
+
+    Parses the source rather than matching text, so a docstring line that looks like the assignment is ignored.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign):
+            targets, value = statement.targets, statement.value
+        elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+            targets, value = [statement.target], statement.value
+        else:
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == name for target in targets):
+            continue
+        literal = value.value if isinstance(value, ast.Constant) else None
+        return str(literal) if isinstance(literal, (int, str)) and not isinstance(literal, bool) else None
+    return None
+
+
+def parse_markers(versions_source: str, incremental_source: str) -> Markers | None:
+    """Read both markers from the text of ``versions.py`` and ``incremental.py``, or None if either is missing."""
+    cache_version = _marker_value(versions_source, 'CACHE_VERSION')
+    runner_fidelity_version = _marker_value(incremental_source, 'RUNNER_FIDELITY_VERSION')
+    if cache_version is None or runner_fidelity_version is None:
+        return None
+    return Markers(cache_version=cache_version, runner_fidelity_version=runner_fidelity_version)
+
+
+def git_output(repo: Path, *args: str) -> str | None:
+    """Return the stdout of ``git <args>`` run in ``repo``, or None when git exits non-zero."""
+    completed = subprocess.run([GIT, *args], cwd=repo, capture_output=True, text=True, check=False)
+    return completed.stdout if completed.returncode == 0 else None
+
+
+def released_markers(ref: str, repo: Path = REPO_ROOT) -> Markers | None:
+    """Return the markers at the newest release tag reachable from ``ref``, or None when they cannot be read.
+
+    Reads the tag's source with ``git cat-file -p``, so it needs the tags fetched but no checkout of them.
+    """
+    if ref.startswith('-'):
+        return None
+    tag = git_output(repo, 'describe', '--tags', '--abbrev=0', '--match', RELEASE_TAG_PATTERN, ref)
+    if tag is None:
+        return None
+    tag = tag.strip()
+    versions = git_output(repo, 'cat-file', '-p', f'{tag}:{VERSIONS_PATH}')
+    incremental = git_output(repo, 'cat-file', '-p', f'{tag}:{INCREMENTAL_PATH}')
+    if versions is None or incremental is None:
+        return None
+    return parse_markers(versions, incremental)
 
 
 def _rank(marker: str) -> int:
@@ -149,12 +216,16 @@ def compare_verdicts(base: Mapping[str, str], head: Mapping[str, str]) -> Verdic
     )
 
 
-def _describe(diff: VerdictDiff) -> str:
-    lines = [
+def _change_lines(diff: VerdictDiff) -> list[str]:
+    return [
         *(f'added: {gremlin}' for gremlin in diff.added),
         *(f'removed: {gremlin}' for gremlin in diff.removed),
         *(f'changed: {change}' for change in diff.changed),
     ]
+
+
+def _describe(diff: VerdictDiff) -> str:
+    lines = _change_lines(diff)
     advice = CACHE_VERSION_ADVICE if diff.changes_the_gremlin_set else RUNNER_FIDELITY_ADVICE
     return '\n'.join(
         [
@@ -167,20 +238,32 @@ def _describe(diff: VerdictDiff) -> str:
 
 
 def check_verdicts(
-    base: Mapping[str, str], head: Mapping[str, str], base_markers: Markers, head_markers: Markers
+    base: Mapping[str, str],
+    head: Mapping[str, str],
+    base_markers: Markers,
+    head_markers: Markers,
+    released: Markers | None = None,
 ) -> str | None:
     """Return why the head code fails the check, or None when it passes.
 
     The check passes when every gremlin keeps its verdict, or when a cache marker was raised between base and
     head, which throws every cached verdict away. It fails when neither run produced a gremlin, or when a marker
-    was lowered.
+    was lowered. A marker lowered from the base is forgiven when it is still at least the ``released`` value and
+    no verdict changed: the base held an unreleased marker, and no release wrote a cache under the lowered one.
+    With ``released`` unknown, any lowering fails.
     """
     if not base and not head:
         return NO_GREMLINS_MESSAGE
     lowered = head_markers.lowered_from(base_markers)
-    if lowered:
-        return LOWERED_MARKER_MESSAGE.format(lowered=', '.join(lowered))
     diff = compare_verdicts(base, head)
+    if lowered:
+        message = LOWERED_MARKER_MESSAGE.format(lowered=', '.join(lowered))
+        if not diff.is_empty:
+            message = '\n'.join([message, 'Gremlin verdicts on the sample project also changed:', *_change_lines(diff)])
+        if released is None:
+            return f'{message}\n{NO_RELEASE_MESSAGE}'
+        below_release = head_markers.lowered_from(released)
+        return message if below_release or not diff.is_empty else None
     if diff.is_empty or base_markers != head_markers:
         return None
     return _describe(diff)
@@ -198,7 +281,8 @@ def guarded_repo_paths() -> set[str]:
     return {source.relative_to(REPO_ROOT).as_posix() for source in guard.guarded_sources()}
 
 
-def _git_diff_names(base_ref: str, *filters: str) -> list[str]:
+def git_diff_names(base_ref: str, *filters: str) -> list[str]:
+    """Return the paths that differ between ``base_ref`` and ``HEAD``, one entry per path (renames split)."""
     completed = subprocess.run(
         [GIT, 'diff', '--name-only', '--no-renames', *filters, base_ref, 'HEAD'],
         cwd=REPO_ROOT,
@@ -230,8 +314,8 @@ def _run_sample(sample: Path, workdir: Path) -> dict[str, str] | None:
 
 
 def _guarded_changes_command(args: argparse.Namespace) -> int:
-    changed = _git_diff_names(args.base_ref)
-    deleted = _git_diff_names(args.base_ref, '--diff-filter=D')
+    changed = git_diff_names(args.base_ref)
+    deleted = git_diff_names(args.base_ref, '--diff-filter=D')
     for path in guarded_changes(changed, deleted, guarded_repo_paths()):
         print(path)
     return 0
@@ -261,7 +345,8 @@ def _load_run(path: Path) -> tuple[dict[str, str], Markers]:
 def _compare_command(args: argparse.Namespace) -> int:
     base_verdicts, base_markers = _load_run(args.base)
     head_verdicts, head_markers = _load_run(args.head)
-    failure = check_verdicts(base_verdicts, head_verdicts, base_markers, head_markers)
+    released = released_markers(args.released_ref, args.repo) if args.released_ref else None
+    failure = check_verdicts(base_verdicts, head_verdicts, base_markers, head_markers, released)
     if failure is not None:
         print(failure)
         return EXIT_VERDICT_CHANGED
@@ -291,6 +376,11 @@ def _parser() -> argparse.ArgumentParser:
     compare = commands.add_parser('compare', help='fail when a verdict changed without a cache-marker bump')
     compare.add_argument('base', type=Path, help='the run file from the base code')
     compare.add_argument('head', type=Path, help='the run file from the head code')
+    compare.add_argument(
+        '--released-ref',
+        help='a ref (the PR base) whose newest reachable release tag sets the lowest marker a PR may lower to',
+    )
+    compare.add_argument('--repo', type=Path, default=REPO_ROOT, help='the repository to read release tags from')
     compare.set_defaults(handler=_compare_command)
     return parser
 

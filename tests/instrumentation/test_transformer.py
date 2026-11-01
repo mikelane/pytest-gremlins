@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
+import copy
 
 import pytest
 
@@ -420,3 +422,72 @@ class DescribeGremlinIdUniquenessAcrossFiles:
 
         assert len(gremlins) >= 1
         assert all('my_module' in g.gremlin_id for g in gremlins)
+
+
+class _GeneratorCallOperator:
+    """A custom operator whose mutate() yields its variants instead of building a list."""
+
+    name = 'gen_call'
+    description = 'swap filter/exclude, yielded'
+
+    def can_mutate(self, node: ast.AST) -> bool:
+        return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'filter'
+
+    def mutate(self, node: ast.AST) -> Iterator[ast.AST]:  # type: ignore[override]
+        for attr in ('exclude', 'get'):
+            mutated = copy.deepcopy(node)
+            assert isinstance(mutated, ast.Call)
+            assert isinstance(mutated.func, ast.Attribute)
+            mutated.func.attr = attr
+            yield mutated
+
+    def get_description(self, _original: ast.AST, mutated: ast.AST) -> str:
+        assert isinstance(mutated, ast.Call)
+        assert isinstance(mutated.func, ast.Attribute)
+        return f'filter to {mutated.func.attr}'
+
+
+class _GeneratorReturnOperator:
+    """A custom return operator whose mutate() yields its single variant."""
+
+    name = 'gen_return'
+    description = 'negate return, yielded'
+
+    def can_mutate(self, node: ast.AST) -> bool:
+        return isinstance(node, ast.Return) and node.value is not None
+
+    def mutate(self, node: ast.AST) -> Iterator[ast.AST]:  # type: ignore[override]
+        mutated = copy.deepcopy(node)
+        assert isinstance(mutated, ast.Return)
+        assert mutated.value is not None
+        mutated.value = ast.UnaryOp(op=ast.Not(), operand=mutated.value)
+        yield mutated
+
+
+class _SingleYieldCallOperator(_GeneratorCallOperator):
+    """Yields exactly one variant; a shared iterator zipped with itself runs out after one item."""
+
+    name = 'one_call'
+
+    def mutate(self, node: ast.AST) -> Iterator[ast.AST]:  # type: ignore[override]
+        yield copy.deepcopy(node)
+
+
+@pytest.mark.small
+class DescribeGeneratorMutateResults:
+    """Custom operators may return a generator from mutate() instead of a list."""
+
+    def it_creates_one_gremlin_per_yielded_call_variant(self):
+        gremlins, _ = transform_source('qs.filter(x)\n', 'm.py', operators=[_GeneratorCallOperator()])
+
+        assert [g.description for g in gremlins] == ['filter to exclude', 'filter to get']
+
+    def it_instruments_a_call_whose_operator_yields_one_variant(self):
+        gremlins, _ = transform_source('qs.filter(x).first()\n', 'm.py', operators=[_SingleYieldCallOperator()])
+
+        assert len(gremlins) == 1
+
+    def it_instruments_a_return_whose_operator_yields_its_variants(self):
+        gremlins, _ = transform_source('def f(x):\n    return x\n', 'm.py', operators=[_GeneratorReturnOperator()])
+
+        assert len(gremlins) == 1

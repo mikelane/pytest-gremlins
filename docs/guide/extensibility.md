@@ -64,6 +64,7 @@ class GremlinOperator(Protocol):
 | `description`  | Shown in reports and `--help` output                                            |
 | `can_mutate()` | Fast check - called for every node of an offered type (see below), return `True` only for nodes you handle |
 | `mutate()`     | Generate mutation variants - called only when `can_mutate()` returns `True`     |
+| `get_description(original, mutated)` | Optional - returns the text shown for each gremlin in reports. Without it, or if it raises, or if reading it raises, or returns `None` or an empty or whitespace-only string, a custom gremlin reads `<name> mutation` |
 
 ### Which Nodes an Operator Is Offered
 
@@ -80,9 +81,10 @@ pytest-gremlins doesn't pass every AST node to your operator. The instrumentatio
 | `ast.Call` | Function and method calls: `f(x)`, `qs.filter(a=1)` |
 | `ast.Return` | `return` statements |
 
-An operator that matches any other node type, such as `ast.Attribute` or `ast.Subscript`, never
-produces a gremlin. Its `can_mutate()` is never called for those nodes, and a run reports no
-gremlins for it. Supporting more node types needs a code change.
+A call is offered as one `ast.Call` node, so an operator that targets `qs.filter(a=1)` matches the
+`ast.Call`, then reads `node.func` for the method name. An operator that matches any other node type,
+such as `ast.Attribute` or `ast.Subscript`, never produces a gremlin. Its `can_mutate()` is never
+called for those nodes, and a run reports no gremlins for it.
 
 For the six expression types, `mutate()` must return expression nodes. For `ast.Return`, it
 must return `ast.Return` statements.
@@ -344,10 +346,12 @@ Normal Python warning filters still apply: escalating `UserWarning` to an error 
 silently ignoring that policy. `KeyboardInterrupt` and `SystemExit` are not caught. The registration is kept
 so a later call can retry construction. Direct `registry.get(name)` calls still propagate constructor errors.
 
-With incremental caching enabled, the cache key includes the active operators' module, qualified class name
-and operator name, in order (including duplicates). A run that skips a failed constructor therefore cannot
-reuse verdicts from a different active operator sequence, even if the installed packages have not changed.
-This identity does not fingerprint arbitrary mutable settings inside a custom operator.
+With incremental caching enabled, non-default active sequences add the operators' module, qualified class
+name and operator name to the cache key, in order (including duplicates). The built-in operators in their
+default registry order keep their existing key; cache version 1 is unchanged. A run that skips a failed
+constructor therefore cannot reuse verdicts from a different active operator sequence, even if the installed
+packages have not changed. This identity does not fingerprint arbitrary mutable settings inside a custom
+operator, and does not make unowned operators or operators that cannot be imported cacheable.
 
 ## AST Manipulation Patterns
 
@@ -544,8 +548,8 @@ class DjangoQuerySetOperator:
         - exclude() -> filter()
         - first() -> last()
         - last() -> first()
-        - exists() -> (removed, returns queryset)
-        - order_by('x') -> order_by('-x')
+        - select_related() -> prefetch_related()
+        - prefetch_related() -> select_related()
     """
 
     METHOD_SWAPS: ClassVar[dict[str, str]] = {

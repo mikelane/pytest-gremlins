@@ -7,9 +7,12 @@ on:
     branches: [main]
   merge_group:
 
+# A new push to a PR supersedes its older run. Pushes to main are keyed on the commit and never cancelled: auto-merge
+# can land PRs back to back, and each commit on main must finish its own run. The merge_group trigger is unused today
+# (this repo has no merge queue) and is kept for one; a merge group has its own gh-readonly-queue ref.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_COLOR: "1"
@@ -55,6 +58,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -84,6 +88,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -96,6 +101,9 @@ jobs:
       - name: Run mypy
         run: uv run mypy src/pytest_gremlins
 
+  # The large tier runs on ubuntu only (see large-tier.yml), so this matrix runs the small and medium tiers on every OS.
+  # PRs run the full matrix because the PR run is the last gate before main, and a reduced matrix would let a failure
+  # that only shows on one OS or Python version reach main.
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -112,6 +120,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: "pyproject.toml"
@@ -161,6 +170,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: "pyproject.toml"
@@ -195,11 +205,15 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.src == 'true'
     steps:
+      # Full history and tags: the cache gate below compares the code with the previous release tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -223,6 +237,11 @@ jobs:
         if: needs.changes.outputs.changelog == 'true'
         run: uv run python scripts/check_release_docs.py --newest --site-dir site
 
+      # Guarded code changed since the previous release with no cache marker raised needs a "(cache kept: ...)" line.
+      - name: Check the newest changelog entry raises a cache marker or keeps the cache on purpose
+        if: needs.changes.outputs.changelog == 'true'
+        run: uv run python scripts/check_cache_kept.py --newest
+
   security:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -234,6 +253,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -257,6 +277,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -307,6 +328,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -349,10 +371,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -381,8 +405,13 @@ jobs:
           uv run --no-sync python scripts/check_verdict_change.py run
           --out "$RUNNER_TEMP/base.json" --workdir "$RUNNER_TEMP/verdict-sample"
 
+      # A marker the PR lowers may go back to the value at the newest release tag reachable from the base.
       - name: Compare verdicts
-        run: uv run --no-sync python scripts/check_verdict_change.py compare "$RUNNER_TEMP/base.json" "$RUNNER_TEMP/head.json"
+        env:
+          BASE_SHA: ${{ needs.verdict-changes.outputs.base-sha }}
+        run: >-
+          uv run --no-sync python scripts/check_verdict_change.py compare
+          "$RUNNER_TEMP/base.json" "$RUNNER_TEMP/head.json" --released-ref "$BASE_SHA"
 
   all-checks:
     name: All Checks Passed
