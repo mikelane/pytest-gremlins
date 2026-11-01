@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from pytest_gremlins.reporting.results import (
     TIMEOUT_NOT_CONFIRMED_PREFIX,
+    GremlinResult,
     GremlinResultStatus,
 )
 from pytest_gremlins.reporting.score import MutationScore
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @pytest.mark.small
@@ -181,7 +187,7 @@ class DescribeMutationScoreWithDowngradedTimeouts:
     """A timeout downgraded to an error stays in the denominator and is reported."""
 
     @staticmethod
-    def _downgraded(make_result):
+    def _downgraded(make_result: Callable[..., GremlinResult]) -> GremlinResult:
         return make_result(GremlinResultStatus.ERROR, error_output=f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (3s) ...')
 
     def it_scores_nine_downgraded_timeouts_and_one_kill_as_ten_percent(self, make_result):

@@ -99,7 +99,7 @@ jobs:
         run: uv sync
 
       - name: Run mypy
-        run: uv run mypy src/pytest_gremlins
+        run: uv run mypy
 
   # The large tier runs on ubuntu only (see large-tier.yml), so this matrix runs the small and medium tiers on every OS.
   # PRs run the full matrix because the PR run is the last gate before main, and a reduced matrix would let a failure

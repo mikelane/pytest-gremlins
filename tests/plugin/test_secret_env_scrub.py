@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 import pytest
-from secret_env_scrub import (
+from secret_env_scrub import (  # type: ignore[import-not-found]
     is_secret_env_name,
     scrub_secret_env,
 )

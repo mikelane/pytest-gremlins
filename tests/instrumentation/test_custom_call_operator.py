@@ -167,7 +167,7 @@ class _NoArgumentDescriptionOperator(_FilterMutationOperator):
 
     name = 'legacy_filter'
 
-    def get_description(self) -> str:  # type: ignore[override]
+    def get_description(self) -> str:
         return self.description
 
 
@@ -182,7 +182,7 @@ class _RaisingDescriptionOperator(_FilterMutationOperator):
 class _NoneDescriptionOperator(_FilterMutationOperator):
     name = 'none_desc'
 
-    def get_description(self, original: ast.AST, mutated: ast.AST) -> str | None:  # type: ignore[override]  # noqa: ARG002
+    def get_description(self, original: ast.AST, mutated: ast.AST) -> str | None:  # noqa: ARG002
         return None
 
 

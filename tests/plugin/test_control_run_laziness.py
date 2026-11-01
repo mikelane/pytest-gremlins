@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import create_autospec
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
+from unittest.mock import (
+    MagicMock,
+    create_autospec,
+)
 
 import pytest
 
@@ -23,6 +29,9 @@ from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 LOADS = ControlRunOutcome(loads_cleanly=True, output='', seconds=0.1)
 FAILS = ControlRunOutcome(loads_cleanly=False, output='ImportError: boom', seconds=0.1)
@@ -52,7 +61,7 @@ def session(tmp_path: Path) -> GremlinSession:
 
 
 @pytest.fixture
-def control(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def control(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> MagicMock:
     """Stub the selection, the cache lookup and the control subprocess; return the control stub."""
     selections = {'g1': ['test_a'], 'g2': ['test_b'], 'g3': ['test_c']}
     monkeypatch.setattr(
@@ -61,7 +70,7 @@ def control(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr('pytest_gremlins.plugin._get_rootdir', lambda _config: tmp_path)
     stub = create_autospec(run_control, return_value=LOADS)
     monkeypatch.setattr('pytest_gremlins.plugin.run_control', stub)
-    return stub
+    return cast('MagicMock', stub)
 
 
 def _cache_hits(monkeypatch: pytest.MonkeyPatch, cached_ids: set[str]) -> None:
@@ -78,7 +87,7 @@ class DescribeLazyControlRun:
     def it_spawns_nothing_and_prints_nothing_when_every_gremlin_is_cached(
         self,
         session: GremlinSession,
-        control,
+        control: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -94,7 +103,7 @@ class DescribeLazyControlRun:
     def it_controls_only_the_tests_of_the_uncached_gremlins(
         self,
         session: GremlinSession,
-        control,
+        control: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _cache_hits(monkeypatch, {'g1'})
@@ -106,7 +115,7 @@ class DescribeLazyControlRun:
     def it_ignores_pardoned_gremlins(
         self,
         session: GremlinSession,
-        control,
+        control: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _cache_hits(monkeypatch, set())
@@ -122,7 +131,7 @@ class DescribeLazyControlRun:
     def it_still_disables_attribution_when_an_uncached_gremlin_cannot_load(
         self,
         session: GremlinSession,
-        control,
+        control: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],

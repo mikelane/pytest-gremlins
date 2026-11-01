@@ -25,4 +25,4 @@ def it_survives_a_meta_path_entry_whose_attribute_lookup_raises(monkeypatch: pyt
 
     next(hook)
 
-    assert sys.meta_path[0] is proxy
+    assert sys.meta_path[0] is proxy  # type: ignore[comparison-overlap]

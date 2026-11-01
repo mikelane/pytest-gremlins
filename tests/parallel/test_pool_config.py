@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import multiprocessing
 import sys
+from typing import cast
 
 import pytest
 
 from pytest_gremlins.parallel.pool_config import (
     PoolConfig,
+    StartMethod,
     get_optimal_start_method,
 )
 
@@ -79,12 +81,12 @@ class DescribePoolConfigValidation:
     def it_raises_error_for_invalid_start_method(self) -> None:
         """Invalid start method raises ValueError."""
         with pytest.raises(ValueError, match='Invalid start method'):
-            PoolConfig(start_method='invalid')
+            PoolConfig(start_method='invalid')  # type: ignore[arg-type]
 
     @pytest.mark.parametrize('method', ['auto', 'spawn', 'fork', 'forkserver'])
     def it_accepts_valid_start_methods(self, method: str) -> None:
         """Valid start methods are accepted."""
-        config = PoolConfig(start_method=method)
+        config = PoolConfig(start_method=cast('StartMethod', method))
         assert config.start_method == method
 
     def it_max_workers_must_be_positive(self) -> None:

@@ -4,9 +4,13 @@ The IncrementalCache orchestrates content hashing and result storage to
 implement the invalidation rules for incremental analysis.
 """
 
+from pathlib import Path
+
 import pytest
 
 from pytest_gremlins.cache.incremental import IncrementalCache
+
+from .cached_entries import partial_entry
 
 
 @pytest.mark.medium
@@ -35,11 +39,7 @@ class DescribeIncrementalCache:
 
     def it_caches_and_retrieves_result(self, tmp_path):
         """Cached results can be retrieved with same hashes."""
-        result_data = {
-            'gremlin_id': 'g001',
-            'status': 'zapped',
-            'killing_test': 'test_foo',
-        }
+        result_data = partial_entry(gremlin_id='g001', status='zapped', killing_test='test_foo')
 
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             cache.cache_result(
@@ -59,7 +59,7 @@ class DescribeIncrementalCache:
 
     def it_invalidates_cache_when_source_file_changes(self, tmp_path):
         """Changed source hash causes cache miss."""
-        result_data = {'gremlin_id': 'g001', 'status': 'zapped'}
+        result_data = partial_entry(gremlin_id='g001', status='zapped')
 
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             cache.cache_result(
@@ -80,7 +80,7 @@ class DescribeIncrementalCache:
 
     def it_invalidates_cache_when_test_file_is_modified(self, tmp_path):
         """Changed test hash causes cache miss."""
-        result_data = {'gremlin_id': 'g001', 'status': 'zapped'}
+        result_data = partial_entry(gremlin_id='g001', status='zapped')
 
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             cache.cache_result(
@@ -101,7 +101,7 @@ class DescribeIncrementalCache:
 
     def it_invalidates_cache_when_new_test_is_added(self, tmp_path):
         """Adding a new test causes cache miss."""
-        result_data = {'gremlin_id': 'g001', 'status': 'survived'}
+        result_data = partial_entry(gremlin_id='g001', status='survived')
 
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             cache.cache_result(
@@ -125,7 +125,7 @@ class DescribeIncrementalCache:
 
     def it_deleted_test_invalidates_cache(self, tmp_path):
         """Removing a test causes cache miss."""
-        result_data = {'gremlin_id': 'g001', 'status': 'zapped'}
+        result_data = partial_entry(gremlin_id='g001', status='zapped')
 
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             cache.cache_result(
@@ -149,7 +149,7 @@ class DescribeIncrementalCache:
 
     def it_unchanged_code_returns_cached_result(self, tmp_path):
         """Identical hashes return cached result instantly."""
-        result_data = {'gremlin_id': 'g001', 'status': 'survived'}
+        result_data = partial_entry(gremlin_id='g001', status='survived')
         test_hashes = {
             'test_foo': 'hash_foo',
             'test_bar': 'hash_bar',
@@ -174,8 +174,8 @@ class DescribeIncrementalCache:
 
     def it_caches_different_gremlins_separately(self, tmp_path):
         """Different gremlins in same file have separate cache entries."""
-        result_g001 = {'gremlin_id': 'g001', 'status': 'zapped'}
-        result_g002 = {'gremlin_id': 'g002', 'status': 'survived'}
+        result_g001 = partial_entry(gremlin_id='g001', status='zapped')
+        result_g002 = partial_entry(gremlin_id='g002', status='survived')
 
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             cache.cache_result(
@@ -208,7 +208,7 @@ class DescribeIncrementalCache:
     def it_persists_cache_between_sessions(self, tmp_path):
         """Cache data persists after closing and reopening."""
         cache_dir = tmp_path / '.gremlins_cache'
-        result_data = {'gremlin_id': 'g001', 'status': 'zapped'}
+        result_data = partial_entry(gremlin_id='g001', status='zapped')
 
         with IncrementalCache(cache_dir) as cache:
             cache.cache_result(
@@ -235,20 +235,20 @@ class DescribeIncrementalCache:
                 gremlin_id='file1:g001',
                 source_hash='source_hash',
                 test_hashes={'test_foo': 'test_hash'},
-                result={'status': 'zapped'},
+                result=partial_entry(status='zapped'),
             )
             cache.cache_result(
                 gremlin_id='file1:g002',
                 source_hash='source_hash',
                 test_hashes={'test_foo': 'test_hash'},
-                result={'status': 'survived'},
+                result=partial_entry(status='survived'),
             )
             # Cache result for gremlin in different file
             cache.cache_result(
                 gremlin_id='file2:g001',
                 source_hash='source_hash',
                 test_hashes={'test_foo': 'test_hash'},
-                result={'status': 'zapped'},
+                result=partial_entry(status='zapped'),
             )
 
             cache.invalidate_file('file1')
@@ -288,13 +288,13 @@ class DescribeIncrementalCache:
                 gremlin_id='g001',
                 source_hash='hash1',
                 test_hashes={'test': 'hash'},
-                result={'status': 'zapped'},
+                result=partial_entry(status='zapped'),
             )
             cache.cache_result(
                 gremlin_id='g002',
                 source_hash='hash2',
                 test_hashes={'test': 'hash'},
-                result={'status': 'survived'},
+                result=partial_entry(status='survived'),
             )
 
             cache.clear()
@@ -315,7 +315,7 @@ class DescribeIncrementalCache:
                 gremlin_id='g001',
                 source_hash='hash',
                 test_hashes={'test': 'hash'},
-                result={'status': 'zapped'},
+                result=partial_entry(status='zapped'),
             )
 
             # Cache hit
@@ -339,7 +339,7 @@ class DescribeIncrementalCache:
 
     def it_supports_empty_test_hashes(self, tmp_path):
         """Cache works with empty test_hashes (no tests cover gremlin)."""
-        result_data = {'gremlin_id': 'g001', 'status': 'survived'}
+        result_data = partial_entry(gremlin_id='g001', status='survived')
 
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             cache.cache_result(
@@ -357,14 +357,14 @@ class DescribeIncrementalCache:
 
         assert retrieved == result_data
 
-    def test_invalidate_file_with_no_matching_entries_is_noop(self, tmp_path) -> None:
+    def test_invalidate_file_with_no_matching_entries_is_noop(self, tmp_path: Path) -> None:
         """invalidate_file('nonexistent') does not affect existing entries."""
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             cache.cache_result(
                 gremlin_id='file1:g001',
                 source_hash='source_hash',
                 test_hashes={'test_foo': 'test_hash'},
-                result={'status': 'zapped'},
+                result=partial_entry(status='zapped'),
             )
 
             cache.invalidate_file('nonexistent')
@@ -374,4 +374,4 @@ class DescribeIncrementalCache:
                 source_hash='source_hash',
                 test_hashes={'test_foo': 'test_hash'},
             )
-            assert result == {'status': 'zapped'}
+            assert result == partial_entry(status='zapped')

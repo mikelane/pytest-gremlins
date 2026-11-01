@@ -14,11 +14,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.reporting.sonarqube_export import SonarQubeExporter
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 
@@ -194,7 +198,7 @@ class DescribeSonarQubeExporterIssueFormat:
 class DescribeSonarQubeExporterFileOutput:
     """Tests for writing SonarQube format to file."""
 
-    def it_writes_to_file(self, make_result, tmp_path: Path):
+    def it_writes_to_file(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
         exporter = SonarQubeExporter()

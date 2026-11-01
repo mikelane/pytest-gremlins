@@ -12,6 +12,8 @@ import pytest
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import IncrementalCache
 
+from .cached_entries import partial_entry
+
 
 def _write_source_files(src_dir: Path, count: int) -> list[Path]:
     """Write ``count`` small Python modules into ``src_dir`` and return their paths, sorted."""
@@ -59,7 +61,7 @@ class DescribePluginCachePattern:
                     gremlin_id,
                     source_hash,
                     selected_test_hashes,
-                    {'status': 'zapped', 'killing_test': 'test_0'},
+                    partial_entry(status='zapped', killing_test='test_0'),
                 )
 
             cold_time = time.perf_counter() - cold_start
@@ -74,7 +76,7 @@ class DescribePluginCachePattern:
 
                 # Check cache (hit expected)
                 result = cache.get_cached_result(gremlin_id, source_hash, selected_test_hashes)
-                assert result == {'status': 'zapped', 'killing_test': 'test_0'}
+                assert result == partial_entry(status='zapped', killing_test='test_0')
 
             warm_time = time.perf_counter() - warm_start
 
@@ -101,7 +103,7 @@ class DescribePluginCachePattern:
                     f'gremlin_{i}',
                     source_hash,
                     test_hashes,
-                    {'status': 'zapped'},
+                    partial_entry(status='zapped'),
                 )
 
         # Measure cache lookup overhead
@@ -208,7 +210,7 @@ class DescribeBatchOperations:
                     f'g_{i}',
                     'src_hash',
                     {'test': 'hash'},
-                    {'status': 'zapped'},
+                    partial_entry(status='zapped'),
                 )
 
         # Simulate batch lookup pattern

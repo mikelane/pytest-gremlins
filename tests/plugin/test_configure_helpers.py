@@ -130,7 +130,7 @@ class DescribeResolveTargetPaths:
 def _inactive_run_config(*, collectonly: bool, worker: bool = False) -> pytest.Config:
     option = _FakeOption()
     option.collectonly = collectonly  # type: ignore[attr-defined]
-    extra = {'workerinput': {}} if worker else {}
+    extra: dict[str, dict[str, object]] = {'workerinput': {}} if worker else {}
     fake = SimpleNamespace(option=option, stash=pytest.Stash(), **extra)
     return cast('pytest.Config', fake)
 

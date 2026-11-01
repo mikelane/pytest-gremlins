@@ -7,7 +7,7 @@ runs.  With reruns honoured, the boundary mutant survives (1 zapped / 1 survived
 from __future__ import annotations
 
 import pytest
-from rerun_samples import (
+from rerun_samples import (  # type: ignore[import-not-found]
     GREMLIN_ARGS,
     SAMPLE,
     verdicts,

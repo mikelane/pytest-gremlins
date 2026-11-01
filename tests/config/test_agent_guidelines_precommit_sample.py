@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
 import pytest
 import yaml
@@ -18,11 +21,11 @@ SAMPLE_PATTERN = re.compile(r'### Pre-commit\n.*?```yaml\n(?P<sample>.*?)\n```',
 def _load_sample_repos() -> list[dict[str, Any]]:
     match = SAMPLE_PATTERN.search(GUIDELINES_PATH.read_text(encoding='utf-8'))
     assert match is not None, 'AGENT_GUIDELINES.md has no "### Pre-commit" yaml sample'
-    return yaml.safe_load(match.group('sample'))['repos']
+    return cast('list[dict[str, Any]]', yaml.safe_load(match.group('sample'))['repos'])
 
 
 def _load_real_repos() -> list[dict[str, Any]]:
-    return yaml.safe_load(PRECOMMIT_CONFIG_PATH.read_text(encoding='utf-8'))['repos']
+    return cast('list[dict[str, Any]]', yaml.safe_load(PRECOMMIT_CONFIG_PATH.read_text(encoding='utf-8'))['repos'])
 
 
 def _remote_revs(repos: list[dict[str, Any]]) -> dict[str, str]:

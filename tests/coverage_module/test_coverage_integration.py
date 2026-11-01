@@ -16,7 +16,7 @@ class DescribeCoverageGuidedTestSelection:
     def it_shows_test_count_per_gremlin_in_output(
         self,
         pytester_with_markers: pytest.Pytester,
-    ):
+    ) -> None:
         """Verify output shows 'running N/M tests' for each gremlin (AC1).
 
         Creates a module with two functions, each tested by different tests.
@@ -71,7 +71,7 @@ class DescribeCoverageGuidedFallback:
     def it_falls_back_to_running_all_tests_for_uncovered_gremlins(
         self,
         pytester_with_markers: pytest.Pytester,
-    ):
+    ) -> None:
         """Verify uncovered gremlins are tested via fallback to all tests (AC4).
 
         Creates a function not covered by any test. Coverage-guided selection

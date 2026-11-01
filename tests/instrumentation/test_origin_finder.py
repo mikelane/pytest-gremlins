@@ -20,7 +20,6 @@ import importlib.util
 import inspect
 import json
 import os
-from pathlib import Path
 import pickle
 import pkgutil
 import sys
@@ -30,7 +29,11 @@ from types import (
     ModuleType,
     SimpleNamespace,
 )
-from typing import TypeVar
+from typing import (
+    TYPE_CHECKING,
+    TypeVar,
+    cast,
+)
 import zlib
 
 import pytest
@@ -54,6 +57,9 @@ from pytest_gremlins.plugin import (
 
 from .recursion_error import _raise_recursion_error
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 Sources = InstrumentedSources
 Install = Callable[[Sources], InstalledFinder]
 T = TypeVar('T')
@@ -68,7 +74,8 @@ def _encode(source: str) -> str:
 
 
 def _sources_for(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    return {normalize_origin(str(origin)): {'tree': _encode(source), 'source': source, 'origin': str(origin)}}
+    entry = {'tree': _encode(source), 'source': source, 'origin': str(origin)}
+    return {normalize_origin(str(origin)): cast('InstrumentedEntry', entry)}
 
 
 def _sources_for_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
@@ -86,7 +93,7 @@ def install_finder(monkeypatch: pytest.MonkeyPatch) -> Install:
     """Install the finder at the front of ``sys.meta_path``; restore the import state afterwards."""
     monkeypatch.setattr(sys, 'meta_path', list(sys.meta_path))
     monkeypatch.setattr(sys, 'modules', dict(sys.modules))
-    return install
+    return cast('Install', install)
 
 
 def _recording(real: Callable[[str], T], calls: list[str]) -> Callable[[str], T]:

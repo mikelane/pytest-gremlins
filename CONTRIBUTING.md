@@ -204,7 +204,7 @@ uv run ruff check src tests
 uv run ruff format --check src tests
 
 # Type checking
-uv run mypy src/pytest_gremlins
+uv run mypy
 
 # Run all checks (pre-commit runs these)
 uv run pre-commit run --all-files
@@ -236,7 +236,7 @@ Before submitting a PR, ensure:
 
 - [ ] Tests written FIRST (TDD)
 - [ ] All tests pass (`uv run pytest`)
-- [ ] Type checking passes (`uv run mypy src/pytest_gremlins`)
+- [ ] Type checking passes (`uv run mypy`)
 - [ ] Linting passes (`uv run ruff check .`)
 - [ ] Formatting correct (`uv run ruff format --check .`)
 - [ ] Docstrings added/updated for public APIs

@@ -37,7 +37,7 @@ def recorded_environments(monkeypatch: pytest.MonkeyPatch) -> RecordedEnvironmen
             {
                 'ACTIVE_GREMLIN': os.environ.get('ACTIVE_GREMLIN'),
                 'PYTHONPATH': os.environ.get('PYTHONPATH'),
-                'attribute': target.__gremlin_active__,  # type: ignore[attr-defined]
+                'attribute': target.__gremlin_active__,
             }
         )
 

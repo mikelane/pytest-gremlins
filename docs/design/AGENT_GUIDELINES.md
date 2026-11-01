@@ -485,9 +485,9 @@ repos:
         stages: [pre-commit]
       - id: mypy-commit
         name: mypy (strict, commit)
-        entry: uv run --frozen mypy src/pytest_gremlins
+        entry: uv run --frozen mypy
         language: system
-        files: ^src/
+        files: ^(src|tests)/
         types_or: [python, pyi]
         pass_filenames: false
         stages: [pre-commit]

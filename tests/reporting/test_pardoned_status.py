@@ -15,10 +15,10 @@ class DescribeGremlinResultStatusPardoned:
         assert GremlinResultStatus.PARDONED.value == 'pardoned'
 
     def it_pardoned_is_distinct_from_survived(self):
-        assert GremlinResultStatus.PARDONED != GremlinResultStatus.SURVIVED
+        assert GremlinResultStatus.PARDONED != GremlinResultStatus.SURVIVED  # type: ignore[comparison-overlap]
 
     def it_pardoned_is_distinct_from_zapped(self):
-        assert GremlinResultStatus.PARDONED != GremlinResultStatus.ZAPPED
+        assert GremlinResultStatus.PARDONED != GremlinResultStatus.ZAPPED  # type: ignore[comparison-overlap]
 
 
 @pytest.mark.small

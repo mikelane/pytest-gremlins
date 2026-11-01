@@ -21,7 +21,7 @@ AGE_TEST = (
 PYPROJECT = '[tool.pytest.ini_options]\npythonpath = ["src"]\n'
 SKIP_LINE = '*skipped *broken.py*could not instrument (ValueError: boom)*'
 
-_real_transform = plugin.transform_source
+_real_transform = plugin.transform_source  # type: ignore[attr-defined]
 
 
 def _explode_on_broken(source: str, file_path: str, *args: object, **kwargs: object) -> object:
