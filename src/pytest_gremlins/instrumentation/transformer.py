@@ -115,6 +115,7 @@ def create_gremlins_for_node(
     operator: GremlinOperator,
     file_path: str,
     id_generator: Callable[[], str],
+    description_original: ast.expr | ast.stmt | None = None,
 ) -> list[Gremlin]:
     """Create gremlins for any AST node using a specific operator.
 
@@ -123,6 +124,8 @@ def create_gremlins_for_node(
         operator: The operator to use for mutation.
         file_path: Path to the source file (for gremlin metadata).
         id_generator: Callable that returns the next gremlin ID.
+        description_original: The node to describe the mutation against, when it differs from ``node``
+            (for example a copy taken before ``node`` was instrumented). Defaults to ``node``.
 
     Returns:
         List of Gremlin objects for each possible mutation.
@@ -130,13 +133,20 @@ def create_gremlins_for_node(
     if not operator.can_mutate(node):
         return []
 
-    mutations = operator.mutate(node)
+    mutations = list(operator.mutate(node))
     gremlins: list[Gremlin] = []
 
-    for mutated_node in mutations:
+    describe_against = node if description_original is None else description_original
+    described_mutations = _mutations_to_describe(mutations, operator, description_original)
+
+    for mutated_node, described_node in zip(mutations, described_mutations, strict=True):
         if not isinstance(mutated_node, (ast.expr, ast.stmt)):
             continue  # pragma: no cover
-        description = _get_mutation_description(node, mutated_node, operator)
+        description = _get_mutation_description(
+            describe_against,
+            described_node if isinstance(described_node, (ast.expr, ast.stmt)) else mutated_node,
+            operator,
+        )
         gremlin = Gremlin(
             gremlin_id=id_generator(),
             file_path=file_path,
@@ -193,6 +203,25 @@ def _get_return_description(original: ast.expr | ast.stmt, mutated: ast.expr | a
     return None  # pragma: no cover
 
 
+def _mutations_to_describe(
+    mutations: list[ast.AST],
+    operator: GremlinOperator,
+    description_original: ast.expr | ast.stmt | None,
+) -> list[ast.AST]:
+    """Pick the mutated nodes to describe, so a description never shows instrumentation code.
+
+    When ``description_original`` is a pristine copy, the operator mutates it again and the results are paired
+    with ``mutations`` by index. A failure or a different count means no safe pairing, so ``mutations`` is used.
+    """
+    if description_original is None:
+        return mutations
+    try:
+        pristine_mutations = list(operator.mutate(description_original))
+    except Exception:
+        return mutations
+    return pristine_mutations if len(pristine_mutations) == len(mutations) else mutations
+
+
 def _get_mutation_description(
     original: ast.expr | ast.stmt,
     mutated: ast.expr | ast.stmt,
@@ -227,7 +256,24 @@ def _get_mutation_description(
         if desc:
             return desc
 
-    return f'{operator.name} mutation'  # pragma: no cover
+    return _get_custom_operator_description(original, mutated, operator)
+
+
+def _get_custom_operator_description(
+    original: ast.expr | ast.stmt,
+    mutated: ast.expr | ast.stmt,
+    operator: GremlinOperator,
+) -> str:
+    """Describe a mutation with the operator's optional ``get_description()``, else by operator name."""
+    fallback = f'{operator.name} mutation'
+    try:
+        describe = getattr(operator, 'get_description', None)
+        if not callable(describe):
+            return fallback
+        description = describe(original, mutated)
+        return str(description) if description and str(description).strip() else fallback
+    except Exception:
+        return fallback
 
 
 class GremlinCollector(ast.NodeVisitor):
@@ -421,10 +467,12 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
         self,
         node: ast.expr | ast.stmt,
         operators: list[GremlinOperator] | None = None,
+        description_original: ast.expr | ast.stmt | None = None,
     ) -> list[Gremlin]:
         """Create gremlins for any node using all applicable operators.
 
         Pass ``operators`` when the applicable operators are already known, to avoid asking each one again.
+        Pass ``description_original`` to describe the mutations against a different node than the one mutated.
         """
         all_gremlins: list[Gremlin] = []
         for operator in self._get_operators_for_node(node) if operators is None else operators:
@@ -433,6 +481,7 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
                 operator,
                 self.file_path,
                 self._next_gremlin_id,
+                description_original,
             )
             all_gremlins.extend(gremlins)
         return all_gremlins
@@ -500,13 +549,14 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
 
         Gremlins are decided from the instrumented statement, exactly as before, so their identity does not
         change; only their original node is swapped for a copy taken before instrumentation, so it shows the
-        line as the user wrote it.
+        line as the user wrote it. Descriptions are likewise computed from that copy.
         """
         pristine = copy.deepcopy(node)
         self.generic_visit(node)
 
         gremlins = [
-            dataclasses.replace(gremlin, original_node=pristine) for gremlin in self._create_gremlins_for_node(node)
+            dataclasses.replace(gremlin, original_node=pristine)
+            for gremlin in self._create_gremlins_for_node(node, description_original=pristine)
         ]
         if not gremlins:
             return node

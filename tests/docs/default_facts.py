@@ -2,20 +2,40 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+import re
+
 from pytest_gremlins.plugin import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_COVERAGE_TIMEOUT_SECONDS,
     DEFAULT_MUTANT_TIMEOUT_SECONDS,
     DEFAULT_REPORT_FORMATS,
 )
+from pytest_gremlins.reporting.html import resolve_html_output_path
 
 from .docs_facts import (
     default_cells,
     registered_help_defaults,
     registered_options,
+    toml_default_comments,
 )
 
-UNSET_PHRASES: frozenset[str] = frozenset({'none', 'all', 'auto-discovered', 'not set', 'no limit', 'disabled', '[]'})
+# The phrase the docs use for each option or key that has no code default. Each name has exactly one, so a wrong
+# phrase fails even when it is valid for another option.
+UNSET_PHRASE_BY_NAME: dict[str, str] = {
+    '--gremlin-operators': 'all',
+    '--gremlin-targets': 'auto-discovered',
+    '--gremlin-exclude': 'none',
+    '--gremlin-explain': 'none',
+    '--gremlin-max-pardons-pct': 'disabled',
+    '--max-pardons': 'disabled',
+    'operators': 'all',
+    'paths': 'auto-discovered',
+    'exclude': '[]',
+    'workers': 'not set',
+    'max_pardons': 'no limit',
+    'max-pardons-pct': 'no limit',
+}
 
 CONFIG_KEY_TO_FLAG: dict[str, str] = {
     'operators': '--gremlin-operators',
@@ -44,7 +64,11 @@ def normalize(cell: str) -> str:
     return cell.strip().strip('`').strip('"').lower()
 
 
+_PROJECT_ROOT = Path('project')
+HTML_REPORT_DIR = resolve_html_output_path(_PROJECT_ROOT, None).parent.relative_to(_PROJECT_ROOT).as_posix() + '/'
+
 CODE_DEFAULTS: dict[str, object] = {
+    '--gremlins-html-dir': HTML_REPORT_DIR,
     '--gremlin-batch-size': DEFAULT_BATCH_SIZE,
     '--gremlin-report': DEFAULT_REPORT_FORMATS,
     '--gremlin-coverage-timeout': DEFAULT_COVERAGE_TIMEOUT_SECONDS,
@@ -64,11 +88,13 @@ def default_mismatches(documented: dict[str, str], expected_by_name: dict[str, s
     for name, cell in documented.items():
         expected = expected_by_name.get(name)
         shown = normalize(cell)
+        phrase = UNSET_PHRASE_BY_NAME.get(name)
         if expected is not None and shown != expected.lower():
             problems.append(f'{name}: documented {shown!r}, code default {expected!r}')
-        elif expected is None and shown not in UNSET_PHRASES:
+        elif expected is None and shown != phrase:
             problems.append(
-                f'{name}: documented {shown!r}, but the code has no default (use one of {sorted(UNSET_PHRASES)})'
+                f'{name}: documented {shown!r}, but the code has no default '
+                f'(use {phrase!r}; register a phrase in UNSET_PHRASE_BY_NAME if none)'
             )
     return problems
 
@@ -89,3 +115,21 @@ def expected_flag_defaults() -> dict[str, str | None]:
 def expected_key_defaults() -> dict[str, str | None]:
     hard = hard_code_defaults()
     return {key: hard.get(CONFIG_KEY_TO_FLAG.get(key, '')) for key in key_defaults_in_docs()}
+
+
+def default_comment_mismatches(comments: dict[str, str], table_cells: dict[str, str]) -> list[str]:
+    """Describe each TOML ``# Default:`` comment that does not start with the default its key's table cell states."""
+    problems: list[str] = []
+    for key, comment in comments.items():
+        if key not in table_cells:
+            problems.append(f'{key}: the TOML example says "Default: {comment}" but the options table has no such key')
+            continue
+        stated = normalize(table_cells[key])
+        if not re.match(rf'{re.escape(stated)}(?!\w)', normalize(comment)):
+            problems.append(f'{key}: the TOML example says "Default: {comment}", the options table says {stated!r}')
+    return problems
+
+
+def toml_default_comment_mismatches() -> list[str]:
+    """Describe each ``# Default:`` comment on the configuration page that disagrees with its options table row."""
+    return default_comment_mismatches(toml_default_comments(), key_defaults_in_docs())

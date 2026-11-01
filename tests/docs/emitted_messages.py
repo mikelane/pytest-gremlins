@@ -53,7 +53,7 @@ def wrapped_validation_templates(source: str) -> list[str]:
             text = _template_text(node.exc.args[0])
             if text is not None:
                 templates.append(f'{MESSAGE_PREFIX} {text}')
-    return templates
+    return [template for template in templates if _has_stable_phrase(template)]
 
 
 def message_templates_under(root: Path) -> list[str]:

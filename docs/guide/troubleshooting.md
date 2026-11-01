@@ -245,11 +245,13 @@ instead of failing.
 
 1. Validate your TOML syntax. Common mistakes:
 
-   ```toml
+   ```text
    # WRONG - missing quotes around string
    [tool.pytest-gremlins]
    operators = [comparison, arithmetic]
+   ```
 
+   ```toml
    # CORRECT
    [tool.pytest-gremlins]
    operators = ["comparison", "arithmetic"]

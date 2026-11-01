@@ -55,27 +55,35 @@ Produces deterministic SHA-256 hashes for files and strings.
 
 ### Helper modules under the test root
 
-A test's verdict can depend on code the test file never names: a fixture module loaded through `pytest_plugins`, or a
-helper that a test or a `conftest.py` imports. pytest-gremlins does not trace those imports. Instead it hashes every
-Python file under the test root that is not a collected test file into the cache key of each test file there. The test
-root is the top-level directory under the pytest rootdir that holds the test file (for example `tests/`). A test file
-that sits directly in the rootdir has no directory to sweep, so only the `.py` files beside it count. Collected test
-files, `conftest.py` files (hashed separately along the path to each test) and `__pycache__` are skipped. The file name
-decides nothing: a `test_utils.py` that holds no collected tests is a helper, and editing it changes the key.
+A test's verdict can depend on code the test file never names: a fixture module loaded through `pytest_plugins`, a
+helper that a test or a `conftest.py` imports, or a helper defined inside another test file. The cache key covers all
+three.
+
+**Helper modules.** pytest-gremlins hashes every Python file under the test root that is not a test file into the cache
+key of each test file there. The test root is the top-level directory under the pytest rootdir that holds the test file
+(for example `tests/`). A test file that sits directly in the rootdir has no directory to sweep, so only the `.py` files
+beside it count. A file is a test file when its name matches the `python_files` setting (default `test_*.py` and
+`*_test.py`); that is decided by the name alone, never by what pytest collected in the run. So a test file has the same
+key whether you run it alone or with the whole suite. `conftest.py` files (hashed separately along the path to each
+test) and `__pycache__` are skipped.
 
 The trade-off is coarse on purpose: **editing any helper under the test root re-runs gremlins for every test file
 under that root.** The cost is extra misses after a helper edit. Python files outside the test root do not affect the
 key.
 
-Two limits follow from treating every collected test file as a test, never a helper:
+**Imported test files.** Other test files that a test, or a `conftest.py` on its path, imports are hashed into its key
+too, so editing `make()` in `tests/test_b.py` re-runs the gremlins of a `tests/test_a.py` that imports it. pytest-gremlins
+reads each file's `import x`, `from x import y` and relative imports with `ast`, resolves them to `.py` files under the
+test root, and follows them transitively (import cycles are safe). A module named in a module-level `pytest_plugins`
+assignment (a string, or a list or tuple of strings) counts as an import, so a test-named fixture module loaded that way
+is in the key. An absolute import is looked up from rootdir, from each directory between the importing file and
+rootdir, and from each `pythonpath` entry in your pytest ini (resolved against rootdir). Source with a byte-order mark
+or a `coding:` declaration is read correctly. A file that cannot be parsed contributes nothing.
+A test file that nothing imports does not affect other files' keys.
 
-- A helper defined inside a collected test file (for example `make()` in `tests/test_b.py`, imported by
-  `tests/test_a.py`) is not in the key of the files that import it. Editing it replays the cached verdicts of those
-  other test files. Keep shared helpers in modules with no collected tests, or clear the cache with
-  `--gremlin-clear-cache` after editing one.
-- Whether a `test_*.py` file counts as a helper depends on what pytest collected in that run. Running one test file and
-  then the whole suite gives the same unchanged test file two different keys, so switching between selections misses
-  the cache.
+**Limit: dynamic imports are not followed.** A test file reached only through `importlib.import_module` with a computed
+name, or any other import resolved at run time, is not in the key. Editing it replays the cached verdicts of the files
+that load it. Import it statically, or clear the cache with `--gremlin-clear-cache` after editing one.
 
 ### Usage Example
 
@@ -262,8 +270,8 @@ xdist. Other sessions with the part just re-test once. Every other session keeps
 | Installed package (including a PEP 610 editable install) that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
 | Operator defined in a `conftest.py` on the hashed chain (from the pytest rootdir down to each test file, even if the project is installed editable) | No effect on the key; the source and conftest hashes cover it |
 | Operator that does not come from an installed distribution: a project-local helper module, a module loaded by file path or sharing a name with another module, a namespace-package module (unless an installed distribution in that namespace sits at the same top-level name), a class defined inside a function, a module with no file, or an editable install recorded only through a `.pth` file or a setuptools import finder | Every run misses the cache for every gremlin: the key carries a fresh random token, so the run is slower but never serves a stale verdict. The run also writes no results to the cache, since no later run could read them, so `results.db` does not grow. An operator keeps hits only when it is importable by its qualified name and an installed package owns its module. Restoring cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator from an installed distribution still keys on that distribution's version |
-| Helper module under the test root edited, added or removed: a `pytest_plugins` fixture module, or a module a test or `conftest.py` imports | Miss for every gremlin covered by any test file under that test root. The key folds in every `.py` file there that is not a collected test file, a `conftest.py` or under `__pycache__` |
-| Helper code inside a collected test file edited, imported by another test file | No effect on the importing test file's key: its cached verdicts are replayed. See [Helper modules under the test root](#helper-modules-under-the-test-root) |
+| Helper module under the test root edited, added or removed: a `pytest_plugins` fixture module, or a module a test or `conftest.py` imports | Miss for every gremlin covered by any test file under that test root. The key folds in every `.py` file there whose name matches no `python_files` pattern, other than a `conftest.py` or a file under `__pycache__` |
+| Helper code inside a test file edited, imported (statically) by another test file or its `conftest.py` | Miss for every gremlin covered by the importing test file. A test file imported only dynamically is not followed. See [Helper modules under the test root](#helper-modules-under-the-test-root) |
 | Python file outside the test root edited, and not a source file a gremlin mutates | No effect on the key |
 | Nothing changed | Hit (return cached result) |
 
