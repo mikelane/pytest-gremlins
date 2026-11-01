@@ -277,6 +277,20 @@ def _get_custom_operator_description(
         return fallback
 
 
+def gremlin_file_prefix(file_path: str) -> str:
+    """Return the prefix every gremlin id of ``file_path`` starts with.
+
+    Gremlin ids are ``{prefix}_g<NNN>``; the cache prunes stale rows by this prefix.
+
+    Example:
+        >>> gremlin_file_prefix('src/mod.py')[:4]
+        'mod_'
+    """
+    stem = Path(file_path).stem
+    path_hash = hashlib.md5(file_path.encode(), usedforsecurity=False).hexdigest()[:4]
+    return f'{stem}_{path_hash}'
+
+
 class GremlinCollector(ast.NodeVisitor):
     """Collects gremlins from comparison nodes in an AST."""
 
@@ -295,10 +309,7 @@ class GremlinCollector(ast.NodeVisitor):
         Uses the file stem (name without extension) combined with a short hash
         to ensure uniqueness even for files with the same name in different dirs.
         """
-        stem = Path(file_path).stem
-        # Use first 4 chars of MD5 hash for uniqueness
-        path_hash = hashlib.md5(file_path.encode(), usedforsecurity=False).hexdigest()[:4]
-        return f'{stem}_{path_hash}'
+        return gremlin_file_prefix(file_path)
 
     def _next_gremlin_id(self) -> str:
         self._gremlin_counter += 1
@@ -447,10 +458,7 @@ class MutationSwitchingTransformer(ast.NodeTransformer):
         Uses the file stem (name without extension) combined with a short hash
         to ensure uniqueness even for files with the same name in different dirs.
         """
-        stem = Path(file_path).stem
-        # Use first 4 chars of MD5 hash for uniqueness
-        path_hash = hashlib.md5(file_path.encode(), usedforsecurity=False).hexdigest()[:4]
-        return f'{stem}_{path_hash}'
+        return gremlin_file_prefix(file_path)
 
     def _next_gremlin_id(self) -> str:
         self._gremlin_counter += 1

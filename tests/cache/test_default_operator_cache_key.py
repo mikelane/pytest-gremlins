@@ -8,7 +8,10 @@ import pytest
 
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.store import ResultStore
-from pytest_gremlins.instrumentation.transformer import get_default_registry
+from pytest_gremlins.instrumentation.transformer import (
+    get_default_registry,
+    gremlin_file_prefix,
+)
 from pytest_gremlins.operators.comparison import ComparisonOperator
 
 if TYPE_CHECKING:
@@ -99,3 +102,89 @@ class DescribeDefaultOperatorCacheKey:
 
         assert key != LEGACY_DEFAULT_KEY
         assert ':ops=' in key
+
+
+@pytest.mark.medium
+class DescribePruningOperatorSequenceKeys:
+    @pytest.mark.parametrize('pytester_loaded', [False, True])
+    @pytest.mark.parametrize('xdist_loaded', [False, True])
+    @pytest.mark.parametrize(
+        'indices',
+        [(4, 3, 2, 1, 0), (1, 2, 3, 4), (0, 1, 2, 3, 4, 0), ()],
+        ids=['reordered', 'subset', 'duplicated', 'empty'],
+    )
+    def it_preserves_separate_current_verdicts_after_pruning(
+        self, tmp_path: Path, indices: tuple[int, ...], pytester_loaded: bool, xdist_loaded: bool
+    ) -> None:
+        operators = get_default_registry().get_all()
+        selected = tuple(operators[index] for index in indices)
+        cache_dir = tmp_path / '.gremlins_cache'
+        prefix = gremlin_file_prefix('src/example.py')
+        gremlin_id = f'{prefix}_g001'
+        other_id = f'{gremlin_file_prefix("src/other.py")}_g001'
+        for active, status in [(operators, 'zapped'), (selected, 'survived')]:
+            with IncrementalCache(
+                cache_dir,
+                iter(active),
+                pytester_loaded=lambda: pytester_loaded,
+                xdist_loader_loaded=lambda: xdist_loaded,
+            ) as cache:
+                cache.cache_result(gremlin_id, 'old', TEST_HASHES, {'status': status})
+                cache.cache_result(gremlin_id, 'current', TEST_HASHES, {'status': status})
+                cache.cache_result(other_id, 'old', TEST_HASHES, {'status': status})
+        with IncrementalCache(cache_dir, operators) as cache:
+            cache.prune_stale_sources({prefix: {'current'}})
+        for active, status in [(operators, 'zapped'), (selected, 'survived')]:
+            with IncrementalCache(
+                cache_dir,
+                iter(active),
+                pytester_loaded=lambda: pytester_loaded,
+                xdist_loader_loaded=lambda: xdist_loaded,
+            ) as cache:
+                assert cache.get_cached_result(gremlin_id, 'old', TEST_HASHES) is None
+                assert cache.get_cached_result(gremlin_id, 'current', TEST_HASHES) == {'status': status}
+                assert cache.get_cached_result(other_id, 'old', TEST_HASHES) == {'status': status}
+
+    @pytest.mark.parametrize('pytester_loaded', [False, True])
+    @pytest.mark.parametrize('xdist_loaded', [False, True])
+    def it_retains_the_skipped_sequence_verdict_when_the_constructor_recovers(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pytester_loaded: bool, xdist_loaded: bool
+    ) -> None:
+        registry = get_default_registry()
+        cache_dir = tmp_path / '.gremlins_cache'
+        prefix = gremlin_file_prefix('src/example.py')
+        gremlin_id = f'{prefix}_g001'
+
+        def unavailable(_self: ComparisonOperator) -> None:
+            raise ImportError('optional dependency unavailable')
+
+        with monkeypatch.context() as patch:
+            patch.setattr(ComparisonOperator, '__init__', unavailable)
+            with pytest.warns(UserWarning, match='comparison.*ImportError'):
+                surviving = registry.get_all()
+            with IncrementalCache(
+                cache_dir,
+                surviving,
+                pytester_loaded=lambda: pytester_loaded,
+                xdist_loader_loaded=lambda: xdist_loaded,
+            ) as cache:
+                cache.cache_result(gremlin_id, 'old', TEST_HASHES, {'status': 'survived'})
+                cache.cache_result(gremlin_id, 'current', TEST_HASHES, {'status': 'survived'})
+
+        with IncrementalCache(
+            cache_dir,
+            registry.get_all(),
+            pytester_loaded=lambda: pytester_loaded,
+            xdist_loader_loaded=lambda: xdist_loaded,
+        ) as cache:
+            cache.prune_stale_sources({prefix: {'current'}})
+            assert cache.get_cached_result(gremlin_id, 'current', TEST_HASHES) is None
+            cache.cache_result(gremlin_id, 'current', TEST_HASHES, {'status': 'zapped'})
+        with IncrementalCache(
+            cache_dir,
+            surviving,
+            pytester_loaded=lambda: pytester_loaded,
+            xdist_loader_loaded=lambda: xdist_loaded,
+        ) as cache:
+            assert cache.get_cached_result(gremlin_id, 'old', TEST_HASHES) is None
+            assert cache.get_cached_result(gremlin_id, 'current', TEST_HASHES) == {'status': 'survived'}

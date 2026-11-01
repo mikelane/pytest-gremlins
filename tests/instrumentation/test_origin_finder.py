@@ -19,6 +19,7 @@ import importlib.resources
 import importlib.util
 import inspect
 import json
+import os
 from pathlib import Path
 import pickle
 import pkgutil
@@ -29,6 +30,7 @@ from types import (
     ModuleType,
     SimpleNamespace,
 )
+from typing import TypeVar
 import zlib
 
 import pytest
@@ -37,6 +39,8 @@ from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.origin_finder import (
     GremlinFinder,
     GremlinLoader,
+    InstalledFinder,
+    InstrumentedEntry,
     InstrumentedSources,
     file_identity,
     install,
@@ -51,7 +55,8 @@ from pytest_gremlins.plugin import (
 from .recursion_error import _raise_recursion_error
 
 Sources = InstrumentedSources
-Install = Callable[[Sources], GremlinFinder]
+Install = Callable[[Sources], InstalledFinder]
+T = TypeVar('T')
 
 INSTRUMENTED = 'VALUE = "instrumented"\n'
 ORIGINAL = 'VALUE = "original"\n'
@@ -62,12 +67,12 @@ def _encode(source: str) -> str:
     return base64.b64encode(zlib.compress(pickle.dumps(ast.parse(source)))).decode('ascii')
 
 
-def _entry(origin: Path, source: str = INSTRUMENTED) -> Sources:
+def _sources_for(origin: Path, source: str = INSTRUMENTED) -> Sources:
     return {normalize_origin(str(origin)): {'tree': _encode(source), 'source': source, 'origin': str(origin)}}
 
 
-def _entry_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    entry = {
+def _sources_for_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
+    entry: InstrumentedEntry = {
         'tree': _encode(source),
         'source': source,
         'origin': str(origin),
@@ -82,6 +87,16 @@ def install_finder(monkeypatch: pytest.MonkeyPatch) -> Install:
     monkeypatch.setattr(sys, 'meta_path', list(sys.meta_path))
     monkeypatch.setattr(sys, 'modules', dict(sys.modules))
     return install
+
+
+def _recording(real: Callable[[str], T], calls: list[str]) -> Callable[[str], T]:
+    """Wrap ``real`` so every argument it receives is appended to ``calls``."""
+
+    def record(path: str) -> T:
+        calls.append(path)
+        return real(path)
+
+    return record
 
 
 def _import(name: str) -> ModuleType:
@@ -112,9 +127,9 @@ class DescribeGremlinFinderServesByOrigin:
     ) -> None:
         tmp_path.joinpath('plain_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(tmp_path / 'plain_mod.py'))
+        install_finder(_sources_for(tmp_path / 'plain_mod.py'))
 
-        assert _import('plain_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('plain_mod').VALUE == 'instrumented'
 
     def it_leaves_a_module_that_is_not_instrumented_alone(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -122,9 +137,9 @@ class DescribeGremlinFinderServesByOrigin:
         tmp_path.joinpath('untouched_mod.py').write_text(ORIGINAL)
         tmp_path.joinpath('other_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(tmp_path / 'other_mod.py'))
+        install_finder(_sources_for(tmp_path / 'other_mod.py'))
 
-        assert _import('untouched_mod').VALUE == 'original'  # type: ignore[attr-defined]
+        assert _import('untouched_mod').VALUE == 'original'
 
     def it_gives_the_module_the_real_file_as_its_location(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -132,7 +147,7 @@ class DescribeGremlinFinderServesByOrigin:
         origin = tmp_path / 'located_mod.py'
         origin.write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(origin))
+        install_finder(_sources_for(origin))
 
         module = _import('located_mod')
 
@@ -146,12 +161,12 @@ class DescribeGremlinFinderServesByOrigin:
         package.joinpath('__init__.py').write_text(ORIGINAL)
         package.joinpath('child.py').write_text('CHILD = 1\n')
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(package / '__init__.py'))
+        install_finder(_sources_for(package / '__init__.py'))
 
         module = _import('served_pkg')
         child = _import('served_pkg.child')
 
-        assert (module.VALUE, list(module.__path__), child.CHILD) == (  # type: ignore[attr-defined]
+        assert (module.VALUE, list(module.__path__), child.CHILD) == (
             'instrumented',
             [str(package)],
             1,
@@ -166,12 +181,12 @@ class DescribeGremlinFinderServesByOrigin:
         outer.joinpath('shared_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
         monkeypatch.syspath_prepend(str(outer))
-        install_finder(_entry(outer / 'shared_mod.py'))
+        install_finder(_sources_for(outer / 'shared_mod.py'))
 
         under_package = _import('outer_pkg.shared_mod')
         under_root = _import('shared_mod')
 
-        assert (under_package.VALUE, under_root.VALUE) == ('instrumented', 'instrumented')  # type: ignore[attr-defined]
+        assert (under_package.VALUE, under_root.VALUE) == ('instrumented', 'instrumented')
         assert under_package is not under_root
 
     def it_serves_a_module_reached_through_a_symlinked_directory(
@@ -183,9 +198,9 @@ class DescribeGremlinFinderServesByOrigin:
         link = tmp_path / 'link'
         link.symlink_to(real, target_is_directory=True)
         monkeypatch.syspath_prepend(str(link))
-        install_finder(_entry(real / 'linked_mod.py'))
+        install_finder(_sources_for(real / 'linked_mod.py'))
 
-        assert _import('linked_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('linked_mod').VALUE == 'instrumented'
 
     def it_serves_a_module_inside_a_namespace_package(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -194,9 +209,9 @@ class DescribeGremlinFinderServesByOrigin:
         namespace.mkdir()
         namespace.joinpath('leaf.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(namespace / 'leaf.py'))
+        install_finder(_sources_for(namespace / 'leaf.py'))
 
-        assert _import('ns_pkg.leaf').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('ns_pkg.leaf').VALUE == 'instrumented'
 
     def it_keeps_package_data_readable_through_importlib_resources(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -206,7 +221,7 @@ class DescribeGremlinFinderServesByOrigin:
         package.joinpath('__init__.py').write_text(ORIGINAL)
         package.joinpath('payload.txt').write_text('payload')
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(package / '__init__.py'))
+        install_finder(_sources_for(package / '__init__.py'))
 
         _import('data_pkg')
 
@@ -220,7 +235,7 @@ class DescribeGremlinFinderServesByOrigin:
         package.joinpath('__init__.py').write_text(ORIGINAL)
         package.joinpath('blob.bin').write_bytes(b'blob')
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(package / '__init__.py'))
+        install_finder(_sources_for(package / '__init__.py'))
 
         _import('blob_pkg')
 
@@ -312,9 +327,9 @@ class DescribeGremlinFinderDelegation:
         origin.parent.mkdir()
         origin.write_text(ORIGINAL)
         monkeypatch.setattr(sys, 'meta_path', [*sys.meta_path, _ServesFromElsewhere('editable_mod', origin)])
-        install_finder(_entry(origin))
+        install_finder(_sources_for(origin))
 
-        assert _import('editable_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('editable_mod').VALUE == 'instrumented'
 
     def it_lets_a_raising_finder_raise_for_the_import_system_instead_of_serving_past_it(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -322,7 +337,7 @@ class DescribeGremlinFinderDelegation:
         tmp_path.joinpath('guarded_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
         monkeypatch.setattr(sys, 'meta_path', [_RaisesForName('guarded_mod'), *sys.meta_path])
-        install_finder(_entry(tmp_path / 'guarded_mod.py'))
+        install_finder(_sources_for(tmp_path / 'guarded_mod.py'))
 
         with pytest.raises(RuntimeError, match='finder blew up'):
             _import('guarded_mod')
@@ -333,9 +348,9 @@ class DescribeGremlinFinderDelegation:
         tmp_path.joinpath('again_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
         monkeypatch.setattr(sys, 'meta_path', [_AsksTheImportSystemAgain('again_mod'), *sys.meta_path])
-        install_finder(_entry(tmp_path / 'again_mod.py'))
+        install_finder(_sources_for(tmp_path / 'again_mod.py'))
 
-        assert _import('again_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('again_mod').VALUE == 'instrumented'
 
     def it_asks_the_later_finders_once_for_a_module_it_does_not_instrument(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -356,19 +371,19 @@ class DescribeGremlinFinderDelegation:
         tmp_path.joinpath('outer_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
         install_finder({})
-        install_finder(_entry(tmp_path / 'outer_mod.py'))
+        install_finder(_sources_for(tmp_path / 'outer_mod.py'))
 
-        assert _import('outer_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('outer_mod').VALUE == 'instrumented'
 
     def it_serves_the_module_when_the_second_gremlin_finder_is_the_one_that_instruments_it(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
     ) -> None:
         tmp_path.joinpath('inner_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(tmp_path / 'inner_mod.py'))
+        install_finder(_sources_for(tmp_path / 'inner_mod.py'))
         sys.meta_path.insert(0, GremlinFinder({}))  # install() is idempotent, so a second finder is added by hand
 
-        assert _import('inner_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('inner_mod').VALUE == 'instrumented'
 
     def it_serves_a_module_to_one_thread_while_another_thread_is_resolving_the_same_name(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -377,7 +392,7 @@ class DescribeGremlinFinderDelegation:
         origin.write_text(ORIGINAL)
         blocker = _BlocksFirstLookup('raced_mod', origin)
         monkeypatch.setattr(sys, 'meta_path', [*sys.meta_path, blocker])
-        finder = install_finder(_entry(origin))
+        finder = install_finder(_sources_for(origin))
         first_thread = threading.Thread(target=finder.find_spec, args=('raced_mod',))
         first_thread.start()
         assert blocker.entered.wait(timeout=10)
@@ -412,19 +427,19 @@ class DescribeGremlinFinderMetaPathEdges:
         tmp_path.joinpath('legacy_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
         monkeypatch.setattr(sys, 'meta_path', [object(), *sys.meta_path])
-        install_finder(_entry(tmp_path / 'legacy_mod.py'))
+        install_finder(_sources_for(tmp_path / 'legacy_mod.py'))
 
-        assert _import('legacy_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('legacy_mod').VALUE == 'instrumented'
 
     def it_does_not_ask_itself_when_it_sits_on_sys_meta_path_twice(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
     ) -> None:
         tmp_path.joinpath('twice_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
-        finder = install_finder(_entry(tmp_path / 'twice_mod.py'))
+        finder = install_finder(_sources_for(tmp_path / 'twice_mod.py'))
         sys.meta_path.insert(1, finder)
 
-        assert _import('twice_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('twice_mod').VALUE == 'instrumented'
 
     def it_resolves_through_every_finder_when_it_was_never_installed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -434,7 +449,7 @@ class DescribeGremlinFinderMetaPathEdges:
         monkeypatch.syspath_prepend(str(tmp_path))
         importlib.invalidate_caches()
 
-        spec = GremlinFinder(_entry(origin)).find_spec('detached_mod')
+        spec = GremlinFinder(_sources_for(origin)).find_spec('detached_mod')
 
         assert spec is not None
         assert isinstance(spec.loader, GremlinLoader)
@@ -445,13 +460,34 @@ class DescribeGremlinFinderMetaPathEdges:
         ghost = tmp_path / 'ghost_mod.py'
         monkeypatch.setattr(sys, 'meta_path', [*sys.meta_path, _ServesFromElsewhere('ghost_mod', ghost)])
         tmp_path.joinpath('real_mod.py').write_text(ORIGINAL)
-        finder = install_finder(_entry_with_identity(tmp_path / 'real_mod.py'))
+        finder = install_finder(_sources_for_with_identity(tmp_path / 'real_mod.py'))
 
         spec = finder.find_spec('ghost_mod')
 
         assert spec is not None
         assert spec.origin == str(ghost)
         assert not isinstance(spec.loader, GremlinLoader)
+
+
+@pytest.mark.small
+class DescribeGremlinLoaderPackageData:
+    """Package data is read through the loader that located the file, and only offered when that loader has it."""
+
+    def it_offers_no_get_data_when_the_original_loader_has_none(self) -> None:
+        loader = GremlinLoader(None, original_loader=object(), source=INSTRUMENTED)
+
+        assert getattr(loader, 'get_data', None) is None
+
+    def it_offers_no_get_data_when_there_is_no_original_loader(self) -> None:
+        loader = GremlinLoader(None, source=INSTRUMENTED)
+
+        assert getattr(loader, 'get_data', None) is None
+
+    def it_reads_data_through_the_original_loader(self) -> None:
+        original = SimpleNamespace(get_data=lambda path: f'data of {path}'.encode())
+        loader = GremlinLoader(None, original_loader=original, source=INSTRUMENTED)
+
+        assert loader.get_data('payload.bin') == b'data of payload.bin'
 
 
 @pytest.mark.small
@@ -486,7 +522,7 @@ class DescribeGremlinLoaderCompilesShippedTree:
 
         GremlinLoader(_encode('def f():\n    return 1\n'), source='def f():\n    return 1\n').exec_module(module)
 
-        assert module.f.__code__.co_filename == origin  # type: ignore[attr-defined]
+        assert module.f.__code__.co_filename == origin
 
     def it_keeps_the_line_numbers_of_the_shipped_tree(self) -> None:
         module = _module_from('lines_mod', 'lines_mod.py')
@@ -495,14 +531,14 @@ class DescribeGremlinLoaderCompilesShippedTree:
             module
         )
 
-        assert module.f.__code__.co_firstlineno == 10  # type: ignore[attr-defined]
+        assert module.f.__code__.co_firstlineno == 10
 
     def it_does_not_inherit_future_flags_from_the_loader_module(self) -> None:
         module = _module_from('flags_mod', 'flags_mod.py')
 
         GremlinLoader(_encode('def f():\n    return 1\n'), source='def f():\n    return 1\n').exec_module(module)
 
-        assert module.f.__code__.co_flags & __future__.annotations.compiler_flag == 0  # type: ignore[attr-defined]
+        assert module.f.__code__.co_flags & __future__.annotations.compiler_flag == 0
 
 
 _real_compile = compile
@@ -530,7 +566,7 @@ class DescribeGremlinLoaderDeepTreeFallback:
 
         GremlinLoader(_encode(self.TREE_VALUE), source=self.SOURCE_VALUE).exec_module(module)
 
-        assert module.VALUE == 'from the source'  # type: ignore[attr-defined]
+        assert module.VALUE == 'from the source'
 
     def it_compiles_the_source_when_compiling_the_tree_exceeds_the_recursion_limit(
         self, monkeypatch: pytest.MonkeyPatch
@@ -540,7 +576,7 @@ class DescribeGremlinLoaderDeepTreeFallback:
 
         GremlinLoader(_encode(self.TREE_VALUE), source=self.SOURCE_VALUE).exec_module(module)
 
-        assert module.VALUE == 'from the source'  # type: ignore[attr-defined]
+        assert module.VALUE == 'from the source'
 
     def it_requires_the_source_to_fall_back_to(self) -> None:
         with pytest.raises(TypeError, match='source'):
@@ -551,21 +587,21 @@ class DescribeGremlinLoaderDeepTreeFallback:
 
         GremlinLoader(None, source=self.SOURCE_VALUE).exec_module(module)
 
-        assert module.VALUE == 'from the source'  # type: ignore[attr-defined]
+        assert module.VALUE == 'from the source'
 
     def it_prefers_the_tree_when_it_compiles(self) -> None:
         module = _module_from('shallow_mod', 'shallow_mod.py')
 
         GremlinLoader(_encode(self.TREE_VALUE), source=self.SOURCE_VALUE).exec_module(module)
 
-        assert module.VALUE == 'from the tree'  # type: ignore[attr-defined]
+        assert module.VALUE == 'from the tree'
 
     def it_names_the_module_in_the_code_it_compiles_from_source_as_main_did(self) -> None:
         module = _module_from('fallback_name_mod', '/project/fallback_name_mod.py')
 
         GremlinLoader(None, source='def f():\n    return 1\n').exec_module(module)
 
-        assert module.f.__code__.co_filename == 'fallback_name_mod'  # type: ignore[attr-defined]
+        assert module.f.__code__.co_filename == 'fallback_name_mod'
 
 
 @pytest.mark.medium
@@ -584,7 +620,7 @@ class DescribeInstrumentedTracebacks:
         module = _import('traceback_mod')
 
         with pytest.raises(ValueError, match='1') as raised:
-            module.boom()  # type: ignore[attr-defined]
+            module.boom()
 
         frame = traceback.extract_tb(raised.value.__traceback__)[-1]
         assert (frame.filename, frame.lineno, frame.line) == (str(target), 23, 'raise ValueError(value)')
@@ -600,7 +636,7 @@ class DescribeGremlinFinderCompileFilename:
         target = tmp_path / 'filename_mod.py'
         target.write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(target, 'def f():\n    return 1\n'))
+        install_finder(_sources_for(target, 'def f():\n    return 1\n'))
 
         module = _import('filename_mod')
 
@@ -621,9 +657,9 @@ class DescribeGremlinFinderServesByFileIdentity:
         spelling.parent.mkdir()
         _hardlink_or_skip(spelling, target)
         monkeypatch.syspath_prepend(str(spelling.parent))
-        install_finder(_entry_with_identity(target))
+        install_finder(_sources_for_with_identity(target))
 
-        assert _import('twin_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('twin_mod').VALUE == 'instrumented'
 
     def it_leaves_a_different_file_with_the_same_name_alone(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -635,9 +671,9 @@ class DescribeGremlinFinderServesByFileIdentity:
         namesake.parent.mkdir()
         namesake.write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(namesake.parent))
-        install_finder(_entry_with_identity(target))
+        install_finder(_sources_for_with_identity(target))
 
-        assert _import('namesake_mod').VALUE == 'original'  # type: ignore[attr-defined]
+        assert _import('namesake_mod').VALUE == 'original'
 
     def it_never_matches_on_an_entry_without_an_identity(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -649,9 +685,40 @@ class DescribeGremlinFinderServesByFileIdentity:
         spelling.parent.mkdir()
         _hardlink_or_skip(spelling, target)
         monkeypatch.syspath_prepend(str(spelling.parent))
-        install_finder(_entry(target))
+        install_finder(_sources_for(target))
 
-        assert _import('anon_mod').VALUE == 'original'  # type: ignore[attr-defined]
+        assert _import('anon_mod').VALUE == 'original'
+
+    def it_reaches_a_differently_named_hard_link_to_a_target_through_file_identity(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'real' / 'core_impl.py'
+        target.parent.mkdir()
+        target.write_text(ORIGINAL)
+        alias = tmp_path / 'vendor' / 'thing.py'
+        alias.parent.mkdir()
+        _hardlink_or_skip(alias, target)
+        monkeypatch.syspath_prepend(str(alias.parent))
+        install_finder(_sources_for_with_identity(target))
+
+        assert _import('thing').VALUE == 'instrumented'
+
+    def it_calls_file_identity_when_basename_misses_to_reach_differently_named_symlinks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
+    ) -> None:
+        target = tmp_path / 'core_impl.py'
+        target.write_text(ORIGINAL)
+        alias = tmp_path / 'differently_named.py'
+        _symlink_or_skip(alias, target)
+        monkeypatch.syspath_prepend(str(tmp_path))
+        install_finder(_sources_for_with_identity(target))
+        called: list[str] = []
+        original_file_identity = origin_finder.file_identity
+        monkeypatch.setattr(origin_finder, 'file_identity', _recording(original_file_identity, called))
+
+        _import('differently_named')
+
+        assert called == [str(alias)]
 
 
 @pytest.mark.medium
@@ -681,7 +748,7 @@ class DescribeFileIdentityOfZeroInode:
     """ReFS and network drives report an inode of 0 or reuse inodes, so a zero inode is no identity."""
 
     def it_is_none_when_the_filesystem_reports_an_inode_of_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(origin_finder.os, 'stat', lambda _path: SimpleNamespace(st_dev=7, st_ino=0))
+        monkeypatch.setattr(os, 'stat', lambda _path: SimpleNamespace(st_dev=7, st_ino=0))
 
         assert file_identity('anything.py') is None
 
@@ -696,12 +763,10 @@ class DescribeGremlinFinderBasenamePrefilter:
         tmp_path.joinpath('target_mod.py').write_text(ORIGINAL)
         tmp_path.joinpath('bystander_mod.py').write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(tmp_path / 'target_mod.py'))
+        install_finder(_sources_for(tmp_path / 'target_mod.py'))
         resolved: list[str] = []
         original_normalize_origin = origin_finder.normalize_origin
-        monkeypatch.setattr(
-            origin_finder, 'normalize_origin', lambda path: resolved.append(path) or original_normalize_origin(path)
-        )
+        monkeypatch.setattr(origin_finder, 'normalize_origin', _recording(original_normalize_origin, resolved))
 
         _import('bystander_mod')
 
@@ -717,9 +782,9 @@ class DescribeGremlinFinderBasenamePrefilter:
         namesake.parent.mkdir()
         namesake.write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(namesake.parent))
-        install_finder(_entry(target))
+        install_finder(_sources_for(target))
 
-        assert _import('shared_name_mod').VALUE == 'original'  # type: ignore[attr-defined]
+        assert _import('shared_name_mod').VALUE == 'original'
 
     def it_matches_file_names_without_regard_to_case(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -727,9 +792,9 @@ class DescribeGremlinFinderBasenamePrefilter:
         origin = tmp_path / 'MixedCaseMod.py'
         origin.write_text(ORIGINAL)
         monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry(origin))
+        install_finder(_sources_for(origin))
 
-        assert _import('MixedCaseMod').VALUE == 'instrumented'  # type: ignore[attr-defined]
+        assert _import('MixedCaseMod').VALUE == 'instrumented'
 
     def it_serves_a_file_under_the_name_listed_for_it_even_when_its_origin_is_named_differently(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
@@ -739,44 +804,11 @@ class DescribeGremlinFinderBasenamePrefilter:
         alias = tmp_path / 'listed_alias_mod.py'
         _symlink_or_skip(alias, target)
         monkeypatch.syspath_prepend(str(tmp_path))
-        sources = _entry(target)
+        sources = _sources_for(target)
         sources[normalize_origin(str(target))]['file_names'] = ['core_impl.py', 'listed_alias_mod.py']
         install_finder(sources)
 
-        assert _import('listed_alias_mod').VALUE == 'instrumented'  # type: ignore[attr-defined]
-
-    def it_reaches_a_differently_named_hard_link_to_a_target_through_file_identity(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
-    ) -> None:
-        target = tmp_path / 'real' / 'core_impl.py'
-        target.parent.mkdir()
-        target.write_text(ORIGINAL)
-        alias = tmp_path / 'vendor' / 'thing.py'
-        alias.parent.mkdir()
-        _hardlink_or_skip(alias, target)
-        monkeypatch.syspath_prepend(str(alias.parent))
-        install_finder(_entry_with_identity(target))
-
-        assert _import('thing').VALUE == 'instrumented'  # type: ignore[attr-defined]
-
-    def it_calls_file_identity_when_basename_misses_to_reach_differently_named_symlinks(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, install_finder: Install
-    ) -> None:
-        target = tmp_path / 'core_impl.py'
-        target.write_text(ORIGINAL)
-        alias = tmp_path / 'differently_named.py'
-        _symlink_or_skip(alias, target)
-        monkeypatch.syspath_prepend(str(tmp_path))
-        install_finder(_entry_with_identity(target))
-        called: list[str] = []
-        original_file_identity = origin_finder.file_identity
-        monkeypatch.setattr(
-            origin_finder, 'file_identity', lambda path: called.append(path) or original_file_identity(path)
-        )
-
-        _import('differently_named')
-
-        assert called == [str(alias)]
+        assert _import('listed_alias_mod').VALUE == 'instrumented'
 
 
 @pytest.mark.small
@@ -798,3 +830,44 @@ class DescribeSharedFinderSource:
     @pytest.mark.parametrize('script', [_get_bootstrap_script, _get_lightweight_runner_script])
     def it_embeds_the_finder_module_verbatim(self, script: Callable[[], str]) -> None:
         assert inspect.getsource(origin_finder) in script()
+
+
+@pytest.mark.small
+class DescribeInstrumentedEntrySchema:
+    """The sources.json entry has one checked definition, with only what the finder needs required."""
+
+    def it_requires_only_the_source_and_the_origin(self) -> None:
+        assert origin_finder.InstrumentedEntry.__required_keys__ == {'source', 'origin'}
+
+    def it_treats_the_tree_the_identity_and_the_file_names_as_optional(self) -> None:
+        assert origin_finder.InstrumentedEntry.__optional_keys__ == {'tree', 'identity', 'file_names'}
+
+
+@pytest.mark.small
+class DescribeFinderModuleIsPasteable:
+    """The finder module is pasted into generated scripts, which run without pytest-gremlins on the path."""
+
+    def _tree(self) -> ast.Module:
+        return ast.parse(inspect.getsource(origin_finder))
+
+    def it_imports_only_standard_library_modules_at_module_level(self) -> None:
+        imported = {
+            name.split('.')[0]
+            for node in self._tree().body
+            for name in (
+                [alias.name for alias in node.names]
+                if isinstance(node, ast.Import)
+                else [node.module or '']
+                if isinstance(node, ast.ImportFrom)
+                else []
+            )
+        }
+
+        assert imported <= sys.stdlib_module_names
+
+    def it_has_no_future_import(self) -> None:
+        future_imports = [
+            node for node in ast.walk(self._tree()) if isinstance(node, ast.ImportFrom) and node.module == '__future__'
+        ]
+
+        assert future_imports == []
