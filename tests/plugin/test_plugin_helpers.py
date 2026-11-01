@@ -363,13 +363,11 @@ class DescribeBuildTestCommand:
         assert 'addopts=' in result
 
     def it_includes_no_cov_when_pytest_cov_is_loaded(self) -> None:
-        """When pytest-cov is loaded, --no-cov is passed through."""
         result = _build_test_command(None, pytest_cov_options=['--no-cov'])
 
         assert '--no-cov' in result
 
     def it_omits_no_cov_when_pytest_cov_is_not_loaded(self) -> None:
-        """When pytest-cov is not loaded, no --no-cov is passed."""
         result = _build_test_command(None)
 
         assert '--no-cov' not in result
@@ -401,7 +399,6 @@ class DescribeBuildTestCommandFileIO:
         assert 'addopts=' in result
 
     def it_includes_no_cov_when_pytest_cov_is_loaded_with_instrumented_dir(self, tmp_path: Path) -> None:
-        """When pytest-cov is loaded with instrumented_dir, --no-cov is passed through."""
         instrumented_dir = tmp_path / 'instrumented'
         instrumented_dir.mkdir()
 
@@ -410,7 +407,6 @@ class DescribeBuildTestCommandFileIO:
         assert '--no-cov' in result
 
     def it_omits_no_cov_when_pytest_cov_is_not_loaded_with_instrumented_dir(self, tmp_path: Path) -> None:
-        """When pytest-cov is not loaded with instrumented_dir, no --no-cov is passed."""
         instrumented_dir = tmp_path / 'instrumented'
         instrumented_dir.mkdir()
 

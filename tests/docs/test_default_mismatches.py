@@ -51,3 +51,21 @@ class DescribeDefaultCommentPrefixMatch:
 
     def it_rejects_a_comment_stating_1200_when_the_table_says_120(self):
         assert default_comment_mismatches({'coverage_timeout': '1200'}, {'coverage_timeout': '`120`'}) != []
+
+    def it_rejects_a_decimal_comment_when_the_table_states_its_integer_part(self):
+        problems = default_comment_mismatches({'mutant_timeout': '30.5'}, {'mutant_timeout': '`30`'})
+
+        assert problems == ['mutant_timeout: the TOML example says "Default: 30.5", the options table says \'30\'']
+
+    def it_rejects_a_longer_list_when_the_table_states_its_first_item(self):
+        problems = default_comment_mismatches({'report': '"console", "html"'}, {'report': '`"console"`'})
+
+        assert problems == [
+            'report: the TOML example says "Default: "console", "html"", the options table says \'console\''
+        ]
+
+    def it_accepts_a_single_quoted_literal_equal_to_the_table_default(self):
+        assert default_comment_mismatches({'report': "'console'"}, {'report': '`"console"`'}) == []
+
+    def it_accepts_a_comment_that_explains_the_default_in_parentheses(self):
+        assert default_comment_mismatches({'workers': 'not set (one at a time)'}, {'workers': 'not set'}) == []
