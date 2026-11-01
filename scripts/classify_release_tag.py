@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify a release tag: is it a PEP 440 pre-release (``aN``, ``bN`` or ``rcN``)?
+"""Classify a release tag: is it a PEP 440 pre-release (``aN``, ``bN``, ``rcN``, ``cN`` or ``.devN``)?
 
 The release workflow runs this before creating the GitHub Release and passes the result to
 ``prerelease:``. The tag is parsed, not substring-matched, so ``v1.9.0b3`` is a pre-release and
@@ -15,11 +15,17 @@ from pathlib import Path
 import re
 import sys
 
-PRERELEASE_TAG_PATTERN = re.compile(r'v[0-9]+\.[0-9]+\.[0-9]+(?:a|b|rc)[0-9]+')
+# ``uv run --no-project`` has no ``packaging``, so the pre-release rule is spelled out. It covers every tag that
+# ``verify_release_tag.py`` accepts and PEP 440 treats as a pre-release: a pre-release segment, a dev segment, or both.
+PRERELEASE_TAG_PATTERN = re.compile(
+    r'v[0-9]+\.[0-9]+\.[0-9]+'
+    r'(?:(?:alpha|beta|preview|pre|rc|a|b|c)[0-9]*(?:\.post[0-9]+)?(?:\.dev[0-9]+)?'
+    r'|(?:\.post[0-9]+)?\.dev[0-9]+)'
+)
 
 
 def is_prerelease(tag: str) -> bool:
-    """Return True when the tag is ``vMAJOR.MINOR.PATCH`` followed by a PEP 440 ``aN``, ``bN`` or ``rcN`` segment."""
+    """Return True when the tag is ``vMAJOR.MINOR.PATCH`` followed by a PEP 440 pre-release or dev segment."""
     return PRERELEASE_TAG_PATTERN.fullmatch(tag) is not None
 
 

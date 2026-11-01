@@ -18,7 +18,17 @@ RELEASE_WORKFLOW = ROOT / '.github' / 'workflows' / 'release.yml'
 
 PRERELEASE_TAGS = ['v1.9.0a1', 'v1.8.0b8', 'v1.9.0b3', 'v1.9.0rc1', 'v2.0.0rc12']
 FINAL_TAGS = ['v1.12.0', 'v1.12.2', 'v0.1.0', 'v10.20.30']
-NON_PEP440_TAGS = ['v1.9.0-beta.1', 'v1.9.0alpha1', 'v1.9.0.dev1', 'v1.9.0src', 'v1.9.0b', 'v1.9.0post1']
+EXTENDED_PRERELEASE_TAGS = [
+    'v1.9.0.dev1',
+    'v1.9.0b1.dev2',
+    'v1.9.0rc1.post1',
+    'v1.9.0c1',
+    'v1.9.0alpha1',
+    'v1.9.0b',
+    'v1.9.0.post1.dev1',
+]
+VERIFY_ACCEPTED_NON_PRERELEASE_TAGS = ['v1.9.0src', 'v1.9.0post1', 'v1.9.0.post1', 'v1.9.0.']
+NON_PEP440_TAGS = ['v1.9.0-beta.1', 'v1.9.0src', 'v1.9.0post1', 'v1.9.0.post1', 'v1.9.0.']
 
 
 def _load() -> ModuleType:
@@ -40,6 +50,23 @@ class DescribeIsPrerelease:
     @pytest.mark.parametrize('tag', PRERELEASE_TAGS)
     def it_marks_pep440_pre_release_tags_as_prerelease(self, tag: str) -> None:
         assert _load().is_prerelease(tag) is True
+
+    @pytest.mark.parametrize('tag', EXTENDED_PRERELEASE_TAGS)
+    def it_marks_every_verify_accepted_pep440_pre_release_as_prerelease(self, tag: str) -> None:
+        assert _load().is_prerelease(tag) is True
+
+    @pytest.mark.parametrize(
+        'tag', PRERELEASE_TAGS + EXTENDED_PRERELEASE_TAGS + FINAL_TAGS + VERIFY_ACCEPTED_NON_PRERELEASE_TAGS
+    )
+    def it_agrees_with_packaging_on_every_tag(self, tag: str) -> None:
+        packaging_version = pytest.importorskip('packaging.version')
+
+        try:
+            expected = packaging_version.Version(tag).is_prerelease
+        except packaging_version.InvalidVersion:
+            expected = False
+
+        assert _load().is_prerelease(tag) is expected
 
     @pytest.mark.parametrize('tag', FINAL_TAGS)
     def it_marks_final_tags_as_not_prerelease(self, tag: str) -> None:
