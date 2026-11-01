@@ -119,9 +119,9 @@ class DescribeXdistOptionsWithAutoloadOffByTheRunsInputs:
 @pytest.mark.small
 @pytest.mark.usefixtures('autoload_enabled')
 class DescribeXdistOptionsWithAnInheritedBlock:
-    @pytest.mark.parametrize('block', ['no:xdist', 'no:xdist.plugin'])
+    @pytest.mark.parametrize('block', ['-p no:xdist', '-p no:xdist.plugin', '-pno:xdist'])
     def it_loads_xdist_again_when_addopts_blocks_it(self, block: str, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv('PYTEST_ADDOPTS', f'-p {block}')
+        monkeypatch.setenv('PYTEST_ADDOPTS', block)
 
         assert _xdist_options_for(_config(loaded=('xdist',)), []) == (['-p', 'xdist'], True)
 

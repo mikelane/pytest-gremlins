@@ -3456,20 +3456,14 @@ _XDIST_BLOCKS = frozenset({'no:xdist', 'no:xdist.plugin'})
 
 
 def _gremlin_runs_inherit_an_xdist_block(config: pytest.Config) -> bool:
-    """Return whether ``addopts`` or ``PYTEST_ADDOPTS`` hold ``-p no:xdist`` (or ``-pno:xdist``)."""
+    """Return whether ``addopts`` or ``PYTEST_ADDOPTS`` block xdist: ``-p no:xdist`` or ``-p no:xdist.plugin``.
+
+    The attached spelling (``-pno:xdist``) counts too.
+    """
     tokens = _arguments_gremlin_runs_inherit(config)
     blocked = {value for flag, value in pairwise(tokens) if flag == '-p'}
     blocked |= {argument.removeprefix('-p') for argument in tokens if argument.startswith('-p')}
     return not _XDIST_BLOCKS.isdisjoint(name.strip() for name in blocked)
-
-
-def _loader_options_for_xdist_block(config: pytest.Config) -> list[str]:
-    """Return the ``-p`` loader that overrides an inherited xdist block, for a session that loaded xdist again.
-
-    The session's command line unblocked and loaded xdist, which gremlin runs never see, so they would reject
-    ``-n``.  The later ``-p`` overrides the inherited block.
-    """
-    return _loader_options_for(config, _XDIST_PLUGIN_NAMES)
 
 
 def _xdist_options_for(config: pytest.Config, rerun_options: Sequence[str]) -> tuple[list[str], bool]:
@@ -3480,16 +3474,28 @@ def _xdist_options_for(config: pytest.Config, rerun_options: Sequence[str]) -> t
     would register the module twice).  Gremlin runs that start with autoload disabled (see
     :func:`_gremlin_runs_have_autoload_disabled`, or the flag the rerun options forward) register nothing
     themselves, so they get ``-p`` and the name the session registered it under, and ``-n 0`` goes out only then.
+    Gremlin runs that autoload still do not register xdist when the inherited ``addopts`` or ``PYTEST_ADDOPTS``
+    hold ``-p no:xdist`` (see :func:`_gremlin_runs_inherit_an_xdist_block`) and only the session's own command
+    line, which is not passed on, loaded it again (issue #685).  They get the same loader as runs without
+    autoload, and the later ``-p`` overrides the inherited block.  A block that hides xdist from the session too
+    leaves nothing registered, so nothing is forwarded.
     A session whose xdist is registered under an unknown name gets neither, which errs toward a missed kill.
+
+    Args:
+        config: The session's pytest config, read for the registered plugins and the inherited ``addopts``.
+        rerun_options: The options forwarded to gremlin runs by :func:`_rerun_options_for`, checked for
+            ``--disable-plugin-autoload``.
 
     Returns:
         The loader options and whether to forward ``-n 0``.
     """
-    if _gremlin_runs_have_autoload_disabled(config) or _DISABLE_PLUGIN_AUTOLOAD_FLAG in rerun_options:
+    gremlin_runs_skip_xdist = (
+        _gremlin_runs_have_autoload_disabled(config)
+        or _DISABLE_PLUGIN_AUTOLOAD_FLAG in rerun_options
+        or _gremlin_runs_inherit_an_xdist_block(config)
+    )
+    if gremlin_runs_skip_xdist:
         loader_options = _loader_options_for(config, _XDIST_PLUGIN_NAMES)
-        return loader_options, bool(loader_options)
-    if _gremlin_runs_inherit_an_xdist_block(config):
-        loader_options = _loader_options_for_xdist_block(config)
         return loader_options, bool(loader_options)
     return [], config.pluginmanager.hasplugin(_XDIST_ENTRY_POINT_NAME)
 
