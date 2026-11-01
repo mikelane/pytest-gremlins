@@ -152,6 +152,12 @@ from pytest_gremlins.rerun_options import (
     session_rerun_budget,
     unforwarded_rerun_key_warning,
 )
+from pytest_gremlins.rootdir_mismatch import (
+    argument_file_mismatch_message,
+    argument_files_only_the_session_can_read,
+    node_id_mismatch_message,
+    node_ids_that_do_not_resolve,
+)
 from pytest_gremlins.xdist_options import (
     addopts_without_xdist,
     env_with_stripped_addopts,
@@ -1094,6 +1100,7 @@ def pytest_configure(config: pytest.Config) -> None:
     xdist_active = xdist_numprocesses not in (None, 0)
 
     rootdir = _get_rootdir(config)
+    _reject_argument_files_gremlin_runs_cannot_read(config, rootdir)
 
     cli_max_pardons_pct, cli_max_pardons = _read_validated_pardon_limits(config)
 
@@ -1354,6 +1361,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     rootdir = _get_rootdir(session.config)
     node_ids = [item.nodeid for item in session.items]
     normalized_node_ids = _make_node_ids_relative(node_ids, rootdir)
+    _reject_node_ids_gremlin_runs_cannot_resolve(session.items, normalized_node_ids, rootdir)
     gremlin_session.test_node_ids = {node_id: node_id for node_id in normalized_node_ids}
 
     name_to_nodes: dict[str, list[str]] = {}
@@ -1381,6 +1389,16 @@ def pytest_collection_finish(session: pytest.Session) -> None:
         return
 
     _generate_gremlins(gremlin_session, source_files, rootdir)
+
+
+def _reject_node_ids_gremlin_runs_cannot_resolve(
+    items: Sequence[pytest.Item], normalized_node_ids: Sequence[str], rootdir: Path
+) -> None:
+    """Stop the run when no collected test has a node id that names its file from the rootdir (#690)."""
+    tests = [(item.path, node_id) for item, node_id in zip(items, normalized_node_ids, strict=True)]
+    unresolved = node_ids_that_do_not_resolve(rootdir, tests)
+    if tests and len(unresolved) == len(tests):
+        raise pytest.UsageError(node_id_mismatch_message(unresolved, rootdir))
 
 
 def _hash_sources_and_tests_for_cache(
@@ -3334,11 +3352,24 @@ def _arguments_gremlin_runs_inherit(config: pytest.Config) -> list[str]:
     (pytest rejects an unreadable one as a usage error before this runs), which errs toward a missed loader and
     so toward a missed kill rather than a false one.
     """
+    return expand_argument_files(_unexpanded_inherited_arguments(config), base_dir=_get_rootdir(config))
+
+
+def _unexpanded_inherited_arguments(config: pytest.Config) -> list[str]:
+    """Return the ``addopts`` and ``PYTEST_ADDOPTS`` tokens, with each ``@file`` argument still unexpanded."""
     try:
         pytest_addopts_args = shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))
     except ValueError:
         pytest_addopts_args = []
-    return expand_argument_files([*config.getini('addopts'), *pytest_addopts_args], base_dir=_get_rootdir(config))
+    return [*config.getini('addopts'), *pytest_addopts_args]
+
+
+def _reject_argument_files_gremlin_runs_cannot_read(config: pytest.Config, rootdir: Path) -> None:
+    """Stop the run when an inherited relative ``@file`` exists only from the session's starting directory (#686)."""
+    session_dir = config.invocation_params.dir
+    unreadable = argument_files_only_the_session_can_read(_unexpanded_inherited_arguments(config), session_dir, rootdir)
+    if unreadable:
+        raise pytest.UsageError(argument_file_mismatch_message(unreadable, session_dir, rootdir))
 
 
 def _gremlin_runs_have_autoload_disabled(config: pytest.Config) -> bool:

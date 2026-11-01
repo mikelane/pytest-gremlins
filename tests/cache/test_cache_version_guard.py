@@ -57,7 +57,7 @@ RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
 # One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
 # between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
 RECORDED_DIGESTS: dict[str, str] = {
-    'argument_files.py': '51f410675614800dad41f0777b0e10cd5f708f4c405abbe22369c0f3ff29f320',  # pragma: allowlist secret
+    'argument_files.py': '1bd1374b822df8936a6967d37d38c95b04ba7b325d0cbceb677c4e32f6ecf2a6',  # pragma: allowlist secret
     # --
     'ast_copy.py': 'f94a3572585f293c0798490a1685f4d77eb970f67c0f53556dcef29826998832',  # pragma: allowlist secret
     # --
@@ -161,7 +161,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '8d90451d1a0b75a2a0007544aff4c83c63fae3290419ac3abf68d7fc84b3d703',  # pragma: allowlist secret
+    'plugin.py': 'd36d50cfc102801beb6cb92c0f4b121923f7f65a2ff6b10aa9d8331d378d4516',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -172,6 +172,8 @@ RECORDED_DIGESTS: dict[str, str] = {
     'reporting/types.py': 'f732c4d57c6173836ac0244f4176fded3e86da043c768d9b55386f42a57d0492',  # pragma: allowlist secret  # noqa: E501
     # --
     'rerun_options.py': '4ff81ee1b119e41b6904e8e8b22b2d2bc54e6ec80a467056314579df2e9abf0c',  # pragma: allowlist secret
+    # --
+    'rootdir_mismatch.py': '4326966179c9c20eb545d72798a88599d47204eb4155e6a75bbe5b774a3b2bf8',  # pragma: allowlist secret  # noqa: E501
     # --
     'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }
