@@ -6,18 +6,13 @@ With ``pythonpath = a``, tests import ``a/util/core.py`` as ``util.core``. It us
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
-_EXECUTION_MODES = {
-    'default': (),
-    'parallel': ('--gremlin-parallel', '--gremlin-workers=2'),
-    'batch': ('--gremlin-batch',),
-    'xdist': ('-n', '2'),
-}
-
-_COMMON_ARGS = ('--gremlins', '--gremlin-operators=comparison', '-p', 'no:cacheprovider')
+from .module_name_runs import (
+    COMMON_ARGS,
+    EXECUTION_MODES,
+    verdicts,
+)
 
 _UTIL_INIT = """
 from .core import positive
@@ -62,15 +57,6 @@ def test_small():
 """
 
 
-def _count(output: str, label: str) -> int:
-    match = re.search(rf'{label}: (\d+) gremlins', output)
-    return int(match.group(1)) if match else 0
-
-
-def _verdicts(output: str) -> tuple[int, int, int]:
-    return _count(output, 'Zapped'), _count(output, 'Survived'), _count(output, 'Error')
-
-
 def _write_util_package(pytester: pytest.Pytester, entry: str) -> None:
     package = pytester.path / entry / 'util'
     package.mkdir(parents=True)
@@ -83,18 +69,16 @@ def _write_util_package(pytester: pytest.Pytester, entry: str) -> None:
 class DescribePythonpathModuleNames:
     """A gremlin that a test catches is ZAPPED when its package lives under a ``pythonpath`` entry."""
 
-    @pytest.mark.parametrize('mode', list(_EXECUTION_MODES))
+    @pytest.mark.parametrize('mode', list(EXECUTION_MODES))
     def it_zaps_gremlins_in_a_package_on_a_non_src_pythonpath_entry(
         self, pytester_with_markers: pytest.Pytester, mode: str
     ) -> None:
         pytester_with_markers.makeini('[pytest]\npythonpath = a\n')
         _write_util_package(pytester_with_markers, 'a')
 
-        result = pytester_with_markers.runpytest_subprocess(
-            *_COMMON_ARGS, '--gremlin-targets=a', *_EXECUTION_MODES[mode]
-        )
+        result = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, '--gremlin-targets=a', *EXECUTION_MODES[mode])
 
-        assert _verdicts(result.stdout.str()) == (4, 0, 0)
+        assert verdicts(result.stdout.str()) == (4, 0, 0)
 
     def it_zaps_gremlins_in_a_package_on_a_nested_pythonpath_entry(
         self, pytester_with_markers: pytest.Pytester
@@ -102,15 +86,15 @@ class DescribePythonpathModuleNames:
         pytester_with_markers.makeini('[pytest]\npythonpath = libs/vendor\n')
         _write_util_package(pytester_with_markers, 'libs/vendor')
 
-        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=libs')
+        result = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, '--gremlin-targets=libs')
 
-        assert _verdicts(result.stdout.str()) == (4, 0, 0)
+        assert verdicts(result.stdout.str()) == (4, 0, 0)
 
     def it_zaps_a_plain_module_on_a_pythonpath_entry(self, pytester_with_markers: pytest.Pytester) -> None:
         pytester_with_markers.makeini('[pytest]\npythonpath = a\n')
         pytester_with_markers.mkdir('a').joinpath('lone.py').write_text(_LONE_MODULE)
         pytester_with_markers.mkdir('tests').joinpath('test_lone.py').write_text(_LONE_MODULE_TESTS)
 
-        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=a')
+        result = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, '--gremlin-targets=a')
 
-        assert _verdicts(result.stdout.str()) == (2, 0, 0)
+        assert verdicts(result.stdout.str()) == (2, 0, 0)

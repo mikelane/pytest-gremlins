@@ -8,18 +8,13 @@ and a virtualenv-like directory inside the project.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
-_COMMON_ARGS = ('--gremlins', '--gremlin-operators=comparison', '-p', 'no:cacheprovider')
-
-_EXECUTION_MODES = {
-    'default': (),
-    'parallel': ('--gremlin-parallel', '--gremlin-workers=2'),
-    'batch': ('--gremlin-batch',),
-    'xdist': ('-n', '2'),
-}
+from .module_name_runs import (
+    COMMON_ARGS,
+    EXECUTION_MODES,
+    verdicts,
+)
 
 _POSITIVE = """
 def positive(n):
@@ -122,21 +117,12 @@ def test_positive():
 """
 
 
-def _count(output: str, label: str) -> int:
-    match = re.search(rf'{label}: (\d+) gremlins', output)
-    return int(match.group(1)) if match else 0
-
-
-def _verdicts(output: str) -> tuple[int, int, int]:
-    return _count(output, 'Zapped'), _count(output, 'Survived'), _count(output, 'Error')
-
-
 @pytest.mark.medium
 @pytest.mark.usefixtures('utf8_child_output')
 class DescribeOriginResolvedModuleNames:
     """Whatever name the tests import a target under, the gremlins in its file are scored there."""
 
-    @pytest.mark.parametrize('mode', list(_EXECUTION_MODES))
+    @pytest.mark.parametrize('mode', list(EXECUTION_MODES))
     def it_zaps_a_package_served_by_a_meta_path_finder_from_outside_sys_path(
         self, pytester_with_markers: pytest.Pytester, mode: str
     ) -> None:
@@ -148,10 +134,10 @@ class DescribeOriginResolvedModuleNames:
         pytester_with_markers.mkdir('tests').joinpath('test_edit.py').write_text(_EDITABLE_TESTS)
 
         result = pytester_with_markers.runpytest_subprocess(
-            *_COMMON_ARGS, '--gremlin-targets=store/editpkg', *_EXECUTION_MODES[mode]
+            *COMMON_ARGS, '--gremlin-targets=store/editpkg', *EXECUTION_MODES[mode]
         )
 
-        assert _verdicts(result.stdout.str()) == (2, 0, 0)
+        assert verdicts(result.stdout.str()) == (2, 0, 0)
 
     @pytest.mark.parametrize('mode', ['default', 'xdist'])
     def it_zaps_a_file_that_the_tests_import_under_two_names(
@@ -168,10 +154,10 @@ class DescribeOriginResolvedModuleNames:
         tests.joinpath('test_nested_name.py').write_text(_TESTS_BY_NESTED_NAME)
 
         result = pytester_with_markers.runpytest_subprocess(
-            *_COMMON_ARGS, '--gremlin-targets=a/util/core.py', *_EXECUTION_MODES[mode]
+            *COMMON_ARGS, '--gremlin-targets=a/util/core.py', *EXECUTION_MODES[mode]
         )
 
-        assert _verdicts(result.stdout.str()) == (4, 0, 0)
+        assert verdicts(result.stdout.str()) == (4, 0, 0)
 
     def it_zaps_every_gremlin_when_a_target_module_is_a_symlink_to_another_target(
         self, pytester_with_markers: pytest.Pytester
@@ -187,9 +173,9 @@ class DescribeOriginResolvedModuleNames:
             pytest.skip('this platform cannot create symlinks')
         pytester_with_markers.mkdir('tests').joinpath('test_core.py').write_text(_SYMLINK_ALIAS_TESTS)
 
-        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
+        result = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, '--gremlin-targets=src/mypkg')
 
-        assert _verdicts(result.stdout.str()) == (2, 0, 0)
+        assert verdicts(result.stdout.str()) == (2, 0, 0)
 
     def it_zaps_a_target_the_tests_import_through_a_differently_named_symlink_outside_the_targets(
         self, pytester_with_markers: pytest.Pytester
@@ -208,9 +194,9 @@ class DescribeOriginResolvedModuleNames:
             _CORE_TESTS.replace('from mypkg.core import', 'from thing import')
         )
 
-        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
+        result = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, '--gremlin-targets=src/mypkg')
 
-        assert _verdicts(result.stdout.str()) == (2, 0, 0)
+        assert verdicts(result.stdout.str()) == (2, 0, 0)
 
     def it_zaps_a_target_the_import_system_spells_with_different_case_than_the_disk(
         self, pytester_with_markers: pytest.Pytester
@@ -224,9 +210,9 @@ class DescribeOriginResolvedModuleNames:
         package.joinpath('core.py').write_text(_POSITIVE)
         pytester_with_markers.mkdir('tests').joinpath('test_core.py').write_text(_CORE_TESTS)
 
-        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
+        result = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, '--gremlin-targets=src/mypkg')
 
-        assert _verdicts(result.stdout.str()) == (2, 0, 0)
+        assert verdicts(result.stdout.str()) == (2, 0, 0)
 
     def it_names_modules_the_same_when_a_virtualenv_lives_inside_the_project(
         self, pytester_with_markers: pytest.Pytester
@@ -243,6 +229,6 @@ class DescribeOriginResolvedModuleNames:
         package.joinpath('core.py').write_text(_POSITIVE)
         pytester_with_markers.mkdir('tests').joinpath('test_core.py').write_text(_SRC_TESTS)
 
-        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=src/mypkg')
+        result = pytester_with_markers.runpytest_subprocess(*COMMON_ARGS, '--gremlin-targets=src/mypkg')
 
-        assert _verdicts(result.stdout.str()) == (2, 0, 0)
+        assert verdicts(result.stdout.str()) == (2, 0, 0)
