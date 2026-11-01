@@ -73,6 +73,25 @@ class DescribeCheckCacheKept:
         assert len(problems) == 1
         assert 'empty' in problems[0]
 
+    @pytest.mark.parametrize('line', ['    (cache kept: x)', '\t(cache kept: x)'])
+    def it_ignores_a_line_inside_an_indented_code_block(self, line: str) -> None:
+        preamble = f'Intro.\n\n{line}\n'
+
+        assert checker.cache_kept_reasons(preamble) == []
+
+    @pytest.mark.parametrize('line', ['(Cache kept: x)', '(CACHE KEPT: x)'])
+    def it_hints_at_the_expected_spelling_when_the_case_differs(self, line: str) -> None:
+        problems = checker.check_cache_kept(CHANGED, PREVIOUS, PREVIOUS, preamble=f'Intro.\n\n{line}\n')
+
+        assert 'lowercase' in problems[0]
+
+    def it_needs_a_line_only_when_guarded_code_changed_and_no_marker_was_raised(self) -> None:
+        raised = checker.Markers(cache_version='9', runner_fidelity_version=PREVIOUS.runner_fidelity_version)
+
+        assert checker.needs_cache_kept_line(CHANGED, PREVIOUS, PREVIOUS) is True
+        assert checker.needs_cache_kept_line([], PREVIOUS, PREVIOUS) is False
+        assert checker.needs_cache_kept_line(CHANGED, PREVIOUS, raised) is False
+
     def it_passes_when_one_of_two_lines_has_a_reason(self) -> None:
         preamble = '(cache kept:)\n(cache kept: logging only)\n'
 

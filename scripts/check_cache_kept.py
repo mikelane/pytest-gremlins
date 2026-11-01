@@ -62,12 +62,16 @@ from check_verdict_change import (
 PROBLEM_PREFIX = 'PROBLEM: '
 CACHE_KEPT = re.compile(r'\(cache kept:([^)]*)\)')
 LINE_FORMAT = '(cache kept: <reason>)'
+CACHE_KEPT_ANY_CASE = re.compile(r'\(cache kept:', re.IGNORECASE)
+INDENTED_CODE_LINE = re.compile(r'^(?: {4}|\t).*$', re.MULTILINE)
 
-__all__ = ['GIT', 'cache_kept_reasons', 'check_cache_kept', 'main', 'previous_release_tag']
+__all__ = ['GIT', 'cache_kept_reasons', 'check_cache_kept', 'main', 'needs_cache_kept_line', 'previous_release_tag']
 
 
 def cache_kept_reasons(preamble: str) -> list[str]:
-    """Return the stripped reason of every ``(cache kept: ...)`` line in ``preamble``; code spans do not count.
+    """Return the stripped reason of every ``(cache kept: ...)`` line in ``preamble``.
+
+    Code spans and indented code blocks do not count.
 
     Args:
         preamble: The changelog entry's prose before its first ``###`` heading.
@@ -75,8 +79,13 @@ def cache_kept_reasons(preamble: str) -> list[str]:
     Returns:
         One reason per ``(cache kept: ...)`` line, in order; a line with no reason gives an empty string.
     """
-    visible = CODE_SPAN.sub('', preamble)
+    visible = CODE_SPAN.sub('', INDENTED_CODE_LINE.sub('', preamble))
     return [match.group(1).strip() for match in CACHE_KEPT.finditer(visible)]
+
+
+def needs_cache_kept_line(changed: Sequence[str], previous: Markers, head: Markers) -> bool:
+    """Return whether the release needs a ``(cache kept: ...)`` line: guarded code changed and no marker was raised."""
+    return bool(changed) and head == previous
 
 
 def check_cache_kept(changed: Sequence[str], previous: Markers, head: Markers, preamble: str) -> list[str]:
@@ -91,7 +100,7 @@ def check_cache_kept(changed: Sequence[str], previous: Markers, head: Markers, p
     Returns:
         The problems, one line each, or an empty list when the release passes.
     """
-    if not changed or head != previous:
+    if not needs_cache_kept_line(changed, previous, head):
         return []
     reasons = cache_kept_reasons(preamble)
     if any(reasons):
@@ -102,6 +111,8 @@ def check_cache_kept(changed: Sequence[str], previous: Markers, head: Markers, p
             f'the {LINE_FORMAT} line has an empty reason; say why the cached verdicts stay valid after changes to '
             f'{files}'
         ]
+    if CACHE_KEPT_ANY_CASE.search(preamble):
+        return [f'the {LINE_FORMAT} line must be spelled in lowercase, exactly as shown, to be recognized']
     return [
         f'guarded code changed since the previous release ({files}), but neither CACHE_VERSION nor '
         f'RUNNER_FIDELITY_VERSION was raised. Raise one, or keep the cache on purpose with a line {LINE_FORMAT} '
@@ -189,8 +200,7 @@ def _check(args: argparse.Namespace) -> tuple[str, list[str], str]:
         raise CannotCheckError(f'cannot read the cache markers at {previous_tag}')
     changed = _changed_guarded_files(previous_tag)
     head = _head_markers()
-    needs_line = bool(changed) and head == previous
-    preamble = _preamble(changelog, version) if needs_line else ''
+    preamble = _preamble(changelog, version) if needs_cache_kept_line(changed, previous, head) else ''
     passed = f'The {version} release changes no guarded code, raises a cache marker, or states why it keeps the cache.'
     return version, check_cache_kept(changed, previous, head, preamble), passed
 
