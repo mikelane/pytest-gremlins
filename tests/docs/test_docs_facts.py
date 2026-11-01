@@ -96,6 +96,12 @@ class DescribeTomlBlocks:
         with pytest.raises(DocsFormatError, match=r'configuration\.md:1: .*TOML'):
             pytest_gremlins_toml_blocks(page)
 
+    def it_reads_a_block_fenced_with_four_backticks(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text('````toml\n[tool.pytest-gremlins]\nworkers = 2\n````\n', encoding='utf-8')
+
+        assert pytest_gremlins_toml_blocks(page) == [{'workers': 2}]
+
 
 @pytest.mark.medium
 class DescribeDefaultCells:
@@ -234,6 +240,25 @@ class DescribeTomlDefaultCommentAttribution:
         )
 
         assert toml_default_comments(page) == {'workers': 'not set'}
+
+    def it_does_not_carry_a_comment_past_a_commented_out_multi_line_array(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: all\n# operators = [\n#   "comparison",\n# ]\n'
+            'batch_size = 10\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {}
+
+    def it_does_not_carry_a_comment_past_a_commented_out_multi_line_string(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: []\n# exclude = """\n# tests/*\n# """\nbatch_size = 10\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {}
 
     def it_attributes_every_default_comment_on_the_real_configuration_page(self):
         default_comment_count = sum(
