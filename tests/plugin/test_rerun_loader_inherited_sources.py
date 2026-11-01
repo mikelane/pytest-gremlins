@@ -8,29 +8,15 @@ from __future__ import annotations
 
 import pytest
 from rerun_samples import (
+    AUTOLOAD_ENV_VAR,
+    FLAKY_UNDER_GREMLINS_TEST,
     GREMLIN_ARGS,
     SAMPLE,
     verdicts,
 )
 
-AUTOLOAD_ENV_VAR = 'PYTEST_DISABLE_PLUGIN_AUTOLOAD'
 # The session autoloads these but gremlin runs with autoload off would not; block them so only reruns differ.
 SESSION_ONLY_BLOCKS = ('-p', 'no:xdist', '-p', 'no:test_categories')
-
-FLAKY_UNDER_GREMLINS_TEST = """
-import os
-
-from sample import classify
-
-calls = []
-
-
-def test_big():
-    calls.append(1)
-    in_gremlin_run = 'ACTIVE_GREMLIN' in os.environ
-    assert len(calls) > 1 or not in_gremlin_run, 'flaky inside gremlin runs'
-    assert classify(11) == 'big'
-"""
 
 
 def _write_flaky_project(pytester: pytest.Pytester, ini: str) -> None:

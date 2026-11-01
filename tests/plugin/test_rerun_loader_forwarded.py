@@ -15,6 +15,8 @@ from typing import (
 
 import pytest
 from rerun_samples import (
+    AUTOLOAD_ENV_VAR,
+    FLAKY_UNDER_GREMLINS_TEST,
     GREMLIN_ARGS,
     SAMPLE,
     verdicts,
@@ -27,25 +29,7 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 if TYPE_CHECKING:
     from pytest_gremlins.cache.types import CachedGremlinResult
 
-AUTOLOAD_ENV_VAR = 'PYTEST_DISABLE_PLUGIN_AUTOLOAD'
 LOAD_PLUGINS = ('-p', 'gremlins', '-p', 'pytest_rerunfailures')
-
-# Fails on its first call in every gremlin run (ACTIVE_GREMLIN is set only there) and passes on a rerun, and
-# leaves the mutants at the boundary alive.
-FLAKY_UNDER_GREMLINS_TEST = """
-import os
-
-from sample import classify
-
-calls = []
-
-
-def test_big():
-    calls.append(1)
-    in_gremlin_run = 'ACTIVE_GREMLIN' in os.environ
-    assert len(calls) > 1 or not in_gremlin_run, 'flaky inside gremlin runs'
-    assert classify(11) == 'big'
-"""
 
 
 def _session_with(
@@ -184,13 +168,16 @@ def _write_flaky_project(pytester: pytest.Pytester) -> None:
 
 
 @pytest.fixture
-def autoload_disabled(pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
+def autoload_disabled(
+    pytester_with_markers: pytest.Pytester,  # noqa: ARG001 - requested only so it is created first
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Disable plugin autoload for the runs below; gremlin runs inherit it.
 
     ``-p pytest_cov.plugin`` rides along in ``PYTEST_ADDOPTS`` because gremlin runs append ``--no-cov`` whenever
     pytest-cov is installed, and they would reject it without the plugin loaded (a separate bug, issue #654).
+    Requesting ``pytester_with_markers`` first matters: pytester clears ``PYTEST_ADDOPTS`` when it is created.
     """
-    assert pytester_with_markers  # pytester clears PYTEST_ADDOPTS when it is created, so it must exist first
     monkeypatch.setenv(AUTOLOAD_ENV_VAR, '1')
     monkeypatch.setenv('PYTEST_ADDOPTS', '-p pytest_cov.plugin')
 

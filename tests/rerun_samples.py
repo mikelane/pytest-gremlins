@@ -45,6 +45,25 @@ def test_big():
     assert classify(10) == 'small'
 """
 
+# Fails on its first call in every gremlin run (ACTIVE_GREMLIN is set only there) and passes on a rerun, and
+# leaves the mutants at the boundary alive.
+FLAKY_UNDER_GREMLINS_TEST = """
+import os
+
+from sample import classify
+
+calls = []
+
+
+def test_big():
+    calls.append(1)
+    in_gremlin_run = 'ACTIVE_GREMLIN' in os.environ
+    assert len(calls) > 1 or not in_gremlin_run, 'flaky inside gremlin runs'
+    assert classify(11) == 'big'
+"""
+
+AUTOLOAD_ENV_VAR = 'PYTEST_DISABLE_PLUGIN_AUTOLOAD'
+
 GREMLIN_ARGS = (
     '--gremlins',
     '--gremlin-targets=sample.py',
