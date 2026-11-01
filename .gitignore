@@ -141,6 +141,7 @@ Thumbs.db
 
 # Project specific
 .gremlins/
+.gremlins_cache/
 *.db
 *.pstats
 mutants/
@@ -154,18 +155,7 @@ mutants/
 .ruff_cache/
 
 # Coverage
-.coverage
-.coverage.*
 coverage.json
-htmlcov/
-
-# pytest
-.pytest_cache/
-
-# Build artifacts
-*.egg-info/
-dist/
-build/
 
 # Claude Code local config
 .claude/settings.local.json
@@ -190,9 +180,6 @@ build/
 credentials.json
 service-account.json
 *-credentials.json
-
-# MkDocs build output
-site/
 
 # Demo videos (hosted on YouTube, not committed to repo)
 *.mp4
