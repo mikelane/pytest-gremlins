@@ -134,13 +134,27 @@ class DescribeMergeConfigsCliValidation:
             merge_configs(GremlinConfig(), cli_operators='comparison,bogus')
 
     @pytest.mark.parametrize(
-        'cli_operators', ['comparison,,boolean', 'comparison,', ',comparison', 'comparison, ,boolean']
+        'cli_operators', ['comparison,,boolean', 'comparison,boolean,', ',comparison,boolean', 'comparison, ,boolean']
     )
-    def it_rejects_empty_cli_operator_entries(self, cli_operators: str) -> None:
-        with pytest.raises(ValueError, match=r'--gremlin-operators has an empty entry.*got'):
-            merge_configs(GremlinConfig(), cli_operators=cli_operators)
+    def it_drops_empty_cli_operator_entries(self, cli_operators: str) -> None:
+        merged = merge_configs(GremlinConfig(), cli_operators=cli_operators)
 
-    @pytest.mark.parametrize('cli_targets', ['src,,lib', 'src,', ',src', 'src, ,lib'])
-    def it_rejects_empty_cli_target_entries(self, cli_targets: str) -> None:
-        with pytest.raises(ValueError, match=r'--gremlin-targets has an empty entry.*got'):
-            merge_configs(GremlinConfig(), cli_targets=cli_targets)
+        assert merged.operators == ['comparison', 'boolean']
+
+    @pytest.mark.parametrize(
+        ('cli_targets', 'expected'), [('src,', ['src']), (',src', ['src']), ('src, ,lib', ['src', 'lib'])]
+    )
+    def it_drops_empty_cli_target_entries(self, cli_targets: str, expected: list[str]) -> None:
+        merged = merge_configs(GremlinConfig(), cli_targets=cli_targets)
+
+        assert merged.paths == expected
+
+    def it_keeps_a_comma_only_target_list_as_origin_main_did(self) -> None:
+        merged = merge_configs(GremlinConfig(), cli_targets=',')
+
+        assert merged.paths == ['', '']
+
+    def it_keeps_a_comma_only_operator_list_as_origin_main_did(self) -> None:
+        merged = merge_configs(GremlinConfig(), cli_operators=',')
+
+        assert merged.operators == ['', '']

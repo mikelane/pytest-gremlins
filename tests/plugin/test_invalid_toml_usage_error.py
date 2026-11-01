@@ -102,8 +102,6 @@ class DescribeInvalidCliListOption:
                 '--gremlin-operators=bogus',
                 "*--gremlin-operators has unknown operator 'bogus'*Valid operators:*comparison*",
             ),
-            ('--gremlin-operators=comparison,,boolean', '*--gremlin-operators has an empty entry*'),
-            ('--gremlin-targets=target.py,', '*--gremlin-targets has an empty entry*'),
         ],
     )
     def it_exits_with_a_usage_error_naming_the_flag(

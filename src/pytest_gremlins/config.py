@@ -212,23 +212,20 @@ def _check_operator_names(names: list[str], source: str = '[tool.pytest-gremlins
             raise ValueError(f'{source} has unknown operator {name!r}. Valid operators: {", ".join(valid)}')
 
 
-def _split_cli_list(raw: str, flag: str) -> list[str]:
-    """Split a comma-separated CLI value into trimmed entries.
+def _split_cli_list(raw: str) -> list[str]:
+    """Split a comma-separated CLI value into trimmed entries, dropping empty ones.
+
+    A trailing comma is legitimate (the pre-commit recipe builds one), so empty entries are dropped. A value made
+    only of commas keeps its empty entries, as it did before validation existed.
 
     Args:
         raw: The raw option value, such as ``'comparison, boolean'``.
-        flag: The CLI flag the value came from, used in the error message.
 
     Returns:
-        The entries with surrounding whitespace removed.
-
-    Raises:
-        ValueError: If any entry is empty, naming the flag and the value.
+        The non-empty entries with surrounding whitespace removed.
     """
     entries = [entry.strip() for entry in raw.split(',')]
-    if not all(entries):
-        raise ValueError(f'{flag} has an empty entry; use a comma-separated list such as a,b, got {raw!r}')
-    return entries
+    return [entry for entry in entries if entry] or entries
 
 
 def _read_workers(tool_config: dict[str, Any], pyproject_path: Path) -> int | str | None:
@@ -746,19 +743,18 @@ def merge_configs(
         GremlinConfig with CLI values overriding file config where provided.
 
     Raises:
-        ValueError: If ``cli_operators`` names an unregistered operator or has an empty entry, or
-            ``cli_targets`` has an empty entry.
+        ValueError: If ``cli_operators`` names an unregistered operator.
     """
     operators: list[str] | None = None
     if cli_operators and cli_operators.strip():
-        operators = _split_cli_list(cli_operators, '--gremlin-operators')
-        _check_operator_names(operators, '--gremlin-operators')
+        operators = _split_cli_list(cli_operators)
+        _check_operator_names([name for name in operators if name], '--gremlin-operators')
     elif file_config.operators is not None:
         operators = file_config.operators
 
     paths: list[str] | None = None
     if cli_targets and cli_targets.strip():
-        paths = _split_cli_list(cli_targets, '--gremlin-targets')
+        paths = _split_cli_list(cli_targets)
     elif file_config.paths is not None:
         paths = file_config.paths
 
