@@ -186,7 +186,7 @@ If your project uses [uv](https://github.com/astral-sh/uv), install it, sync you
 (with pytest-gremlins in its dev dependencies), and run pytest through `uv run`:
 
 ```yaml
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
 
       - name: Install project
         run: uv sync
