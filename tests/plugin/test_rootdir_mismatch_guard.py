@@ -29,6 +29,10 @@ def test_big():
 ARGUMENT_FILE_CONTENT = '-q\n'
 USAGE_ERROR_EXIT_CODE = 4
 ROOTDIR_PHRASE = 'gremlin runs start in the rootdir'
+# The two comparison gremlins of ``n > 10`` that ``STRONG_TEST`` pins at the boundary.
+SCORED_VERDICTS = {'Zapped': 2, 'Survived': 0, 'Error': 0}
+# Lets a test in a subdirectory import ``sample`` from the project root.
+SYS_PATH_CONFTEST = 'import sys\nsys.path.insert(0, "..")\n'
 
 
 def _write_project(pytester: pytest.Pytester, *, tests_dir: str = '') -> Path:
@@ -48,9 +52,7 @@ def _assert_stopped_before_any_gremlin(result: pytest.RunResult) -> None:
 
 
 def _assert_scored_normally(result: pytest.RunResult) -> None:
-    counts = verdicts(result.stdout.str())
-    assert counts['Error'] == 0
-    assert counts['Zapped'] + counts['Survived'] > 0
+    assert verdicts(result.stdout.str()) == SCORED_VERDICTS
     assert ROOTDIR_PHRASE not in result.stderr.str() + result.stdout.str()
 
 
@@ -155,7 +157,7 @@ class DescribeArgumentFileLayoutsThatKeepWorking:
     ) -> None:
         pytester_with_markers.makeini('[pytest]\n')
         tests_directory = _write_project(pytester_with_markers, tests_dir='tests')
-        (tests_directory / 'conftest.py').write_text('import sys\nsys.path.insert(0, "..")\n', encoding='utf-8')
+        (tests_directory / 'conftest.py').write_text(SYS_PATH_CONFTEST, encoding='utf-8')
         monkeypatch.chdir(tests_directory)
 
         result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '.')
@@ -204,7 +206,7 @@ class DescribeNodeIdLayoutsThatKeepWorking:
     ) -> None:
         pytester_with_markers.makeini('[pytest]\n')
         tests_directory = _write_project(pytester_with_markers, tests_dir='tests')
-        (tests_directory / 'conftest.py').write_text('import sys\nsys.path.insert(0, "..")\n', encoding='utf-8')
+        (tests_directory / 'conftest.py').write_text(SYS_PATH_CONFTEST, encoding='utf-8')
         monkeypatch.chdir(tests_directory)
 
         result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS)
