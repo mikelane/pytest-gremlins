@@ -49,6 +49,7 @@ from coverage.exceptions import CoverageException
 import pytest
 
 from pytest_gremlins import node_id_args
+from pytest_gremlins.argument_files import expand_argument_files
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import (
     MILLISECONDS_PER_SECOND,
@@ -140,7 +141,6 @@ from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.rerun_options import (
     RerunIniResolution,
     baseline_rerun_warning,
-    expand_argument_files,
     mutant_timeout_for_items,
     rerun_cache_settings,
     rerun_ini_as_gremlin_runs_read,
