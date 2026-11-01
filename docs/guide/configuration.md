@@ -342,9 +342,14 @@ use a list, not a bare string, got 'tests/*'
     (e.g. operators = ["comparison", "boundary"]); to run all operators, remove the key.
     ```
 
-- The command-line flags are checked the same way. `--gremlin-operators` and `--gremlin-targets` take a
-  comma-separated list. Empty entries (`comparison,,boolean`, `src,`) are dropped, so a trailing comma is fine.
-  Each name in `--gremlin-operators` must be a registered operator, and the error lists the valid names.
+- The command-line flags are checked too, with one difference for empty entries. `--gremlin-operators` and
+  `--gremlin-targets` take a comma-separated list. Empty entries (`comparison,,boolean`, `src,`) are dropped, so a
+  trailing comma is fine, while an empty string in a TOML list (`operators = ["comparison", ""]`) is rejected as not a
+  list of strings. Each name in `--gremlin-operators` must be a registered operator, and the error lists the valid
+  names.
+- A value made only of commas keeps its empty entries. `--gremlin-operators=,` selects no operators: it warns
+  `Unknown operator '' requested, ignoring` and the run finds no gremlins. `--gremlin-targets=,` resolves each
+  empty entry to the project root, as if you had passed `--gremlin-targets=.`.
   `--gremlin-exclude` takes one glob pattern per use and is repeatable.
 - A `tool` entry in `pyproject.toml` that is not a table (`tool = 5`) is rejected with `[tool] must be a table of
   settings, got 5` and exit code 4, like any other wrong-typed value. You see this message only when you pass `-c`
