@@ -465,12 +465,12 @@ Project: 1000 gremlins, 8 CPU cores, 600ms per gremlin run
 
 Sequential:                     1000 x 600ms = 600 seconds
 Parallel (8 workers):           1000 x 600ms / 8 = 75 seconds
-Batch (size=10, 8 workers):     1000 x 600ms / 8 = 75 seconds, or more
+Batch (size=10, 8 workers):     1000 x 600ms / 8 = 75 seconds, usually more
 ```
 
 Batch mode starts the same 1000 subprocesses as parallel mode on the same 8 workers, so at 600ms per run it also
-takes 75 seconds or more. A batch run is never shorter than that: every gremlin runs the union of the tests covering
-any gremlin in the run, not just its own covering tests.
+takes about 75 seconds, and usually longer: every gremlin runs the union of the tests covering any gremlin in the run,
+not just its own covering tests.
 
 ---
 
