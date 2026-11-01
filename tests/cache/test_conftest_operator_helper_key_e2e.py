@@ -45,6 +45,12 @@ def _operator_conftest(import_line: str) -> str:
     return OPERATOR_BODY.format(import_line=import_line)
 
 
+@pytest.fixture(autouse=True)
+def _utf8_child_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the child pytest sessions write UTF-8, so Windows cp1252 bullets decode."""
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+
+
 @pytest.fixture
 def sibling_operator_helper(pytester: pytest.Pytester) -> Path:
     pytester.makepyfile(target=TARGET)

@@ -382,6 +382,7 @@ def _local_modules_imported_by(conftests: Iterable[Path], project_root: Path | N
         SyntaxError: A module in the chain cannot be parsed.
         MemoryError: A module in the chain is too deeply nested for the parser.
         RecursionError: A module in the chain is too deeply nested for the compiler.
+        RuntimeError: A module path loops through symlinks (``Path.resolve`` before Python 3.13).
     """
     pending = [conftest.resolve() for conftest in conftests]
     seen = set(pending)
@@ -416,7 +417,7 @@ def _conftest_operators_label(loaded_conftests: Iterable[Path], project_root: Pa
     try:
         modules = {*conftests, *_local_modules_imported_by(conftests, project_root)}
         entries = sorted({(_conftest_name(module, project_root), hasher.hash_file(module)) for module in modules})
-    except (OSError, SyntaxError, ValueError, MemoryError, RecursionError):
+    except (OSError, SyntaxError, ValueError, MemoryError, RecursionError, RuntimeError):
         return None
     return f'{_CONFTEST_OPERATORS_PREFIX}{hasher.hash_string("|".join(f"{name}:{digest}" for name, digest in entries))}'
 

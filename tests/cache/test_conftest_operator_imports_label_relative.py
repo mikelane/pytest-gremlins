@@ -97,6 +97,25 @@ class DescribeRelativeImportsInConftestOperatorLabel:
 
         installed_versions_fingerprint([op], tmp_path, [conftest])
 
+    def it_does_not_crash_when_resolving_a_symlink_loop_raises_runtime_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        conftest = tmp_path / 'conftest.py'
+        conftest.write_text('from . import helper\n')
+        (tmp_path / 'helper.py').write_text('A = 1\n')
+        op = _operator_from(conftest, 'conftest', monkeypatch)
+        path_type = type(tmp_path)
+        original_resolve = path_type.resolve
+
+        def resolve_like_python_312(self: Path, strict: bool = False) -> Path:
+            if self.name == 'helper.py':
+                raise RuntimeError(f'Symlink loop from {str(self)!r}')
+            return original_resolve(self, strict=strict)
+
+        monkeypatch.setattr(path_type, 'resolve', resolve_like_python_312)
+
+        installed_versions_fingerprint([op], tmp_path, [conftest])
+
     def it_does_not_crash_on_a_relative_import_beyond_the_filesystem_root(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
