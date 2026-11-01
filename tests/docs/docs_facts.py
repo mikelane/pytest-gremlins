@@ -39,7 +39,8 @@ DEFAULT_COLUMN_HEADER = 'Default'
 _HELP_DEFAULT = re.compile(r'\(default: ([^,)]+)')
 _DEFAULT_COMMENT = re.compile(r'^#\s*Default:\s*(.+)$')
 _TOML_ASSIGNMENT = re.compile(r'^([A-Za-z0-9_-]+)\s*=')
-_FENCE = re.compile(r'^\s*(```|~~~)\s*(\w*)')
+_FENCE = re.compile(r'^\s*(`{3,}|~{3,})\s*(\w*)')
+_MULTI_LINE_VALUE_OPENERS = ('[', '{', '"""', "'''")
 
 
 class DocsFormatError(ValueError):
@@ -168,12 +169,22 @@ def fenced_blocks(page: Path) -> list[tuple[str, list[tuple[int, str]]]]:
         fence = _FENCE.match(line)
         if fence and opening_marker is None:
             opening_marker, language, lines = fence.group(1), fence.group(2).lower(), []
-        elif fence and fence.group(1) == opening_marker:
+        elif fence and _closes(opening_marker, fence.group(1), fence.group(2)):
             blocks.append((language, lines))
             opening_marker = None
         elif opening_marker is not None:
             lines.append((number, line))
     return blocks
+
+
+def _closes(opening_marker: str | None, marker: str, trailing_text: str) -> bool:
+    """Return whether a fence line closes a block: same character, at least as long, and no info string."""
+    return (
+        opening_marker is not None
+        and not trailing_text
+        and marker[0] == opening_marker[0]
+        and len(marker) >= len(opening_marker)
+    )
 
 
 def _location(page: Path, line_number: int) -> str:
@@ -310,8 +321,11 @@ class _PendingDefault:
 
 def _is_commented_out_setting(text: str) -> bool:
     """Return whether ``text`` is a TOML assignment, not prose that happens to start with ``word =``."""
-    if not _TOML_ASSIGNMENT.match(text):
+    assignment = _TOML_ASSIGNMENT.match(text)
+    if not assignment:
         return False
+    if text[assignment.end() :].lstrip().startswith(_MULTI_LINE_VALUE_OPENERS):
+        return True
     try:
         tomllib.loads(text)
     except tomllib.TOMLDecodeError:
