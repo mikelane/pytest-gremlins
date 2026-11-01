@@ -94,7 +94,7 @@ jobs:
         run: uv sync
 
       - name: Run mypy
-        run: uv run mypy src/pytest_gremlins
+        run: uv run mypy
 
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
