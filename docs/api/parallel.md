@@ -469,8 +469,8 @@ Batch (size=10, 8 workers):     1000 x 600ms / 8 = 75 seconds, or more
 ```
 
 Batch mode starts the same 1000 subprocesses as parallel mode on the same 8 workers, so at 600ms per run it also
-takes 75 seconds. In practice a batch run usually takes longer than 600ms, because every gremlin runs the union of the tests
-covering any gremlin in the run, not just its own covering tests.
+takes 75 seconds or more. A batch run is never shorter than that: every gremlin runs the union of the tests covering
+any gremlin in the run, not just its own covering tests.
 
 ---
 
