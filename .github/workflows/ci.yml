@@ -7,9 +7,12 @@ on:
     branches: [main]
   merge_group:
 
+# A new push to a PR supersedes its older run. Pushes to main are keyed on the commit and never cancelled: auto-merge
+# can land PRs back to back, and each commit on main must finish its own run. The merge_group trigger is unused today
+# (this repo has no merge queue) and is kept for one; a merge group has its own gh-readonly-queue ref.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_COLOR: "1"
@@ -55,6 +58,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -84,6 +88,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -96,6 +101,9 @@ jobs:
       - name: Run mypy
         run: uv run mypy src/pytest_gremlins
 
+  # The large tier runs on ubuntu only (see large-tier.yml), so this matrix runs the small and medium tiers on every OS.
+  # PRs run the full matrix because the PR run is the last gate before main, and a reduced matrix would let a failure
+  # that only shows on one OS or Python version reach main.
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -112,6 +120,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: "pyproject.toml"
@@ -161,6 +170,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
           cache-dependency-glob: "pyproject.toml"
@@ -203,6 +213,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -242,6 +253,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -265,6 +277,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -315,6 +328,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 
@@ -362,6 +376,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
+          version: ">=0.13.0"
           enable-cache: true
           prune-cache: true
 

@@ -910,7 +910,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10
 
       - name: Set up Python
         uses: actions/setup-python@v5

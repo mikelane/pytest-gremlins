@@ -1,4 +1,8 @@
-"""Every setup-uv step that saves a cache prunes it first.
+"""Every setup-uv step that can save a cache prunes it first.
+
+A step saves a cache when ``enable-cache`` is ``true`` or left at its default ``auto``, which counts as on for
+``workflow_dispatch`` runs (cut-release.yml, release.yml and docs.yml are dispatched by hand). Only
+``enable-cache: false`` opts out.
 
 setup-uv v9.0.0 changed the ``prune-cache`` default from ``true`` to ``false`` (astral-sh/setup-uv#967). Without
 pruning, each saved cache holds every downloaded wheel: PR #859's caches measured 109-129 MB per key, against
@@ -17,7 +21,7 @@ import yaml
 WORKFLOWS_DIR = Path(__file__).resolve().parents[2] / '.github' / 'workflows'
 
 
-def _cached_setup_uv_steps() -> list[tuple[str, dict[str, Any]]]:
+def _caching_setup_uv_steps() -> list[tuple[str, dict[str, Any]]]:
     found = []
     for workflow_path in sorted(WORKFLOWS_DIR.glob('*.yml')):
         workflow = yaml.safe_load(workflow_path.read_text(encoding='utf-8'))
@@ -25,19 +29,19 @@ def _cached_setup_uv_steps() -> list[tuple[str, dict[str, Any]]]:
             for index, step in enumerate(job.get('steps', [])):
                 uses = step.get('uses', '')
                 inputs = step.get('with') or {}
-                if uses.startswith('astral-sh/setup-uv@') and inputs.get('enable-cache') is True:
+                if uses.startswith('astral-sh/setup-uv@') and inputs.get('enable-cache') is not False:
                     found.append((f'{workflow_path.name}:{job_id}:{index}', inputs))
     return found
 
 
-CACHED_STEPS = _cached_setup_uv_steps()
+CACHING_STEPS = _caching_setup_uv_steps()
 
 
 @pytest.mark.small
 class DescribeSetupUvCachePruning:
-    def it_finds_cached_setup_uv_steps(self) -> None:
-        assert len(CACHED_STEPS) > 0
+    def it_finds_caching_setup_uv_steps(self) -> None:
+        assert len(CACHING_STEPS) > 0
 
-    @pytest.mark.parametrize(('step_id', 'inputs'), CACHED_STEPS, ids=[step_id for step_id, _ in CACHED_STEPS])
+    @pytest.mark.parametrize(('step_id', 'inputs'), CACHING_STEPS, ids=[step_id for step_id, _ in CACHING_STEPS])
     def it_prunes_the_uv_cache_before_saving_it(self, step_id: str, inputs: dict[str, Any]) -> None:
         assert inputs.get('prune-cache') is True, f'{step_id} saves an unpruned uv cache'
