@@ -42,7 +42,7 @@ def test_flaky_2():
 
 
 @pytest.mark.large
-def test_it_does_not_time_out_the_pre_scan_when_three_flaky_tests_wait_out_the_rerun_delay(
+def it_does_not_time_out_the_pre_scan_when_three_flaky_tests_wait_out_the_rerun_delay(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Three flaky tests each sleep --reruns-delay (6s) once: 18s of sleeps. One test's share alone
