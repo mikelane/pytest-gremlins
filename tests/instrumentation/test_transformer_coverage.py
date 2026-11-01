@@ -7,6 +7,7 @@ in the transformer module.
 from __future__ import annotations
 
 import ast
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,6 +17,9 @@ from pytest_gremlins.instrumentation.transformer import (
     transform_source,
 )
 from pytest_gremlins.operators import ComparisonOperator
+
+if TYPE_CHECKING:
+    from pytest_gremlins.operators.protocol import GremlinOperator
 
 
 @pytest.mark.small
@@ -67,7 +71,7 @@ def check(a, b):
     return a and b
 """
         # Use only ComparisonOperator - it won't produce gremlins for BoolOp
-        operators = [ComparisonOperator()]
+        operators: list[GremlinOperator] = [ComparisonOperator()]
         gremlins, _tree = transform_source(source, 'test.py', operators=operators)
 
         # With only comparison operator, no gremlins from 'and' expression
@@ -86,7 +90,7 @@ def do_nothing():
     return
 """
         # Use only comparison operator - it won't produce gremlins for bare return
-        operators = [ComparisonOperator()]
+        operators: list[GremlinOperator] = [ComparisonOperator()]
         gremlins, _tree = transform_source(source, 'test.py', operators=operators)
 
         # No gremlins should be produced from bare return with comparison operator

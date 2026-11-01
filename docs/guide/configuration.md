@@ -342,6 +342,15 @@ use a list, not a bare string, got 'tests/*'
     (e.g. operators = ["comparison", "boundary"]); to run all operators, remove the key.
     ```
 
+- The command-line flags are checked too, with one difference for empty entries. `--gremlin-operators` and
+  `--gremlin-targets` take a comma-separated list. Empty entries (`comparison,,boolean`, `src,`) are dropped, so a
+  trailing comma is fine, while an empty string in a TOML list (`operators = ["comparison", ""]`) is rejected as not a
+  list of strings. Each name in `--gremlin-operators` must be a registered operator, and the error lists the valid
+  names.
+- A value made only of commas keeps its empty entries. `--gremlin-operators=,` selects no operators: it warns
+  `Unknown operator '' requested, ignoring` and the run finds no gremlins. `--gremlin-targets=,` resolves each
+  empty entry to the project root, as if you had passed `--gremlin-targets=.`.
+  `--gremlin-exclude` takes one glob pattern per use and is repeatable.
 - A `tool` entry in `pyproject.toml` that is not a table (`tool = 5`) is rejected with `[tool] must be a table of
   settings, got 5` and exit code 4, like any other wrong-typed value. You see this message only when you pass `-c`
   pointing at another config file (for example `-c other.ini`). A `pytest.ini`, `tox.ini` or `setup.cfg` next to
@@ -537,6 +546,11 @@ The cache is stored in `.gremlins_cache/` in your project root. Cache keys inclu
   does not matter. Changing any of them re-judges every gremlin. Without pytest-rerunfailures loaded they are not keyed.
 
 When source or test files change, affected gremlins are re-tested.
+
+When a source file changes, the rows cached for its old content cannot hit while the file keeps its current content,
+so each run deletes them at start. `results.db` keeps one version of each file instead of growing with every edit.
+This needs no option. Because the older version's rows are gone, switching to a branch with a different version of a
+file and back costs hits for that file: its gremlins are re-tested once. See [Pruning stranded rows](../api/cache.md#pruning-stranded-rows).
 
 **Clear the cache:**
 
@@ -853,24 +867,27 @@ test command that selects the union of the tests covering any of them.
 pytest --gremlins --gremlin-batch --gremlin-batch-size=20
 ```
 
-Batch size tuning:
+Batch size sets how many gremlins one worker task covers. Results are reported only after every batch has
+finished, whatever the size.
 
 | Batch Size | Tradeoff |
 |------------|----------|
-| Small (5-10) | More worker tasks, but faster feedback on failures |
+| Small (5-10) | More worker tasks, so the load spreads more evenly across workers |
 | Medium (20-50) | Balanced for most projects |
-| Large (100+) | Fewer worker tasks, but slower feedback |
+| Large (100+) | Fewer worker tasks; with fewer batches than workers, some workers sit idle |
+
+Batch mode takes precedence over parallel mode: with `--gremlin-batch`, `--gremlin-parallel` has no effect, and
+`--gremlin-workers` sets the number of batch workers. Because each gremlin runs the union of the covering tests,
+a batch run gains nothing over a parallel run with the same workers and is often slower.
 
 ### Combined Performance Options
 
-For maximum speed, combine all performance options:
+For the fastest runs, combine the cache with parallel execution and leave batch mode off:
 
 ```bash
 pytest --gremlins \
     --gremlin-cache \
-    --gremlin-parallel \
-    --gremlin-batch \
-    --gremlin-batch-size=20
+    --gremlin-parallel
 ```
 
 ## CI Integration
@@ -1041,11 +1058,11 @@ Each kind of problem is handled differently:
     ERROR: pytest-gremlins: [tool.pytest-gremlins].cache must be a boolean (e.g. cache = true), got 'yes'
     ```
 
-- **An unknown operator name** in `operators` or `--gremlin-operators` is skipped with a
-  `UserWarning`, and the run goes on with the operators that do exist:
+- **An unknown operator name** in `operators` or `--gremlin-operators` stops the run with a usage
+  error and exit code 4. The message names the key or flag and lists the valid operators:
 
     ```text
-    UserWarning: Unknown operator 'typo' requested, ignoring
+    ERROR: pytest-gremlins: --gremlin-operators has unknown operator 'typo'. Valid operators: ...
     ```
 
 - **A path in `paths` that doesn't exist** is dropped without a message. If no configured

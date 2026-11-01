@@ -19,6 +19,8 @@ from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.cache.versions import versions_fingerprint
 from pytest_gremlins.operators.comparison import ComparisonOperator
 
+from .cached_entries import partial_entry
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -61,7 +63,7 @@ class DescribeCacheWritesWithAnUnownedOperator:
         cache_dir = tmp_path / '.gremlins_cache'
 
         with IncrementalCache(cache_dir, [_unowned_operator(project_root)], project_root) as cache:
-            cache.cache_result('g001', 'src', {'test_a': 'h'}, {'status': 'zapped'})
+            cache.cache_result('g001', 'src', {'test_a': 'h'}, partial_entry(status='zapped'))
 
         assert _row_count(cache_dir) == 0
 
@@ -69,8 +71,8 @@ class DescribeCacheWritesWithAnUnownedOperator:
         cache_dir = tmp_path / '.gremlins_cache'
 
         with IncrementalCache(cache_dir, [_unowned_operator(project_root)], project_root) as cache:
-            cache.cache_result_deferred('g001', 'src', {'test_a': 'h'}, {'status': 'zapped'})
-            cache.cache_result_deferred('g002', 'src', {'test_a': 'h'}, {'status': 'survived'})
+            cache.cache_result_deferred('g001', 'src', {'test_a': 'h'}, partial_entry(status='zapped'))
+            cache.cache_result_deferred('g002', 'src', {'test_a': 'h'}, partial_entry(status='survived'))
             cache.flush()
 
         assert _row_count(cache_dir) == 0
@@ -78,7 +80,7 @@ class DescribeCacheWritesWithAnUnownedOperator:
     def it_still_misses_on_lookup(self, tmp_path: Path, project_root: Path) -> None:
         operators = [_unowned_operator(project_root)]
         with IncrementalCache(tmp_path / '.gremlins_cache', operators, project_root) as cache:
-            cache.cache_result('g001', 'src', {'test_a': 'h'}, {'status': 'zapped'})
+            cache.cache_result('g001', 'src', {'test_a': 'h'}, partial_entry(status='zapped'))
 
             assert cache.get_cached_result('g001', 'src', {'test_a': 'h'}) is None
 
@@ -91,10 +93,10 @@ class DescribeCacheWritesWithOnlyInstalledOperators:
     def it_writes_through_cache_result_and_hits_on_the_next_run(self, tmp_path: Path, project_root: Path) -> None:
         cache_dir = tmp_path / '.gremlins_cache'
         with IncrementalCache(cache_dir, [ComparisonOperator()], project_root) as cache:
-            cache.cache_result('g001', 'src', {'test_a': 'h'}, {'status': 'zapped'})
+            cache.cache_result('g001', 'src', {'test_a': 'h'}, partial_entry(status='zapped'))
 
         with IncrementalCache(cache_dir, [ComparisonOperator()], project_root) as cache:
-            assert cache.get_cached_result('g001', 'src', {'test_a': 'h'}) == {'status': 'zapped'}
+            assert cache.get_cached_result('g001', 'src', {'test_a': 'h'}) == partial_entry(status='zapped')
         assert _row_count(cache_dir) == 1
 
     def it_writes_through_cache_result_deferred_and_hits_on_the_next_run(
@@ -102,11 +104,11 @@ class DescribeCacheWritesWithOnlyInstalledOperators:
     ) -> None:
         cache_dir = tmp_path / '.gremlins_cache'
         with IncrementalCache(cache_dir, [ComparisonOperator()], project_root) as cache:
-            cache.cache_result_deferred('g001', 'src', {'test_a': 'h'}, {'status': 'zapped'})
+            cache.cache_result_deferred('g001', 'src', {'test_a': 'h'}, partial_entry(status='zapped'))
             cache.flush()
 
         with IncrementalCache(cache_dir, [ComparisonOperator()], project_root) as cache:
-            assert cache.get_cached_result('g001', 'src', {'test_a': 'h'}) == {'status': 'zapped'}
+            assert cache.get_cached_result('g001', 'src', {'test_a': 'h'}) == partial_entry(status='zapped')
         assert _row_count(cache_dir) == 1
 
 
@@ -121,6 +123,6 @@ class DescribeCacheWritesWithAnUnownedOperatorWhoseModuleNameHoldsTheSeparator:
         cache_dir = tmp_path / '.gremlins_cache'
 
         with IncrementalCache(cache_dir, [_unowned_operator(project_root, 'ops|helper')], project_root) as cache:
-            cache.cache_result('g001', 'src', {'test_a': 'h'}, {'status': 'zapped'})
+            cache.cache_result('g001', 'src', {'test_a': 'h'}, partial_entry(status='zapped'))
 
         assert _row_count(cache_dir) == 0

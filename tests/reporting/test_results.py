@@ -101,7 +101,7 @@ class DescribeGremlinResultCreation:
             status=GremlinResultStatus.ZAPPED,
         )
         with pytest.raises(AttributeError):
-            result.status = GremlinResultStatus.SURVIVED  # pyright: ignore[reportAttributeAccessIssue]
+            result.status = GremlinResultStatus.SURVIVED  # type: ignore[misc]  # pyright: ignore[reportAttributeAccessIssue]
 
 
 @pytest.mark.small

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import pytest
 
@@ -33,7 +34,7 @@ def applied_settings(pytester: pytest.Pytester) -> dict[str, object]:
     pytester.makeconftest(RECORD_APPLIED_SETTINGS)
     pytester.makepyfile(test_sample='def test_sample():\n    pass\n')
     pytester.runpytest_inprocess('--gremlins')
-    return json.loads((pytester.path / APPLIED_FILE).read_text(encoding='utf-8'))
+    return cast('dict[str, object]', json.loads((pytester.path / APPLIED_FILE).read_text(encoding='utf-8')))
 
 
 @pytest.mark.medium

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from typing import cast
 
 import pytest
 
@@ -144,7 +145,9 @@ def foo():
 
         assert len(mutations) == 2
         assert all(isinstance(m, ast.Return) for m in mutations)
-        mutation_values = {m.value.value if isinstance(m.value, ast.Constant) else None for m in mutations}
+        mutation_values = {
+            m.value.value if isinstance(m.value, ast.Constant) else None for m in cast('list[ast.Return]', mutations)
+        }
         assert None in mutation_values
         assert False in mutation_values
 
@@ -162,7 +165,9 @@ def foo():
         mutations = operator.mutate(return_node)
 
         assert all(isinstance(m, ast.Return) for m in mutations)
-        mutation_values = {m.value.value if isinstance(m.value, ast.Constant) else None for m in mutations}
+        mutation_values = {
+            m.value.value if isinstance(m.value, ast.Constant) else None for m in cast('list[ast.Return]', mutations)
+        }
         assert None in mutation_values
         assert True in mutation_values
 

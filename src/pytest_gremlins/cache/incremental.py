@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         Iterable,
         Mapping,
     )
+    from collections.abc import Set as AbstractSet
     from pathlib import Path
 
     from pytest_gremlins.cache.types import CachedGremlinResult
@@ -504,6 +505,19 @@ class IncrementalCache:
             file_prefix: Prefix to match in gremlin IDs.
         """
         self._store.delete_by_prefix(f'{file_prefix}:')
+
+    def prune_stale_sources(self, current_hashes: Mapping[str, AbstractSet[str]]) -> None:
+        """Delete rows that an edit left unreadable, for the files in this run.
+
+        A row whose gremlin id belongs to one of ``current_hashes`` but whose source-hash segment is not a current
+        hash of its prefix can never hit again, so it is removed in one transaction. Rows of other files and
+        rows with the current hash are untouched. Call this from the controller process only.
+
+        Args:
+            current_hashes: Maps each file's gremlin-id prefix (``{stem}_{path_hash}``) to the current source
+                hashes of every file sharing that prefix (the path hash is short, so distinct files can collide).
+        """
+        self._store.prune_stale_source_hashes(current_hashes)
 
     def clear(self) -> None:
         """Remove all cached results."""

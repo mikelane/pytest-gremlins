@@ -141,6 +141,7 @@ SQLite-backed cache for gremlin test results.
 | `has(cache_key)` | `bool` | Check if key exists |
 | `delete(cache_key)` | `None` | Remove single entry |
 | `delete_by_prefix(prefix)` | `None` | Remove entries by prefix |
+| `prune_stale_source_hashes(current_hashes)` | `None` | Remove rows whose source hash is not a current hash of their file prefix |
 | `clear()` | `None` | Remove all entries |
 | `keys()` | `list[str]` | Get all cache keys |
 | `count()` | `int` | Get entry count |
@@ -225,6 +226,7 @@ Coordinates content hashing and result storage for smart cache invalidation.
 | `cache_result_deferred(...)` | `None` | Cache result (batch) |
 | `flush()` | `None` | Commit deferred writes |
 | `invalidate_file(file_prefix)` | `None` | Invalidate file's gremlins |
+| `prune_stale_sources(current_hashes)` | `None` | Delete rows stranded by an edited source file |
 | `clear()` | `None` | Clear entire cache |
 | `get_stats()` | `dict` | Get hit/miss statistics |
 | `close()` | `None` | Close and release resources |
@@ -247,8 +249,8 @@ The cache also records which code produced its verdicts: an internal cache versi
 provides a `pytest_gremlins.operators` entry point or owns the module of an operator registered for the run
 (including operators a `conftest.py` registers). Upgrading pytest-gremlins keeps the cache, unless the release
 changes how verdicts are computed and raises the cache version (then the first run is cold). Installing, removing,
-upgrading or downgrading an operator package invalidates it. Old entries stop matching; they remain in `results.db`
-until pruning ([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
+upgrading or downgrading an operator package invalidates it: every cached verdict misses. The old rows stay in
+`results.db` until their source file changes (see [Pruning stranded rows](#pruning-stranded-rows)).
 
 Two sessions add a part to the key so that only they miss once after an upgrade: one that loads the pytester plugin
 adds `pytester-615` (#891), and one whose gremlin runs load pytest-xdist themselves because plugin autoload is
@@ -270,11 +272,15 @@ well (#685). Other sessions with the part just re-test once. Every other session
 | Distribution providing a `pytest_gremlins.operators` entry point installed, removed or changed version | Miss for every gremlin (old entries stop matching) |
 | Installed package (including a PEP 610 editable install) that owns the module of a `conftest.py`-registered operator changes version | Miss for every gremlin (old entries stop matching) |
 | Operator defined in a `conftest.py` that is registered as a plugin (its module is named `conftest` or ends in `.conftest` and its file is such a `conftest.py`, or a function in its class body comes from one). An operator from an installed package whose module is merely named `conftest` is not one: it is keyed by the package version, including one that subclasses the `GremlinOperator` protocol or is a dataclass | Hits stay intact while no loaded `conftest.py` changes. The versions part of every key gets one `conftest-operators=` label that hashes every `conftest.py` registered as a plugin when the cache opens (the rootdir's and those of the command-line arguments, such as `a/` and `b/` in `pytest a b`): its path, relative to the rootdir or absolute outside it, and its content. Editing any of them is a miss for every gremlin, wherever the operator's code comes from (a decorator or a method borrowed from another `conftest.py`). The test key alone hashes only the `conftest.py` files on the path to each covering test, so a gremlin covered only by tests in a sibling directory would otherwise replay a stale verdict. A loaded `conftest.py` that cannot be read misses on every run. A `conftest.py` pytest loads later, during collection, is not in the label. The label also hashes the project-local modules those `conftest.py` files import, followed transitively: a helper beside the operator's `conftest.py` or in another directory, and a `conftest.py` that is imported but not registered (`from b.conftest import ...`). The path of each is relative to the rootdir. Imports are read statically. A relative import is resolved to files beside the importer whether or not the session loaded them. An absolute import is hashed only when the session has loaded it, and the parent packages of a dotted import count too, so editing `pkg/__init__.py` is a miss. A relative dotted import such as `from .sub.deep import z` also hashes each intermediate package's `__init__.py` (`sub/__init__.py`, and the importer's own package `__init__.py`). A symlink under the rootdir is hashed through its content even when it points outside the rootdir. A module outside the rootdir and one in an installed package are not hashed (installed packages are keyed by version). A conftest that imports the package under test from source, under the rootdir, hashes that source, so any edit to it is a miss for every gremlin. A module that cannot be read or parsed misses on every run ([#924](https://github.com/mikelane/pytest-gremlins/issues/924)). An operator in a `conftest.py` that an installed package ships and registers as a plugin (`-p pkg.conftest`, a `pytest11` entry point or `pytest_plugins`) also keeps its `pkg==<version>` label, so an upgrade that changes only another file of the package is a miss. A project with no such operator gets the same keys as before |
-| Operator that does not come from an installed distribution: a project-local helper module, a module loaded by file path or sharing a name with another module, a namespace-package module (unless an installed distribution in that namespace sits at the same top-level name), a class defined inside a function, a module with no file, or an editable install recorded only through a `.pth` file or a setuptools import finder | Every run misses the cache for every gremlin: the key carries a fresh random token, so the run is slower but never serves a stale verdict. The run also writes no results to the cache, since no later run could read them, so `results.db` does not grow. An operator keeps hits only when it is importable by its qualified name and an installed package owns its module. Restoring cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator from an installed distribution still keys on that distribution's version |
+| Operator that does not come from an installed distribution: a project-local helper module, a module loaded by file path or sharing a name with another module, a namespace-package module (unless an installed distribution owns its file, which for a regular install means the distribution's install record lists it), a class defined inside a function, a module with no file, or an editable install recorded only through a `.pth` file or a setuptools import finder | Every run misses the cache for every gremlin: the key carries a fresh random token, so the run is slower but never serves a stale verdict. The run also writes no results to the cache, since no later run could read them, so `results.db` does not grow. An operator keeps hits only when it is importable by its qualified name and an installed package owns its module. Restoring cache hits for the others is tracked in [#887](https://github.com/mikelane/pytest-gremlins/issues/887). An operator from an installed distribution still keys on that distribution's version |
 | Helper module under the test root edited, added or removed: a `pytest_plugins` fixture module, or a module a test or `conftest.py` imports | Miss for every gremlin covered by any test file under that test root. The key folds in every `.py` file there whose name matches no `python_files` pattern, other than a `conftest.py` or a file under `__pycache__` |
 | Helper code inside a test file edited, imported (statically) by another test file or its `conftest.py` | Miss for every gremlin covered by the importing test file. A test file imported only dynamically is not followed. See [Helper modules under the test root](#helper-modules-under-the-test-root) |
 | Python file outside the test root edited, and not a source file a gremlin mutates | No effect on the key |
 | Nothing changed | Hit (return cached result) |
+
+The table and the paragraph below it together cover every case. The paragraph gives the rules for when an installed
+distribution owns an operator's module, and the cases that miss under them: a source checkout with a leftover
+`egg-info`, an editable install without `top_level.txt`, and a `.egg` install.
 
 A regular installed distribution owns an operator's module only when the distribution's install record (`RECORD` or
 `installed-files.txt`) lists the module's file. A source checkout's `SOURCES.txt` is not an install record, so a
@@ -286,6 +292,27 @@ misses. An editable install without `top_level.txt` (non-setuptools backends suc
 uv_build, flit and pdm) always misses, because its `.pth` directory can hold packages the wheel does not
 ship. Setuptools editables and normal wheels keep stable keys. An empty `RECORD` or `installed-files.txt` counts as
 no install record. A `.egg` install has no install record, so it misses; zip installs keep their version label.
+
+### Pruning stranded rows
+
+Editing a source file changes its hash, so every row cached for that file stops matching. At the start of each run,
+the controller process deletes, for each target file in the run, the rows whose gremlin id belongs to that file but
+whose source-hash segment is not the file's current hash. The delete is one transaction and an indexed range scan on
+the primary key, anchored on `{stem}_{path_hash}_g<digits>:` so a longer stem cannot be caught by mistake. Rows for
+files outside the run are kept, unless the file shares a gremlin prefix with a file in the run (see below). Rows with
+the current hash under any other key part are kept. `results.db` therefore
+holds at most one source version per file instead of growing with every edit. xdist workers and
+`--gremlin-parallel` workers never prune or write the cache. There is no flag or config key for it, and the key
+format and `CACHE_VERSION` are unchanged.
+
+Switching branches can cost hits: a branch that edits a file prunes the rows of the other branch's version of it, so
+switching back re-tests that file's gremlins. Rows for deleted or renamed files are not pruned. The `v=` part is not a
+prune criterion: rows with the current source hash and an old `v=` part are kept, and rows with an old `v=` part and a
+stale source hash are pruned like any other stale row.
+
+A file left out of the run keeps its rows unless it shares a gremlin prefix with a file in the run. That means the
+same file name and the same first 4 hex characters of the path hash, which is rare. Then its rows may be pruned. This
+costs one cache miss for those gremlins and never changes a verdict.
 
 ### Usage Example
 

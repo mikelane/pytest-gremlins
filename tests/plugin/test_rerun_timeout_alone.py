@@ -7,7 +7,10 @@ not the mutant. The unmutated confirmation runs alone, so the mutated run it is 
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 from unittest.mock import (
     MagicMock,
     create_autospec,
@@ -31,6 +34,9 @@ from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 TIMEOUT_SECONDS = 20
 FINISHES_QUICKLY = UnmutatedRunOutcome(timed_out=False, seconds=0.1)
@@ -65,14 +71,14 @@ def session(tmp_path: Path) -> GremlinSession:
 def fake_solo_run(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     solo_run = create_autospec(_test_gremlin, return_value=_pooled(GremlinResultStatus.SURVIVED))
     monkeypatch.setattr('pytest_gremlins.plugin._test_gremlin', solo_run)
-    return solo_run
+    return cast('MagicMock', solo_run)
 
 
 @pytest.fixture
 def fake_unmutated_run(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     unmutated_run = create_autospec(run_unmutated, return_value=FINISHES_QUICKLY)
     monkeypatch.setattr('pytest_gremlins.plugin.run_unmutated', unmutated_run)
-    return unmutated_run
+    return cast('MagicMock', unmutated_run)
 
 
 def _confirm(result: GremlinResult, session: GremlinSession, tmp_path: Path) -> GremlinResult:
@@ -168,7 +174,7 @@ class DescribeCachingOfSoloRerunResults:
         session.source_hashes = {'/path/to/source.py': 'hash'}
         session.test_node_ids = {'t.py::test_a': 't.py::test_a'}
         session.test_hashes = {'t.py': 'test_hash'}
-        return cache
+        return cast('MagicMock', cache)
 
     @pytest.mark.parametrize(
         ('solo', 'expected'),

@@ -11,6 +11,7 @@ import importlib
 import sys
 from typing import (
     TYPE_CHECKING,
+    Any,
     NamedTuple,
 )
 
@@ -20,6 +21,8 @@ from pytest_gremlins.cache.versions import installed_versions_fingerprint
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from pytest_gremlins.operators.protocol import GremlinOperator
 
 CLASS_V1 = 'class HelperOperator:\n    name = "helper"\n    description = "v1"\n'
 CLASS_V2 = CLASS_V1.replace('"v1"', '"v2 edited"')
@@ -107,14 +110,15 @@ HELPER_CASES = [
 ]
 
 
-def _import_helper(monkeypatch: pytest.MonkeyPatch, qualname: str = 'HelperOperator') -> object:
+def _import_helper(monkeypatch: pytest.MonkeyPatch, qualname: str = 'HelperOperator') -> GremlinOperator:
     monkeypatch.delitem(sys.modules, 'gremlin_pkg', raising=False)
     monkeypatch.delitem(sys.modules, 'gremlin_pkg._impl', raising=False)
     importlib.invalidate_caches()
-    holder: object = importlib.import_module('gremlin_pkg')
+    holder: Any = importlib.import_module('gremlin_pkg')
     for part in qualname.split('.'):
         holder = getattr(holder, part)
-    return holder()  # type: ignore[operator]
+    operator: GremlinOperator = holder()
+    return operator
 
 
 def _make_package(

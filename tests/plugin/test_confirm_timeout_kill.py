@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 from unittest.mock import (
     MagicMock,
     create_autospec,
@@ -32,6 +35,9 @@ from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 FINISHES = UnmutatedRunOutcome(timed_out=False, seconds=0.1)
 HANGS = UnmutatedRunOutcome(timed_out=True, seconds=1.0)
@@ -63,7 +69,7 @@ def session(tmp_path: Path) -> GremlinSession:
 def fake_unmutated_run(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     unmutated_run = create_autospec(run_unmutated, return_value=FINISHES)
     monkeypatch.setattr('pytest_gremlins.plugin.run_unmutated', unmutated_run)
-    return unmutated_run
+    return cast('MagicMock', unmutated_run)
 
 
 @pytest.mark.medium

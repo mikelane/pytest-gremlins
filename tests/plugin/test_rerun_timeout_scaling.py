@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -166,7 +167,7 @@ class DescribeSessionRerunBackoffFactor:
     def it_defaults_to_one_when_nothing_sets_it(self) -> None:
         option = SimpleNamespace(reruns_delay_backoff_factor=None)
 
-        assert session_rerun_backoff_factor(option, {}.get) == 1.0
+        assert session_rerun_backoff_factor(option, lambda _key: None) == 1.0
 
     def it_reads_the_command_line_option(self) -> None:
         option = SimpleNamespace(reruns_delay_backoff_factor=2.5)
@@ -194,7 +195,7 @@ class DescribeSessionRerunBackoffFactor:
     def it_counts_a_negative_factor_as_one_the_way_the_plugin_does(self) -> None:
         option = SimpleNamespace(reruns_delay_backoff_factor=-2.0)
 
-        assert session_rerun_backoff_factor(option, {}.get) == 1.0
+        assert session_rerun_backoff_factor(option, lambda _key: None) == 1.0
 
 
 @pytest.mark.small
@@ -207,7 +208,7 @@ class DescribeRerunScaledMutantTimeoutLog:
         )
 
         with caplog.at_level(logging.DEBUG, logger=plugin.logger.name):
-            plugin._rerun_scaled_timeout(config, 30, label='Mutant')
+            plugin._rerun_scaled_timeout(cast('pytest.Config', config), 30, label='Mutant')
 
         assert '-> 130s' in caplog.text
 
@@ -219,7 +220,7 @@ class DescribeRerunScaledMutantTimeoutLog:
         )
 
         with caplog.at_level(logging.DEBUG, logger=plugin.logger.name):
-            plugin._rerun_scaled_timeout(config, 30, label='Mutant')
+            plugin._rerun_scaled_timeout(cast('pytest.Config', config), 30, label='Mutant')
 
         assert 'backoff_factor=3.0' in caplog.text
         assert '-> 94s' in caplog.text

@@ -295,8 +295,13 @@ version, so the first run after that upgrade is cold: old entries stop matching.
 The same holds when a package providing a `pytest_gremlins.operators` entry point is installed, removed or
 changes version.
 
-Entries that stop matching remain in `results.db` until pruning
-([#871](https://github.com/mikelane/pytest-gremlins/issues/871)).
+Neither change deletes anything: every cached verdict misses, and the old rows stay in `results.db` until their
+source file changes and the run prunes them (see
+[Pruning stranded rows](../api/cache.md#pruning-stranded-rows)).
+
+Each key also ends with a runner marker that changes when a release changes how gremlins are run. Opening the cache
+deletes every row whose key does not end with the current marker, so a release that changes the marker does remove
+the old rows.
 
 ## Debugging Cache Behavior
 
@@ -317,7 +322,8 @@ The cache directory (`.gremlins_cache/`) can also be deleted manually.
 If cache invalidation has bugs, results could be stale. Mitigations:
 
 - Conservative invalidation (when in doubt, re-analyze)
-- Version-based cache clearing
+- Version-keyed entries: the cache version and operator package versions are part of every key, so a change misses
+  every cached verdict
 - `--gremlin-clear-cache` flag for verification
 
 ### Disk Space

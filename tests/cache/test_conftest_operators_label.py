@@ -14,6 +14,7 @@ from pytest_gremlins.cache.versions import installed_versions_fingerprint
 from pytest_gremlins.operators.comparison import ComparisonOperator
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from pytest_gremlins.operators.protocol import GremlinOperator
@@ -26,15 +27,16 @@ OPERATOR_SOURCE = (
 
 def _operator_in_module(
     monkeypatch: pytest.MonkeyPatch, module_name: str, module_file: Path, source: str = OPERATOR_SOURCE
-) -> object:
+) -> GremlinOperator:
     module = types.ModuleType(module_name)
     module.__file__ = str(module_file)
     monkeypatch.setitem(sys.modules, module_name, module)
     exec(compile(source, str(module_file), 'exec'), module.__dict__)  # noqa: S102
-    return module.Local()
+    operator: GremlinOperator = module.Local()
+    return operator
 
 
-def _operator_borrowing_conftest_function(monkeypatch: pytest.MonkeyPatch, conftest: Path) -> object:
+def _operator_borrowing_conftest_function(monkeypatch: pytest.MonkeyPatch, conftest: Path) -> GremlinOperator:
     module = types.ModuleType('helper_module')
     monkeypatch.setitem(sys.modules, 'helper_module', module)
     borrowed = compile('def mutate(self, node):\n    return []\n', str(conftest), 'exec')
@@ -45,7 +47,8 @@ def _operator_borrowing_conftest_function(monkeypatch: pytest.MonkeyPatch, conft
         module.__dict__,
     )
     module.Local.mutate = scope['mutate']
-    return module.Local()
+    operator: GremlinOperator = module.Local()
+    return operator
 
 
 def _label(fingerprint: str) -> str:
@@ -179,14 +182,14 @@ def rootdir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def installed_conftest_operator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
+def installed_conftest_operator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[GremlinOperator]:
     site = tmp_path / 'site'
     _write_installed_conftest_operator(site, '1.0')
     monkeypatch.syspath_prepend(str(site))
     for name in ('instpkg_r3', 'instpkg_r3.conftest'):
         monkeypatch.delitem(sys.modules, name, raising=False)
     importlib.invalidate_caches()
-    operator = importlib.import_module('instpkg_r3.conftest').Op()
+    operator: GremlinOperator = importlib.import_module('instpkg_r3.conftest').Op()
     yield operator
     for name in ('instpkg_r3', 'instpkg_r3.conftest'):
         sys.modules.pop(name, None)
@@ -195,19 +198,19 @@ def installed_conftest_operator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 @pytest.mark.medium
 class DescribeInstalledPackageWithConftestNamedOperatorModule:
     def it_keys_on_the_version_of_the_owning_distribution(
-        self, installed_conftest_operator: object, rootdir: Path
+        self, installed_conftest_operator: GremlinOperator, rootdir: Path
     ) -> None:
         fingerprint = installed_versions_fingerprint([installed_conftest_operator], rootdir, loaded_conftests=[])
 
         assert 'instpkg-r3==1.0' in fingerprint
 
-    def it_adds_no_conftest_label(self, installed_conftest_operator: object, rootdir: Path) -> None:
+    def it_adds_no_conftest_label(self, installed_conftest_operator: GremlinOperator, rootdir: Path) -> None:
         fingerprint = installed_versions_fingerprint([installed_conftest_operator], rootdir, loaded_conftests=[])
 
         assert LABEL_PREFIX not in fingerprint
 
     def it_changes_when_the_package_is_upgraded(
-        self, installed_conftest_operator: object, rootdir: Path, tmp_path: Path
+        self, installed_conftest_operator: GremlinOperator, rootdir: Path, tmp_path: Path
     ) -> None:
         before = installed_versions_fingerprint([installed_conftest_operator], rootdir, loaded_conftests=[])
         site = tmp_path / 'site'
@@ -239,7 +242,7 @@ def _write_installed_plugin_conftest(site: Path, version: str, offset: int) -> N
 
 
 @pytest.fixture
-def plugin_conftest_operator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
+def plugin_conftest_operator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[GremlinOperator]:
     site = tmp_path / 'site'
     _write_installed_plugin_conftest(site, '1.0', offset=1)
     monkeypatch.syspath_prepend(str(site))
@@ -247,7 +250,7 @@ def plugin_conftest_operator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     for name in names:
         monkeypatch.delitem(sys.modules, name, raising=False)
     importlib.invalidate_caches()
-    operator = importlib.import_module('instpkg_r4.conftest').Op()
+    operator: GremlinOperator = importlib.import_module('instpkg_r4.conftest').Op()
     yield operator
     for name in names:
         sys.modules.pop(name, None)
@@ -256,7 +259,7 @@ def plugin_conftest_operator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 @pytest.mark.medium
 class DescribeInstalledPackageConftestRegisteredAsPlugin:
     def it_keys_on_the_version_of_the_owning_distribution(
-        self, plugin_conftest_operator: object, rootdir: Path, tmp_path: Path
+        self, plugin_conftest_operator: GremlinOperator, rootdir: Path, tmp_path: Path
     ) -> None:
         loaded = [tmp_path / 'site' / 'instpkg_r4' / 'conftest.py']
 
@@ -264,7 +267,9 @@ class DescribeInstalledPackageConftestRegisteredAsPlugin:
 
         assert 'instpkg-r4==1.0' in fingerprint
 
-    def it_keeps_the_conftest_label(self, plugin_conftest_operator: object, rootdir: Path, tmp_path: Path) -> None:
+    def it_keeps_the_conftest_label(
+        self, plugin_conftest_operator: GremlinOperator, rootdir: Path, tmp_path: Path
+    ) -> None:
         loaded = [tmp_path / 'site' / 'instpkg_r4' / 'conftest.py']
 
         fingerprint = installed_versions_fingerprint([plugin_conftest_operator], rootdir, loaded_conftests=loaded)
@@ -272,7 +277,7 @@ class DescribeInstalledPackageConftestRegisteredAsPlugin:
         assert LABEL_PREFIX in fingerprint
 
     def it_changes_when_the_package_is_upgraded_outside_the_conftest(
-        self, plugin_conftest_operator: object, rootdir: Path, tmp_path: Path
+        self, plugin_conftest_operator: GremlinOperator, rootdir: Path, tmp_path: Path
     ) -> None:
         site = tmp_path / 'site'
         loaded = [site / 'instpkg_r4' / 'conftest.py']

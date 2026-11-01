@@ -55,7 +55,7 @@ class DescribeRunTestSpecCoroutines:
     def it_does_not_run_the_coroutine_body(self, test_module: types.ModuleType) -> None:
         _run_test_spec(_spec('test_async'))
 
-        assert test_module.calls == []  # type: ignore[attr-defined]
+        assert test_module.calls == []
 
     def it_still_passes_a_plain_test(self) -> None:
         assert _run_test_spec(_spec('test_plain')) is _TestOutcome.PASSED
@@ -72,7 +72,7 @@ class DescribeInProcessExecutorIneligibleTests:
         results = InProcessExecutor().execute(['g1'], {'g1': MODULE_NAME}, [spec], ineligible_specs=frozenset({spec}))
 
         assert results[0].status == GremlinResultStatus.ERROR
-        assert test_module.calls == []  # type: ignore[attr-defined]
+        assert test_module.calls == []
 
     def it_names_the_test_and_the_subprocess_executor_in_the_error(self) -> None:
         spec = _spec('test_plain')
@@ -113,7 +113,7 @@ class DescribeInProcessExecutorWithUninstrumentedModule:
         results = InProcessExecutor().execute(['g1'], {'g1': MODULE_NAME}, [_spec('test_plain')])
 
         assert results[0].status == GremlinResultStatus.ERROR
-        assert test_module.calls == []  # type: ignore[attr-defined]
+        assert test_module.calls == []
 
     def it_reports_error_when_the_target_module_is_not_imported(self) -> None:
         results = InProcessExecutor().execute(['g1'], {'g1': '_never_imported_module'}, [_spec('test_plain')])

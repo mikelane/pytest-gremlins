@@ -11,6 +11,8 @@ import pytest
 
 from pytest_gremlins.cache.store import ResultStore
 
+from .cached_entries import partial_entry
+
 
 @pytest.mark.medium
 class DescribeStoreBatchOperations:
@@ -21,8 +23,8 @@ class DescribeStoreBatchOperations:
         db_path = tmp_path / 'results.db'
 
         with ResultStore(db_path) as store:
-            store.put_deferred('key1', {'status': 'zapped'})
-            store.put_deferred('key2', {'status': 'survived'})
+            store.put_deferred('key1', partial_entry(status='zapped'))
+            store.put_deferred('key2', partial_entry(status='survived'))
 
             # Data should be in memory but not visible to new connections
             # (no commit has happened)
@@ -31,8 +33,8 @@ class DescribeStoreBatchOperations:
             store.flush()
 
             # Now data should be retrievable
-            assert store.get('key1') == {'status': 'zapped'}
-            assert store.get('key2') == {'status': 'survived'}
+            assert store.get('key1') == partial_entry(status='zapped')
+            assert store.get('key2') == partial_entry(status='survived')
 
     def it_batch_writes_are_faster_than_individual(self, tmp_path: Path) -> None:
         """Batch writes with deferred commit are faster than individual commits."""
@@ -44,7 +46,7 @@ class DescribeStoreBatchOperations:
             store.clear()
             start = time.perf_counter()
             for i in range(num_entries):
-                store.put(f'individual_key_{i}', {'value': i})
+                store.put(f'individual_key_{i}', partial_entry(value=i))
             individual_time = time.perf_counter() - start
 
         # Time batch writes (deferred commits)
@@ -52,7 +54,7 @@ class DescribeStoreBatchOperations:
             store.clear()
             start = time.perf_counter()
             for i in range(num_entries):
-                store.put_deferred(f'batch_key_{i}', {'value': i})
+                store.put_deferred(f'batch_key_{i}', partial_entry(value=i))
             store.flush()
             batch_time = time.perf_counter() - start
 
@@ -68,21 +70,21 @@ class DescribeStoreBatchOperations:
 
         # Write with deferred, close without explicit flush
         with ResultStore(db_path) as store:
-            store.put_deferred('key1', {'status': 'zapped'})
+            store.put_deferred('key1', partial_entry(status='zapped'))
             # No explicit flush - close should handle it
 
         # Reopen and verify data persisted
         with ResultStore(db_path) as store:
             result = store.get('key1')
-            assert result == {'status': 'zapped'}
+            assert result == partial_entry(status='zapped')
 
     def it_context_manager_flushes_on_exit(self, tmp_path: Path) -> None:
         """Context manager exit flushes pending writes."""
         db_path = tmp_path / 'results.db'
 
         with ResultStore(db_path) as store:
-            store.put_deferred('key1', {'status': 'zapped'})
+            store.put_deferred('key1', partial_entry(status='zapped'))
 
         # Data should be persisted
         with ResultStore(db_path) as store:
-            assert store.get('key1') == {'status': 'zapped'}
+            assert store.get('key1') == partial_entry(status='zapped')

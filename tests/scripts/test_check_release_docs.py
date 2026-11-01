@@ -8,11 +8,17 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from types import ModuleType
-from typing import Any
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    cast,
+)
 
 import pytest
 import yaml
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'check_release_docs.py'
 WORKFLOWS = Path(__file__).resolve().parents[2] / '.github' / 'workflows'
@@ -943,7 +949,7 @@ def _v2_problems(entry_body: str) -> list[str]:
     checker = _load_checker()
     changelog = f'# Changelog\n\n## v2.0.0 (2026-11-01)\n\n{entry_body}\n{OLDER_ENTRY}'
 
-    return checker.find_problems(changelog, '2.0.0', SITE)
+    return cast('list[str]', checker.find_problems(changelog, '2.0.0', SITE))
 
 
 @pytest.mark.small
@@ -1211,7 +1217,7 @@ class DescribeReleaseNotesStep:
             if step.get('id') == 'changelog'
         ]
         assert len(steps) == 1
-        return steps[0]
+        return cast('dict[str, Any]', steps[0])
 
     def it_takes_the_release_notes_from_the_checker(self) -> None:
         run = self._notes_step()['run']

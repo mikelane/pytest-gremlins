@@ -125,10 +125,11 @@ pytest-gremlins needs (like dynamic contexts for test selection).
 **Symptom:**
 
 ```text
-UserWarning: Unknown operator 'comparision' requested, ignoring
+ERROR: pytest-gremlins: --gremlin-operators has unknown operator 'comparision'. Valid operators: ...
 ```
 
-(Note: no gremlins found because the operator name was misspelled)
+(The run stops with exit code 4 and the message lists the valid operator names. A misspelled name in the
+`operators` key of `pyproject.toml` produces the same error, naming `[tool.pytest-gremlins].operators`.)
 
 **Cause:** You specified an operator name in configuration that doesn't exist. Common causes:
 
@@ -781,8 +782,10 @@ pytest imports `-p` and `PYTEST_PLUGINS` modules while it parses its configurati
 pytest-gremlins puts its finder back in front. A target loaded from the inner `conftest.py` through
 `pytest_plugins` is fine.
 
-In those cases, import the target in the outer test before the inner session starts, or avoid claiming it
-through `python_files`.
+In those cases, import the target in the outer test before the inner session starts. With the first two settings,
+keeping the target out of `python_files` also works when that pattern is what claims it. It does not help when the
+target is loaded with `-p` or `PYTEST_PLUGINS`: pytest marks every module it loads as a plugin for assertion
+rewriting, whatever `python_files` says.
 
 **Cache:** A verdict cached while this bug was present can be a survivor that your tests in fact catch. It is
 never a false zap. After upgrading, a session that loads the pytester plugin misses the cache once and recomputes
