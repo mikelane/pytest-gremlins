@@ -39,7 +39,7 @@ DEFAULT_COLUMN_HEADER = 'Default'
 _HELP_DEFAULT = re.compile(r'\(default: ([^,)]+)')
 _DEFAULT_COMMENT = re.compile(r'^#\s*Default:\s*(.+)$')
 _TOML_ASSIGNMENT = re.compile(r'^([A-Za-z0-9_-]+)\s*=')
-_FENCE = re.compile(r'^\s*(`{3,}|~{3,})\s*(\w*)')
+_FENCE = re.compile(r'^\s*(`{3,}|~{3,})(.*)$')
 _MULTI_LINE_VALUE_OPENERS = ('[', '{', '"""', "'''")
 
 
@@ -168,7 +168,7 @@ def fenced_blocks(page: Path) -> list[tuple[str, list[tuple[int, str]]]]:
     for number, line in enumerate(page.read_text(encoding='utf-8').splitlines(), start=1):
         fence = _FENCE.match(line)
         if fence and opening_marker is None:
-            opening_marker, language, lines = fence.group(1), fence.group(2).lower(), []
+            opening_marker, language, lines = fence.group(1), _language(fence.group(2)), []
         elif fence and _closes(opening_marker, fence.group(1), fence.group(2)):
             blocks.append((language, lines))
             opening_marker = None
@@ -177,11 +177,16 @@ def fenced_blocks(page: Path) -> list[tuple[str, list[tuple[int, str]]]]:
     return blocks
 
 
+def _language(info_string: str) -> str:
+    """Return the leading language tag of an opening fence's info string, lowercased."""
+    return re.split(r'\W', info_string.strip(), maxsplit=1)[0].lower()
+
+
 def _closes(opening_marker: str | None, marker: str, trailing_text: str) -> bool:
     """Return whether a fence line closes a block: same character, at least as long, and no info string."""
     return (
         opening_marker is not None
-        and not trailing_text
+        and not trailing_text.strip()
         and marker[0] == opening_marker[0]
         and len(marker) >= len(opening_marker)
     )
@@ -324,12 +329,10 @@ def _is_commented_out_setting(text: str) -> bool:
     assignment = _TOML_ASSIGNMENT.match(text)
     if not assignment:
         return False
-    if text[assignment.end() :].lstrip().startswith(_MULTI_LINE_VALUE_OPENERS):
-        return True
     try:
         tomllib.loads(text)
     except tomllib.TOMLDecodeError:
-        return False
+        return text[assignment.end() :].strip() in _MULTI_LINE_VALUE_OPENERS
     return True
 
 
