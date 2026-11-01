@@ -6,8 +6,9 @@ This operator mutates arithmetic operators (+, -, *, /, //, %, **).
 from __future__ import annotations
 
 import ast
-import copy
 from typing import ClassVar
+
+from pytest_gremlins.ast_copy import copy_ast
 
 
 class ArithmeticOperator:
@@ -88,7 +89,7 @@ class ArithmeticOperator:
 
         mutations: list[ast.AST] = []
         for replacement_op_type in self.MUTATIONS[op_type]:
-            mutated = copy.deepcopy(node)
+            mutated = copy_ast(node)
             mutated.op = replacement_op_type()
             mutations.append(mutated)
 

@@ -218,11 +218,13 @@ If every target was skipped, the mutation report says `1 file(s) skipped and not
 and lists the files instead of `No gremlins found`. The HTML and JSON reports are still written, with a total of 0
 and the skipped files listed.
 
-**Cause:** Instrumenting the file raised an exception. A very long operator chain (about 120 `+` terms or
-about 245 `|` terms) exceeds Python's recursion limit. Any other exception from instrumentation is
-reported the same way. The other targets are still mutation tested, but the skipped file gets no gremlins,
-so the score says nothing about its tests. The exit code does not change, so a skipped file never fails
-CI on its own. Watch for this line in the output.
+**Cause:** Instrumenting the file raised an exception. Long operator chains are fine: a chain of 120 `+` terms
+or 245 `|` terms is instrumented normally. The usual trigger is a very long chain of method calls, such as
+`x.conjugate().conjugate()...` with about 160 links or more, whose instrumented tree is too deep for Python's
+recursion limit when it is written back out as source. Very long `+` (about 160 terms) and `|` (about 320 terms)
+chains hit the same limit. Any other exception from instrumentation is reported the same way. The other targets
+are still mutation tested, but the skipped file gets no gremlins, so the score says nothing about its tests.
+The exit code does not change, so a skipped file never fails CI on its own. Watch for this line in the output.
 
 **Solution:** Split the long expression, for example into a loop or a `sum(...)`. Run with
 `--log-cli-level=ERROR` to see the full traceback.
