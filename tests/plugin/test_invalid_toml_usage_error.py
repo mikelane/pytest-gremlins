@@ -89,3 +89,30 @@ class DescribeUnknownTomlKeyWhenNothingIsMutated:
 
         output = result.stdout.str() + result.stderr.str()
         assert "unknown key 'max_pardon_pct'" in output
+
+
+@pytest.mark.medium
+class DescribeInvalidCliListOption:
+    """An invalid --gremlin-operators or --gremlin-targets value is a usage error."""
+
+    @pytest.mark.parametrize(
+        ('flag', 'expected'),
+        [
+            (
+                '--gremlin-operators=bogus',
+                "*--gremlin-operators has unknown operator 'bogus'*Valid operators:*comparison*",
+            ),
+            ('--gremlin-operators=comparison,,boolean', '*--gremlin-operators has an empty entry*'),
+            ('--gremlin-targets=target.py,', '*--gremlin-targets has an empty entry*'),
+        ],
+    )
+    def it_exits_with_a_usage_error_naming_the_flag(
+        self, pytester_with_markers: pytest.Pytester, flag: str, expected: str
+    ) -> None:
+        pytester_with_markers.makepyfile(target=_TARGET, test_target=_TEST)
+
+        result = pytester_with_markers.runpytest_subprocess('--gremlins', flag)
+
+        assert result.ret == pytest.ExitCode.USAGE_ERROR
+        assert 'INTERNALERROR' not in result.stdout.str() + result.stderr.str()
+        result.stderr.fnmatch_lines([expected])

@@ -701,7 +701,7 @@ def get_users():
 
 ### My Operator Isn't Being Discovered
 
-If `--gremlin-operators=<name>` gives `UserWarning: Unknown operator '<name>' requested, ignoring`,
+If `--gremlin-operators=<name>` exits with code 4 and `--gremlin-operators has unknown operator '<name>'`,
 the run's registry doesn't have your operator:
 
 1. Register on `get_default_registry()` from `pytest_gremlins.instrumentation.transformer`. An

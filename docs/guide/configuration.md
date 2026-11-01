@@ -342,6 +342,10 @@ use a list, not a bare string, got 'tests/*'
     (e.g. operators = ["comparison", "boundary"]); to run all operators, remove the key.
     ```
 
+- The command-line flags are checked the same way. `--gremlin-operators` and `--gremlin-targets` take a
+  comma-separated list, and an empty entry (`comparison,,boolean`, `src,`) stops the run with exit code 4 and a
+  message that names the flag and the value. Each name in `--gremlin-operators` must be a registered operator, and
+  the error lists the valid names. `--gremlin-exclude` takes one glob pattern per use and is repeatable.
 - A `tool` entry in `pyproject.toml` that is not a table (`tool = 5`) is rejected with `[tool] must be a table of
   settings, got 5` and exit code 4, like any other wrong-typed value. You see this message only when you pass `-c`
   pointing at another config file (for example `-c other.ini`). A `pytest.ini`, `tox.ini` or `setup.cfg` next to
