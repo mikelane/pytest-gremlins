@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from pytest_gremlins.cache import versions
 from pytest_gremlins.cache.versions import installed_versions_fingerprint
 
 if TYPE_CHECKING:
@@ -104,3 +105,63 @@ class DescribeConftestImportsInLabel:
         elsewhere.write_text('OFFSET = 2\n')
 
         assert _fingerprint_label(operator, tmp_path, rootdir) == before
+
+    def it_resolves_a_relative_import_of_a_name_from_a_sibling_module(
+        self, operator: GremlinOperator, tmp_path: Path
+    ) -> None:
+        (tmp_path / 'conftest.py').write_text('from ._sibling import OFFSET\n')
+        sibling = tmp_path / '_sibling.py'
+        sibling.write_text('OFFSET = 1\n')
+        before = _fingerprint_label(operator, tmp_path)
+
+        sibling.write_text('OFFSET = 2\n')
+
+        assert _fingerprint_label(operator, tmp_path) != before
+
+    def it_resolves_a_submodule_imported_by_name_from_a_package(
+        self, operator: GremlinOperator, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        package = tmp_path / 'pkg'
+        package.mkdir()
+        init = package / '__init__.py'
+        init.write_text('')
+        helper = package / '_helper.py'
+        helper.write_text('OFFSET = 1\n')
+        (tmp_path / 'conftest.py').write_text('from pkg import _helper\n')
+        _load(monkeypatch, 'pkg', init)
+        _load(monkeypatch, 'pkg._helper', helper)
+        before = _fingerprint_label(operator, tmp_path)
+
+        helper.write_text('OFFSET = 2\n')
+
+        assert _fingerprint_label(operator, tmp_path) != before
+
+    def it_ignores_an_imported_module_in_an_installed_packages_directory(
+        self, operator: GremlinOperator, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        site = tmp_path / 'site'
+        site.mkdir()
+        monkeypatch.setattr(versions, '_site_directories', lambda: [site.resolve()])
+        (tmp_path / 'conftest.py').write_text('import _installed\n')
+        installed = site / '_installed.py'
+        installed.write_text('OFFSET = 1\n')
+        _load(monkeypatch, '_installed', installed)
+        before = _fingerprint_label(operator, tmp_path)
+
+        installed.write_text('OFFSET = 2\n')
+
+        assert _fingerprint_label(operator, tmp_path) == before
+
+    @pytest.mark.parametrize('broken_source', [b'def (\n', b'OFFSET = 1\x00\n'], ids=['syntax-error', 'null-byte'])
+    def it_always_misses_when_an_imported_module_cannot_be_parsed(
+        self, operator: GremlinOperator, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, broken_source: bytes
+    ) -> None:
+        (tmp_path / 'conftest.py').write_text('import _broken\n')
+        broken = tmp_path / '_broken.py'
+        broken.write_bytes(broken_source)
+        _load(monkeypatch, '_broken', broken)
+
+        conftests = [tmp_path / 'conftest.py']
+        first = installed_versions_fingerprint([operator], tmp_path, conftests)
+
+        assert first != installed_versions_fingerprint([operator], tmp_path, conftests)

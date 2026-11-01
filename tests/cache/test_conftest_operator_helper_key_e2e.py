@@ -48,8 +48,8 @@ def _operator_conftest(import_line: str) -> str:
 @pytest.fixture
 def sibling_operator_helper(pytester: pytest.Pytester) -> Path:
     pytester.makepyfile(target=TARGET)
-    for directory in ('a', 'b'):
-        pytester.mkdir(directory)
+    pytester.mkdir('a')
+    pytester.mkdir('b')
     (pytester.path / 'a' / 'conftest.py').write_text(_operator_conftest('from _offset_helper import OFFSET'))
     helper = pytester.path / 'a' / '_offset_helper.py'
     helper.write_text(HELPER.format(offset=1))
@@ -72,10 +72,8 @@ def rootdir_operator_helper(pytester: pytest.Pytester) -> Path:
 
 @pytest.mark.medium
 class DescribeConftestOperatorHelperInCacheKey:
-    def it_hits_on_a_warm_run_with_the_helper_unchanged(
-        self, pytester: pytest.Pytester, sibling_operator_helper: Path
-    ) -> None:
-        assert sibling_operator_helper.exists()
+    @pytest.mark.usefixtures('sibling_operator_helper')
+    def it_hits_on_a_warm_run_with_the_helper_unchanged(self, pytester: pytest.Pytester) -> None:
         pytester.runpytest_subprocess(*GREMLIN_ARGS, 'a', 'b')
 
         warm = pytester.runpytest_subprocess(*GREMLIN_ARGS, 'a', 'b')
@@ -106,9 +104,10 @@ class DescribeConftestOperatorHelperInCacheKey:
         self, pytester: pytest.Pytester
     ) -> None:
         pytester.makepyfile(target=TARGET)
-        for directory in ('a', 'b'):
-            pytester.mkdir(directory)
-            (pytester.path / directory / '__init__.py').write_text('')
+        pytester.mkdir('a')
+        pytester.mkdir('b')
+        (pytester.path / 'a' / '__init__.py').write_text('')
+        (pytester.path / 'b' / '__init__.py').write_text('')
         lender = pytester.path / 'b' / 'conftest.py'
         lender.write_text(HELPER.format(offset=1))
         (pytester.path / 'a' / 'conftest.py').write_text(_operator_conftest('from b.conftest import OFFSET'))
