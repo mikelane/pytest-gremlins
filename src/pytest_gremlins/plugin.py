@@ -1421,12 +1421,10 @@ def _prune_stale_cache_rows(gremlin_session: GremlinSession) -> None:
     """
     if gremlin_session.cache is None:
         return
-    gremlin_session.cache.prune_stale_sources(
-        {
-            gremlin_file_prefix(file_path): source_hash
-            for file_path, source_hash in gremlin_session.source_hashes.items()
-        }
-    )
+    hashes_by_prefix: dict[str, set[str]] = {}
+    for file_path, source_hash in gremlin_session.source_hashes.items():
+        hashes_by_prefix.setdefault(gremlin_file_prefix(file_path), set()).add(source_hash)
+    gremlin_session.cache.prune_stale_sources(hashes_by_prefix)
 
 
 def _test_file_patterns(gremlin_session: GremlinSession, config: pytest.Config) -> tuple[str, ...]:

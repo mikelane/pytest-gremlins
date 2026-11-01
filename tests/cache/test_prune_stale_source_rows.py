@@ -34,7 +34,7 @@ class DescribePruneStaleSourceHashes:
         store.put(_key('mod_ab12_g002', 'H1'), RESULT)
         store.put(_key('other_cd34_g001', 'H1'), RESULT)
 
-        store.prune_stale_source_hashes({'mod_ab12': 'H2'})
+        store.prune_stale_source_hashes({'mod_ab12': {'H2'}})
 
         assert store.keys() == [_key('other_cd34_g001', 'H1')]
         assert store.count() == 1
@@ -42,7 +42,7 @@ class DescribePruneStaleSourceHashes:
     def it_misses_the_dropped_ids_under_the_old_hash(self, store: ResultStore) -> None:
         store.put(_key('mod_ab12_g001', 'H1'), RESULT)
 
-        store.prune_stale_source_hashes({'mod_ab12': 'H2'})
+        store.prune_stale_source_hashes({'mod_ab12': {'H2'}})
 
         assert store.get(_key('mod_ab12_g001', 'H1')) is None
 
@@ -54,7 +54,7 @@ class DescribePruneStaleSourceHashes:
         store.put(kept[0], RESULT)
         store.put(kept[1], RESULT)
 
-        store.prune_stale_source_hashes({'mod_ab12': 'H2'})
+        store.prune_stale_source_hashes({'mod_ab12': {'H2'}})
 
         assert sorted(store.keys()) == sorted(kept)
 
@@ -64,14 +64,14 @@ class DescribePruneStaleSourceHashes:
         store.put(longer, RESULT)
         store.put(lookalike, RESULT)
 
-        store.prune_stale_source_hashes({'mod_ab12': 'H2'})
+        store.prune_stale_source_hashes({'mod_ab12': {'H2'}})
 
         assert sorted(store.keys()) == sorted([longer, lookalike])
 
     def it_leaves_files_not_named_in_the_call_untouched(self, store: ResultStore) -> None:
         store.put(_key('gone_ef56_g001', 'H1'), RESULT)
 
-        store.prune_stale_source_hashes({'mod_ab12': 'H2'})
+        store.prune_stale_source_hashes({'mod_ab12': {'H2'}})
 
         assert store.count() == 1
 
@@ -80,7 +80,7 @@ class DescribePruneStaleSourceHashes:
         store.put(_key('b_0002_g001', 'OLD'), RESULT)
         store.put(_key('b_0002_g002', 'NEW'), RESULT)
 
-        store.prune_stale_source_hashes({'a_0001': 'NEW', 'b_0002': 'NEW'})
+        store.prune_stale_source_hashes({'a_0001': {'NEW'}, 'b_0002': {'NEW'}})
 
         assert store.keys() == [_key('b_0002_g002', 'NEW')]
 
@@ -88,7 +88,7 @@ class DescribePruneStaleSourceHashes:
         store.put(_key('a.b%_1234_g001', 'OLD'), RESULT)
         store.put(_key('axb%_1234_g001', 'OLD'), RESULT)
 
-        store.prune_stale_source_hashes({'a.b%_1234': 'NEW'})
+        store.prune_stale_source_hashes({'a.b%_1234': {'NEW'}})
 
         assert store.keys() == [_key('axb%_1234_g001', 'OLD')]
 
@@ -96,7 +96,7 @@ class DescribePruneStaleSourceHashes:
         store.put(_key('mod_ab12_g1000', 'H1'), RESULT)
         store.put(_key('mod_ab12_g1000', 'H2'), RESULT)
 
-        store.prune_stale_source_hashes({'mod_ab12': 'H2'})
+        store.prune_stale_source_hashes({'mod_ab12': {'H2'}})
 
         assert store.keys() == [_key('mod_ab12_g1000', 'H2')]
 
@@ -118,7 +118,7 @@ class DescribePruneStaleSourceHashes:
         store.put(_key('mod_ab12_g001', old_hash), RESULT)
         store.put(_key('mod_ab12_g002', current_hash), RESULT)
 
-        store.prune_stale_source_hashes({'mod_ab12': current_hash})
+        store.prune_stale_source_hashes({'mod_ab12': {current_hash}})
 
         assert store.keys() == [_key('mod_ab12_g002', current_hash)]
 
@@ -126,6 +126,15 @@ class DescribePruneStaleSourceHashes:
         malformed_key = 'mod_ab12_g001'
         store.put(malformed_key, RESULT)
 
-        store.prune_stale_source_hashes({'mod_ab12': 'H2'})
+        store.prune_stale_source_hashes({'mod_ab12': {'H2'}})
 
         assert store.keys() == [malformed_key]
+
+    def it_keeps_rows_of_every_current_hash_sharing_a_prefix(self, store: ResultStore) -> None:
+        store.put(_key('mod_ab12_g001', 'HA'), RESULT)
+        store.put(_key('mod_ab12_g001', 'HB'), RESULT)
+        store.put(_key('mod_ab12_g001', 'OLD'), RESULT)
+
+        store.prune_stale_source_hashes({'mod_ab12': {'HA', 'HB'}})
+
+        assert sorted(store.keys()) == [_key('mod_ab12_g001', 'HA'), _key('mod_ab12_g001', 'HB')]

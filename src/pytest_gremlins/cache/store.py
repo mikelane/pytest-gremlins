@@ -14,7 +14,10 @@ import sqlite3
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import (
+        Mapping,
+    )
+    from collections.abc import Set as AbstractSet
     from pathlib import Path
 
     from pytest_gremlins.cache.types import CachedGremlinResult
@@ -186,23 +189,24 @@ class ResultStore:
         )
         self._conn.commit()
 
-    def prune_stale_source_hashes(self, current_hashes: Mapping[str, str]) -> None:
+    def prune_stale_source_hashes(self, current_hashes: Mapping[str, AbstractSet[str]]) -> None:
         """Remove rows stranded by an edit: same file, different source hash.
 
         A gremlin key starts ``{file_prefix}_g<digits>:{source_hash}:``. For each file prefix, every row whose
-        source-hash segment differs from the file's current hash is deleted, all in one transaction. The rows are
+        source-hash segment is not one of the current hashes is deleted, all in one transaction. The rows are
         found with an indexed range scan on the primary key (``LIKE`` cannot use the index), then anchored on
         ``_g<digits>:`` so a longer stem such as ``mod_ab12_gx`` is not mistaken for ``mod_ab12``.
 
         Args:
-            current_hashes: Maps each file prefix (``{stem}_{path_hash}``) to that file's current source hash.
-                Files not named here are untouched.
+            current_hashes: Maps each file prefix (``{stem}_{path_hash}``) to the current source hashes of every
+                file sharing it. Two files can collide on the short path hash, so a prefix may hold several.
+                Prefixes not named here are untouched.
         """
         stale_keys: list[tuple[str]] = []
-        for file_prefix, current_hash in current_hashes.items():
+        for file_prefix, hashes in current_hashes.items():
             gremlin_start = f'{file_prefix}_g'
             range_end = f'{file_prefix}_h'
-            current_row = re.compile(rf'{re.escape(gremlin_start)}\d+:{re.escape(current_hash)}:')
+            current_row = re.compile(rf'{re.escape(gremlin_start)}\d+:(?:{"|".join(map(re.escape, hashes))}):')
             anchored_row = re.compile(rf'{re.escape(gremlin_start)}\d+:')
             for (cache_key,) in self._conn.execute(
                 'SELECT cache_key FROM results WHERE cache_key >= ? AND cache_key < ?',

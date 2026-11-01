@@ -30,7 +30,7 @@ class DescribePruneAgainstRealKeyProducers:
             cache.cache_result(gremlin_id, old_hash, {'t.py': 'h'}, RESULT)  # type: ignore[arg-type]
             cache.cache_result(gremlin_id, current_hash, {'t.py': 'h'}, RESULT)  # type: ignore[arg-type]
 
-            cache.prune_stale_sources({gremlin_file_prefix(file_path): current_hash})
+            cache.prune_stale_sources({gremlin_file_prefix(file_path): {current_hash}})
 
             assert cache.get_cached_result(gremlin_id, old_hash, {'t.py': 'h'}) is None
             assert cache.get_cached_result(gremlin_id, current_hash, {'t.py': 'h'}) == RESULT

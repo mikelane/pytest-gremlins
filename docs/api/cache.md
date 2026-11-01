@@ -141,7 +141,7 @@ SQLite-backed cache for gremlin test results.
 | `has(cache_key)` | `bool` | Check if key exists |
 | `delete(cache_key)` | `None` | Remove single entry |
 | `delete_by_prefix(prefix)` | `None` | Remove entries by prefix |
-| `prune_stale_source_hashes(current_hashes)` | `None` | Remove rows whose source hash is out of date |
+| `prune_stale_source_hashes(current_hashes)` | `None` | Remove rows whose source hash is not a current hash of their file prefix |
 | `clear()` | `None` | Remove all entries |
 | `keys()` | `list[str]` | Get all cache keys |
 | `count()` | `int` | Get entry count |
