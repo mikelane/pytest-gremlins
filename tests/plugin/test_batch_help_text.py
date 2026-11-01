@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from typing import (
+    Protocol,
+    cast,
+)
+
 import pytest
 
 from pytest_gremlins import plugin
+
+
+class _OptionRegistrar(Protocol):
+    """The part of ``pytest.Parser`` that ``pytest_addoption`` calls."""
+
+    def getgroup(self, name: str, description: str = ..., after: str | None = ...) -> object: ...
 
 
 class _RecordingGroup:
@@ -23,13 +34,14 @@ class _RecordingParser:
     def getgroup(self, *_args: object, **_kwargs: object) -> _RecordingGroup:
         return self.group
 
-    def addini(self, *_args: object, **_kwargs: object) -> None:
-        pass
+
+def _register_options(parser: _OptionRegistrar) -> None:
+    plugin.pytest_addoption(cast('pytest.Parser', parser))
 
 
 def _help_texts() -> dict[str, str]:
     parser = _RecordingParser()
-    plugin.pytest_addoption(parser)  # type: ignore[arg-type]
+    _register_options(parser)
     return parser.group.help_by_option
 
 
