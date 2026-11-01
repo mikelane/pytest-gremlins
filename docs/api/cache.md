@@ -255,7 +255,8 @@ adds `pytester-615` (#891), and one whose gremlin runs load pytest-xdist themsel
 disabled adds `xdist-668` (#668). Earlier versions could report false kills for tests using `worker_id` or
 `testrun_uid` when xdist was loaded with `-p xdist.plugin` (spaced or joined) on the command line, or when
 `--disable-plugin-autoload` came with `-p pytest_rerunfailures` in `addopts`, because the gremlin runs went without
-xdist. Other sessions with the part just re-test once. Every other session keeps its key.
+xdist. A session that keeps autoload on but inherits `-p no:xdist` and loads xdist on its command line gets the part as
+well (#685). Other sessions with the part just re-test once. Every other session keeps its key.
 
 ### Invalidation Rules
 

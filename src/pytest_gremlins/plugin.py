@@ -3452,6 +3452,26 @@ _XDIST_PLUGIN_NAMES: tuple[str, ...] = ('xdist.plugin', 'xdist')
 _XDIST_ENTRY_POINT_NAME = 'xdist'
 
 
+_XDIST_BLOCKS = frozenset({'no:xdist', 'no:xdist.plugin'})
+
+
+def _gremlin_runs_inherit_an_xdist_block(config: pytest.Config) -> bool:
+    """Return whether ``addopts`` or ``PYTEST_ADDOPTS`` hold ``-p no:xdist`` (or ``-pno:xdist``)."""
+    tokens = _arguments_gremlin_runs_inherit(config)
+    blocked = {value for flag, value in pairwise(tokens) if flag == '-p'}
+    blocked |= {argument.removeprefix('-p') for argument in tokens if argument.startswith('-p')}
+    return not _XDIST_BLOCKS.isdisjoint(name.strip() for name in blocked)
+
+
+def _loader_options_for_xdist_block(config: pytest.Config) -> list[str]:
+    """Return the ``-p`` loader that overrides an inherited xdist block, for a session that loaded xdist again.
+
+    The session's command line unblocked and loaded xdist, which gremlin runs never see, so they would reject
+    ``-n``.  The later ``-p`` overrides the inherited block.
+    """
+    return _loader_options_for(config, _XDIST_PLUGIN_NAMES)
+
+
 def _xdist_options_for(config: pytest.Config, rerun_options: Sequence[str]) -> tuple[list[str], bool]:
     """Return the ``-p`` loader for gremlin runs and whether they get ``-n 0`` (issue #668).
 
@@ -3467,6 +3487,9 @@ def _xdist_options_for(config: pytest.Config, rerun_options: Sequence[str]) -> t
     """
     if _gremlin_runs_have_autoload_disabled(config) or _DISABLE_PLUGIN_AUTOLOAD_FLAG in rerun_options:
         loader_options = _loader_options_for(config, _XDIST_PLUGIN_NAMES)
+        return loader_options, bool(loader_options)
+    if _gremlin_runs_inherit_an_xdist_block(config):
+        loader_options = _loader_options_for_xdist_block(config)
         return loader_options, bool(loader_options)
     return [], config.pluginmanager.hasplugin(_XDIST_ENTRY_POINT_NAME)
 

@@ -680,6 +680,12 @@ re-tests them (one cache miss). Autoload can be disabled by the environment, by 
 `PYTEST_ADDOPTS`, or by `--disable-plugin-autoload` given only on the command line. Sessions that keep autoload on,
 and sessions with autoload off but no xdist, keep their cache.
 
+Autoload can also stay on while `addopts` or `PYTEST_ADDOPTS` holds `-p no:xdist` and your command line loads xdist
+again with `-p xdist`. The command line does not reach gremlin runs, so they inherit the block and used to fail with
+`unrecognized arguments: -n` on every gremlin. They now get `-p xdist` (under the name your session registered it
+with) before `-n 0`, which overrides the block, and the same `xdist-668` cache key part applies to those sessions. A
+bare `PYTEST_PLUGINS=xdist` needed no change.
+
 ---
 
 ### Using pytest-xdist with gremlins

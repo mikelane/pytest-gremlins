@@ -116,6 +116,23 @@ class DescribeXdistOptionsWithAutoloadOffByTheRunsInputs:
         assert _xdist_options_for(_config(loaded=('xdist',)), []) == (['-p', 'xdist'], True)
 
 
+@pytest.mark.small
+@pytest.mark.usefixtures('autoload_enabled')
+class DescribeXdistOptionsWithAnInheritedBlock:
+    @pytest.mark.parametrize('block', ['no:xdist', 'no:xdist.plugin'])
+    def it_loads_xdist_again_when_addopts_blocks_it(self, block: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', f'-p {block}')
+
+        assert _xdist_options_for(_config(loaded=('xdist',)), []) == (['-p', 'xdist'], True)
+
+    def it_forwards_nothing_when_a_block_hides_xdist_from_the_session_too(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '-p no:xdist')
+
+        assert _xdist_options_for(_config(), []) == NO_XDIST
+
+
 @pytest.mark.medium
 @pytest.mark.usefixtures('autoload_disabled')
 class DescribeGremlinRunsWithAutoloadDisabledAndXdist:
