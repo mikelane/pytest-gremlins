@@ -88,8 +88,8 @@ uv run pytest tests -m "small or medium"
 # Run all tests
 uv run pytest
 
-# Type checking (strict)
-uv run mypy src/pytest_gremlins
+# Type checking (strict; pyproject.toml points it at src and tests)
+uv run mypy
 
 # Linting
 uv run ruff check src tests
