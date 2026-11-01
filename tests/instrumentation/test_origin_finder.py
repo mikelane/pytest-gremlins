@@ -798,3 +798,39 @@ class DescribeSharedFinderSource:
     @pytest.mark.parametrize('script', [_get_bootstrap_script, _get_lightweight_runner_script])
     def it_embeds_the_finder_module_verbatim(self, script: Callable[[], str]) -> None:
         assert inspect.getsource(origin_finder) in script()
+
+
+@pytest.mark.small
+class DescribeInstrumentedEntrySchema:
+    """The sources.json entry has one checked definition, with only what the finder needs required."""
+
+    def it_requires_only_the_source_and_the_origin(self) -> None:
+        assert origin_finder.InstrumentedEntry.__required_keys__ == {'source', 'origin'}
+
+    def it_treats_the_tree_the_identity_and_the_file_names_as_optional(self) -> None:
+        assert origin_finder.InstrumentedEntry.__optional_keys__ == {'tree', 'identity', 'file_names'}
+
+
+@pytest.mark.small
+class DescribeFinderModuleIsPasteable:
+    """The finder module is pasted into generated scripts, which run without pytest-gremlins on the path."""
+
+    def _tree(self) -> ast.Module:
+        return ast.parse(inspect.getsource(origin_finder))
+
+    def it_imports_only_standard_library_modules_at_module_level(self) -> None:
+        imported = {
+            alias.name.split('.')[0] if isinstance(node, ast.Import) else (node.module or '').split('.')[0]
+            for node in self._tree().body
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in (node.names if isinstance(node, ast.Import) else [node])
+        }
+
+        assert imported <= sys.stdlib_module_names
+
+    def it_has_no_future_import(self) -> None:
+        future_imports = [
+            node for node in ast.walk(self._tree()) if isinstance(node, ast.ImportFrom) and node.module == '__future__'
+        ]
+
+        assert future_imports == []

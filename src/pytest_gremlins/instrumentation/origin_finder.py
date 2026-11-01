@@ -41,8 +41,8 @@ class InstrumentedEntry(TypedDict):
     source: str
     tree: NotRequired[str]
     origin: str
-    identity: str | None
-    file_names: list[str]
+    identity: NotRequired[str | None]
+    file_names: NotRequired[list[str]]
 
 
 InstrumentedSources = dict[str, InstrumentedEntry]
