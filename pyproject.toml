@@ -264,6 +264,12 @@ module = "tests.*"
 disallow_untyped_defs = false
 disallow_untyped_decorators = false
 
+# Helper modules that pytest imports by bare name through ``pythonpath = ["tests"]`` (mypy sees them as
+# ``tests.<name>``), and third-party packages without stubs that only the tests and benchmarks import.
+[[tool.mypy.overrides]]
+module = ["cov_samples", "rerun_samples", "secret_env_scrub", "sample", "jsonschema", "pre_commit.*", "psutil", "xdist", "xdist.*"]
+ignore_missing_imports = true
+
 # =============================================================================
 # Pytest
 # =============================================================================
