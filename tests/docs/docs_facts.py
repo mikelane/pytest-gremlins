@@ -332,7 +332,19 @@ def _is_commented_out_setting(text: str) -> bool:
     try:
         tomllib.loads(text)
     except tomllib.TOMLDecodeError:
-        return text[assignment.end() :].strip() in _MULTI_LINE_VALUE_OPENERS
+        value = text[assignment.end() :].strip()
+        if value.startswith('['):
+            return _parses_once_the_array_closes(text)
+        return value in _MULTI_LINE_VALUE_OPENERS
+    return True
+
+
+def _parses_once_the_array_closes(text: str) -> bool:
+    """Return whether ``text`` opens a TOML array that parses once its closing bracket is on the next line."""
+    try:
+        tomllib.loads(f'{text}\n]')
+    except tomllib.TOMLDecodeError:
+        return False
     return True
 
 
