@@ -125,10 +125,11 @@ pytest-gremlins needs (like dynamic contexts for test selection).
 **Symptom:**
 
 ```text
-UserWarning: Unknown operator 'comparision' requested, ignoring
+ERROR: pytest-gremlins: --gremlin-operators has unknown operator 'comparision'. Valid operators: ...
 ```
 
-(Note: no gremlins found because the operator name was misspelled)
+(The run stops with exit code 4 and the message lists the valid operator names. A misspelled name in the
+`operators` key of `pyproject.toml` produces the same error, naming `[tool.pytest-gremlins].operators`.)
 
 **Cause:** You specified an operator name in configuration that doesn't exist. Common causes:
 
