@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.reporting.diff import _node_to_source
-from pytest_gremlins.reporting.html import (  # type: ignore[attr-defined]
+from pytest_gremlins.reporting.history import _build_operator_data
+from pytest_gremlins.reporting.html import (
     HtmlReporter,
-    _build_operator_data,
     append_history_entry,
     load_history,
     resolve_html_output_path,
