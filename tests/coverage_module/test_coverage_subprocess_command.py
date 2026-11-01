@@ -6,15 +6,17 @@ for full node ID contexts instead of dynamic_context=test_function.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import cast
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 from unittest.mock import (
     MagicMock,
     patch,
 )
 
 import pytest
-import xdist.plugin
+import xdist.plugin  # type: ignore[import-untyped]
 
 from pytest_gremlins.plugin import (
     GremlinSession,
@@ -23,6 +25,9 @@ from pytest_gremlins.plugin import (
     _run_tests_with_coverage,
 )
 from pytest_gremlins.xdist_options import addopts_without_xdist
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.medium

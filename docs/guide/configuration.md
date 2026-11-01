@@ -542,6 +542,11 @@ The cache is stored in `.gremlins_cache/` in your project root. Cache keys inclu
 
 When source or test files change, affected gremlins are re-tested.
 
+When a source file changes, the rows cached for its old content can never hit again, so each run deletes them at
+start. `results.db` keeps one version of each file instead of growing with every edit. This needs no option. Because
+the older version's rows are gone, switching to a branch with a different version of a file and back costs hits for
+that file: its gremlins are re-tested once. See [Pruning stranded rows](../api/cache.md#pruning-stranded-rows).
+
 **Clear the cache:**
 
 ```bash
@@ -909,7 +914,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10
 
       - name: Set up Python
         uses: actions/setup-python@v5

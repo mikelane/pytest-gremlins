@@ -231,7 +231,7 @@ class DescribeMaxPardonsPctFileIO:
 
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
+        pytest_configure(make_pytest_config(tmp_path))
 
         session = plugin._get_session()
         assert session is not None
@@ -279,7 +279,7 @@ class DescribeMaxPardonsPctFileIO:
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
         with patch('pytest_gremlins.plugin.pytest') as mock_pytest:
-            pytest_configure(make_pytest_config(tmp_path, gremlin_max_pardons_pct=150.0))  # type: ignore[arg-type]
+            pytest_configure(make_pytest_config(tmp_path, gremlin_max_pardons_pct=150.0))
 
         mock_pytest.exit.assert_called_once()
         assert mock_pytest.exit.call_args.kwargs.get('returncode') == 4

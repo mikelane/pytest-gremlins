@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 import threading
 import time
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 from unittest.mock import (
     MagicMock,
     create_autospec,
@@ -28,6 +31,9 @@ from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 LOADS = ControlRunOutcome(loads_cleanly=True, output='', seconds=0.1)
 FAILS = ControlRunOutcome(loads_cleanly=False, output='ImportError: nope', seconds=0.1)
@@ -62,7 +68,7 @@ def _session(tmp_path: Path, workers: int | None) -> GremlinSession:
 def fake_control(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     control = create_autospec(run_control, return_value=LOADS)
     monkeypatch.setattr('pytest_gremlins.plugin.run_control', control)
-    return control
+    return cast('MagicMock', control)
 
 
 @pytest.mark.medium

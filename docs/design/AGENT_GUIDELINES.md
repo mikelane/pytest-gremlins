@@ -485,15 +485,15 @@ repos:
         stages: [pre-commit]
       - id: mypy-commit
         name: mypy (strict, commit)
-        entry: uv run --frozen mypy src/pytest_gremlins
+        entry: uv run --frozen mypy
         language: system
-        files: ^src/
+        files: ^(src|tests)/
         types_or: [python, pyi]
         pass_filenames: false
         stages: [pre-commit]
 
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.13.7
+    rev: v4.19.3
     hooks:
       - id: commitizen
         stages: [commit-msg]
@@ -736,7 +736,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -745,7 +745,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync
       - run: uv run mypy src
 
@@ -757,7 +757,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: ${{ matrix.python-version }}
       - run: uv sync
@@ -768,7 +768,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync
       - run: uv run pytest --doctest-modules src/pytest_gremlins
       - run: uv run mkdocs build --strict
@@ -777,7 +777,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync
       - run: uv run pip-audit
 ```
@@ -797,7 +797,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv build
       - run: uv publish --index-url https://test.pypi.org/simple/
 
@@ -813,7 +813,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10
       - run: uv build
       - run: uv publish
 

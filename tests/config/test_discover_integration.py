@@ -7,7 +7,7 @@ import pytest
 class DescribeDiscoveryChainIntegration:
     """Pytester-based test for the full discovery chain."""
 
-    def it_discovers_gremlins_via_project_name_when_no_setuptools(self, pytester_with_markers: pytest.Pytester):
+    def it_discovers_gremlins_via_project_name_when_no_setuptools(self, pytester_with_markers: pytest.Pytester) -> None:
         """Full chain: [project].name heuristic discovers package, gremlins are found."""
         pytester_with_markers.makefile(
             '.toml',

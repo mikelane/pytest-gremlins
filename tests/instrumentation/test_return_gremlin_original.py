@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import ast
+from typing import TYPE_CHECKING
 
 import pytest
 
 from pytest_gremlins.instrumentation.transformer import transform_source
 
+if TYPE_CHECKING:
+    from pytest_gremlins.instrumentation.gremlin import Gremlin
 
-def _return_gremlins(statement: str):
+
+def _return_gremlins(statement: str) -> list[Gremlin]:
     gremlins, _ = transform_source(f'def target(a, b, age):\n    {statement}\n', 'm.py')
     return [g for g in gremlins if isinstance(g.original_node, ast.Return)]
 
@@ -42,7 +46,7 @@ MAIN_RETURN_FALSE_THEN_COMPARE = [
 ]
 
 
-def _inventory(source: str):
+def _inventory(source: str) -> list[tuple[str, str, str, int]]:
     gremlins, _ = transform_source(source, 'm.py')
     return [(g.gremlin_id, g.operator_name, g.description, g.line_number) for g in gremlins]
 

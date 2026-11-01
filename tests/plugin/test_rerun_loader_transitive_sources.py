@@ -9,7 +9,7 @@ registration and every gremlin errors unless gremlin runs are told to disable au
 from __future__ import annotations
 
 import pytest
-from rerun_samples import (
+from rerun_samples import (  # type: ignore[import-not-found]
     GREMLIN_ARGS,
     SAMPLE,
     verdicts,

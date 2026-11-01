@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 from types import SimpleNamespace
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 from unittest.mock import (
     MagicMock,
     create_autospec,
@@ -41,6 +44,11 @@ from pytest_gremlins.reporting.results import (
     GremlinResultStatus,
 )
 from pytest_gremlins.reporting.score import MutationScore
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pytest_gremlins.cache.types import CachedGremlinResult
 
 MAPPED = 'tests/test_m.py::test_mapped'
 UNMAPPED = 'tests/test_m.py::test_unmapped[A]'
@@ -297,7 +305,10 @@ class DescribeCacheKeyAfterTheMarkerFix:
         after = GremlinSession(test_node_ids={parametrized: parametrized}, test_hashes={'t.py': 'file-hash'})
         cache = IncrementalCache(tmp_path)
         cache.cache_result(
-            'g001', 'src', _build_test_hashes_for_gremlin([parametrized], before), {'status': 'survived'}
+            'g001',
+            'src',
+            _build_test_hashes_for_gremlin([parametrized], before),
+            cast('CachedGremlinResult', {'status': 'survived'}),
         )
 
         replayed = cache.get_cached_result('g001', 'src', _build_test_hashes_for_gremlin([parametrized], after))

@@ -9,6 +9,7 @@ import ast
 import json
 from pathlib import Path
 import subprocess
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -44,7 +45,7 @@ TEST_NAMES = [f'test_entity_for_route_maps_registry_key_{i}' for i in range(430)
 
 def _node_ids_in_file(command: list[str]) -> list[str]:
     option = next(argument for argument in command if argument.startswith(f'{NODE_IDS_FILE_OPTION}='))
-    return json.loads(Path(option.split('=', 1)[1]).read_text(encoding='utf-8'))
+    return cast('list[str]', json.loads(Path(option.split('=', 1)[1]).read_text(encoding='utf-8')))
 
 
 @pytest.fixture

@@ -19,6 +19,8 @@ from pytest_gremlins.cache.versions import installed_versions_fingerprint
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from pytest_gremlins.operators.protocol import GremlinOperator
+
 DECORATOR_MODULE = (
     'import functools\n'
     '\n'
@@ -89,14 +91,15 @@ LOCAL_NAME_COPY_HELPER = (
 UNRELATED_MODULE = 'VALUE = 1\n'
 
 
-def _path_load_operator(path: Path, source: str, module_name: str = 'path_loaded_helper') -> object:
+def _path_load_operator(path: Path, source: str, module_name: str = 'path_loaded_helper') -> GremlinOperator:
     path.write_text(source)
     spec = importlib.util.spec_from_file_location(module_name, path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.HelperOperator()
+    operator: GremlinOperator = module.HelperOperator()
+    return operator
 
 
 @pytest.fixture

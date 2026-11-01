@@ -38,7 +38,7 @@ class DescribePytestConfigureWithFileConfig:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path))
 
         session = plugin._get_session()
         assert session is not None
@@ -62,7 +62,7 @@ class DescribePytestConfigureWithFileConfig:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(  # type: ignore[arg-type]
+        plugin.pytest_configure(
             make_pytest_config(tmp_path, gremlin_operators='boolean'),
         )
 
@@ -91,7 +91,7 @@ class DescribePytestConfigureWithFileConfig:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(  # type: ignore[arg-type]
+        plugin.pytest_configure(
             make_pytest_config(tmp_path, gremlin_targets='lib'),
         )
 
@@ -115,7 +115,7 @@ class DescribePytestConfigureWithFileConfig:
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
         monkeypatch.setattr('pytest_gremlins.config._packages_distributions', dict)
 
-        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path))
 
         session = plugin._get_session()
         assert session is not None
@@ -136,7 +136,7 @@ class DescribePytestConfigureWithFileConfig:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path))
 
         session = plugin._get_session()
         assert session is not None
@@ -159,7 +159,7 @@ class DescribePytestConfigureWithFileConfig:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path))
 
         session = plugin._get_session()
         assert session is not None
@@ -179,7 +179,7 @@ class DescribePytestConfigureWithFileConfig:
         plugin._set_session(None)
         monkeypatch.setattr('pytest_gremlins.plugin._gremlin_session', None)
 
-        plugin.pytest_configure(make_pytest_config(tmp_path))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path))
 
         session = plugin._get_session()
         assert session is not None
@@ -208,7 +208,7 @@ class DescribePytestConfigureCoverageMode:
 
         pm = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
         pm.get_plugin.return_value = MagicMock()  # pytest-cov plugin: internal type, no public spec; bare-mock: ok
-        plugin.pytest_configure(make_pytest_config(tmp_path, pluginmanager=pm))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path, pluginmanager=pm))
 
         session = plugin._get_session()
         assert session is not None
@@ -231,7 +231,7 @@ class DescribePytestConfigureCoverageMode:
 
         pm = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
         pm.get_plugin.return_value = None
-        plugin.pytest_configure(make_pytest_config(tmp_path, pluginmanager=pm))  # type: ignore[arg-type]
+        plugin.pytest_configure(make_pytest_config(tmp_path, pluginmanager=pm))
 
         session = plugin._get_session()
         assert session is not None

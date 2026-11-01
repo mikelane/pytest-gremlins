@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import sys
 import types
+from typing import TYPE_CHECKING
 
 import pytest
 
 from pytest_gremlins.parallel.fork_executor import ForkExecutor
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.results import GremlinResultStatus
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def _make_instrumented_module(module_name: str) -> types.ModuleType:
@@ -69,20 +73,20 @@ def test_zero_is_not_positive():
 
 
 @pytest.fixture
-def instrumented_module() -> types.ModuleType:
+def instrumented_module() -> Iterator[types.ModuleType]:
     """Provide a fake instrumented module, cleaned up after test."""
     mod_name = '_test_fork_gremlins_target'
     module = _make_instrumented_module(mod_name)
-    yield module  # type: ignore[misc]
+    yield module
     sys.modules.pop(mod_name, None)
 
 
 @pytest.fixture
-def test_module(instrumented_module: types.ModuleType) -> types.ModuleType:
+def test_module(instrumented_module: types.ModuleType) -> Iterator[types.ModuleType]:
     """Provide a test module that exercises the instrumented module."""
     mod_name = '_test_fork_gremlins_tests'
     module = _make_test_module(mod_name, instrumented_module.__name__)
-    yield module  # type: ignore[misc]
+    yield module
     sys.modules.pop(mod_name, None)
 
 
@@ -197,7 +201,7 @@ class DescribeForkExecutorIsolation:
             test_specs=test_specs,
         )
 
-        assert instrumented_module.__gremlin_active__ is None  # type: ignore[attr-defined]
+        assert instrumented_module.__gremlin_active__ is None
 
     def it_records_execution_time(
         self,

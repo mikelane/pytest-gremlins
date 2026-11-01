@@ -72,7 +72,7 @@ NO_RELEASE_MESSAGE = (
     'No release tag with readable cache markers was found from the base, so a lowered marker cannot be compared '
     'with a released value. Fetch tags (fetch-depth: 0) or restore the base value.'
 )
-RELEASE_TAG_PATTERN = 'v[0-9]*'
+RELEASE_TAG_PATTERN = 'v[0-9]*.[0-9]*.[0-9]*'
 VERSIONS_PATH = 'src/pytest_gremlins/cache/versions.py'
 INCREMENTAL_PATH = 'src/pytest_gremlins/cache/incremental.py'
 
@@ -126,7 +126,8 @@ def parse_markers(versions_source: str, incremental_source: str) -> Markers | No
     return Markers(cache_version=cache_version, runner_fidelity_version=runner_fidelity_version)
 
 
-def _git_output(repo: Path, *args: str) -> str | None:
+def git_output(repo: Path, *args: str) -> str | None:
+    """Return the stdout of ``git <args>`` run in ``repo``, or None when git exits non-zero."""
     completed = subprocess.run([GIT, *args], cwd=repo, capture_output=True, text=True, check=False)
     return completed.stdout if completed.returncode == 0 else None
 
@@ -136,12 +137,14 @@ def released_markers(ref: str, repo: Path = REPO_ROOT) -> Markers | None:
 
     Reads the tag's source with ``git cat-file -p``, so it needs the tags fetched but no checkout of them.
     """
-    tag = _git_output(repo, 'describe', '--tags', '--abbrev=0', '--match', RELEASE_TAG_PATTERN, ref)
+    if ref.startswith('-'):
+        return None
+    tag = git_output(repo, 'describe', '--tags', '--abbrev=0', '--match', RELEASE_TAG_PATTERN, ref)
     if tag is None:
         return None
     tag = tag.strip()
-    versions = _git_output(repo, 'cat-file', '-p', f'{tag}:{VERSIONS_PATH}')
-    incremental = _git_output(repo, 'cat-file', '-p', f'{tag}:{INCREMENTAL_PATH}')
+    versions = git_output(repo, 'cat-file', '-p', f'{tag}:{VERSIONS_PATH}')
+    incremental = git_output(repo, 'cat-file', '-p', f'{tag}:{INCREMENTAL_PATH}')
     if versions is None or incremental is None:
         return None
     return parse_markers(versions, incremental)
@@ -213,12 +216,16 @@ def compare_verdicts(base: Mapping[str, str], head: Mapping[str, str]) -> Verdic
     )
 
 
-def _describe(diff: VerdictDiff) -> str:
-    lines = [
+def _change_lines(diff: VerdictDiff) -> list[str]:
+    return [
         *(f'added: {gremlin}' for gremlin in diff.added),
         *(f'removed: {gremlin}' for gremlin in diff.removed),
         *(f'changed: {change}' for change in diff.changed),
     ]
+
+
+def _describe(diff: VerdictDiff) -> str:
+    lines = _change_lines(diff)
     advice = CACHE_VERSION_ADVICE if diff.changes_the_gremlin_set else RUNNER_FIDELITY_ADVICE
     return '\n'.join(
         [
@@ -251,8 +258,10 @@ def check_verdicts(
     diff = compare_verdicts(base, head)
     if lowered:
         message = LOWERED_MARKER_MESSAGE.format(lowered=', '.join(lowered))
+        if not diff.is_empty:
+            message = '\n'.join([message, 'Gremlin verdicts on the sample project also changed:', *_change_lines(diff)])
         if released is None:
-            return f'{message} {NO_RELEASE_MESSAGE}'
+            return f'{message}\n{NO_RELEASE_MESSAGE}'
         below_release = head_markers.lowered_from(released)
         return message if below_release or not diff.is_empty else None
     if diff.is_empty or base_markers != head_markers:
@@ -272,7 +281,8 @@ def guarded_repo_paths() -> set[str]:
     return {source.relative_to(REPO_ROOT).as_posix() for source in guard.guarded_sources()}
 
 
-def _git_diff_names(base_ref: str, *filters: str) -> list[str]:
+def git_diff_names(base_ref: str, *filters: str) -> list[str]:
+    """Return the paths that differ between ``base_ref`` and ``HEAD``, one entry per path (renames split)."""
     completed = subprocess.run(
         [GIT, 'diff', '--name-only', '--no-renames', *filters, base_ref, 'HEAD'],
         cwd=REPO_ROOT,
@@ -304,8 +314,8 @@ def _run_sample(sample: Path, workdir: Path) -> dict[str, str] | None:
 
 
 def _guarded_changes_command(args: argparse.Namespace) -> int:
-    changed = _git_diff_names(args.base_ref)
-    deleted = _git_diff_names(args.base_ref, '--diff-filter=D')
+    changed = git_diff_names(args.base_ref)
+    deleted = git_diff_names(args.base_ref, '--diff-filter=D')
     for path in guarded_changes(changed, deleted, guarded_repo_paths()):
         print(path)
     return 0

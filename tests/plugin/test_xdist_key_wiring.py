@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cov_samples import (
+from cov_samples import (  # type: ignore[import-not-found]
     SESSION_ARGS,
     write_project,
 )

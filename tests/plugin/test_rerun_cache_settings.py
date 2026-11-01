@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -11,6 +12,9 @@ from pytest_gremlins.rerun_options import (
     rerun_cache_settings,
     rerun_ini_as_gremlin_runs_read,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _option(**overrides: object) -> SimpleNamespace:
@@ -25,7 +29,7 @@ def _option(**overrides: object) -> SimpleNamespace:
     return SimpleNamespace(**{**defaults, **overrides})
 
 
-def _ini(**values: object) -> object:
+def _ini(**values: object) -> Callable[[str], object]:
     return values.get
 
 

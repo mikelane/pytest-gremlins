@@ -8,9 +8,12 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from types import ModuleType
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'check_verdict_change.py'
 
@@ -110,7 +113,8 @@ class DescribeVerdictCheck:
     def it_fails_when_a_marker_was_lowered_with_a_verdict_change(self, head_markers: object, lowered: str) -> None:
         failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, head_markers, released=RELEASED_MARKERS)
 
-        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered)
+        assert failure is not None
+        assert failure.startswith(checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered))
 
     def it_fails_when_a_marker_was_lowered_even_if_no_verdict_changed(self) -> None:
         lowered = checker.Markers(cache_version='0', runner_fidelity_version='rf21')
@@ -124,7 +128,22 @@ class DescribeVerdictCheck:
 
         failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, mixed, released=RELEASED_MARKERS)
 
-        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION')
+        assert failure is not None
+        assert failure.startswith(checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION'))
+        assert 'changed: sample.py:10 comparison: >= to >: zapped -> survived' in failure
+
+    def it_names_the_changed_verdict_in_the_full_failure_message(self) -> None:
+        mixed = checker.Markers(cache_version='2', runner_fidelity_version='rf20')
+
+        failure = checker.check_verdicts(ZAPPED, SURVIVED, BASE_MARKERS, mixed, released=RELEASED_MARKERS)
+
+        assert failure == '\n'.join(
+            [
+                checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION'),
+                'Gremlin verdicts on the sample project also changed:',
+                'changed: sample.py:10 comparison: >= to >: zapped -> survived',
+            ]
+        )
 
 
 UNRELEASED_BASE = checker.Markers(cache_version='3', runner_fidelity_version='rf21')
@@ -170,7 +189,8 @@ class DescribeMarkerLoweredToTheReleasedValue:
     ) -> None:
         failure = checker.check_verdicts(ZAPPED, SURVIVED, UNRELEASED_BASE, candidate, released=RELEASED_AT_2_RF20)
 
-        assert failure == checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered)
+        assert failure is not None
+        assert failure.startswith(checker.LOWERED_MARKER_MESSAGE.format(lowered=lowered))
 
     def it_fails_closed_and_says_why_when_no_release_is_known(self) -> None:
         lowered = checker.Markers(cache_version='3', runner_fidelity_version='rf20')
@@ -178,7 +198,21 @@ class DescribeMarkerLoweredToTheReleasedValue:
         failure = checker.check_verdicts(ZAPPED, ZAPPED, UNRELEASED_BASE, lowered, released=None)
 
         assert failure == (
-            checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION') + ' ' + checker.NO_RELEASE_MESSAGE
+            checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION') + '\n' + checker.NO_RELEASE_MESSAGE
+        )
+
+    def it_appends_the_no_release_message_to_the_change_list_when_a_verdict_changed(self) -> None:
+        lowered = checker.Markers(cache_version='3', runner_fidelity_version='rf20')
+
+        failure = checker.check_verdicts(ZAPPED, SURVIVED, UNRELEASED_BASE, lowered, released=None)
+
+        assert failure == '\n'.join(
+            [
+                checker.LOWERED_MARKER_MESSAGE.format(lowered='RUNNER_FIDELITY_VERSION'),
+                'Gremlin verdicts on the sample project also changed:',
+                'changed: sample.py:10 comparison: >= to >: zapped -> survived',
+                checker.NO_RELEASE_MESSAGE,
+            ]
         )
 
     def it_does_not_need_a_release_when_no_marker_is_lowered(self) -> None:
@@ -265,6 +299,19 @@ class DescribeReleasedMarkers:
         _git(repo, 'tag', 'not-a-release')
 
         assert checker.released_markers('HEAD', repo=repo) is None
+
+    @pytest.mark.parametrize('tag', ['v1-wip', 'v2'])
+    def it_ignores_tags_that_are_not_three_part_release_versions(self, repo: Path, tag: str) -> None:
+        _commit_markers(repo, '1', 'rf19')
+        _git(repo, 'tag', tag)
+
+        assert checker.released_markers('HEAD', repo=repo) is None
+
+    def it_returns_nothing_for_a_ref_that_looks_like_a_git_option(self, repo: Path) -> None:
+        _commit_markers(repo, '1', 'rf19')
+        _git(repo, 'tag', 'v1.0.0')
+
+        assert checker.released_markers('--all', repo=repo) is None
 
     def it_returns_nothing_when_the_tag_has_no_marker_sources(self, repo: Path) -> None:
         (repo / 'README.md').write_text('hi\n', encoding='utf-8')
@@ -372,7 +419,7 @@ class DescribeGuardedPathsFromTheGuard:
 MODULE_BODY = ''.join(f'value_{index} = {index}\n' for index in range(30))
 
 
-def _git(repo: Path, *args: str) -> None:
+def _qa_git(repo: Path, *args: str) -> None:
     subprocess.run(['git', '-c', 'user.name=qa', '-c', 'user.email=qa@example.com', *args], cwd=repo, check=True)  # noqa: S607
 
 
@@ -384,14 +431,14 @@ def repo_with_module_moved_out_of_the_package(tmp_path: Path, monkeypatch: pytes
     module = tmp_path / 'src' / 'pytest_gremlins' / 'moved.py'
     module.parent.mkdir(parents=True)
     module.write_text(MODULE_BODY, encoding='utf-8')
-    _git(tmp_path, 'init', '--quiet')
-    _git(tmp_path, 'add', '.')
-    _git(tmp_path, 'commit', '--quiet', '-m', 'base')
+    _qa_git(tmp_path, 'init', '--quiet')
+    _qa_git(tmp_path, 'add', '.')
+    _qa_git(tmp_path, 'commit', '--quiet', '-m', 'base')
     (tmp_path / 'tools').mkdir()
-    _git(tmp_path, 'mv', 'src/pytest_gremlins/moved.py', 'tools/moved.py')
+    _qa_git(tmp_path, 'mv', 'src/pytest_gremlins/moved.py', 'tools/moved.py')
     with (tmp_path / 'tools' / 'moved.py').open('a', encoding='utf-8') as moved:
         moved.write('extra = 1\n')
-    _git(tmp_path, 'commit', '--quiet', '-am', 'move the module out of the package')
+    _qa_git(tmp_path, 'commit', '--quiet', '-am', 'move the module out of the package')
     monkeypatch.setattr(checker, 'REPO_ROOT', tmp_path)
     return tmp_path
 
@@ -400,8 +447,8 @@ def repo_with_module_moved_out_of_the_package(tmp_path: Path, monkeypatch: pytes
 class DescribeModuleMovedOutOfThePackage:
     @pytest.mark.usefixtures('repo_with_module_moved_out_of_the_package')
     def it_counts_the_old_path_like_a_deleted_package_module(self) -> None:
-        changed = checker._git_diff_names('HEAD~1')
-        deleted = checker._git_diff_names('HEAD~1', '--diff-filter=D')
+        changed = checker.git_diff_names('HEAD~1')
+        deleted = checker.git_diff_names('HEAD~1', '--diff-filter=D')
 
         changes = checker.guarded_changes(changed, deleted, set())
 
@@ -461,7 +508,7 @@ class DescribeCompareCommand:
         self, tmp_path: Path, repo: Path
     ) -> None:
         _commit_markers(repo, '1', 'rf21')
-        _git(repo, 'tag', 'v1.0.0')
+        _qa_git(repo, 'tag', 'v1.0.0')
         base = _write_run(tmp_path / 'base.json', ZAPPED, cache_version='2')
         head = _write_run(tmp_path / 'head.json', ZAPPED, cache_version='1')
 

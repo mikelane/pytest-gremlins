@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -19,12 +19,15 @@ from .docs_facts import (
     toml_default_comments,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 @pytest.mark.medium
 class DescribeRegisteredOptions:
     """The option list covers every group the plugin's hook registers into."""
 
-    def it_includes_an_option_added_with_parser_addoption(self, monkeypatch: pytest.MonkeyPatch):
+    def it_includes_an_option_added_with_parser_addoption(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def hook_adding_an_anonymous_option(parser: pytest.Parser) -> None:
             real_hook(parser)
             parser.addoption('--gremlin-example', action='store_true', help='an undocumented option')
@@ -33,7 +36,7 @@ class DescribeRegisteredOptions:
 
         assert '--gremlin-example' in registered_flags()
 
-    def it_includes_an_option_added_to_another_named_group(self, monkeypatch: pytest.MonkeyPatch):
+    def it_includes_an_option_added_to_another_named_group(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def hook_adding_a_grouped_option(parser: pytest.Parser) -> None:
             real_hook(parser)
             parser.getgroup('other').addoption('--gremlin-other', action='store_true', help='another group')
@@ -50,7 +53,7 @@ class DescribeRegisteredOptions:
 class DescribeQuotedMessages:
     """A message quoted as pytest prints a usage error is checked like any other."""
 
-    def it_finds_a_message_quoted_after_the_error_prefix(self, tmp_path: Path):
+    def it_finds_a_message_quoted_after_the_error_prefix(self, tmp_path: Path) -> None:
         (tmp_path / 'page.md').write_text(
             '```text\n$ pytest --gremlins\nERROR: pytest-gremlins: this message does not exist\n```\n',
             encoding='utf-8',
@@ -63,7 +66,7 @@ class DescribeQuotedMessages:
 class DescribeTomlBlocks:
     """A TOML block that does not parse is reported with its page and line."""
 
-    def it_names_the_page_and_line_of_a_block_that_does_not_parse(self, tmp_path: Path):
+    def it_names_the_page_and_line_of_a_block_that_does_not_parse(self, tmp_path: Path) -> None:
         page = tmp_path / 'configuration.md'
         page.write_text('intro\n\n```toml\n[tool.pytest-gremlins]\nworkers = ...\n```\n', encoding='utf-8')
 
@@ -75,7 +78,7 @@ class DescribeTomlBlocks:
 class DescribeDefaultCells:
     """The Default column is found by its header, wherever it sits."""
 
-    def it_reads_a_table_whose_default_column_is_second(self, tmp_path: Path):
+    def it_reads_a_table_whose_default_column_is_second(self, tmp_path: Path) -> None:
         page = tmp_path / 'configuration.md'
         page.write_text(
             '| Key | Default | Description |\n|---|---|---|\n| `batch_size` | `99` | batch size |\n',
@@ -84,7 +87,7 @@ class DescribeDefaultCells:
 
         assert default_cells(page) == {'batch_size': '`99`'}
 
-    def it_names_the_page_and_line_of_a_row_too_short_to_have_a_default(self, tmp_path: Path):
+    def it_names_the_page_and_line_of_a_row_too_short_to_have_a_default(self, tmp_path: Path) -> None:
         page = tmp_path / 'configuration.md'
         page.write_text(
             '| Key | Description | Default |\n|---|---|---|\n| `batch_size` | batch size |\n', encoding='utf-8'
@@ -98,7 +101,7 @@ class DescribeDefaultCells:
 class DescribeTomlDefaultCommentAttribution:
     """A Default comment belongs to the assignment directly below it, not to whichever key comes next."""
 
-    def it_does_not_carry_an_orphan_comment_over_a_commented_out_key(self, tmp_path: Path):
+    def it_does_not_carry_an_orphan_comment_over_a_commented_out_key(self, tmp_path: Path) -> None:
         page = tmp_path / 'configuration.md'
         page.write_text(
             '```toml\n[tool.pytest-gremlins]\n# Default: 10\n# batch_size = 20\n\ncache = true\n```\n',
@@ -107,7 +110,7 @@ class DescribeTomlDefaultCommentAttribution:
 
         assert toml_default_comments(page) == {}
 
-    def it_attributes_a_default_comment_that_more_comment_lines_follow(self, tmp_path: Path):
+    def it_attributes_a_default_comment_that_more_comment_lines_follow(self, tmp_path: Path) -> None:
         page = tmp_path / 'configuration.md'
         page.write_text(
             '```toml\n[tool.pytest-gremlins]\n# Default: []\n# Test files are skipped.\nexclude = []\n```\n',
@@ -116,7 +119,7 @@ class DescribeTomlDefaultCommentAttribution:
 
         assert toml_default_comments(page) == {'exclude': '[]'}
 
-    def it_attributes_a_default_comment_that_wraps_onto_a_second_line(self, tmp_path: Path):
+    def it_attributes_a_default_comment_that_wraps_onto_a_second_line(self, tmp_path: Path) -> None:
         page = tmp_path / 'configuration.md'
         page.write_text(
             '```toml\n[tool.pytest-gremlins]\n# Default: not set (one at a time unless\n'

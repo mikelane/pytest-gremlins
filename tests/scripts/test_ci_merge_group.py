@@ -7,7 +7,10 @@ does not run on that event never reports, and the queued PR times out.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
 import pytest
 import yaml
@@ -19,13 +22,13 @@ PR_ONLY_CONTEXTS = ('github.event.pull_request', 'github.head_ref', 'github.base
 
 
 def _workflow() -> dict[Any, Any]:
-    return yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))
+    return cast('dict[Any, Any]', yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8')))
 
 
 def _triggers() -> dict[str, Any]:
     # PyYAML parses the bare key ``on`` as boolean True.
     workflow = _workflow()
-    return workflow.get('on', workflow.get(True))
+    return cast('dict[str, Any]', workflow.get('on', workflow.get(True)))
 
 
 @pytest.mark.medium
@@ -57,6 +60,20 @@ class DescribeCiMergeGroupTrigger:
 
         assert context not in text
 
-    def it_isolates_the_concurrency_group_per_ref(self) -> None:
-        # Each merge group runs on its own gh-readonly-queue ref, so a ref-keyed group never cancels another.
-        assert '${{ github.ref }}' in _workflow()['concurrency']['group']
+    def it_keys_pushes_to_main_on_the_commit_so_back_to_back_merges_each_finish(self) -> None:
+        # The queue merges PRs back to back. A group shared by every push to main would cancel the earlier run.
+        group = _workflow()['concurrency']['group']
+
+        assert "github.event_name == 'push' && github.sha" in group
+
+    def it_keys_every_other_event_on_the_ref(self) -> None:
+        # Each merge group runs on its own gh-readonly-queue ref, and a PR on its own merge ref.
+        group = _workflow()['concurrency']['group']
+
+        assert group.endswith('|| github.ref }}')
+
+    def it_cancels_in_progress_runs_only_for_pull_requests(self) -> None:
+        # A newer push to a PR supersedes its older run. Pushes to main and merge groups must run to completion.
+        cancel = _workflow()['concurrency']['cancel-in-progress']
+
+        assert cancel == "${{ github.event_name == 'pull_request' }}"

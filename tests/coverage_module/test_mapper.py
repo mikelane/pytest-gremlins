@@ -44,7 +44,7 @@ class DescribeCoverageMapAddCoverage:
 class DescribeCoverageMapIdempotency:
     """Test idempotency of add operations."""
 
-    def it_add_same_test_twice_to_same_location_is_idempotent(self, coverage_map) -> None:
+    def it_add_same_test_twice_to_same_location_is_idempotent(self, coverage_map: CoverageMap) -> None:
         """Adding ('src/auth.py', 42, 'test_login') twice still results in 1 test at that location."""
         coverage_map.add('src/auth.py', 42, 'test_login')
         coverage_map.add('src/auth.py', 42, 'test_login')
