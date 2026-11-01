@@ -470,6 +470,27 @@ class DescribeGremlinFinderMetaPathEdges:
 
 
 @pytest.mark.small
+class DescribeGremlinLoaderPackageData:
+    """Package data is read through the loader that located the file, and only offered when that loader has it."""
+
+    def it_offers_no_get_data_when_the_original_loader_has_none(self) -> None:
+        loader = GremlinLoader(None, original_loader=object(), source=INSTRUMENTED)
+
+        assert getattr(loader, 'get_data', None) is None
+
+    def it_offers_no_get_data_when_there_is_no_original_loader(self) -> None:
+        loader = GremlinLoader(None, source=INSTRUMENTED)
+
+        assert getattr(loader, 'get_data', None) is None
+
+    def it_reads_data_through_the_original_loader(self) -> None:
+        original = SimpleNamespace(get_data=lambda path: f'data of {path}'.encode())
+        loader = GremlinLoader(None, original_loader=original, source=INSTRUMENTED)
+
+        assert loader.get_data('payload.bin') == b'data of payload.bin'
+
+
+@pytest.mark.small
 class DescribeGremlinLoaderResourceReader:
     """Package data is read through the loader that found the file, when there is one."""
 
