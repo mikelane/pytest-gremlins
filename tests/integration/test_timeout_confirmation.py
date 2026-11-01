@@ -67,7 +67,7 @@ _MODES = {
 }
 
 
-def _json_report(pytester: pytest.Pytester) -> dict:
+def _json_report(pytester: pytest.Pytester) -> dict[str, Any]:
     return cast('dict[Any, Any]', json.loads(Path(pytester.path, 'coverage', 'gremlins', 'gremlins.json').read_text()))
 
 

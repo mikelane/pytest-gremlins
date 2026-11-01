@@ -92,7 +92,7 @@ def _argparse_parser(parser: pytest.Parser) -> Any:
     optparser = getattr(parser, 'optparser', None)
     # TODO(#721): pytest 8 has no public accessor, so this falls back to the private _getparser().
     # Remove the fallback once the pytest floor reaches 9.x.
-    return optparser if optparser is not None else parser._getparser()
+    return optparser if optparser is not None else parser._getparser()  # type: ignore[attr-defined]
 
 
 @pytest.mark.small

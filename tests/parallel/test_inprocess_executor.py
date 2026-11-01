@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import types
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -19,6 +20,9 @@ from pytest_gremlins.parallel.inprocess_executor import (
 )
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.results import GremlinResultStatus
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def _make_instrumented_module(module_name: str) -> types.ModuleType:
@@ -65,7 +69,7 @@ def test_zero_is_not_positive():
 
 
 @pytest.fixture
-def instrumented_module() -> types.ModuleType:
+def instrumented_module() -> Iterator[types.ModuleType]:
     """Provide a fake instrumented module, cleaned up after test."""
     mod_name = '_test_gremlins_target'
     module = _make_instrumented_module(mod_name)
@@ -74,7 +78,7 @@ def instrumented_module() -> types.ModuleType:
 
 
 @pytest.fixture
-def test_module(instrumented_module: types.ModuleType) -> types.ModuleType:
+def test_module(instrumented_module: types.ModuleType) -> Iterator[types.ModuleType]:
     """Provide a test module that exercises the instrumented module."""
     mod_name = '_test_gremlins_tests'
     module = _make_test_module(mod_name, instrumented_module.__name__)

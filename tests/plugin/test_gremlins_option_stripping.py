@@ -95,21 +95,21 @@ class DescribeOptionTablesFrom:
 
         value_opts, flag_opts = option_tables_from(register)
 
-        assert (value_opts, flag_opts) == ({'--brand-new-value'}, {'--brand-new'})
+        assert (value_opts, flag_opts) == (frozenset({'--brand-new-value'}), frozenset({'--brand-new'}))
 
     def it_tables_the_negated_spelling_of_a_boolean_optional_action_as_a_flag(self) -> None:
         value_opts, flag_opts = option_tables_from(
             lambda p: p.addoption('--toggle', action=argparse.BooleanOptionalAction)
         )
 
-        assert (value_opts, flag_opts) == (set(), {'--toggle', '--no-toggle'})
+        assert (value_opts, flag_opts) == (frozenset(), frozenset({'--toggle', '--no-toggle'}))
 
     def it_ignores_ini_registrations_made_by_pytest_addoption(self) -> None:
         def register(parser: Any) -> None:
             parser.addini('gremlin_thing', 'help')
             parser.getgroup('g').addoption('--new-flag', action='store_true')
 
-        assert option_tables_from(register) == (set(), {'--new-flag'})
+        assert option_tables_from(register) == (frozenset(), frozenset({'--new-flag'}))
 
 
 @pytest.mark.small
@@ -141,7 +141,7 @@ class DescribeOptionTakesValue:
     def it_keeps_a_store_false_flag_from_eating_the_next_token(self) -> None:
         value_opts, flag_opts = option_tables_from(lambda p: p.addoption('--off', action='store_false'))
 
-        assert (value_opts, flag_opts) == (set(), {'--off'})
+        assert (value_opts, flag_opts) == (frozenset(), frozenset({'--off'}))
 
 
 @pytest.mark.small

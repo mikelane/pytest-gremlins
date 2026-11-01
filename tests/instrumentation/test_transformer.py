@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
 import copy
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,6 +16,9 @@ from pytest_gremlins.instrumentation.transformer import (
     transform_source,
 )
 from pytest_gremlins.operators.comparison import ComparisonOperator
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.mark.small
@@ -478,16 +481,16 @@ class DescribeGeneratorMutateResults:
     """Custom operators may return a generator from mutate() instead of a list."""
 
     def it_creates_one_gremlin_per_yielded_call_variant(self):
-        gremlins, _ = transform_source('qs.filter(x)\n', 'm.py', operators=[_GeneratorCallOperator()])
+        gremlins, _ = transform_source('qs.filter(x)\n', 'm.py', operators=[_GeneratorCallOperator()])  # type: ignore[list-item]
 
         assert [g.description for g in gremlins] == ['filter to exclude', 'filter to get']
 
     def it_instruments_a_call_whose_operator_yields_one_variant(self):
-        gremlins, _ = transform_source('qs.filter(x).first()\n', 'm.py', operators=[_SingleYieldCallOperator()])
+        gremlins, _ = transform_source('qs.filter(x).first()\n', 'm.py', operators=[_SingleYieldCallOperator()])  # type: ignore[list-item]
 
         assert len(gremlins) == 1
 
     def it_instruments_a_return_whose_operator_yields_its_variants(self):
-        gremlins, _ = transform_source('def f(x):\n    return x\n', 'm.py', operators=[_GeneratorReturnOperator()])
+        gremlins, _ = transform_source('def f(x):\n    return x\n', 'm.py', operators=[_GeneratorReturnOperator()])  # type: ignore[list-item]
 
         assert len(gremlins) == 1

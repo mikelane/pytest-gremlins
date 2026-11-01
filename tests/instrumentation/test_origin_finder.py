@@ -19,7 +19,6 @@ import importlib.resources
 import importlib.util
 import inspect
 import json
-from pathlib import Path
 import pickle
 import pkgutil
 import sys
@@ -29,6 +28,10 @@ from types import (
     ModuleType,
     SimpleNamespace,
 )
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 import zlib
 
 import pytest
@@ -37,6 +40,7 @@ from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.origin_finder import (
     GremlinFinder,
     GremlinLoader,
+    InstrumentedEntry,
     InstrumentedSources,
     file_identity,
     install,
@@ -49,6 +53,9 @@ from pytest_gremlins.plugin import (
 )
 
 from .recursion_error import _raise_recursion_error
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 Sources = InstrumentedSources
 Install = Callable[[Sources], GremlinFinder]
@@ -63,7 +70,8 @@ def _encode(source: str) -> str:
 
 
 def _entry(origin: Path, source: str = INSTRUMENTED) -> Sources:
-    return {normalize_origin(str(origin)): {'tree': _encode(source), 'source': source, 'origin': str(origin)}}
+    entry = {'tree': _encode(source), 'source': source, 'origin': str(origin)}
+    return {normalize_origin(str(origin)): cast('InstrumentedEntry', entry)}
 
 
 def _entry_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
@@ -73,7 +81,7 @@ def _entry_with_identity(origin: Path, source: str = INSTRUMENTED) -> Sources:
         'origin': str(origin),
         'identity': file_identity(str(origin)),
     }
-    return {normalize_origin(str(origin)): entry}
+    return {normalize_origin(str(origin)): cast('InstrumentedEntry', entry)}
 
 
 @pytest.fixture
@@ -81,7 +89,7 @@ def install_finder(monkeypatch: pytest.MonkeyPatch) -> Install:
     """Install the finder at the front of ``sys.meta_path``; restore the import state afterwards."""
     monkeypatch.setattr(sys, 'meta_path', list(sys.meta_path))
     monkeypatch.setattr(sys, 'modules', dict(sys.modules))
-    return install
+    return cast('Install', install)
 
 
 def _import(name: str) -> ModuleType:
@@ -681,7 +689,8 @@ class DescribeFileIdentityOfZeroInode:
     """ReFS and network drives report an inode of 0 or reuse inodes, so a zero inode is no identity."""
 
     def it_is_none_when_the_filesystem_reports_an_inode_of_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(origin_finder.os, 'stat', lambda _path: SimpleNamespace(st_dev=7, st_ino=0))
+        stat_without_inode: Callable[[str], SimpleNamespace] = lambda _path: SimpleNamespace(st_dev=7, st_ino=0)  # noqa: E731
+        monkeypatch.setattr(origin_finder.os, 'stat', stat_without_inode)  # type: ignore[attr-defined]
 
         assert file_identity('anything.py') is None
 
@@ -699,9 +708,12 @@ class DescribeGremlinFinderBasenamePrefilter:
         install_finder(_entry(tmp_path / 'target_mod.py'))
         resolved: list[str] = []
         original_normalize_origin = origin_finder.normalize_origin
-        monkeypatch.setattr(
-            origin_finder, 'normalize_origin', lambda path: resolved.append(path) or original_normalize_origin(path)
-        )
+
+        def recording_normalize_origin(path: str) -> str:
+            resolved.append(path)
+            return original_normalize_origin(path)
+
+        monkeypatch.setattr(origin_finder, 'normalize_origin', recording_normalize_origin)
 
         _import('bystander_mod')
 
@@ -770,9 +782,12 @@ class DescribeGremlinFinderBasenamePrefilter:
         install_finder(_entry_with_identity(target))
         called: list[str] = []
         original_file_identity = origin_finder.file_identity
-        monkeypatch.setattr(
-            origin_finder, 'file_identity', lambda path: called.append(path) or original_file_identity(path)
-        )
+
+        def recording_file_identity(path: str) -> str | None:
+            called.append(path)
+            return original_file_identity(path)
+
+        monkeypatch.setattr(origin_finder, 'file_identity', recording_file_identity)
 
         _import('differently_named')
 

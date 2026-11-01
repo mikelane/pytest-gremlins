@@ -20,7 +20,7 @@ class DescribeNodeToSource:
 
     def it_returns_empty_string_when_unparsing_fails(self):
         node = ast.parse('x + 1', mode='eval').body
-        del node.left  # break the node so ast.unparse raises
+        delattr(node, 'left')  # break the node so ast.unparse raises
         assert _node_to_source(node) == ''
 
 

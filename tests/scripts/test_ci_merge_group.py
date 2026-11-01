@@ -28,7 +28,7 @@ def _workflow() -> dict[Any, Any]:
 def _triggers() -> dict[str, Any]:
     # PyYAML parses the bare key ``on`` as boolean True.
     workflow = _workflow()
-    return workflow.get('on', workflow.get(True))
+    return cast('dict[str, Any]', workflow.get('on', workflow.get(True)))
 
 
 @pytest.mark.medium

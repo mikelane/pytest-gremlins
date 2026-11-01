@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.reporting.diff import _node_to_source
-from pytest_gremlins.reporting.html import (
+from pytest_gremlins.reporting.html import (  # type: ignore[attr-defined]
     HtmlReporter,
     _build_operator_data,
     append_history_entry,
@@ -1269,7 +1269,7 @@ class DescribeNodeToSourceLogging:
         # Build a minimal AST node then corrupt it so ast.unparse raises.
         node = ast.parse('x + 1', mode='eval').body
         # Remove the required attributes so ast.unparse raises an AttributeError.
-        del node.left
+        delattr(node, 'left')
 
         with caplog.at_level(logging.WARNING, logger='pytest_gremlins.reporting.diff'):
             source_text = _node_to_source(node)
