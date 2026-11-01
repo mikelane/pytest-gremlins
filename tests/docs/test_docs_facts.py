@@ -73,6 +73,28 @@ class DescribeTomlBlocks:
         with pytest.raises(DocsFormatError, match=r'configuration\.md:3: .*TOML'):
             pytest_gremlins_toml_blocks(page)
 
+    def it_reads_a_block_fenced_with_tildes(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text('~~~toml\n[tool.pytest-gremlins]\nworkers = 2\n~~~\n', encoding='utf-8')
+
+        assert pytest_gremlins_toml_blocks(page) == [{'workers': 2}]
+
+    def it_reads_a_block_whose_language_tag_is_uppercase(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text('```TOML\n[tool.pytest-gremlins]\nworkers = 2\n```\n', encoding='utf-8')
+
+        assert pytest_gremlins_toml_blocks(page) == [{'workers': 2}]
+
+    def it_keeps_a_backtick_line_inside_a_tilde_fence_as_block_content(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '~~~toml\n[tool.pytest-gremlins]\n```\nworkers = 2\n~~~\n',
+            encoding='utf-8',
+        )
+
+        with pytest.raises(DocsFormatError, match=r'configuration\.md:1: .*TOML'):
+            pytest_gremlins_toml_blocks(page)
+
 
 @pytest.mark.medium
 class DescribeDefaultCells:

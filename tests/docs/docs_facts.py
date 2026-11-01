@@ -40,7 +40,7 @@ _HELP_DEFAULT = re.compile(r'\(default: ([^,)]+)')
 _TABLE_ROW_FLAG = re.compile(r'^\|\s*`(--[a-z0-9-]+)`\s*\|')
 _DEFAULT_COMMENT = re.compile(r'^#\s*Default:\s*(.+)$')
 _TOML_ASSIGNMENT = re.compile(r'^([A-Za-z0-9_-]+)\s*=')
-_FENCE = re.compile(r'^\s*```(\w*)')
+_FENCE = re.compile(r'^\s*(```|~~~)\s*(\w*)')
 
 
 class DocsFormatError(ValueError):
@@ -153,18 +153,23 @@ def flags_mentioned_in_docs(docs_root: Path = DOCS_ROOT) -> dict[str, list[str]]
 
 
 def fenced_blocks(page: Path) -> list[tuple[str, list[tuple[int, str]]]]:
-    """Return ``(language, [(line_number, line), ...])`` for every fenced code block on ``page``."""
+    """Return ``(language, [(line_number, line), ...])`` for every fenced code block on ``page``.
+
+    A block opened with backticks closes only at backticks, and one opened with tildes only at tildes. The
+    language tag is lowercased.
+    """
     blocks: list[tuple[str, list[tuple[int, str]]]] = []
-    language: str | None = None
+    opening_marker: str | None = None
+    language = ''
     lines: list[tuple[int, str]] = []
     for number, line in enumerate(page.read_text(encoding='utf-8').splitlines(), start=1):
         fence = _FENCE.match(line)
-        if fence and language is None:
-            language, lines = fence.group(1), []
-        elif fence and language is not None:
+        if fence and opening_marker is None:
+            opening_marker, language, lines = fence.group(1), fence.group(2).lower(), []
+        elif fence and fence.group(1) == opening_marker:
             blocks.append((language, lines))
-            language = None
-        elif language is not None:
+            opening_marker = None
+        elif opening_marker is not None:
             lines.append((number, line))
     return blocks
 
