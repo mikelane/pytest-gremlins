@@ -92,7 +92,7 @@ jobs:
       - name: Check the release raises a cache marker or keeps the cache on purpose
         run: uv run python scripts/check_cache_kept.py "$RELEASE_TAG"
 
-  # Run full test suite before release
+  # Run the small and medium tiers on every OS. The large tier runs on ubuntu only (see large-tests below).
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
     needs: [verify-tag]
@@ -259,11 +259,13 @@ jobs:
       - name: Run full attrs compatibility test
         run: uv run pytest tests/integration/test_attrs_full.py -m "medium or large" -v
 
-  # The PR gate skips the large tier, so a release must prove it separately
+  # The PR gate skips the large tier, so a release must prove it separately. The large tier runs on ubuntu only.
+  # test_attrs_full skips here: it needs the attrs checkout that attrs-compat restores and runs it.
   large-tests:
     name: Large tests (Python 3.12, ubuntu-latest)
     needs: [verify-tag]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

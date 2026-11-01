@@ -1,7 +1,14 @@
 name: Large Tier
 
 # The PR gate runs `small or medium`. This workflow runs the `large` tier nightly so a red large test
-# surfaces within a day. A failing test fails the job, which notifies the repository's watchers.
+# surfaces within a day. A failing test fails the job. GitHub notifies the user who last edited the cron
+# schedule of a failed scheduled run, not the people watching the repository.
+#
+# The large tier runs on ubuntu only, with Python 3.12. #576 scoped it that way on purpose: the tests are slow, and
+# the Windows and macOS legs of the PR matrix already cover the platform-specific code with the small and medium tiers.
+#
+# test_attrs_full skips in this job. It needs the attrs checkout, which only the release attrs-compat job restores,
+# and that job runs the test on every release.
 on:
   schedule:
     - cron: '17 6 * * *'

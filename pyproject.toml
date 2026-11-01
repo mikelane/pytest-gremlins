@@ -282,7 +282,7 @@ addopts = [
 markers = [
     "small: Fast, isolated unit tests (< 100ms)",
     "medium: Integration tests with real resources (< 10s)",
-    "large: End-to-end system tests (< 60s)",
+    "large: End-to-end system tests (each under a minute; the whole tier has a 60 minute job limit)",
     "xdist_integration: BDD bootstrap tests for xdist coexistence (issue #295)",
     "wip: Work-in-progress BDD scenarios blocked by open implementation issues — excluded from CI",
 ]

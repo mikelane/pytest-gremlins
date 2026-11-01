@@ -7,9 +7,12 @@ on:
     branches: [main]
   merge_group:
 
+# A new push to a PR supersedes its older run. Pushes to main are keyed on the commit and never cancelled: the merge
+# queue lands PRs back to back, and each landed commit must finish its own run. A merge group has its own
+# gh-readonly-queue ref, so it never shares a group with another.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_COLOR: "1"
@@ -96,6 +99,9 @@ jobs:
       - name: Run mypy
         run: uv run mypy src/pytest_gremlins
 
+  # The large tier runs on ubuntu only (see large-tier.yml), so this matrix runs the small and medium tiers on every OS.
+  # The merge queue keeps the full matrix: it is the last gate before main, and a reduced queue matrix would let a
+  # failure that only shows on one OS or Python version reach main.
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
