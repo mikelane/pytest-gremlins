@@ -63,9 +63,9 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': '7ec35396b33af150211f40bb668d2c0d8479f1f7bc717bf22121e73fbe384fc7',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': '21f6e4f22ca618e690dd6f182334efd6f366d9fc0e595f4b887afc2a79abad86',  # pragma: allowlist secret  # noqa: E501
     # --
-    'cache/store.py': '967c632516b6ae126921f43f1c72b753de59c0cac9679557793c2082e0003cc1',  # pragma: allowlist secret
+    'cache/store.py': '9c2666678dbc083c7a5d7cb8b6061f9c32b801062f574a7709ea7388213dbec3',  # pragma: allowlist secret
     # --
     'cache/types.py': 'e8f2a82731cb4bfaec2a4803fe312826f3a85511224868322aa7eb127339085a',  # pragma: allowlist secret
     # --
@@ -111,7 +111,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'instrumentation/switcher.py': '602bef0ec33b9e4f0edbb24db1497f2d9fbf57952662a5f11ec51dee262cff0e',  # pragma: allowlist secret  # noqa: E501
     # --
-    'instrumentation/transformer.py': 'fd39499cb93ebfd9efa068c9f7f71dcd005f1d47cb361f0955d3682d4116d2c2',  # pragma: allowlist secret  # noqa: E501
+    'instrumentation/transformer.py': '1f9e4f3cf7d1df89a24c9a34a2098f6e5cfa0d7ebeb72d93f7302851f5d49a23',  # pragma: allowlist secret  # noqa: E501
     # --
     'node_id_args.py': 'd8a6f83045811ffe0c9513e74a15278966c62071db6f3722b1ebc5359c073bb9',  # pragma: allowlist secret
     # --
@@ -159,7 +159,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '68688764acf2d7636c5ea5d9876c4f85c13f242a3bb3ead351302212ac6ef12e',  # pragma: allowlist secret
+    'plugin.py': 'fb61cf3e1510fd4bd2d372ecff0e47f88ad9cc8899d1457e8c985e03e573b9c1',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --

@@ -101,6 +101,7 @@ from pytest_gremlins.instrumentation.spawn_hook import (
 from pytest_gremlins.instrumentation.switcher import ACTIVE_GREMLIN_ENV_VAR
 from pytest_gremlins.instrumentation.transformer import (
     get_default_registry,
+    gremlin_file_prefix,
     transform_source,
 )
 from pytest_gremlins.node_id_file import command_with_node_ids_file
@@ -1402,6 +1403,7 @@ def _hash_sources_and_tests_for_cache(
     hasher = ContentHasher()
     for file_path, source in source_files.items():
         gremlin_session.source_hashes[file_path] = hasher.hash_string(source)
+    _prune_stale_cache_rows(gremlin_session)
     test_files = {node_id.split('::')[0] for node_id in gremlin_session.test_node_ids}
     memo = _KeyMemo(pythonpath=tuple(Path(os.path.normpath(entry)) for entry in pythonpath))
     for test_file in test_files:
@@ -1410,6 +1412,21 @@ def _hash_sources_and_tests_for_cache(
             gremlin_session.test_hashes[test_file] = _hash_test_file_with_conftests(
                 hasher, rootdir, test_file, test_file_patterns, memo
             )
+
+
+def _prune_stale_cache_rows(gremlin_session: GremlinSession) -> None:
+    """Drop cached rows that an edit stranded: same file, older source hash (#930).
+
+    Runs in the controller only; xdist workers return from ``pytest_collection_finish`` before this point.
+    """
+    if gremlin_session.cache is None:
+        return
+    gremlin_session.cache.prune_stale_sources(
+        {
+            gremlin_file_prefix(file_path): source_hash
+            for file_path, source_hash in gremlin_session.source_hashes.items()
+        }
+    )
 
 
 def _test_file_patterns(gremlin_session: GremlinSession, config: pytest.Config) -> tuple[str, ...]:
