@@ -12,7 +12,6 @@ from pytest_gremlins import plugin
 from pytest_gremlins.plugin import (
     GremlinSession,
     _BaselineRecorder,
-    _build_test_command,
     _own_session_key,
     _rerun_ini_warnings_for,
     _rerun_options_for,
@@ -20,6 +19,9 @@ from pytest_gremlins.plugin import (
     _skip_mutation_unless_baseline_is_green,
 )
 from pytest_gremlins.rerun_options import unforwarded_rerun_key_warning
+from pytest_gremlins.verdicts import (
+    _build_test_command,
+)
 
 _ALL_RERUN_KEYS = ('reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except')
 

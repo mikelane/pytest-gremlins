@@ -24,12 +24,14 @@ from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.parallel.exit_codes import COLLECTION_KILLING_TEST
 from pytest_gremlins.plugin import (
     GremlinSession,
-    _confirm_collection_kill,
-    _prefill_collection_kill_confirmations,
 )
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
+)
+from pytest_gremlins.verdicts import (
+    _confirm_collection_kill,
+    _prefill_collection_kill_confirmations,
 )
 
 if TYPE_CHECKING:
@@ -67,7 +69,7 @@ def _session(tmp_path: Path, workers: int | None) -> GremlinSession:
 @pytest.fixture
 def fake_control(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     control = create_autospec(run_control, return_value=LOADS)
-    monkeypatch.setattr('pytest_gremlins.plugin.run_control', control)
+    monkeypatch.setattr('pytest_gremlins.verdicts.run_control', control)
     return cast('MagicMock', control)
 
 

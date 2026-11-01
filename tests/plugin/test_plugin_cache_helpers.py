@@ -21,11 +21,13 @@ from pytest_gremlins.plugin import (
     _build_test_hashes_for_gremlin,
     _cache_gremlin_result,
     _check_cache_for_gremlin,
-    _test_gremlin,
 )
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
+)
+from pytest_gremlins.verdicts import (
+    _test_gremlin,
 )
 
 

@@ -23,7 +23,6 @@ from pytest_gremlins.plugin import (
     GremlinSession,
     _add_source_file,
     _build_filtered_test_command,
-    _build_test_command,
     _cleanup_instrumented_dir,
     _decode_numbits,
     _extract_test_name_from_context,
@@ -38,6 +37,9 @@ from pytest_gremlins.plugin import (
     _select_tests_for_gremlin_prioritized,
     _should_include_file,
     _workers_type,
+)
+from pytest_gremlins.verdicts import (
+    _build_test_command,
 )
 
 
