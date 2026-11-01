@@ -51,8 +51,8 @@ from check_verdict_change import (
     REPO_ROOT,
     VERSIONS_PATH,
     Markers,
-    _git_diff_names,
-    _git_output,
+    git_diff_names,
+    git_output,
     guarded_changes,
     guarded_repo_paths,
     parse_markers,
@@ -62,12 +62,21 @@ from check_verdict_change import (
 PROBLEM_PREFIX = 'PROBLEM: '
 CACHE_KEPT = re.compile(r'\(cache kept:([^)]*)\)')
 LINE_FORMAT = '(cache kept: <reason>)'
+CACHE_KEPT_ANY_CASE = re.compile(r'\(cache kept:', re.IGNORECASE)
+INDENTED_CODE_LINE = re.compile(r'^(?: {0,3}\t| {4}).*$', re.MULTILINE)
 
-__all__ = ['GIT', 'cache_kept_reasons', 'check_cache_kept', 'main', 'previous_release_tag']
+__all__ = ['GIT', 'cache_kept_reasons', 'check_cache_kept', 'main', 'needs_cache_kept_line', 'previous_release_tag']
+
+
+def _prose_only(preamble: str) -> str:
+    """Return ``preamble`` without indented code blocks and code spans."""
+    return CODE_SPAN.sub('', INDENTED_CODE_LINE.sub('', preamble))
 
 
 def cache_kept_reasons(preamble: str) -> list[str]:
-    """Return the stripped reason of every ``(cache kept: ...)`` line in ``preamble``; code spans do not count.
+    """Return the stripped reason of every ``(cache kept: ...)`` line in ``preamble``.
+
+    Code spans and indented code blocks do not count.
 
     Args:
         preamble: The changelog entry's prose before its first ``###`` heading.
@@ -75,8 +84,22 @@ def cache_kept_reasons(preamble: str) -> list[str]:
     Returns:
         One reason per ``(cache kept: ...)`` line, in order; a line with no reason gives an empty string.
     """
-    visible = CODE_SPAN.sub('', preamble)
+    visible = _prose_only(preamble)
     return [match.group(1).strip() for match in CACHE_KEPT.finditer(visible)]
+
+
+def needs_cache_kept_line(changed: Sequence[str], previous: Markers, head: Markers) -> bool:
+    """Return whether the release needs a ``(cache kept: ...)`` line: guarded code changed and no marker was raised.
+
+    Args:
+        changed: The guarded repository paths that changed since the previous release.
+        previous: The cache markers at the previous release tag.
+        head: The cache markers in the code being released.
+
+    Returns:
+        True when guarded code changed and both markers equal their values at the previous release.
+    """
+    return bool(changed) and head == previous
 
 
 def check_cache_kept(changed: Sequence[str], previous: Markers, head: Markers, preamble: str) -> list[str]:
@@ -91,7 +114,7 @@ def check_cache_kept(changed: Sequence[str], previous: Markers, head: Markers, p
     Returns:
         The problems, one line each, or an empty list when the release passes.
     """
-    if not changed or head != previous:
+    if not needs_cache_kept_line(changed, previous, head):
         return []
     reasons = cache_kept_reasons(preamble)
     if any(reasons):
@@ -102,6 +125,8 @@ def check_cache_kept(changed: Sequence[str], previous: Markers, head: Markers, p
             f'the {LINE_FORMAT} line has an empty reason; say why the cached verdicts stay valid after changes to '
             f'{files}'
         ]
+    if CACHE_KEPT_ANY_CASE.search(_prose_only(preamble)):
+        return [f'the {LINE_FORMAT} line must be spelled in lowercase, exactly as shown, to be recognized']
     return [
         f'guarded code changed since the previous release ({files}), but neither CACHE_VERSION nor '
         f'RUNNER_FIDELITY_VERSION was raised. Raise one, or keep the cache on purpose with a line {LINE_FORMAT} '
@@ -123,13 +148,13 @@ def previous_release_tag(version: str | None, repo: Path = REPO_ROOT) -> str | N
         The tag name, or ``None`` when no release tag is reachable.
     """
     excluded = ['--exclude', f'v{version.removeprefix("v")}'] if version else []
-    tag = _git_output(repo, 'describe', '--tags', '--abbrev=0', '--match', RELEASE_TAG_PATTERN, *excluded, 'HEAD')
+    tag = git_output(repo, 'describe', '--tags', '--abbrev=0', '--match', RELEASE_TAG_PATTERN, *excluded, 'HEAD')
     return tag.strip() if tag else None
 
 
 def _is_tagged(version: str, repo: Path = REPO_ROOT) -> bool:
     """Return whether the release tag ``v<version>`` exists, so that version is already released."""
-    return _git_output(repo, 'rev-parse', '-q', '--verify', f'refs/tags/v{version}^{{commit}}') is not None
+    return git_output(repo, 'rev-parse', '-q', '--verify', f'refs/tags/v{version}^{{commit}}') is not None
 
 
 def _head_markers() -> Markers:
@@ -144,8 +169,8 @@ def _head_markers() -> Markers:
 
 def _changed_guarded_files(previous_tag: str) -> list[str]:
     """Return the guarded files that differ between ``previous_tag`` and the working tree."""
-    changed = _git_diff_names(previous_tag)
-    deleted = _git_diff_names(previous_tag, '--diff-filter=D')
+    changed = git_diff_names(previous_tag)
+    deleted = git_diff_names(previous_tag, '--diff-filter=D')
     return guarded_changes(changed, deleted, guarded_repo_paths())
 
 
@@ -189,8 +214,7 @@ def _check(args: argparse.Namespace) -> tuple[str, list[str], str]:
         raise CannotCheckError(f'cannot read the cache markers at {previous_tag}')
     changed = _changed_guarded_files(previous_tag)
     head = _head_markers()
-    needs_line = bool(changed) and head == previous
-    preamble = _preamble(changelog, version) if needs_line else ''
+    preamble = _preamble(changelog, version) if needs_cache_kept_line(changed, previous, head) else ''
     passed = f'The {version} release changes no guarded code, raises a cache marker, or states why it keeps the cache.'
     return version, check_cache_kept(changed, previous, head, preamble), passed
 
