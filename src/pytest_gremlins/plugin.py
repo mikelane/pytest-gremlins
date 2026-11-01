@@ -836,6 +836,7 @@ def _init_cache(
     operators: Sequence[GremlinOperator],
     *,
     pytester_loaded: Callable[[], bool] = lambda: False,
+    loaded_conftests: Sequence[Path] = (),
     xdist_loader_loaded: Callable[[], bool] = lambda: False,
 ) -> IncrementalCache | None:
     """Initialise the incremental cache when enabled, optionally clearing it first.
@@ -847,6 +848,8 @@ def _init_cache(
         operators: The operators registered for the run, after conftest registration; their owning
             distributions are part of the cache key.
         pytester_loaded: Reports whether the session loads the pytester plugin; such sessions get their own key part.
+        loaded_conftests: The ``conftest.py`` files the session has loaded; hashed into the key when an operator is
+            defined in a conftest.
         xdist_loader_loaded: Reports whether gremlin runs load xdist themselves (autoload disabled, #668); such
             sessions get their own key part.
 
@@ -861,6 +864,7 @@ def _init_cache(
         operators,
         project_root=rootdir,
         pytester_loaded=pytester_loaded,
+        loaded_conftests=loaded_conftests,
         xdist_loader_loaded=xdist_loader_loaded,
     )
     if clear_cache:
@@ -1047,6 +1051,23 @@ def _pytester_loaded(config: pytest.Config) -> bool:
     return any(config.pluginmanager.has_plugin(name) for name in PYTESTER_PLUGIN_NAMES)
 
 
+def _loaded_conftests(config: pytest.Config) -> list[Path]:
+    """The ``conftest.py`` files registered as plugins so far.
+
+    pytest registers each conftest module with the plugin manager, which ``get_plugins`` lists publicly. At
+    ``pytest_configure`` that holds the initial conftests (the rootdir's, and those of the command-line
+    arguments); conftests in other directories load during collection, after the cache opens.
+
+    Args:
+        config: The pytest config whose plugin manager is asked.
+
+    Returns:
+        The path of every registered plugin module whose file is named ``conftest.py``.
+    """
+    files = (getattr(plugin, '__file__', None) for plugin in config.pluginmanager.get_plugins())
+    return [Path(file) for file in files if file is not None and Path(file).name == 'conftest.py']
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-gremlins based on command-line options.
 
@@ -1135,6 +1156,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config.option.gremlin_clear_cache,
         operators,
         pytester_loaded=lambda: _pytester_loaded(config),
+        loaded_conftests=_loaded_conftests(config),
         xdist_loader_loaded=lambda: bool(xdist_loader_options),
     )
 
