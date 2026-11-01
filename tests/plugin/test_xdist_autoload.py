@@ -116,6 +116,40 @@ class DescribeXdistOptionsWithAutoloadOffByTheRunsInputs:
         assert _xdist_options_for(_config(loaded=('xdist',)), []) == (['-p', 'xdist'], True)
 
 
+@pytest.mark.small
+@pytest.mark.usefixtures('autoload_enabled')
+class DescribeXdistOptionsWithAnInheritedBlock:
+    @pytest.mark.parametrize('block', ['-p no:xdist', '-pno:xdist'])
+    def it_loads_xdist_again_when_addopts_blocks_it(self, block: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', block)
+
+        assert _xdist_options_for(_config(loaded=('xdist',)), []) == (['-p', 'xdist'], True)
+
+    def it_forwards_no_loader_for_no_xdist_plugin_which_does_not_block_the_autoloaded_entry_point(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # pytest blocks the ``xdist.plugin`` module name only; autoload still registers the ``xdist`` entry point.
+        monkeypatch.setenv('PYTEST_ADDOPTS', '-p no:xdist.plugin')
+
+        assert _xdist_options_for(_config(loaded=('xdist',)), []) == ([], True)
+
+    @pytest.mark.parametrize('lift', ['-p no:xdist -p xdist', '-pno:xdist -pxdist'])
+    def it_forwards_no_loader_when_a_later_inherited_p_xdist_lifts_the_block(
+        self, lift: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # e.g. ini ``addopts = -p no:xdist`` with CI exporting ``PYTEST_ADDOPTS='-p xdist'``.
+        monkeypatch.setenv('PYTEST_ADDOPTS', lift)
+
+        assert _xdist_options_for(_config(loaded=('xdist',)), []) == ([], True)
+
+    def it_forwards_nothing_when_a_block_hides_xdist_from_the_session_too(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '-p no:xdist')
+
+        assert _xdist_options_for(_config(), []) == NO_XDIST
+
+
 @pytest.mark.medium
 @pytest.mark.usefixtures('autoload_disabled')
 class DescribeGremlinRunsWithAutoloadDisabledAndXdist:
