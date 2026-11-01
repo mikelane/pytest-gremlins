@@ -249,31 +249,60 @@ def toml_default_comments(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
     for language, lines in fenced_blocks(page):
         if language != 'toml':
             continue
-        stated: str | None = None
+        pending = _PendingDefault()
         for _, line in lines:
-            comment = _DEFAULT_COMMENT.match(line.strip())
-            assignment = _TOML_ASSIGNMENT.match(line)
+            text = line.strip()
+            comment = _DEFAULT_COMMENT.match(text)
+            assignment = _TOML_ASSIGNMENT.match(text)
             if comment:
-                stated = comment.group(1)
-            elif assignment and stated is not None:
-                comments[assignment.group(1)] = stated
-                stated = None
-            elif _interrupts_default_comment(line):
-                stated = None
+                pending = _PendingDefault(comment.group(1))
+            elif assignment and pending.stated is not None:
+                comments[assignment.group(1)] = pending.stated
+                pending = _PendingDefault()
+            else:
+                pending = pending.after(text)
     return comments
 
 
-def _interrupts_default_comment(line: str) -> bool:
-    """Return whether ``line`` separates a ``# Default:`` comment from the assignment below it.
+@dataclass(frozen=True)
+class _PendingDefault:
+    """A ``# Default:`` comment waiting for the assignment it describes.
 
-    Explanatory comment lines continue the Default comment. A commented-out assignment does not.
+    Explanatory comment lines may follow it, and a blank line may sit right above the assignment. A blank line
+    between the Default and any other comment line ends the wait: the Default belonged to a deleted key, and the
+    comment starts the next key's paragraph.
     """
-    text = line.strip()
-    if not text:
+
+    stated: str | None = None
+    explained: bool = False
+    blank_seen: bool = False
+
+    def after(self, text: str) -> _PendingDefault:
+        """Return the pending Default after a line that is neither a Default comment nor an assignment."""
+        if self.stated is None or self._ends_at(text):
+            return _PendingDefault()
+        if text:
+            return _PendingDefault(self.stated, explained=True, blank_seen=self.blank_seen)
+        return _PendingDefault(self.stated, explained=self.explained, blank_seen=True)
+
+    def _ends_at(self, text: str) -> bool:
+        if not text:
+            return self.explained
+        if not text.startswith('#'):
+            return True
+        body = text.lstrip('#').strip()
+        return self.blank_seen or body.startswith('[') or _is_commented_out_setting(body)
+
+
+def _is_commented_out_setting(text: str) -> bool:
+    """Return whether ``text`` is a TOML assignment, not prose that happens to start with ``word =``."""
+    if not _TOML_ASSIGNMENT.match(text):
         return False
-    if not text.startswith('#'):
-        return True
-    return _TOML_ASSIGNMENT.match(text.lstrip('#').lstrip()) is not None
+    try:
+        tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return False
+    return True
 
 
 def keys_the_loader_ignores(workdir: Path, page: Path = CONFIGURATION_PAGE) -> frozenset[str]:

@@ -129,6 +129,58 @@ class DescribeTomlDefaultCommentAttribution:
 
         assert toml_default_comments(page) == {'workers': 'not set (one at a time unless'}
 
+    def it_attributes_a_default_comment_inside_an_indented_block(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '=== "pyproject.toml"\n\n    ```toml\n    [tool.pytest-gremlins]\n    # Default: 10\n    batch_size = 10\n'
+            '    ```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {'batch_size': '10'}
+
+    def it_does_not_carry_an_orphan_comment_past_a_blank_line_after_another_comment(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: auto\n\n# Enable cache\ncache = true\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {}
+
+    def it_does_not_carry_an_explained_comment_past_a_blank_line(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: auto\n# Pick the worker count.\n\ncache = true\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {}
+
+    def it_attributes_a_default_comment_separated_from_its_key_by_one_blank_line(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text('```toml\n[tool.pytest-gremlins]\n# Default: 10\n\nbatch_size = 10\n```\n', encoding='utf-8')
+
+        assert toml_default_comments(page) == {'batch_size': '10'}
+
+    def it_does_not_carry_a_comment_past_a_commented_out_table_header(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: auto\n# [tool.other]\ncache = true\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {}
+
+    def it_keeps_a_default_comment_across_prose_that_looks_like_an_assignment(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: not set\n# auto = os.cpu_count()\nworkers = "auto"\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {'workers': 'not set'}
+
     def it_attributes_every_default_comment_on_the_real_configuration_page(self):
         default_comment_count = sum(
             line.lstrip().startswith('# Default:')
