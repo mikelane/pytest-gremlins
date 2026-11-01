@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from io import StringIO
 import json
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,23 +19,30 @@ from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.console import ConsoleReporter
 from pytest_gremlins.reporting.html import HtmlReporter
 from pytest_gremlins.reporting.json_reporter import JsonReporter
-from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.reporting.stryker_export import StrykerExporter
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 
 @pytest.mark.small
 class DescribeGremlinResultErrorOutput:
     """Tests for error_output field on GremlinResult."""
 
-    def it_stores_error_output(self, make_result) -> None:
+    def it_stores_error_output(self, make_result: Callable[..., GremlinResult]) -> None:
         result = make_result(
             GremlinResultStatus.ERROR,
             error_output='ImportError: No module named foo',
         )
         assert result.error_output == 'ImportError: No module named foo'
 
-    def it_defaults_error_output_to_empty_string(self, make_result) -> None:
+    def it_defaults_error_output_to_empty_string(self, make_result: Callable[..., GremlinResult]) -> None:
         result = make_result(GremlinResultStatus.ERROR)
         assert result.error_output == ''
 
@@ -63,7 +71,9 @@ class DescribeWorkerResultErrorOutput:
 class DescribeMutationScoreTopErrors:
     """Tests for MutationScore.top_errors() method."""
 
-    def it_returns_only_error_results_with_nonempty_error_output(self, make_result) -> None:
+    def it_returns_only_error_results_with_nonempty_error_output(
+        self, make_result: Callable[..., GremlinResult]
+    ) -> None:
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.ERROR, error_output='crash 1'),
@@ -78,7 +88,7 @@ class DescribeMutationScoreTopErrors:
         assert all(r.status == GremlinResultStatus.ERROR for r in errors)
         assert all(r.error_output for r in errors)
 
-    def it_respects_limit_parameter(self, make_result) -> None:
+    def it_respects_limit_parameter(self, make_result: Callable[..., GremlinResult]) -> None:
         results = [make_result(GremlinResultStatus.ERROR, error_output=f'crash {i}') for i in range(10)]
         score = MutationScore.from_results(results)
 
@@ -90,7 +100,7 @@ class DescribeMutationScoreTopErrors:
 class DescribeConsoleReporterErrorOutput:
     """Tests for error details in console output."""
 
-    def it_prints_error_details_when_errors_exist(self, make_result) -> None:
+    def it_prints_error_details_when_errors_exist(self, make_result: Callable[..., GremlinResult]) -> None:
         results = [
             make_result(
                 GremlinResultStatus.ERROR,
@@ -110,7 +120,7 @@ class DescribeConsoleReporterErrorOutput:
         assert 'src/auth.py:42' in output_text
         assert 'ImportError: No module named foo' in output_text
 
-    def it_prints_nothing_extra_when_no_errors(self, make_result) -> None:
+    def it_prints_nothing_extra_when_no_errors(self, make_result: Callable[..., GremlinResult]) -> None:
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.SURVIVED),
@@ -129,7 +139,7 @@ class DescribeConsoleReporterErrorOutput:
 class DescribeHtmlReporterErrorOutput:
     """Tests for error details in HTML output."""
 
-    def it_renders_errors_section_with_collapsible_stderr(self, make_result) -> None:
+    def it_renders_errors_section_with_collapsible_stderr(self, make_result: Callable[..., GremlinResult]) -> None:
         results = [
             make_result(
                 GremlinResultStatus.ERROR,
@@ -149,7 +159,9 @@ class DescribeHtmlReporterErrorOutput:
         assert 'ImportError: boom' in html
         assert 'src/auth.py' in html
 
-    def it_omits_errors_section_when_no_errors_have_error_output(self, make_result) -> None:
+    def it_omits_errors_section_when_no_errors_have_error_output(
+        self, make_result: Callable[..., GremlinResult]
+    ) -> None:
         results = [
             make_result(GremlinResultStatus.ZAPPED),
             make_result(GremlinResultStatus.SURVIVED),
@@ -166,7 +178,7 @@ class DescribeHtmlReporterErrorOutput:
 class DescribeJsonReporterErrorOutput:
     """Tests for error_output in JSON report."""
 
-    def it_includes_error_output_for_errored_gremlins(self, make_result) -> None:
+    def it_includes_error_output_for_errored_gremlins(self, make_result: Callable[..., GremlinResult]) -> None:
         results = [
             make_result(
                 GremlinResultStatus.ERROR,
@@ -180,7 +192,7 @@ class DescribeJsonReporterErrorOutput:
 
         assert data['results'][0]['error_output'] == 'ImportError: No module named foo'
 
-    def it_omits_error_output_key_for_non_errored_gremlins(self, make_result) -> None:
+    def it_omits_error_output_key_for_non_errored_gremlins(self, make_result: Callable[..., GremlinResult]) -> None:
         results = [
             make_result(GremlinResultStatus.ZAPPED),
         ]
@@ -203,7 +215,7 @@ def _no_source_reads(monkeypatch: pytest.MonkeyPatch) -> None:
 class DescribeStrykerExporterErrorOutput:
     """Tests for statusReason in Stryker export."""
 
-    def it_includes_status_reason_for_errored_gremlins(self, make_result) -> None:
+    def it_includes_status_reason_for_errored_gremlins(self, make_result: Callable[..., GremlinResult]) -> None:
         results = [
             make_result(
                 GremlinResultStatus.ERROR,
@@ -218,7 +230,7 @@ class DescribeStrykerExporterErrorOutput:
 
         assert mutant['statusReason'] == 'ImportError: No module named foo'
 
-    def it_omits_status_reason_for_non_errored_gremlins(self, make_result) -> None:
+    def it_omits_status_reason_for_non_errored_gremlins(self, make_result: Callable[..., GremlinResult]) -> None:
         results = [
             make_result(GremlinResultStatus.ZAPPED),
         ]
@@ -235,7 +247,7 @@ class DescribeStrykerExporterErrorOutput:
 class DescribeCachedGremlinResultErrorOutput:
     """Tests for error_output in cache round-trip."""
 
-    def it_round_trips_error_output_through_cache(self, tmp_path) -> None:
+    def it_round_trips_error_output_through_cache(self, tmp_path: Path) -> None:
         cache = IncrementalCache(tmp_path / '.gremlins_cache')
         cached_result = CachedGremlinResult(
             status='error',
@@ -260,7 +272,7 @@ class DescribeCachedGremlinResultErrorOutput:
         assert retrieved['error_output'] == 'ImportError: No module named foo'
         cache.close()
 
-    def it_deserializes_old_cache_entries_without_error_output(self, tmp_path) -> None:
+    def it_deserializes_old_cache_entries_without_error_output(self, tmp_path: Path) -> None:
         cache = IncrementalCache(tmp_path / '.gremlins_cache')
         # Simulate an old-format entry by casting a dict without error_output
         old_result: CachedGremlinResult = {

@@ -4,6 +4,8 @@ The IncrementalCache orchestrates content hashing and result storage to
 implement the invalidation rules for incremental analysis.
 """
 
+from pathlib import Path
+
 import pytest
 
 from pytest_gremlins.cache.incremental import IncrementalCache
@@ -357,7 +359,7 @@ class DescribeIncrementalCache:
 
         assert retrieved == result_data
 
-    def test_invalidate_file_with_no_matching_entries_is_noop(self, tmp_path) -> None:
+    def test_invalidate_file_with_no_matching_entries_is_noop(self, tmp_path: Path) -> None:
         """invalidate_file('nonexistent') does not affect existing entries."""
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             cache.cache_result(

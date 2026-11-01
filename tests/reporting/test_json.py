@@ -10,11 +10,13 @@ import pytest
 from pytest_gremlins.reporting.json_reporter import JsonReporter
 from pytest_gremlins.reporting.results import (
     TIMEOUT_NOT_CONFIRMED_PREFIX,
+    GremlinResult,
     GremlinResultStatus,
 )
 from pytest_gremlins.reporting.score import MutationScore
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 
@@ -154,7 +156,7 @@ class DescribeJsonReporterResultFormat:
 class DescribeJsonReporterFileOutput:
     """Tests for writing JSON to file."""
 
-    def it_writes_to_file(self, make_result, tmp_path: Path):
+    def it_writes_to_file(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()
@@ -166,7 +168,7 @@ class DescribeJsonReporterFileOutput:
         data = json.loads(output_file.read_text())
         assert 'summary' in data
 
-    def it_writes_formatted_json(self, make_result, tmp_path: Path):
+    def it_writes_formatted_json(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         reporter = JsonReporter()

@@ -7,6 +7,7 @@ import json
 import logging
 from pathlib import Path
 import re
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,8 +19,14 @@ from pytest_gremlins.reporting.html import (
     load_history,
     resolve_html_output_path,
 )
-from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
 from pytest_gremlins.reporting.score import MutationScore
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _extract_canvas_tag(html: str, canvas_id: str) -> str:
@@ -201,7 +208,7 @@ class DescribeHtmlReporterSelectedTests:
 class DescribeHtmlReporterFileOutput:
     """Tests for writing HTML to file."""
 
-    def it_writes_to_file(self, make_result, tmp_path: Path):
+    def it_writes_to_file(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         reporter = HtmlReporter()
@@ -335,7 +342,9 @@ class DescribeHtmlReporterOutputLocation:
     References: #155, #157
     """
 
-    def it_creates_nested_parent_directories_before_writing(self, make_result, tmp_path: Path):
+    def it_creates_nested_parent_directories_before_writing(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         # write_text without mkdir raises FileNotFoundError for missing parents.
         # This test fails if mkdir(parents=True) is absent from write_report.
         results = [make_result(GremlinResultStatus.ZAPPED)]
@@ -348,7 +357,9 @@ class DescribeHtmlReporterOutputLocation:
         assert nested.exists()
         assert '<!DOCTYPE html>' in nested.read_text()
 
-    def it_writes_to_the_exact_nested_path_not_a_sibling(self, make_result, tmp_path: Path):
+    def it_writes_to_the_exact_nested_path_not_a_sibling(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         # Hardcoding 'gremlin-report.html' next to rootdir would fail this assertion.
         results = [make_result(GremlinResultStatus.SURVIVED)]
         score = MutationScore.from_results(results)
@@ -361,7 +372,9 @@ class DescribeHtmlReporterOutputLocation:
         assert not (tmp_path / 'deep' / 'nested.html').exists()
         assert not (tmp_path / 'index.html').exists()
 
-    def it_succeeds_when_parent_directory_already_exists(self, make_result, tmp_path: Path):
+    def it_succeeds_when_parent_directory_already_exists(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         # exist_ok=True must be set; without it a second mkdir raises FileExistsError.
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
@@ -381,20 +394,20 @@ class DescribeResolveHtmlOutputPath:
     References: #155, #156
     """
 
-    def it_returns_coverage_gremlins_index_when_no_custom_dir(self, tmp_path: Path):
+    def it_returns_coverage_gremlins_index_when_no_custom_dir(self, tmp_path: Path) -> None:
         resolved_path = resolve_html_output_path(rootdir=tmp_path, html_dir=None)
 
         # Must be exactly <rootdir>/coverage/gremlins/index.html, not rootdir/gremlin-report.html.
         assert resolved_path == tmp_path / 'coverage' / 'gremlins' / 'index.html'
 
-    def it_returns_custom_dir_slash_index_when_html_dir_provided(self, tmp_path: Path):
+    def it_returns_custom_dir_slash_index_when_html_dir_provided(self, tmp_path: Path) -> None:
         custom = tmp_path / 'my-reports'
         resolved_path = resolve_html_output_path(rootdir=tmp_path, html_dir=custom)
 
         # Must append index.html to the custom dir, not the default subpath.
         assert resolved_path == custom / 'index.html'
 
-    def it_does_not_embed_coverage_gremlins_when_custom_dir_given(self, tmp_path: Path):
+    def it_does_not_embed_coverage_gremlins_when_custom_dir_given(self, tmp_path: Path) -> None:
         custom = tmp_path / 'out'
         resolved_path = resolve_html_output_path(rootdir=tmp_path, html_dir=custom)
 
@@ -402,7 +415,7 @@ class DescribeResolveHtmlOutputPath:
         assert 'coverage' not in resolved_path.parts
         assert 'gremlins' not in resolved_path.parts
 
-    def it_uses_rootdir_not_cwd_for_default_path(self, tmp_path: Path):
+    def it_uses_rootdir_not_cwd_for_default_path(self, tmp_path: Path) -> None:
         different_rootdir = tmp_path / 'project-root'
         resolved_path = resolve_html_output_path(rootdir=different_rootdir, html_dir=None)
 
@@ -410,7 +423,7 @@ class DescribeResolveHtmlOutputPath:
         assert resolved_path == different_rootdir / 'coverage' / 'gremlins' / 'index.html'
         assert resolved_path.is_relative_to(different_rootdir)
 
-    def it_resolves_relative_html_dir_against_rootdir(self, tmp_path: Path):
+    def it_resolves_relative_html_dir_against_rootdir(self, tmp_path: Path) -> None:
         # When --gremlins-html-dir is passed as a relative path string (e.g. "reports"),
         # resolve_html_output_path must anchor it to rootdir, not to cwd.
         # A naïve impl that uses html_dir as-is would return a relative path like
@@ -729,7 +742,7 @@ class DescribeAppendHistoryEntry:
     References: #171, #172
     """
 
-    def it_creates_history_json_when_absent(self, make_result, tmp_path: Path):
+    def it_creates_history_json_when_absent(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         history_path = tmp_path / 'history.json'
@@ -738,7 +751,7 @@ class DescribeAppendHistoryEntry:
 
         assert history_path.exists()
 
-    def it_writes_score_and_timestamp_to_entry(self, make_result, tmp_path: Path):
+    def it_writes_score_and_timestamp_to_entry(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         history_path = tmp_path / 'history.json'
@@ -751,7 +764,7 @@ class DescribeAppendHistoryEntry:
         assert 'score' in entries[0]
         assert entries[0]['score'] == 100.0
 
-    def it_appends_to_existing_entries(self, make_result, tmp_path: Path):
+    def it_appends_to_existing_entries(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         history_path = tmp_path / 'history.json'
@@ -762,7 +775,7 @@ class DescribeAppendHistoryEntry:
         entries = json.loads(history_path.read_text())
         assert len(entries) == 2
 
-    def it_caps_entries_at_history_limit(self, make_result, tmp_path: Path):
+    def it_caps_entries_at_history_limit(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         history_path = tmp_path / 'history.json'
@@ -773,7 +786,7 @@ class DescribeAppendHistoryEntry:
         entries = json.loads(history_path.read_text())
         assert len(entries) == 3
 
-    def it_includes_by_file_breakdown_in_entry(self, make_result, tmp_path: Path):
+    def it_includes_by_file_breakdown_in_entry(self, make_result: Callable[..., GremlinResult], tmp_path: Path) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED, file_path='src/auth.py')]
         score = MutationScore.from_results(results)
         history_path = tmp_path / 'history.json'
@@ -784,7 +797,9 @@ class DescribeAppendHistoryEntry:
         assert 'by_file' in entries[0]
         assert 'src/auth.py' in entries[0]['by_file']
 
-    def it_includes_by_operator_breakdown_in_entry(self, make_result, tmp_path: Path):
+    def it_includes_by_operator_breakdown_in_entry(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED, operator_name='comparison')]
         score = MutationScore.from_results(results)
         history_path = tmp_path / 'history.json'
@@ -1164,12 +1179,12 @@ class DescribeHtmlReporterA11y:
 class DescribeLoadHistory:
     """Tests for the load_history module-level function."""
 
-    def it_returns_empty_list_when_file_is_missing(self, tmp_path: Path):
+    def it_returns_empty_list_when_file_is_missing(self, tmp_path: Path) -> None:
         loaded_entries = load_history(tmp_path / 'nonexistent.json')
 
         assert loaded_entries == []
 
-    def it_returns_parsed_list_from_valid_json_file(self, tmp_path: Path):
+    def it_returns_parsed_list_from_valid_json_file(self, tmp_path: Path) -> None:
         history_path = tmp_path / 'history.json'
         expected_entries = [
             {'timestamp': '2026-01-01T00:00:00+00:00', 'score': 80.0, 'by_file': {}, 'by_operator': {}},
@@ -1181,7 +1196,7 @@ class DescribeLoadHistory:
 
         assert loaded_entries == expected_entries
 
-    def it_returns_empty_list_for_corrupt_json(self, tmp_path: Path):
+    def it_returns_empty_list_for_corrupt_json(self, tmp_path: Path) -> None:
         history_path = tmp_path / 'history.json'
         history_path.write_text('invalid json', encoding='utf-8')
 
@@ -1189,7 +1204,7 @@ class DescribeLoadHistory:
 
         assert loaded_entries == []
 
-    def it_returns_empty_list_when_path_is_a_directory(self, tmp_path: Path):
+    def it_returns_empty_list_when_path_is_a_directory(self, tmp_path: Path) -> None:
         # Passing a directory where a file is expected raises OSError on read_text.
         loaded_entries = load_history(tmp_path)
 
@@ -1250,7 +1265,7 @@ class DescribeBuildOperatorData:
 class DescribeNodeToSourceLogging:
     """Tests for logging in _node_to_source when AST unparsing fails."""
 
-    def it_logs_warning_when_node_to_source_fails(self, caplog: pytest.LogCaptureFixture):
+    def it_logs_warning_when_node_to_source_fails(self, caplog: pytest.LogCaptureFixture) -> None:
         # Build a minimal AST node then corrupt it so ast.unparse raises.
         node = ast.parse('x + 1', mode='eval').body
         # Remove the required attributes so ast.unparse raises an AttributeError.
@@ -1268,8 +1283,8 @@ class DescribeAppendHistoryEntryLogging:
     """Tests for logging in append_history_entry when history file is corrupt."""
 
     def it_logs_warning_when_history_file_is_corrupt(
-        self, make_result, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ):
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         corrupt = tmp_path / 'history.json'
         corrupt.write_text('not json', encoding='utf-8')
         results = [make_result(GremlinResultStatus.ZAPPED)]
@@ -1286,7 +1301,7 @@ class DescribeAppendHistoryEntryLogging:
 class DescribeLoadHistoryLogging:
     """Tests for logging in load_history when history file is corrupt."""
 
-    def it_logs_warning_when_history_file_is_corrupt(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    def it_logs_warning_when_history_file_is_corrupt(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         corrupt = tmp_path / 'history.json'
         corrupt.write_text('not json', encoding='utf-8')
 
@@ -1302,7 +1317,9 @@ class DescribeLoadHistoryLogging:
 class DescribeWriteReportLogging:
     """Tests for logging in HtmlReporter.write_report."""
 
-    def it_logs_info_with_output_path(self, make_result, tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    def it_logs_info_with_output_path(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output_path = tmp_path / 'report.html'
@@ -1319,7 +1336,9 @@ class DescribeWriteReportLogging:
 class DescribeWriteReportHistoryPersistence:
     """Tests that write_report persists history alongside the HTML file."""
 
-    def it_creates_history_json_next_to_the_html_report(self, make_result, tmp_path: Path):
+    def it_creates_history_json_next_to_the_html_report(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output_path = tmp_path / 'coverage' / 'gremlins' / 'index.html'
@@ -1330,7 +1349,9 @@ class DescribeWriteReportHistoryPersistence:
         history_path = output_path.parent / 'history.json'
         assert history_path.exists()
 
-    def it_appends_a_score_entry_to_history_json(self, make_result, tmp_path: Path):
+    def it_appends_a_score_entry_to_history_json(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output_path = tmp_path / 'index.html'
@@ -1343,7 +1364,9 @@ class DescribeWriteReportHistoryPersistence:
         assert len(entries) == 1
         assert entries[0]['score'] == 100.0
 
-    def it_does_not_append_an_empty_score_to_existing_history(self, make_result, tmp_path: Path):
+    def it_does_not_append_an_empty_score_to_existing_history(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         output_path = tmp_path / 'index.html'
         reporter = HtmlReporter()
         reporter.write_report(MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)]), output_path)
@@ -1357,7 +1380,9 @@ class DescribeWriteReportHistoryPersistence:
         assert json.loads(history_path.read_text()) == original
         assert 'chain.py' in output_path.read_text()
 
-    def it_does_not_append_an_all_pardoned_score_to_existing_history(self, make_result, tmp_path: Path):
+    def it_does_not_append_an_all_pardoned_score_to_existing_history(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         output_path = tmp_path / 'index.html'
         reporter = HtmlReporter()
         reporter.write_report(MutationScore.from_results([make_result(GremlinResultStatus.ZAPPED)]), output_path)
@@ -1367,7 +1392,9 @@ class DescribeWriteReportHistoryPersistence:
         entries = json.loads((tmp_path / 'history.json').read_text())
         assert [entry['score'] for entry in entries] == [100.0]
 
-    def it_still_writes_html_when_history_raises(self, make_result, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def it_still_writes_html_when_history_raises(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output_path = tmp_path / 'index.html'
@@ -1384,8 +1411,12 @@ class DescribeWriteReportHistoryPersistence:
         assert '<!DOCTYPE html>' in content
 
     def it_logs_a_warning_when_history_raises(
-        self, make_result, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ):
+        self,
+        make_result: Callable[..., GremlinResult],
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output_path = tmp_path / 'index.html'
@@ -1405,7 +1436,9 @@ class DescribeWriteReportHistoryPersistence:
         assert 'history' in record.message.lower()
         assert str(output_path) in record.message
 
-    def it_renders_no_data_placeholder_with_single_history_entry(self, make_result, tmp_path: Path):
+    def it_renders_no_data_placeholder_with_single_history_entry(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output_path = tmp_path / 'index.html'
@@ -1416,7 +1449,9 @@ class DescribeWriteReportHistoryPersistence:
         content = output_path.read_text(encoding='utf-8')
         assert 'No historical data yet.' in content
 
-    def it_passes_history_to_html_when_history_exists(self, make_result, tmp_path: Path):
+    def it_passes_history_to_html_when_history_exists(
+        self, make_result: Callable[..., GremlinResult], tmp_path: Path
+    ) -> None:
         results = [make_result(GremlinResultStatus.ZAPPED)]
         score = MutationScore.from_results(results)
         output_path = tmp_path / 'index.html'
