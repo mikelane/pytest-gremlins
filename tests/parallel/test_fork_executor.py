@@ -73,7 +73,7 @@ def instrumented_module() -> types.ModuleType:
     """Provide a fake instrumented module, cleaned up after test."""
     mod_name = '_test_fork_gremlins_target'
     module = _make_instrumented_module(mod_name)
-    yield module  # type: ignore[misc]
+    yield module
     sys.modules.pop(mod_name, None)
 
 
@@ -82,7 +82,7 @@ def test_module(instrumented_module: types.ModuleType) -> types.ModuleType:
     """Provide a test module that exercises the instrumented module."""
     mod_name = '_test_fork_gremlins_tests'
     module = _make_test_module(mod_name, instrumented_module.__name__)
-    yield module  # type: ignore[misc]
+    yield module
     sys.modules.pop(mod_name, None)
 
 
@@ -197,7 +197,7 @@ class DescribeForkExecutorIsolation:
             test_specs=test_specs,
         )
 
-        assert instrumented_module.__gremlin_active__ is None  # type: ignore[attr-defined]
+        assert instrumented_module.__gremlin_active__ is None
 
     def it_records_execution_time(
         self,

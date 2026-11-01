@@ -105,7 +105,7 @@ class Addr:
 
         Addr = exec_globals['Addr']  # noqa: N806
         instance = Addr()  # type: ignore[operator]
-        assert instance.last is False  # type: ignore[union-attr]
+        assert instance.last is False
 
     def it_uses_mutation_when_gremlin_is_active(self):
         source = """
@@ -127,7 +127,7 @@ class Addr:
 
         Addr = exec_globals['Addr']  # noqa: N806
         instance = Addr()  # type: ignore[operator]
-        assert instance.last is True  # type: ignore[union-attr]
+        assert instance.last is True
 
     def it_true_default_flips_to_false_when_gremlin_active(self):
         source = """
@@ -148,4 +148,4 @@ class Range:
 
         Range = exec_globals['Range']  # noqa: N806
         instance = Range()  # type: ignore[operator]
-        assert instance.from0 is False  # type: ignore[union-attr]
+        assert instance.from0 is False

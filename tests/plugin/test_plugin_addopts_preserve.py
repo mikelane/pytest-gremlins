@@ -194,7 +194,7 @@ class DescribePytestConfigureStoresPreservedAddopts:
             addopts=['--cov=mypkg', '--import-mode=importlib'],
         )
 
-        pytest_configure(config)  # type: ignore[arg-type]
+        pytest_configure(config)
 
         assert _get_session().preserved_addopts == '--import-mode=importlib'
 

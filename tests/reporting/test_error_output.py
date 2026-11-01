@@ -263,7 +263,7 @@ class DescribeCachedGremlinResultErrorOutput:
     def it_deserializes_old_cache_entries_without_error_output(self, tmp_path) -> None:
         cache = IncrementalCache(tmp_path / '.gremlins_cache')
         # Simulate an old-format entry by casting a dict without error_output
-        old_result: CachedGremlinResult = {  # type: ignore[typeddict-item]
+        old_result: CachedGremlinResult = {
             'status': 'zapped',
             'killing_test': 'test_foo',
             'execution_time_ms': 10.0,

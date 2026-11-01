@@ -433,7 +433,7 @@ class _GeneratorCallOperator:
     def can_mutate(self, node: ast.AST) -> bool:
         return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'filter'
 
-    def mutate(self, node: ast.AST) -> Iterator[ast.AST]:  # type: ignore[override]
+    def mutate(self, node: ast.AST) -> Iterator[ast.AST]:
         for attr in ('exclude', 'get'):
             mutated = copy.deepcopy(node)
             assert isinstance(mutated, ast.Call)
@@ -456,7 +456,7 @@ class _GeneratorReturnOperator:
     def can_mutate(self, node: ast.AST) -> bool:
         return isinstance(node, ast.Return) and node.value is not None
 
-    def mutate(self, node: ast.AST) -> Iterator[ast.AST]:  # type: ignore[override]
+    def mutate(self, node: ast.AST) -> Iterator[ast.AST]:
         mutated = copy.deepcopy(node)
         assert isinstance(mutated, ast.Return)
         assert mutated.value is not None
@@ -469,7 +469,7 @@ class _SingleYieldCallOperator(_GeneratorCallOperator):
 
     name = 'one_call'
 
-    def mutate(self, node: ast.AST) -> Iterator[ast.AST]:  # type: ignore[override]
+    def mutate(self, node: ast.AST) -> Iterator[ast.AST]:
         yield copy.deepcopy(node)
 
 
