@@ -141,6 +141,7 @@ SQLite-backed cache for gremlin test results.
 | `has(cache_key)` | `bool` | Check if key exists |
 | `delete(cache_key)` | `None` | Remove single entry |
 | `delete_by_prefix(prefix)` | `None` | Remove entries by prefix |
+| `prune_stale_source_hashes(current_hashes)` | `None` | Remove rows whose source hash is not a current hash of their file prefix |
 | `clear()` | `None` | Remove all entries |
 | `keys()` | `list[str]` | Get all cache keys |
 | `count()` | `int` | Get entry count |
@@ -225,6 +226,7 @@ Coordinates content hashing and result storage for smart cache invalidation.
 | `cache_result_deferred(...)` | `None` | Cache result (batch) |
 | `flush()` | `None` | Commit deferred writes |
 | `invalidate_file(file_prefix)` | `None` | Invalidate file's gremlins |
+| `prune_stale_sources(current_hashes)` | `None` | Delete rows stranded by an edited source file |
 | `clear()` | `None` | Clear entire cache |
 | `get_stats()` | `dict` | Get hit/miss statistics |
 | `close()` | `None` | Close and release resources |
@@ -286,6 +288,26 @@ misses. An editable install without `top_level.txt` (non-setuptools backends suc
 uv_build, flit and pdm) always misses, because its `.pth` directory can hold packages the wheel does not
 ship. Setuptools editables and normal wheels keep stable keys. An empty `RECORD` or `installed-files.txt` counts as
 no install record. A `.egg` install has no install record, so it misses; zip installs keep their version label.
+
+### Pruning stranded rows
+
+Editing a source file changes its hash, so every row cached for that file stops matching. At the start of each run,
+the controller process deletes, for each target file in the run, the rows whose gremlin id belongs to that file but
+whose source-hash segment is not the file's current hash. The delete is one transaction and an indexed range scan on
+the primary key, anchored on `{stem}_{path_hash}_g<digits>:` so a longer stem cannot be caught by mistake. Rows for
+files outside the run are kept, unless the file shares a gremlin prefix with a file in the run (see below). Rows with
+the current hash under any other key part are kept. `results.db` therefore
+holds at most one source version per file instead of growing with every edit. xdist workers and
+`--gremlin-parallel` workers never prune or write the cache. There is no flag or config key for it, and the key
+format and `CACHE_VERSION` are unchanged.
+
+Switching branches can cost hits: a branch that edits a file prunes the rows of the other branch's version of it, so
+switching back re-tests that file's gremlins. Rows for deleted or renamed files and rows keyed by an old `v=` part are
+not pruned.
+
+A file left out of the run keeps its rows unless it shares a gremlin prefix with a file in the run. That means the
+same file name and the same first 4 hex characters of the path hash, which is rare. Then its rows may be pruned. This
+costs one cache miss for those gremlins and never changes a verdict.
 
 ### Usage Example
 
