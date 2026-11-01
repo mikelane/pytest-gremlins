@@ -56,6 +56,24 @@ class DescribePruningThroughThePlugin:
         assert _keys_under_source_hash(pytester.path, first_hash) == []
         assert _keys_under_source_hash(pytester.path, _hash_of(pytester.path, 'src_module'))
 
+    def it_leaves_only_current_hash_rows_after_an_edit_with_clear_cache(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester = pytester_with_markers
+        pytester.makepyfile(src_module=FIRST_SOURCE, test_module=TEST_SOURCE)
+        args = ('--gremlins', '--gremlin-targets=src_module.py', '--gremlin-cache')
+        pytester.runpytest(*args)
+        first_hash = _hash_of(pytester.path, 'src_module')
+        pytester.makepyfile(src_module=EDITED_SOURCE)
+
+        result = pytester.runpytest(*args, '--gremlin-clear-cache')
+
+        current_hash = _hash_of(pytester.path, 'src_module')
+        assert result.ret == 0
+        assert _keys_under_source_hash(pytester.path, first_hash) == []
+        assert _keys_under_source_hash(pytester.path, current_hash) == _stored_keys(pytester.path)
+        assert _stored_keys(pytester.path)
+
     def it_hits_every_row_on_an_unchanged_third_run(self, pytester_with_markers: pytest.Pytester) -> None:
         pytester = pytester_with_markers
         pytester.makepyfile(src_module=FIRST_SOURCE, test_module=TEST_SOURCE)

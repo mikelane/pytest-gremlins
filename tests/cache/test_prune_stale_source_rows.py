@@ -51,8 +51,8 @@ class DescribePruneStaleSourceHashes:
             _key('mod_ab12_g001', 'H2'),
             _key('mod_ab12_g001', 'H2', 'other-tests:opt=2:reruns=1x0.0:rr={}:v=ver:pytester:xdist:rf20'),
         ]
-        for key in kept:
-            store.put(key, RESULT)
+        store.put(kept[0], RESULT)
+        store.put(kept[1], RESULT)
 
         store.prune_stale_source_hashes({'mod_ab12': 'H2'})
 
@@ -91,3 +91,41 @@ class DescribePruneStaleSourceHashes:
         store.prune_stale_source_hashes({'a.b%_1234': 'NEW'})
 
         assert store.keys() == [_key('axb%_1234_g001', 'OLD')]
+
+    def it_prunes_a_counter_of_a_thousand_or_more(self, store: ResultStore) -> None:
+        store.put(_key('mod_ab12_g1000', 'H1'), RESULT)
+        store.put(_key('mod_ab12_g1000', 'H2'), RESULT)
+
+        store.prune_stale_source_hashes({'mod_ab12': 'H2'})
+
+        assert store.keys() == [_key('mod_ab12_g1000', 'H2')]
+
+    def it_is_a_no_op_for_an_empty_mapping(self, store: ResultStore) -> None:
+        store.put(_key('mod_ab12_g001', 'H1'), RESULT)
+
+        store.prune_stale_source_hashes({})
+
+        assert store.count() == 1
+
+    @pytest.mark.parametrize(
+        ('old_hash', 'current_hash'),
+        [('H1', 'H1X'), ('H1X', 'H1'), ('abc', 'abcdef')],
+        ids=['old-is-prefix', 'current-is-prefix', 'longer-current'],
+    )
+    def it_compares_whole_hash_segments_not_prefixes(
+        self, store: ResultStore, old_hash: str, current_hash: str
+    ) -> None:
+        store.put(_key('mod_ab12_g001', old_hash), RESULT)
+        store.put(_key('mod_ab12_g002', current_hash), RESULT)
+
+        store.prune_stale_source_hashes({'mod_ab12': current_hash})
+
+        assert store.keys() == [_key('mod_ab12_g002', current_hash)]
+
+    def it_leaves_a_key_without_a_hash_segment_alone(self, store: ResultStore) -> None:
+        malformed_key = 'mod_ab12_g001'
+        store.put(malformed_key, RESULT)
+
+        store.prune_stale_source_hashes({'mod_ab12': 'H2'})
+
+        assert store.keys() == [malformed_key]
