@@ -102,6 +102,16 @@ class DescribeTomlBlocks:
 
         assert pytest_gremlins_toml_blocks(page) == [{'workers': 2}]
 
+    def it_keeps_a_fence_line_with_an_attribute_info_string_as_block_content(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n``` {.toml}\nworkers = 2\n```\n',
+            encoding='utf-8',
+        )
+
+        with pytest.raises(DocsFormatError, match=r'configuration\.md:1: .*TOML'):
+            pytest_gremlins_toml_blocks(page)
+
 
 @pytest.mark.medium
 class DescribeDefaultCells:
@@ -236,6 +246,16 @@ class DescribeTomlDefaultCommentAttribution:
         page = tmp_path / 'configuration.md'
         page.write_text(
             '```toml\n[tool.pytest-gremlins]\n# Default: not set\n# auto = os.cpu_count()\nworkers = "auto"\n```\n',
+            encoding='utf-8',
+        )
+
+        assert toml_default_comments(page) == {'workers': 'not set'}
+
+    def it_keeps_a_default_comment_across_prose_that_starts_a_bracketed_value(self, tmp_path: Path) -> None:
+        page = tmp_path / 'configuration.md'
+        page.write_text(
+            '```toml\n[tool.pytest-gremlins]\n# Default: not set\n# workers = [number of CPUs] when auto\n'
+            'workers = "auto"\n```\n',
             encoding='utf-8',
         )
 
