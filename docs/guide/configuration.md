@@ -868,7 +868,7 @@ pytest --gremlins --gremlin-batch --gremlin-batch-size=20
 ```
 
 Batch size sets how many gremlins one worker task covers. Results are reported only after every batch has
-finished, whatever the size, so a smaller batch does not give earlier feedback.
+finished, whatever the size.
 
 | Batch Size | Tradeoff |
 |------------|----------|
