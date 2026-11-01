@@ -1,9 +1,4 @@
-"""Known limits of the coarse helper-module cache key (#760), pinned as strict xfails.
-
-The coarse rule hashes every non-test ``.py`` file under the test root. A collected test file is never a
-helper, so two cases fall outside it. Each test here fails today; when a fix lands, the strict xfail turns
-into a failure and the marker must come off.
-"""
+"""Cache keys must not depend on test selection, and must see helpers defined inside test files (#910)."""
 
 from __future__ import annotations
 
@@ -43,11 +38,6 @@ def project(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> pytes
 
 @pytest.mark.medium
 class DescribeCollectedTestFileUsedAsHelper:
-    @pytest.mark.xfail(
-        strict=True,
-        reason='#760 coarse rule: a collected test file is never hashed as a helper, so a helper it defines '
-        'that another test imports replays a stale verdict when edited',
-    )
     def it_misses_the_cache_after_editing_a_helper_defined_in_another_collected_test_file(
         self, project: pytest.Pytester
     ) -> None:
@@ -61,11 +51,6 @@ class DescribeCollectedTestFileUsedAsHelper:
 
 @pytest.mark.medium
 class DescribeTestSelectionAndTheKey:
-    @pytest.mark.xfail(
-        strict=True,
-        reason='#760 coarse rule: whether test_b.py counts as a helper depends on whether pytest collected it, '
-        'so running one test file and then the whole suite gives the same unchanged test_a.py two keys',
-    )
     def it_keeps_the_key_when_only_the_selection_of_collected_files_changes(self, tmp_path: Path) -> None:
         (tmp_path / 'tests').mkdir()
         (tmp_path / 'tests' / 'test_a.py').write_text('def test_a(): pass\n')

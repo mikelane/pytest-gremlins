@@ -27,13 +27,24 @@ from types import (
 )
 from typing import (
     Any,
+    NotRequired,
     Protocol,
+    TypedDict,
     cast,
 )
 import zlib
 
-# Entries are decoded from sources.json and mix str, str | None and list[str] values.
-InstrumentedEntry = dict[str, Any]
+
+class InstrumentedEntry(TypedDict):
+    """One file's entry in ``sources.json``, as ``_write_instrumented_sources`` writes it and the finder reads it."""
+
+    source: str
+    tree: NotRequired[str]
+    origin: str
+    identity: str | None
+    file_names: list[str]
+
+
 InstrumentedSources = dict[str, InstrumentedEntry]
 
 

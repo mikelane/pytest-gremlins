@@ -48,6 +48,8 @@ from pytest_gremlins.plugin import (
     _write_instrumented_sources,
 )
 
+from .recursion_error import _raise_recursion_error
+
 Sources = InstrumentedSources
 Install = Callable[[Sources], GremlinFinder]
 
@@ -501,10 +503,6 @@ class DescribeGremlinLoaderCompilesShippedTree:
         GremlinLoader(_encode('def f():\n    return 1\n'), source='def f():\n    return 1\n').exec_module(module)
 
         assert module.f.__code__.co_flags & __future__.annotations.compiler_flag == 0  # type: ignore[attr-defined]
-
-
-def _raise_recursion_error(*_args: object, **_kwargs: object) -> None:
-    raise RecursionError
 
 
 _real_compile = compile

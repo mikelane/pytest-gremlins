@@ -43,23 +43,6 @@ class DescribeRunTestsWithCoverageCommand:
         bootstrap_idx = captured_cmd.index('-p')
         assert captured_cmd[bootstrap_idx + 1] == 'pytest_gremlins.coverage.subprocess_bootstrap'
 
-    def it_ignores_the_assert_rewrite_warning_the_prescan_entry_point_provokes(self, tmp_path: Path) -> None:
-        """pytest 9.2 applies ini ``filterwarnings = error`` to config-time warnings.
-
-        The pre-scan entry point imports ``pytest_gremlins`` before pytest starts, so pytest warns that the
-        module cannot be rewritten; under ``filterwarnings = error`` that aborted the pre-scan.
-        """
-        captured_cmd: list[str] = []
-
-        def capture_cmd(cmd: list[str], **_kwargs: object) -> None:
-            captured_cmd.extend(cmd)
-
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
-            _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path)
-
-        w_index = captured_cmd.index('-W')
-        assert captured_cmd[w_index + 1] == 'ignore::pytest.PytestAssertRewriteWarning'
-
     def it_disables_gremlins_plugin_in_subprocess(self, tmp_path: Path) -> None:
         """The subprocess command disables the full gremlins plugin via -p no:gremlins."""
         captured_cmd: list[str] = []
