@@ -65,7 +65,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': 'efc80d7b9cf558e4f3340869c152387687ffd874f6f1b171a0562dd34bde5d12',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': 'caf8366c2e7978667ef5ea1b7318a8b8231b91badb33e67724f910f106960e9c',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/store.py': '5f0948aacf44044a8a66ebc1863479e0df29cec9eb4ae73edd63ac2cfab8173b',  # pragma: allowlist secret
     # --
@@ -133,7 +133,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'operators/protocol.py': '999044b8fd477412888e1febfbc756cc8928e8f1afd0fc4ec11cca4c28437be2',  # pragma: allowlist secret  # noqa: E501
     # --
-    'operators/registry.py': 'd080086690b1d631cbf8d7c8b0c3a98f0c9e48309778c98bf148df9d0b897625',  # pragma: allowlist secret  # noqa: E501
+    'operators/registry.py': '5d2fbe933255b5bcd9a0c97427877390d2cae21aead4663aeff62b6de7691e6e',  # pragma: allowlist secret  # noqa: E501
     # --
     'operators/return_value.py': 'f99d68ef54470480f5c5615708e267e4812f0a9bdc32d04abcf29c30de569568',  # pragma: allowlist secret  # noqa: E501
     # --

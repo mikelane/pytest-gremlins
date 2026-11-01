@@ -6,6 +6,7 @@ to implement smart cache invalidation based on content changes.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import (
     TYPE_CHECKING,
@@ -16,6 +17,13 @@ from typing import (
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.store import ResultStore
 from pytest_gremlins.cache.versions import versions_fingerprint
+from pytest_gremlins.operators import (
+    ArithmeticOperator,
+    BooleanOperator,
+    BoundaryOperator,
+    ComparisonOperator,
+    ReturnOperator,
+)
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -28,6 +36,20 @@ if TYPE_CHECKING:
 
     from pytest_gremlins.cache.types import CachedGremlinResult
     from pytest_gremlins.operators.protocol import GremlinOperator
+
+
+# Match the built-in registry order without constructing operators: a constructor may currently fail.
+# The exact-default-key regression guards this sequence against the registry's defaults.
+_DEFAULT_OPERATOR_IDENTITIES = tuple(
+    (operator_class.__module__, operator_class.__qualname__, name)
+    for operator_class, name in (
+        (ComparisonOperator, 'comparison'),
+        (ArithmeticOperator, 'arithmetic'),
+        (BooleanOperator, 'boolean'),
+        (BoundaryOperator, 'boundary'),
+        (ReturnOperator, 'return'),
+    )
+)
 
 
 RUNNER_FIDELITY_VERSION = 'rf20'
@@ -254,6 +276,7 @@ class IncrementalCache:
     - optimize_level: the optimize level the gremlin subprocess compiled under
     - rerun_budget: the ``(reruns, reruns_delay)`` the gremlin runs were allowed
     - rerun_settings: the other resolved rerun settings (backoff factor, filters, mode, exclusions, suite cap)
+    - operators: ordered identities, only when the sequence differs from the built-in default
     - versions: ``CACHE_VERSION`` and operator-package versions (any change retires the whole cache)
     - PYTESTER_KEY_PART: present only while the session loads the pytester plugin (#891)
     - XDIST_KEY_PART: present only when gremlin runs load xdist themselves because autoload is disabled (#668)
@@ -288,8 +311,9 @@ class IncrementalCache:
 
         Args:
             cache_dir: Directory to store cache files.
-            operators: The operators registered for this run; the installed distributions that own them are
-                part of the cache key, so upgrading a package that supplies one retires its verdicts.
+            operators: The instantiated operators active for this run, in mutation order. Non-default sequences
+                add their ordered identities to the key; the built-in default sequence keeps its existing key.
+                Owning installed distributions are also part of the key.
             project_root: The pytest rootdir; an operator module under it is project code, so no distribution
                 label is added. An operator keeps a stable key only when it is importable by its qualified name and
                 an installed distribution owns its module. Every other operator, a conftest operator excepted,
@@ -309,7 +333,17 @@ class IncrementalCache:
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
         self._store.delete_keys_not_ending_with(f':{RUNNER_FIDELITY_VERSION}')
-        fingerprint = versions_fingerprint(operators, project_root, loaded_conftests)
+        active_operators = tuple(operators)
+        # Sequential gremlin IDs depend on operator order, even when supplier versions match.
+        operator_identities = tuple(
+            (type(operator).__module__, type(operator).__qualname__, operator.name) for operator in active_operators
+        )
+        self._operators_key_part = (
+            ''
+            if operator_identities == _DEFAULT_OPERATOR_IDENTITIES
+            else f':ops={self._hasher.hash_string(json.dumps(operator_identities))}'
+        )
+        fingerprint = versions_fingerprint(active_operators, project_root, loaded_conftests)
         self._versions_hash = self._hasher.hash_string(fingerprint.text)
         self._writes_are_readable = fingerprint.writes_are_readable
         self._hits = 0
@@ -359,7 +393,8 @@ class IncrementalCache:
         return (
             f'{gremlin_id}:{source_hash}:{combined_test_hash}'
             f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}'
-            f':v={self._versions_hash}{pytester_part}{xdist_part}:{RUNNER_FIDELITY_VERSION}'
+            f'{self._operators_key_part}:v={self._versions_hash}{pytester_part}{xdist_part}'
+            f':{RUNNER_FIDELITY_VERSION}'
         )
 
     def get_cached_result(
