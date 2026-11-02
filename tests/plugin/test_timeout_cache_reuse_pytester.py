@@ -8,6 +8,12 @@ SOURCE = 'def add(a, b):\n    return a + b\n'
 TEST = 'from calc import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n'
 
 
+@pytest.fixture(autouse=True)
+def _utf8_child_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every pytest child these tests spawn write its output as UTF-8."""
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+
+
 def _run(pytester: pytest.Pytester, timeout: int, *extra: str) -> str:
     result = pytester.runpytest_subprocess(
         '--gremlins',
@@ -39,7 +45,7 @@ class DescribeTimeoutChangeAgainstWarmCache:
 
         warm = _run(pytester_with_markers, 30)
 
-        assert 'cache hit (skipping)' in warm
+        assert warm.count('cache hit (skipping)') == 2
         assert 'gremlins from cache' not in warm
 
     def it_serves_parallel_verdicts_after_a_timeout_change(self, pytester_with_markers: pytest.Pytester) -> None:
@@ -57,5 +63,4 @@ class DescribeTimeoutChangeAgainstWarmCache:
 
         warm = _run(pytester_with_markers, 31, '--gremlin-batch')
 
-        assert ' 0 to test' in warm
-        assert ' 0 gremlins from cache' not in warm
+        assert 'pytest-gremlins: 2 gremlins from cache, 0 to test' in warm
