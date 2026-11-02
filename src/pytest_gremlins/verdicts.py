@@ -83,6 +83,7 @@ def _unmutated_command_and_env(gremlin_session: GremlinSession, rootdir: Path) -
         xdist_loaded=gremlin_session.xdist_loaded,
         xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
+        config_file_options=gremlin_session.config_file_options,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
     )
@@ -343,6 +344,7 @@ def _build_test_command(
     xdist_loaded: bool = False,
     xdist_loader_options: Sequence[str] = (),
     doctest_ini_overrides: Sequence[str] = (),
+    config_file_options: Sequence[str] = (),
     rerun_options: Sequence[str] = (),
     pytest_cov_options: Sequence[str] = (),
 ) -> list[str]:
@@ -375,6 +377,8 @@ def _build_test_command(
         doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs
             (see :func:`_doctest_ini_overrides`), kept outside ``addopts`` because pytest before 9.1 ignores a
             ``-o`` nested in an ``addopts`` value (issue #719).
+        config_file_options: ``-c <config file>`` of the session, so gremlin runs read the config file
+            the session was given (issue #951).
         rerun_options: pytest-rerunfailures options typed on the command line (see
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended last so they win over
             ``addopts`` as they do in the baseline run.  A flaky test then has to fail on every
@@ -397,6 +401,7 @@ def _build_test_command(
             '-o',
             f'addopts={gremlin_addopts}',
             *doctest_ini_overrides,
+            *config_file_options,
         ]
     else:
         command = [
@@ -409,6 +414,7 @@ def _build_test_command(
             '-o',
             f'addopts={gremlin_addopts}',
             *doctest_ini_overrides,
+            *config_file_options,
         ]
 
     command.extend(pytest_cov_options)

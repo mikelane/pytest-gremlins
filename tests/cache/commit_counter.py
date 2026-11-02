@@ -34,3 +34,24 @@ def record_commits(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
     monkeypatch.setattr(sqlite3, 'connect', connect_and_record)
     return commits
+
+
+def record_statements(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Record every SQL statement run on connections opened after this call.
+
+    Same hook as ``record_commits``; statements carry their bound values, so a
+    recorded SELECT can be passed to ``EXPLAIN QUERY PLAN`` as-is.
+
+    Returns:
+        A list that grows by one entry per statement.
+    """
+    statements: list[str] = []
+    real_connect = sqlite3.connect
+
+    def connect_and_record(*args: object, **kwargs: object) -> sqlite3.Connection:
+        connection = real_connect(*args, **kwargs)  # type: ignore[call-overload]
+        connection.set_trace_callback(statements.append)
+        return connection  # type: ignore[no-any-return]
+
+    monkeypatch.setattr(sqlite3, 'connect', connect_and_record)
+    return statements

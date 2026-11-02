@@ -108,6 +108,14 @@ Cache: 85 hits, 15 misses (85% hit rate)
 
 The HTML report provides a detailed, visual representation of mutation testing results.
 
+![The pytest-gremlins HTML report in the light theme. A row of summary cards shows 27 total gremlins,
+27 zapped, 0 survived and a 100% mutation score. Below them are a score gauge, an outcomes pie chart,
+a per-file score bar chart and an operator distribution bar chart. At the bottom, the Historical Trend
+line chart shows the mutation score rising from 48% to 78% to 100% across three runs.](../assets/html-report.png)
+
+The screenshot comes from a small sample project after three runs. The per-gremlin results table that
+follows the charts in a real report is left out.
+
 ### Enabling HTML Report
 
 ```bash

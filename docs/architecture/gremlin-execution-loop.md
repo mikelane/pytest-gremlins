@@ -136,6 +136,6 @@ handling, the cache lookup and the verdict mapping stay the same.
 If both are set, batch execution is the one that runs; `--gremlin-workers` sets how many workers
 it uses.
 
-The `fork` and `inprocess` executors are disabled
+The `fork` and `inprocess` executors were removed
 ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)), so every mode runs gremlins in
 subprocesses.
