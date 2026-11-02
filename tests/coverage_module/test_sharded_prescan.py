@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import gc
+import getpass
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any
 import warnings
@@ -76,7 +78,7 @@ class DescribeRunPrescanShards:
     def it_returns_one_data_file_per_shard_each_written_by_its_own_process(self, tmp_path: Path) -> None:
         data_files = _run(tmp_path, [['ok', 'a'], ['ok', 'b'], ['ok', 'c']])
 
-        assert data_files == [tmp_path / 'scratch' / f'shard_{index}' / 'coverage.data' for index in range(3)]
+        assert data_files == [tmp_path / 'scratch' / str(index) / 'coverage.data' for index in range(3)]
         assert data_files is not None
         recorded = [json.loads(path.read_text(encoding='utf-8'))['ids'] for path in data_files]
         assert recorded == [['ok', 'a'], ['ok', 'b'], ['ok', 'c']]
@@ -93,7 +95,37 @@ class DescribeRunPrescanShards:
 
         assert data_files is not None
         basetemps = [_last_basetemp(path) for path in data_files]
-        assert basetemps == [f'--basetemp={tmp_path / "scratch" / f"shard_{index}" / "basetemp"}' for index in range(2)]
+        assert basetemps == [f'--basetemp={tmp_path / "scratch" / str(index) / "b"}' for index in range(2)]
+
+    def it_keeps_each_shard_basetemp_no_longer_than_pytests_default_basetemp(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A shard's ``tmp_path`` must stay short enough to bind an AF_UNIX socket (104 bytes on macOS)."""
+        real_run = sharded_prescan.run_prescan_shards
+        basetemps: list[str] = []
+
+        def run_fake_shards(_command: Sequence[str], shards: Sequence[Sequence[str]], **kwargs: Any) -> None:
+            data_files = real_run([sys.executable, '-c', _FAKE_SHARD], shards, **kwargs)
+            assert data_files is not None
+            basetemps.extend(_last_basetemp(path).removeprefix('--basetemp=') for path in data_files)
+
+        monkeypatch.setattr(sharded_prescan, 'run_prescan_shards', run_fake_shards)
+        monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+
+        sharded_prescan.run_sharded_prescan(
+            ['unused'],
+            ['ok', 'a', 'b', 'c'],
+            worker_count=4,
+            cwd=tmp_path,
+            timeout=30,
+            env=dict(os.environ),
+            combined=tmp_path / 'combined',
+        )
+
+        pytest_default = Path(tempfile.gettempdir()) / f'pytest-of-{getpass.getuser()}' / 'pytest-9999'
+        assert len(basetemps) == 4
+        assert len(set(basetemps)) == 4
+        assert max(len(path) for path in basetemps) <= len(str(pytest_default))
 
     def it_puts_the_basetemp_after_everything_else_so_it_overrides_addopts(self, tmp_path: Path) -> None:
         data_files = _run(tmp_path, [['ok']])
@@ -135,7 +167,7 @@ class DescribeRunPrescanShards:
     def it_kills_a_running_shard_when_a_later_shard_cannot_be_launched(
         self, tmp_path: Path, started_shards: list[subprocess.Popen[bytes]]
     ) -> None:
-        (tmp_path / 'scratch' / 'shard_1').mkdir(parents=True)
+        (tmp_path / 'scratch' / '1').mkdir(parents=True)
 
         with pytest.raises(FileExistsError):
             _run(tmp_path, [['hang'], ['ok']])

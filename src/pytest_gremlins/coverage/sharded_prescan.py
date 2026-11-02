@@ -11,6 +11,9 @@ therefore select more tests, never fewer.
 Each shard also gets its own ``--basetemp`` inside the scratch directory, placed last so it overrides a ``--basetemp``
 from the project's addopts or ``PYTEST_ADDOPTS`` (pytest prepends both). Without it, every shard would clear and
 reuse the same directory and delete the live temp files of the others, as pytest-xdist workers avoid by the same means.
+The scratch directory and its entries have deliberately short names (``<TMPDIR>/pgsXXXXXXXX/<index>/b``), so a shard's
+``tmp_path`` is no longer than the serial pre-scan's. A test that binds an ``AF_UNIX`` socket there stays under the
+104-byte limit on macOS in a shard exactly as it does serially.
 
 The outcome is all or nothing. If any shard times out, cannot be started, crashes or leaves no data, the caller gets
 no data files at all, because a map built from some of the shards would claim that lines no test covers are
@@ -77,7 +80,7 @@ def run_prescan_shards(
     data_files: list[Path] = []
     try:
         for index, shard in enumerate(shards):
-            shard_dir = scratch_dir / f'shard_{index}'
+            shard_dir = scratch_dir / str(index)
             shard_dir.mkdir()
             data_files.append(shard_dir / 'coverage.data')
             processes.append(_start_shard(command, shard, shard_dir, data_files[-1], cwd=cwd, env=env))
@@ -118,7 +121,7 @@ def run_sharded_prescan(
         OSError: If the operating system cannot start a shard.
     """
     shards = split_into_shards(node_ids, worker_count)
-    with tempfile.TemporaryDirectory(prefix='pytest_gremlins_shards_', ignore_cleanup_errors=True) as scratch:
+    with tempfile.TemporaryDirectory(prefix='pgs', ignore_cleanup_errors=True) as scratch:
         data_files = run_prescan_shards(command, shards, cwd=cwd, timeout=timeout, env=env, scratch_dir=Path(scratch))
         if data_files is None:
             return False
@@ -176,7 +179,7 @@ def _start_shard(
     env: Mapping[str, str],
 ) -> subprocess.Popen[bytes]:
     return subprocess.Popen(  # Intentional: runs a pytest pre-scan command
-        [*command_with_node_ids_file(command, node_ids, shard_dir), f'--basetemp={shard_dir / "basetemp"}'],
+        [*command_with_node_ids_file(command, node_ids, shard_dir), f'--basetemp={shard_dir / "b"}'],
         cwd=str(cwd),
         env={**env, 'COVERAGE_FILE': str(data_file)},
         stdout=subprocess.DEVNULL,

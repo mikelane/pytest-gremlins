@@ -133,6 +133,28 @@ _EXPECTED_TRIPLES = {
 }
 
 
+_SOCKET_TEST = """\
+import socket
+
+from sample import double
+
+
+def test_sock(tmp_path):
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(tmp_path / 's'))
+    server.close()
+    assert double(1) == 2
+"""
+
+_OTHER_TEST = """\
+from sample import double
+
+
+def test_other():
+    assert double(2) == 4
+"""
+
+
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
@@ -187,6 +209,30 @@ class DescribeParallelPrescanEquivalence:
     def it_records_the_same_triples_when_the_project_runs_its_own_tests_under_xdist(self, project: Path) -> None:
         assert _mapping(project, 2, preserved_addopts='-n 2') == _EXPECTED_TRIPLES
 
+    def it_keeps_a_test_that_binds_a_unix_socket_in_tmp_path_the_serial_pre_scan_records(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Where AF_UNIX paths are capped (104 bytes on macOS), a long shard ``tmp_path`` would drop this test."""
+        monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+        (tmp_path / 'sample.py').write_text('def double(value):\n    return value * 2\n', encoding='utf-8')
+        (tmp_path / 'test_sock.py').write_text(_SOCKET_TEST, encoding='utf-8')
+        (tmp_path / 'test_other.py').write_text(_OTHER_TEST, encoding='utf-8')
+        node_ids = ['test_sock.py::test_sock', 'test_other.py::test_other']
+
+        def recorded(workers: int) -> set[str]:
+            return set(
+                _run_tests_with_coverage(
+                    node_ids,
+                    tmp_path,
+                    coverage_include=[str((tmp_path / 'sample.py').resolve())],
+                    prescan_workers=workers,
+                )
+            )
+
+        serial = recorded(1)
+        assert 'test_sock.py::test_sock' in serial
+        assert recorded(2) >= serial
+
     def it_leaves_no_coverage_files_behind(
         self, project: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
     ) -> None:
@@ -196,7 +242,7 @@ class DescribeParallelPrescanEquivalence:
         _mapping(project, 2)
 
         assert list(project.glob('.coverage*')) == []
-        assert list(scratch_root.glob('pytest_gremlins_shards_*')) == []
+        assert list(scratch_root.glob('pgs*')) == []
 
 
 @pytest.fixture
