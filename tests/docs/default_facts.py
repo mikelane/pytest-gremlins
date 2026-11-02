@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+from pytest_gremlins.config import DEFAULT_PRESCAN_WORKERS
 from pytest_gremlins.plugin import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_COVERAGE_TIMEOUT_SECONDS,
@@ -48,6 +49,7 @@ CONFIG_KEY_TO_FLAG: dict[str, str] = {
     'max_pardons': '--max-pardons',
     'max-pardons-pct': '--gremlin-max-pardons-pct',
     'coverage_timeout': '--gremlin-coverage-timeout',
+    'prescan_workers': '--gremlin-prescan-workers',
     'mutant_timeout': '--gremlin-mutant-timeout',
 }
 
@@ -61,7 +63,7 @@ def as_text(value: object) -> str:
 
 
 def normalize(cell: str) -> str:
-    return cell.strip().strip('`').strip('"').lower()
+    return cell.strip().strip('`').strip('"\'').lower()
 
 
 _PROJECT_ROOT = Path('project')
@@ -72,6 +74,7 @@ CODE_DEFAULTS: dict[str, object] = {
     '--gremlin-batch-size': DEFAULT_BATCH_SIZE,
     '--gremlin-report': DEFAULT_REPORT_FORMATS,
     '--gremlin-coverage-timeout': DEFAULT_COVERAGE_TIMEOUT_SECONDS,
+    '--gremlin-prescan-workers': DEFAULT_PRESCAN_WORKERS,
     '--gremlin-mutant-timeout': DEFAULT_MUTANT_TIMEOUT_SECONDS,
 }
 
@@ -117,6 +120,11 @@ def expected_key_defaults() -> dict[str, str | None]:
     return {key: hard.get(CONFIG_KEY_TO_FLAG.get(key, '')) for key in key_defaults_in_docs()}
 
 
+# What may follow the table's default in a ``# Default:`` comment: nothing, or prose such as ``all operators`` or
+# ``not set (one at a time ...)``. A digit, ``.``, quote or comma would make the comment state a different value.
+_END_OF_STATED_DEFAULT = r'(?=$|\s|\()'
+
+
 def default_comment_mismatches(comments: dict[str, str], table_cells: dict[str, str]) -> list[str]:
     """Describe each TOML ``# Default:`` comment that does not start with the default its key's table cell states."""
     problems: list[str] = []
@@ -125,7 +133,7 @@ def default_comment_mismatches(comments: dict[str, str], table_cells: dict[str, 
             problems.append(f'{key}: the TOML example says "Default: {comment}" but the options table has no such key')
             continue
         stated = normalize(table_cells[key])
-        if not re.match(rf'{re.escape(stated)}(?!\w)', normalize(comment)):
+        if not re.match(re.escape(stated) + _END_OF_STATED_DEFAULT, normalize(comment)):
             problems.append(f'{key}: the TOML example says "Default: {comment}", the options table says {stated!r}')
     return problems
 

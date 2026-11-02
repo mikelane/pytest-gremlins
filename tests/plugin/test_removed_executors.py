@@ -1,4 +1,4 @@
-"""``--gremlin-executor=fork|inprocess`` fail at startup until their redesign (issue #532)."""
+"""``--gremlin-executor=fork|inprocess`` fail at startup: both executors were removed (issue #532)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ USAGE_ERROR_EXIT_CODE = 4
 
 
 @pytest.mark.medium
-class DescribeDisabledExecutors:
-    """The fork and inprocess executors never run the mutated code, so they are refused."""
+class DescribeRemovedExecutors:
+    """The fork and inprocess executors never ran the mutated code and were removed, so they are refused."""
 
     @pytest.mark.parametrize('executor', ['fork', 'inprocess'])
     def it_exits_with_a_usage_error(self, pytester_with_markers: pytest.Pytester, executor: str) -> None:
@@ -32,6 +32,23 @@ class DescribeDisabledExecutors:
         assert f'--gremlin-executor={executor}' in output
         assert '--gremlin-executor=subprocess' in output
         assert TRACKING_URL in output
+
+    @pytest.mark.parametrize('executor', ['fork', 'inprocess'])
+    def it_says_the_executor_was_removed(self, pytester_with_markers: pytest.Pytester, executor: str) -> None:
+        pytester_with_markers.makepyfile(test_nothing='def test_nothing():\n    pass\n')
+
+        result = pytester_with_markers.runpytest_subprocess('--gremlins', f'--gremlin-executor={executor}')
+
+        assert 'was removed' in result.stderr.str()
+
+    def it_lists_the_valid_choices_for_an_unknown_executor(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester_with_markers.makepyfile(test_nothing='def test_nothing():\n    pass\n')
+
+        result = pytester_with_markers.runpytest_subprocess('--gremlins', '--gremlin-executor=bogus')
+
+        assert result.ret == USAGE_ERROR_EXIT_CODE
+        assert "unknown executor 'bogus'" in result.stderr.str()
+        assert 'auto, subprocess' in result.stderr.str()
 
     @pytest.mark.parametrize('executor', ['auto', 'subprocess'])
     def it_leaves_the_supported_executors_alone(self, pytester_with_markers: pytest.Pytester, executor: str) -> None:

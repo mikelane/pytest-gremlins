@@ -103,6 +103,6 @@ don't need to be removed for `--gremlins`.
   pardoned. `--gremlin-max-pardons-pct` and `--max-pardons` end it with exit code 1 when their
   limit is exceeded.
 - **Invalid configuration exits 4 (v1.11.0).** A bad `[tool.pytest-gremlins]` value, an
-  out-of-range `--gremlin-*` value, or `--gremlin-executor=fork`/`inprocess` stops the run with
+  out-of-range `--gremlin-*` value, or `--gremlin-executor=fork`/`inprocess` (both removed) stops the run with
   a usage error before any test runs. See
   [Configuration Validation](configuration.md#configuration-validation).
