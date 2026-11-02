@@ -223,6 +223,7 @@ nav:
 
   - User Guide:
       - Getting Started: guide/getting-started.md
+      - FAQ: guide/faq.md
       - Configuration: guide/configuration.md
       - Operators: guide/operators.md
       - Reports: guide/reports.md
