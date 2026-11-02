@@ -1322,7 +1322,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
         session.config.pluginmanager.register(context_plugin)
 
 
-class _XdistWorkerNode(Protocol):
+class _ControllerReportingNode(Protocol):
     """The part of xdist's ``WorkerController`` gremlins reads: the controller Config it reports to."""
 
     config: pytest.Config
@@ -1331,7 +1331,7 @@ class _XdistWorkerNode(Protocol):
 if _XDIST_AVAILABLE:
 
     @pytest.hookimpl(optionalhook=True)
-    def pytest_xdist_node_collection_finished(node: _XdistWorkerNode, ids: list[str]) -> None:
+    def pytest_xdist_node_collection_finished(node: _ControllerReportingNode, ids: list[str]) -> None:
         """Capture item IDs reported by the first xdist worker after it finishes collection.
 
         xdist workers each collect all test items independently and report them
