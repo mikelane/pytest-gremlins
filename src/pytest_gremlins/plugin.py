@@ -815,7 +815,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         dest='gremlin_explain',
         help=(
-            'Diagnose why a gremlin survived: for the given gremlin id (e.g. g001), '
+            'Diagnose why a gremlin survived: for the given gremlin id (e.g. calculator_e336_g001), '
             'print the covering set, the selected list, their diff, and close-match '
             'suggestions for any dropped tests, then skip the mutation loop so pytest '
             'can finish normally.'
