@@ -21,15 +21,14 @@ class DescribeSplitIntoShards:
     def it_returns_no_shards_for_no_node_ids(self) -> None:
         assert split_into_shards([], 4) == []
 
-    def it_keeps_every_test_of_a_file_in_one_shard_in_its_original_order(self) -> None:
+    @pytest.mark.parametrize('file', ['a.py', 'b.py', 'c.py'])
+    def it_keeps_every_test_of_a_file_in_one_shard_in_its_original_order(self, file: str) -> None:
         node_ids = [*_ids('a.py', 3), *_ids('b.py', 3), *_ids('c.py', 3)]
 
         shards = split_into_shards(node_ids, 2)
 
-        for file in ('a.py', 'b.py', 'c.py'):
-            holding = [shard for shard in shards if any(i.startswith(f'{file}::') for i in shard)]
-            assert len(holding) == 1
-            assert [i for i in holding[0] if i.startswith(f'{file}::')] == _ids(file, 3)
+        holding = [[i for i in shard if i.startswith(f'{file}::')] for shard in shards]
+        assert [ids for ids in holding if ids] == [_ids(file, 3)]
 
     def it_places_each_id_in_exactly_one_shard(self) -> None:
         node_ids = [*_ids('a.py', 5), *_ids('b.py', 2), *_ids('c.py', 7), *_ids('d.py', 1)]

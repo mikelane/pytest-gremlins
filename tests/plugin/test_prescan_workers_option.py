@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 
 from pytest_gremlins import plugin
+from pytest_gremlins.config import MAX_PRESCAN_WORKERS
 
 
 def _configured_session(pytester: pytest.Pytester, *args: str, pyproject: str = '') -> plugin.GremlinSession:
     pytester.makepyfile(sample='def one():\n    return 1\n')
-    if pyproject:
-        pytester.makepyprojecttoml(f'[tool.pytest-gremlins]\n{pyproject}\n')
+    pytester.makepyprojecttoml(f'[tool.pytest-gremlins]\n{pyproject}\n')
     pytester.parseconfigure('--gremlins', '--gremlin-targets=sample.py', *args)
     session = plugin._get_session()
     assert session is not None
@@ -39,7 +39,7 @@ class DescribePrescanWorkersThroughTheRealEntryPoint:
 
         assert session.prescan_workers == 4
 
-    @pytest.mark.parametrize('value', ['0', '-1', '65'])
+    @pytest.mark.parametrize('value', ['0', '-1', str(MAX_PRESCAN_WORKERS + 1)])
     def it_rejects_an_out_of_range_flag_naming_the_flag_and_value(
         self, pytester_with_markers: pytest.Pytester, value: str
     ) -> None:
