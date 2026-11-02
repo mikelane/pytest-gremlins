@@ -38,6 +38,7 @@ import tempfile
 import tokenize
 from typing import (
     TYPE_CHECKING,
+    Protocol,
 )
 import zlib
 
@@ -1321,10 +1322,16 @@ def pytest_sessionstart(session: pytest.Session) -> None:
         session.config.pluginmanager.register(context_plugin)
 
 
+class _XdistWorkerNode(Protocol):
+    """The part of xdist's ``WorkerController`` gremlins reads: the controller Config it reports to."""
+
+    config: pytest.Config
+
+
 if _XDIST_AVAILABLE:
 
     @pytest.hookimpl(optionalhook=True)
-    def pytest_xdist_node_collection_finished(node: object, ids: list[str]) -> None:  # noqa: ARG001
+    def pytest_xdist_node_collection_finished(node: _XdistWorkerNode, ids: list[str]) -> None:
         """Capture item IDs reported by the first xdist worker after it finishes collection.
 
         xdist workers each collect all test items independently and report them
@@ -1332,10 +1339,10 @@ if _XDIST_AVAILABLE:
         first worker's list and ignore subsequent calls.
 
         Args:
-            node: The xdist worker node (unused; all workers collect the same items).
+            node: The xdist worker node; its Config is the controller's, which owns the session.
             ids: The list of test node IDs collected by this worker.
         """
-        gremlin_session = _get_session()
+        gremlin_session = _session_for(node.config)
         if gremlin_session is None or not gremlin_session.enabled:
             return
 
