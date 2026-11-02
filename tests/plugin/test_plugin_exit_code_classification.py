@@ -12,8 +12,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
-from pytest_gremlins.plugin import _test_gremlin
 from pytest_gremlins.reporting.results import GremlinResultStatus
+from pytest_gremlins.verdicts import (
+    _test_gremlin,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -86,7 +88,7 @@ class DescribeGremlinExitCodeClassification:
             return subprocess.CompletedProcess(args=['pytest'], returncode=returncode, stdout=b'', stderr=b'')
 
         monkeypatch.setattr('pytest_gremlins.plugin.subprocess.run', fake_run)
-        monkeypatch.setattr('pytest_gremlins.plugin.time.monotonic', lambda: next(clock))
+        monkeypatch.setattr('pytest_gremlins.verdicts.time.monotonic', lambda: next(clock))
 
         result = _test_gremlin(sample_gremlin, ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
 

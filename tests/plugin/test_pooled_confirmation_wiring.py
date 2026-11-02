@@ -14,7 +14,10 @@ from typing import (
 
 import pytest
 
-from pytest_gremlins import plugin
+from pytest_gremlins import (
+    plugin,
+    verdicts,
+)
 from pytest_gremlins.node_id_file import NODE_IDS_FILE_OPTION
 
 if TYPE_CHECKING:
@@ -59,7 +62,7 @@ def _tests_the_command_runs(test_command: list[str]) -> str:
 def confirmation_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """Record every call to ``_confirm_pooled_result`` while still running the real confirmation."""
     calls: list[dict[str, Any]] = []
-    real_confirm = plugin._confirm_pooled_result
+    real_confirm = verdicts._confirm_pooled_result
 
     def spy(
         result: Any,

@@ -24,6 +24,19 @@ def _argparse_file_decoding() -> tuple[str, str]:
     return sys.getfilesystemencoding(), sys.getfilesystemencodeerrors()
 
 
+def read_argument_file(argument_file: Path) -> list[str] | None:
+    """Return the lines of an ``@file`` argument file, or None when it cannot be read or decoded.
+
+    The file is decoded the way the running Python's argparse decodes it: with the locale encoding, strictly,
+    before Python 3.12, and with the filesystem encoding and error handler from 3.12 on.
+    """
+    try:
+        encoding, errors = _argparse_file_decoding()
+        return argument_file.read_text(encoding=encoding, errors=errors).splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read: tuple[Path, ...] = ()) -> list[str]:
     """Replace each ``@file`` argument with the lines of that file, the way pytest's parser does.
 
@@ -45,10 +58,8 @@ def expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read:
         argument_file = base_dir / arg[len(_ARGUMENT_FILE_PREFIX) :]
         if argument_file in files_being_read:
             continue
-        try:
-            encoding, errors = _argparse_file_decoding()
-            lines = argument_file.read_text(encoding=encoding, errors=errors).splitlines()
-        except (OSError, UnicodeDecodeError):
+        lines = read_argument_file(argument_file)
+        if lines is None:
             continue
         expanded.extend(expand_argument_files(lines, base_dir, (*files_being_read, argument_file)))
     return expanded
