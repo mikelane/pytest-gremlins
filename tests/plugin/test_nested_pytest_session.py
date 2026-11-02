@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -24,6 +25,7 @@ from pytest_gremlins.plugin import (
     pytest_sessionfinish,
     pytest_terminal_summary,
     pytest_unconfigure,
+    pytest_xdist_node_collection_finished,
 )
 
 if TYPE_CHECKING:
@@ -265,6 +267,65 @@ class DescribeNestedPytestSession:
         result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*', 'Zapped: * gremlins*'])
         result.stdout.no_fnmatch_line('Error: *')
 
+    def it_reports_gremlins_when_a_test_leaves_an_inner_config_configured(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makepyfile(
+            core_module='def sub(a, b):\n    return a - b\n',
+        )
+        pytester_with_markers.makepyfile(
+            test_core=('from core_module import sub\n\ndef test_sub():\n    assert sub(3, 1) == 2\n'),
+            test_leak=(
+                'import pytest\n'
+                'from _pytest.config import get_config\n'
+                '\n'
+                '_LEAKED = []\n'
+                '\n'
+                '@pytest.mark.medium\n'
+                'def test_leaves_a_config_configured(tmp_path):\n'
+                '    config = get_config([str(tmp_path)])\n'
+                '    config.parse([str(tmp_path), "-p", "no:cacheprovider"])\n'
+                '    config._do_configure()\n'
+                '    _LEAKED.append(config)\n'
+            ),
+        )
+
+        result = pytester_with_markers.runpytest_subprocess('--gremlins', '--gremlin-targets=core_module.py')
+
+        result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*', 'Zapped: 2 gremlins*'])
+
+    @pytest.mark.parametrize('numprocesses', ['0', '2'])
+    def it_reports_gremlins_when_the_controller_leaves_an_inner_config_configured(
+        self, pytester_with_markers: pytest.Pytester, numprocesses: str
+    ) -> None:
+        pytester_with_markers.makepyfile(
+            core_module='def sub(a, b):\n    return a - b\n',
+        )
+        pytester_with_markers.makeconftest(
+            'import tempfile\n'
+            'from _pytest.config import get_config\n'
+            '\n'
+            '_LEAKED = []\n'
+            '\n'
+            'def pytest_sessionstart(session):\n'
+            '    if hasattr(session.config, "workerinput"):\n'
+            '        return\n'
+            '    path = tempfile.mkdtemp()\n'
+            '    config = get_config([path])\n'
+            '    config.parse([path, "-p", "no:cacheprovider"])\n'
+            '    config._do_configure()\n'
+            '    _LEAKED.append(config)\n'
+        )
+        pytester_with_markers.makepyfile(
+            test_core=('from core_module import sub\n\ndef test_sub():\n    assert sub(3, 1) == 2\n'),
+        )
+
+        result = pytester_with_markers.runpytest_subprocess(
+            '--gremlins', '--gremlin-targets=core_module.py', '-n', numprocesses
+        )
+
+        result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*', 'Zapped: 2 gremlins*'])
+
 
 class _RaisingCache:
     def close(self) -> None:
@@ -339,3 +400,27 @@ class DescribeHooksReadTheSessionTheirConfigOwns:
             pytest_sessionfinish(session, exitstatus=1)
 
         assert gate.call_args.args[0] is owned
+
+    def it_stores_xdist_item_ids_in_the_session_the_controller_config_owns(
+        self, tmp_path: Path, make_pytest_config: Callable[..., Any]
+    ) -> None:
+        config = make_pytest_config(tmp_path, gremlins=False)
+        owned = GremlinSession(enabled=True)
+        config.stash[_own_session_key] = owned
+        _set_session(GremlinSession(enabled=True))
+
+        pytest_xdist_node_collection_finished(node=SimpleNamespace(config=config), ids=['test_a.py::test_a'])
+
+        assert owned.xdist_item_ids == ['test_a.py::test_a']
+
+    def it_leaves_the_global_session_alone_when_storing_xdist_item_ids(
+        self, tmp_path: Path, make_pytest_config: Callable[..., Any]
+    ) -> None:
+        config = make_pytest_config(tmp_path, gremlins=False)
+        config.stash[_own_session_key] = GremlinSession(enabled=True)
+        swapped = GremlinSession(enabled=True)
+        _set_session(swapped)
+
+        pytest_xdist_node_collection_finished(node=SimpleNamespace(config=config), ids=['test_b.py::test_b'])
+
+        assert swapped.xdist_item_ids is None
