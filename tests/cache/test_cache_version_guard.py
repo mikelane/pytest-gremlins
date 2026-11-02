@@ -152,21 +152,17 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/exit_codes.py': '4b0c1b2aa2d80c2483e7b2294960f2dc59e13438a1837b48056888ad6527da14',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/fork_executor.py': 'a8553843606b1f21c192849e79207d71a61e8f4fc089a0ef9891337eccd9dcc3',  # pragma: allowlist secret  # noqa: E501
-    # --
-    'parallel/inprocess_executor.py': '250373b1553a8d52b9e437f2d65eea6d5fc2e977440f3e82f94a77020090bc67',  # pragma: allowlist secret  # noqa: E501
-    # --
     'parallel/lightweight.py': '72dd62804a24be6334d38305fdd058fe70c537e445a73329d1e11c81f22482db',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/persistent_pool.py': 'ff1309b9440529053e646d0af40990a4cb7068cb6c66e637d3cafe1fa0be220b',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/pool.py': 'dd1e32efef562fe73506be11431bcc516d87b064bbd0edc5f1ff73711989344a',  # pragma: allowlist secret
     # --
-    'parallel/pool_config.py': '7af64e5f01674965d50a40aea73547967316c01c10258aa6e800f7eaa90cae20',  # pragma: allowlist secret  # noqa: E501
+    'parallel/pool_config.py': '92d388fc68203d1e6a15ef69ab96ade058d9c3c9f3fb8a86f444f57c8e0fd74a',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '6d8aea4e6f47fe25652219694a2da784545d10360b34bc7189b8bddbf5e241b7',  # pragma: allowlist secret
+    'plugin.py': '246db5ada5aac745171429de716c9f65998b6fbfe988e66eedc970359cb52ceb',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --

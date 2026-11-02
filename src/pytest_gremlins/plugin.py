@@ -819,11 +819,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption(
         '--gremlin-executor',
         default='auto',
-        choices=['auto', 'subprocess', 'fork', 'inprocess'],
         dest='gremlin_executor',
         help=(
             'Execution strategy: auto (default, same as subprocess) or subprocess. '
-            'fork and inprocess are disabled pending https://github.com/mikelane/pytest-gremlins/issues/532.'
+            'fork and inprocess were removed (https://github.com/mikelane/pytest-gremlins/issues/532).'
         ),
     )
     group.addoption(
@@ -1049,22 +1048,28 @@ def _read_cli_timeout(config: pytest.Config, flag: str) -> int | None:
     return cli_value
 
 
-DISABLED_EXECUTORS = ('fork', 'inprocess')
-EXECUTOR_REDESIGN_ISSUE_URL = 'https://github.com/mikelane/pytest-gremlins/issues/532'
+REMOVED_EXECUTORS = ('fork', 'inprocess')
+SUPPORTED_EXECUTORS = ('auto', 'subprocess')
+EXECUTOR_REMOVAL_ISSUE_URL = 'https://github.com/mikelane/pytest-gremlins/issues/532'
 
 
-def _reject_disabled_executor(executor: str) -> None:
-    """Fail at startup for executors that did not run the mutated code.
+def _validate_executor(executor: str) -> None:
+    """Fail at startup for a removed or unknown ``--gremlin-executor`` value.
 
     Raises:
-        pytest.UsageError: If ``executor`` is ``fork`` or ``inprocess``.
+        pytest.UsageError: If ``executor`` is ``fork``, ``inprocess`` or not a known executor.
     """
-    if executor in DISABLED_EXECUTORS:
+    if executor in REMOVED_EXECUTORS:
         raise pytest.UsageError(
-            f'pytest-gremlins: --gremlin-executor={executor} is temporarily disabled because it produced '
+            f'pytest-gremlins: --gremlin-executor={executor} was removed because it produced '
             'incorrect results (it did not run the mutated code). '
             'Use --gremlin-executor=subprocess (the default). '
-            f'Tracking: {EXECUTOR_REDESIGN_ISSUE_URL}'
+            f'Details: {EXECUTOR_REMOVAL_ISSUE_URL}'
+        )
+    if executor not in SUPPORTED_EXECUTORS:
+        raise pytest.UsageError(
+            f"pytest-gremlins: unknown executor '{executor}' for --gremlin-executor. "
+            f'Choose from: {", ".join(SUPPORTED_EXECUTORS)}.'
         )
 
 
@@ -1118,7 +1123,7 @@ def pytest_configure(config: pytest.Config) -> None:
     if not config.option.gremlins:
         return
 
-    _reject_disabled_executor(getattr(config.option, 'gremlin_executor', 'auto'))
+    _validate_executor(getattr(config.option, 'gremlin_executor', 'auto'))
 
     # xdist with -n > 0 distributes test items across workers; gremlins runs
     # its mutation phase sequentially after xdist tears down (two-phase mode).

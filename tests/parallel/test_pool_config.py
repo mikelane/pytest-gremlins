@@ -169,14 +169,15 @@ class DescribePoolConfigExecutor:
         config = PoolConfig()
         assert config.executor == 'subprocess'
 
-    @pytest.mark.parametrize('executor', ['auto', 'subprocess', 'fork', 'inprocess'])
+    @pytest.mark.parametrize('executor', ['auto', 'subprocess'])
     def it_accepts_valid_executors(self, executor: str) -> None:
         config = PoolConfig(executor=executor)
         assert config.executor == executor
 
-    def it_rejects_unknown_executor(self) -> None:
+    @pytest.mark.parametrize('executor', ['magic', 'fork', 'inprocess'])
+    def it_rejects_unknown_or_removed_executors(self, executor: str) -> None:
         with pytest.raises(ValueError, match='executor must be one of'):
-            PoolConfig(executor='magic')
+            PoolConfig(executor=executor)
 
 
 @pytest.mark.small
