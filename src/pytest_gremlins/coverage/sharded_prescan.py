@@ -15,6 +15,7 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
+import gc
 from pathlib import Path
 import subprocess
 import tempfile
@@ -135,8 +136,22 @@ def _combined_without_error(data_files: Sequence[Path], combined: Path) -> bool:
         combine_shard_data(data_files, combined)
     except CoverageException:
         combined.unlink(missing_ok=True)
-        return False
-    return True
+        succeeded = False
+    else:
+        succeeded = True
+    _release_unreadable_data_connections()
+    return succeeded
+
+
+def _release_unreadable_data_connections() -> None:
+    """Close the connection coverage.py leaves open on a data file it could not read.
+
+    The connection is only freed by garbage collection, and pytest reports the resulting ResourceWarning against
+    whichever unrelated test runs next. Collecting here, with the warning ignored, keeps it from surfacing there.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', ResourceWarning)
+        gc.collect()
 
 
 def _start_shard(

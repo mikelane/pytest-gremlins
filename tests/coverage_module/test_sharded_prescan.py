@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import time
+import warnings
 
 import coverage
 import pytest
@@ -104,6 +106,7 @@ def _write_shard_data(path: Path, test_name: str, lines_by_file: dict[str, set[i
     data.set_context(test_name)
     data.add_lines({file: dict.fromkeys(lines) for file, lines in lines_by_file.items()})
     data.write()
+    data.close()
 
 
 @pytest.mark.medium
@@ -118,6 +121,7 @@ class DescribeCombineShardData:
         data = coverage.CoverageData(basename=str(combined))
         data.read()
         contexts = data.contexts_by_lineno('/src/m.py')
+        data.close()
         assert {line: sorted(names) for line, names in contexts.items()} == {
             1: ['a.py::test_one'],
             2: ['a.py::test_one', 'b.py::test_two[x-1]'],
@@ -150,3 +154,13 @@ class DescribeRunShardedPrescan:
         # The fake shards write JSON, not a coverage database, which is what a corrupt data file looks like.
         assert self._run(tmp_path, ['ok', 'ok2'], combined) is False
         assert not combined.exists()
+
+    def it_leaves_no_unclosed_database_connection_behind_when_the_shard_data_cannot_be_combined(
+        self, tmp_path: Path
+    ) -> None:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            self._run(tmp_path, ['ok', 'ok2'], tmp_path / 'combined')
+            gc.collect()
+
+        assert [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)] == []
