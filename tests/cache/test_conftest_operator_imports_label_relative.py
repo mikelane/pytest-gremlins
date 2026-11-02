@@ -6,7 +6,10 @@ import ast
 from collections import Counter
 import sys
 import types
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 import pytest
 
@@ -166,9 +169,10 @@ class DescribeRelativeImportsInConftestOperatorLabel:
         parsed: Counter[str] = Counter()
         real_parse = ast.parse
 
-        def counting_parse(source: bytes, filename: str = '<unknown>') -> ast.Module:
+        def counting_parse(source: bytes, filename: str = '<unknown>', *args: Any, **kwargs: Any) -> ast.Module:
             parsed[filename] += 1
-            return real_parse(source, filename=filename)
+            module: ast.Module = real_parse(source, filename, *args, **kwargs)
+            return module
 
         monkeypatch.setattr(ast, 'parse', counting_parse)
 
