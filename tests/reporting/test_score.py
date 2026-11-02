@@ -279,7 +279,8 @@ class DescribeMutationScoreWithDowngradedTimeouts:
 
         assert warning is not None
         assert warning.endswith(
-            'half the 86400s timeout. The limit is already at the 86400s maximum, so speed up those tests.'
+            'half the 86400s timeout. The limit is already at the 86400s maximum; lower any reruns or rerun delays, '
+            'or speed up those tests.'
         )
 
     def it_names_the_mutant_timeout_generically_when_the_limit_is_unknown(self, make_result):

@@ -12,8 +12,10 @@ from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
     limit_advice,
+    limit_was_scaled,
     mutant_timeout_advice,
 )
+from pytest_gremlins.rerun_options import scaled_mutant_timeout
 
 
 @pytest.mark.small
@@ -221,6 +223,18 @@ _MUTANT_RAISE = 'Raise {limit} with --gremlin-mutant-timeout or [tool.pytest-gre
 
 
 @pytest.mark.small
+class DescribeLimitWasScaled:
+    """Tests for limit_was_scaled, which the note and the advice both branch on."""
+
+    @pytest.mark.parametrize(
+        ('attempt_timeout', 'limit', 'expected'),
+        [(30, 130, True), (30, 30, False), (None, 130, False), (30, None, False), (None, None, False)],
+    )
+    def it_is_true_only_when_a_known_limit_differs_from_a_known_attempt_limit(self, attempt_timeout, limit, expected):
+        assert limit_was_scaled(attempt_timeout, limit) is expected
+
+
+@pytest.mark.small
 class DescribeLimitAdvice:
     """Tests for limit_advice, the remedy every timeout message names."""
 
@@ -244,12 +258,24 @@ class DescribeLimitAdvice:
     def it_says_the_limit_is_at_the_maximum_when_it_was_configured_there(self, attempt_timeout):
         advice = limit_advice(86400, attempt_timeout, unscaled_name='it', raise_advice='raise {limit} now')
 
-        assert advice == 'the limit is already at the 86400s maximum'
+        assert advice == 'the limit is already at the 86400s maximum; lower any reruns or rerun delays'
 
     def it_advises_raising_a_limit_one_second_below_the_maximum(self):
         advice = limit_advice(86399, None, unscaled_name='it', raise_advice='raise {limit} now')
 
         assert advice == 'raise it now'
+
+    def it_keeps_the_rerun_remedy_when_reruns_cannot_widen_a_limit_configured_at_the_maximum(self):
+        scaled = scaled_mutant_timeout(86400, reruns=2, reruns_delay=40000)
+
+        advice = limit_advice(scaled, 86400, unscaled_name='it', raise_advice='raise {limit} now')
+
+        assert advice == 'the limit is already at the 86400s maximum; lower any reruns or rerun delays'
+
+    def it_does_not_call_an_unknown_limit_scaled_when_the_attempt_limit_is_known(self):
+        advice = limit_advice(None, 30, unscaled_name='the timeout', raise_advice='raise {limit} now')
+
+        assert advice == 'raise the timeout now'
 
     def it_advises_raising_a_limit_it_does_not_know(self):
         advice = limit_advice(None, None, unscaled_name='the timeout', raise_advice='raise {limit} now')
@@ -276,7 +302,9 @@ class DescribeMutantTimeoutAdvice:
 
         assert advice == 'The limit is capped at 86400s; lower --reruns or --reruns-delay, or speed up these tests.'
 
-    def it_leaves_only_speeding_up_when_the_limit_was_configured_at_the_maximum(self):
+    def it_offers_lowering_any_reruns_when_the_limit_was_configured_at_the_maximum(self):
         advice = mutant_timeout_advice(86400, 86400, unscaled_name='the limit', tests='these tests')
 
-        assert advice == 'The limit is already at the 86400s maximum, so speed up these tests.'
+        assert advice == (
+            'The limit is already at the 86400s maximum; lower any reruns or rerun delays, or speed up these tests.'
+        )

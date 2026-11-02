@@ -168,13 +168,13 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/worker_kill.py': '04582134f7fa45932ce0c9cb2a6108017f2714571401e01ae5374c2f0b27339d',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'ad5b2a8a42f0c082fcb6cfcc0e5c79d69a3445394342b64cae0e2eda9f83f1de',  # pragma: allowlist secret
+    'plugin.py': 'b56f89636512bdf707ad9ae7b19168409049f945b738a9a050d65248a3fec4d2',  # pragma: allowlist secret
     # --
     'process_tree.py': 'f48a64afd8d30e9aac97f5d7d8ed245ee4f3283b73dc293f7c0f3553cf1a433e',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
-    'reporting/results.py': '68ee94ea714e3cb6410ca9d814b240e2ea5fd4efef5a73fd062b65510dfe0e72',  # pragma: allowlist secret  # noqa: E501
+    'reporting/results.py': '4b3dc36e5cefb9b6051d45fe5ef164269af0735e4d998698b14a7bf49d7638b9',  # pragma: allowlist secret  # noqa: E501
     # --
     'reporting/score.py': '6dd3df555d7106ce82685631af169b6a3ea25498c31ee586a6ee56cd34415d17',  # pragma: allowlist secret  # noqa: E501
     # --

@@ -540,6 +540,8 @@ and the JSON report gains a `timeout_warning` object with the count, the timeout
    pytest --durations=10
    ```
 
+   A timeout already at the 86400-second maximum cannot be raised, so lower any reruns or rerun delays instead.
+
 2. Exclude specific slow tests from mutation testing using pytest marks.
 
 **Prevention:** Keep individual tests fast (under 1 second when possible).
