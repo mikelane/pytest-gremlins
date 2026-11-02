@@ -8,6 +8,7 @@ oversubscribes the machine no more than the pool already did.
 from __future__ import annotations
 
 import ast
+from concurrent.futures import ThreadPoolExecutor
 import threading
 from typing import (
     TYPE_CHECKING,
@@ -43,7 +44,6 @@ if TYPE_CHECKING:
 COMMAND = ['python', 'bootstrap.py', 't.py::test_a']
 NODE_IDS = ['t.py::test_a']
 RENDEZVOUS_SECONDS = 30
-HOLD_SECONDS = 0.05
 
 
 def _gremlin(index: int) -> Gremlin:
@@ -81,24 +81,30 @@ def unmutated_run(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 
 class _ConcurrencyProbe:
-    """A stand-in for ``_test_gremlin`` that records how many re-runs overlap, and which one hung."""
+    """A stand-in for ``_test_gremlin`` that records how many re-runs overlap, and which ones ran.
 
-    def __init__(self, status: GremlinResultStatus = GremlinResultStatus.TIMEOUT) -> None:
-        self._status = status
-        self._lock = threading.Lock()
+    Each call holds until ``peers`` re-runs have overlapped at least once, so the peak it records does not
+    depend on how fast the threads happen to start. ``RENDEZVOUS_SECONDS`` only stops a broken run hanging.
+    """
+
+    def __init__(self, peers: int = 1) -> None:
+        self._peers = peers
+        self._condition = threading.Condition()
         self._running = 0
         self.max_running = 0
         self.rerun_ids: list[str] = []
 
     def __call__(self, gremlin: Gremlin, *_args: object, **_kwargs: object) -> GremlinResult:
-        with self._lock:
+        with self._condition:
             self._running += 1
             self.max_running = max(self.max_running, self._running)
             self.rerun_ids.append(gremlin.gremlin_id)
-        threading.Event().wait(HOLD_SECONDS)
-        with self._lock:
+            self._condition.notify_all()
+            met = self._condition.wait_for(lambda: self.max_running >= self._peers, timeout=RENDEZVOUS_SECONDS)
             self._running -= 1
-        return GremlinResult(gremlin=gremlin, status=self._status)
+        if not met:
+            raise TimeoutError(f'fewer than {self._peers} re-runs ever ran at the same time')
+        return GremlinResult(gremlin=gremlin, status=GremlinResultStatus.TIMEOUT)
 
 
 @pytest.fixture
@@ -106,6 +112,19 @@ def probe(monkeypatch: pytest.MonkeyPatch) -> _ConcurrencyProbe:
     concurrency_probe = _ConcurrencyProbe()
     monkeypatch.setattr('pytest_gremlins.verdicts._test_gremlin', concurrency_probe)
     return concurrency_probe
+
+
+@pytest.fixture
+def pool_sizes(monkeypatch: pytest.MonkeyPatch) -> list[int | None]:
+    """Record the ``max_workers`` of every thread pool the verdicts module opens."""
+    sizes: list[int | None] = []
+
+    def recording_executor(max_workers: int | None = None) -> ThreadPoolExecutor:
+        sizes.append(max_workers)
+        return ThreadPoolExecutor(max_workers=max_workers)
+
+    monkeypatch.setattr('pytest_gremlins.verdicts.ThreadPoolExecutor', recording_executor)
+    return sizes
 
 
 @pytest.mark.medium
@@ -126,10 +145,21 @@ class DescribeConcurrentTimeoutReruns:
 
     @pytest.mark.parametrize(('workers', 'gremlins', 'expected_peak'), [(2, 5, 2), (4, 4, 4), (8, 3, 3), (1, 3, 1)])
     def it_never_runs_more_reruns_at_once_than_the_pool_has_workers(
-        self, probe: _ConcurrencyProbe, tmp_path: Path, workers: int, gremlins: int, expected_peak: int
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        pool_sizes: list[int | None],
+        tmp_path: Path,
+        *,
+        workers: int,
+        gremlins: int,
+        expected_peak: int,
     ) -> None:
+        probe = _ConcurrencyProbe(peers=expected_peak)
+        monkeypatch.setattr('pytest_gremlins.verdicts._test_gremlin', probe)
+
         _confirm_pooled_results(_pooled_timeouts(gremlins), _session(tmp_path, workers), tmp_path)
 
+        assert pool_sizes == [expected_peak]
         assert probe.max_running == expected_peak
 
     def it_returns_the_verdicts_in_the_order_it_was_given_them(self, probe: _ConcurrencyProbe, tmp_path: Path) -> None:
