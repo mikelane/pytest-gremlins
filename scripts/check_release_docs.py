@@ -19,6 +19,30 @@ is any ``###`` heading that is not one of the known sections. A fence or HTML co
 sections (``Internal``, ``Documentation``) and before the first heading, but it must be closed and must not hide a
 ``###`` heading. The check fails closed: whatever it does not understand is reported, never skipped.
 
+Three line rules cover the whole selected entry, in the preamble, the exempt sections and the gated sections alike:
+
+* Only the exact ``### <section>`` headings (up to 3 leading spaces, optional tab after the hashes, optional
+  closing hashes) and the ``## [v]X.Y.Z`` version headings are accepted. Any other line that starts with ``#`` is an
+  unsupported heading, whether or not a renderer would make one of it: ``#Feature``, ``####Detail``, ``###Feature``,
+  ``#Feature ###``, ``##v2.0.0`` and ``#<TAB>Feature`` all fail. The one exception is an issue-number continuation
+  such as ``  #720)``, which is a wrapped reference inside a bullet. It is accepted only while a list item is open
+  directly above it: a standalone ``    #720)`` renders as a heading and fails.
+* Every thematic break or setext-underline shape is rejected, in every section and with no attempt to guess the
+  previous line: a run of ``=``, a run of one or two ``-``, and ``***``, ``---``, ``___``, ``* * *`` and ``- - -``.
+  This also rejects a delimiter under a pipe or inline-HTML line, so ``A | B`` + ``---`` and
+  ``<em>Feature</em>`` + ``---`` cannot hide a rendered heading.
+* A raw ``<h1>``-``<h6>`` tag is rejected wherever a reader can see it, in any case and with attributes, because the
+  renderer turns it into a real heading inside a block quote or a list item too. A tag written as a code span
+  (```<h1>```) stays literal text.
+* Both rules apply again after the list-marker and block-quote prefixes are stripped, so ``> #Feature``,
+  ``- #### Detail``, ``> <em>Feature</em>`` + ``> ---`` and ``- ---`` fail too. A code fence has to start at the
+  outer level (up to the leading spaces the scanner already accepts); a fence opener inside a block quote or after
+  a list marker is reported as unsupported instead of being read as code.
+
+A second visible copy of the selected version heading is a problem wherever it sits, including the no-space
+(``##v2.0.0``), indented and quoted or listed variants, because ``--notes-out`` publishes only the first copy while
+readers see both.
+
 Nothing skips this check: it has no flag, environment variable or input that turns it off.
 
 ``--newest`` checks the topmost ``## [v]X.Y.Z`` entry instead of a named version; it selects, never skips. When
@@ -74,10 +98,14 @@ EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
 LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 SECTION_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
 HEADING_CLOSER = re.compile(r'(?:^|[ \t]+)#+[ \t]*$')
+CONTAINER_PREFIX = re.compile(r'(?: {0,3}>[ \t]?|[ \t]*(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+|(?=[ \t]*$)))')
+ISSUE_CONTINUATION = re.compile(r'[ \t]+#[0-9]+(?:[ \t]*,[ \t]*#[0-9]+)*[ \t]*\)[ \t]*$')
+LIST_ITEM = re.compile(r'[ \t]*(?:[-*+]|[0-9]{1,9}[.)])[ \t]+\S')
+CONTAINER_QUOTE = re.compile(r'[ \t]*(?:>[ \t]*)+')
+HTML_HEADING = re.compile(r'<(/?)h[1-6]\b', re.IGNORECASE)
+THEMATIC_OR_SETEXT = re.compile(r'[ \t]*(?:(?:=[ \t]*)+|-{1,2}|(?:[-*_][ \t]*){3,})[ \t]*$')
 UNSUPPORTED_SHAPES = (
     (re.compile(r'\s*>'), 'a blockquote'),
-    (re.compile(r'\s*#{1,6}(?:[ \t]|$)'), 'a heading other than a "###" section heading'),
-    (re.compile(r'\s*(?:=+|-{2,}|(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$'), 'a thematic break or setext underline'),
     (re.compile(r'\s*[\u2022\u2023\u25e6\u25aa\u25cf]'), 'a pseudo-bullet; write "-"'),
 )
 
@@ -113,12 +141,64 @@ def _structural_title(text: str, level: int) -> str | None:
     return HEADING_CLOSER.sub('', match.group(2) or '').strip()
 
 
+def _container_content(text: str) -> str:
+    """Strip the block-quote and list markers of ``text`` so the content inside them can be read on its own."""
+    content = text
+    while (match := CONTAINER_PREFIX.match(content)) is not None:
+        content = content[match.end() :]
+    return content
+
+
+def _line_shape_problem(text: str, *, list_continuation: bool = False) -> str | None:
+    """Describe a heading or delimiter shape the accepted changelog format rejects, or return ``None``.
+
+    The format is strict on purpose: a visible line is allowed only if it is one of the known ``###`` section
+    headings, a version heading, ordinary prose or a list line. Anything that starts with ``#`` in another shape is
+    reported, whether or not a renderer would make a heading of it, and every thematic-break or setext-underline
+    shape is reported without looking at the line above it. Both readings repeat inside list and block-quote
+    markers, which is how ``> #Feature`` and ``- ---`` are caught.
+
+    ``list_continuation`` says the caller read the previous visible line as an open list item, so an issue-number
+    line such as ``  #716)`` is the wrapped tail of a bullet reference. A standalone ``    #720)`` is not a
+    continuation: a renderer makes an ``h1`` of it, so it stays an unsupported heading shape.
+    """
+    if not text.strip():
+        return None
+    if list_continuation and ISSUE_CONTINUATION.match(text):
+        return None
+    content = _container_content(text)
+    if content.lstrip(' \t').startswith('#'):
+        accepted = content == text and (
+            _structural_title(content, SECTION_LEVEL) is not None or _structural_title(content, ENTRY_LEVEL) is not None
+        )
+        return None if accepted else 'a heading that is not a known "###" section heading or version heading'
+    if _is_html_heading(text):
+        return 'a raw HTML heading; use a known "###" section heading'
+    if THEMATIC_OR_SETEXT.match(text) or THEMATIC_OR_SETEXT.match(content):
+        return 'a thematic break or setext underline'
+    return None
+
+
+def _is_html_heading(text: str) -> bool:
+    """Return whether ``text`` holds a visible raw ``<h1>``-``<h6>`` tag outside a code span.
+
+    A renderer turns these tags into real headings even inside a block quote or a list item, so the strict format
+    rejects them wherever the line is visible. A tag written as a code span (```<h1>```) stays literal text.
+    """
+    return bool(HTML_HEADING.search(CODE_SPAN.sub(' ', text)))
+
+
 def _fence_marker(text: str) -> str | None:
     match = FENCE.match(text)
     if match is None:
         return None
     marker, info = match.groups()
     return None if marker[0] == '`' and '`' in info else marker
+
+
+def _container_fence_marker(text: str) -> str | None:
+    """Return the fence marker when ``text`` opens a fence inside a list item or block quote, else ``None``."""
+    return _fence_marker(_container_content(text)) if _container_content(text) != text else None
 
 
 def _closes_fence(text: str, marker: str) -> bool:
@@ -152,15 +232,23 @@ def _strip_comments(text: str, in_comment: bool, allow_open: bool) -> tuple[str,
 
 
 class _Scanner:
-    """Walks the changelog once, hiding fenced code and HTML comments the way a Markdown renderer does."""
+    """Walks the changelog once, hiding fenced code and HTML comments the way a Markdown renderer does.
+
+    A line inside an outer fence or an HTML comment is invisible, so a fence opener written inside one is literal
+    text and is neither reported nor read as code. A fence opener inside a list item or block quote is unsupported by
+    the accepted format: it is recorded for a diagnostic, and its lines are read as plain text instead of opening a
+    region that would hide what follows.
+    """
 
     def __init__(self, neutralized: frozenset[int]) -> None:
         self.lines: list[_Line] = []
         self.hidden_headings: list[tuple[_Region, int]] = []
         self.hidden_version_headings: list[tuple[_Region, int, str]] = []
+        self.container_fence_openers: list[int] = []
         self.open_region: _Region | None = None
         self._neutralized = neutralized
         self._fence = ''
+        self._container_fence = ''
         self._in_comment = False
 
     def feed(self, number: int, text: str) -> None:
@@ -171,23 +259,36 @@ class _Scanner:
         if self._fence:
             self._feed_fenced(text)
             return
-        marker = None if self._in_comment or number in self._neutralized else _fence_marker(text)
+        if self._in_comment:
+            self._feed_text(number, text)
+            return
+        if self._container_fence:
+            if _closes_fence(_container_content(text), self._container_fence):
+                self._container_fence = ''
+            self._feed_text(number, text, neutralized=True)
+            return
+        marker = None if number in self._neutralized else _fence_marker(text)
         if marker:
             self._fence = marker
             self.open_region = _Region(number, 'code fence')
             self.lines.append(_Line(number, text, opens_fence=True))
-        else:
-            self._feed_text(number, text)
+            return
+        container_marker = None if number in self._neutralized else _container_fence_marker(text)
+        if container_marker:
+            self._container_fence = container_marker
+            self.container_fence_openers.append(number)
+        self._feed_text(number, text, neutralized=number in self._neutralized or container_marker is not None)
 
     def _feed_fenced(self, text: str) -> None:
         if _closes_fence(text, self._fence):
             self._fence = ''
             self.open_region = None
 
-    def _feed_text(self, number: int, text: str) -> None:
+    def _feed_text(self, number: int, text: str, *, neutralized: bool = False) -> None:
+        """Record ``text`` as a visible line; ``neutralized`` keeps it from opening a code fence or comment region."""
         heading = '' if self._in_comment else text
         visible, opened, still_open = _strip_comments(
-            text, self._in_comment, allow_open=number not in self._neutralized
+            text, self._in_comment, allow_open=not neutralized and number not in self._neutralized
         )
         self.lines.append(_Line(number, visible, heading, opens_comment=opened or COMMENT_OPEN in visible))
         if not still_open:
@@ -204,12 +305,16 @@ class _Scan:
     hidden_headings: list[tuple[_Region, int]]
     hidden_version_headings: list[tuple[_Region, int, str]]
     raw_lines: list[str]
+    container_fence_openers: frozenset[int] = frozenset()
 
 
 def _scan(changelog: str) -> _Scan:
     """Scan ``changelog``; a fence or comment that is never closed is reported, then read as plain text.
 
-    Reading it as plain text keeps it from hiding the rest of the file, so later sections are still checked.
+    Reading it as plain text keeps it from hiding the rest of the file, so later sections are still checked. A fence
+    marker inside a list item or block quote is never read as code either: such a line is reported as unsupported, so
+    it must not open a region that would hide the lines after it. The scanner knows the enclosing fence or comment
+    before it reads a line, so literal fence markers inside one are left alone.
     """
     raw = LINE_BREAK.split(changelog)
     neutralized: set[int] = set()
@@ -225,6 +330,7 @@ def _scan(changelog: str) -> _Scan:
                 scanner.hidden_headings,
                 scanner.hidden_version_headings,
                 LINE_WITH_BREAK.findall(changelog),
+                frozenset(scanner.container_fence_openers),
             )
         unclosed.append(scanner.open_region)
         neutralized.add(scanner.open_region.number)
@@ -267,9 +373,12 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
         if heading.match(text)
     ]
     lines = scan.lines[start + 1 : end]
+    shapes = _entry_shape_problems(lines) + _container_fence_problems(scan, first, last)
     text = ''.join(scan.raw_lines[first - 1 : last - 1])
     return _Entry(
-        lines, problems + _stray_heading_problems(lines), text if text.endswith(('\n', '\r')) else f'{text}\n'
+        lines,
+        problems + shapes + _stray_heading_problems(lines) + _copy_problems(scan.lines[start + 1 :], bare_version),
+        text if text.endswith(('\n', '\r')) else f'{text}\n',
     )
 
 
@@ -280,6 +389,65 @@ def _stray_heading_problems(lines: list[_Line]) -> list[str]:
         f'version heading; the release notes would publish what follows it as part of this entry'
         for line in lines
         if _structural_title(line.heading, ENTRY_LEVEL) is not None
+    ]
+
+
+def _copy_problems(later_lines: list[_Line], bare_version: str) -> list[str]:
+    """Report a second visible copy of the selected version heading anywhere after the first one."""
+    copy = re.compile(rf'v?{re.escape(bare_version)}(?=$|[ \t(?#\[])')
+    return [
+        f'a second visible copy of the entry version heading is at line {line.number} '
+        f'({_shorten(line.heading.strip())}); remove it so the entry is published once'
+        for line in later_lines
+        if _is_version_copy(line.heading, copy)
+    ]
+
+
+def _is_version_copy(text: str, copy: re.Pattern[str]) -> bool:
+    """Return whether ``text`` is a visible ``##`` heading for the selected version, in any accepted shape."""
+    content = _container_content(text).lstrip(' \t')
+    is_level_two = content.startswith('##') and not content.startswith('###')
+    return is_level_two and copy.match(content[2:].lstrip(' \t')) is not None
+
+
+def _entry_shape_problems(lines: list[_Line]) -> list[str]:
+    """Report unsupported heading and delimiter shapes on the visible lines of the entry.
+
+    An issue-number line is read as a wrapped bullet reference only while a list item is open above it, so the
+    exception cannot accept a standalone ``#720)`` that a renderer turns into a heading.
+    """
+    problems: list[str] = []
+    in_list_item = False
+    for line in lines:
+        text = line.text
+        reason = _line_shape_problem(text, list_continuation=in_list_item)
+        if reason is not None:
+            problems.append(f'{reason} at line {line.number} ({_shorten(text.strip())})')
+        if not text.strip():
+            in_list_item = False
+            continue
+        in_list_item = _opens_list_item(text, continued=in_list_item)
+    return problems
+
+
+def _opens_list_item(text: str, *, continued: bool) -> bool:
+    """Return whether ``text`` leaves a list item open for an indented continuation line below it.
+
+    A bullet or numbered item starts one. A quoted item (``> - x``) does not count: a quote body is not a plain list
+    continuation for the strict format, so those lines are held to the same rules as any other visible line.
+    """
+    if LIST_ITEM.match(text) and not CONTAINER_QUOTE.match(text):
+        return True
+    return continued and text[0] in ' \t' and not LIST_ITEM.match(text)
+
+
+def _container_fence_problems(scan: _Scan, first: int, last: int) -> list[str]:
+    """Report a code fence opened inside a list item or block quote: only outer-level fences are supported."""
+    return [
+        f'a code fence opened inside a list item or block quote at line {number} is unsupported; start the fence at '
+        'the outer level'
+        for number in sorted(scan.container_fence_openers)
+        if first <= number < last
     ]
 
 
