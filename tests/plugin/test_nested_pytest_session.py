@@ -56,13 +56,10 @@ class DescribeConfigureOwnsTheSession:
         config = make_pytest_config(tmp_path, gremlins=True)
         config.option.gremlin_coverage_timeout = 0
 
-        try:
-            with pytest.raises(pytest.exit.Exception):
-                pytest_configure(config)
+        with pytest.raises(pytest.exit.Exception):
+            pytest_configure(config)
 
-            assert _get_session() is not outer
-        finally:
-            _set_session(None)
+        assert _get_session() is config.stash[_own_session_key]
 
     def it_restores_the_outer_session_when_the_inner_config_unconfigures(
         self, tmp_path: Path, make_pytest_config: Callable[..., Any]
@@ -71,13 +68,10 @@ class DescribeConfigureOwnsTheSession:
         _set_session(outer)
         config = make_pytest_config(tmp_path, gremlins=False)
 
-        try:
-            pytest_configure(config)
-            _unconfigure(config)
+        pytest_configure(config)
+        _unconfigure(config)
 
-            assert _get_session() is outer
-        finally:
-            _set_session(None)
+        assert _get_session() is outer
 
     def it_restores_the_outer_session_when_inner_configs_unconfigure_out_of_order(
         self, tmp_path: Path, make_pytest_config: Callable[..., Any]
@@ -87,18 +81,15 @@ class DescribeConfigureOwnsTheSession:
         first = make_pytest_config(tmp_path, gremlins=False)
         second = make_pytest_config(tmp_path, gremlins=False)
 
-        try:
-            pytest_configure(first)
-            pytest_configure(second)
-            _unconfigure(first)
+        pytest_configure(first)
+        pytest_configure(second)
+        _unconfigure(first)
 
-            assert _get_session() is second.stash[_own_session_key]
+        assert _get_session() is second.stash[_own_session_key]
 
-            _unconfigure(second)
+        _unconfigure(second)
 
-            assert _get_session() is outer
-        finally:
-            _set_session(None)
+        assert _get_session() is outer
 
     def it_records_reports_only_into_the_session_of_the_config_that_produced_them(
         self, tmp_path: Path, make_pytest_config: Callable[..., Any]
@@ -220,6 +211,7 @@ class DescribeNestedPytestSession:
         result = pytester_with_markers.runpytest_subprocess('--gremlins', '--gremlin-targets=core_module.py')
 
         result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*', 'Zapped: * gremlins*'])
+        result.stderr.no_fnmatch_line('*skipping mutation testing*')
 
     def it_counts_an_outer_failure_while_an_inner_config_is_still_configured(
         self, pytester_with_markers: pytest.Pytester
@@ -291,16 +283,13 @@ class DescribeReleaseSessionWhenCacheCloseRaises:
         _set_session(outer)
         config = make_pytest_config(tmp_path, gremlins=False)
 
-        try:
-            pytest_configure(config)
-            config.stash[_own_session_key].cache = _RaisingCache()
+        pytest_configure(config)
+        config.stash[_own_session_key].cache = _RaisingCache()
 
-            with pytest.raises(RuntimeError, match='close failed'):
-                _unconfigure(config)
+        with pytest.raises(RuntimeError, match='close failed'):
+            _unconfigure(config)
 
-            assert _get_session() is outer
-        finally:
-            _set_session(None)
+        assert _get_session() is outer
 
 
 @pytest.mark.medium
@@ -317,10 +306,7 @@ class DescribeHooksReadTheSessionTheirConfigOwns:
         _set_session(GremlinSession(enabled=True))
         reporter = MagicMock(spec=TerminalReporter)
 
-        try:
-            pytest_terminal_summary(reporter, exitstatus=0, config=config)
-        finally:
-            _set_session(None)
+        pytest_terminal_summary(reporter, exitstatus=0, config=config)
 
         reporter.write_line.assert_any_call('owned-notice')
 
@@ -333,10 +319,7 @@ class DescribeHooksReadTheSessionTheirConfigOwns:
         _set_session(stray)
         reporter = MagicMock(spec=TerminalReporter)
 
-        try:
-            pytest_terminal_summary(reporter, exitstatus=0, config=config)
-        finally:
-            _set_session(None)
+        pytest_terminal_summary(reporter, exitstatus=0, config=config)
 
         reporter.write_line.assert_not_called()
 
@@ -351,11 +334,8 @@ class DescribeHooksReadTheSessionTheirConfigOwns:
         session = MagicMock(spec=pytest.Session)
         session.config = config
 
-        try:
-            with patch('pytest_gremlins.plugin._skip_mutation_unless_baseline_is_green') as gate:
-                gate.return_value = True
-                pytest_sessionfinish(session, exitstatus=1)
-        finally:
-            _set_session(None)
+        with patch('pytest_gremlins.plugin._skip_mutation_unless_baseline_is_green') as gate:
+            gate.return_value = True
+            pytest_sessionfinish(session, exitstatus=1)
 
         assert gate.call_args.args[0] is owned
