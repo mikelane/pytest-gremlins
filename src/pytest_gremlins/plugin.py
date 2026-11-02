@@ -324,6 +324,8 @@ class GremlinSession:
             run strip them (see :func:`pytest_gremlins.xdist_options.addopts_without_xdist`).
         doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs,
             passed as top-level arguments because pytest before 9.1 ignores a ``-o`` nested in ``addopts`` (#719).
+        config_file_options: ``-c <config file>`` when the session was given ``-c``/``--config-file``, else empty,
+            so gremlin runs and the coverage pre-scan read the same config file (#951).
     """
 
     enabled: bool = False
@@ -373,6 +375,7 @@ class GremlinSession:
     explain_gremlin_id: str | None = None
     preserved_addopts: str = ''
     doctest_ini_overrides: list[str] = field(default_factory=list)
+    config_file_options: list[str] = field(default_factory=list)
     rerun_options: list[str] = field(default_factory=list)
     pytest_cov_options: list[str] = field(default_factory=list)
     rerun_ini_warnings: list[str] = field(default_factory=list)
@@ -1198,6 +1201,7 @@ def pytest_configure(config: pytest.Config) -> None:
             xdist_workers=xdist_worker_int if xdist_active else None,
             preserved_addopts=_addopts_for_gremlin_runs(config),
             doctest_ini_overrides=_doctest_ini_overrides(config),
+            config_file_options=_config_file_options(config),
             rerun_options=rerun_options,
             pytest_cov_options=_pytest_cov_options_for(config, rerun_options),
             rerun_ini_warnings=_rerun_ini_warnings_for(config),
@@ -2926,6 +2930,7 @@ def _run_prescan_reporting_problems(
             coverage_include=coverage_include,
             preserved_addopts=gremlin_session.preserved_addopts,
             doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
+            config_file_options=gremlin_session.config_file_options,
             rerun_options=gremlin_session.rerun_options,
             xdist_loader_options=gremlin_session.xdist_loader_options,
             timeout=prescan_timeout,
@@ -3357,6 +3362,19 @@ def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
     return bool(getattr(config.option, 'inifilename', None))
 
 
+def _config_file_options(config: pytest.Config) -> list[str]:
+    """Return ``-c <path>`` for gremlin runs and the pre-scan when the session was given ``-c``/``--config-file``.
+
+    Child sessions find a config file the way pytest does, so one with another name (``gremlin.ini``) is
+    invisible to them unless named (#951).  Without ``-c`` they discover the same file as the session and
+    nothing is added.  The path is the one the session resolved, absolute, so it does not depend on the child's
+    working directory.
+    """
+    if not _rerun_ini_settings_are_forwarded(config) or config.inipath is None:
+        return []
+    return ['-c', config.inipath.as_posix()]
+
+
 _DOCTEST_FLAG = '--doctest-modules'
 _DOCTEST_GLOB = '--doctest-glob'
 
@@ -3674,6 +3692,7 @@ def _run_tests_with_coverage(
     coverage_include: list[str] | None = None,
     preserved_addopts: str = '',
     doctest_ini_overrides: Sequence[str] = (),
+    config_file_options: Sequence[str] = (),
     rerun_options: Sequence[str] = (),
     xdist_loader_options: Sequence[str] = (),
     timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS,
@@ -3713,6 +3732,8 @@ def _run_tests_with_coverage(
         doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs
             (see :func:`_doctest_ini_overrides`), kept outside ``addopts`` because pytest before 9.1 ignores a
             ``-o`` nested in an ``addopts`` value (issue #719).
+        config_file_options: ``-c <config file>`` of the session (see :func:`_config_file_options`), so the
+            pre-scan reads the config file the session was given (issue #951).
         rerun_options: pytest-rerunfailures options from the command line (see
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended so a test that flakes
             before reaching the code under test is rerun, as in the baseline, and still lands in the
@@ -3764,6 +3785,7 @@ def _run_tests_with_coverage(
         '-o',
         f'addopts={addopts_without_gremlins(addopts_without_xdist(preserved_addopts))}',
         *doctest_ini_overrides,
+        *config_file_options,
         '--tb=no',
         '-q',
         *rerun_options,
@@ -3858,6 +3880,7 @@ def _run_batch_mutation_testing(  # pragma: no cover
         xdist_loaded=gremlin_session.xdist_loaded,
         xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
+        config_file_options=gremlin_session.config_file_options,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
     )
@@ -3977,6 +4000,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         xdist_loaded=gremlin_session.xdist_loaded,
         xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
+        config_file_options=gremlin_session.config_file_options,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
     )
@@ -4342,6 +4366,7 @@ def _run_mutation_testing(
         xdist_loaded=gremlin_session.xdist_loaded,
         xdist_loader_options=gremlin_session.xdist_loader_options,
         doctest_ini_overrides=gremlin_session.doctest_ini_overrides,
+        config_file_options=gremlin_session.config_file_options,
         rerun_options=gremlin_session.rerun_options,
         pytest_cov_options=gremlin_session.pytest_cov_options,
     )
