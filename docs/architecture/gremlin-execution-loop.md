@@ -124,7 +124,9 @@ handling, the cache lookup and the verdict mapping stay the same.
   TOML configuration. Each worker runs one gremlin at a time and spawns the same bootstrap
   subprocess, with the same environment variable and that gremlin's own test selection. The
   parent collects the results as they complete. A timeout is first re-run alone, in case the
-  workers only slowed it down, and then the usual confirmations apply.
+  workers only slowed it down, and then the usual confirmations apply. The solo re-runs of several
+  timeouts overlap, at most as many at once as the pool has workers, so N hung gremlins cost
+  about two timeouts of wall clock, not N + 1. Verdicts are the same as with one re-run at a time.
   See [Parallel Execution](parallelization.md).
 - **`--gremlin-batch`** groups the gremlins that still need a run into batches of
   `--gremlin-batch-size` (default 10) and hands each batch to a worker. Inside a batch the

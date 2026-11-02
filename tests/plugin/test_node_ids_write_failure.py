@@ -76,7 +76,9 @@ def stubbed_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     )
     monkeypatch.setattr(plugin_module, '_check_cache_for_gremlin', lambda *_a, **_kw: None)
     monkeypatch.setattr(plugin_module, '_confirm_kill', lambda result, *_a, **_kw: result)
-    monkeypatch.setattr(plugin_module, '_confirm_pooled_result', lambda result, *_a, **_kw: result)
+    monkeypatch.setattr(
+        plugin_module, '_confirm_pooled_results', lambda pending, *_a, **_kw: [result for result, *_ in pending]
+    )
 
 
 def _fail_node_ids_write_when_selecting(monkeypatch: pytest.MonkeyPatch, failing: str) -> None:

@@ -59,6 +59,9 @@ if TYPE_CHECKING:
     from pytest_gremlins.parallel.pool import WorkerResult
     from pytest_gremlins.plugin import GremlinSession
 
+    PooledResult = tuple[GremlinResult, list[str], Sequence[str]]
+    """A pooled result with the command its subprocess ran and the node ids that command selected."""
+
 logger = logging.getLogger(__name__)
 
 UNMAPPED_SELECTION_PREFIX = 'no verdict: the gremlin has no test to run'
@@ -324,6 +327,53 @@ def _rerun_timeout_alone(
     return dataclass_replace(solo_result, selected_tests=result.selected_tests)
 
 
+def _rerun_pooled_timeouts(
+    pending: Sequence[PooledResult],
+    gremlin_session: GremlinSession,
+    rootdir: Path,
+) -> list[GremlinResult]:
+    """Re-run each pooled TIMEOUT alone, up to one re-run per pool worker at a time (issue #917).
+
+    Each re-run is still a lone run of one gremlin, so it tells pool contention from a real hang, but
+    re-running N hung gremlins one after another cost N timeouts. Running at most ``parallel_workers``
+    of them at once costs about one, and loads the machine no more than the pool did. Worker threads
+    only wait on a subprocess, and the results come back in the order of ``pending``.
+
+    Args:
+        pending: Each pooled result with the command it ran and the node ids that command selected.
+        gremlin_session: The current gremlin session, holding the timeout and the worker count.
+        rootdir: Root directory of the project.
+
+    Returns:
+        One result per entry of ``pending``: unchanged unless it was a TIMEOUT, otherwise the solo run's result.
+    """
+    timed_out = [entry for entry in pending if entry[0].status == GremlinResultStatus.TIMEOUT]
+    if not timed_out:
+        return [result for result, _command, _node_ids in pending]
+    worker_count = min(len(timed_out), gremlin_session.parallel_workers or os.cpu_count() or 4)
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        reruns = executor.map(
+            lambda entry: _rerun_timeout_alone(entry[0], entry[1], rootdir, gremlin_session), timed_out
+        )
+        rerun_by_gremlin_id = {
+            entry[0].gremlin.gremlin_id: rerun for entry, rerun in zip(timed_out, reruns, strict=True)
+        }
+    return [rerun_by_gremlin_id.get(result.gremlin.gremlin_id, result) for result, _command, _node_ids in pending]
+
+
+def _confirm_pooled_results(
+    pending: Sequence[PooledResult],
+    gremlin_session: GremlinSession,
+    rootdir: Path,
+) -> list[GremlinResult]:
+    """Judge parallel or batch results: re-run timeouts alone and concurrently, then apply the usual confirmations."""
+    reran = _rerun_pooled_timeouts(pending, gremlin_session, rootdir)
+    return [
+        _confirm_kill(result, node_ids, gremlin_session, rootdir)
+        for result, (_pooled, _command, node_ids) in zip(reran, pending, strict=True)
+    ]
+
+
 def _confirm_pooled_result(
     result: GremlinResult,
     test_command: list[str],
@@ -331,9 +381,8 @@ def _confirm_pooled_result(
     gremlin_session: GremlinSession,
     rootdir: Path,
 ) -> GremlinResult:
-    """Judge a parallel or batch result: re-run a timeout alone, then apply the usual confirmations."""
-    result = _rerun_timeout_alone(result, test_command, rootdir, gremlin_session)
-    return _confirm_kill(result, node_ids, gremlin_session, rootdir)
+    """Judge one parallel or batch result: re-run a timeout alone, then apply the usual confirmations."""
+    return _confirm_pooled_results([(result, test_command, node_ids)], gremlin_session, rootdir)[0]
 
 
 def _build_test_command(

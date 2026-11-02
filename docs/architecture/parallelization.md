@@ -337,7 +337,9 @@ pytest --gremlins --gremlin-workers=4       # use 4 workers
 Each gremlin's test run has a per-mutant timeout: 30 seconds by default, set with
 `--gremlin-mutant-timeout` or `mutant_timeout` (1-86400), and scaled up when
 pytest-rerunfailures reruns are configured. A gremlin that exceeds it in the pool is re-run
-alone first, since the timeout may have come from contention with other workers. A timeout
+alone first, since the timeout may have come from contention with other workers. Re-runs of
+several timed-out gremlins overlap, at most as many at once as there are workers, so a run
+with many hung gremlins pays about two timeouts of wall clock, not one per gremlin. A timeout
 that repeats counts as `TIMEOUT` (a kill) only when the gremlin's tests, run without the
 mutant, finish within half the timeout. Otherwise the gremlin is reported as `ERROR`. See
 [Error: Test timeout exceeded](../guide/troubleshooting.md#error-test-timeout-exceeded).

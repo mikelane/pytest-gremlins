@@ -1,4 +1,4 @@
-"""The parallel and batch runners judge their results through ``_confirm_pooled_result`` (issue #576).
+"""The parallel and batch runners judge their results through ``_confirm_pooled_results`` (issue #576).
 
 Both runners are ``# pragma: no cover``, so a reverted or mis-wired call site would pass every other
 medium test. These tests drive a real tiny run in each mode and spy on the confirmation step.
@@ -60,28 +60,23 @@ def _tests_the_command_runs(test_command: list[str]) -> str:
 
 @pytest.fixture
 def confirmation_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
-    """Record every call to ``_confirm_pooled_result`` while still running the real confirmation."""
+    """Record every result passed to ``_confirm_pooled_results`` while still running the real confirmation."""
     calls: list[dict[str, Any]] = []
-    real_confirm = verdicts._confirm_pooled_result
+    real_confirm = verdicts._confirm_pooled_results
 
-    def spy(
-        result: Any,
-        test_command: list[str],
-        node_ids: list[str],
-        gremlin_session: GremlinSession,
-        rootdir: Any,
-    ) -> Any:
-        calls.append(
+    def spy(pending: list[Any], gremlin_session: GremlinSession, rootdir: Any) -> Any:
+        calls.extend(
             {
                 'selected_tests': list(result.selected_tests),
                 'command_tests': _tests_the_command_runs(test_command),
                 'node_ids': list(node_ids),
                 'mutant_timeout': gremlin_session.mutant_timeout,
             }
+            for result, test_command, node_ids in pending
         )
-        return real_confirm(result, test_command, node_ids, gremlin_session, rootdir)
+        return real_confirm(pending, gremlin_session, rootdir)
 
-    monkeypatch.setattr(plugin, '_confirm_pooled_result', spy)
+    monkeypatch.setattr(plugin, '_confirm_pooled_results', spy)
     return calls
 
 

@@ -146,7 +146,7 @@ from pytest_gremlins.verdicts import (
     _cache_row_from_result,
     _collect_unmutated,
     _confirm_kill,
-    _confirm_pooled_result,
+    _confirm_pooled_results,
     _immediate_result_if_pardoned,
     _immediate_result_if_selection_unrunnable,
     _is_cacheable,
@@ -3941,10 +3941,12 @@ def _run_batch_mutation_testing(  # pragma: no cover
 
     # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
     _prefill_collection_kill_confirmations([(r, batch_node_ids) for r in unconfirmed], gremlin_session, rootdir)
-    for unconfirmed_result in unconfirmed:
-        gremlin_result = _confirm_pooled_result(
-            unconfirmed_result, test_command, batch_node_ids, gremlin_session, rootdir
-        )
+    confirmed = _confirm_pooled_results(
+        [(unconfirmed_result, test_command, batch_node_ids) for unconfirmed_result in unconfirmed],
+        gremlin_session,
+        rootdir,
+    )
+    for unconfirmed_result, gremlin_result in zip(unconfirmed, confirmed, strict=True):
         results.append(gremlin_result)
         _cache_gremlin_result(
             unconfirmed_result.gremlin, unconfirmed_result.selected_tests, gremlin_result, gremlin_session
@@ -4079,16 +4081,19 @@ def _confirm_and_cache_pooled_results(
     _prefill_collection_kill_confirmations(
         [(r, _node_ids_for_tests(r.selected_tests, gremlin_session)) for r in unconfirmed], gremlin_session, rootdir
     )
-    confirmed: list[GremlinResult] = []
-    for unconfirmed_result in unconfirmed:
-        confirmed_result = _confirm_pooled_result(
-            unconfirmed_result,
-            test_commands[unconfirmed_result.gremlin.gremlin_id],
-            _node_ids_for_tests(unconfirmed_result.selected_tests, gremlin_session),
-            gremlin_session,
-            rootdir,
-        )
-        confirmed.append(confirmed_result)
+    confirmed = _confirm_pooled_results(
+        [
+            (
+                r,
+                test_commands[r.gremlin.gremlin_id],
+                _node_ids_for_tests(r.selected_tests, gremlin_session),
+            )
+            for r in unconfirmed
+        ],
+        gremlin_session,
+        rootdir,
+    )
+    for unconfirmed_result, confirmed_result in zip(unconfirmed, confirmed, strict=True):
         _cache_gremlin_result(
             unconfirmed_result.gremlin, unconfirmed_result.selected_tests, confirmed_result, gremlin_session
         )
