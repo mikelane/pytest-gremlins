@@ -125,18 +125,13 @@ from pytest_gremlins.reporting.results import (
 )
 from pytest_gremlins.reporting.score import MutationScore
 from pytest_gremlins.rerun_options import (
-    RerunIniResolution,
     baseline_rerun_warning,
     mutant_timeout_for_items,
     rerun_cache_settings,
-    rerun_ini_as_gremlin_runs_read,
-    rerun_keys_set_in,
     rerun_options_in,
-    resolve_rerun_ini,
     scaled_mutant_timeout,
     session_rerun_backoff_factor,
     session_rerun_budget,
-    unforwarded_rerun_key_warning,
 )
 from pytest_gremlins.rootdir_mismatch import (
     argument_file_mismatch_message,
@@ -383,7 +378,6 @@ class GremlinSession:
     config_file_options: list[str] = field(default_factory=list)
     rerun_options: list[str] = field(default_factory=list)
     pytest_cov_options: list[str] = field(default_factory=list)
-    rerun_ini_warnings: list[str] = field(default_factory=list)
     baseline_rerun_test_ids: set[str] = field(default_factory=set)
     coverage_timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS
     coverage_attempt_timeout: int | None = None
@@ -1249,7 +1243,6 @@ def pytest_configure(config: pytest.Config) -> None:
             config_file_options=_config_file_options(config),
             rerun_options=rerun_options,
             pytest_cov_options=_pytest_cov_options_for(config, rerun_options),
-            rerun_ini_warnings=_rerun_ini_warnings_for(config),
             coverage_timeout=_rerun_scaled_timeout(config, coverage_timeout, label='Coverage pre-scan'),
             coverage_attempt_timeout=coverage_timeout,
             prescan_workers=merged_config.prescan_workers or DEFAULT_PRESCAN_WORKERS,
@@ -2823,8 +2816,6 @@ def _skip_mutation_unless_baseline_is_green(gremlin_session: GremlinSession, exi
     if _is_green_baseline(gremlin_session, exitstatus):
         if exitstatus == pytest.ExitCode.TESTS_FAILED:
             print(_NON_TEST_CHECK_NOTE, file=sys.stderr)
-        for ini_warning in gremlin_session.rerun_ini_warnings:
-            print(ini_warning, file=sys.stderr)
         rerun_warning = baseline_rerun_warning(gremlin_session.baseline_rerun_test_ids)
         if rerun_warning is not None:
             print(rerun_warning, file=sys.stderr)
@@ -3409,16 +3400,6 @@ def _session_was_given_config_file(config: pytest.Config) -> bool:
     return bool(getattr(config.option, 'inifilename', None))
 
 
-def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
-    """Return whether the rerun ini settings are passed to gremlin runs as ``--override-ini`` arguments.
-
-    Only when the session was given ``-c`` but the config file is not forwarded to gremlin runs, which cannot
-    happen once :func:`_config_file_options` names the file (#951): a gremlin run reads the rerun settings from
-    the same file as this session, so nothing is overridden, reset or warned about.
-    """
-    return _session_was_given_config_file(config) and not _config_file_options(config)
-
-
 def _config_file_options(config: pytest.Config) -> list[str]:
     """Return ``-c <path>`` for gremlin runs and the pre-scan when the session was given ``-c``/``--config-file``.
 
@@ -3521,25 +3502,7 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     loader_options = _loader_options_for_gremlin_runs(config, _RERUNFAILURES_PLUGIN_NAMES)
     if _gremlin_runs_would_load_the_module_twice(config):
         loader_options = [_DISABLE_PLUGIN_AUTOLOAD_FLAG, '-p', _RERUNFAILURES_MODULE_NAME]
-    return [*loader_options, *_rerun_settings_for(config)]
-
-
-def _rerun_settings_for(config: pytest.Config) -> list[str]:
-    """Return the rerun options and ini settings of a session that loaded pytest-rerunfailures."""
-    command_line_options = _command_line_rerun_options(config)
-    if not _rerun_ini_settings_are_forwarded(config):
-        return command_line_options
-    ini_resolution = _rerun_ini_resolution_for(config)
-    return [*ini_resolution.overrides, *ini_resolution.resets, *command_line_options]
-
-
-def _rerun_ini_resolution_for(config: pytest.Config) -> RerunIniResolution:
-    """Return the rerun ini overrides, resets and unforwardable keys gremlin runs get under ``-c``."""
-    return resolve_rerun_ini(
-        config.getini,
-        overridden_by=_command_line_rerun_options(config),
-        option_keys_set=rerun_keys_set_in(config.option),
-    )
+    return [*loader_options, *_command_line_rerun_options(config)]
 
 
 def _gremlin_run_rerun_budget(config: pytest.Config) -> RerunBudget:
@@ -3569,10 +3532,7 @@ def _gremlin_run_rerun_cache_settings(config: pytest.Config) -> str:
     doctest_settings = ' '.join(shlex.quote(token) for token in _doctest_ini_overrides(config))
     if not _rerunfailures_is_loaded(config):
         return doctest_settings
-    read_ini: Callable[[str], object] = config.getini
-    if _rerun_ini_settings_are_forwarded(config):
-        read_ini = rerun_ini_as_gremlin_runs_read(read_ini, _rerun_ini_resolution_for(config).resets)
-    return f'{rerun_cache_settings(config.option, read_ini)} {doctest_settings}'.strip()
+    return f'{rerun_cache_settings(config.option, config.getini)} {doctest_settings}'.strip()
 
 
 def _prescan_timeout(gremlin_session: GremlinSession) -> int:
@@ -3624,13 +3584,6 @@ def _rerun_scaled_timeout(config: pytest.Config, per_run_timeout: int, *, label:
         scaled_timeout,
     )
     return scaled_timeout
-
-
-def _rerun_ini_warnings_for(config: pytest.Config) -> list[str]:
-    """Return one warning per rerun ini setting that ``-c`` holds and gremlin runs cannot be given."""
-    if not _rerunfailures_is_loaded(config) or not _rerun_ini_settings_are_forwarded(config):
-        return []
-    return [unforwarded_rerun_key_warning(key) for key in _rerun_ini_resolution_for(config).unforwardable_keys]
 
 
 def _rerunfailures_is_loaded(config: pytest.Config) -> bool:
