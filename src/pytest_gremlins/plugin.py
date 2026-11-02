@@ -3836,6 +3836,7 @@ def _run_tests_with_coverage(
         f'--rcfile={coveragerc_path}',
         '-m',
         'pytest_gremlins.coverage.prescan_main',
+        f'--rootdir={rootdir}',
         '-p',
         'pytest_gremlins.coverage.subprocess_bootstrap',
         '-p',
