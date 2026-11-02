@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+from collections import Counter
 import sys
-import time
 import types
 from typing import TYPE_CHECKING
 
@@ -154,7 +155,7 @@ class DescribeRelativeImportsInConftestOperatorLabel:
 
         assert _lbl(op, tmp_path, conftest) == _lbl(op, tmp_path, conftest)
 
-    def it_stays_fast_on_a_long_chain(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_parses_each_module_of_a_long_chain_once(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         count = 1500
         for i in range(count):
             nxt = f'from . import m{i + 1}\n' if i + 1 < count else ''
@@ -162,11 +163,19 @@ class DescribeRelativeImportsInConftestOperatorLabel:
         conftest = tmp_path / 'conftest.py'
         conftest.write_text('from . import m0\n')
         op = _operator_from(conftest, 'conftest', monkeypatch)
+        parsed: Counter[str] = Counter()
+        real_parse = ast.parse
 
-        start = time.perf_counter()
-        _lbl(op, tmp_path, conftest)
+        def counting_parse(source: bytes, filename: str = '<unknown>') -> ast.Module:
+            parsed[filename] += 1
+            return real_parse(source, filename=filename)
 
-        assert time.perf_counter() - start < 3
+        monkeypatch.setattr(ast, 'parse', counting_parse)
+
+        label = _lbl(op, tmp_path, conftest)
+
+        assert label.startswith(LABEL_PREFIX)
+        assert (len(parsed), max(parsed.values())) == (count + 1, 1)
 
     def it_ignores_an_unrelated_file_edit(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         (tmp_path / 'h.py').write_text('V = 1\n')
