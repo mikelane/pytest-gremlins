@@ -5,7 +5,8 @@
 site_name: pytest-gremlins
 site_description: Fast-first mutation testing for pytest - let the gremlins loose, see which ones survive
 site_author: Mike Lane
-site_url: https://pytest-gremlins.readthedocs.io
+# Read the Docs serves under /en/latest/; the social cards plugin builds og:image URLs from this.
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, 'https://pytest-gremlins.readthedocs.io/en/latest/']
 copyright: Copyright &copy; 2024-2026 Mike Lane
 
 repo_name: mikelane/pytest-gremlins
