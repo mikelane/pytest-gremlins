@@ -628,30 +628,15 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
 
 - Options in `addopts` and `PYTEST_ADDOPTS` reach per-gremlin runs as they always did.
 - The rerun ini settings (`reruns`, `reruns_delay`, `reruns_delay_backoff_factor`, `only_rerun`, `rerun_except`)
-  reach them too. Without `-c`/`--config-file`, a gremlin run finds the same project config file you did and
-  reads the settings itself; gremlins forwards nothing. With `-c` or `--config-file` (also through
-  `PYTEST_ADDOPTS` or an `@file`), the gremlin runs cannot read that file, so gremlins passes each setting that
-  is set as `--override-ini`, and a rerun option typed on the command line still wins over the file, as in pytest.
-- With `-c`, a gremlin run finds the project's own config file (`pytest.ini`, `pyproject.toml`...), which your
-  baseline never read. So under `-c`, gremlins also resets each rerun key that the `-c` file leaves unset, or that
-  it cannot carry (next item), with an empty `--override-ini`. Empty means what your baseline ran with: no
-  filter for `only_rerun` and `rerun_except`, no reruns for `reruns`, and no delay and a backoff factor of 1.0 for
-  `reruns_delay` and `reruns_delay_backoff_factor`. So the project file can neither restrict reruns nor make the
-  gremlin runs wait where your baseline did not. Every rerun key is either forwarded or reset. A key that a
-  rerun option already sets is left alone, wherever the option comes from: the command line, the `addopts` of the
-  `-c` file or `PYTEST_ADDOPTS`. pytest-rerunfailures reads the option before the ini key, and gremlin runs receive
-  those `addopts` themselves. (A `-c` that reaches the gremlin runs through `PYTEST_ADDOPTS` is read by them.)
-- pytest strips each line of a list value given with `-o`, splits it at line breaks and drops empty lines. Under
-  `-c`, an `only_rerun` or `rerun_except` list with an empty item, or an item that has leading or trailing
-  whitespace, a line break or a NUL byte (possible in a TOML list such as `rerun_except = ["xyz "]`), would
-  reach the gremlin runs changed, and a changed pattern reruns fewer failures than your baseline did. So
-  gremlins does not forward that key: it resets it to no filter and prints
-  `pytest-gremlins: warning: the ini setting 'rerun_except' is not carried into gremlin runs ...`.
-  The gremlin runs then rerun more failures than the baseline, so a gremlin your tests would zap can survive,
-  but a flaky test never zaps one it should not. To avoid this, remove the whitespace, line breaks, NUL bytes
-  and empty items from the list, or put the config in a file pytest finds without `-c`.
-  The warning is not printed when `--only-rerun` or `--rerun-except` (from the command line, the `-c` file's
-  `addopts` or `PYTEST_ADDOPTS`) or a `-o` setting already replaces the key.
+  reach them too, because a gremlin run reads the same config file you did. Without `-c`/`--config-file`, it finds
+  the same project config file by itself. With `-c` or `--config-file` (also through `PYTEST_ADDOPTS` or an
+  `@file`), gremlins passes the same `-c` file on to the gremlin runs and the coverage pre-scan, so they read the
+  settings from it and a rerun option typed on the command line still wins over the file, as in pytest. Gremlins
+  no longer copies the settings as `--override-ini`, resets any of them, or warns about a list item it cannot
+  carry: the file itself reaches the run, so a pattern such as `rerun_except = ["xyz "]` arrives unchanged.
+- A rerun option that sets a key, wherever it comes from (the command line, the `addopts` of the `-c` file or
+  `PYTEST_ADDOPTS`), wins over the ini key, because pytest-rerunfailures reads the option before the ini key and
+  gremlin runs receive those `addopts` themselves.
 - Rerun options typed on the command line are carried over too: `--reruns`, `--reruns-delay`,
   `--reruns-delay-backoff-factor`, `--reruns-mode`, `--only-rerun`, `--rerun-except`, `--rerun-exclude-path`,
   `--force-reruns` and `--max-suite-reruns`. They go last on the command, so they win over `addopts`, as in pytest.
