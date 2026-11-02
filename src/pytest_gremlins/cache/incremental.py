@@ -226,6 +226,14 @@ def _holds_at_timeout(
 
     The same limit always holds. At another limit only a non-TIMEOUT verdict that finished strictly inside the new
     limit holds; an elapsed time equal to the limit is a miss, and an unknown elapsed time is a miss.
+
+    A TIMEOUT verdict is reused only at the identical limit. That is deliberate: reuse at another limit would
+    need the unmutated confirmation run's time stored with the result, and exact-limit reuse is the conservative
+    choice (#795).
+
+    SAFETY: the stored ``execution_time_ms`` may be a total over reruns, so it is at least any single attempt's
+    time. Comparing it strictly below the new limit therefore never reuses a verdict a cold run would not
+    reach. If elapsed time ever became smaller than a single attempt's time, this rule would need revisiting.
     """
     if stored_timeout == mutant_timeout:
         return True
