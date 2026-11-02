@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pytest_gremlins import rerun_options
+from pytest_gremlins import argument_files
 from pytest_gremlins.rerun_options import rerun_options_in
 
 
@@ -78,7 +78,7 @@ class DescribeArgumentFilesOnPythonBefore312:
 
     @pytest.fixture(autouse=True)
     def _argparse_reads_the_locale_encoding(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(rerun_options, '_ARGPARSE_READS_LOCALE_ENCODING', True)
+        monkeypatch.setattr(argument_files, '_ARGPARSE_READS_LOCALE_ENCODING', True)
         monkeypatch.setattr(locale, 'getpreferredencoding', lambda *_args: 'cp1252')
 
     def it_reads_a_file_in_the_locale_encoding_that_the_filesystem_encoding_would_reject(
@@ -102,7 +102,7 @@ class DescribeArgumentFilesOnPython312AndLater:
     def it_ignores_a_file_the_filesystem_encoding_cannot_decode_instead_of_raising(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(rerun_options, '_ARGPARSE_READS_LOCALE_ENCODING', False)
+        monkeypatch.setattr(argument_files, '_ARGPARSE_READS_LOCALE_ENCODING', False)
         monkeypatch.setattr('sys.getfilesystemencoding', lambda: 'utf-8')
         monkeypatch.setattr('sys.getfilesystemencodeerrors', lambda: 'strict')
         (tmp_path / 'args.txt').write_bytes(b'--reruns\n2\n\xff\n')

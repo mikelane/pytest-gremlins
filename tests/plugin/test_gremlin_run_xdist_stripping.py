@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from pytest_gremlins.plugin import _build_test_command
+from pytest_gremlins.verdicts import (
+    _build_test_command,
+)
 from pytest_gremlins.xdist_options import (
     addopts_without_xdist,
     env_with_stripped_addopts,
