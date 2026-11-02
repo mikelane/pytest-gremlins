@@ -49,6 +49,7 @@ _PRE_DERIVATION_VALUE_OPTS = frozenset(
         '--gremlin-workers',
         '--gremlin-batch-size',
         '--gremlin-coverage-timeout',
+        '--gremlin-prescan-workers',
         '--gremlin-mutant-timeout',
         '--gremlins-html-dir',
         '--gremlin-max-pardons-pct',

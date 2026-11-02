@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+from pytest_gremlins.config import DEFAULT_PRESCAN_WORKERS
 from pytest_gremlins.plugin import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_COVERAGE_TIMEOUT_SECONDS,
@@ -48,6 +49,7 @@ CONFIG_KEY_TO_FLAG: dict[str, str] = {
     'max_pardons': '--max-pardons',
     'max-pardons-pct': '--gremlin-max-pardons-pct',
     'coverage_timeout': '--gremlin-coverage-timeout',
+    'prescan_workers': '--gremlin-prescan-workers',
     'mutant_timeout': '--gremlin-mutant-timeout',
 }
 
@@ -72,6 +74,7 @@ CODE_DEFAULTS: dict[str, object] = {
     '--gremlin-batch-size': DEFAULT_BATCH_SIZE,
     '--gremlin-report': DEFAULT_REPORT_FORMATS,
     '--gremlin-coverage-timeout': DEFAULT_COVERAGE_TIMEOUT_SECONDS,
+    '--gremlin-prescan-workers': DEFAULT_PRESCAN_WORKERS,
     '--gremlin-mutant-timeout': DEFAULT_MUTANT_TIMEOUT_SECONDS,
 }
 

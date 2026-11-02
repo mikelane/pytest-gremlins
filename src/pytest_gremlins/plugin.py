@@ -54,6 +54,8 @@ from pytest_gremlins.cache.incremental import (
     subprocess_optimize_level,
 )
 from pytest_gremlins.config import (
+    DEFAULT_PRESCAN_WORKERS,
+    MAX_PRESCAN_WORKERS,
     MAX_TIMEOUT_SECONDS,
     VALID_REPORT_FORMATS,
     GremlinConfig,
@@ -77,6 +79,7 @@ from pytest_gremlins.coverage import (
 )
 from pytest_gremlins.coverage.context_plugin import GremlinContextPlugin
 from pytest_gremlins.coverage.nodeid_markers import strip_marker_suffix
+from pytest_gremlins.coverage.sharded_prescan import run_sharded_prescan
 from pytest_gremlins.gremlins_options import addopts_without_gremlins
 from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.origin_finder import (
@@ -305,6 +308,8 @@ class GremlinSession:
             pytest-rerunfailures budget (issue #673).
         coverage_attempt_timeout: The configured pre-scan limit before scaling, or ``None``
             when the session does not know it (a hand-built session).
+        prescan_workers: How many serial processes the coverage pre-scan is sharded across (issue #527);
+            1 runs it as a single process.
         mutant_timeout: Seconds one gremlin's test run may take before the gremlin
             is reported as a timeout.  This is the configured limit already scaled by the
             session's pytest-rerunfailures budget (issue #655), so the timeout warning and the
@@ -382,6 +387,8 @@ class GremlinSession:
     baseline_rerun_test_ids: set[str] = field(default_factory=set)
     coverage_timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS
     coverage_attempt_timeout: int | None = None
+    prescan_workers: int = DEFAULT_PRESCAN_WORKERS
+    basetemp: Path | None = None
     mutant_timeout: int = DEFAULT_MUTANT_TIMEOUT_SECONDS
     mutant_attempt_timeout: int | None = None
     rerun_budget: RerunBudget = NO_RERUNS
@@ -746,6 +753,20 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         ),
     )
     group.addoption(
+        '--gremlin-prescan-workers',
+        action='store',
+        type=int,
+        default=None,
+        dest='gremlin_prescan_workers',
+        help=(
+            'Number of serial processes the coverage pre-scan is sharded across, whose results are combined '
+            f'(default: {DEFAULT_PRESCAN_WORKERS}, max: {MAX_PRESCAN_WORKERS}). Each shard pays its own '
+            'interpreter start-up, import and collection, and runs tests concurrently with the others, so use it '
+            'for large suites whose tests do not share a database, port or temp file. If any shard fails or times '
+            'out, coverage-guided test selection is disabled'
+        ),
+    )
+    group.addoption(
         '--gremlin-mutant-timeout',
         action='store',
         type=int,
@@ -1002,6 +1023,18 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config, config_warnings
     return True
 
 
+def _read_cli_prescan_workers(config: pytest.Config) -> int | None:
+    """Return the count given to ``--gremlin-prescan-workers``, exiting with a usage error if it is outside 1..MAX."""
+    cli_value: int | None = getattr(config.option, 'gremlin_prescan_workers', None)
+    if cli_value is not None and not 0 < cli_value <= MAX_PRESCAN_WORKERS:
+        pytest.exit(
+            f'--gremlin-prescan-workers must be a positive integer no greater than {MAX_PRESCAN_WORKERS}, '
+            f'got {cli_value!r}.',
+            returncode=4,
+        )
+    return cli_value
+
+
 def _read_cli_timeout(config: pytest.Config, flag: str) -> int | None:
     """Return the seconds given to ``flag``, exiting with a usage error if they are outside 1..MAX."""
     dest = flag.removeprefix('--').replace('-', '_')
@@ -1105,6 +1138,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     cli_coverage_timeout = _read_cli_timeout(config, '--gremlin-coverage-timeout')
     cli_mutant_timeout = _read_cli_timeout(config, '--gremlin-mutant-timeout')
+    cli_prescan_workers = _read_cli_prescan_workers(config)
 
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
@@ -1131,6 +1165,7 @@ def pytest_configure(config: pytest.Config) -> None:
             cli_max_pardons_pct=cli_max_pardons_pct,
             cli_max_pardons=cli_max_pardons,
             cli_coverage_timeout=cli_coverage_timeout,
+            cli_prescan_workers=cli_prescan_workers,
             cli_mutant_timeout=cli_mutant_timeout,
         )
     except ValueError as invalid:
@@ -1217,6 +1252,8 @@ def pytest_configure(config: pytest.Config) -> None:
             rerun_ini_warnings=_rerun_ini_warnings_for(config),
             coverage_timeout=_rerun_scaled_timeout(config, coverage_timeout, label='Coverage pre-scan'),
             coverage_attempt_timeout=coverage_timeout,
+            prescan_workers=merged_config.prescan_workers or DEFAULT_PRESCAN_WORKERS,
+            basetemp=_session_basetemp(config),
             mutant_timeout=_rerun_scaled_timeout(config, mutant_attempt_timeout, label='Mutant'),
             mutant_attempt_timeout=mutant_attempt_timeout,
             rerun_budget=_gremlin_run_rerun_budget(config),
@@ -2944,6 +2981,8 @@ def _run_prescan_reporting_problems(
             rerun_options=gremlin_session.rerun_options,
             xdist_loader_options=gremlin_session.xdist_loader_options,
             timeout=prescan_timeout,
+            prescan_workers=gremlin_session.prescan_workers,
+            session_basetemp=gremlin_session.basetemp,
         )
     except CoveragePrescanTimeoutError as timeout_error:
         _warn_prescan_timeout(timeout_error.seconds, gremlin_session.coverage_attempt_timeout)
@@ -3699,6 +3738,43 @@ def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, time
         raise CoveragePrescanLaunchError(launch_error) from launch_error
 
 
+def _session_basetemp(config: pytest.Config) -> Path | None:
+    """The session's ``--basetemp`` as an absolute path, resolved against the invocation directory as pytest does."""
+    given = getattr(config.option, 'basetemp', None)
+    if not given:
+        return None
+    return Path(os.path.abspath(str(given)))  # noqa: PTH100
+
+
+def _launch_sharded_prescan(
+    command: list[str], node_ids: list[str], rootdir: Path, timeout: int, workers: int, *, basetemp: Path | None
+) -> bool:
+    """Run the pre-scan ``command`` sharded over ``workers`` processes, combining their coverage into ``.coverage``.
+
+    Returns:
+        ``False`` when a shard failed, so no coverage was written; ``True`` otherwise.
+
+    Raises:
+        CoveragePrescanTimeoutError: If the shards exceed ``timeout`` seconds together.
+        CoveragePrescanLaunchError: If the operating system cannot start a shard.
+    """
+    try:
+        return run_sharded_prescan(
+            command,
+            node_ids,
+            worker_count=workers,
+            cwd=rootdir,
+            timeout=timeout,
+            env=_prescan_env(),
+            combined=rootdir / '.coverage',
+            user_basetemp=basetemp,
+        )
+    except subprocess.TimeoutExpired as expired:
+        raise CoveragePrescanTimeoutError(timeout) from expired
+    except OSError as launch_error:
+        raise CoveragePrescanLaunchError(launch_error) from launch_error
+
+
 def _run_tests_with_coverage(
     test_node_ids: list[str],
     rootdir: Path,
@@ -3711,6 +3787,8 @@ def _run_tests_with_coverage(
     rerun_options: Sequence[str] = (),
     xdist_loader_options: Sequence[str] = (),
     timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS,
+    prescan_workers: int = DEFAULT_PRESCAN_WORKERS,
+    session_basetemp: Path | None = None,
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
 
@@ -3757,6 +3835,10 @@ def _run_tests_with_coverage(
             uses an xdist fixture such as ``worker_id`` still runs, and is recorded, in the pre-scan (issue #927).
             Empty for sessions whose pre-scan already has xdist, which keeps their arguments unchanged.
         timeout: Seconds the pre-scan subprocess may run (default 120).
+        prescan_workers: Serial processes to shard the pre-scan over (default 1, a single process). Their coverage
+            is combined; if any shard fails the result is empty, never a partial map (issue #527).
+        session_basetemp: The session's absolute ``--basetemp``, if any. A sharded pre-scan runs shard ``i`` in
+            ``<session_basetemp>/<i>``, so a shard's ``tmp_path`` is as short as the serial pre-scan's.
 
     Returns:
         Dict mapping test names to their coverage data (file path -> lines).
@@ -3808,16 +3890,22 @@ def _run_tests_with_coverage(
     ]
 
     try:
-        _launch_prescan(cmd, test_node_ids, rootdir, timeout)
-    except (CoveragePrescanTimeoutError, CoveragePrescanLaunchError):
+        if prescan_workers > DEFAULT_PRESCAN_WORKERS:
+            data_written = _launch_sharded_prescan(
+                cmd, test_node_ids, rootdir, timeout, prescan_workers, basetemp=session_basetemp
+            )
+        else:
+            _launch_prescan(cmd, test_node_ids, rootdir, timeout)
+            data_written = True
+    finally:
         coveragerc_path.unlink(missing_ok=True)
-        raise
+    if not data_written:
+        return {}
 
     coverage_by_test: dict[str, dict[str, list[int]]] = {}
 
     try:
         if not coverage_db_path.exists():  # pragma: no cover
-            coveragerc_path.unlink(missing_ok=True)
             return {}
 
         conn = sqlite3.connect(str(coverage_db_path))
@@ -3845,7 +3933,6 @@ def _run_tests_with_coverage(
     finally:
         try:
             coverage_db_path.unlink(missing_ok=True)
-            coveragerc_path.unlink(missing_ok=True)
         except OSError as exc:  # pragma: no cover
             logger.debug('Failed to clean up coverage files: %s', exc)
 

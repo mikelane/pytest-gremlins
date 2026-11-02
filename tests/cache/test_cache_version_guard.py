@@ -74,7 +74,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/versions.py': 'e63f95cdbc95739bebb9530781e68c368f64473f23318f3e80368ee19d498b8a',  # pragma: allowlist secret
     # --
-    'config.py': 'c02fe1b538cb745d7e4606bebca0162da641065acc18465e568e17898297c5e8',  # pragma: allowlist secret
+    'config.py': 'f6f54470b3eaa24032742ef90b9b36df7b7215c9d9802b0dcb411b870891cde3',  # pragma: allowlist secret
     # --
     'control_run.py': '95174e647a5cea01a3bfb54a0498df39c92f7c57168bf2dbaea3ddcbc0584270',  # pragma: allowlist secret
     # --
@@ -90,9 +90,13 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'coverage/prescan_main.py': '7ffea6a07f3b2216aa493ebc36b5bae3d5c90a52413a2c6be72dc7cf6161c28b',  # pragma: allowlist secret  # noqa: E501
     # --
+    'coverage/prescan_shards.py': '454744289d6a728ed4cb5cc2dfde41683d54a5ea80aed0f754f32862ba984233',  # pragma: allowlist secret  # noqa: E501
+    # --
     'coverage/prioritized_selector.py': '60c4b6fd3e094aa0627428c75fb5693a9d7de28f1f1943baf12abe7b4bc5cdc2',  # pragma: allowlist secret  # noqa: E501
     # --
     'coverage/selector.py': 'b35af2f065bb47abe40ba63c83d0dc95cacc12de744e261f65aba879f149707b',  # pragma: allowlist secret  # noqa: E501
+    # --
+    'coverage/sharded_prescan.py': '5cdc57ff92e26aeadefc02b2f41e6e0178d101bd2705c75eef7ed7ac243d7a8b',  # pragma: allowlist secret  # noqa: E501
     # --
     'coverage/subprocess_bootstrap.py': 'c0eeeb6ae0d1ee099c901d2a76432502d05309897111be48b9eb616ab37c1463',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -158,7 +162,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'cec9166a5b8643580bb4f2f8d6b3af4ec6cf524a9155b332c822140327653ee9',  # pragma: allowlist secret
+    'plugin.py': '246db5ada5aac745171429de716c9f65998b6fbfe988e66eedc970359cb52ceb',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
