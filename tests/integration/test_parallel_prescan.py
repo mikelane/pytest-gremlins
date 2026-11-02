@@ -211,6 +211,7 @@ class DescribeParallelPrescanEquivalence:
     def it_records_the_same_triples_when_the_project_runs_its_own_tests_under_xdist(self, project: Path) -> None:
         assert _mapping(project, 2, preserved_addopts='-n 2') == _EXPECTED_TRIPLES
 
+    @pytest.mark.skipif(sys.platform == 'win32', reason='Windows Python has no socket.AF_UNIX')
     def it_keeps_a_test_that_binds_a_unix_socket_in_tmp_path_the_serial_pre_scan_records(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

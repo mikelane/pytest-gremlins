@@ -267,15 +267,17 @@ def _write_shard_data(path: Path, test_name: str, lines_by_file: dict[str, set[i
 @pytest.mark.medium
 class DescribeCombineShardData:
     def it_keeps_each_tests_context_on_its_lines(self, tmp_path: Path) -> None:
-        _write_shard_data(tmp_path / 's0', 'a.py::test_one', {'/src/m.py': {1, 2}})
-        _write_shard_data(tmp_path / 's1', 'b.py::test_two[x-1]', {'/src/m.py': {2, 3}})
+        # coverage.py canonicalizes paths, so a POSIX-style '/src/m.py' turns into a drive path on Windows.
+        source = str((tmp_path / 'm.py').resolve())
+        _write_shard_data(tmp_path / 's0', 'a.py::test_one', {source: {1, 2}})
+        _write_shard_data(tmp_path / 's1', 'b.py::test_two[x-1]', {source: {2, 3}})
         combined = tmp_path / 'combined'
 
         combine_shard_data([tmp_path / 's0', tmp_path / 's1'], combined)
 
         data = coverage.CoverageData(basename=str(combined))
         data.read()
-        contexts = data.contexts_by_lineno('/src/m.py')
+        contexts = data.contexts_by_lineno(source)
         data.close()
         assert {line: sorted(names) for line, names in contexts.items()} == {
             1: ['a.py::test_one'],
