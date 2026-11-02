@@ -33,6 +33,8 @@ from pytest_gremlins.plugin import (
     pytest_sessionfinish,
 )
 
+pytestmark = pytest.mark.usefixtures('hooks_read_global_session')
+
 
 @pytest.mark.medium
 class DescribeCoverageSubprocessClearsAddopts:

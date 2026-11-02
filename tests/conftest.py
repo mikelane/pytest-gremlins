@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 import pytest
 from secret_env_scrub import scrub_secret_env  # type: ignore[import-not-found]
 
+from pytest_gremlins import plugin
 from pytest_gremlins.instrumentation.transformer import get_default_registry
 from pytest_gremlins.operators import entry_points as loader
 from pytest_gremlins.plugin import _set_session
@@ -87,6 +88,12 @@ def reset_gremlin_session() -> Generator[None, None, None]:
     """
     yield
     _set_session(None)
+
+
+@pytest.fixture
+def hooks_read_global_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make hooks resolve the session from the module global, for tests that drive them with stand-in configs."""
+    monkeypatch.setattr(plugin, '_session_for', lambda _config: plugin._get_session())
 
 
 @pytest.fixture
