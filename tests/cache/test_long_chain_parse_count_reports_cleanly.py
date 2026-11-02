@@ -26,7 +26,12 @@ versions._local_modules_imported_by = _walk_twice
 
 @pytest.mark.medium
 class DescribeLongChainParseCountProbe:
-    def it_reports_a_walk_that_reparses_modules_as_one_failed_test(self, pytester: pytest.Pytester) -> None:
+    def it_reports_a_walk_that_reparses_modules_as_one_failed_test(
+        self,
+        pytester: pytest.Pytester,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
         pytester.makepyfile(reparsing_walk=REPARSING_WALK)
         pytester.makepyfile(test_probe=PROBE.read_text())
 
