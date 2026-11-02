@@ -6,8 +6,8 @@
 
 !!! warning "Historical report"
     This report describes v1.9.0. Since v1.10.1, `--gremlin-executor=fork` and
-    `--gremlin-executor=inprocess` exit with a usage error, pending
-    [#532](https://github.com/mikelane/pytest-gremlins/issues/532): they did not run the mutated
+    `--gremlin-executor=inprocess` exit with a usage error; they were removed in
+    [#532](https://github.com/mikelane/pytest-gremlins/issues/532) because they did not run the mutated
     code, so their results were wrong. The only working executor is `subprocess` (what `auto`
     resolves to). Wherever this report mentions the `inprocess` or `fork` executors as a speedup,
     that speedup was never real and isn't available today. The measurements below are of the
