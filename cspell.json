@@ -41,6 +41,7 @@
     "upstreaming",
     "addopts",
     "rerunfailures",
+    "prescan",
     "admonition",
     "astral",
     "autofix",

@@ -54,6 +54,8 @@ from pytest_gremlins.cache.incremental import (
     subprocess_optimize_level,
 )
 from pytest_gremlins.config import (
+    DEFAULT_PRESCAN_WORKERS,
+    MAX_PRESCAN_WORKERS,
     MAX_TIMEOUT_SECONDS,
     VALID_REPORT_FORMATS,
     GremlinConfig,
@@ -305,6 +307,8 @@ class GremlinSession:
             pytest-rerunfailures budget (issue #673).
         coverage_attempt_timeout: The configured pre-scan limit before scaling, or ``None``
             when the session does not know it (a hand-built session).
+        prescan_workers: How many serial processes the coverage pre-scan is sharded across (issue #527);
+            1 runs it as a single process.
         mutant_timeout: Seconds one gremlin's test run may take before the gremlin
             is reported as a timeout.  This is the configured limit already scaled by the
             session's pytest-rerunfailures budget (issue #655), so the timeout warning and the
@@ -379,6 +383,7 @@ class GremlinSession:
     baseline_rerun_test_ids: set[str] = field(default_factory=set)
     coverage_timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS
     coverage_attempt_timeout: int | None = None
+    prescan_workers: int = DEFAULT_PRESCAN_WORKERS
     mutant_timeout: int = DEFAULT_MUTANT_TIMEOUT_SECONDS
     mutant_attempt_timeout: int | None = None
     rerun_budget: RerunBudget = NO_RERUNS
@@ -743,6 +748,20 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         ),
     )
     group.addoption(
+        '--gremlin-prescan-workers',
+        action='store',
+        type=int,
+        default=None,
+        dest='gremlin_prescan_workers',
+        help=(
+            'Number of serial processes the coverage pre-scan is sharded across, whose results are combined '
+            f'(default: {DEFAULT_PRESCAN_WORKERS}, max: {MAX_PRESCAN_WORKERS}). Each shard pays its own '
+            'interpreter start-up, import and collection, and runs tests concurrently with the others, so use it '
+            'for large suites whose tests do not share a database, port or temp file. If any shard fails or times '
+            'out, coverage-guided test selection is disabled'
+        ),
+    )
+    group.addoption(
         '--gremlin-mutant-timeout',
         action='store',
         type=int,
@@ -996,6 +1015,18 @@ def _maybe_short_circuit_for_inactive_run(config: pytest.Config, config_warnings
     return True
 
 
+def _read_cli_prescan_workers(config: pytest.Config) -> int | None:
+    """Return the count given to ``--gremlin-prescan-workers``, exiting with a usage error if it is outside 1..MAX."""
+    cli_value: int | None = getattr(config.option, 'gremlin_prescan_workers', None)
+    if cli_value is not None and not 0 < cli_value <= MAX_PRESCAN_WORKERS:
+        pytest.exit(
+            f'--gremlin-prescan-workers must be a positive integer no greater than {MAX_PRESCAN_WORKERS}, '
+            f'got {cli_value!r}.',
+            returncode=4,
+        )
+    return cli_value
+
+
 def _read_cli_timeout(config: pytest.Config, flag: str) -> int | None:
     """Return the seconds given to ``flag``, exiting with a usage error if they are outside 1..MAX."""
     dest = flag.removeprefix('--').replace('-', '_')
@@ -1093,6 +1124,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
     cli_coverage_timeout = _read_cli_timeout(config, '--gremlin-coverage-timeout')
     cli_mutant_timeout = _read_cli_timeout(config, '--gremlin-mutant-timeout')
+    cli_prescan_workers = _read_cli_prescan_workers(config)
 
     cli_report_list = _parse_cli_report_formats(config.option.gremlin_report)
 
@@ -1119,6 +1151,7 @@ def pytest_configure(config: pytest.Config) -> None:
             cli_max_pardons_pct=cli_max_pardons_pct,
             cli_max_pardons=cli_max_pardons,
             cli_coverage_timeout=cli_coverage_timeout,
+            cli_prescan_workers=cli_prescan_workers,
             cli_mutant_timeout=cli_mutant_timeout,
         )
     except ValueError as invalid:
@@ -1203,6 +1236,7 @@ def pytest_configure(config: pytest.Config) -> None:
             rerun_ini_warnings=_rerun_ini_warnings_for(config),
             coverage_timeout=_rerun_scaled_timeout(config, coverage_timeout, label='Coverage pre-scan'),
             coverage_attempt_timeout=coverage_timeout,
+            prescan_workers=merged_config.prescan_workers or DEFAULT_PRESCAN_WORKERS,
             mutant_timeout=_rerun_scaled_timeout(config, mutant_attempt_timeout, label='Mutant'),
             mutant_attempt_timeout=mutant_attempt_timeout,
             rerun_budget=_gremlin_run_rerun_budget(config),

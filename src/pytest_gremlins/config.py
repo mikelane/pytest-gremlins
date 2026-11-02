@@ -38,6 +38,7 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         'max_pardons',
         'max-pardons-pct',
         'coverage_timeout',
+        'prescan_workers',
         'mutant_timeout',
     }
 )
@@ -45,6 +46,10 @@ CONFIG_KEYS: frozenset[str] = frozenset(
 
 # subprocess.run overflows (OverflowError) above ~2.1M seconds; a day is far beyond any sane pre-scan.
 MAX_TIMEOUT_SECONDS = 86_400
+
+# Each pre-scan worker is a whole interpreter that imports the project and its tests, so the count is capped.
+MAX_PRESCAN_WORKERS = 64
+DEFAULT_PRESCAN_WORKERS = 1
 
 
 @dataclass
@@ -63,6 +68,7 @@ class GremlinConfig:
         report: List of report formats (e.g. ["html", "json"]).
         batch_size: Number of gremlins per batch in batch mode.
         coverage_timeout: Seconds the coverage pre-scan may run before it is abandoned.
+        prescan_workers: Number of serial processes the coverage pre-scan is sharded across.
         mutant_timeout: Seconds one gremlin's test run may take before it is reported as a timeout.
     """
 
@@ -76,6 +82,7 @@ class GremlinConfig:
     max_pardons_pct: float | None = None
     max_pardons: int | None = None
     coverage_timeout: int | None = None
+    prescan_workers: int | None = None
     mutant_timeout: int | None = None
 
 
@@ -116,6 +123,24 @@ def _resolve_workers(value: int | str | None) -> int | None:
             f'Use a positive integer (e.g. workers = 4) or "auto" to match your CPU count.'
         )
     return value
+
+
+def _read_prescan_workers(tool_config: dict[str, object], pyproject_path: Path) -> int | None:
+    """Return ``tool_config['prescan_workers']`` as a count in 1..MAX_PRESCAN_WORKERS, or None when absent.
+
+    Raises:
+        ValueError: If the value is not an integer in that range, naming the key and the value.
+    """
+    raw = tool_config.get('prescan_workers')
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int) or not 0 < raw <= MAX_PRESCAN_WORKERS:
+        logger.warning('Invalid prescan_workers in %s: expected positive integer, got %r', pyproject_path, raw)
+        raise ValueError(
+            f'[tool.pytest-gremlins].prescan_workers must be a positive integer no greater than '
+            f'{MAX_PRESCAN_WORKERS} (e.g. prescan_workers = 4), got {raw!r}'
+        )
+    return raw
 
 
 def _read_timeout_seconds(tool_config: dict[str, object], key: str, example: int, pyproject_path: Path) -> int | None:
@@ -430,6 +455,7 @@ def load_config(
     workers = _read_workers(tool_config, pyproject_path)
     batch_size = _read_batch_size(tool_config, pyproject_path)
     coverage_timeout = _read_timeout_seconds(tool_config, 'coverage_timeout', 300, pyproject_path)
+    prescan_workers = _read_prescan_workers(tool_config, pyproject_path)
     mutant_timeout = _read_timeout_seconds(tool_config, 'mutant_timeout', 120, pyproject_path)
     cache = _read_cache(tool_config, pyproject_path)
     report = _read_report(tool_config, pyproject_path)
@@ -450,6 +476,7 @@ def load_config(
         max_pardons_pct=max_pardons_pct,
         max_pardons=max_pardons,
         coverage_timeout=coverage_timeout,
+        prescan_workers=prescan_workers,
         mutant_timeout=mutant_timeout,
     )
 
@@ -718,6 +745,7 @@ def merge_configs(
     cli_max_pardons_pct: float | None = None,
     cli_max_pardons: int | None = None,
     cli_coverage_timeout: int | None = None,
+    cli_prescan_workers: int | None = None,
     cli_mutant_timeout: int | None = None,
 ) -> GremlinConfig:
     """Merge CLI arguments with file configuration.
@@ -737,6 +765,7 @@ def merge_configs(
         cli_max_pardons_pct: Max pardoned % from CLI (--gremlin-max-pardons-pct).
         cli_max_pardons: Max absolute pardon count from CLI (--max-pardons).
         cli_coverage_timeout: Pre-scan timeout in seconds from CLI (--gremlin-coverage-timeout).
+        cli_prescan_workers: Pre-scan shard count from CLI (--gremlin-prescan-workers).
         cli_mutant_timeout: Per-gremlin test timeout in seconds from CLI (--gremlin-mutant-timeout).
 
     Returns:
@@ -771,6 +800,9 @@ def merge_configs(
     coverage_timeout: int | None = (
         cli_coverage_timeout if cli_coverage_timeout is not None else file_config.coverage_timeout
     )
+    prescan_workers: int | None = (
+        cli_prescan_workers if cli_prescan_workers is not None else file_config.prescan_workers
+    )
     mutant_timeout: int | None = cli_mutant_timeout if cli_mutant_timeout is not None else file_config.mutant_timeout
 
     return GremlinConfig(
@@ -784,5 +816,6 @@ def merge_configs(
         max_pardons_pct=max_pardons_pct,
         max_pardons=max_pardons,
         coverage_timeout=coverage_timeout,
+        prescan_workers=prescan_workers,
         mutant_timeout=mutant_timeout,
     )

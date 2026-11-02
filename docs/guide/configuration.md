@@ -45,6 +45,7 @@ Every command-line option starts with `--gremlin-*` or `--gremlins*`, except `--
 | `--gremlin-batch` | flag | `false` | Group gremlins into worker tasks (does not reduce subprocesses) |
 | `--gremlin-batch-size` | integer | `10` | Number of gremlins per worker task |
 | `--gremlin-coverage-timeout` | integer | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled; scaled up like the mutant timeout when pytest-rerunfailures reruns are configured |
+| `--gremlin-prescan-workers` | integer | `1` | Number of serial processes (1-64) the coverage pre-scan is sharded across; the default runs it as one process, as before ([details](#parallel-coverage-pre-scan)) |
 | `--gremlin-mutant-timeout` | integer | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
 | `--gremlin-executor` | `auto` or `subprocess` | `auto` | How each gremlin's tests run. `auto` is the same as `subprocess`. `fork` and `inprocess` are also accepted by the parser but stop the run with a usage error, because they did not run the mutated code ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
 
@@ -288,6 +289,11 @@ batch_size = 20
 # Default: 120
 coverage_timeout = 300
 
+# Number of serial processes the coverage pre-scan is sharded across
+# (see "Parallel coverage pre-scan" below before raising it)
+# Default: 1
+prescan_workers = 4
+
 # Seconds one gremlin's test run may take before the gremlin is reported
 # as a timeout (raise it when a survivor's covering tests take longer)
 # Default: 30
@@ -314,6 +320,7 @@ max-pardons-pct = 5.0
 | `report` | string or list | `"console"` | Report format(s): `"html"`, `"json"`, `"console"`, or a list like `["html", "json"]` |
 | `batch_size` | int | `10` | Number of gremlins per batch in batch execution mode |
 | `coverage_timeout` | int | `120` | Seconds (1-86400) the coverage pre-scan may run; on expiry gremlins prints a notice to stderr and runs every test per gremlin; scaled by the rerun budget like `mutant_timeout` |
+| `prescan_workers` | int | `1` | Number of serial processes (1-64) the coverage pre-scan is sharded across ([details](#parallel-coverage-pre-scan)) |
 | `mutant_timeout` | int | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
 | `max_pardons` | int | no limit | Absolute ceiling on pardoned gremlins |
 | `max-pardons-pct` | float | no limit | Maximum percentage of pardoned gremlins (0-100) |
@@ -810,6 +817,48 @@ coverage_timeout = 600
 
 The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
 the TOML key.
+
+### Parallel Coverage Pre-Scan
+
+The coverage pre-scan runs your whole suite once, under tracing, in a single process. On a large suite that is the
+slowest step of a run. `--gremlin-prescan-workers N` (or `prescan_workers = N` in `[tool.pytest-gremlins]`) splits
+the pre-scan across `N` independent serial pytest processes and combines their coverage data. It is opt-in: the
+default is `1`, which runs the pre-scan as one process exactly as before. The value must be a positive integer, at
+most 64. The CLI flag wins over the TOML key.
+
+```bash
+pytest --gremlins --gremlin-prescan-workers=4
+```
+
+```toml
+[tool.pytest-gremlins]
+prescan_workers = 4
+```
+
+How it works:
+
+- The selected tests are divided among the shards by test file, so a module-scoped fixture is set up in one shard
+  only. Files go, largest first, to the shard with the fewest tests so far. A suite with fewer test files than
+  workers uses one shard per file.
+- Each shard is a separate serial process. This does not need pytest-xdist, and it is not affected by `-n`: the
+  pre-scan never distributes tests across xdist workers.
+- Per-test coverage contexts survive the combine, so the resulting map is the same set of
+  (file, line, test) entries a single process would record.
+
+Trade-offs to weigh before raising it:
+
+- Every shard pays its own interpreter start-up, imports and test collection. On a small suite the pre-scan can
+  get slower, not faster.
+- Shards run at the same time. A suite whose tests share a database, a TCP port or a fixed temp file can fail or
+  interfere when several copies run concurrently. Leave the option at `1` for those suites.
+- Shards run in the same directory and each writes its own coverage data file, so tests that write to the project
+  tree can collide.
+
+Failure handling is all-or-nothing. If any shard times out, cannot start, crashes (an exit status other than 0 or
+1, such as a collection error) or leaves no coverage data, gremlins never uses the partial map: coverage-guided
+test selection is disabled and every gremlin runs the whole suite, with the same notices as a failed single-process
+pre-scan. `--gremlin-coverage-timeout` is the limit for the whole parallel pre-scan, not per shard. For measured
+timings see the [profiling report](../performance/profiling-report.md).
 
 ### Per-Mutant Timeout
 

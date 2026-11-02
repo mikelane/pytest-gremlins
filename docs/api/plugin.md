@@ -30,6 +30,7 @@ The plugin handles:
 | `--gremlin-batch` | `False` | Group gremlins into worker tasks; does not reduce subprocesses |
 | `--gremlin-batch-size` | `10` | Gremlins per worker task |
 | `--gremlin-coverage-timeout` | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled |
+| `--gremlin-prescan-workers` | `1` | Serial processes (1-64) the coverage pre-scan is sharded across; if any shard fails or times out, selection is disabled |
 | `--gremlin-mutant-timeout` | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before it is reported as a timeout; scaled up for pytest-rerunfailures reruns |
 | `--gremlin-executor` | `auto` | `auto` (same as `subprocess`) or `subprocess`; `fork` and `inprocess` exit with a usage error ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
 | `--gremlin-no-coverage-filter` | `False` | Run every test for every gremlin instead of the coverage-selected ones |
@@ -118,6 +119,9 @@ batch_size = 20
 # Seconds the coverage pre-scan may run (default 120)
 coverage_timeout = 300
 
+# Serial processes the coverage pre-scan is sharded across (default 1)
+prescan_workers = 4
+
 # Seconds one attempt of a gremlin's test run may take (default 30)
 mutant_timeout = 60
 
@@ -151,6 +155,7 @@ max_pardons = 10
         - max_pardons_pct
         - max_pardons
         - coverage_timeout
+        - prescan_workers
         - mutant_timeout
 
 ## Configuration Functions
