@@ -565,7 +565,7 @@ class _BaselineRecorder:
         self._config = config
 
     def _enabled_session(self) -> GremlinSession | None:
-        gremlin_session = self._config.stash.get(_own_session_key, None)
+        gremlin_session = _session_for(self._config)
         if gremlin_session is None or not gremlin_session.enabled:
             return None
         return gremlin_session
