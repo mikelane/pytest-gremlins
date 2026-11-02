@@ -8,6 +8,8 @@ from collections.abc import (
 )
 import shlex
 
+from pytest_gremlins.addopts import split_addopts
+
 # pytest-xdist options that take a value.  Written either inline (``--dist=load``) or
 # with the value as the next token (``--dist load``).
 _XDIST_VALUE_OPTS = frozenset(
@@ -61,7 +63,7 @@ def addopts_without_xdist(addopts: str) -> str:
         >>> addopts_without_xdist('-nauto --dist=loadscope -v')
         '-v'
     """
-    args = shlex.split(addopts)
+    args = split_addopts(addopts)
     kept: list[str] = []
     index = 0
     while index < len(args):

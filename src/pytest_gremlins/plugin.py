@@ -45,6 +45,7 @@ from coverage.exceptions import CoverageException
 import pytest
 
 from pytest_gremlins import node_id_args
+from pytest_gremlins.addopts import inherited_addopts_tokens
 from pytest_gremlins.argument_files import expand_argument_files
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import (
@@ -3152,11 +3153,7 @@ def _arguments_gremlin_runs_inherit(config: pytest.Config) -> list[str]:
 
 def _unexpanded_inherited_arguments(config: pytest.Config) -> list[str]:
     """Return the ``addopts`` and ``PYTEST_ADDOPTS`` tokens, with each ``@file`` argument still unexpanded."""
-    try:
-        pytest_addopts_args = shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))
-    except ValueError:
-        pytest_addopts_args = []
-    return [*config.getini('addopts'), *pytest_addopts_args]
+    return [*config.getini('addopts'), *inherited_addopts_tokens(os.environ)]
 
 
 def _reject_argument_files_gremlin_runs_cannot_read(config: pytest.Config, rootdir: Path) -> None:
