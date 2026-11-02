@@ -135,6 +135,12 @@ from pytest_gremlins.rerun_options import (
     session_rerun_budget,
     unforwarded_rerun_key_warning,
 )
+from pytest_gremlins.rootdir_mismatch import (
+    argument_file_mismatch_message,
+    argument_files_only_the_session_can_read,
+    node_id_mismatch_message,
+    node_ids_that_do_not_resolve,
+)
 from pytest_gremlins.verdicts import (
     _build_test_command,
     _cache_row_from_result,
@@ -1081,6 +1087,7 @@ def pytest_configure(config: pytest.Config) -> None:
     xdist_active = xdist_numprocesses not in (None, 0)
 
     rootdir = _get_rootdir(config)
+    _reject_argument_files_gremlin_runs_cannot_read(config, rootdir)
 
     cli_max_pardons_pct, cli_max_pardons = _read_validated_pardon_limits(config)
 
@@ -1351,6 +1358,9 @@ def pytest_collection_finish(session: pytest.Session) -> None:
 
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
+    if source_files:
+        tests = [(item.path, node_id) for item, node_id in zip(session.items, normalized_node_ids, strict=True)]
+        _reject_node_ids_gremlin_runs_cannot_resolve(tests, rootdir)
 
     _hash_sources_and_tests_for_cache(
         gremlin_session,
@@ -1368,6 +1378,16 @@ def pytest_collection_finish(session: pytest.Session) -> None:
         return
 
     _generate_gremlins(gremlin_session, source_files, rootdir)
+
+
+def _reject_node_ids_gremlin_runs_cannot_resolve(tests: Sequence[tuple[Path, str]], rootdir: Path) -> None:
+    """Stop a run that has sources to mutate when no test has a node id naming its file from the rootdir (#690).
+
+    ``tests`` pairs each test's file with the node id gremlin runs are given for it.
+    """
+    unresolved = node_ids_that_do_not_resolve(rootdir, tests)
+    if tests and len(unresolved) == len(tests):
+        raise pytest.UsageError(node_id_mismatch_message(unresolved, rootdir))
 
 
 def _hash_sources_and_tests_for_cache(
@@ -2646,6 +2666,15 @@ def _node_ids_for_tests(selected_tests: Sequence[str], gremlin_session: GremlinS
     ]
 
 
+def _xdist_tests_by_claimed_file(node_ids: Sequence[str], rootdir: Path) -> list[tuple[Path, str]]:
+    """Pair each worker-reported node id with the file it names from ``rootdir``.
+
+    The controller has no items, so no test file is known independently of the node id.  An id whose file part
+    is empty or names a missing file still fails the check.
+    """
+    return [(rootdir / node_id.split('::', maxsplit=1)[0], node_id) for node_id in node_ids]
+
+
 def _rebuild_state_from_xdist_workers(
     session: pytest.Session,
     gremlin_session: GremlinSession,
@@ -2669,6 +2698,8 @@ def _rebuild_state_from_xdist_workers(
     logger.debug('pytest_sessionfinish: xdist Phase 2 reconstructed %d test node IDs', len(normalized))
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
+    if source_files:
+        _reject_node_ids_gremlin_runs_cannot_resolve(_xdist_tests_by_claimed_file(normalized, rootdir), rootdir)
     _hash_sources_and_tests_for_cache(
         gremlin_session,
         source_files,
@@ -3059,11 +3090,24 @@ def _arguments_gremlin_runs_inherit(config: pytest.Config) -> list[str]:
     (pytest rejects an unreadable one as a usage error before this runs), which errs toward a missed loader and
     so toward a missed kill rather than a false one.
     """
+    return expand_argument_files(_unexpanded_inherited_arguments(config), base_dir=_get_rootdir(config))
+
+
+def _unexpanded_inherited_arguments(config: pytest.Config) -> list[str]:
+    """Return the ``addopts`` and ``PYTEST_ADDOPTS`` tokens, with each ``@file`` argument still unexpanded."""
     try:
         pytest_addopts_args = shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))
     except ValueError:
         pytest_addopts_args = []
-    return expand_argument_files([*config.getini('addopts'), *pytest_addopts_args], base_dir=_get_rootdir(config))
+    return [*config.getini('addopts'), *pytest_addopts_args]
+
+
+def _reject_argument_files_gremlin_runs_cannot_read(config: pytest.Config, rootdir: Path) -> None:
+    """Stop the run when an inherited relative ``@file`` exists only from the session's starting directory (#686)."""
+    session_dir = config.invocation_params.dir
+    unreadable = argument_files_only_the_session_can_read(_unexpanded_inherited_arguments(config), session_dir, rootdir)
+    if unreadable:
+        raise pytest.UsageError(argument_file_mismatch_message(unreadable, session_dir, rootdir))
 
 
 def _gremlin_runs_have_autoload_disabled(config: pytest.Config) -> bool:
