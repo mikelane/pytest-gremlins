@@ -61,7 +61,7 @@ def as_text(value: object) -> str:
 
 
 def normalize(cell: str) -> str:
-    return cell.strip().strip('`').strip('"').lower()
+    return cell.strip().strip('`').strip('"\'').lower()
 
 
 _PROJECT_ROOT = Path('project')
@@ -117,6 +117,11 @@ def expected_key_defaults() -> dict[str, str | None]:
     return {key: hard.get(CONFIG_KEY_TO_FLAG.get(key, '')) for key in key_defaults_in_docs()}
 
 
+# What may follow the table's default in a ``# Default:`` comment: nothing, or prose such as ``all operators`` or
+# ``not set (one at a time ...)``. A digit, ``.``, quote or comma would make the comment state a different value.
+_END_OF_STATED_DEFAULT = r'(?=$|\s|\()'
+
+
 def default_comment_mismatches(comments: dict[str, str], table_cells: dict[str, str]) -> list[str]:
     """Describe each TOML ``# Default:`` comment that does not start with the default its key's table cell states."""
     problems: list[str] = []
@@ -125,7 +130,7 @@ def default_comment_mismatches(comments: dict[str, str], table_cells: dict[str, 
             problems.append(f'{key}: the TOML example says "Default: {comment}" but the options table has no such key')
             continue
         stated = normalize(table_cells[key])
-        if not re.match(rf'{re.escape(stated)}(?!\w)', normalize(comment)):
+        if not re.match(re.escape(stated) + _END_OF_STATED_DEFAULT, normalize(comment)):
             problems.append(f'{key}: the TOML example says "Default: {comment}", the options table says {stated!r}')
     return problems
 
