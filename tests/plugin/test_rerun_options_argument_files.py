@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import locale
 from pathlib import Path
 
@@ -54,9 +55,19 @@ class DescribeRerunOptionsInArgumentFiles:
     def it_reads_an_argument_file_with_a_byte_that_is_not_utf8_the_way_argparse_does(self, tmp_path: Path) -> None:
         # An encoded surrogate is invalid in strict UTF-8 but decodes under both error handlers argparse may
         # use (surrogateescape on POSIX, surrogatepass on Windows); a lone latin-1 byte would not on Windows.
-        (tmp_path / 'not_utf8.txt').write_bytes(b'--reruns\n2\n# \xed\xa0\x80\n')
+        argument_file = tmp_path / 'not_utf8.txt'
+        argument_file.write_bytes(b'--reruns\n2\n# \xed\xa0\x80\n')
+        parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+        parser.add_argument('--reruns')
 
-        assert rerun_options_in(['@not_utf8.txt'], base_dir=tmp_path) == ['--reruns=2']
+        try:
+            parsed, _ = parser.parse_known_args([f'@{argument_file}'])
+        except UnicodeDecodeError:
+            expected = []
+        else:
+            expected = [f'--reruns={parsed.reruns}'] if parsed.reruns is not None else []
+
+        assert rerun_options_in(['@not_utf8.txt'], base_dir=tmp_path) == expected
 
     def it_resolves_a_relative_argument_file_against_the_current_directory_by_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
