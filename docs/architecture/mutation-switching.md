@@ -1,7 +1,8 @@
 # Mutation Switching
 
-Mutation switching is the foundation of pytest-gremlins' speed architecture. It eliminates
-the two slowest operations in traditional mutation testing: file I/O and module reloading.
+Mutation switching is the foundation of pytest-gremlins' speed architecture. It embeds every
+mutation for a source file in one instrumented version of that file, then selects a mutant at
+runtime instead of writing a separate source file for each one.
 
 ## The Problem with Traditional Mutation Testing
 
@@ -92,7 +93,7 @@ sequenceDiagram
     participant Subprocess as Bootstrap subprocess
     participant Tests
 
-    Note over Tool: Instrument code once (at startup)
+    Note over Tool: Instrument each target file once for the analysis
 
     loop For each mutation
         Tool->>Subprocess: Spawn with ACTIVE_GREMLIN=gXXX
@@ -102,56 +103,70 @@ sequenceDiagram
     end
 ```
 
-The source is instrumented once. Each mutation is then tested by starting a subprocess with a
-different `ACTIVE_GREMLIN` value, so no source file is rewritten and no mutated copy of the
-module has to be built. The full per-gremlin sequence, including test selection and the cache,
-is in [The Gremlin Execution Loop](gremlin-execution-loop.md).
+Each target file is instrumented once for the analysis. Each mutation is then tested by starting
+a subprocess with a different `ACTIVE_GREMLIN` value, so the source file on disk is never
+rewritten and the mutation set does not have to be rebuilt. The full per-gremlin sequence,
+including test selection and the cache, is in
+[The Gremlin Execution Loop](gremlin-execution-loop.md).
 
 ## Why This Is Faster
 
-### No File I/O
+The saving comes from doing the mutation analysis once per file and choosing a smaller set of
+tests for each gremlin. It does not come from eliminating file I/O or process startup.
 
-Traditional approach:
+### Instrument Each Target File Once per Run
 
-```text
-Write file: ~1-10ms per mutation
-Read file (Python import): ~1-5ms per file
-Total for 1000 mutations: 2-15 seconds just in file I/O
-```
+Pytest-gremlins parses each target file and embeds every mutation for that file in one
+instrumented AST. It writes the instrumented tree or source to `sources.json` in a temporary
+directory, next to the `gremlin_bootstrap.py` script. This normally happens after test
+collection; under pytest-xdist it happens at the end of the run, once the controller has the
+worker item ids. Either way, each target file is processed once for the analysis, and a later
+gremlin for the same file reuses that instrumented representation instead of rewriting the file
+or rebuilding the file's mutation set.
 
-Mutation switching:
+The switch is part of the generated code. The module reads `ACTIVE_GREMLIN` into
+`__gremlin_active__` when it is imported, and each mutation site compares that value with gremlin
+ids before falling through to the original expression or statement.
 
-```text
-No file operations during testing: 0ms
-```
+### Start a Fresh pytest Process for Each Gremlin
 
-### No Module Reloading
+The default loop runs each gremlin that needs a verdict in a separate `gremlin_bootstrap.py`
+subprocess, with `ACTIVE_GREMLIN` and the selected test node ids. Each subprocess reads
+`sources.json` and installs the import hook before pytest or the project's test modules are
+imported. When the project imports an instrumented file, the hook compiles and executes its
+instrumented tree in that process.
 
-Traditional approach:
+Process startup, interpreter and pytest initialization, project and dependency imports, and
+code compilation therefore happen again for every gremlin that runs. Module state and
+connections belong to that process and do not carry over to the next gremlin.
 
-```text
-Import module with dependencies: 50-5000ms per import
-1000 mutations: 50 seconds to 83 minutes just importing
-```
+### Limit Each Run to Covering Tests
 
-Mutation switching:
+The coverage pre-scan runs the test suite with a context per test and builds a map from source
+lines to tests. For each gremlin, the plugin selects the tests that executed its line. If no test
+covers the line, or a pre-scan problem disables coverage selection, it runs the whole suite.
+Selected tests are ordered by specificity, so pytest's exit-first option can stop at the first
+failure. Batch mode uses one union of selected tests across all gremlins awaiting a run, and
+passes that same test command to every batch.
 
-```text
-Import once at startup: 50-5000ms total
-Environment variable check: <1 microsecond per mutation
-```
+This can reduce the test work inside each subprocess, but the reduction depends on the project's
+test coverage and structure. When enabled, the incremental cache can replace a subprocess with a
+stored verdict if the gremlin, source, selected tests, and settings still match. Pardoned
+gremlins and selections with no runnable test also skip the subprocess.
 
-### Process Stays Hot
+### What Still Happens for Every Gremlin That Runs
 
-Beyond raw import time, there are hidden costs to reloading modules:
+- A fresh Python process and pytest session are created.
+- The bootstrap reads `sources.json`, and the import system loads the modules and dependencies
+  the selected tests need.
+- Instrumented modules are compiled and executed in that process.
+- The selected tests are collected and run, including their own file and resource I/O.
+- Some verdicts need an additional unmutated run to confirm that a collection failure or timeout
+  came from the mutation rather than the harness.
 
-- **JIT warmup:** Python's JIT (in 3.13+) loses optimizations
-- **Cache invalidation:** Bytecode caches become useless
-- **Connection pools:** Database connections get dropped
-- **Singleton state:** Application state resets
-
-With mutation switching, the Python process stays warm. Caches remain valid. Connections
-stay open. Everything runs at full speed.
+The gain is structural: one analysis per file and a focused test selection per gremlin, instead
+of rewriting a source file for each mutant and running the whole suite. The size of that gain
+depends on the project, so this page makes no claim about a specific speedup.
 
 ## Implementation Details
 
@@ -303,11 +318,12 @@ pytest --gremlins --gremlin-explain=calculator_e336_g001
 ## Comparison with File-Based Mutation
 
 | Aspect | File-Based | Mutation Switching |
-|--------|------------|-------------------|
-| File I/O per mutation | 2 operations | 0 operations |
-| Module imports | N (one per mutation) | 1 (at startup) |
-| Process state | Reset each mutation | Preserved |
-| Parallelization | Requires file locking | Trivial (env vars) |
+|--------|------------|--------------------|
+| Source file per mutation | Rewritten, then restored | Left unchanged |
+| Mutation setup | Repeated for each source file change | All mutations for a file embedded in one instrumented AST |
+| Module loading per gremlin | A fresh process imports the rewritten file | A fresh process imports the instrumented file through the hook |
+| Process state | Reset for each mutant | Reset for each gremlin |
+| Parallelization | Requires coordination around shared source files | Workers assign gremlin ids and spawn independent processes |
 | Debugging | Easy (one mutation at a time) | Slightly harder (all embedded) |
 | Code readability | Original preserved | Instrumented harder to read |
 
@@ -325,8 +341,8 @@ may affect bytecode cache sizes.
 
 ### Compilation Time
 
-Initial instrumentation takes longer than loading uninstrumented code. This is a one-time
-cost that pays for itself after a few mutations.
+Parsing and transforming each target file adds work before the first gremlin. The instrumented
+tree is then compiled and executed in each gremlin subprocess that imports the file.
 
 ### Interaction with pytest's Assertion Rewriting
 
@@ -345,20 +361,20 @@ Mutation switching was pioneered by [Stryker](https://stryker-mutator.io/) for J
 
 > "Mutation switching can give a performance boost of up to 20-70%"
 
-For Python, the gains are even larger because:
-
-- Python imports are slower than JavaScript module loading
-- Python lacks JavaScript's V8-level JIT optimization
-- Many Python projects have heavyweight dependencies (numpy, pandas, Django)
+Mutation switching is a general technique; its effect in a Python project depends on how its
+mutation tool implements the switch, how its test suite is structured, and how often a source file
+would otherwise be rewritten and reimported.
 
 ## Summary
 
 Mutation switching is the foundation that makes everything else possible:
 
-- **Speed:** No file I/O, no reimporting
-- **Parallelization:** Workers just set different environment variables
-- **Simplicity:** No file locking, no temporary directories, no cleanup
-- **Stability:** Original files are never modified
+- **Speed:** Each file is instrumented once for the analysis, and coverage guidance narrows each
+  gremlin's test run. A gremlin that runs still pays for a fresh process, imports, and I/O.
+- **Parallelization:** Workers assign gremlin ids and spawn independent bootstrap processes.
+- **Simplicity:** Original source files are never rewritten. The bootstrap and `sources.json`
+  live in a temporary directory cleaned up during normal pytest teardown.
+- **Stability:** Original files are never modified.
 
 Combined with coverage guidance, incremental analysis, and parallel execution, mutation
 switching transforms mutation testing from an overnight CI job into a tool you can use
