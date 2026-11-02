@@ -6,7 +6,12 @@ from typing import (
     TYPE_CHECKING,
     Any,
 )
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 
+from _pytest.terminal import TerminalReporter
 import pytest
 
 from pytest_gremlins.plugin import (
@@ -16,6 +21,8 @@ from pytest_gremlins.plugin import (
     _own_session_key,
     _set_session,
     pytest_configure,
+    pytest_sessionfinish,
+    pytest_terminal_summary,
     pytest_unconfigure,
 )
 
@@ -265,3 +272,90 @@ class DescribeNestedPytestSession:
 
         result.stdout.fnmatch_lines(['*pytest-gremlins mutation report*', 'Zapped: * gremlins*'])
         result.stdout.no_fnmatch_line('Error: *')
+
+
+class _RaisingCache:
+    def close(self) -> None:
+        msg = 'close failed'
+        raise RuntimeError(msg)
+
+
+@pytest.mark.medium
+class DescribeReleaseSessionWhenCacheCloseRaises:
+    """A failing cache close must not strand the global on the dead owned session."""
+
+    def it_restores_the_displaced_session_and_propagates_the_error(
+        self, tmp_path: Path, make_pytest_config: Callable[..., Any]
+    ) -> None:
+        outer = GremlinSession(enabled=True)
+        _set_session(outer)
+        config = make_pytest_config(tmp_path, gremlins=False)
+
+        try:
+            pytest_configure(config)
+            config.stash[_own_session_key].cache = _RaisingCache()
+
+            with pytest.raises(RuntimeError, match='close failed'):
+                _unconfigure(config)
+
+            assert _get_session() is outer
+        finally:
+            _set_session(None)
+
+
+@pytest.mark.medium
+class DescribeHooksReadTheSessionTheirConfigOwns:
+    """Hooks read the session their own Config owns, even when the global was swapped."""
+
+    def it_reports_the_owned_session_notices_in_the_terminal_summary(
+        self, tmp_path: Path, make_pytest_config: Callable[..., Any]
+    ) -> None:
+        config = make_pytest_config(tmp_path, gremlins=False)
+        owned = GremlinSession(enabled=True)
+        owned.terminal_notices.append('owned-notice')
+        config.stash[_own_session_key] = owned
+        _set_session(GremlinSession(enabled=True))
+        reporter = MagicMock(spec=TerminalReporter)
+
+        try:
+            pytest_terminal_summary(reporter, exitstatus=0, config=config)
+        finally:
+            _set_session(None)
+
+        reporter.write_line.assert_any_call('owned-notice')
+
+    def it_does_nothing_in_the_terminal_summary_when_the_config_owns_no_session(
+        self, tmp_path: Path, make_pytest_config: Callable[..., Any]
+    ) -> None:
+        config = make_pytest_config(tmp_path, gremlins=False)
+        stray = GremlinSession(enabled=True)
+        stray.terminal_notices.append('stray-notice')
+        _set_session(stray)
+        reporter = MagicMock(spec=TerminalReporter)
+
+        try:
+            pytest_terminal_summary(reporter, exitstatus=0, config=config)
+        finally:
+            _set_session(None)
+
+        reporter.write_line.assert_not_called()
+
+    def it_gates_the_sessionfinish_on_the_owned_sessions_baseline(
+        self, tmp_path: Path, make_pytest_config: Callable[..., Any]
+    ) -> None:
+        config = make_pytest_config(tmp_path, gremlins=False)
+        owned = GremlinSession(enabled=True)
+        config.stash[_own_session_key] = owned
+        swapped = GremlinSession(enabled=True)
+        _set_session(swapped)
+        session = MagicMock(spec=pytest.Session)
+        session.config = config
+
+        try:
+            with patch('pytest_gremlins.plugin._skip_mutation_unless_baseline_is_green') as gate:
+                gate.return_value = True
+                pytest_sessionfinish(session, exitstatus=1)
+        finally:
+            _set_session(None)
+
+        assert gate.call_args.args[0] is owned

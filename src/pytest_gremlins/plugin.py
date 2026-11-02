@@ -521,6 +521,11 @@ def _set_session(session: GremlinSession | None) -> None:
     _gremlin_session = session
 
 
+def _session_for(config: pytest.Config) -> GremlinSession | None:
+    """Return the session ``config`` owns, or None when gremlins never installed one for it."""
+    return config.stash.get(_own_session_key, None)
+
+
 def _install_session(config: pytest.Config, session: GremlinSession) -> None:
     """Make ``session`` the current session and the one ``config`` owns."""
     config.stash[_own_session_key] = session
@@ -539,11 +544,13 @@ def _release_session(config: pytest.Config) -> None:
     for configured in _configured_configs:
         if configured.stash[_displaced_session_key] is owned:
             configured.stash[_displaced_session_key] = displaced
-    _cleanup_instrumented_dir(owned.instrumented_dir)
-    if owned.cache is not None:
-        owned.cache.close()
-    if _get_session() is owned:
-        _set_session(displaced)
+    try:
+        _cleanup_instrumented_dir(owned.instrumented_dir)
+        if owned.cache is not None:
+            owned.cache.close()
+    finally:
+        if _get_session() is owned:
+            _set_session(displaced)
 
 
 class _BaselineRecorder:
@@ -1298,7 +1305,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     Args:
         session: The pytest session object.
     """
-    gremlin_session = _get_session()
+    gremlin_session = _session_for(session.config)
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
@@ -1374,7 +1381,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     and normalises node IDs but skips gremlin generation — that happens in
     ``pytest_sessionfinish`` once worker item IDs are available.
     """
-    gremlin_session = _get_session()
+    gremlin_session = _session_for(session.config)
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
@@ -2615,7 +2622,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     mutation testing as normal.  Phase 1 (xdist test run) and Phase 2 (gremlins
     mutations) are therefore temporally isolated with no shared mutable state.
     """
-    gremlin_session = _get_session()
+    gremlin_session = _session_for(session.config)
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
@@ -4954,7 +4961,7 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     config: pytest.Config,
 ) -> None:
     """Add mutation testing results to terminal output."""
-    gremlin_session = _get_session()
+    gremlin_session = _session_for(config)
     if gremlin_session is None or not gremlin_session.enabled:
         return
 

@@ -46,6 +46,9 @@ from pytest_gremlins.plugin import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+pytestmark = pytest.mark.usefixtures('hooks_read_global_session')
+
+
 _UNSET: object = object()  # sentinel: numprocesses attribute absent
 
 

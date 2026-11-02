@@ -23,6 +23,8 @@ from pytest_gremlins.plugin import (
     pytest_sessionfinish,
 )
 
+pytestmark = pytest.mark.usefixtures('hooks_read_global_session')
+
 
 def _make_controller_session(tmp_path: Path) -> MagicMock:
     """Build a mock pytest.Session configured as an xdist controller (no workerinput)."""
