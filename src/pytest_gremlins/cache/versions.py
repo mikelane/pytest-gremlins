@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import csv
 from dataclasses import dataclass
 from functools import cached_property
@@ -209,9 +210,13 @@ def _site_directories() -> list[Path]:
 
 def _is_project_local(location: Path, project_root: Path | None) -> bool:
     """Whether ``location`` is project code: under the pytest rootdir and not in an installed-packages directory."""
-    if project_root is None or not location.is_relative_to(project_root.resolve()):
+    if project_root is None:
         return False
-    return not any(location.is_relative_to(site) for site in _site_directories())
+    roots = (project_root, project_root.resolve())
+    if not any(location.is_relative_to(root) for root in roots):
+        return False
+    sites = _site_directories()
+    return not any(location.is_relative_to(site) for site in sites)
 
 
 def _is_installed_module_file(entry: _IndexedDistribution, top_level: str, location: Path) -> bool:
@@ -327,20 +332,92 @@ def _conftest_name(conftest: Path, project_root: Path | None) -> str:
     return resolved.as_posix()
 
 
+def _relative_import_candidates(importer: Path, node: ast.ImportFrom) -> list[Path]:
+    base = importer.parent
+    for _ in range(node.level - 1):
+        base = base.parent
+    stem = base.joinpath(*node.module.split('.')) if node.module else base
+    names = [alias.name for alias in node.names]
+    paths = [stem.with_suffix('.py'), stem / '__init__.py'] if node.module else [stem / '__init__.py']
+    paths += [path for name in names for path in (stem / f'{name}.py', stem / name / '__init__.py')]
+    return [*paths, *_parent_package_inits(base, node.module)]
+
+
+def _parent_package_inits(base: Path, dotted_module: str | None) -> list[Path]:
+    """``from .sub.deep import z`` runs ``base/__init__.py`` and ``base/sub/__init__.py`` before ``sub/deep.py``."""
+    parts = dotted_module.split('.') if dotted_module else []
+    return [base.joinpath(*parts[:depth]) / '__init__.py' for depth in range(len(parts))]
+
+
+def _dotted_prefixes(dotted_name: str) -> list[str]:
+    """``pkg.sub.mod`` -> ``pkg``, ``pkg.sub``, ``pkg.sub.mod``: importing a module runs every parent package."""
+    parts = dotted_name.split('.')
+    return ['.'.join(parts[: end + 1]) for end in range(len(parts))]
+
+
+def _absolute_import_module_names(node: ast.Import | ast.ImportFrom) -> list[str]:
+    if isinstance(node, ast.Import):
+        return [prefix for alias in node.names for prefix in _dotted_prefixes(alias.name)]
+    module = node.module or ''
+    return [*_dotted_prefixes(module), *(f'{module}.{alias.name}' for alias in node.names)]
+
+
+def _imported_files(importer: Path, tree: ast.AST) -> set[Path]:
+    """The files of the modules ``tree`` imports statically; an absolute import never loaded names no file."""
+    files: set[Path] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level:
+            files |= {path for path in _relative_import_candidates(importer, node) if path.is_file()}
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            origins = (getattr(sys.modules.get(name), '__file__', None) for name in _absolute_import_module_names(node))
+            files |= {Path(origin) for origin in origins if origin is not None}
+    return {file for file in files if file.suffix == '.py'}
+
+
+def _local_modules_imported_by(conftests: Iterable[Path], project_root: Path | None) -> set[Path]:
+    """Every project-local ``.py`` module the conftests import, followed transitively (#924).
+
+    Raises:
+        OSError: A module in the chain cannot be read.
+        SyntaxError: A module in the chain cannot be parsed.
+        MemoryError: A module in the chain is too deeply nested for the parser.
+        RecursionError: A module in the chain is too deeply nested for the compiler.
+        RuntimeError: A module path loops through symlinks (``Path.resolve`` before Python 3.13).
+    """
+    pending = [conftest.resolve() for conftest in conftests]
+    seen = set(pending)
+    local: set[Path] = set()
+    while pending:
+        importer = pending.pop()
+        tree = ast.parse(importer.read_bytes(), filename=str(importer))
+        for imported in _imported_files(importer, tree):
+            if imported.resolve() in seen or not _is_project_local(imported, project_root):
+                continue
+            seen.add(imported.resolve())
+            local.add(imported)
+            pending.append(imported)
+    return local
+
+
 def _conftest_operators_label(loaded_conftests: Iterable[Path], project_root: Path | None) -> str | None:
-    """Label the content of every loaded ``conftest.py``; ``None`` when one cannot be read.
+    """Label the content of every loaded ``conftest.py`` and the local modules they import; ``None`` if unreadable.
 
     The test key hashes only the conftests on the path from the rootdir to a covering test, so an operator in
     ``a/conftest.py`` never reaches the key of a gremlin covered only by tests under ``b/`` (#899). Which
     conftest defines the operator is not worked out: its code can come from another conftest, a decorator or a
     base class. Hashing them all makes an edit to any loaded conftest a miss for every gremlin.
+
+    A module a conftest imports (a helper beside it, or in another directory) can supply the operator's behavior
+    without being registered as a plugin, so the project-local modules the conftests import, transitively, are
+    hashed too (#924). Modules outside the rootdir and installed packages are not: installed operators are keyed
+    by version. A conftest with no local import yields the same label as before.
     """
     hasher = ContentHasher()
+    conftests = list(loaded_conftests)
     try:
-        entries = sorted(
-            {(_conftest_name(conftest, project_root), hasher.hash_file(conftest)) for conftest in loaded_conftests}
-        )
-    except OSError:
+        modules = {*conftests, *_local_modules_imported_by(conftests, project_root)}
+        entries = sorted({(_conftest_name(module, project_root), hasher.hash_file(module)) for module in modules})
+    except (OSError, SyntaxError, ValueError, MemoryError, RecursionError, RuntimeError):
         return None
     return f'{_CONFTEST_OPERATORS_PREFIX}{hasher.hash_string("|".join(f"{name}:{digest}" for name, digest in entries))}'
 
