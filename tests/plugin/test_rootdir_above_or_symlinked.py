@@ -48,6 +48,17 @@ def project(pytester_with_markers: pytest.Pytester) -> Path:
     return directory
 
 
+@pytest.fixture
+def linked_project(pytester_with_markers: pytest.Pytester, project: Path) -> Path:
+    """A symlink to the project directory, beside it; skips where symlinks cannot be created."""
+    link = pytester_with_markers.path / 'link'
+    try:
+        link.symlink_to(project, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip('symlinks cannot be created here')
+    return link
+
+
 def _target(project: Path) -> str:
     return f'--gremlin-targets={(project / "sample.py").as_posix()}'
 
@@ -99,17 +110,16 @@ class DescribeALayoutWithoutARootdirOption:
 @pytest.mark.medium
 class DescribeASymlinkedRootdir:
     def it_stops_with_one_clear_error(
-        self, pytester_with_markers: pytest.Pytester, project: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        pytester_with_markers: pytest.Pytester,
+        project: Path,
+        linked_project: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        link = pytester_with_markers.path / 'link'
-        try:
-            link.symlink_to(project, target_is_directory=True)
-        except (OSError, NotImplementedError):
-            pytest.skip('symlinks cannot be created here')
         monkeypatch.chdir(project)
 
         result = pytester_with_markers.runpytest_subprocess(
-            *GREMLIN_ARGS, _target(project), f'--rootdir={link.as_posix()}', 'tests'
+            *GREMLIN_ARGS, _target(project), f'--rootdir={linked_project.as_posix()}', 'tests'
         )
 
         assert result.ret == USAGE_ERROR_EXIT_CODE
