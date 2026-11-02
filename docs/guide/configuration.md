@@ -46,7 +46,7 @@ Every command-line option starts with `--gremlin-*` or `--gremlins*`, except `--
 | `--gremlin-batch-size` | integer | `10` | Number of gremlins per worker task |
 | `--gremlin-coverage-timeout` | integer | `120` | Seconds (1-86400) the coverage pre-scan may run before coverage-guided test selection is disabled; scaled up like the mutant timeout when pytest-rerunfailures reruns are configured |
 | `--gremlin-mutant-timeout` | integer | `30` | Seconds (1-86400) one attempt of a gremlin's test run may take before the gremlin is reported as a timeout; scaled up when pytest-rerunfailures reruns are configured ([details](#flaky-tests-and-pytest-rerunfailures)) |
-| `--gremlin-executor` | `auto` or `subprocess` | `auto` | How each gremlin's tests run. `auto` is the same as `subprocess`. `fork` and `inprocess` are also accepted by the parser but stop the run with a usage error, because they did not run the mutated code ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
+| `--gremlin-executor` | `auto` or `subprocess` | `auto` | How each gremlin's tests run. `auto` is the same as `subprocess`. `fork` and `inprocess` were removed because they did not run the mutated code. Passing either stops the run with a usage error, as does any other value ([#532](https://github.com/mikelane/pytest-gremlins/issues/532)) |
 
 ### Diagnostic Options
 
@@ -174,12 +174,12 @@ pytest --gremlins --strict-pardons
 pytest --gremlins --gremlin-no-coverage-filter
 ```
 
-**Refuse the disabled executors:**
+**Refuse the removed executors:**
 
 <!-- markdownlint-disable MD013 -->
 ```text
 $ pytest --gremlins --gremlin-executor=fork
-ERROR: pytest-gremlins: --gremlin-executor=fork is temporarily disabled because it produced incorrect results (it did not run the mutated code). Use --gremlin-executor=subprocess (the default). Tracking: https://github.com/mikelane/pytest-gremlins/issues/532
+ERROR: pytest-gremlins: --gremlin-executor=fork was removed because it produced incorrect results (it did not run the mutated code). Use --gremlin-executor=subprocess (the default). Details: https://github.com/mikelane/pytest-gremlins/issues/532
 ```
 <!-- markdownlint-enable MD013 -->
 
