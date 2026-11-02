@@ -51,10 +51,6 @@ def project(pytester_with_markers: pytest.Pytester) -> Path:
     return root
 
 
-def _session_config(*, config_file: str | None) -> pytest.Config:
-    return cast('pytest.Config', SimpleNamespace(option=SimpleNamespace(inifilename=config_file), inipath=None))
-
-
 @pytest.mark.medium
 class DescribeAConfigFileGivenWithDashC:
     def it_scores_gremlins_when_the_config_file_has_a_name_pytest_does_not_discover(
@@ -77,8 +73,11 @@ class DescribeTheConfigFileOptions:
 
         assert plugin._config_file_options(config) == ['-c', ini.as_posix()]
 
-    def it_names_nothing_when_the_session_discovered_its_own_config_file(self) -> None:
-        assert plugin._config_file_options(_session_config(config_file=None)) == []
+    def it_names_nothing_when_the_session_discovered_its_own_config_file(self, tmp_path: Path) -> None:
+        discovered = tmp_path / 'pytest.ini'
+        config = cast('pytest.Config', SimpleNamespace(option=SimpleNamespace(inifilename=None), inipath=discovered))
+
+        assert plugin._config_file_options(config) == []
 
     def it_puts_the_config_file_in_a_gremlin_run_command_once(self) -> None:
         command = verdicts_module._build_test_command(None, '', config_file_options=['-c', 'gremlin.ini'])
