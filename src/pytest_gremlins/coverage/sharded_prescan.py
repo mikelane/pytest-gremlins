@@ -8,12 +8,19 @@ Session- and package-scoped fixtures run once per shard, so their code is credit
 the combined map holds every entry a single process records, plus those fixture lines. Gremlins in fixture code
 therefore select more tests, never fewer.
 
-Each shard also gets its own ``--basetemp`` inside the scratch directory, placed last so it overrides a ``--basetemp``
-from the project's addopts or ``PYTEST_ADDOPTS`` (pytest prepends both). Without it, every shard would clear and
-reuse the same directory and delete the live temp files of the others, as pytest-xdist workers avoid by the same means.
-The scratch directory and its entries have deliberately short names (``<TMPDIR>/pgsXXXXXXXX/<index>/b``), so a shard's
-``tmp_path`` is no longer than the serial pre-scan's. A test that binds an ``AF_UNIX`` socket there stays under the
-104-byte limit on macOS in a shard exactly as it does serially.
+Each shard also gets its own ``--basetemp``, placed last so it overrides a ``--basetemp`` from the project's addopts
+or ``PYTEST_ADDOPTS`` (pytest prepends both). Without it, every shard would clear and reuse the same directory and
+delete the live temp files of the others, as pytest-xdist workers avoid by the same means.
+
+Where the shard basetemps live keeps a shard's ``tmp_path`` no longer than the serial pre-scan's, so a test that binds
+an ``AF_UNIX`` socket there stays under the 104-byte limit on macOS in a shard exactly as it does serially:
+
+- When the session has a ``--basetemp``, the serial pre-scan honours it, so shard ``i`` uses ``<basetemp>/<i>``.
+- Otherwise the scratch directory is made under ``PYTEST_DEBUG_TEMPROOT`` when that is set and under the system
+  temporary directory when not (pytest's own choice of root), and shard ``i`` uses ``<scratch>/<i>/b``. The scratch
+  directory and its entries have deliberately short names (``pgsXXXXXXXX``).
+
+Each shard's coverage data file and node id file stay in the scratch directory either way.
 
 The outcome is all or nothing. If any shard times out, cannot be started, crashes or leaves no data, the caller gets
 no data files at all, because a map built from some of the shards would claim that lines no test covers are
@@ -28,6 +35,7 @@ from collections.abc import (
 )
 import gc
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import time
@@ -56,6 +64,7 @@ def run_prescan_shards(
     timeout: float,
     env: Mapping[str, str],
     scratch_dir: Path,
+    basetemp_root: Path | None = None,
 ) -> list[Path] | None:
     """Run ``command`` once per shard, all at the same time, and return each shard's coverage data file.
 
@@ -66,6 +75,8 @@ def run_prescan_shards(
         timeout: Seconds all shards together may take.
         env: Environment for every shard; ``COVERAGE_FILE`` is set per shard on top of it.
         scratch_dir: Existing directory that holds each shard's node id file and data file. The caller removes it.
+        basetemp_root: Existing directory whose entry ``<index>`` is shard ``index``'s ``--basetemp``. By default each
+            shard's basetemp is ``<index>/b`` inside ``scratch_dir``.
 
     Returns:
         The data files, in shard order, or ``None`` when any shard crashed or recorded no data. Every shard is
@@ -83,7 +94,8 @@ def run_prescan_shards(
             shard_dir = scratch_dir / str(index)
             shard_dir.mkdir()
             data_files.append(shard_dir / 'coverage.data')
-            processes.append(_start_shard(command, shard, shard_dir, data_files[-1], cwd=cwd, env=env))
+            basetemp = shard_dir / 'b' if basetemp_root is None else basetemp_root / str(index)
+            processes.append(_start_shard(command, shard, shard_dir, data_files[-1], basetemp, cwd=cwd, env=env))
         finished_cleanly = _wait_for_all(processes, deadline, timeout)
     finally:
         _stop_all(processes)
@@ -101,6 +113,7 @@ def run_sharded_prescan(
     timeout: float,
     env: Mapping[str, str],
     combined: Path,
+    user_basetemp: Path | None = None,
 ) -> bool:
     """Shard ``node_ids`` over at most ``worker_count`` processes and write their combined coverage to ``combined``.
 
@@ -112,6 +125,8 @@ def run_sharded_prescan(
         timeout: Seconds all shards together may take.
         env: Environment for every shard.
         combined: Path of the combined coverage data file to create.
+        user_basetemp: The session's absolute ``--basetemp``, if it has one. Shard ``i`` then runs in
+            ``<user_basetemp>/<i>``, as the serial pre-scan would run in ``user_basetemp``.
 
     Returns:
         ``True`` when ``combined`` was written; ``False`` when a shard failed, in which case nothing is written.
@@ -121,11 +136,37 @@ def run_sharded_prescan(
         OSError: If the operating system cannot start a shard.
     """
     shards = split_into_shards(node_ids, worker_count)
-    with tempfile.TemporaryDirectory(prefix='pgs', ignore_cleanup_errors=True) as scratch:
-        data_files = run_prescan_shards(command, shards, cwd=cwd, timeout=timeout, env=env, scratch_dir=Path(scratch))
-        if data_files is None:
-            return False
-        return _combined_without_error(data_files, combined)
+    if user_basetemp is not None:
+        user_basetemp.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix='pgs', dir=_scratch_root(env, user_basetemp), ignore_cleanup_errors=True
+        ) as scratch:
+            data_files = run_prescan_shards(
+                command,
+                shards,
+                cwd=cwd,
+                timeout=timeout,
+                env=env,
+                scratch_dir=Path(scratch),
+                basetemp_root=user_basetemp,
+            )
+            if data_files is None:
+                return False
+            return _combined_without_error(data_files, combined)
+    finally:
+        if user_basetemp is not None:
+            _remove_shard_basetemps(user_basetemp, len(shards))
+
+
+def _scratch_root(env: Mapping[str, str], user_basetemp: Path | None) -> str | None:
+    """Where pytest would put its temp files: nowhere special under a ``--basetemp``, else ``PYTEST_DEBUG_TEMPROOT``."""
+    return None if user_basetemp is not None else env.get('PYTEST_DEBUG_TEMPROOT') or None
+
+
+def _remove_shard_basetemps(basetemp: Path, shard_count: int) -> None:
+    for index in range(shard_count):
+        shutil.rmtree(basetemp / str(index), ignore_errors=True)
 
 
 def combine_shard_data(data_files: Sequence[Path], combined: Path) -> None:
@@ -174,12 +215,13 @@ def _start_shard(
     node_ids: Sequence[str],
     shard_dir: Path,
     data_file: Path,
+    basetemp: Path,
     *,
     cwd: Path,
     env: Mapping[str, str],
 ) -> subprocess.Popen[bytes]:
     return subprocess.Popen(  # Intentional: runs a pytest pre-scan command
-        [*command_with_node_ids_file(command, node_ids, shard_dir), f'--basetemp={shard_dir / "b"}'],
+        [*command_with_node_ids_file(command, node_ids, shard_dir), f'--basetemp={basetemp}'],
         cwd=str(cwd),
         env={**env, 'COVERAGE_FILE': str(data_file)},
         stdout=subprocess.DEVNULL,

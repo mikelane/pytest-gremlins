@@ -127,6 +127,72 @@ class DescribeRunPrescanShards:
         assert len(set(basetemps)) == 4
         assert max(len(path) for path in basetemps) <= len(str(pytest_default))
 
+    def _shard_basetemps(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, env: dict[str, str], **options: Any
+    ) -> list[str]:
+        real_run = sharded_prescan.run_prescan_shards
+        basetemps: list[str] = []
+
+        def run_fake_shards(_command: Sequence[str], shards: Sequence[Sequence[str]], **kwargs: Any) -> None:
+            data_files = real_run([sys.executable, '-c', _FAKE_SHARD], shards, **kwargs)
+            assert data_files is not None
+            basetemps.extend(_last_basetemp(path).removeprefix('--basetemp=') for path in data_files)
+
+        monkeypatch.setattr(sharded_prescan, 'run_prescan_shards', run_fake_shards)
+        monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+        sharded_prescan.run_sharded_prescan(
+            ['unused'],
+            ['ok', 'a', 'b'],
+            worker_count=3,
+            cwd=tmp_path,
+            timeout=30,
+            env=env,
+            combined=tmp_path / 'combined',
+            **options,
+        )
+        return basetemps
+
+    def it_places_each_shard_basetemp_under_the_users_basetemp_by_shard_index(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        user_basetemp = tmp_path / 'short'
+
+        basetemps = self._shard_basetemps(tmp_path, monkeypatch, dict(os.environ), user_basetemp=user_basetemp)
+
+        assert basetemps == [str(user_basetemp / str(index)) for index in range(3)]
+
+    def it_places_the_scratch_directory_under_pytest_debug_temproot_when_there_is_no_user_basetemp(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        temproot = tmp_path / 'temproot'
+        temproot.mkdir()
+        env = {**os.environ, 'PYTEST_DEBUG_TEMPROOT': str(temproot)}
+
+        basetemps = self._shard_basetemps(tmp_path, monkeypatch, env)
+
+        assert len(basetemps) == 3
+        assert all(Path(path).relative_to(temproot.resolve()).parts[0].startswith('pgs') for path in basetemps)
+        assert all(Path(path).name == 'b' for path in basetemps)
+
+    def it_prefers_the_users_basetemp_over_pytest_debug_temproot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        user_basetemp = tmp_path / 'short'
+        env = {**os.environ, 'PYTEST_DEBUG_TEMPROOT': str(tmp_path / 'ignored')}
+
+        basetemps = self._shard_basetemps(tmp_path, monkeypatch, env, user_basetemp=user_basetemp)
+
+        assert basetemps == [str(user_basetemp / str(index)) for index in range(3)]
+
+    def it_removes_the_shard_directories_it_made_inside_the_users_basetemp(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        user_basetemp = tmp_path / 'short'
+
+        self._shard_basetemps(tmp_path, monkeypatch, dict(os.environ), user_basetemp=user_basetemp)
+
+        assert list(user_basetemp.iterdir()) == []
+
     def it_puts_the_basetemp_after_everything_else_so_it_overrides_addopts(self, tmp_path: Path) -> None:
         data_files = _run(tmp_path, [['ok']])
 

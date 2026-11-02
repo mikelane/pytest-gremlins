@@ -385,6 +385,7 @@ class GremlinSession:
     coverage_timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS
     coverage_attempt_timeout: int | None = None
     prescan_workers: int = DEFAULT_PRESCAN_WORKERS
+    basetemp: Path | None = None
     mutant_timeout: int = DEFAULT_MUTANT_TIMEOUT_SECONDS
     mutant_attempt_timeout: int | None = None
     rerun_budget: RerunBudget = NO_RERUNS
@@ -1238,6 +1239,7 @@ def pytest_configure(config: pytest.Config) -> None:
             coverage_timeout=_rerun_scaled_timeout(config, coverage_timeout, label='Coverage pre-scan'),
             coverage_attempt_timeout=coverage_timeout,
             prescan_workers=merged_config.prescan_workers or DEFAULT_PRESCAN_WORKERS,
+            basetemp=_session_basetemp(config),
             mutant_timeout=_rerun_scaled_timeout(config, mutant_attempt_timeout, label='Mutant'),
             mutant_attempt_timeout=mutant_attempt_timeout,
             rerun_budget=_gremlin_run_rerun_budget(config),
@@ -2962,6 +2964,7 @@ def _run_prescan_reporting_problems(
             xdist_loader_options=gremlin_session.xdist_loader_options,
             timeout=prescan_timeout,
             prescan_workers=gremlin_session.prescan_workers,
+            session_basetemp=gremlin_session.basetemp,
         )
     except CoveragePrescanTimeoutError as timeout_error:
         _warn_prescan_timeout(timeout_error.seconds, gremlin_session.coverage_attempt_timeout)
@@ -3694,7 +3697,17 @@ def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, time
         raise CoveragePrescanLaunchError(launch_error) from launch_error
 
 
-def _launch_sharded_prescan(command: list[str], node_ids: list[str], rootdir: Path, timeout: int, workers: int) -> bool:
+def _session_basetemp(config: pytest.Config) -> Path | None:
+    """The session's ``--basetemp`` as an absolute path, resolved against the invocation directory as pytest does."""
+    given = getattr(config.option, 'basetemp', None)
+    if not given:
+        return None
+    return Path(os.path.abspath(str(given)))  # noqa: PTH100
+
+
+def _launch_sharded_prescan(
+    command: list[str], node_ids: list[str], rootdir: Path, timeout: int, workers: int, *, basetemp: Path | None
+) -> bool:
     """Run the pre-scan ``command`` sharded over ``workers`` processes, combining their coverage into ``.coverage``.
 
     Returns:
@@ -3713,6 +3726,7 @@ def _launch_sharded_prescan(command: list[str], node_ids: list[str], rootdir: Pa
             timeout=timeout,
             env=_prescan_env(),
             combined=rootdir / '.coverage',
+            user_basetemp=basetemp,
         )
     except subprocess.TimeoutExpired as expired:
         raise CoveragePrescanTimeoutError(timeout) from expired
@@ -3732,6 +3746,7 @@ def _run_tests_with_coverage(
     xdist_loader_options: Sequence[str] = (),
     timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS,
     prescan_workers: int = DEFAULT_PRESCAN_WORKERS,
+    session_basetemp: Path | None = None,
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
 
@@ -3778,6 +3793,8 @@ def _run_tests_with_coverage(
         timeout: Seconds the pre-scan subprocess may run (default 120).
         prescan_workers: Serial processes to shard the pre-scan over (default 1, a single process). Their coverage
             is combined; if any shard fails the result is empty, never a partial map (issue #527).
+        session_basetemp: The session's absolute ``--basetemp``, if any. A sharded pre-scan runs shard ``i`` in
+            ``<session_basetemp>/<i>``, so a shard's ``tmp_path`` is as short as the serial pre-scan's.
 
     Returns:
         Dict mapping test names to their coverage data (file path -> lines).
@@ -3828,7 +3845,9 @@ def _run_tests_with_coverage(
 
     try:
         if prescan_workers > DEFAULT_PRESCAN_WORKERS:
-            data_written = _launch_sharded_prescan(cmd, test_node_ids, rootdir, timeout, prescan_workers)
+            data_written = _launch_sharded_prescan(
+                cmd, test_node_ids, rootdir, timeout, prescan_workers, basetemp=session_basetemp
+            )
         else:
             _launch_prescan(cmd, test_node_ids, rootdir, timeout)
             data_written = True

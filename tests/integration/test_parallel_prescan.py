@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
+import sys
 import tempfile
 from typing import Any
 
@@ -232,6 +234,67 @@ class DescribeParallelPrescanEquivalence:
         serial = recorded(1)
         assert 'test_sock.py::test_sock' in serial
         assert recorded(2) >= serial
+
+    @pytest.mark.skipif(sys.platform == 'win32', reason='needs a short /tmp path')
+    def it_keeps_a_socket_test_that_fits_under_the_users_short_basetemp(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A user ``--basetemp`` keeps ``tmp_path`` short in the serial pre-scan, so it must in a shard too."""
+        monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+        short_root = Path(tempfile.mkdtemp(prefix='q', dir='/tmp'))
+        try:
+            node_ids = self._write_socket_project(tmp_path)
+
+            def recorded(workers: int) -> set[str]:
+                return set(
+                    _run_tests_with_coverage(
+                        node_ids,
+                        tmp_path,
+                        coverage_include=[str((tmp_path / 'sample.py').resolve())],
+                        preserved_addopts=f'--basetemp={(short_root / "bt").as_posix()}',
+                        session_basetemp=short_root / 'bt',
+                        prescan_workers=workers,
+                    )
+                )
+
+            serial = recorded(1)
+            assert 'test_sock.py::test_sock' in serial
+            assert recorded(2) >= serial
+        finally:
+            shutil.rmtree(short_root, ignore_errors=True)
+
+    @pytest.mark.skipif(sys.platform == 'win32', reason='needs a short /tmp path')
+    def it_keeps_a_socket_test_that_fits_under_pytest_debug_temproot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+        short_root = Path(tempfile.mkdtemp(prefix='q', dir='/tmp'))
+        monkeypatch.setenv('PYTEST_DEBUG_TEMPROOT', str(short_root))
+        try:
+            node_ids = self._write_socket_project(tmp_path)
+
+            def recorded(workers: int) -> set[str]:
+                return set(
+                    _run_tests_with_coverage(
+                        node_ids,
+                        tmp_path,
+                        coverage_include=[str((tmp_path / 'sample.py').resolve())],
+                        prescan_workers=workers,
+                    )
+                )
+
+            serial = recorded(1)
+            assert 'test_sock.py::test_sock' in serial
+            assert recorded(2) >= serial
+        finally:
+            shutil.rmtree(short_root, ignore_errors=True)
+
+    @staticmethod
+    def _write_socket_project(directory: Path) -> list[str]:
+        (directory / 'sample.py').write_text('def double(value):\n    return value * 2\n', encoding='utf-8')
+        (directory / 'test_sock.py').write_text(_SOCKET_TEST, encoding='utf-8')
+        (directory / 'test_other.py').write_text(_OTHER_TEST, encoding='utf-8')
+        return ['test_sock.py::test_sock', 'test_other.py::test_other']
 
     def it_leaves_no_coverage_files_behind(
         self, project: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
