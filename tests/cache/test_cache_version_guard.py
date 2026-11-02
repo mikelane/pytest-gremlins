@@ -72,7 +72,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/types.py': 'e8f2a82731cb4bfaec2a4803fe312826f3a85511224868322aa7eb127339085a',  # pragma: allowlist secret
     # --
-    'cache/versions.py': '8c85f3ac61a0bdf7d0a3fc71c24808e0c4e668db5ddef4ac85fc199eddbe90a4',  # pragma: allowlist secret
+    'cache/versions.py': 'e63f95cdbc95739bebb9530781e68c368f64473f23318f3e80368ee19d498b8a',  # pragma: allowlist secret
     # --
     'config.py': 'f6f54470b3eaa24032742ef90b9b36df7b7215c9d9802b0dcb411b870891cde3',  # pragma: allowlist secret
     # --
