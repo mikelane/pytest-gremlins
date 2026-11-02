@@ -66,7 +66,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': 'efc80d7b9cf558e4f3340869c152387687ffd874f6f1b171a0562dd34bde5d12',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': '0026f6f1151957ff90ae92a01ab4f0c3d126dc399b479836c9724b174bcaa8cb',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/store.py': '5f0948aacf44044a8a66ebc1863479e0df29cec9eb4ae73edd63ac2cfab8173b',  # pragma: allowlist secret
     # --
@@ -162,7 +162,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '615f73d1a3f5650713d5fa12035c15085cc06adcc151fb716178854415fc8b69',  # pragma: allowlist secret
+    'plugin.py': '4436db09003120ac9857035677144e4ce32109bf6c9867838958e88bf4ec37dd',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --

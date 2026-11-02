@@ -2005,7 +2005,7 @@ def _write_instrumented_sources(
     duplicates: dict[str, list[str]] | None = None,
     unwritable: dict[str, str] | None = None,
 ) -> Path:
-    """Write instrumented sources to a JSON file for import hook injection.
+    """Write instrumented sources to a JSON file for the origin finder.
 
     Creates a temporary directory containing:
     1. A JSON file mapping the normalized real path of each instrumented file to its
@@ -2016,11 +2016,11 @@ def _write_instrumented_sources(
        the lowercased file names it may be imported as (``names``, so the finder skips every other import
        without touching the disk). No module name is recorded: the finder in the
        subprocess serves a file under whatever name the import system resolves to it.
-    2. A bootstrap script that registers import hooks and runs pytest
+    2. A bootstrap script that installs the origin finder and runs pytest
     3. A ``spawn_hook`` directory holding a ``sitecustomize.py`` that installs the same finder in fresh
        interpreters, such as ``multiprocessing`` spawn children (#604)
 
-    This approach ensures that import hooks are registered BEFORE any modules
+    This approach ensures that the origin finder is installed BEFORE any modules
     are imported, which is necessary because pytest adds the test directory
     to sys.path before PYTHONPATH.
 
@@ -2181,11 +2181,11 @@ def _prepend_injection(body: list[ast.stmt], injection_nodes: list[ast.stmt]) ->
 
 
 def _get_bootstrap_script() -> str:
-    """Return the bootstrap script that registers import hooks and runs pytest.
+    """Return the bootstrap script that installs the origin finder and runs pytest.
 
     The bootstrap script:
     1. Reads instrumented sources from a JSON file
-    2. Registers a MetaPathFinder that intercepts imports for instrumented modules
+    2. Installs the origin finder, a MetaPathFinder that intercepts imports for instrumented modules
     3. Runs pytest with any provided arguments
 
     Note: The use of compile() and the exec built-in here is intentional and safe.
@@ -2201,7 +2201,7 @@ def _get_bootstrap_script() -> str:
     script = """#!/usr/bin/env python
 '''Bootstrap script for pytest-gremlins mutation testing.
 
-This script registers import hooks to intercept module imports and provide
+This script installs the origin finder to intercept module imports and provide
 instrumented code with mutation switching logic, then runs pytest.
 '''
 
@@ -2234,6 +2234,9 @@ def main():
     from _pytest.config import ConftestImportFailure
 
     class FinderFronter:
+        # Kept although the gremlins plugin has the same re-front in its own pytest_load_initial_conftests:
+        # that plugin is not loaded when gremlin runs disable plugin autoload (the pytest-rerunfailures
+        # case, #684) or run under -p no:gremlins, and this class does not depend on it being loaded.
         # pytest parses its command line, which puts its assertion-rewrite hook at the front of
         # sys.meta_path, ahead of our finder, so the hook would serve (and we would never instrument)
         # every conftest.py and python_files match. Re-front the finder after the hook exists but before
@@ -3149,7 +3152,12 @@ def _plugins_declared_by(module: object) -> set[str]:
 
 
 def _with_plugins_they_load(names: set[str]) -> set[str]:
-    """Return ``names`` plus every plugin that those already imported modules load through ``pytest_plugins``."""
+    """Return ``names`` plus every plugin that those already imported modules load through ``pytest_plugins``.
+
+    Limitation: only modules already in ``sys.modules`` are followed. A plugin that is not imported yet, or whose
+    ``pytest_plugins`` is built dynamically or listed conditionally at import time, is not seen; the module is then
+    not detected as loaded twice (#794).
+    """
     pending = list(names)
     reached = set(names)
     while pending:
@@ -4233,6 +4241,10 @@ def _split_gremlins_needing_a_run(
     up in the cache. The cache hit and miss counters are updated and the split is
     reported once.
 
+    Only the batch and parallel runs call this, so only they print the ``N gremlins from cache`` line. The
+    sequential run looks each gremlin up as it reaches it and prints ``cache hit (skipping)`` per gremlin
+    instead, followed by the ``Cache:`` summary (#771).
+
     Args:
         gremlins: The gremlins to split, in run order.
         gremlin_tests: The runnable selection for each gremlin, keyed by gremlin id.
@@ -4333,6 +4345,8 @@ def _run_mutation_testing(
         pytest_cov_options=gremlin_session.pytest_cov_options,
     )
 
+    # Serial by design: sequential mode has no worker pool, so each collection kill is confirmed in turn by
+    # _confirm_kill. The parallel and batch runs prefill their confirmations concurrently (#810).
     for i, gremlin in enumerate(gremlin_session.gremlins, 1):
         pardoned_result = _immediate_result_if_pardoned(gremlin)
         if pardoned_result is not None:
