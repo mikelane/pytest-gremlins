@@ -1,9 +1,8 @@
-"""A cached verdict is not reused across runs whose gremlin runs used different rerun filters (#677).
+"""A cached verdict reflects the rerun filter the gremlin runs read, with or without ``-c`` (#677, #951).
 
-Under ``-c``, a ``rerun_except`` pattern that ``-o`` cannot carry unchanged (trailing space) is reset to empty
-for the gremlin runs, so they run with no filter.  Without ``-c`` the gremlin runs discover the same file and
-apply the filter.  The main session resolves the same ``rerun_except`` both times, so the cache key is equal
-and the second run reuses verdicts the first run's gremlin runs reached under different settings.
+A ``rerun_except`` pattern that ``-o`` cannot carry unchanged (trailing space) used to be reset to empty for the
+gremlin runs of a ``-c`` session, so they ran with no filter.  Gremlin runs are now given the ``-c`` file itself, so
+they apply the filter exactly as a run without ``-c`` does, and both reach the same verdict.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ def _project(pytester: pytest.Pytester) -> None:
 @pytest.mark.medium
 @pytest.mark.parametrize(
     ('config_args', 'expected'),
-    [((), 'Zapped: 2 gremlins*'), (('-c', 'pyproject.toml'), 'Survived: 2 gremlins*')],
+    [((), 'Zapped: 2 gremlins*'), (('-c', 'pyproject.toml'), 'Zapped: 2 gremlins*')],
 )
 def it_cold_run_reaches_the_verdict_its_gremlin_runs_earn(
     pytester: pytest.Pytester, config_args: tuple[str, ...], expected: str, monkeypatch: pytest.MonkeyPatch
@@ -44,7 +43,7 @@ def it_cold_run_reaches_the_verdict_its_gremlin_runs_earn(
 
 
 @pytest.mark.medium
-def it_discovered_config_run_does_not_reuse_survivors_from_a_dash_c_run(
+def it_discovered_config_run_reaches_the_verdict_of_a_dash_c_run(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
@@ -57,7 +56,7 @@ def it_discovered_config_run_does_not_reuse_survivors_from_a_dash_c_run(
 
 
 @pytest.mark.medium
-def it_dash_c_run_does_not_reuse_zaps_from_a_discovered_config_run(
+def it_dash_c_run_reaches_the_verdict_of_a_discovered_config_run(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
@@ -66,4 +65,4 @@ def it_dash_c_run_does_not_reuse_zaps_from_a_discovered_config_run(
 
     result = pytester.runpytest_subprocess(*GREMLIN_ARGS, '-c', 'pyproject.toml')
 
-    result.stdout.fnmatch_lines(['Survived: 2 gremlins*'])
+    result.stdout.fnmatch_lines(['Zapped: 2 gremlins*'])
