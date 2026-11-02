@@ -134,7 +134,7 @@ def combine_shard_data(data_files: Sequence[Path], combined: Path) -> None:
 def _combined_without_error(data_files: Sequence[Path], combined: Path) -> bool:
     try:
         combine_shard_data(data_files, combined)
-    except CoverageException:
+    except (CoverageException, OSError):
         combined.unlink(missing_ok=True)
         succeeded = False
     else:

@@ -42,7 +42,10 @@ class DescribeSplitIntoShards:
 
         shards = split_into_shards(node_ids, 2)
 
-        assert sorted(len(shard) for shard in shards) == [10, 12]
+        assert shards == [
+            [*_ids('big.py', 10), *_ids('s3.py', 2)],
+            [*_ids('mid.py', 6), *_ids('s1.py', 2), *_ids('s2.py', 2)],
+        ]
 
     def it_uses_no_more_shards_than_there_are_files(self) -> None:
         node_ids = [*_ids('a.py', 4), *_ids('b.py', 4)]
@@ -58,10 +61,8 @@ class DescribeSplitIntoShards:
 
         assert shards == [['a.py::test_0', 'b.py::test_0', 'c.py::test_0']]
 
-    def it_is_deterministic(self) -> None:
-        node_ids = [*_ids('a.py', 3), *_ids('b.py', 3), *_ids('c.py', 3), *_ids('d.py', 3)]
-
-        assert split_into_shards(node_ids, 3) == split_into_shards(node_ids, 3)
+    def it_keeps_a_single_file_whole_however_many_shards_are_asked_for(self) -> None:
+        assert split_into_shards(_ids('a.py', 5), 4) == [_ids('a.py', 5)]
 
     def it_treats_a_parametrized_id_with_colons_in_its_parameters_as_part_of_its_file(self) -> None:
         node_ids = ['a.py::test_x[a::b]', 'a.py::test_x[c]', 'b.py::T::test_y']

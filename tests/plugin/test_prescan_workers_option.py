@@ -47,4 +47,5 @@ class DescribePrescanWorkersThroughTheRealEntryPoint:
 
         result = pytester_with_markers.runpytest('--gremlins', f'--gremlin-prescan-workers={value}')
 
+        assert result.ret == pytest.ExitCode.USAGE_ERROR
         result.stderr.fnmatch_lines([f'*--gremlin-prescan-workers must be a positive integer*{value}*'])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 from typing import Any
 
 import pytest
@@ -108,6 +109,29 @@ _SERIAL_NODE_IDS = [
     'test_async.py::test_fetch_err',
 ]
 
+_PLAIN_NODE_IDS = _SERIAL_NODE_IDS[:3]
+
+_PLAIN_TRIPLES = {
+    ('sample.py', 2, 'test_plain.py::test_classify_ok'),
+    ('sample.py', 3, 'test_plain.py::test_classify_ok'),
+    ('sample.py', 2, 'test_plain.py::test_classify_err'),
+    ('sample.py', 4, 'test_plain.py::test_classify_err'),
+    ('sample.py', 8, 'test_plain.py::test_double'),
+}
+
+_EXPECTED_TRIPLES = {
+    *_PLAIN_TRIPLES,
+    ('sample.py', 8, 'test_parametrized.py::test_double_param[1]'),
+    ('sample.py', 8, 'test_parametrized.py::test_double_param[2]'),
+    ('sample.py', 8, 'test_parametrized.py::test_double_param[3]'),
+    ('sample.py', 12, 'test_parametrized.py::test_label_param[a]'),
+    ('sample.py', 12, 'test_parametrized.py::test_label_param[b]'),
+    ('sample.py', 16, 'test_async.py::test_fetch_ok'),
+    ('sample.py', 17, 'test_async.py::test_fetch_ok'),
+    ('sample.py', 16, 'test_async.py::test_fetch_err'),
+    ('sample.py', 18, 'test_async.py::test_fetch_err'),
+}
+
 
 @pytest.fixture
 def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -120,16 +144,18 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def _mapping(project: Path, workers: int, *, preserved_addopts: str = '') -> set[tuple[str, int, str]]:
+def _mapping(
+    project: Path, workers: int, *, preserved_addopts: str = '', node_ids: list[str] | None = None
+) -> set[tuple[str, int, str]]:
     coverage_data = _run_tests_with_coverage(
-        _SERIAL_NODE_IDS,
+        _SERIAL_NODE_IDS if node_ids is None else node_ids,
         project,
         coverage_include=[str((project / 'sample.py').resolve())],
         preserved_addopts=preserved_addopts,
         prescan_workers=workers,
     )
     return {
-        (file, line, node_id)
+        (Path(file).name, line, node_id)
         for node_id, files in coverage_data.items()
         for file, lines in files.items()
         for line in lines
@@ -143,50 +169,75 @@ class DescribeParallelPrescanEquivalence:
 
         assert recorded == set(_SERIAL_NODE_IDS)
 
+    def it_records_the_expected_line_level_triples_when_serial(self, project: Path) -> None:
+        assert _mapping(project, 1) == _EXPECTED_TRIPLES
+
     @pytest.mark.parametrize('workers', [2, 3])
     def it_records_the_same_file_line_and_node_id_triples_as_the_serial_pre_scan(
         self, project: Path, workers: int
     ) -> None:
-        serial = _mapping(project, 1)
-
-        assert _mapping(project, workers) == serial
+        assert _mapping(project, workers) == _EXPECTED_TRIPLES
 
     def it_records_the_same_triples_when_there_are_more_workers_than_files(self, project: Path) -> None:
-        assert _mapping(project, 8) == _mapping(project, 1)
+        assert _mapping(project, 8) == _EXPECTED_TRIPLES
+
+    def it_records_the_same_triples_for_a_single_test_file_with_several_workers(self, project: Path) -> None:
+        assert _mapping(project, 4, node_ids=_PLAIN_NODE_IDS) == _PLAIN_TRIPLES
 
     def it_records_the_same_triples_when_the_project_runs_its_own_tests_under_xdist(self, project: Path) -> None:
-        assert _mapping(project, 2, preserved_addopts='-n 2') == _mapping(project, 1)
+        assert _mapping(project, 2, preserved_addopts='-n 2') == _EXPECTED_TRIPLES
 
-    def it_leaves_no_coverage_files_behind(self, project: Path) -> None:
+    def it_leaves_no_coverage_files_behind(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        scratch_root = tmp_path_factory.mktemp('scratch_root')
+        monkeypatch.setattr(tempfile, 'tempdir', str(scratch_root))
+
         _mapping(project, 2)
 
-        assert not (project / '.coverage').exists()
-        assert not (project / '.coveragerc.gremlins').exists()
+        assert list(project.glob('.coverage*')) == []
+        assert list(scratch_root.glob('pytest_gremlins_shards_*')) == []
+
+
+@pytest.fixture
+def sharded_calls(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    calls: list[int] = []
+
+    def spy(*args: Any, **kwargs: Any) -> bool:
+        calls.append(kwargs['worker_count'])
+        return run_sharded_prescan(*args, **kwargs)
+
+    monkeypatch.setattr(plugin, 'run_sharded_prescan', spy)
+    return calls
 
 
 @pytest.mark.medium
 class DescribeWhenTheShardedPathRuns:
-    def it_shards_only_when_more_than_one_worker_is_asked_for(
-        self, project: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        calls: list[int] = []
-
-        def spy(*args: Any, **kwargs: Any) -> bool:
-            calls.append(kwargs['worker_count'])
-            return run_sharded_prescan(*args, **kwargs)
-
-        monkeypatch.setattr(plugin, 'run_sharded_prescan', spy)
-
+    def it_shards_only_when_more_than_one_worker_is_asked_for(self, project: Path, sharded_calls: list[int]) -> None:
+        calls = sharded_calls
         _mapping(project, 1)
         _mapping(project, 3)
 
         assert calls == [3]
 
+    def it_reports_an_operating_system_error_as_a_launch_failure_and_removes_its_config(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def cannot_start(*_args: Any, **_kwargs: Any) -> bool:
+            raise OSError('cannot start a shard')
+
+        monkeypatch.setattr(plugin, 'run_sharded_prescan', cannot_start)
+
+        with pytest.raises(plugin.CoveragePrescanLaunchError):
+            _mapping(project, 2)
+
+        assert list(project.glob('.coverage*')) == []
+
 
 @pytest.mark.medium
 class DescribeParallelPrescanAbstains:
     def it_returns_no_data_and_the_existing_notice_when_one_shard_cannot_collect(
-        self, project: Path, capsys: pytest.CaptureFixture[str]
+        self, project: Path, capsys: pytest.CaptureFixture[str], sharded_calls: list[int]
     ) -> None:
         (project / 'test_async.py').write_text('def test_fetch_ok(:\n', encoding='utf-8')
 
@@ -197,11 +248,13 @@ class DescribeParallelPrescanAbstains:
             coverage_include=[str((project / 'sample.py').resolve())],
         )
 
+        assert sharded_calls == [3]
         assert coverage_data == {}
         assert 'Coverage collection returned no data' in capsys.readouterr().err
+        assert list(project.glob('.coverage*')) == []
 
     def it_returns_no_data_and_the_timeout_notice_when_a_shard_outlasts_the_limit(
-        self, project: Path, capsys: pytest.CaptureFixture[str]
+        self, project: Path, capsys: pytest.CaptureFixture[str], sharded_calls: list[int]
     ) -> None:
         (project / 'test_async.py').write_text(
             'import time\n\n\ndef test_fetch_ok():\n    time.sleep(60)\n\n\ndef test_fetch_err():\n    pass\n',
@@ -215,8 +268,10 @@ class DescribeParallelPrescanAbstains:
             coverage_include=[str((project / 'sample.py').resolve())],
         )
 
+        assert sharded_calls == [3]
         assert coverage_data == {}
         assert 'coverage pre-scan exceeded 3s' in capsys.readouterr().err
+        assert list(project.glob('.coverage*')) == []
 
 
 @pytest.mark.medium

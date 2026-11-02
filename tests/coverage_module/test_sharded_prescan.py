@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import gc
 import json
 import os
@@ -9,11 +10,13 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from typing import Any
 import warnings
 
 import coverage
 import pytest
 
+from pytest_gremlins.coverage import sharded_prescan
 from pytest_gremlins.coverage.sharded_prescan import (
     combine_shard_data,
     run_prescan_shards,
@@ -36,9 +39,23 @@ sys.exit({'crash': 2, 'testsfail': 1}.get(behaviour, 0))
 """
 
 
+@pytest.fixture
+def started_shards(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen[bytes]]:
+    started: list[subprocess.Popen[bytes]] = []
+    real_popen = subprocess.Popen
+
+    def recording_popen(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        process: subprocess.Popen[bytes] = real_popen(*args, **kwargs)
+        started.append(process)
+        return process
+
+    monkeypatch.setattr(subprocess, 'Popen', recording_popen)
+    return started
+
+
 def _run(tmp_path: Path, shards: list[list[str]], *, timeout: int = 30) -> list[Path] | None:
     scratch = tmp_path / 'scratch'
-    scratch.mkdir()
+    scratch.mkdir(exist_ok=True)
     return run_prescan_shards(
         [sys.executable, '-c', _FAKE_SHARD],
         shards,
@@ -54,6 +71,7 @@ class DescribeRunPrescanShards:
     def it_returns_one_data_file_per_shard_each_written_by_its_own_process(self, tmp_path: Path) -> None:
         data_files = _run(tmp_path, [['ok', 'a'], ['ok', 'b'], ['ok', 'c']])
 
+        assert data_files == [tmp_path / 'scratch' / f'shard_{index}' / 'coverage.data' for index in range(3)]
         assert data_files is not None
         recorded = [json.loads(path.read_text(encoding='utf-8'))['ids'] for path in data_files]
         assert recorded == [['ok', 'a'], ['ok', 'b'], ['ok', 'c']]
@@ -85,6 +103,26 @@ class DescribeRunPrescanShards:
     def it_raises_a_timeout_when_the_shards_outlast_the_limit(self, tmp_path: Path) -> None:
         with pytest.raises(subprocess.TimeoutExpired):
             _run(tmp_path, [['ok'], ['hang']], timeout=2)
+
+    def it_kills_the_hung_shard_when_the_shards_outlast_the_limit(
+        self, tmp_path: Path, started_shards: list[subprocess.Popen[bytes]]
+    ) -> None:
+        with pytest.raises(subprocess.TimeoutExpired):
+            _run(tmp_path, [['hang'], ['hang']], timeout=2)
+
+        assert [process.returncode == 0 for process in started_shards] == [False, False]
+        assert [process.poll() is not None for process in started_shards] == [True, True]
+
+    def it_kills_a_running_shard_when_a_later_shard_cannot_be_launched(
+        self, tmp_path: Path, started_shards: list[subprocess.Popen[bytes]]
+    ) -> None:
+        (tmp_path / 'scratch' / 'shard_1').mkdir(parents=True)
+
+        with pytest.raises(FileExistsError):
+            _run(tmp_path, [['hang'], ['ok']])
+
+        assert [process.returncode == 0 for process in started_shards] == [False]
+        assert [process.poll() is not None for process in started_shards] == [True]
 
     def it_raises_when_a_shard_cannot_be_started(self, tmp_path: Path) -> None:
         scratch = tmp_path / 'scratch'
@@ -152,6 +190,18 @@ class DescribeRunShardedPrescan:
         combined = tmp_path / 'combined'
 
         # The fake shards write JSON, not a coverage database, which is what a corrupt data file looks like.
+        assert self._run(tmp_path, ['ok', 'ok2'], combined) is False
+        assert not combined.exists()
+
+    def it_reports_failure_and_writes_nothing_when_combining_hits_an_operating_system_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def disk_error(_data_files: Sequence[Path], _combined: Path) -> None:
+            raise OSError('disk error while combining')
+
+        monkeypatch.setattr(sharded_prescan, 'combine_shard_data', disk_error)
+        combined = tmp_path / 'combined'
+
         assert self._run(tmp_path, ['ok', 'ok2'], combined) is False
         assert not combined.exists()
 

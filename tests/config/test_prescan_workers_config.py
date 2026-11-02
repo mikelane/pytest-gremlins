@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 import pytest
@@ -38,11 +39,23 @@ class DescribePrescanWorkersFromFile:
 
         assert load_config(tmp_path).prescan_workers is None
 
-    @pytest.mark.parametrize('raw', ['0', '-1', '"4"', 'true', '1.5', str(MAX_PRESCAN_WORKERS + 1)])
-    def it_rejects_values_that_are_not_a_positive_integer_within_the_cap(self, tmp_path: Path, raw: str) -> None:
+    @pytest.mark.parametrize(
+        ('raw', 'echoed'),
+        [
+            ('0', '0'),
+            ('-1', '-1'),
+            ('"4"', "'4'"),
+            ('true', 'True'),
+            ('1.5', '1.5'),
+            (str(MAX_PRESCAN_WORKERS + 1), str(MAX_PRESCAN_WORKERS + 1)),
+        ],
+    )
+    def it_rejects_values_that_are_not_a_positive_integer_within_the_cap(
+        self, tmp_path: Path, raw: str, echoed: str
+    ) -> None:
         _write_pyproject(tmp_path, f'prescan_workers = {raw}')
 
-        with pytest.raises(ValueError, match=r'prescan_workers must be a positive integer'):
+        with pytest.raises(ValueError, match=rf'prescan_workers must be a positive integer.*got {re.escape(echoed)}$'):
             load_config(tmp_path)
 
 
