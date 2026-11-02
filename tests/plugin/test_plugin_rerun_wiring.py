@@ -52,6 +52,7 @@ def _config(
     args: list[str],
     ini: dict[str, str | list[str]] | None = None,
     inifilename: str | None = None,
+    inipath: Path | None = None,
     parsed_options: dict[str, object] | None = None,
 ) -> pytest.Config:
     pluginmanager = SimpleNamespace(hasplugin=lambda name: name == registered_plugin)
@@ -60,6 +61,7 @@ def _config(
         pluginmanager=pluginmanager,
         invocation_params=SimpleNamespace(args=tuple(args), dir=Path()),
         rootdir=Path(),
+        inipath=inipath,
         getini=lambda name: ini_values.get(name, [] if name in ('only_rerun', 'rerun_except') else ''),
         option=SimpleNamespace(inifilename=inifilename, **(parsed_options or {})),
     )
@@ -310,3 +312,40 @@ class DescribeCoveragePrescanRerunOptions:
         _run_prescan_reporting_problems(['test_a.py::test_flaky'], tmp_path, gremlin_session, coverage_include=None)
 
         assert '--reruns=2' in prescan_commands[0]
+
+
+@pytest.mark.small
+class DescribeRerunIniSettingsWhenTheConfigFileIsForwarded:
+    """With the ``-c`` file passed to gremlin runs (#951) they read the rerun ini settings themselves."""
+
+    def it_forwards_no_override_or_reset_so_the_file_the_runs_read_decides(self) -> None:
+        config = _config(
+            registered_plugin='rerunfailures',
+            args=['-c', 'ci.toml'],
+            ini={'reruns': '2', 'rerun_except': ['xyz ']},
+            inifilename='ci.toml',
+            inipath=Path('/project/ci.toml'),
+        )
+
+        assert _rerun_options_for(config) == []
+
+    def it_keeps_the_command_line_rerun_options(self) -> None:
+        config = _config(
+            registered_plugin='rerunfailures',
+            args=['-c', 'ci.toml', '--reruns', '3'],
+            inifilename='ci.toml',
+            inipath=Path('/project/ci.toml'),
+        )
+
+        assert _rerun_options_for(config) == ['--reruns=3']
+
+    def it_warns_about_no_key_because_the_file_arrives_unchanged(self) -> None:
+        config = _config(
+            registered_plugin='rerunfailures',
+            args=[],
+            ini={'rerun_except': ['xyz ']},
+            inifilename='ci.toml',
+            inipath=Path('/project/ci.toml'),
+        )
+
+        assert _rerun_ini_warnings_for(config) == []

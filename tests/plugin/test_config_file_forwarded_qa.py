@@ -57,10 +57,6 @@ def two_config_project(pytester_with_markers: pytest.Pytester) -> Path:
 
 @pytest.mark.medium
 class DescribeAVerdictCachedBeforeGremlinRunsReadTheConfigFile:
-    @pytest.mark.xfail(
-        strict=True,
-        reason='adversarial QA #951: no cache marker or key part retires verdicts cached while gremlin runs ignored -c',
-    )
     def it_is_not_reused_once_gremlin_runs_read_the_config_file(
         self, pytester_with_markers: pytest.Pytester, two_config_project: Path
     ) -> None:
@@ -86,10 +82,6 @@ _TOML_WITH_TRAILING_SPACE_PATTERN = '[tool.pytest.ini_options]\nreruns = 2\nreru
 
 @pytest.mark.medium
 class DescribeARerunPatternInTheConfigFileGremlinRunsNowRead:
-    @pytest.mark.xfail(
-        strict=True,
-        reason='adversarial QA #951: rerun ini resets under -c discard a setting the gremlin runs now read themselves',
-    )
     def it_keeps_the_pattern_the_gremlin_runs_read_from_the_config_file(
         self, pytester_with_markers: pytest.Pytester
     ) -> None:

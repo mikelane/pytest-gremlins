@@ -20,8 +20,6 @@ from rerun_samples import (  # type: ignore[import-not-found]
     write_flaky_project,
 )
 
-from pytest_gremlins.rerun_options import unforwarded_rerun_key_warning
-
 
 @pytest.mark.medium
 class DescribeRerunOptionsOnTheCommandLine:
@@ -224,15 +222,6 @@ class DescribeRerunPatternsPytestWouldStripOnTheCommandLine:
         counts = verdicts(result.stdout.str())
         assert counts['Survived'] > 0
         assert counts['Zapped'] == 1
-
-    def it_skips_the_pattern_under_a_config_file_and_says_so(self, pytester_with_markers: pytest.Pytester) -> None:
-        (pytester_with_markers.path / 'ci.toml').write_text(_TOML_WITH_TRAILING_SPACE_PATTERN, encoding='utf-8')
-
-        result = run_gremlins(pytester_with_markers, '-c', 'ci.toml', tests=_FLAKY_TEST_FAILING_WITH_XYZ)
-
-        assert result.stderr.lines.count(unforwarded_rerun_key_warning('rerun_except')) == 1
-        assert result.stderr.str().count('not carried into gremlin runs') == 1
-        assert survivor_count(result.stdout.str()) > 0
 
     def it_still_forwards_the_other_rerun_settings_under_a_config_file(
         self, pytester_with_markers: pytest.Pytester
