@@ -4,6 +4,10 @@ Each shard is the same ``coverage run -m pytest_gremlins.coverage.prescan_main``
 pre-scan uses, given its own node ids and its own coverage data file. There is no pytest-xdist involved: every shard
 is a plain serial pytest run, so coverage.py traces every test in it.
 
+Session- and package-scoped fixtures run once per shard, so their code is credited to the first test of every shard:
+the combined map holds every entry a single process records, plus those fixture lines. Gremlins in fixture code
+therefore select more tests, never fewer.
+
 The outcome is all or nothing. If any shard times out, cannot be started, crashes or leaves no data, the caller gets
 no data files at all, because a map built from some of the shards would claim that lines no test covers are
 uncovered. The caller then runs without coverage-guided selection.
@@ -128,7 +132,11 @@ def combine_shard_data(data_files: Sequence[Path], combined: Path) -> None:
         # A user's ``filterwarnings = error`` must not turn coverage.py's notice about a bad file into a crash;
         # ``strict`` makes that file raise a CoverageException, which the caller handles.
         warnings.simplefilter('ignore', CoverageWarning)
-        coverage.Coverage(data_file=str(combined)).combine([str(path) for path in data_files], strict=True, keep=True)
+        # ``config_file=False``: the project's coverage config belongs to the shards, not to this combine. Reading it
+        # here would import its plugins and could store paths differently from the single-process pre-scan.
+        coverage.Coverage(data_file=str(combined), config_file=False).combine(
+            [str(path) for path in data_files], strict=True, keep=True
+        )
 
 
 def _combined_without_error(data_files: Sequence[Path], combined: Path) -> bool:

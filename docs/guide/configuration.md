@@ -842,8 +842,11 @@ How it works:
   workers uses one shard per file.
 - Each shard is a separate serial process. This does not need pytest-xdist, and it is not affected by `-n`: the
   pre-scan never distributes tests across xdist workers.
-- Per-test coverage contexts survive the combine, so the resulting map is the same set of
-  (file, line, test) entries a single process would record.
+- Per-test coverage contexts survive the combine, so every (file, line, test) entry a single process would
+  record is in the combined map. Each shard is its own pytest session, so code that a session- or
+  package-scoped fixture runs is credited to the first test of every shard. The combined map can therefore
+  hold extra entries for fixture code, never fewer entries than a single process records. A gremlin in fixture
+  code selects more tests, never fewer.
 
 Trade-offs to weigh before raising it:
 

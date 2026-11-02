@@ -3832,18 +3832,15 @@ def _run_tests_with_coverage(
         else:
             _launch_prescan(cmd, test_node_ids, rootdir, timeout)
             data_written = True
-    except (CoveragePrescanTimeoutError, CoveragePrescanLaunchError):
+    finally:
         coveragerc_path.unlink(missing_ok=True)
-        raise
     if not data_written:
-        coveragerc_path.unlink(missing_ok=True)
         return {}
 
     coverage_by_test: dict[str, dict[str, list[int]]] = {}
 
     try:
         if not coverage_db_path.exists():  # pragma: no cover
-            coveragerc_path.unlink(missing_ok=True)
             return {}
 
         conn = sqlite3.connect(str(coverage_db_path))
@@ -3871,7 +3868,6 @@ def _run_tests_with_coverage(
     finally:
         try:
             coverage_db_path.unlink(missing_ok=True)
-            coveragerc_path.unlink(missing_ok=True)
         except OSError as exc:  # pragma: no cover
             logger.debug('Failed to clean up coverage files: %s', exc)
 

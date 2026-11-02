@@ -143,10 +143,12 @@ was measured separately from the profile above, on a synthetic suite built for t
 
 - **Suite:** 4,000 tests in 40 files, each running a few lines of a three-function package and sleeping
   4 ms, so the pre-scan is bound by test time rather than coverage tracing. Tests share no state, which is the
-  best case for sharding; a suite with a slow session fixture pays that fixture once per shard.
+  best case for sharding; a suite with a slow session fixture pays that fixture once per shard, and its
+  fixture lines are credited to the first test of every shard.
 - **Method:** the plugin's `_run_tests_with_coverage` was called directly, so the timings cover the pre-scan
   and reading its data back, not the mutation run. Before any timing was accepted, the coverage map was
   checked: it held all 4,000 tests and 31,600 covered lines, and was identical at 1, 2 and 4 workers.
+  This suite has no session or package fixtures; with them the sharded map is a superset of the serial one.
 - **Machine:** Apple M2 Max, 12 cores, 64 GB, macOS, Python 3.14.0, pytest 9.1.1, coverage.py 7.17.0. The
   machine was shared, with a load average between 4 and 9 during the runs, so read the speedups as
   indicative. Sleep-bound tests parallelize better than CPU-bound ones, which share cores with the other
