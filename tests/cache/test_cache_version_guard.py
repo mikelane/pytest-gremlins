@@ -96,7 +96,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'coverage/selector.py': 'b35af2f065bb47abe40ba63c83d0dc95cacc12de744e261f65aba879f149707b',  # pragma: allowlist secret  # noqa: E501
     # --
-    'coverage/sharded_prescan.py': 'b4d8f58a0ea67be559127f6ac61a26097ed8f18a0b83f5563da6fb94a6747180',  # pragma: allowlist secret  # noqa: E501
+    'coverage/sharded_prescan.py': '325c4da962c15fd9571d971df2b2b38d86d8e7605a5f692e52f8c7d707849ef6',  # pragma: allowlist secret  # noqa: E501
     # --
     'coverage/subprocess_bootstrap.py': 'c0eeeb6ae0d1ee099c901d2a76432502d05309897111be48b9eb616ab37c1463',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -166,7 +166,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'b178ad158f881cd1684bdd6252ecf55b60402de99ec1bd1198fd693401b16c7d',  # pragma: allowlist secret
+    'plugin.py': '06ae10bf911e185cb7ff58483ede1310a29766bbc079f06c57195660ba5d85dd',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --

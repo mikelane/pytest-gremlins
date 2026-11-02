@@ -79,6 +79,7 @@ from pytest_gremlins.coverage import (
 )
 from pytest_gremlins.coverage.context_plugin import GremlinContextPlugin
 from pytest_gremlins.coverage.nodeid_markers import strip_marker_suffix
+from pytest_gremlins.coverage.sharded_prescan import run_sharded_prescan
 from pytest_gremlins.gremlins_options import addopts_without_gremlins
 from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.origin_finder import (
@@ -2960,6 +2961,7 @@ def _run_prescan_reporting_problems(
             rerun_options=gremlin_session.rerun_options,
             xdist_loader_options=gremlin_session.xdist_loader_options,
             timeout=prescan_timeout,
+            prescan_workers=gremlin_session.prescan_workers,
         )
     except CoveragePrescanTimeoutError as timeout_error:
         _warn_prescan_timeout(timeout_error.seconds, gremlin_session.coverage_attempt_timeout)
@@ -3692,6 +3694,32 @@ def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, time
         raise CoveragePrescanLaunchError(launch_error) from launch_error
 
 
+def _launch_sharded_prescan(command: list[str], node_ids: list[str], rootdir: Path, timeout: int, workers: int) -> bool:
+    """Run the pre-scan ``command`` sharded over ``workers`` processes, combining their coverage into ``.coverage``.
+
+    Returns:
+        ``False`` when a shard failed, so no coverage was written; ``True`` otherwise.
+
+    Raises:
+        CoveragePrescanTimeoutError: If the shards exceed ``timeout`` seconds together.
+        CoveragePrescanLaunchError: If the operating system cannot start a shard.
+    """
+    try:
+        return run_sharded_prescan(
+            command,
+            node_ids,
+            worker_count=workers,
+            cwd=rootdir,
+            timeout=timeout,
+            env=_prescan_env(),
+            combined=rootdir / '.coverage',
+        )
+    except subprocess.TimeoutExpired as expired:
+        raise CoveragePrescanTimeoutError(timeout) from expired
+    except OSError as launch_error:
+        raise CoveragePrescanLaunchError(launch_error) from launch_error
+
+
 def _run_tests_with_coverage(
     test_node_ids: list[str],
     rootdir: Path,
@@ -3703,6 +3731,7 @@ def _run_tests_with_coverage(
     rerun_options: Sequence[str] = (),
     xdist_loader_options: Sequence[str] = (),
     timeout: int = DEFAULT_COVERAGE_TIMEOUT_SECONDS,
+    prescan_workers: int = DEFAULT_PRESCAN_WORKERS,
 ) -> dict[str, dict[str, list[int]]]:
     """Run all tests with coverage collection using dynamic contexts.
 
@@ -3747,6 +3776,8 @@ def _run_tests_with_coverage(
             uses an xdist fixture such as ``worker_id`` still runs, and is recorded, in the pre-scan (issue #927).
             Empty for sessions whose pre-scan already has xdist, which keeps their arguments unchanged.
         timeout: Seconds the pre-scan subprocess may run (default 120).
+        prescan_workers: Serial processes to shard the pre-scan over (default 1, a single process). Their coverage
+            is combined; if any shard fails the result is empty, never a partial map (issue #527).
 
     Returns:
         Dict mapping test names to their coverage data (file path -> lines).
@@ -3796,10 +3827,17 @@ def _run_tests_with_coverage(
     ]
 
     try:
-        _launch_prescan(cmd, test_node_ids, rootdir, timeout)
+        if prescan_workers > DEFAULT_PRESCAN_WORKERS:
+            data_written = _launch_sharded_prescan(cmd, test_node_ids, rootdir, timeout, prescan_workers)
+        else:
+            _launch_prescan(cmd, test_node_ids, rootdir, timeout)
+            data_written = True
     except (CoveragePrescanTimeoutError, CoveragePrescanLaunchError):
         coveragerc_path.unlink(missing_ok=True)
         raise
+    if not data_written:
+        coveragerc_path.unlink(missing_ok=True)
+        return {}
 
     coverage_by_test: dict[str, dict[str, list[int]]] = {}
 

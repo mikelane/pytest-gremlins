@@ -17,10 +17,17 @@ from collections.abc import (
 )
 from pathlib import Path
 import subprocess
+import tempfile
 import time
+import warnings
 
 import coverage
+from coverage.exceptions import (
+    CoverageException,
+    CoverageWarning,
+)
 
+from pytest_gremlins.coverage.prescan_shards import split_into_shards
 from pytest_gremlins.node_id_file import command_with_node_ids_file
 
 # pytest exits 0 when all tests pass and 1 when some fail; the pre-scan records coverage either way. Anything else
@@ -73,6 +80,42 @@ def run_prescan_shards(
     return data_files
 
 
+def run_sharded_prescan(
+    command: Sequence[str],
+    node_ids: Sequence[str],
+    *,
+    worker_count: int,
+    cwd: Path,
+    timeout: float,
+    env: Mapping[str, str],
+    combined: Path,
+) -> bool:
+    """Shard ``node_ids`` over at most ``worker_count`` processes and write their combined coverage to ``combined``.
+
+    Args:
+        command: The pre-scan command, whose launcher understands ``--gremlins-node-ids-file``.
+        node_ids: Every node id the pre-scan runs.
+        worker_count: The most shard processes to run at once.
+        cwd: Directory every shard runs in.
+        timeout: Seconds all shards together may take.
+        env: Environment for every shard.
+        combined: Path of the combined coverage data file to create.
+
+    Returns:
+        ``True`` when ``combined`` was written; ``False`` when a shard failed, in which case nothing is written.
+
+    Raises:
+        subprocess.TimeoutExpired: If the shards are still running after ``timeout`` seconds.
+        OSError: If the operating system cannot start a shard.
+    """
+    shards = split_into_shards(node_ids, worker_count)
+    with tempfile.TemporaryDirectory(prefix='pytest_gremlins_shards_', ignore_cleanup_errors=True) as scratch:
+        data_files = run_prescan_shards(command, shards, cwd=cwd, timeout=timeout, env=env, scratch_dir=Path(scratch))
+        if data_files is None:
+            return False
+        return _combined_without_error(data_files, combined)
+
+
 def combine_shard_data(data_files: Sequence[Path], combined: Path) -> None:
     """Merge the shards' coverage data into ``combined``, keeping each line's per-test contexts.
 
@@ -80,7 +123,20 @@ def combine_shard_data(data_files: Sequence[Path], combined: Path) -> None:
         data_files: Coverage data files written by the shards.
         combined: Path of the data file to create.
     """
-    coverage.Coverage(data_file=str(combined)).combine([str(path) for path in data_files], strict=True, keep=True)
+    with warnings.catch_warnings():
+        # A user's ``filterwarnings = error`` must not turn coverage.py's notice about a bad file into a crash;
+        # ``strict`` makes that file raise a CoverageException, which the caller handles.
+        warnings.simplefilter('ignore', CoverageWarning)
+        coverage.Coverage(data_file=str(combined)).combine([str(path) for path in data_files], strict=True, keep=True)
+
+
+def _combined_without_error(data_files: Sequence[Path], combined: Path) -> bool:
+    try:
+        combine_shard_data(data_files, combined)
+    except CoverageException:
+        combined.unlink(missing_ok=True)
+        return False
+    return True
 
 
 def _start_shard(

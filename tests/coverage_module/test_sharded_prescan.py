@@ -15,6 +15,7 @@ import pytest
 from pytest_gremlins.coverage.sharded_prescan import (
     combine_shard_data,
     run_prescan_shards,
+    run_sharded_prescan,
 )
 
 # Stands in for ``coverage run -m pytest_gremlins.coverage.prescan_main``: it reads the shard's node-id file, whose
@@ -122,3 +123,30 @@ class DescribeCombineShardData:
             2: ['a.py::test_one', 'b.py::test_two[x-1]'],
             3: ['b.py::test_two[x-1]'],
         }
+
+
+@pytest.mark.medium
+class DescribeRunShardedPrescan:
+    def _run(self, tmp_path: Path, node_ids: list[str], combined: Path) -> bool:
+        return run_sharded_prescan(
+            [sys.executable, '-c', _FAKE_SHARD],
+            node_ids,
+            worker_count=2,
+            cwd=tmp_path,
+            timeout=30,
+            env=dict(os.environ),
+            combined=combined,
+        )
+
+    def it_reports_failure_and_writes_nothing_when_a_shard_crashes(self, tmp_path: Path) -> None:
+        combined = tmp_path / 'combined'
+
+        assert self._run(tmp_path, ['crash', 'ok'], combined) is False
+        assert not combined.exists()
+
+    def it_reports_failure_and_writes_nothing_when_the_shard_data_cannot_be_combined(self, tmp_path: Path) -> None:
+        combined = tmp_path / 'combined'
+
+        # The fake shards write JSON, not a coverage database, which is what a corrupt data file looks like.
+        assert self._run(tmp_path, ['ok', 'ok2'], combined) is False
+        assert not combined.exists()
