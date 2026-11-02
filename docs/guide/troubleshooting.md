@@ -232,7 +232,11 @@ score ERROR. pytest-gremlins stops the run instead, in these cases only:
   If only some tests are affected, or no sources were found, the run continues as before (a run that finds no
   sources still ends with "No gremlins found").
 
-Starting pytest from a subdirectory of the rootdir (`cd tests && pytest --gremlins`) is not affected.
+Starting pytest from a subdirectory of the rootdir (`cd tests && pytest --gremlins`) is not affected. Neither is a
+`--rootdir` above the project: the coverage pre-scan uses the same rootdir as your session, so gremlins score
+normally even when the project has its own ini file. A `--rootdir` given as a symlinked path to the project
+can give the tests node ids that do not name their file; the run then stops with this message, so pass the real
+path instead.
 
 **Solution:** Run pytest from the rootdir, name the argument file with an absolute path, or drop `--rootdir` and
 point `-c` at a config file in the project root.
