@@ -239,7 +239,8 @@ can give the tests node ids that do not name their file; the run then stops with
 path instead.
 
 **Solution:** Run pytest from the rootdir, name the argument file with an absolute path, or drop `--rootdir` and
-point `-c` at a config file in the project root.
+point `-c` at a config file in the project root. Gremlin runs and the coverage pre-scan read the same `-c` /
+`--config-file` as your session, whatever the file is called (for example `gremlin.ini` holding `pythonpath`).
 
 ---
 

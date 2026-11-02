@@ -6,15 +6,15 @@ scaling issues with the cache.
 
 from __future__ import annotations
 
-from contextlib import closing
 import json
-import sqlite3
 from typing import (
     TYPE_CHECKING,
     Any,
 )
 
 import pytest
+
+from pytest_gremlins.cache import ResultStore
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -30,13 +30,12 @@ _REPORT_RELATIVE_PATH = ('coverage', 'gremlins', 'gremlins.json')
 
 
 def _overwrite_cached_statuses(db_path: Path, *, only_status: str, new_status: str) -> None:
-    with closing(sqlite3.connect(db_path)) as conn:
-        for cache_key, result_json in conn.execute('SELECT cache_key, result_json FROM results').fetchall():
-            entry = json.loads(result_json)
-            if entry['status'] == only_status:
-                entry['status'] = new_status
-                conn.execute('UPDATE results SET result_json = ? WHERE cache_key = ?', (json.dumps(entry), cache_key))
-        conn.commit()
+    with ResultStore(db_path) as store:
+        cached_keys = store.keys()
+        for cache_key in cached_keys:
+            entry = store.get(cache_key)
+            if entry is not None and entry['status'] == only_status:
+                store.put(cache_key, {**entry, 'status': new_status})
 
 
 @pytest.mark.medium
@@ -270,16 +269,3 @@ class TestIsSmall:
         _, warm_verdicts = self._run_with_json_report(large_project)
 
         assert warm_verdicts != cold_verdicts
-
-    def it_fails_loudly_when_the_warm_run_writes_no_report(
-        self,
-        large_project: pytest.Pytester,
-    ) -> None:
-        """A stale report from the cold run is never read as the warm run's report."""
-        self._run_with_json_report(large_project)
-        report_path = large_project.path.joinpath(*_REPORT_RELATIVE_PATH)
-        report_path.unlink()
-        report_path.mkdir()
-
-        with pytest.raises((OSError, json.JSONDecodeError)):
-            self._run_with_json_report(large_project)

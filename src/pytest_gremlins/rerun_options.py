@@ -4,15 +4,16 @@ A mutant is zapped when a covering test fails.  A flaky test that fails for reas
 mutation would zap every mutant it covers, unless the gremlin run reruns it the way the baseline did.
 Rerun options in the project's ``addopts`` and ``PYTEST_ADDOPTS`` already reach gremlin runs, and so do the
 ini settings of any config file pytest finds on its own, because a gremlin run discovers the same file.
-This module carries the rerun options typed on the command line, and, only when a ``-c`` config file holds
-the settings where the gremlin runs usually cannot read it, the rerun ini settings as ``--override-ini`` arguments.
+This module carries the rerun options typed on the command line.  Under ``-c`` the gremlin runs are given the same
+config file (issue #951), so they read the rerun ini settings from it and nothing is copied as ``--override-ini``.
+:func:`resolve_rerun_ini` remains for a session whose ``-c`` file cannot be forwarded: it carries the rerun ini
+settings as ``--override-ini`` arguments.
 pytest strips and splits the value of ``-o``, so a list setting whose items would change (issue #658)
 is not carried.
-A gremlin run under ``-c`` usually finds the project's own config file, which the baseline never read, so
+Such a gremlin run would find the project's own config file, which the baseline never read, so
 every rerun ini key that is not carried is reset to empty: a filter list (``only_rerun``, ``rerun_except``)
 then means no filter, an empty count means no reruns, and an empty delay or backoff factor means the
 plugin's defaults (no delay, factor 1.0), exactly what the baseline ran with.
-(A ``-c`` that reaches a gremlin run through ``PYTEST_ADDOPTS`` is read by that run too.)
 A key is left alone when a parsed option already sets it, wherever it came from (the command line,
 ``addopts`` of the ``-c`` file or ``PYTEST_ADDOPTS``), because pytest-rerunfailures reads the option before
 the ini key and the gremlin runs receive those sources themselves.
@@ -255,8 +256,10 @@ def resolve_rerun_ini(
 ) -> RerunIniResolution:
     r"""Resolve the pytest-rerunfailures ini settings the main session holds into what gremlin runs are given.
 
-    A gremlin run starts its own pytest, which is not given ``-c`` or ``--config-file`` (unless it comes
-    through ``PYTEST_ADDOPTS``) and so does not read that file.  Passing the resolved values on the command
+    Used only when the session's ``-c`` file cannot be forwarded to gremlin runs (they are normally given the
+    same ``-c``, issue #951, and read the settings themselves).  A gremlin run then starts its own pytest, which
+    is not given ``-c`` or ``--config-file`` (unless it comes through ``PYTEST_ADDOPTS``) and so does not read
+    that file.  Passing the resolved values on the command
     line gives that run the settings the baseline ran with.  Each key is read once and lands in exactly one
     place:
 
@@ -269,8 +272,8 @@ def resolve_rerun_ini(
     * ``unforwardable_keys``: the key is a list whose items pytest would change on the way (see
       :func:`survives_override_ini`).  It is left out of ``overrides`` because a changed pattern reruns fewer
       failures than the baseline did and so zaps gremlins the tests did not earn.
-    * ``resets``: an empty ``--override-ini`` for each key that is unset, unreadable or unforwardable.  Under
-      ``-c`` a gremlin run finds the project's own config file, which can restrict reruns or add a delay where
+    * ``resets``: an empty ``--override-ini`` for each key that is unset, unreadable or unforwardable.  Without
+      the ``-c`` file a gremlin run finds the project's own config file, which can restrict reruns or add a delay where
       the baseline had none.  ``--override-ini=key=`` makes pytest-rerunfailures fall back to what the baseline
       ran with: an empty ``only_rerun`` or ``rerun_except`` list is no filter, an empty ``reruns`` is no reruns
       (``int('')`` fails and the plugin ignores the error), and an empty ``reruns_delay`` or
