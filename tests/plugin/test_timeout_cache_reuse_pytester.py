@@ -31,6 +31,16 @@ class DescribeTimeoutChangeAgainstWarmCache:
 
         assert 'cache hit (skipping)' in warm
         assert 'cache miss' not in warm
+        assert 'gremlins from cache' not in warm
+
+    def it_reports_sequential_hits_one_gremlin_at_a_time(self, pytester_with_markers: pytest.Pytester) -> None:
+        pytester_with_markers.makepyfile(calc=SOURCE, test_calc=TEST)
+        _run(pytester_with_markers, 30)
+
+        warm = _run(pytester_with_markers, 30)
+
+        assert 'cache hit (skipping)' in warm
+        assert 'gremlins from cache' not in warm
 
     def it_serves_parallel_verdicts_after_a_timeout_change(self, pytester_with_markers: pytest.Pytester) -> None:
         pytester_with_markers.makepyfile(calc=SOURCE, test_calc=TEST)
