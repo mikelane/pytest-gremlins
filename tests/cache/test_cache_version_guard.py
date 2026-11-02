@@ -40,7 +40,8 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[2] / 'src' / 'pytest_gremlins'
 # Keys are package-relative POSIX paths: a file, or a directory prefix ending in "/".
 # Only renderers that run after every verdict is decided belong here. Nothing on the verdict path imports them:
 # the parallel executors and plugin.py import only reporting/results.py (GremlinResultStatus), and
-# reporting/score.py, reporting/types.py and reporting/__init__.py stay guarded.
+# reporting/score.py, reporting/types.py and reporting/__init__.py stay guarded. plugin.py stays guarded too: it
+# still holds the bootstrap exit-code mapping, the cache-key test hashing and the attributability marker.
 EXCLUDED_FROM_GUARD: dict[str, str] = {
     '__init__.py': 'Holds only __version__, which cz bump rewrites each release; decides no verdict.',
     'reporting/console.py': 'Formats finished results for the terminal; decides no verdict.',
@@ -57,7 +58,7 @@ RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
 # One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
 # between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
 RECORDED_DIGESTS: dict[str, str] = {
-    'argument_files.py': '51f410675614800dad41f0777b0e10cd5f708f4c405abbe22369c0f3ff29f320',  # pragma: allowlist secret
+    'argument_files.py': '1bd1374b822df8936a6967d37d38c95b04ba7b325d0cbceb677c4e32f6ecf2a6',  # pragma: allowlist secret
     # --
     'ast_copy.py': 'f94a3572585f293c0798490a1685f4d77eb970f67c0f53556dcef29826998832',  # pragma: allowlist secret
     # --
@@ -65,7 +66,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': 'efc80d7b9cf558e4f3340869c152387687ffd874f6f1b171a0562dd34bde5d12',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': '0026f6f1151957ff90ae92a01ab4f0c3d126dc399b479836c9724b174bcaa8cb',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/store.py': '5f0948aacf44044a8a66ebc1863479e0df29cec9eb4ae73edd63ac2cfab8173b',  # pragma: allowlist secret
     # --
@@ -161,7 +162,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '8d90451d1a0b75a2a0007544aff4c83c63fae3290419ac3abf68d7fc84b3d703',  # pragma: allowlist secret
+    'plugin.py': '4436db09003120ac9857035677144e4ce32109bf6c9867838958e88bf4ec37dd',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -172,6 +173,10 @@ RECORDED_DIGESTS: dict[str, str] = {
     'reporting/types.py': 'f732c4d57c6173836ac0244f4176fded3e86da043c768d9b55386f42a57d0492',  # pragma: allowlist secret  # noqa: E501
     # --
     'rerun_options.py': '4ff81ee1b119e41b6904e8e8b22b2d2bc54e6ec80a467056314579df2e9abf0c',  # pragma: allowlist secret
+    # --
+    'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
+    # --
+    'verdicts.py': '5f9b4248f4661ba311243b9bc37fc0d2255e7fdef18646aaee362ffbed8f1383',  # pragma: allowlist secret
     # --
     'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }
@@ -384,7 +389,7 @@ class DescribeCacheVersionGuard:
         )
 
     @pytest.mark.parametrize(
-        'guarded_file', ['node_id_args.py', 'rerun_options.py', 'config.py', 'gremlins_options.py']
+        'guarded_file', ['node_id_args.py', 'rerun_options.py', 'config.py', 'gremlins_options.py', 'verdicts.py']
     )
     def it_changes_the_digest_when_a_guarded_file_changes(
         self, guarded_file: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -445,4 +450,22 @@ class DescribeCacheVersionGuard:
     def it_excludes_nothing_that_the_verdict_path_imports(self) -> None:
         guarded = {source.relative_to(PACKAGE_ROOT).as_posix() for source in guarded_sources()}
 
-        assert {'config.py', 'gremlins_options.py', 'plugin.py', 'reporting/results.py'} <= guarded
+        assert {'config.py', 'gremlins_options.py', 'plugin.py', 'verdicts.py', 'reporting/results.py'} <= guarded
+
+    def it_catches_an_edit_to_the_collection_kill_confirmation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        package_copy = _copy_package(tmp_path, monkeypatch)
+        before = _guarded_digests()
+
+        verdicts_source = package_copy / 'verdicts.py'
+        original = 'if result.status != GremlinResultStatus.ZAPPED or result.killing_test != COLLECTION_KILLING_TEST:'
+        assert original in verdicts_source.read_text()
+        verdicts_source.write_text(verdicts_source.read_text().replace(original, 'if True:'))
+
+        assert _guarded_digests() != before
+
+    def it_keeps_the_collection_kill_confirmation_out_of_plugin_py(self) -> None:
+        plugin_source = (PACKAGE_ROOT / 'plugin.py').read_text(encoding='utf-8')
+
+        assert 'def _confirm_collection_kill' not in plugin_source

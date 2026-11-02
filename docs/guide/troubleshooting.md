@@ -207,6 +207,38 @@ If your source code is elsewhere, use: pytest --gremlins --gremlin-targets=your_
 
 ---
 
+### Error: gremlin runs start in the rootdir
+
+**Symptom:**
+
+The run stops before any gremlin executes, with exit code 4 and one message that starts like this:
+
+```text
+ERROR: pytest-gremlins: gremlin runs start in the rootdir /path/to/project, but ...
+```
+
+**Cause:** Gremlin runs always start in the pytest rootdir. When you start the session somewhere else, two things
+that the session resolved against its own directory can fail to resolve from the rootdir, and every gremlin would
+score ERROR. pytest-gremlins stops the run instead, in these cases only:
+
+- `addopts` in your ini file, or `PYTEST_ADDOPTS`, names a relative `@file` that exists from the directory you
+  started in but not from the rootdir (for example `cd sub && pytest --gremlins ..` with `sub/args.txt`).
+  The message names the file. A file that exists from both directories does not stop the run.
+- Gremlins would run, but none of the collected tests has a node id that names its test file from the rootdir.
+  This happens when `--rootdir` points below the tests, when `-c cfg/pytest.ini` puts the rootdir in a
+  subdirectory that does not hold the tests, or when the tests lie outside the rootdir.
+  With `-n` (pytest-xdist) the check runs on the node ids the workers report, before any gremlin is built, and
+  ends with the same message and exit code.
+  If only some tests are affected, or no sources were found, the run continues as before (a run that finds no
+  sources still ends with "No gremlins found").
+
+Starting pytest from a subdirectory of the rootdir (`cd tests && pytest --gremlins`) is not affected.
+
+**Solution:** Run pytest from the rootdir, name the argument file with an absolute path, or drop `--rootdir` and
+point `-c` at a config file in the project root.
+
+---
+
 ### Warning: a file was skipped and not mutation tested
 
 **Symptom:**

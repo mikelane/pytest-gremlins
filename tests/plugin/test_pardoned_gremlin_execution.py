@@ -15,7 +15,6 @@ from pytest_gremlins import plugin as plugin_module
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.plugin import (
     GremlinSession,
-    _immediate_result_if_pardoned,
     _run_batch_mutation_testing,
     _run_mutation_testing,
     _run_parallel_mutation_testing,
@@ -23,6 +22,9 @@ from pytest_gremlins.plugin import (
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
+)
+from pytest_gremlins.verdicts import (
+    _immediate_result_if_pardoned,
 )
 
 

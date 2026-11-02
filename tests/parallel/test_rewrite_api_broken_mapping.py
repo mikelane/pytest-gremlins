@@ -23,11 +23,13 @@ from pytest_gremlins.parallel.lightweight import describe_runner_error
 from pytest_gremlins.plugin import (
     GremlinSession,
     _cache_gremlin_result,
-    _test_gremlin,
 )
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
+)
+from pytest_gremlins.verdicts import (
+    _test_gremlin,
 )
 
 EXPLANATION = f'pytest-gremlins: assertion rewriting is unavailable with pytest {pytest.__version__}'
