@@ -34,7 +34,7 @@ data_file = pathlib.Path(os.environ['COVERAGE_FILE'])
 if behaviour == 'hang':
     time.sleep(60)
 if behaviour != 'nodata':
-    data_file.write_text(json.dumps({'ids': ids, 'cwd': os.getcwd()}), encoding='utf-8')
+    data_file.write_text(json.dumps({'ids': ids, 'cwd': os.getcwd(), 'argv': sys.argv[1:]}), encoding='utf-8')
 sys.exit({'crash': 2, 'testsfail': 1}.get(behaviour, 0))
 """
 
@@ -66,6 +66,11 @@ def _run(tmp_path: Path, shards: list[list[str]], *, timeout: int = 30) -> list[
     )
 
 
+def _last_basetemp(data_file: Path) -> str:
+    argv: list[str] = json.loads(data_file.read_text(encoding='utf-8'))['argv']
+    return [argument for argument in argv if argument.startswith('--basetemp=')][-1]
+
+
 @pytest.mark.medium
 class DescribeRunPrescanShards:
     def it_returns_one_data_file_per_shard_each_written_by_its_own_process(self, tmp_path: Path) -> None:
@@ -82,6 +87,20 @@ class DescribeRunPrescanShards:
 
         assert data_files is not None
         assert Path(json.loads(data_files[0].read_text(encoding='utf-8'))['cwd']).resolve() == tmp_path.resolve()
+
+    def it_gives_each_shard_its_own_basetemp_inside_the_scratch_directory(self, tmp_path: Path) -> None:
+        data_files = _run(tmp_path, [['ok', 'a'], ['ok', 'b']])
+
+        assert data_files is not None
+        basetemps = [_last_basetemp(path) for path in data_files]
+        assert basetemps == [f'--basetemp={tmp_path / "scratch" / f"shard_{index}" / "basetemp"}' for index in range(2)]
+
+    def it_puts_the_basetemp_after_everything_else_so_it_overrides_addopts(self, tmp_path: Path) -> None:
+        data_files = _run(tmp_path, [['ok']])
+
+        assert data_files is not None
+        argv = json.loads(data_files[0].read_text(encoding='utf-8'))['argv']
+        assert argv[-1].startswith('--basetemp=')
 
     def it_treats_failing_tests_as_a_finished_shard(self, tmp_path: Path) -> None:
         assert _run(tmp_path, [['ok'], ['testsfail']]) is not None

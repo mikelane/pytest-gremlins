@@ -294,3 +294,57 @@ class DescribeParallelPrescanInARealRun:
         assert 'running 2/2 tests' not in result.stdout.str()
         assert 'coverage-guided test selection disabled' not in result.stderr.str()
         assert 'Coverage collection returned no data' not in result.stderr.str()
+
+
+_TEMP_FILE_HOLDER = """\
+import time
+
+from sample import double
+
+
+def test_holds_a_temp_file(tmp_path):
+    marker = tmp_path / 'marker.txt'
+    marker.write_text('x')
+    time.sleep(3)
+    assert marker.read_text() == 'x'
+    assert double(1) == 2
+"""
+
+_LATE_TEMP_USER = """\
+import time
+
+from sample import double
+
+
+def test_asks_for_a_temp_dir_late(tmp_path_factory):
+    time.sleep(1)
+    assert tmp_path_factory.mktemp('late').is_dir()
+    assert double(3) == 6
+"""
+
+
+@pytest.fixture
+def basetemp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+    (tmp_path / 'sample.py').write_text('def double(value):\n    return value * 2\n', encoding='utf-8')
+    (tmp_path / 'test_holder.py').write_text(_TEMP_FILE_HOLDER, encoding='utf-8')
+    (tmp_path / 'test_late_user.py').write_text(_LATE_TEMP_USER, encoding='utf-8')
+    return tmp_path
+
+
+@pytest.mark.medium
+class DescribeParallelPrescanWithABasetempInAddopts:
+    def it_records_every_test_even_though_all_shards_were_told_the_same_basetemp(self, basetemp_project: Path) -> None:
+        node_ids = ['test_holder.py::test_holds_a_temp_file', 'test_late_user.py::test_asks_for_a_temp_dir_late']
+        shared_basetemp = f'--basetemp={(basetemp_project / "shared_basetemp").as_posix()}'
+
+        def mapping(workers: int) -> dict[str, dict[str, list[int]]]:
+            return _run_tests_with_coverage(
+                node_ids,
+                basetemp_project,
+                coverage_include=[str((basetemp_project / 'sample.py').resolve())],
+                preserved_addopts=shared_basetemp,
+                prescan_workers=workers,
+            )
+
+        assert mapping(2) == mapping(1)

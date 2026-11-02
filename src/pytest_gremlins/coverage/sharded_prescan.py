@@ -8,6 +8,10 @@ Session- and package-scoped fixtures run once per shard, so their code is credit
 the combined map holds every entry a single process records, plus those fixture lines. Gremlins in fixture code
 therefore select more tests, never fewer.
 
+Each shard also gets its own ``--basetemp`` inside the scratch directory, placed last so it overrides a ``--basetemp``
+from the project's addopts or ``PYTEST_ADDOPTS`` (pytest prepends both). Without it, every shard would clear and
+reuse the same directory and delete the live temp files of the others, as pytest-xdist workers avoid by the same means.
+
 The outcome is all or nothing. If any shard times out, cannot be started, crashes or leaves no data, the caller gets
 no data files at all, because a map built from some of the shards would claim that lines no test covers are
 uncovered. The caller then runs without coverage-guided selection.
@@ -172,7 +176,7 @@ def _start_shard(
     env: Mapping[str, str],
 ) -> subprocess.Popen[bytes]:
     return subprocess.Popen(  # Intentional: runs a pytest pre-scan command
-        command_with_node_ids_file(command, node_ids, shard_dir),
+        [*command_with_node_ids_file(command, node_ids, shard_dir), f'--basetemp={shard_dir / "basetemp"}'],
         cwd=str(cwd),
         env={**env, 'COVERAGE_FILE': str(data_file)},
         stdout=subprocess.DEVNULL,

@@ -860,8 +860,13 @@ Trade-offs to weigh before raising it:
 Failure handling is all-or-nothing. If any shard times out, cannot start, crashes (an exit status other than 0 or
 1, such as a collection error) or leaves no coverage data, gremlins never uses the partial map: coverage-guided
 test selection is disabled and every gremlin runs the whole suite, with the same notices as a failed single-process
-pre-scan. `--gremlin-coverage-timeout` is the limit for the whole parallel pre-scan, not per shard. For measured
-timings see the [profiling report](../performance/profiling-report.md).
+pre-scan. `--gremlin-coverage-timeout` is the limit for the whole parallel pre-scan, not per shard.
+
+Each shard gets its own base temp directory, which overrides any base temp directory set in your addopts or
+`PYTEST_ADDOPTS`, so shards do not delete each other's temp files. Interference through other shared state (a
+database, a port, a fixed file path) is not detected: the test that loses the race fails, and its lines are
+missing from the coverage map. That is not an abstain, which is why such suites should keep the option at `1`.
+For measured timings see the [profiling report](../performance/profiling-report.md).
 
 ### Per-Mutant Timeout
 
