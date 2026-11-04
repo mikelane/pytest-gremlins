@@ -26,6 +26,8 @@ def test_big():
     assert classify(10) == 'small'
 """
 
+PASSING_TEST = 'def test_passes():\n    assert True\n'
+
 ARGUMENT_FILE_CONTENT = '-q\n'
 USAGE_ERROR_EXIT_CODE = 4
 ROOTDIR_PHRASE = 'gremlin runs start in the rootdir'
@@ -121,6 +123,49 @@ class DescribeARelativeArgumentFileOnlyTheSessionDirectoryHas:
         assert '@args.txt' in message
         assert f'run pytest from {pytester_with_markers.path}' in message
         assert 'absolute path' in message
+
+    def it_stops_when_xdist_distributes_the_tests(
+        self, pytester_with_markers: pytest.Pytester, session_directory: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(session_directory)
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '-n', '2', '..')
+
+        _assert_stopped_before_any_gremlin(result)
+
+
+@pytest.mark.medium
+class DescribeARelativeArgumentFileInARunWithNoSourcesToMutate:
+    """#973: no gremlin would run, so an ``@file`` gremlin runs cannot read does not matter."""
+
+    @pytest.fixture
+    def session_directory(self, pytester_with_markers: pytest.Pytester) -> Path:
+        pytester_with_markers.makeini('[pytest]\naddopts = @args.txt\n')
+        (pytester_with_markers.path / 'test_nothing_to_mutate.py').write_text(PASSING_TEST, encoding='utf-8')
+        sub = pytester_with_markers.mkdir('sub')
+        (sub / 'args.txt').write_text(ARGUMENT_FILE_CONTENT, encoding='utf-8')
+        return sub
+
+    def it_reports_no_gremlins_instead_of_stopping(
+        self, pytester_with_markers: pytest.Pytester, session_directory: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(session_directory)
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '..')
+
+        assert result.ret == 0
+        assert 'No gremlins found' in result.stdout.str()
+        assert ROOTDIR_PHRASE not in result.stderr.str() + result.stdout.str()
+
+    def it_does_not_stop_when_xdist_distributes_the_tests(
+        self, pytester_with_markers: pytest.Pytester, session_directory: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(session_directory)
+
+        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '-n', '2', '..')
+
+        assert result.ret == 0
+        assert ROOTDIR_PHRASE not in result.stderr.str() + result.stdout.str()
 
 
 @pytest.mark.medium
