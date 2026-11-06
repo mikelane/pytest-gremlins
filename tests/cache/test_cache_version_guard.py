@@ -76,7 +76,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'config.py': 'f6f54470b3eaa24032742ef90b9b36df7b7215c9d9802b0dcb411b870891cde3',  # pragma: allowlist secret
     # --
-    'control_run.py': '95174e647a5cea01a3bfb54a0498df39c92f7c57168bf2dbaea3ddcbc0584270',  # pragma: allowlist secret
+    'control_run.py': '64aed4241657eb3c9b7de7d56d5a63760bc01fe5dfb98495ac322aba36528762',  # pragma: allowlist secret
     # --
     'coverage/__init__.py': 'aafaa74217e1e3936ede3a3506ba602f27eb43416b0b4b2ebbcadd1817d35854',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -154,15 +154,17 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/lightweight.py': '72dd62804a24be6334d38305fdd058fe70c537e445a73329d1e11c81f22482db',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/persistent_pool.py': 'ff1309b9440529053e646d0af40990a4cb7068cb6c66e637d3cafe1fa0be220b',  # pragma: allowlist secret  # noqa: E501
+    'parallel/persistent_pool.py': '4a2c521ee3306fd271c2047133204595ed27116eaa68dd5658f652e09222673c',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/pool.py': 'dd1e32efef562fe73506be11431bcc516d87b064bbd0edc5f1ff73711989344a',  # pragma: allowlist secret
+    'parallel/pool.py': '5e49d1966917e068d7eaeadd4c73ca4edfa66ef0448a40f49be6a0b7ba677f46',  # pragma: allowlist secret
     # --
     'parallel/pool_config.py': '92d388fc68203d1e6a15ef69ab96ade058d9c3c9f3fb8a86f444f57c8e0fd74a',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'ae3bf9b36401a6d81cb673cba0e545e5e2821224f0e730ca0e4bcad636c22f22',  # pragma: allowlist secret
+    'plugin.py': 'fa4827fceee592167685c632d5a13478e919e8755fa11bfc18159e4849051ceb',  # pragma: allowlist secret
+    # --
+    'process_tree.py': '375588b567d28eaa6d84e2cf62bccdb157341982d07696875327313461abac73',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -176,7 +178,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
     # --
-    'verdicts.py': '369cfc3dac7d71babec502b60c3df8e6c25af33571818a46c6405b74a13c0133',  # pragma: allowlist secret
+    'verdicts.py': 'ccaf3523c8ec292efa2274e843603e5212c348d37ea52943b259b45b66195f3c',  # pragma: allowlist secret
     # --
     'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }

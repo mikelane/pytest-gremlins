@@ -45,7 +45,10 @@ import zlib
 from coverage.exceptions import CoverageException
 import pytest
 
-from pytest_gremlins import node_id_args
+from pytest_gremlins import (
+    node_id_args,
+    process_tree,
+)
 from pytest_gremlins.argument_files import expand_argument_files
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import (
@@ -3738,13 +3741,11 @@ def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, time
     """
     try:
         with tempfile.TemporaryDirectory(prefix='pytest_gremlins_prescan_', ignore_cleanup_errors=True) as node_ids_dir:
-            subprocess.run(  # Intentional: runs pytest test commands
+            process_tree.run_bounded(
                 command_with_node_ids_file(command, node_ids, Path(node_ids_dir)),
                 cwd=str(rootdir),
-                capture_output=True,
-                timeout=timeout,
-                check=False,
                 env=_prescan_env(),
+                timeout=timeout,
             )
     except subprocess.TimeoutExpired as expired:
         raise CoveragePrescanTimeoutError(timeout) from expired

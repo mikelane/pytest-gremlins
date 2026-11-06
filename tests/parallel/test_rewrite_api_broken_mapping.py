@@ -93,7 +93,7 @@ class DescribeRewriteApiBrokenMapping:
                 args=['x'], returncode=REWRITE_API_BROKEN_EXIT_CODE, stdout=b'', stderr=b''
             )
 
-        monkeypatch.setattr('pytest_gremlins.plugin.subprocess.run', fake_run)
+        monkeypatch.setattr('pytest_gremlins.process_tree.run_bounded', fake_run)
 
         result = _test_gremlin(_gremlin(), ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
 

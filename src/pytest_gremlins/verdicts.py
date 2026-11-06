@@ -16,6 +16,7 @@ import sys
 import time
 from typing import TYPE_CHECKING
 
+from pytest_gremlins import process_tree
 from pytest_gremlins.cache.incremental import MILLISECONDS_PER_SECOND
 from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.control_run import (
@@ -494,14 +495,7 @@ def _run_gremlin_subprocess(
     effective_command = lightweight_cmd if lightweight_cmd is not None else test_command
 
     try:
-        subprocess_outcome = subprocess.run(  # Intentional: runs pytest test commands
-            effective_command,
-            cwd=str(rootdir),
-            env=env,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
+        subprocess_outcome = process_tree.run_bounded(effective_command, cwd=str(rootdir), env=env, timeout=timeout)
 
         # pytest uses specific exit codes. Only exit code 1 means tests ran
         # and failed (i.e. the mutation was caught). Other non-zero exit codes

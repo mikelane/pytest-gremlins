@@ -114,7 +114,7 @@ class DescribeGeneratedCoverageRc:
         def capture_rc(*_args: object, **_kwargs: object) -> None:
             captured.append((tmp_path / '.coveragerc.gremlins').read_text())
 
-        with patch('pytest_gremlins.plugin.subprocess.run', side_effect=capture_rc):
+        with patch('pytest_gremlins.process_tree.run_bounded', side_effect=capture_rc):
             _run_tests_with_coverage(['t.py::test_a'], tmp_path, coverage_include=coverage_include)
 
         assert 'core = ctrace' in captured[0]
@@ -132,7 +132,7 @@ class DescribeSubprocessEnvironment:
         monkeypatch.setenv('COVERAGE_CORE', 'sysmon')
         fake_run = create_autospec(subprocess.run)
 
-        with patch('pytest_gremlins.plugin.subprocess.run', fake_run):
+        with patch('pytest_gremlins.process_tree.run_bounded', fake_run):
             _run_tests_with_coverage(['t.py::test_a'], tmp_path)
 
         forwards_coverage_core = 'COVERAGE_CORE' in fake_run.call_args.kwargs['env']
@@ -142,7 +142,7 @@ class DescribeSubprocessEnvironment:
         monkeypatch.setenv('COVERAGE_FILE', str(tmp_path / 'ci-coverage.db'))
         fake_run = create_autospec(subprocess.run)
 
-        with patch('pytest_gremlins.plugin.subprocess.run', fake_run):
+        with patch('pytest_gremlins.process_tree.run_bounded', fake_run):
             _run_tests_with_coverage(['t.py::test_a'], tmp_path)
 
         forwards_coverage_file = 'COVERAGE_FILE' in fake_run.call_args.kwargs['env']
@@ -152,7 +152,7 @@ class DescribeSubprocessEnvironment:
         monkeypatch.setenv('GREMLINS_531_MARKER', 'kept')
         fake_run = create_autospec(subprocess.run)
 
-        with patch('pytest_gremlins.plugin.subprocess.run', fake_run):
+        with patch('pytest_gremlins.process_tree.run_bounded', fake_run):
             _run_tests_with_coverage(['t.py::test_a'], tmp_path)
 
         forwarded_marker = fake_run.call_args.kwargs['env'].get('GREMLINS_531_MARKER')

@@ -118,14 +118,14 @@ class DescribeRunTestsWithCoverageTimeout:
     """_run_tests_with_coverage honours the timeout and reports expiry distinctly."""
 
     def it_defaults_the_subprocess_timeout_to_120_seconds(self, tmp_path: Path) -> None:
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True) as run:
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True) as run:
             _run_tests_with_coverage([], tmp_path)
 
         assert run.call_args.kwargs['timeout'] == DEFAULT_TIMEOUT_SECONDS
 
     @pytest.mark.parametrize('seconds', [1, 45, 900])
     def it_passes_the_configured_timeout_to_the_subprocess(self, tmp_path: Path, seconds: int) -> None:
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True) as run:
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True) as run:
             _run_tests_with_coverage([], tmp_path, timeout=seconds)
 
         assert run.call_args.kwargs['timeout'] == seconds
@@ -134,7 +134,7 @@ class DescribeRunTestsWithCoverageTimeout:
         expired = subprocess.TimeoutExpired(cmd='pytest', timeout=7)
 
         with (
-            patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=expired),
+            patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=expired),
             pytest.raises(CoveragePrescanTimeoutError) as excinfo,
         ):
             _run_tests_with_coverage([], tmp_path, timeout=7)
@@ -145,7 +145,7 @@ class DescribeRunTestsWithCoverageTimeout:
         expired = subprocess.TimeoutExpired(cmd='pytest', timeout=7)
 
         with (
-            patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=expired),
+            patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=expired),
             pytest.raises(CoveragePrescanTimeoutError),
         ):
             _run_tests_with_coverage([], tmp_path, timeout=7)

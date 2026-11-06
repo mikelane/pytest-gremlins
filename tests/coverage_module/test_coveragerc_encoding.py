@@ -27,18 +27,18 @@ class DescribeCoveragercEncoding:
         # because Linux decodes it under the C locale.
         script = textwrap.dedent(
             rf"""
-            import sys
+            import subprocess, sys
             from pathlib import Path
-            from pytest_gremlins import plugin
+            from pytest_gremlins import plugin, process_tree
 
             source_path = str(Path({str(tmp_path)!r}) / 'Jos\xe9' / 'mod.py')
 
             def fake_run(cmd, **kwargs):
                 rcfile = next(arg for arg in cmd if arg.startswith('--rcfile=')).split('=', 1)[1]
                 sys.stdout.buffer.write(Path(rcfile).read_bytes())
-                raise plugin.subprocess.TimeoutExpired(cmd, 0)
+                raise subprocess.TimeoutExpired(cmd, 0)
 
-            plugin.subprocess.run = fake_run
+            process_tree.run_bounded = fake_run
             try:
                 plugin._run_tests_with_coverage(['t.py::t'], Path({str(tmp_path)!r}), coverage_include=[source_path])
             except plugin.CoveragePrescanTimeoutError:

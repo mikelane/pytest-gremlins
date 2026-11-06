@@ -13,6 +13,8 @@
     "build/**"
   ],
   "words": [
+    "taskkill",
+    "setsid",
     "Anders",
     "PYTHONOPTIMIZE",
     "ASGI",

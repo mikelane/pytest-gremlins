@@ -342,6 +342,11 @@ that repeats counts as `TIMEOUT` (a kill) only when the gremlin's tests, run wit
 mutant, finish within half the timeout. Otherwise the gremlin is reported as `ERROR`. See
 [Error: Test timeout exceeded](../guide/troubleshooting.md#error-test-timeout-exceeded).
 
+Every test run (gremlin, timeout confirmation, control run and coverage pre-scan) starts in its own process
+group (`start_new_session` on POSIX, `CREATE_NEW_PROCESS_GROUP` on Windows). On a timeout or an interrupt the
+whole group is ended, so children of a timed-out test do not pile up, and reading the output afterwards is bounded
+so a stray process holding the pipes cannot stall a worker. This lives in `pytest_gremlins.process_tree`.
+
 ## Performance Characteristics
 
 ### Scaling
