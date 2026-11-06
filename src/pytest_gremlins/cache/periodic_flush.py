@@ -35,10 +35,10 @@ class PeriodicFlusher:
     once per ``every_seconds``. Nothing here is thread-safe: call it from the thread that owns the cache
     connection.
 
-    A flush that fails (disk full, database locked) never raises: the failure is logged once per flusher,
-    the pending results stay pending, and the next flush retries them. The cache's own ``close()`` still
-    retries them last, which is where a persistent failure surfaces. After a failure :meth:`flush_if_due`
-    waits a full interval before trying again, so a broken disk is not hit on every result.
+    A flush that fails (disk full, database locked) never raises: the first failure is logged as a warning
+    and later ones at DEBUG, the pending results stay pending, and the next flush retries them. The cache's
+    own ``close()`` still retries them last, which is where a persistent failure surfaces. After a failure
+    :meth:`flush_if_due` waits a full interval before trying again, so a broken disk is not hit on every result.
 
     Args:
         flush: Commits the deferred writes.
@@ -91,10 +91,18 @@ class PeriodicFlusher:
 
     def _note_failure(self, flush_error: Exception) -> None:
         self._retry_not_before = self._clock() + self.every_seconds
-        if not self._warned:
-            self._warned = True
-            logger.warning(
-                'Could not write finished gremlin results to the cache (%s). '
-                'The run continues and the cache retries the writes when it closes.',
+        if self._warned:
+            logger.debug(
+                'Cache flush failed again (%s: %s); the writes stay pending for the next flush',
+                type(flush_error).__name__,
                 flush_error,
             )
+            return
+        self._warned = True
+        logger.warning(
+            'Could not write finished gremlin results to the cache (%s: %s). '
+            'The run continues, retries the writes at the next flush, and the cache retries them again when it '
+            'closes. Further flush failures are logged at DEBUG.',
+            type(flush_error).__name__,
+            flush_error,
+        )

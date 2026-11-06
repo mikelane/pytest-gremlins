@@ -6,6 +6,7 @@ as other gremlins have reached the cache file, the way a CI timeout or an OOM ki
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import closing
 import os
 from pathlib import Path
@@ -77,10 +78,10 @@ def _kill_group(process: subprocess.Popen[bytes]) -> None:
         process.stdout.close()
 
 
-def _wait_until(condition: object) -> None:
+def _wait_until(condition: Callable[[], bool]) -> None:
     deadline = time.monotonic() + WAIT_LIMIT_SECONDS
     while time.monotonic() < deadline:
-        if condition():  # type: ignore[operator]
+        if condition():
             return
         time.sleep(POLL_SECONDS)
     pytest.fail('the run did not reach the expected state in time')

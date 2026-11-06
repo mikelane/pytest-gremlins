@@ -34,8 +34,9 @@ class DescribePeriodicFlusher:
         flushes: list[int] = []
         flusher = PeriodicFlusher(lambda: flushes.append(1), every_results=3, every_seconds=10.0, clock=FakeClock())
 
-        for _ in range(3):
-            flusher.note_result()
+        flusher.note_result()
+        flusher.note_result()
+        flusher.note_result()
         flusher.flush_if_due()
 
         assert flushes == [1]
@@ -44,9 +45,12 @@ class DescribePeriodicFlusher:
         flushes: list[int] = []
         flusher = PeriodicFlusher(lambda: flushes.append(1), every_results=2, every_seconds=10.0, clock=FakeClock())
 
-        for _ in range(3):
-            flusher.note_result()
-            flusher.flush_if_due()
+        flusher.note_result()
+        flusher.flush_if_due()
+        flusher.note_result()
+        flusher.flush_if_due()
+        flusher.note_result()
+        flusher.flush_if_due()
 
         assert flushes == [1]
 
@@ -97,21 +101,29 @@ class DescribePeriodicFlusher:
 
 
 class FailingThenWorkingFlush:
-    def __init__(self, failures: int) -> None:
+    def __init__(self, failures: int, error: Exception | None = None) -> None:
         self.failures_left = failures
+        self.error = error if error is not None else sqlite3.OperationalError('database or disk is full')
         self.successes = 0
 
     def __call__(self) -> None:
         if self.failures_left:
             self.failures_left -= 1
-            raise sqlite3.OperationalError('database or disk is full')
+            raise self.error
         self.successes += 1
+
+
+_SWALLOWED_ERRORS = [
+    pytest.param(sqlite3.OperationalError('database or disk is full'), id='sqlite-error'),
+    pytest.param(OSError(28, 'No space left on device'), id='os-error'),
+]
 
 
 @pytest.mark.small
 class DescribePeriodicFlusherWhenFlushFails:
-    def it_does_not_raise_and_keeps_the_pending_results(self) -> None:
-        flush = FailingThenWorkingFlush(failures=1)
+    @pytest.mark.parametrize('error', _SWALLOWED_ERRORS)
+    def it_does_not_raise_and_keeps_the_pending_results(self, error: Exception) -> None:
+        flush = FailingThenWorkingFlush(failures=1, error=error)
         flusher = PeriodicFlusher(flush, every_results=1, every_seconds=5.0, clock=FakeClock())
         flusher.note_result()
 
@@ -142,6 +154,37 @@ class DescribePeriodicFlusherWhenFlushFails:
 
         assert 'database or disk is full' in caplog.text
 
+    def it_names_the_error_type_in_the_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        flusher = PeriodicFlusher(FailingThenWorkingFlush(failures=1), every_results=1, clock=FakeClock())
+        flusher.note_result()
+
+        with caplog.at_level(logging.WARNING):
+            flusher.flush()
+
+        assert 'OperationalError' in caplog.text
+
+    def it_says_the_writes_are_retried_at_the_next_flush_and_on_close(self, caplog: pytest.LogCaptureFixture) -> None:
+        flusher = PeriodicFlusher(FailingThenWorkingFlush(failures=1), every_results=1, clock=FakeClock())
+        flusher.note_result()
+
+        with caplog.at_level(logging.WARNING):
+            flusher.flush()
+
+        assert ('retries the writes at the next flush' in caplog.text, 'when it closes' in caplog.text) == (True, True)
+
+    def it_logs_each_later_failure_at_debug(self, caplog: pytest.LogCaptureFixture) -> None:
+        flusher = PeriodicFlusher(
+            FailingThenWorkingFlush(failures=3), every_results=1, every_seconds=5.0, clock=FakeClock()
+        )
+        flusher.note_result()
+
+        with caplog.at_level(logging.DEBUG, logger='pytest_gremlins.cache.periodic_flush'):
+            flusher.flush()
+            flusher.flush()
+            flusher.flush()
+
+        assert len([record for record in caplog.records if record.levelno == logging.DEBUG]) == 2
+
     def it_waits_a_full_interval_before_retrying_a_failed_count_flush(self) -> None:
         flush = FailingThenWorkingFlush(failures=1)
         clock = FakeClock()
@@ -157,3 +200,12 @@ class DescribePeriodicFlusherWhenFlushFails:
         flusher.flush_if_due()
 
         assert (retried_too_early, flush.successes) == (0, 1)
+
+    def it_lets_an_error_that_is_not_a_storage_failure_propagate(self) -> None:
+        flusher = PeriodicFlusher(
+            FailingThenWorkingFlush(failures=1, error=RuntimeError('a bug in the flush')), clock=FakeClock()
+        )
+        flusher.note_result()
+
+        with pytest.raises(RuntimeError, match='a bug in the flush'):
+            flusher.flush()

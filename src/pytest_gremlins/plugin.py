@@ -4257,7 +4257,7 @@ def _confirm_and_cache_pooled_results(
     test_commands: dict[str, list[str]],
     gremlin_session: GremlinSession,
     rootdir: Path,
-    already_cached: AbstractSet[str] = frozenset(),
+    already_cached: AbstractSet[str],
 ) -> list[GremlinResult]:
     """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them.
 

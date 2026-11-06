@@ -8,6 +8,7 @@ from collections.abc import (
     Iterator,
 )
 from concurrent.futures import Future
+from pathlib import Path
 from unittest.mock import (
     create_autospec,
     patch,
@@ -85,21 +86,32 @@ def _collect(
         futures,
         aggregator or ResultAggregator(total_gremlins=len(results)),
         {result.gremlin_id: _gremlin(result.gremlin_id) for result in results},
-        {result.gremlin_id: [] for result in results},
+        {result.gremlin_id: _tests_for(result.gremlin_id) for result in results},
         gremlin_session,
     )
+
+
+def _tests_for(gremlin_id: str) -> list[str]:
+    return [f'tests/test_{gremlin_id}.py::test_it']
 
 
 _WaitOutcome = tuple[set[Future[WorkerResult]], set[Future[WorkerResult]]]
 
 
 def _scripted_wait(
-    *outcomes: _WaitOutcome, on_exhausted: Callable[[], None] = lambda: None
+    *outcomes: _WaitOutcome,
+    on_exhausted: Callable[[], None] = lambda: None,
+    seen_kwargs: list[dict[str, object]] | None = None,
 ) -> Callable[..., _WaitOutcome]:
-    """Stand in for ``wait``: yield ``outcomes`` in turn, then run ``on_exhausted`` and raise KeyboardInterrupt."""
+    """Stand in for ``wait``: yield ``outcomes`` in turn, then run ``on_exhausted`` and raise KeyboardInterrupt.
+
+    Each call's keyword arguments are appended to ``seen_kwargs`` when it is given.
+    """
     remaining = iter(outcomes)
 
-    def scripted(*_: object, **__: object) -> _WaitOutcome:
+    def scripted(*_: object, **kwargs: object) -> _WaitOutcome:
+        if seen_kwargs is not None:
+            seen_kwargs.append(kwargs)
         outcome = next(remaining, None)
         if outcome is None:
             on_exhausted()
@@ -123,7 +135,9 @@ def _collect_stuck(
 
 @pytest.mark.small
 class DescribeCollectPooledResults:
-    def it_caches_final_verdicts_as_they_arrive(self, gremlin_session: GremlinSession, cache_calls: list[str]) -> None:
+    def it_caches_final_verdicts_as_they_arrive(
+        self, gremlin_session: GremlinSession, cache: IncrementalCache, cache_calls: list[str]
+    ) -> None:
         cached = _collect(
             [
                 WorkerResult('g1', GremlinResultStatus.SURVIVED),
@@ -134,14 +148,63 @@ class DescribeCollectPooledResults:
 
         assert cached == {'g1', 'g2'}
         assert sorted(cache_calls) == ['g1', 'g2']
+        cache.flush.assert_called_once_with()  # type: ignore[attr-defined]
+
+    def it_hands_the_cache_the_worker_verdict_and_the_gremlin_selection(self, gremlin_session: GremlinSession) -> None:
+        with patch.object(plugin, '_cache_gremlin_result') as cache_result:
+            _collect(
+                [WorkerResult('g1', GremlinResultStatus.ZAPPED, killing_test='tests/test_a.py::test_a')],
+                gremlin_session,
+            )
+
+        gremlin, selected_tests, result, session = cache_result.call_args.args
+        assert (gremlin.gremlin_id, selected_tests, session) == ('g1', _tests_for('g1'), gremlin_session)
+        assert (result.status, result.killing_test) == (GremlinResultStatus.ZAPPED, 'tests/test_a.py::test_a')
+
+    def it_records_a_worker_failure_as_an_error_without_caching_it(
+        self, gremlin_session: GremlinSession, cache: IncrementalCache, cache_calls: list[str]
+    ) -> None:
+        failed: Future[WorkerResult] = Future()
+        failed.set_exception(RuntimeError('worker crashed'))
+        aggregator = ResultAggregator(total_gremlins=1)
+
+        cached = _collect_pooled_results(
+            {failed: 'g1'}, aggregator, {'g1': _gremlin('g1')}, {'g1': []}, gremlin_session
+        )
+
+        assert cached == set()
+        assert cache_calls == []
+        cache.flush.assert_not_called()  # type: ignore[attr-defined]
+        assert [(r.gremlin_id, r.status, r.error_output) for r in aggregator.get_results()] == [
+            ('g1', GremlinResultStatus.ERROR, 'worker crashed')
+        ]
+
+    @pytest.mark.usefixtures('cache_calls')
+    def it_does_not_flush_the_cache_when_caching_is_off(
+        self, gremlin_session: GremlinSession, cache: IncrementalCache
+    ) -> None:
+        gremlin_session.cache_enabled = False
+
+        _collect([WorkerResult('g1', GremlinResultStatus.SURVIVED)], gremlin_session)
+
+        cache.flush.assert_not_called()  # type: ignore[attr-defined]
+
+    @pytest.mark.usefixtures('cache_calls')
+    def it_collects_without_a_cache_object(self, gremlin_session: GremlinSession) -> None:
+        gremlin_session.cache = None
+
+        cached = _collect([WorkerResult('g1', GremlinResultStatus.SURVIVED)], gremlin_session)
+
+        assert cached == {'g1'}
 
     def it_does_not_cache_a_timeout_before_it_is_confirmed(
-        self, gremlin_session: GremlinSession, cache_calls: list[str]
+        self, gremlin_session: GremlinSession, cache: IncrementalCache, cache_calls: list[str]
     ) -> None:
         cached = _collect([WorkerResult('g1', GremlinResultStatus.TIMEOUT)], gremlin_session)
 
         assert cached == set()
         assert cache_calls == []
+        cache.flush.assert_not_called()  # type: ignore[attr-defined]
 
     def it_does_not_cache_a_collection_kill_before_it_is_confirmed(
         self, gremlin_session: GremlinSession, cache_calls: list[str]
@@ -185,6 +248,23 @@ class DescribeCollectPooledResults:
 
         assert flushes_before_second_wait == [1]
 
+    @pytest.mark.usefixtures('cache_calls')
+    def it_waits_no_longer_than_the_flush_interval(self, gremlin_session: GremlinSession) -> None:
+        stuck: Future[WorkerResult] = Future()
+        seen_kwargs: list[dict[str, object]] = []
+        flusher = PeriodicFlusher(lambda: None, every_seconds=7.5)
+
+        with (
+            patch.object(plugin, 'wait', new=_scripted_wait(seen_kwargs=seen_kwargs)),
+            patch.object(plugin, '_cache_flusher_for', return_value=flusher),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            _collect_pooled_results(
+                {stuck: 'g1'}, ResultAggregator(total_gremlins=1), {'g1': _gremlin('g1')}, {'g1': []}, gremlin_session
+            )
+
+        assert seen_kwargs[0]['timeout'] == pytest.approx(7.5)
+
 
 @pytest.mark.small
 class DescribeConfirmAndCachePooledResults:
@@ -197,6 +277,12 @@ class DescribeConfirmAndCachePooledResults:
         ]
         test_commands: dict[str, list[str]] = {'g1': [], 'g2': []}
 
-        _confirm_and_cache_pooled_results(results, test_commands, gremlin_session, rootdir=None, already_cached={'g1'})  # type: ignore[arg-type]
+        confirmed = _confirm_and_cache_pooled_results(
+            results, test_commands, gremlin_session, rootdir=Path(), already_cached={'g1'}
+        )
 
         assert cache_calls == ['g2']
+        assert [(r.gremlin.gremlin_id, r.status) for r in confirmed] == [
+            ('g1', GremlinResultStatus.SURVIVED),
+            ('g2', GremlinResultStatus.ZAPPED),
+        ]

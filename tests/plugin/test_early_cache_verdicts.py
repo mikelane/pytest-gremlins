@@ -53,13 +53,18 @@ class DescribeVerdictIsFinal:
     def it_accepts_verdicts_the_confirmation_never_changes(
         self, status: GremlinResultStatus, killing_test: str | None
     ) -> None:
-        assert _verdict_is_final(_result(status, killing_test))
+        assert _verdict_is_final(_result(status, killing_test)) is True
 
     @pytest.mark.parametrize(('status', 'killing_test'), _PENDING_RESULTS)
     def it_rejects_verdicts_the_confirmation_may_change(
         self, status: GremlinResultStatus, killing_test: str | None
     ) -> None:
-        assert not _verdict_is_final(_result(status, killing_test))
+        assert _verdict_is_final(_result(status, killing_test)) is False
+
+    def it_classifies_every_status(self) -> None:
+        classified = {param.values[0] for param in [*_FINAL_RESULTS, *_PENDING_RESULTS]}
+
+        assert classified == set(GremlinResultStatus)
 
     @pytest.mark.parametrize(('status', 'killing_test'), _FINAL_RESULTS)
     def it_agrees_with_the_confirmation_which_returns_final_verdicts_untouched(
