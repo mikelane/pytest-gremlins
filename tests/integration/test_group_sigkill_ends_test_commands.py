@@ -42,10 +42,6 @@ def test_add():
 
 @pytest.mark.large
 @pytest.mark.skipif(sys.platform == 'win32', reason='process groups and SIGKILL are POSIX')
-@pytest.mark.xfail(
-    strict=True,
-    reason='adversarial QA run 4: a command in its own session outlives a SIGKILL to the run group (#975)',
-)
 @pytest.mark.parametrize(
     'mode',
     [

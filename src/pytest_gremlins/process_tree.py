@@ -18,7 +18,9 @@ places:
 * An ``os.register_at_fork`` hook, also registered at import, empties the registry in a forked child, which must not
   end its parent's commands.
 
-SIGKILL cannot be handled and can still leave a command's processes behind.
+A SIGKILL of the calling process cannot be handled, so each calling process also starts a watchdog helper (not on
+Windows) that holds the read end of a pipe and kills the commands' process groups when the caller dies and the pipe
+reaches end-of-file.
 """
 
 from __future__ import annotations
@@ -56,6 +58,9 @@ PIPE_DRAIN_SECONDS = 5.0
 
 WORKER_STOP_SECONDS = 2.0
 """How long, in total, the SIGTERM cleanup waits for pool workers to end their commands and exit."""
+
+WATCHDOG_STOP_SECONDS = 2.0
+"""How long a normal exit waits for the watchdog helper to see the closed pipe and exit."""
 
 _TASKKILL_TIMEOUT_SECONDS = 10
 """How long Windows ``taskkill`` may take to end a tree before the direct child alone is killed."""
@@ -130,11 +135,88 @@ def _wait_for(
 def _register(process: subprocess.Popen[bytes]) -> None:
     with _live_commands_lock:
         _live_commands[process.pid] = (os.getpid(), process)
+    _tell_watchdog('+', process.pid)
 
 
 def _unregister(process: subprocess.Popen[bytes]) -> None:
     with _live_commands_lock:
         _live_commands.pop(process.pid, None)
+    _tell_watchdog('-', process.pid)
+
+
+_WATCHDOG_SOURCE = """
+import os, signal, sys
+for name in ('SIGINT', 'SIGTERM', 'SIGHUP'):
+    signal.signal(getattr(signal, name), signal.SIG_IGN)
+groups = set()
+for line in sys.stdin.buffer:
+    try:
+        action, group = line[:1], int(line[1:])
+    except ValueError:
+        continue
+    if action == b'+':
+        groups.add(group)
+    elif action == b'-':
+        groups.discard(group)
+for group in groups:
+    try:
+        os.killpg(group, signal.SIGKILL)
+    except OSError:
+        pass
+"""
+"""The watchdog program: it keeps the process groups it is told about and SIGKILLs them when its stdin closes."""
+
+
+class _Watchdog:
+    """A helper process, in its own session, that ends this process's test commands if this process dies.
+
+    The write end of its stdin is the deadman pipe. It reaches end-of-file only when every holder of the write end
+    is gone, whatever killed them (SIGKILL included), and then the watchdog kills the commands' process groups.
+    """
+
+    def __init__(self) -> None:
+        self.owner = os.getpid()
+        self.process = subprocess.Popen(  # Intentional: starts the watchdog helper
+            [sys.executable, '-I', '-S', '-c', _WATCHDOG_SOURCE],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        assert self.process.stdin is not None  # noqa: S101 - stdin=PIPE
+        self.pipe_fd = self.process.stdin.fileno()
+
+    def tell(self, action: str, group: int) -> None:
+        assert self.process.stdin is not None  # noqa: S101 - stdin=PIPE
+        self.process.stdin.write(f'{action}{group}\n'.encode())
+        self.process.stdin.flush()
+
+
+_watchdog: _Watchdog | None = None
+
+
+def watchdog_pid() -> int | None:
+    """Return the pid of this process's watchdog, or ``None`` before it was started or where there is none."""
+    with _live_commands_lock:
+        current = _watchdog
+    return current.process.pid if current is not None and current.owner == os.getpid() else None
+
+
+def _tell_watchdog(action: str, group: int) -> None:
+    """Tell the watchdog about a command's process group; best effort, since the run itself does not need it."""
+    global _watchdog  # noqa: PLW0603 - one watchdog per process
+    if sys.platform == 'win32':
+        return
+    with _live_commands_lock:
+        if _watchdog is None or _watchdog.owner != os.getpid():
+            if action == '-':
+                return
+            with contextlib.suppress(OSError):
+                _watchdog = _Watchdog()
+        current = _watchdog
+        if current is not None:
+            with contextlib.suppress(OSError, ValueError):
+                current.tell(action, group)
 
 
 def live_command_count() -> int:
@@ -159,6 +241,20 @@ def kill_live_commands() -> None:
             _kill_tree(process)
 
 
+def _stop_watchdog() -> None:
+    """Close the deadman pipe and reap the watchdog at a normal exit, so no zombie or ResourceWarning is left."""
+    current = _watchdog
+    if current is None or current.owner != os.getpid():
+        return
+    with contextlib.suppress(OSError, ValueError):
+        if current.process.stdin is not None:
+            current.process.stdin.close()
+    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+        current.process.wait(timeout=WATCHDOG_STOP_SECONDS)
+
+
+# Registered first so that it runs last: the live commands are ended before the watchdog is released.
+atexit.register(_stop_watchdog)
 atexit.register(kill_live_commands)
 
 
@@ -243,9 +339,15 @@ def sigterm_cleanup() -> Iterator[None]:
 
 
 def _forget_inherited_commands() -> None:
-    global _live_commands_lock  # noqa: PLW0603 - a lock held by another thread at fork time stays locked
+    global _live_commands_lock, _watchdog  # noqa: PLW0603 - a lock held by another thread at fork time stays locked
     _live_commands_lock = threading.RLock()
     _live_commands.clear()
+    # The child holds a copy of its parent's watchdog pipe. Closing it here keeps the child from holding the pipe open
+    # past the parent's death, which would stop the watchdog from ever seeing end-of-file.
+    if _watchdog is not None and _watchdog.owner == os.getppid():
+        with contextlib.suppress(OSError, ValueError):
+            os.close(_watchdog.pipe_fd)
+    _watchdog = None
 
 
 if hasattr(os, 'register_at_fork'):

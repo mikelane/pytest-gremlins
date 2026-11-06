@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
 import time
 
@@ -73,3 +74,31 @@ def kill_quietly(pid: int) -> None:
         os.kill(pid, _FORCE_KILL)
     except (ProcessLookupError, PermissionError):
         return
+
+
+def pids_with_env_marker(marker: str) -> list[int]:
+    """Return the pids of this user's other processes whose environment mentions ``marker`` (POSIX, via ``ps``).
+
+    A process inherits the environment its parent was started with, so a marker set before a run marks every
+    process the run started, however deep. The listing process itself and this one are left out.
+    """
+    list_with_environment = ['-E', '-ww'] if sys.platform == 'darwin' else ['e', 'ww']
+    with subprocess.Popen(
+        ['ps', *list_with_environment, '-x', '-o', 'pid=,command='],  # noqa: S607
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as listing:
+        output, _ = listing.communicate(timeout=STARTUP_DEADLINE_SECONDS)
+        excluded = {os.getpid(), listing.pid}
+    pids = [int(line.split(None, 1)[0]) for line in output.splitlines() if line.strip() and marker in line]
+    return [pid for pid in pids if pid not in excluded]
+
+
+def wait_until_no_process_has_env_marker(marker: str) -> list[int]:
+    """Return the pids still carrying ``marker`` after ``REAP_DEADLINE_SECONDS`` (empty when all are gone)."""
+    deadline = time.monotonic() + REAP_DEADLINE_SECONDS
+    leftover = pids_with_env_marker(marker)
+    while leftover and time.monotonic() < deadline:
+        time.sleep(POLL_SECONDS)
+        leftover = pids_with_env_marker(marker)
+    return leftover

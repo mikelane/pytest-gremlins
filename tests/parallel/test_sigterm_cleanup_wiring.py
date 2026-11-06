@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
-import signal
-import sys
 from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
@@ -63,30 +61,6 @@ class DescribeWorkerPoolsInstallSigtermCleanup:
             pass
 
         assert _RecordingExecutor.created_with['initializer'] is process_tree.install_worker_sigterm_cleanup
-
-
-@pytest.mark.small
-@pytest.mark.skipif(sys.platform == 'win32', reason='SIGTERM handlers are POSIX')
-class DescribeMutationRunSigtermCleanup:
-    """``pytest_sessionfinish`` holds the cleanup from the pre-scan through the dispatch (see the integration tests)."""
-
-    def it_leaves_the_enclosing_sigterm_cleanup_in_place_while_the_dispatched_run_executes(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        seen: list[object] = []
-
-        def fake_run(*_args: object) -> list[object]:
-            seen.append(signal.getsignal(signal.SIGTERM))
-            return []
-
-        monkeypatch.setattr(plugin, '_run_mutation_testing', fake_run)
-        gremlin_session = cast('plugin.GremlinSession', SimpleNamespace(batch_enabled=False, parallel_enabled=False))
-
-        with process_tree.sigterm_cleanup():
-            enclosing = signal.getsignal(signal.SIGTERM)
-            plugin._dispatch_mutation_run(cast('pytest.Session', None), gremlin_session)
-
-        assert seen == [enclosing]
 
 
 @pytest.mark.small

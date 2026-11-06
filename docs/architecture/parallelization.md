@@ -367,8 +367,26 @@ is not handled, and that command is not ended. The window is a few microseconds 
 affected the same way. It is not closed because blocking SIGTERM around the start would be inherited by the command
 (a signal mask survives `exec`), so its own SIGTERM would stop working.
 
-Windows has no SIGTERM delivery to Python, so there only the interrupt and exit cleanup apply. SIGKILL (an OOM kill,
-`kill -9`) cannot be handled and can leave a test run's processes behind, as it could before.
+SIGKILL cannot be handled, so it is covered by a deadman pipe instead. The first time a process runs a test command it
+starts a watchdog helper (`python -I -S`, in its own session) and keeps the write end of the pipe on the helper's stdin.
+It tells the watchdog `+pgid` when a command starts and `-pgid` when it has been reaped. The helper blocks reading the
+pipe; the pipe reaches end-of-file only when every holder of the write end is gone, and then the helper SIGKILLs each
+process group it still knows. The caller can die by SIGKILL of one pid or of its whole group (a CI job timeout,
+`timeout -s KILL`), an OOM kill or a crash; the watchdog is not in the caller's group, so it survives all of them.
+
+- The watchdog is a separate process, so it still runs when a mutant keeps the test command inside a C loop that
+  holds the GIL (catastrophic regex backtracking). The mutant timeout, enforced by the caller, ends such a command in
+  the normal case.
+- A forked pool worker closes the copy of its parent's pipe at fork time (`os.register_at_fork`), so a worker that
+  outlives a killed main process does not keep the pipe open. Commands and the watchdog are started with
+  `close_fds`, so they never hold a write end.
+- Each worker process has its own watchdog, so a worker that is killed alone has its commands ended too.
+- At a normal exit the pipe is closed and the helper is waited for, so no zombie or `ResourceWarning` is left.
+- The watchdog is not started on Windows. There the interrupt and exit cleanup still apply, but a hard kill of the
+  gremlins process can leave a test run's processes behind.
+- A command that starts a process in a session of its own (`setsid`) escapes both the timeout kill and the watchdog.
+- The watchdog trusts that a process group id is not reused between the command being reaped and the `-pgid`
+  message reaching it, which is microseconds.
 
 ## Performance Characteristics
 

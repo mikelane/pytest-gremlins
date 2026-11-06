@@ -18,11 +18,19 @@ import subprocess
 import sys
 import time
 
+from process_helpers import (  # type: ignore[import-not-found]
+    kill_quietly,
+    wait_until_no_process_has_env_marker,
+)
 import pytest
 
 pytestmark = pytest.mark.usefixtures('utf8_child_output')
 
 WAIT_LIMIT_SECONDS = 180
+# Every process a killed run started inherits this marker, so any that outlives the kill (a test command that was
+# left spinning) shows up in the process list.
+_RUN_MARKER_NAME = 'GREMLINS_974_RUN_MARKER'
+_RUN_MARKER_VALUE = 'interrupted-run-leaves-nothing-behind'
 POLL_SECONDS = 0.2
 READ_CHUNK_BYTES = 4096
 
@@ -96,6 +104,7 @@ class DescribeKilledParallelRun:
         self, pytester_with_markers: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv('PYTHONUNBUFFERED', '1')
+        monkeypatch.setenv(_RUN_MARKER_NAME, _RUN_MARKER_VALUE)
         pytester_with_markers.makepyfile(calc=_CALC, test_calc=_TESTS)
         project = pytester_with_markers.path
 
@@ -122,8 +131,11 @@ class DescribeKilledParallelRun:
         finally:
             _kill_group(second_run)
 
-        assert rows_kept > 0
-        assert hits == rows_kept
+        leftover = wait_until_no_process_has_env_marker(f'{_RUN_MARKER_NAME}={_RUN_MARKER_VALUE}')
+        for pid in leftover:
+            kill_quietly(pid)
+
+        assert (rows_kept > 0, hits == rows_kept, leftover) == (True, True, [])
 
 
 def _first_cache_hit_count(process: subprocess.Popen[bytes]) -> int:
