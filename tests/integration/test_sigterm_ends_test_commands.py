@@ -81,6 +81,12 @@ def _kill_quietly(pid: int) -> None:
             ('--gremlin-parallel', '--gremlin-workers=2'),
             id='parallel-mutation-run',
         ),
+        pytest.param(_HANG_IN_MUTATION_RUN, ('--gremlin-batch',), id='batch-mutation-run'),
+        pytest.param(
+            _HANG_IN_MUTATION_RUN,
+            ('--gremlin-batch', '--gremlin-parallel', '--gremlin-workers=2'),
+            id='parallel-batch-mutation-run',
+        ),
     ],
 )
 def it_ends_the_hanging_test_command_when_the_main_process_gets_sigterm(
