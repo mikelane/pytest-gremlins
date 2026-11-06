@@ -45,6 +45,8 @@ class PeriodicFlusher:
         every_results: Flush once this many results are pending.
         every_seconds: Flush pending results once this long has passed since the last flush.
         clock: Monotonic clock in seconds; replaceable for tests.
+        on_first_failure: Called once, with the error, the first time a flush fails. The owner uses it to show
+            the user a notice that pytest's log capture cannot swallow.
     """
 
     def __init__(
@@ -54,6 +56,7 @@ class PeriodicFlusher:
         every_results: int = FLUSH_EVERY_RESULTS,
         every_seconds: float = FLUSH_EVERY_SECONDS,
         clock: Callable[[], float] = time.monotonic,
+        on_first_failure: Callable[[Exception], None] | None = None,
     ) -> None:
         """Start the interval now, with nothing pending."""
         self._flush = flush
@@ -64,6 +67,7 @@ class PeriodicFlusher:
         self._last_flush = clock()
         self._retry_not_before = 0.0
         self._warned = False
+        self._on_first_failure = on_first_failure
 
     def note_result(self) -> None:
         """Record that one more result is waiting to be flushed."""
@@ -99,6 +103,8 @@ class PeriodicFlusher:
             )
             return
         self._warned = True
+        if self._on_first_failure is not None:
+            self._on_first_failure(flush_error)
         logger.warning(
             'Could not write finished gremlin results to the cache (%s: %s). '
             'The run continues, retries the writes at the next flush, and the cache retries them again when it '

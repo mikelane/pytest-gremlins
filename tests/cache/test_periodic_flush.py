@@ -209,3 +209,19 @@ class DescribePeriodicFlusherWhenFlushFails:
 
         with pytest.raises(RuntimeError, match='a bug in the flush'):
             flusher.flush()
+
+    def it_tells_the_owner_about_the_first_failure_only(self) -> None:
+        reported: list[Exception] = []
+        flusher = PeriodicFlusher(
+            FailingThenWorkingFlush(failures=3),
+            every_results=1,
+            clock=FakeClock(),
+            on_first_failure=reported.append,
+        )
+        flusher.note_result()
+
+        flusher.flush()
+        flusher.flush()
+        flusher.flush()
+
+        assert [str(error) for error in reported] == ['database or disk is full']

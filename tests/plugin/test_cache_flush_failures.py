@@ -186,3 +186,27 @@ class DescribeSequentialRunFlushing:
             ('g1', GremlinResultStatus.SURVIVED),
             ('g2', GremlinResultStatus.SURVIVED),
         ]
+
+
+@pytest.mark.small
+class DescribeCacheFlushFailureNotice:
+    """The warning has to reach the terminal summary: pytest swallows log records during session finish."""
+
+    def it_queues_one_terminal_notice_naming_the_error(self) -> None:
+        cache = create_autospec(IncrementalCache, instance=True)
+        cache.flush.side_effect = sqlite3.OperationalError('database or disk is full')
+        session: GremlinSession = create_autospec(GremlinSession, instance=True)
+        session.cache_enabled = True
+        session.cache = cache
+        session.terminal_notices = []
+        flusher = plugin._cache_flusher_for(session)
+        flusher.note_result()
+
+        flusher.flush()
+        flusher.flush()
+
+        assert session.terminal_notices == [
+            'pytest-gremlins: warning: could not write finished results to the cache '
+            '(OperationalError: database or disk is full). The run continues and retries the writes; '
+            'the cache retries them again when it closes.'
+        ]

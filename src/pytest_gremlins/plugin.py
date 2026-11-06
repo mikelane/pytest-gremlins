@@ -4320,7 +4320,16 @@ def _cache_flusher_for(gremlin_session: GremlinSession) -> PeriodicFlusher:
     cache = gremlin_session.cache
     if not gremlin_session.cache_enabled or cache is None:
         return PeriodicFlusher(lambda: None)
-    return PeriodicFlusher(cache.flush)
+
+    def queue_failure_notice(flush_error: Exception) -> None:
+        _queue_terminal_notice(
+            gremlin_session,
+            'pytest-gremlins: warning: could not write finished results to the cache '
+            f'({_describe_exception(flush_error)}). The run continues and retries the writes; '
+            'the cache retries them again when it closes.',
+        )
+
+    return PeriodicFlusher(cache.flush, on_first_failure=queue_failure_notice)
 
 
 def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:

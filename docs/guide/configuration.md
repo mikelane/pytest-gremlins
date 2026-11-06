@@ -559,7 +559,8 @@ committed to disk every 25 results or every 5 seconds, whichever comes first. If
 step timeout, an out-of-memory kill), the next run hits the cache for every gremlin that finished before the last
 commit. A parallel run loses at most the last few seconds of results to a kill; a sequential run can also lose the
 gremlin that was running, which takes up to the mutant timeout. If a commit fails (a full disk, a locked database),
-the run logs one warning, keeps going and retries the writes, and the cache retries them again when it closes.
+the run prints one `pytest-gremlins: warning: could not write finished results to the cache` line in the terminal
+summary, keeps going and retries the writes, and the cache retries them again when it closes.
 
 With `--gremlin-parallel`, a timed-out gremlin and a gremlin killed at collection are cached only after their verdicts
 are confirmed at the end of the run, so those few are re-tested after an interruption. `--gremlin-batch` caches at the
