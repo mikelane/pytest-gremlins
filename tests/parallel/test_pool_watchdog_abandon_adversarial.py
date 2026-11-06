@@ -92,6 +92,68 @@ class DescribeAWatchdogThatAbandonsAHungWorkerWithATestCommand:
         assert survivors == [], f'test commands still running after the run ended: {survivors}'
 
 
+_RUN_WHOSE_COLLECT_LOOP_FAILS = """
+import sys
+import time
+from pathlib import Path
+
+from pytest_gremlins.parallel.pool import WorkerPool
+from tests.parallel.watchdog_workers import run_scripted
+
+
+def main():
+    try:
+        with WorkerPool(max_workers=1, timeout=1, grace_seconds=0.2, worker_target=run_scripted) as pool:
+            pool.submit('hung', ['3600'], sys.argv[1], None, {})
+            while not Path(sys.argv[1], 'hung.pid').exists():
+                time.sleep(0.05)
+            raise RuntimeError('the collect loop failed')
+    except RuntimeError as error:
+        print('the pool context raised:', error, flush=True)
+
+
+if __name__ == '__main__':
+    main()
+"""
+
+
+@pytest.mark.large
+@pytest.mark.skipif(sys.platform == 'win32', reason='POSIX process tree')
+class DescribeLeavingThePoolOnAnErrorWhileAWorkerIsHung:
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            'AQA run 3: WorkerPool.__exit__ always calls shutdown(wait=True), so an error raised in the collect '
+            'loop outside service() waits on the hung worker for ever'
+        ),
+    )
+    def it_does_not_wait_on_the_hung_worker(self, tmp_path: Path) -> None:
+        script = tmp_path / 'run_whose_collect_loop_fails.py'
+        script.write_text(_RUN_WHOSE_COLLECT_LOOP_FAILS)
+        repo_root = Path(__file__).resolve().parents[2]
+        log_path = tmp_path / 'run.log'
+        with log_path.open('w') as log:
+            run = subprocess.Popen(
+                [sys.executable, str(script), str(tmp_path)],
+                env={**os.environ, 'PYTHONPATH': str(repo_root)},
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        try:
+            run.wait(timeout=HARD_DEADLINE_SECONDS)
+            finished = True
+        except subprocess.TimeoutExpired:
+            os.killpg(run.pid, signal.SIGKILL)
+            run.wait()
+            finished = False
+        output = log_path.read_text()
+
+        assert finished, f'leaving the pool on an error waited on the hung worker; output:\n{output}'
+        assert 'the pool context raised: the collect loop failed' in output
+        assert not _is_alive(int((tmp_path / 'hung.pid').read_text()))
+
+
 def _is_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
