@@ -2660,6 +2660,23 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             gremlin_session.enabled = False
         return
 
+    # The pre-scan and the control runs start test commands in their own sessions too, so a SIGTERM must reach them
+    # through the same cleanup as the mutation run.
+    with process_tree.sigterm_cleanup():
+        ran = _collect_coverage_then_run_gremlins(session, gremlin_session, rootdir)
+    if ran:
+        _report_unmapped_selections(gremlin_session)
+
+
+def _collect_coverage_then_run_gremlins(
+    session: pytest.Session, gremlin_session: GremlinSession, rootdir: Path
+) -> bool:
+    """Run the coverage pre-scan, check the unmutated suite loads, then run every gremlin.
+
+    Returns:
+        False when ``--gremlin-explain`` stopped after the pre-scan, so no gremlin ran.
+    """
+    config = session.config
     _collect_coverage(gremlin_session, rootdir)
 
     # If pytest-cov is active (--cov was passed), reload its in-memory coverage
@@ -2676,11 +2693,11 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         cov_plugin.cov.load()
 
     if _maybe_short_circuit_for_explain(gremlin_session):
-        return
+        return False
 
     _verify_suite_loads_unmutated(session, gremlin_session)
     gremlin_session.results = _dispatch_mutation_run(session, gremlin_session)
-    _report_unmapped_selections(gremlin_session)
+    return True
 
 
 def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: GremlinSession) -> None:

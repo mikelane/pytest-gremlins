@@ -353,8 +353,9 @@ ends them in these cases:
 
 - A SIGTERM to a pool worker (the pool initializer installs a handler): the worker ends its commands, then terminates
   as SIGTERM would.
-- A SIGTERM to the pytest process while gremlins run (main thread only; the previous handler is called afterwards, or
-  the default action runs, and is restored when the run ends). SIGINT stays with pytest.
+- A SIGTERM to the pytest process from the coverage pre-scan until the last gremlin has run (main thread only;
+  the previous handler is called afterwards, or the default action runs, and is restored when the run ends).
+  SIGINT stays with pytest.
 - An interrupt while control runs execute in a thread pool, and interpreter exit: every command still running is ended.
 
 Windows has no SIGTERM delivery to Python, so there only the interrupt and exit cleanup apply. SIGKILL (an OOM kill,
