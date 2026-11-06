@@ -56,10 +56,23 @@ def _is_gone(pid: int) -> bool:
 
 
 def _kill_quietly(pid: int) -> None:
+    if pid <= 0:  # 0 means "never started"; os.kill(0, ...) would signal this test's own process group
+        return
     try:
         os.kill(pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         return
+
+
+def _wait_for_live_commands(count: int) -> None:
+    # The command can write its pid file before run_bounded has registered it.
+    deadline = time.monotonic() + STARTUP_DEADLINE_SECONDS
+    while time.monotonic() < deadline:
+        if process_tree.live_command_count() == count:
+            return
+        time.sleep(POLL_SECONDS)
+    msg = f'{count} live command(s) never registered'
+    raise AssertionError(msg)
 
 
 def _spawn_caller(runner: str) -> subprocess.Popen[bytes]:
@@ -79,15 +92,45 @@ class DescribeLiveCommandRegistry:
             daemon=True,
         )
         worker.start()
-        command = int(_wait_for_file(pid_file))
+        command_pid = int(_wait_for_file(pid_file))
         try:
             process_tree.terminate_all()
             worker.join(REAP_DEADLINE_SECONDS)
-            gone = _is_gone(command)
+            is_command_gone = _is_gone(command_pid)
         finally:
-            _kill_quietly(command)
+            _kill_quietly(command_pid)
 
-        assert (gone, worker.is_alive()) == (True, False)
+        assert (is_command_gone, worker.is_alive()) == (True, False)
+
+    def it_neither_counts_nor_ends_a_command_owned_by_another_process(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Pins the owner check itself; the fork test below also passes on the at-fork registry reset alone.
+        pid_file = tmp_path / 'command.pid'
+        worker = threading.Thread(
+            target=run_bounded,
+            args=(_sleeper(pid_file),),
+            kwargs={'cwd': str(tmp_path), 'env': dict(os.environ), 'timeout': LONG_SLEEP_SECONDS},
+            daemon=True,
+        )
+        worker.start()
+        command_pid = 0
+        own_pid = os.getpid()
+        try:
+            command_pid = int(_wait_for_file(pid_file))
+            _wait_for_live_commands(1)
+            monkeypatch.setattr(os, 'getpid', lambda: own_pid + 1)
+            count_seen_by_other = process_tree.live_command_count()
+            process_tree.terminate_all()
+            monkeypatch.undo()
+            is_command_alive = not _is_gone_quickly(command_pid)
+        finally:
+            monkeypatch.undo()
+            process_tree.terminate_all()
+            worker.join(REAP_DEADLINE_SECONDS)
+            _kill_quietly(command_pid)
+
+        assert (count_seen_by_other, is_command_alive) == (0, True)
 
     def it_forgets_a_command_once_it_has_finished(self, tmp_path: Path) -> None:
         run_bounded(_python('pass'), cwd=str(tmp_path), env=dict(os.environ), timeout=STARTUP_DEADLINE_SECONDS)
@@ -145,18 +188,18 @@ class DescribeSigtermCleanup:
             f' env=dict(os.environ), timeout={LONG_SLEEP_SECONDS})\n'
         )
         caller = _spawn_caller(runner)
-        command = 0
+        command_pid = 0
         try:
-            command = int(_wait_for_file(pid_file))
+            command_pid = int(_wait_for_file(pid_file))
             os.killpg(caller.pid, signal.SIGTERM)
             returncode = caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
-            gone = _is_gone(command)
+            is_command_gone = _is_gone(command_pid)
         finally:
             caller.kill()
-            if command:
-                _kill_quietly(command)
+            if command_pid:
+                _kill_quietly(command_pid)
 
-        assert (gone, returncode) == (True, -signal.SIGTERM)
+        assert (is_command_gone, returncode) == (True, -signal.SIGTERM)
 
     def it_runs_the_previous_sigterm_handler_after_the_cleanup(self, tmp_path: Path) -> None:
         pid_file = tmp_path / 'command.pid'
@@ -171,18 +214,19 @@ class DescribeSigtermCleanup:
             f' env=dict(os.environ), timeout={LONG_SLEEP_SECONDS})\n'
         )
         caller = _spawn_caller(runner)
-        command = 0
+        command_pid = 0
         try:
-            command = int(_wait_for_file(pid_file))
+            command_pid = int(_wait_for_file(pid_file))
             caller.send_signal(signal.SIGTERM)
-            caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
-            gone = _is_gone(command)
+            returncode = caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
+            is_command_gone = _is_gone(command_pid)
         finally:
             caller.kill()
-            if command:
-                _kill_quietly(command)
+            if command_pid:
+                _kill_quietly(command_pid)
 
-        assert (gone, seen_file.exists()) == (True, True)
+        # Exit status 0 is the previous handler's sys.exit(0): the cleanup did not also re-raise SIGTERM after it.
+        assert (is_command_gone, seen_file.exists(), returncode) == (True, True, 0)
 
     def it_restores_the_previous_sigterm_handler_afterwards(self) -> None:
         before = signal.getsignal(signal.SIGTERM)
@@ -202,7 +246,7 @@ class DescribeSigtermCleanup:
 
         worker = threading.Thread(target=enter)
         worker.start()
-        worker.join()
+        worker.join(REAP_DEADLINE_SECONDS)
 
         assert seen == [before]
 
@@ -230,18 +274,18 @@ class DescribeSigtermCleanup:
             'time.sleep(30)\n'
         )
         caller = _spawn_caller(runner)
-        command = 0
+        command_pid = 0
         try:
             _wait_for_file(tmp_path / 'forked.done')
-            command = int(_wait_for_file(pid_file))
-            survived = not _is_gone_quickly(command)
+            command_pid = int(_wait_for_file(pid_file))
+            has_survived = not _is_gone_quickly(command_pid)
         finally:
             caller.kill()
-            caller.wait()
-            if command:
-                _kill_quietly(command)
+            caller.wait(timeout=REAP_DEADLINE_SECONDS)
+            if command_pid:
+                _kill_quietly(command_pid)
 
-        assert survived
+        assert has_survived
 
 
 def _is_gone_quickly(pid: int) -> bool:
@@ -287,19 +331,19 @@ class DescribeSigtermCleanupLimits:
             f' env=dict(os.environ), timeout={LONG_SLEEP_SECONDS})\n'
         )
         caller = _spawn_caller(runner)
-        command = 0
+        command_pid = 0
         try:
-            command = int(_wait_for_file(pid_file))
+            command_pid = int(_wait_for_file(pid_file))
             caller.send_signal(signal.SIGTERM)
             time.sleep(POLL_SECONDS * 10)
-            still_running = caller.poll() is None and not _is_gone_quickly(command)
+            is_still_running = caller.poll() is None and not _is_gone_quickly(command_pid)
         finally:
             caller.kill()
-            caller.wait()
-            if command:
-                _kill_quietly(command)
+            caller.wait(timeout=REAP_DEADLINE_SECONDS)
+            if command_pid:
+                _kill_quietly(command_pid)
 
-        assert still_running
+        assert is_still_running
 
     def it_terminates_multiprocessing_children_when_the_main_process_gets_sigterm(self, tmp_path: Path) -> None:
         pid_file = tmp_path / 'child.pid'
@@ -317,15 +361,48 @@ class DescribeSigtermCleanupLimits:
             f'        time.sleep({LONG_SLEEP_SECONDS})\n'
         )
         caller = _spawn_caller(runner)
-        worker = 0
+        worker_pid = 0
         try:
-            worker = int(_wait_for_file(pid_file))
+            worker_pid = int(_wait_for_file(pid_file))
             caller.send_signal(signal.SIGTERM)
             returncode = caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
-            gone = _is_gone(worker)
+            is_worker_gone = _is_gone(worker_pid)
         finally:
             caller.kill()
-            if worker:
-                _kill_quietly(worker)
+            if worker_pid:
+                _kill_quietly(worker_pid)
 
-        assert (gone, returncode) == (True, -signal.SIGTERM)
+        assert (is_worker_gone, returncode) == (True, -signal.SIGTERM)
+
+    def it_stops_waiting_for_workers_that_ignore_sigterm_after_the_worker_stop_deadline(self, tmp_path: Path) -> None:
+        # Two workers ignore SIGTERM, so each join runs out. WORKER_STOP_SECONDS bounds the wait in total: an
+        # unbounded join hangs the main process forever, and a per-worker bound doubles it.
+        pid_files = (tmp_path / 'first.pid', tmp_path / 'second.pid')
+        runner = (
+            'import multiprocessing, os, signal, sys, time\n'
+            'from pytest_gremlins import process_tree\n'
+            'def child(pid_file):\n'
+            '    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+            '    open(pid_file, "w").write(str(os.getpid()))\n'
+            f'    time.sleep({LONG_SLEEP_SECONDS})\n'
+            'if __name__ == "__main__":\n'
+            "    context = multiprocessing.get_context('fork')\n"
+            f'    context.Process(target=child, args=({str(pid_files[0])!r},)).start()\n'
+            f'    context.Process(target=child, args=({str(pid_files[1])!r},)).start()\n'
+            '    with process_tree.sigterm_cleanup():\n'
+            f'        time.sleep({LONG_SLEEP_SECONDS})\n'
+        )
+        caller = _spawn_caller(runner)
+        worker_pids = [0, 0]
+        try:
+            worker_pids = [int(_wait_for_file(pid_files[0])), int(_wait_for_file(pid_files[1]))]
+            started = time.monotonic()
+            caller.send_signal(signal.SIGTERM)
+            returncode = caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
+            elapsed = time.monotonic() - started
+        finally:
+            caller.kill()
+            _kill_quietly(worker_pids[0])
+            _kill_quietly(worker_pids[1])
+
+        assert (returncode, elapsed < 2 * process_tree.WORKER_STOP_SECONDS) == (-signal.SIGTERM, True)

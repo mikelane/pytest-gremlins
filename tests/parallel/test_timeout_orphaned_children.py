@@ -77,11 +77,11 @@ def _run_batch_with_deadline(pid_file: Path, cwd: Path) -> tuple[bool, list[Work
     worker = threading.Thread(target=run, daemon=True)
     worker.start()
     worker.join(HARD_DEADLINE_SECONDS)
-    finished = not worker.is_alive()
-    if not finished:
+    has_finished = not worker.is_alive()
+    if not has_finished:
         _kill_if_alive(pid_file)
         worker.join(HARD_DEADLINE_SECONDS)
-    return finished, results
+    return has_finished, results
 
 
 @pytest.mark.medium
@@ -89,20 +89,22 @@ class DescribeRunGremlinBatchWithOrphanedChildren:
     def it_records_timeout_promptly_when_a_child_keeps_the_output_pipes_open(self, tmp_path: Path) -> None:
         pid_file = tmp_path / 'child.pid'
         try:
-            finished, results = _run_batch_with_deadline(pid_file, tmp_path)
+            has_finished, results = _run_batch_with_deadline(pid_file, tmp_path)
         finally:
             _kill_if_alive(pid_file)
 
-        assert finished
+        assert has_finished
         assert [r.status for r in results] == [GremlinResultStatus.TIMEOUT]
 
     @pytest.mark.skipif(sys.platform == 'win32', reason='liveness is probed with signal 0, which kills on Windows')
     def it_kills_the_children_of_a_timed_out_test_run(self, tmp_path: Path) -> None:
         pid_file = tmp_path / 'child.pid'
         try:
-            _run_batch_with_deadline(pid_file, tmp_path)
-            gone = _is_gone(_grandchild_pid(pid_file))
+            # A hung batch makes the deadline helper kill the grandchild itself, so `has_finished` is what proves
+            # the batch, not the helper, ended it.
+            has_finished, _ = _run_batch_with_deadline(pid_file, tmp_path)
+            is_grandchild_gone = _is_gone(_grandchild_pid(pid_file))
         finally:
             _kill_if_alive(pid_file)
 
-        assert gone
+        assert (has_finished, is_grandchild_gone) == (True, True)

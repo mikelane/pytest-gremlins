@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import subprocess
 import sys
 from unittest.mock import (
     create_autospec,
@@ -20,6 +19,7 @@ from unittest.mock import (
 
 import pytest
 
+from pytest_gremlins import process_tree
 from pytest_gremlins.plugin import _run_tests_with_coverage
 
 CALC_MODULE_SOURCE = 'def add(a, b):\n    return a + b\n'
@@ -130,7 +130,7 @@ class DescribeSubprocessEnvironment:
 
     def it_strips_coverage_core_from_the_subprocess_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv('COVERAGE_CORE', 'sysmon')
-        fake_run = create_autospec(subprocess.run)
+        fake_run = create_autospec(process_tree.run_bounded)
 
         with patch('pytest_gremlins.process_tree.run_bounded', fake_run):
             _run_tests_with_coverage(['t.py::test_a'], tmp_path)
@@ -140,7 +140,7 @@ class DescribeSubprocessEnvironment:
 
     def it_strips_coverage_file_from_the_subprocess_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv('COVERAGE_FILE', str(tmp_path / 'ci-coverage.db'))
-        fake_run = create_autospec(subprocess.run)
+        fake_run = create_autospec(process_tree.run_bounded)
 
         with patch('pytest_gremlins.process_tree.run_bounded', fake_run):
             _run_tests_with_coverage(['t.py::test_a'], tmp_path)
@@ -150,7 +150,7 @@ class DescribeSubprocessEnvironment:
 
     def it_preserves_the_rest_of_the_environment(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv('GREMLINS_531_MARKER', 'kept')
-        fake_run = create_autospec(subprocess.run)
+        fake_run = create_autospec(process_tree.run_bounded)
 
         with patch('pytest_gremlins.process_tree.run_bounded', fake_run):
             _run_tests_with_coverage(['t.py::test_a'], tmp_path)

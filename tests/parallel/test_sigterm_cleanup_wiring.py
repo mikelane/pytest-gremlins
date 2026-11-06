@@ -30,6 +30,7 @@ class _RecordingExecutor(ProcessPoolExecutor):
 @pytest.mark.medium
 class DescribeWorkerPoolsInstallSigtermCleanup:
     def it_gives_the_worker_pool_workers_the_sigterm_cleanup(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_RecordingExecutor, 'created_with', {})  # no stale value from another test
         monkeypatch.setattr(pool, 'ProcessPoolExecutor', _RecordingExecutor)
 
         with WorkerPool(max_workers=1):
@@ -38,6 +39,7 @@ class DescribeWorkerPoolsInstallSigtermCleanup:
         assert _RecordingExecutor.created_with['initializer'] is process_tree.install_sigterm_cleanup
 
     def it_gives_the_persistent_pool_workers_the_sigterm_cleanup(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_RecordingExecutor, 'created_with', {})  # no stale value from another test
         monkeypatch.setattr(persistent_pool, 'ProcessPoolExecutor', _RecordingExecutor)
 
         with PersistentWorkerPool.from_config(PoolConfig(max_workers=1, warmup=False)):
@@ -60,8 +62,8 @@ class DescribeMutationRunSigtermCleanup:
             return []
 
         monkeypatch.setattr(plugin, '_run_mutation_testing', fake_run)
-        session = type('S', (), {'batch_enabled': False, 'parallel_enabled': False})()
+        gremlin_session = type('S', (), {'batch_enabled': False, 'parallel_enabled': False})()
 
-        plugin._dispatch_mutation_run(None, session)  # type: ignore[arg-type]
+        plugin._dispatch_mutation_run(None, gremlin_session)  # type: ignore[arg-type]
 
         assert (seen[0] is not before, signal.getsignal(signal.SIGTERM)) == (True, before)

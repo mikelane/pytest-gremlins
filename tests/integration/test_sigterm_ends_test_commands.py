@@ -41,7 +41,7 @@ def test_add():
 """
 
 
-def _wait_for_file(path: Path) -> int:
+def _wait_for_pid(path: Path) -> int:
     deadline = time.monotonic() + STARTUP_DEADLINE_SECONDS
     while time.monotonic() < deadline:
         if path.exists() and path.read_text():
@@ -96,22 +96,22 @@ def it_ends_the_hanging_test_command_when_the_main_process_gets_sigterm(
     pytester.makeini('[pytest]\n')
     pid_file = pytester.path / 'hang.pid'
     env = {**os.environ, 'PYTHONPATH': str(pytester.path), 'HANG_PID_FILE': str(pid_file)}
-    main = subprocess.Popen(
+    gremlins_run = subprocess.Popen(
         [sys.executable, '-m', 'pytest', '-p', 'no:cacheprovider', '--gremlins', '--gremlin-targets=calc.py', *mode],
         cwd=pytester.path,
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    command = 0
+    command_pid = 0
     try:
-        command = _wait_for_file(pid_file)
-        main.send_signal(signal.SIGTERM)
-        main.wait(timeout=STARTUP_DEADLINE_SECONDS)
-        gone = _is_gone(command)
+        command_pid = _wait_for_pid(pid_file)
+        gremlins_run.send_signal(signal.SIGTERM)
+        gremlins_run.wait(timeout=STARTUP_DEADLINE_SECONDS)
+        is_command_gone = _is_gone(command_pid)
     finally:
-        main.kill()
-        if command:
-            _kill_quietly(command)
+        gremlins_run.kill()
+        if command_pid:
+            _kill_quietly(command_pid)
 
-    assert (gone, main.returncode) == (True, -signal.SIGTERM)
+    assert (is_command_gone, gremlins_run.returncode) == (True, -signal.SIGTERM)

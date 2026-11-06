@@ -75,7 +75,12 @@ class DescribeRunBounded:
     def it_runs_the_command_in_the_given_directory_and_environment(self, tmp_path: Path) -> None:
         code = 'import os; print(os.getcwd()); print(os.environ["GREMLIN_PROBE"])'
 
-        completed = run_bounded(_python(code), cwd=str(tmp_path), env={**os.environ, 'GREMLIN_PROBE': 'x'}, timeout=15)
+        completed = run_bounded(
+            _python(code),
+            cwd=str(tmp_path),
+            env={**os.environ, 'GREMLIN_PROBE': 'x'},
+            timeout=STARTUP_DEADLINE_SECONDS,
+        )
 
         assert completed.stdout.split() == [str(tmp_path.resolve()).encode(), b'x']
 
@@ -98,29 +103,51 @@ class DescribeRunBounded:
         )
         with pytest.raises(subprocess.TimeoutExpired):
             _run(_python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
-        grandchild = int(pid_file.read_text())
+        grandchild_pid = int(pid_file.read_text())
         try:
-            gone = _is_gone(grandchild)
+            is_grandchild_gone = _is_gone(grandchild_pid)
         finally:
-            _kill_quietly(grandchild)
+            _kill_quietly(grandchild_pid)
 
-        assert gone
+        assert is_grandchild_gone
 
     @posix_only
     def it_force_kills_a_command_that_ignores_sigterm(self, tmp_path: Path) -> None:
-        marker = tmp_path / 'ready'
+        pid_file = tmp_path / 'command.pid'
         code = (
-            'import signal, time\n'
+            'import os, signal, time\n'
             'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
-            f'open({str(marker)!r}, "w").write("1")\n'
+            f'open({str(pid_file)!r}, "w").write(str(os.getpid()))\n'
             f'time.sleep({LONG_SLEEP_SECONDS})\n'
         )
 
         started = time.monotonic()
         with pytest.raises(subprocess.TimeoutExpired):
             _run(_python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
+        elapsed = time.monotonic() - started
+        command_pid = int(pid_file.read_text())
+        try:
+            is_command_gone = _is_gone(command_pid)
+        finally:
+            _kill_quietly(command_pid)
 
-        assert time.monotonic() - started < REAP_DEADLINE_SECONDS
+        assert (is_command_gone, elapsed < REAP_DEADLINE_SECONDS) == (True, True)
+
+    @posix_only
+    def it_sends_sigterm_before_the_force_kill(self, tmp_path: Path) -> None:
+        # A command that handles SIGTERM gets to run its handler; a bare SIGKILL would leave no marker.
+        marker = tmp_path / 'sigterm.seen'
+        code = (
+            'import signal, sys, time\n'
+            f'def on_sigterm(signum, frame):\n    open({str(marker)!r}, "w").write("1")\n    sys.exit(0)\n'
+            'signal.signal(signal.SIGTERM, on_sigterm)\n'
+            f'time.sleep({LONG_SLEEP_SECONDS})\n'
+        )
+
+        with pytest.raises(subprocess.TimeoutExpired):
+            _run(_python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
+
+        assert marker.read_text() == '1'
 
     @posix_only
     def it_stops_waiting_for_pipes_held_by_a_process_that_left_the_group(
@@ -164,15 +191,15 @@ class DescribeRunBoundedInterrupt:
             f' timeout={LONG_SLEEP_SECONDS})\n'
         )
         gremlins_run = subprocess.Popen(_python(runner), stderr=subprocess.DEVNULL)
-        grandchild = 0
+        grandchild_pid = 0
         try:
-            grandchild = int(_wait_for_file(pid_file))
+            grandchild_pid = int(_wait_for_file(pid_file))
             gremlins_run.send_signal(signal.SIGINT)
             gremlins_run.wait(timeout=STARTUP_DEADLINE_SECONDS)
-            gone = _is_gone(grandchild)
+            is_grandchild_gone = _is_gone(grandchild_pid)
         finally:
             gremlins_run.kill()
-            if grandchild:
-                _kill_quietly(grandchild)
+            if grandchild_pid:
+                _kill_quietly(grandchild_pid)
 
-        assert gone
+        assert is_grandchild_gone
