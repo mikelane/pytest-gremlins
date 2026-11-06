@@ -80,11 +80,6 @@ def _kill_quietly(pid: int) -> None:
             _HANG_IN_MUTATION_RUN,
             ('--gremlin-parallel', '--gremlin-workers=2'),
             id='parallel-mutation-run',
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason='#975: the main process cleanup ends only its own commands; the pool workers never get the '
-                'SIGTERM, so their commands run on until the worker times them out. Needs a design decision.',
-            ),
         ),
     ],
 )

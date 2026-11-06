@@ -251,3 +251,81 @@ def _is_gone_quickly(pid: int) -> bool:
     except ProcessLookupError:
         return True
     return False
+
+
+@pytest.mark.medium
+@posix_only
+class DescribeSigtermCleanupLimits:
+    def it_does_not_install_over_an_ignored_sigterm(self) -> None:
+        previous = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        try:
+            with process_tree.sigterm_cleanup():
+                during = signal.getsignal(signal.SIGTERM)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+
+        assert during == signal.SIG_IGN
+
+    def it_does_not_install_the_worker_cleanup_over_an_ignored_sigterm(self) -> None:
+        previous = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        try:
+            process_tree.install_sigterm_cleanup()
+            installed = signal.getsignal(signal.SIGTERM)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+
+        assert installed == signal.SIG_IGN
+
+    def it_leaves_a_running_command_alone_when_sigterm_is_ignored(self, tmp_path: Path) -> None:
+        pid_file = tmp_path / 'command.pid'
+        runner = (
+            'import os, signal, sys\n'
+            'from pytest_gremlins import process_tree\n'
+            'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+            'with process_tree.sigterm_cleanup():\n'
+            f'    process_tree.run_bounded({_sleeper(pid_file)!r}, cwd={str(tmp_path)!r},'
+            f' env=dict(os.environ), timeout={LONG_SLEEP_SECONDS})\n'
+        )
+        caller = _spawn_caller(runner)
+        command = 0
+        try:
+            command = int(_wait_for_file(pid_file))
+            caller.send_signal(signal.SIGTERM)
+            time.sleep(POLL_SECONDS * 10)
+            still_running = caller.poll() is None and not _is_gone_quickly(command)
+        finally:
+            caller.kill()
+            caller.wait()
+            if command:
+                _kill_quietly(command)
+
+        assert still_running
+
+    def it_terminates_multiprocessing_children_when_the_main_process_gets_sigterm(self, tmp_path: Path) -> None:
+        pid_file = tmp_path / 'child.pid'
+        runner = (
+            'import multiprocessing, os, time\n'
+            'from pytest_gremlins import process_tree\n'
+            'def child():\n'
+            '    process_tree.install_sigterm_cleanup()\n'
+            f'    open({str(pid_file)!r}, "w").write(str(os.getpid()))\n'
+            f'    time.sleep({LONG_SLEEP_SECONDS})\n'
+            'if __name__ == "__main__":\n'
+            "    worker = multiprocessing.get_context('fork').Process(target=child)\n"
+            '    worker.start()\n'
+            '    with process_tree.sigterm_cleanup():\n'
+            f'        time.sleep({LONG_SLEEP_SECONDS})\n'
+        )
+        caller = _spawn_caller(runner)
+        worker = 0
+        try:
+            worker = int(_wait_for_file(pid_file))
+            caller.send_signal(signal.SIGTERM)
+            returncode = caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
+            gone = _is_gone(worker)
+        finally:
+            caller.kill()
+            if worker:
+                _kill_quietly(worker)
+
+        assert (gone, returncode) == (True, -signal.SIGTERM)

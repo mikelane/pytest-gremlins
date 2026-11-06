@@ -878,9 +878,10 @@ processes a test started (a server fixture, a multiprocessing pool, a `subproces
 after the timeout, and they cannot hold the run up by keeping its output open. A process that detaches itself from
 the group (for example with `setsid`) is not killed, but gremlins stops waiting for its output after 5 seconds. An
 interrupted run (Ctrl-C) or a SIGTERM sent to gremlins or to its worker processes ends its in-flight test runs the
-same way, so a CI cancel or `timeout pytest --gremlins` leaves nothing running. SIGKILL cannot be handled: a
-process killed that way can leave a test run's processes behind, as it could before. The verdict is unchanged: the
-gremlin is reported as a timeout.
+same way, so a CI cancel or `timeout pytest --gremlins` leaves nothing running, also under `--gremlin-parallel`
+(the workers get the SIGTERM too). A SIGTERM that the caller set to be ignored is left ignored. SIGKILL cannot be
+handled: a process killed that way can leave a test run's processes behind, as it could before. The verdict is
+unchanged: the gremlin is reported as a timeout.
 
 The incremental cache stores the timeout each verdict was reached under and reuses a verdict at a different timeout
 only when the new limit cannot change it. A zapped, survived or error verdict is reused when the gremlin's run took

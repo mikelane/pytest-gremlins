@@ -355,8 +355,17 @@ ends them in these cases:
   as SIGTERM would.
 - A SIGTERM to the pytest process from the coverage pre-scan until the last gremlin has run (main thread only;
   the previous handler is called afterwards, or the default action runs, and is restored when the run ends).
-  SIGINT stays with pytest.
+  It ends the main process's own commands, then sends SIGTERM to its child processes (the pool workers) and waits up
+  to 2 seconds for them to end theirs and exit, so under `--gremlin-parallel` no worker's command runs on. SIGINT
+  stays with pytest.
+- Where SIGTERM is ignored (`SIG_IGN`), nothing is installed and no command is ended: the caller asked for the signal
+  to have no effect, and a run is not turned into an error result that could be cached.
 - An interrupt while control runs execute in a thread pool, and interpreter exit: every command still running is ended.
+
+A SIGTERM that arrives in the instant between a command being started and being recorded in the registry
+is not handled, and that command is not ended. The window is a few microseconds and a pool worker's command is
+affected the same way. It is not closed because blocking SIGTERM around the start would be inherited by the command
+(a signal mask survives `exec`), so its own SIGTERM would stop working.
 
 Windows has no SIGTERM delivery to Python, so there only the interrupt and exit cleanup apply. SIGKILL (an OOM kill,
 `kill -9`) cannot be handled and can leave a test run's processes behind, as it could before.

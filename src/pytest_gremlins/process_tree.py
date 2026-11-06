@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import multiprocessing
 import os
 from pathlib import Path
 import signal
 import subprocess
 import sys
 import threading
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,6 +38,9 @@ TERMINATE_GRACE_SECONDS = 0.5
 
 PIPE_DRAIN_SECONDS = 5.0
 """How long to wait for the output pipes to close after the kill."""
+
+WORKER_STOP_SECONDS = 2.0
+"""How long, in total, the SIGTERM cleanup waits for pool workers to end their commands and exit."""
 
 _TASKKILL_TIMEOUT_SECONDS = 10
 
@@ -149,6 +154,7 @@ def _install_sigterm_handler(previous: _SignalHandler) -> _SignalHandler:
 
     def end_commands_then_terminate(signum: int, frame: FrameType | None) -> None:
         terminate_all()
+        _stop_child_processes()
         if callable(previous):
             previous(signum, frame)
         elif previous != signal.SIG_IGN:
@@ -159,13 +165,28 @@ def _install_sigterm_handler(previous: _SignalHandler) -> _SignalHandler:
     return replaced
 
 
+def _stop_child_processes() -> None:
+    """SIGTERM the multiprocessing children (the pool workers) so their own cleanup ends their commands."""
+    try:
+        children = multiprocessing.active_children()
+    except RuntimeError:  # a child was being started or reaped while this handler interrupted the main thread
+        return
+    for child in children:
+        with contextlib.suppress(OSError, ValueError):
+            child.terminate()
+    deadline = time.monotonic() + WORKER_STOP_SECONDS
+    for child in children:
+        with contextlib.suppress(OSError, ValueError, AssertionError):
+            child.join(max(0.0, deadline - time.monotonic()))
+
+
 def install_sigterm_cleanup() -> None:
     """Make SIGTERM end this process's test commands, then terminate the process as usual.
 
     This is the initializer of the worker pools. A worker is killed with its caller's process group (a CI cancel,
     ``timeout``, ``killpg``), and its commands run in their own sessions, so they would otherwise run on.
     """
-    if sys.platform != 'win32':
+    if sys.platform != 'win32' and signal.getsignal(signal.SIGTERM) != signal.SIG_IGN:
         _install_sigterm_handler(signal.SIG_DFL)
 
 
@@ -174,13 +195,18 @@ def sigterm_cleanup() -> Iterator[None]:
     """End this process's test commands on SIGTERM, then hand the signal to the handler that was installed before.
 
     A previous handler is called; with none (or the default) the default action runs, so the exit status stays
-    that of SIGTERM. The previous handler is restored afterwards. Handlers can only be set from the main thread, so
-    this does nothing anywhere else, and on Windows. SIGINT is left to pytest.
+    that of SIGTERM. Pool workers get a SIGTERM too, so they end their own commands. The previous handler is restored
+    afterwards. Handlers can only be set from the main thread, so this does nothing anywhere else, and on Windows.
+    Nothing is installed where SIGTERM is ignored: the caller asked for it to have no effect. SIGINT is left to pytest.
     """
-    if sys.platform == 'win32' or threading.current_thread() is not threading.main_thread():
+    previous = signal.getsignal(signal.SIGTERM)
+    if (
+        sys.platform == 'win32'
+        or threading.current_thread() is not threading.main_thread()
+        or previous == signal.SIG_IGN
+    ):
         yield
         return
-    previous = signal.getsignal(signal.SIGTERM)
     replaced = _install_sigterm_handler(previous)
     try:
         yield
