@@ -35,28 +35,30 @@ from pytest_gremlins.verdicts import (
 class DescribeBuildTestHashesForGremlin:
     """Tests for _build_test_hashes_for_gremlin function.
 
-    Tests the dotted-name fallback path (lines 1467-1468) where a test name
-    like 'SomeClass.test_method' is resolved to 'test_method' to find its node ID.
+    Callers pass the selection that ``_select_tests_for_gremlin_prioritized`` already filtered to node ids (#589).
     """
 
-    def it_resolves_dotted_name_via_simple_name_fallback(self) -> None:
-        """'Module.test_method' falls back to 'test_method' when the full name is not in test_node_ids."""
+    def it_maps_a_node_id_to_its_test_file_hash(self) -> None:
         gs = GremlinSession(
             enabled=True,
-            test_node_ids={'test_method': 'tests/test_m.py::test_method'},
+            test_node_ids={'tests/test_m.py::test_method': 'tests/test_m.py::test_method'},
             test_hashes={'tests/test_m.py': 'abc123'},
         )
 
-        result = _build_test_hashes_for_gremlin(['Module.test_method'], gs)
+        result = _build_test_hashes_for_gremlin(['tests/test_m.py::test_method'], gs)
 
-        assert 'Module.test_method' in result
-        assert result['Module.test_method'] == 'abc123'
+        assert result == {'tests/test_m.py::test_method': 'abc123'}
 
-    def it_returns_empty_when_node_id_not_found_even_after_fallback(self) -> None:
-        """Test names with no matching node ID (even via simple name) produce no entry."""
-        gs = GremlinSession(enabled=True, test_node_ids={}, test_hashes={})
+    @pytest.mark.parametrize('test_name', ['test_method', 'TestM.test_method', 'unknown.test_func'])
+    def it_gives_no_hash_to_a_name_that_is_not_a_node_id(self, test_name: str) -> None:
+        gs = GremlinSession(
+            enabled=True,
+            test_node_ids={'tests/test_m.py::test_method': 'tests/test_m.py::test_method'},
+            test_hashes={'tests/test_m.py': 'abc123'},
+            test_name_to_node_ids={'test_method': ['tests/test_m.py::test_method']},
+        )
 
-        result = _build_test_hashes_for_gremlin(['unknown.test_func'], gs)
+        result = _build_test_hashes_for_gremlin([test_name], gs)
 
         assert result == {}
 

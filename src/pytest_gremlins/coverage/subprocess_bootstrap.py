@@ -31,23 +31,6 @@ import pytest
 from pytest_gremlins.coverage.nodeid_markers import strip_marker_suffix
 
 
-def _strip_nodeid_markers(nodeid: str) -> str:
-    """Strip pytest plugin markers (e.g. `` [SMALL]``) from a node ID.
-
-    Plugins like ``pytest-test-categories`` append markers such as
-    ``[SMALL]`` to node IDs during collection.  The main gremlins session
-    stores node IDs *without* these markers, so contexts recorded in the
-    coverage subprocess must match.
-
-    Example:
-        >>> _strip_nodeid_markers('test_module.py::test_add [SMALL]')
-        'test_module.py::test_add'
-        >>> _strip_nodeid_markers('test_module.py::test_add')
-        'test_module.py::test_add'
-    """
-    return strip_marker_suffix(nodeid)
-
-
 class _SubprocessContextPlugin:
     """Switches coverage dynamic context for each test phase.
 
@@ -77,19 +60,19 @@ class _SubprocessContextPlugin:
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_setup(self, item: pytest.Item) -> Generator[None, None, None]:
         """Switch coverage context to ``{nodeid}|setup`` before test setup."""
-        self._safe_switch(f'{_strip_nodeid_markers(item.nodeid)}|setup')
+        self._safe_switch(f'{strip_marker_suffix(item.nodeid)}|setup')
         yield
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_call(self, item: pytest.Item) -> Generator[None, None, None]:
         """Switch coverage context to ``{nodeid}|run`` before the test call."""
-        self._safe_switch(f'{_strip_nodeid_markers(item.nodeid)}|run')
+        self._safe_switch(f'{strip_marker_suffix(item.nodeid)}|run')
         yield
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_teardown(self, item: pytest.Item) -> Generator[None, None, None]:
         """Switch coverage context to ``{nodeid}|teardown`` before teardown."""
-        self._safe_switch(f'{_strip_nodeid_markers(item.nodeid)}|teardown')
+        self._safe_switch(f'{strip_marker_suffix(item.nodeid)}|teardown')
         yield
 
 

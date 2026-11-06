@@ -71,7 +71,13 @@ class DescribeUnmatchedSelectedTestIsNotCached:
         _write_project(tmp_path)
         session = _session_for(tmp_path, ['tests/sub/test_a.py::test_a'])
 
-        assert plugin._selection_has_unhashed_test_file(['test_a'], session) is False
+        assert plugin._selection_has_unhashed_test_file(['tests/sub/test_a.py::test_a'], session) is False
+
+    def it_treats_a_bare_test_name_as_unhashed_even_when_the_reverse_index_knows_it(self, tmp_path: Path) -> None:
+        _write_project(tmp_path)
+        session = _session_for(tmp_path, ['tests/sub/test_a.py::test_a'])
+
+        assert plugin._selection_has_unhashed_test_file(['test_a'], session) is True
 
 
 @pytest.mark.medium
