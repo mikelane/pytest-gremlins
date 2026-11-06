@@ -1,14 +1,17 @@
 """A parallel run does not wait for ever on a worker that cannot return (issue #976).
 
 ``sitecustomize`` in the run's ``PYTHONPATH`` makes the first pool worker that launches a gremlin's test command
-sleep for ever before the launch, outside ``subprocess.run`` and so outside its mutant timeout. The run must
-still finish, with a verdict for every gremlin.
+freeze that command and then sleep for ever, outside ``subprocess.run`` and so outside its mutant timeout. The run
+must still finish, with a verdict for every gremlin, and neither the worker nor its frozen test command may be
+left running.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
+import time
 
 import pytest
 
@@ -21,6 +24,7 @@ pytestmark = [
 
 HARD_DEADLINE_SECONDS = 180
 MUTANT_TIMEOUT_SECONDS = 2
+REAPING_GRACE_SECONDS = 10
 
 _TARGET = """
 def is_larger(a, b):
@@ -39,10 +43,12 @@ def test_larger():
 _SITECUSTOMIZE_THAT_HANGS_THE_FIRST_WORKER = """
 import multiprocessing
 import os
+import signal
 import subprocess
 import time
 
 _MARKER = {marker!r}
+_PIDS = {pids!r}
 _real_init = subprocess.Popen.__init__
 
 
@@ -55,6 +61,10 @@ def _hang_once_in_a_pool_worker(self, *args, **kwargs):
         except FileExistsError:
             pass
         else:
+            _real_init(self, *args, **kwargs)
+            os.kill(self.pid, signal.SIGSTOP)
+            with open(_PIDS, 'w') as pids:
+                pids.write(f'{{os.getpid()}} {{self.pid}}')
             time.sleep(3600)
     _real_init(self, *args, **kwargs)
 
@@ -68,10 +78,11 @@ class DescribeAParallelRunWithAHungWorker:
     def it_finishes_and_names_the_hung_gremlin(
         self, pytester_with_markers: pytest.Pytester, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        pids_file = tmp_path / 'hung-pids'
         injected = tmp_path / 'injected'
         injected.mkdir()
         (injected / 'sitecustomize.py').write_text(
-            _SITECUSTOMIZE_THAT_HANGS_THE_FIRST_WORKER.format(marker=str(tmp_path / 'hung-once'))
+            _SITECUSTOMIZE_THAT_HANGS_THE_FIRST_WORKER.format(marker=str(tmp_path / 'hung-once'), pids=str(pids_file))
         )
         monkeypatch.setenv('PYTHONPATH', str(injected))
         pytester_with_markers.makepyfile(sample=_TARGET)
@@ -88,5 +99,25 @@ class DescribeAParallelRunWithAHungWorker:
 
         output = result.stdout.str() + result.stderr.str()
         assert (tmp_path / 'hung-once').exists(), 'no worker was hung: the test did not exercise the watchdog'
-        assert 'is hung' in output
+        assert 'hung-worker watchdog scored gremlin' in output
         assert sum(verdicts(output).values()) == 3
+        worker_pid, test_command_pid = (int(pid) for pid in pids_file.read_text().split())
+        assert _all_gone([worker_pid, test_command_pid])
+
+
+def _all_gone(pids: list[int]) -> bool:
+    """Wait up to the reaping grace for every pid to disappear; a freshly killed process is reaped by init."""
+    deadline = time.monotonic() + REAPING_GRACE_SECONDS
+    while time.monotonic() < deadline:
+        if not any(_is_alive(pid) for pid in pids):
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def _is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
