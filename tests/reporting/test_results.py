@@ -11,6 +11,8 @@ from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
+    limit_advice,
+    mutant_timeout_advice,
 )
 
 
@@ -213,3 +215,68 @@ class DescribeGremlinResultReplacePreservesFields:
         del original_fields['selected_tests']
         del replaced_fields['selected_tests']
         assert original_fields == replaced_fields
+
+
+_MUTANT_RAISE = 'Raise {limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout'
+
+
+@pytest.mark.small
+class DescribeLimitAdvice:
+    """Tests for limit_advice, the remedy every timeout message names."""
+
+    @pytest.mark.parametrize('attempt_timeout', [30, None])
+    def it_names_the_limit_as_the_caller_does_when_it_was_not_scaled(self, attempt_timeout):
+        advice = limit_advice(30, attempt_timeout, unscaled_name='it', raise_advice='raise {limit} now')
+
+        assert advice == 'raise it now'
+
+    def it_names_the_per_attempt_limit_when_it_was_scaled(self):
+        advice = limit_advice(130, 30, unscaled_name='it', raise_advice='raise {limit} now')
+
+        assert advice == 'raise the per-attempt limit now'
+
+    def it_advises_lowering_the_reruns_when_scaling_reached_the_cap(self):
+        advice = limit_advice(86400, 30000, unscaled_name='it', raise_advice='raise {limit} now')
+
+        assert advice == 'the limit is capped at 86400s; lower --reruns or --reruns-delay'
+
+    @pytest.mark.parametrize('attempt_timeout', [86400, None])
+    def it_says_the_limit_is_at_the_maximum_when_it_was_configured_there(self, attempt_timeout):
+        advice = limit_advice(86400, attempt_timeout, unscaled_name='it', raise_advice='raise {limit} now')
+
+        assert advice == 'the limit is already at the 86400s maximum'
+
+    def it_advises_raising_a_limit_one_second_below_the_maximum(self):
+        advice = limit_advice(86399, None, unscaled_name='it', raise_advice='raise {limit} now')
+
+        assert advice == 'raise it now'
+
+    def it_advises_raising_a_limit_it_does_not_know(self):
+        advice = limit_advice(None, None, unscaled_name='the timeout', raise_advice='raise {limit} now')
+
+        assert advice == 'raise the timeout now'
+
+
+@pytest.mark.small
+class DescribeMutantTimeoutAdvice:
+    """Tests for mutant_timeout_advice, the closing sentence of the downgraded-timeout messages."""
+
+    def it_offers_raising_the_limit_or_speeding_up_the_tests(self):
+        advice = mutant_timeout_advice(30, None, unscaled_name='the limit', tests='these tests')
+
+        assert advice == (f'{_MUTANT_RAISE.format(limit="the limit")}, or speed up these tests.')
+
+    def it_names_the_per_attempt_limit_when_it_was_scaled(self):
+        advice = mutant_timeout_advice(130, 30, unscaled_name='the limit', tests='those tests')
+
+        assert advice == (f'{_MUTANT_RAISE.format(limit="the per-attempt limit")}, or speed up those tests.')
+
+    def it_offers_lowering_the_reruns_when_scaling_reached_the_cap(self):
+        advice = mutant_timeout_advice(86400, 30000, unscaled_name='the limit', tests='these tests')
+
+        assert advice == 'The limit is capped at 86400s; lower --reruns or --reruns-delay, or speed up these tests.'
+
+    def it_leaves_only_speeding_up_when_the_limit_was_configured_at_the_maximum(self):
+        advice = mutant_timeout_advice(86400, 86400, unscaled_name='the limit', tests='these tests')
+
+        assert advice == 'The limit is already at the 86400s maximum, so speed up these tests.'

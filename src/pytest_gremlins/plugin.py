@@ -118,10 +118,9 @@ from pytest_gremlins.reporting.html import (
 )
 from pytest_gremlins.reporting.json_reporter import JsonReporter
 from pytest_gremlins.reporting.results import (
-    CAPPED_LIMIT_ADVICE,
     GremlinResult,
     GremlinResultStatus,
-    limit_is_capped,
+    limit_advice,
     scaled_limit_note,
 )
 from pytest_gremlins.reporting.score import MutationScore
@@ -2943,11 +2942,11 @@ def _report_diagnostic(message: str) -> None:
 def _warn_prescan_timeout(seconds: int, attempt_timeout: int | None = None) -> None:
     """Warn that the pre-scan timed out, which is a different cause from "no data" (issues #503, #673)."""
     scaled_note = scaled_limit_note(attempt_timeout, seconds)
-    raised_limit = 'the per-attempt limit' if scaled_note else 'it'
-    advice = (
-        CAPPED_LIMIT_ADVICE
-        if scaled_note and limit_is_capped(seconds)
-        else f'set coverage_timeout / --gremlin-coverage-timeout to raise {raised_limit}'
+    advice = limit_advice(
+        seconds,
+        attempt_timeout,
+        unscaled_name='it',
+        raise_advice='set coverage_timeout / --gremlin-coverage-timeout to raise {limit}',
     )
     _report_diagnostic(
         f'pytest-gremlins: coverage pre-scan exceeded {seconds}s{scaled_note}; '

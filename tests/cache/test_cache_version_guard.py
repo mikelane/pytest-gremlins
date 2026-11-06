@@ -162,13 +162,13 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'ae3bf9b36401a6d81cb673cba0e545e5e2821224f0e730ca0e4bcad636c22f22',  # pragma: allowlist secret
+    'plugin.py': '2675541887ffd1cf9f598379ce6e28935997350e1740483e20c727d1187750d4',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
-    'reporting/results.py': '82505d9a8978c5193f13e2f53876a963d10ed1a314a22117dd8a286b21530fd6',  # pragma: allowlist secret  # noqa: E501
+    'reporting/results.py': '68ee94ea714e3cb6410ca9d814b240e2ea5fd4efef5a73fd062b65510dfe0e72',  # pragma: allowlist secret  # noqa: E501
     # --
-    'reporting/score.py': 'e13c00b47d0451a30d4354240d10b2d2224ffdcd3ca87b658f648a3e6cfc61d3',  # pragma: allowlist secret  # noqa: E501
+    'reporting/score.py': '6dd3df555d7106ce82685631af169b6a3ea25498c31ee586a6ee56cd34415d17',  # pragma: allowlist secret  # noqa: E501
     # --
     'reporting/types.py': 'f732c4d57c6173836ac0244f4176fded3e86da043c768d9b55386f42a57d0492',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -176,7 +176,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
     # --
-    'verdicts.py': '369cfc3dac7d71babec502b60c3df8e6c25af33571818a46c6405b74a13c0133',  # pragma: allowlist secret
+    'verdicts.py': '6c4bdbca003af52104d2b21ecef3b7db6f99d6c1c954f825e84c0464d611610c',  # pragma: allowlist secret
     # --
     'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }

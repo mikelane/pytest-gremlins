@@ -40,11 +40,10 @@ from pytest_gremlins.parallel.lightweight import (
     describe_runner_error,
 )
 from pytest_gremlins.reporting.results import (
-    CAPPED_LIMIT_ADVICE,
     TIMEOUT_NOT_CONFIRMED_PREFIX,
     GremlinResult,
     GremlinResultStatus,
-    limit_is_capped,
+    mutant_timeout_advice,
     scaled_limit_note,
 )
 from pytest_gremlins.xdist_options import (
@@ -262,7 +261,7 @@ def _timeout_not_confirmed_message(
     unmutated_outcome: UnmutatedRunOutcome,
     attempt_timeout: int | None = None,
 ) -> str:
-    """Explain a downgraded timeout: the selection, how the unmutated run went, the limit, and how to raise it."""
+    """Explain a downgraded timeout: the selection, how the unmutated run went, the limit, and what to do."""
     shown_ids = ', '.join(selection[:MAX_SELECTION_IDS_IN_MESSAGE]) or 'the whole suite'
     hidden_count = len(selection) - MAX_SELECTION_IDS_IN_MESSAGE
     if hidden_count > 0:
@@ -277,17 +276,8 @@ def _timeout_not_confirmed_message(
             f'{scaled_note}'
         )
     )
-    raised_limit = 'the per-attempt limit' if scaled_note else 'the limit'
-    is_capped = bool(scaled_note) and limit_is_capped(mutant_timeout)
-    advice = (
-        f'{CAPPED_LIMIT_ADVICE[0].upper()}{CAPPED_LIMIT_ADVICE[1:]}'
-        if is_capped
-        else f'Raise {raised_limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout'
-    )
-    return (
-        f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (selection: {shown_ids}; unmutated run {unmutated_run_summary}). '
-        f'{advice}, or speed up these tests.'
-    )
+    advice = mutant_timeout_advice(mutant_timeout, attempt_timeout, unscaled_name='the limit', tests='these tests')
+    return f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (selection: {shown_ids}; unmutated run {unmutated_run_summary}). {advice}'
 
 
 def _rerun_timeout_alone(
