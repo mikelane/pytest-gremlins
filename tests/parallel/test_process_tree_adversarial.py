@@ -51,6 +51,11 @@ def _time_out_repeatedly(cwd: Path) -> None:
             _run(sleeper, cwd, TINY_TIMEOUT_SECONDS)
 
 
+def _start_the_watchdog(cwd: Path) -> None:
+    # The watchdog's pipe stays open for the life of the process by design; start it before counting descriptors.
+    _run(python('pass'), cwd, STARTUP_DEADLINE_SECONDS)
+
+
 def _sleeper_writing_pid(pid_file: Path, *, ignore_sigterm: bool = False) -> str:
     ignore = 'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n' if ignore_sigterm else ''
     return (
@@ -120,6 +125,7 @@ class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
 
     def it_kills_a_sigterm_ignoring_command_when_interrupted_during_the_grace_period(self, tmp_path: Path) -> None:
         pid_file = tmp_path / 'command.pid'
+        _start_the_watchdog(tmp_path)
         fds_before = _open_fd_count()
 
         def interrupt(_signum: int, _frame: FrameType | None) -> None:
@@ -156,6 +162,7 @@ class DescribeRunBoundedCost:
         assert overhead < process_tree.TERMINATE_GRACE_SECONDS
 
     def it_leaves_no_file_descriptors_open_after_repeated_timeouts(self, tmp_path: Path) -> None:
+        _start_the_watchdog(tmp_path)
         before = _open_fd_count()
 
         _time_out_repeatedly(tmp_path)
@@ -163,6 +170,7 @@ class DescribeRunBoundedCost:
         assert _open_fd_count() == before
 
     def it_leaves_no_file_descriptors_open_after_a_missing_executable(self, tmp_path: Path) -> None:
+        _start_the_watchdog(tmp_path)
         before = _open_fd_count()
 
         with pytest.raises(FileNotFoundError):
