@@ -114,15 +114,23 @@ class OperatorRegistry:
                      If None, return all registered operators.
 
         Returns:
-            List of operator instances.
+            List of operator instances. Constructors that raise an Exception are
+            skipped with a UserWarning naming the operator and the exception.
+            Warning filters still apply; BaseException subclasses propagate.
         """
-        if enabled is None:
-            return [op() for op in self._operators.values()]
-
         operators: list[GremlinOperator] = []
-        for name in enabled:
+        for name in self._operators if enabled is None else enabled:
             if name in self._operators:
-                operators.append(self._operators[name]())
+                try:
+                    operator = self._operators[name]()
+                except Exception as failure:
+                    warnings.warn(
+                        f"Operator '{name}' could not be instantiated, ignoring: {type(failure).__name__}: {failure}",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                else:
+                    operators.append(operator)
             else:
                 warnings.warn(f"Unknown operator '{name}' requested, ignoring", UserWarning, stacklevel=2)
         return operators
