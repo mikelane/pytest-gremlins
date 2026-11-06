@@ -44,12 +44,18 @@ from pytest_gremlins.parallel.lightweight import (
     build_lightweight_command,
     describe_runner_error,
 )
-from pytest_gremlins.parallel.worker_kill import kill_process_trees
+from pytest_gremlins.parallel.worker_kill import (
+    descendants_of,
+    kill_process_trees,
+)
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.xdist_options import env_without_xdist_addopts
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import (
+        Callable,
+        Iterable,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +224,12 @@ class _Job:
         return True
 
 
+def _sigkill(pids: Iterable[int]) -> None:
+    for pid in pids:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.kill(pid, getattr(signal, 'SIGKILL', signal.SIGTERM))
+
+
 class WorkerPool:
     """Manages a pool of worker processes for parallel mutation testing.
 
@@ -290,7 +302,13 @@ class WorkerPool:
         exc_val: BaseException | None,
         exc_tb: object,
     ) -> None:
-        """Exit the context manager, shutting down the pool."""
+        """Exit the context manager, shutting down the pool.
+
+        Leaving on an error means the collecting loop stopped, so a worker that is hung would never finish and
+        waiting for it is the hang the watchdog exists to end: the workers are abandoned instead.
+        """
+        if exc_type is not None:
+            self._abandon_workers()
         self.shutdown(wait=True)
 
     def shutdown(self, wait: bool = True) -> None:
@@ -368,11 +386,7 @@ class WorkerPool:
         try:
             return self._score_overdue_gremlins()
         except Exception:
-            logger.warning(
-                'The worker watchdog failed; killing every worker so the run cannot wait on a hung one.',
-                exc_info=True,
-            )
-            self._abandon_workers()
+            logger.warning('The worker watchdog failed; the pool abandons its workers on exit.', exc_info=True)
             raise
 
     def _score_overdue_gremlins(self) -> list[str]:
@@ -385,14 +399,31 @@ class WorkerPool:
         return [job.gremlin_id for job in self._replace_executor_after_hang(overdue, now)]
 
     def _abandon_workers(self) -> None:
-        """Last resort after a watchdog failure: SIGKILL every worker and drop the executor without waiting on it."""
+        """End every worker and drop the executor without waiting on it; harmless to call twice.
+
+        The workers' process trees go first, on a best-effort basis, so a hung gremlin's test command does not
+        outlive the run. Whether or not that works, every worker is then killed directly.
+        """
         executor, self._executor = self._executor, None
         if executor is None:
             return
-        for worker_pid in self._worker_pids(executor):
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.kill(worker_pid, getattr(signal, 'SIGKILL', signal.SIGTERM))
+        worker_pids = self._worker_pids(executor)
+        try:
+            kill_process_trees(worker_pids)
+        except Exception:
+            logger.warning('Cannot end the process trees of the pool workers; trying their children.', exc_info=True)
+            self._kill_children_of(worker_pids)
+        _sigkill(worker_pids)
         executor.shutdown(wait=False, cancel_futures=True)
+
+    @staticmethod
+    def _kill_children_of(worker_pids: set[int]) -> None:
+        """Best effort, one worker at a time: kill what ``descendants_of`` finds, and never raise."""
+        for worker_pid in worker_pids:
+            try:
+                _sigkill(descendants_of(worker_pid))
+            except Exception:
+                logger.warning('Cannot list the descendants of worker %s.', worker_pid, exc_info=True)
 
     def _start_executor(self) -> None:
         context = multiprocessing.get_context()

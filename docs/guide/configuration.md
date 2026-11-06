@@ -928,7 +928,9 @@ grandchild whose parent died first is found while it stays in its test command's
 own session or detaches as a daemon is not found and keeps running. The parent lists the tree with `ps`, or from `/proc`
 where `ps` is missing (slim container images).
 If the watchdog itself fails (for example the process table cannot be read), it logs a warning with the
-traceback, kills every worker directly and re-raises, so the run never waits on the hung worker.
+traceback and re-raises. The same holds for any other error that ends a parallel run early, including an
+interrupt: the pool does not wait for its workers on the way out but ends their process trees where it can,
+kills the workers, and exits, so a hung worker never holds the run and its test command is not left running.
 
 Gremlins in flight on the other workers are handled by how long they have run. One that has already run for its
 whole mutant timeout would be scored a timeout by its own test run, so it is scored a timeout now instead of

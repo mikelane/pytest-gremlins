@@ -48,13 +48,6 @@ if __name__ == '__main__':
 @pytest.mark.large
 @pytest.mark.skipif(sys.platform == 'win32', reason='POSIX process tree')
 class DescribeAWatchdogThatAbandonsAHungWorkerWithATestCommand:
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            'AQA run 3: _abandon_workers SIGKILLs only the workers, so the hung test command is orphaned and '
-            'outlives the run'
-        ),
-    )
     def it_leaves_no_test_command_running_after_the_run_ends(self, tmp_path: Path) -> None:
         script = tmp_path / 'run_where_the_kill_fails.py'
         script.write_text(_RUN_WHERE_THE_KILL_FAILS_WITH_A_TEST_COMMAND)
@@ -120,13 +113,6 @@ if __name__ == '__main__':
 @pytest.mark.large
 @pytest.mark.skipif(sys.platform == 'win32', reason='POSIX process tree')
 class DescribeLeavingThePoolOnAnErrorWhileAWorkerIsHung:
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            'AQA run 3: WorkerPool.__exit__ always calls shutdown(wait=True), so an error raised in the collect '
-            'loop outside service() waits on the hung worker for ever'
-        ),
-    )
     def it_does_not_wait_on_the_hung_worker(self, tmp_path: Path) -> None:
         script = tmp_path / 'run_whose_collect_loop_fails.py'
         script.write_text(_RUN_WHOSE_COLLECT_LOOP_FAILS)
