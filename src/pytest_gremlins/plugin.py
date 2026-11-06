@@ -2663,8 +2663,8 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     # The pre-scan and the control runs start test commands in their own sessions too, so a SIGTERM must reach them
     # through the same cleanup as the mutation run.
     with process_tree.sigterm_cleanup():
-        ran = _collect_coverage_then_run_gremlins(session, gremlin_session, rootdir)
-    if ran:
+        has_run_gremlins = _collect_coverage_then_run_gremlins(session, gremlin_session, rootdir)
+    if has_run_gremlins:
         _report_unmapped_selections(gremlin_session)
 
 

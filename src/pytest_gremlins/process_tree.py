@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import logging
 import multiprocessing
 import os
 from pathlib import Path
@@ -43,6 +44,10 @@ WORKER_STOP_SECONDS = 2.0
 """How long, in total, the SIGTERM cleanup waits for pool workers to end their commands and exit."""
 
 _TASKKILL_TIMEOUT_SECONDS = 10
+
+# Never log from the SIGTERM path (terminate_all and what it calls): the logging module takes locks, and a signal
+# handler can interrupt the thread that holds them.
+logger = logging.getLogger(__name__)
 
 _live_commands: dict[int, tuple[int, subprocess.Popen[bytes]]] = {}
 """Commands that are running now, by pid, with the pid of the process that started each."""
@@ -92,6 +97,13 @@ def _wait_for(
         finally:
             # An interrupt during the grace period still reaps the command and closes its pipes.
             stdout, stderr = _drain(process)
+        # The exit status tells whether SIGTERM was enough (-15) or the group needed SIGKILL (-9).
+        logger.debug(
+            'Test command (pid %d) outlasted %ss; its process group was ended, exit status %s',
+            process.pid,
+            timeout,
+            process.returncode,
+        )
         raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from expired
     except BaseException:
         _kill_tree(process)
@@ -300,6 +312,11 @@ def _drain(process: subprocess.Popen[bytes]) -> tuple[bytes, bytes]:
 
 
 def _abandon_pipes(process: subprocess.Popen[bytes]) -> None:
+    logger.debug(
+        'Output pipes of test command (pid %d) still open %ss after the kill; a process outside its group holds them',
+        process.pid,
+        PIPE_DRAIN_SECONDS,
+    )
     if sys.platform != 'win32':
         for pipe in (process.stdout, process.stderr):
             if pipe is not None:
