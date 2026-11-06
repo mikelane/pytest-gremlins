@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+logger = logging.getLogger(__name__)
 
 FLUSH_EVERY_RESULTS = 25
 """Results that may wait in memory before a flush.
@@ -18,8 +22,9 @@ cost is far below 1% of a run. A kill that arrives between flushes loses at most
 FLUSH_EVERY_SECONDS = 5.0
 """Longest a result waits in memory before a flush.
 
-Bounds the loss when gremlins finish slowly, and when the run stalls on a single stuck gremlin, which
-is the case that motivated the policy.
+Bounds the loss when gremlins finish slowly, and when a parallel run stalls on a single stuck gremlin,
+which is the case that motivated the policy. The sequential runner flushes between gremlins, so it
+can lose up to this long plus the running gremlin's own time (at most ``mutant_timeout``).
 """
 
 
@@ -29,6 +34,11 @@ class PeriodicFlusher:
     The owner calls :meth:`note_result` after each deferred cache write and :meth:`flush_if_due` at least
     once per ``every_seconds``. Nothing here is thread-safe: call it from the thread that owns the cache
     connection.
+
+    A flush that fails (disk full, database locked) never raises: the failure is logged once per flusher,
+    the pending results stay pending, and the next flush retries them. The cache's own ``close()`` still
+    retries them last, which is where a persistent failure surfaces. After a failure :meth:`flush_if_due`
+    waits a full interval before trying again, so a broken disk is not hit on every result.
 
     Args:
         flush: Commits the deferred writes.
@@ -52,20 +62,39 @@ class PeriodicFlusher:
         self._clock = clock
         self._pending = 0
         self._last_flush = clock()
+        self._retry_not_before = 0.0
+        self._warned = False
 
     def note_result(self) -> None:
         """Record that one more result is waiting to be flushed."""
         self._pending += 1
 
     def flush_if_due(self) -> None:
-        """Flush when the count or the interval says so."""
-        interval_elapsed = self._clock() - self._last_flush >= self.every_seconds
+        """Flush when the count or the interval says so, unless a failed flush is still cooling off."""
+        now = self._clock()
+        if now < self._retry_not_before:
+            return
+        interval_elapsed = now - self._last_flush >= self.every_seconds
         if self._pending >= self._every_results or (self._pending and interval_elapsed):
             self.flush()
 
     def flush(self) -> None:
-        """Flush now if anything is pending."""
+        """Flush now if anything is pending; a failure is logged once and leaves the results pending."""
         if self._pending:
-            self._flush()
+            try:
+                self._flush()
+            except (sqlite3.Error, OSError) as flush_error:
+                self._note_failure(flush_error)
+                return
             self._pending = 0
         self._last_flush = self._clock()
+
+    def _note_failure(self, flush_error: Exception) -> None:
+        self._retry_not_before = self._clock() + self.every_seconds
+        if not self._warned:
+            self._warned = True
+            logger.warning(
+                'Could not write finished gremlin results to the cache (%s). '
+                'The run continues and the cache retries the writes when it closes.',
+                flush_error,
+            )

@@ -68,7 +68,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/incremental.py': '9803a880a60d3bd5ede1dd14f3ee02da24a8faed7928d50a9ec93504e5a118c6',  # pragma: allowlist secret  # noqa: E501
     # --
-    'cache/periodic_flush.py': '2a92b57b42aa87c97f6451b3686e977028a6e4f92f4773613cb03c36328fe40f',  # pragma: allowlist secret  # noqa: E501
+    'cache/periodic_flush.py': '0d81ed3d6ee80b2675111cb64829db0f5ba4f879263a935a16bae156ceedda2c',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/store.py': '5f0948aacf44044a8a66ebc1863479e0df29cec9eb4ae73edd63ac2cfab8173b',  # pragma: allowlist secret
     # --
