@@ -100,7 +100,7 @@ class DescribeAParallelRunWithAHungWorker:
 
         output = result.stdout.str() + result.stderr.str()
         assert (tmp_path / 'hung-once').exists(), 'no worker was hung: the test did not exercise the watchdog'
-        assert 'hung-worker watchdog scored gremlin' in output
+        assert 'hung-worker watchdog killed the worker of gremlin' in output
         assert sum(verdicts(output).values()) == 3
         worker_pid, test_command_pid = (int(pid) for pid in pids_file.read_text().split())
         assert _all_gone([worker_pid, test_command_pid]), _describe([worker_pid, test_command_pid])

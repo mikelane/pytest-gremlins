@@ -502,8 +502,10 @@ class WorkerPool:
             for job in self._unfinished_jobs()
             if job not in overdue and job.started_at is not None and now - job.started_at >= self._timeout
         ]
-        self._warn_about_hung_gremlins(overdue, past_their_timeout, now)
         scored = [job for job in [*overdue, *past_their_timeout] if job.settle(self._timeout_result(job, now))]
+        self._warn_about_hung_gremlins(
+            [job for job in overdue if job in scored], [job for job in past_their_timeout if job in scored], now
+        )
         self._breaking_generation = self._generation
         kill_process_trees(worker_pids)
         old_executor.shutdown(wait=True, cancel_futures=True)
@@ -524,7 +526,8 @@ class WorkerPool:
         for job in overdue:
             logger.warning(
                 'Gremlin %s ran %.0fs past its start, beyond the %ss mutant timeout plus %ss grace: '
-                'its worker (pid %s) is hung. Recording TIMEOUT and killing the worker.',
+                'its worker (pid %s) is hung. The worker is killed and the pooled result is TIMEOUT; '
+                'the gremlin is then re-run alone to settle its verdict.',
                 job.gremlin_id,
                 now - (job.started_at or now),
                 self._timeout,
@@ -534,7 +537,8 @@ class WorkerPool:
         for job in past_their_timeout:
             logger.warning(
                 'Gremlin %s was in flight on a worker killed for another hang and had already run %.0fs, '
-                'past the %ss mutant timeout. Recording TIMEOUT instead of restarting it.',
+                'past the %ss mutant timeout. The pooled result is TIMEOUT instead of a restart; '
+                'the gremlin is then re-run alone to settle its verdict.',
                 job.gremlin_id,
                 now - (job.started_at or now),
                 self._timeout,

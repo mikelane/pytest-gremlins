@@ -232,19 +232,11 @@ class DescribeAGremlinWhoseRealVerdictLandsWhileTheWatchdogScoresIt:
         pool._jobs['finishes-at-its-deadline'].started_at = time.monotonic() - 10
         monkeypatch.setattr(pool_module, 'kill_process_trees', lambda _pids: None)
 
-        real_logger = pool_module.logger
+        def verdict_lands_while_scoring(job: _Job, now: float) -> WorkerResult:
+            future.set_result(_survived('finishes-at-its-deadline'))
+            return WorkerResult(job.gremlin_id, GremlinResultStatus.TIMEOUT, execution_time_ms=now)
 
-        class _LandsDuringScoring:
-            # The first warning is the hung-gremlin one, logged after the gremlin is picked and before it is
-            # settled. Every other logger call goes to the real logger, so new log lines do not break the probe.
-            def warning(self, *_args: object, **_kwargs: object) -> None:
-                if not future.done():
-                    future.set_result(_survived('finishes-at-its-deadline'))
-
-            def __getattr__(self, name: str) -> object:
-                return getattr(real_logger, name)
-
-        monkeypatch.setattr(pool_module, 'logger', _LandsDuringScoring())
+        monkeypatch.setattr(pool, '_timeout_result', verdict_lands_while_scoring)
 
         scored = pool.service()
 

@@ -4309,12 +4309,12 @@ def _confirm_and_cache_pooled_results(
 
 
 def _queue_hung_worker_notices(hung_gremlin_ids: Sequence[str], gremlin_session: GremlinSession) -> None:
-    """Tell the terminal summary which gremlins the hung-worker watchdog scored; the pool has already logged each."""
+    """Tell the terminal summary whose workers the hung-worker watchdog killed; the pool already logged each."""
     for gremlin_id in hung_gremlin_ids:
         _queue_terminal_notice(
             gremlin_session,
-            f'pytest-gremlins: warning: the hung-worker watchdog scored gremlin {gremlin_id} as a timeout. It '
-            'outlived its mutant timeout on a worker that was killed.',
+            f'pytest-gremlins: warning: the hung-worker watchdog killed the worker of gremlin {gremlin_id} after it '
+            'outlived its mutant timeout. The gremlin is re-run alone to settle its verdict.',
         )
 
 

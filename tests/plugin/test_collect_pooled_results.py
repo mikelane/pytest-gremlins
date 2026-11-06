@@ -319,7 +319,8 @@ class DescribeCollectPooledResults:
 
         assert [(r.gremlin_id, r.status) for r in aggregator.get_results()] == [('g1', GremlinResultStatus.TIMEOUT)]
         assert len(gremlin_session.terminal_notices) == 1, gremlin_session.terminal_notices
-        assert 'hung-worker watchdog scored gremlin g1 ' in gremlin_session.terminal_notices[0]
+        assert 'hung-worker watchdog killed the worker of gremlin g1 ' in gremlin_session.terminal_notices[0]
+        assert 're-run alone' in gremlin_session.terminal_notices[0]
 
     @pytest.mark.usefixtures('cache_calls')
     def it_keeps_the_shorter_flush_interval_when_it_is_below_the_watchdog_tick(
