@@ -308,7 +308,10 @@ class WorkerPool:
         waiting for it is the hang the watchdog exists to end: the workers are abandoned instead.
         """
         if exc_type is not None:
-            self._abandon_workers()
+            try:
+                self._abandon_workers()
+            except Exception:
+                logger.warning('Cannot abandon the pool workers; the original error is reported.', exc_info=True)
         self.shutdown(wait=True)
 
     def shutdown(self, wait: bool = True) -> None:
