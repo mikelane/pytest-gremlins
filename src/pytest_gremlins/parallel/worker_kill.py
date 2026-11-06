@@ -2,7 +2,8 @@
 
 A worker that hangs can still own a test command, and that command can own more processes. Ending only the
 worker would leave them running, so the whole tree goes: the descendants are listed first (they are reparented
-the moment their parent dies), then every process is killed.
+the moment their parent dies), then their process groups and every process are killed. A process that starts
+its own session escapes, and so does one that left the command's group after its parent died.
 """
 
 from __future__ import annotations
@@ -30,10 +31,33 @@ def kill_process_tree(root_pid: int) -> None:
     if _IS_WINDOWS:
         _taskkill_tree(root_pid)
         return
-    victims = [*descendants_of(root_pid), root_pid]
-    for pid in victims:
+    descendants = descendants_of(root_pid)
+    process_groups = _groups_to_signal(root_pid, descendants)
+    for group in process_groups:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(group, signal.SIGKILL)
+    for pid in [*descendants, root_pid]:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(pid, signal.SIGKILL)
+
+
+def _groups_to_signal(root_pid: int, descendants: list[int]) -> set[int]:
+    """Return the process groups of the descendants, which also hold members whose parent died first.
+
+    A test command that runs in its own process group (see #975) can leave a grandchild that outlives its
+    parent: the parent links no longer reach it, but it is still in the command's group. Signalling that group
+    ends it. The group of this process and the worker's own group are never signalled, so a descendant that
+    shares them cannot take the parent run down.
+    """
+    own_groups = {os.getpgrp(), _group_of(root_pid)}
+    return {group for pid in descendants if (group := _group_of(pid)) not in own_groups}
+
+
+def _group_of(pid: int) -> int:
+    try:
+        return os.getpgid(pid)
+    except (ProcessLookupError, PermissionError):
+        return os.getpgrp()
 
 
 def descendants_of(root_pid: int) -> list[int]:

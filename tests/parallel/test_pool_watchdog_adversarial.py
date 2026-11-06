@@ -83,22 +83,30 @@ class DescribeAHungGremlinInFlightWhenAnotherHangIsCaught:
         assert finished_at[id(second_hung)] - submitted_at < timeout + timeout + grace + SLACK_SECONDS
 
 
-def _spawn_orphaning_tree(tmp_path: Path) -> tuple[subprocess.Popen[bytes], Path]:
-    """Start a process whose child double-forks a long-lived grandchild, then exits (a daemonized helper)."""
+def _spawn_command_with_orphaned_grandchild(tmp_path: Path) -> tuple[subprocess.Popen[bytes], Path]:
+    """Start a worker whose test command (its own process group, as run_bounded makes it) orphans a grandchild.
+
+    The command starts a helper that forks a grandchild and exits, so the grandchild is adopted by init: no
+    parent link leads to it any more, but it stays in the command's process group.
+    """
     grandchild_pid_file = tmp_path / 'grandchild.pid'
-    script = (
+    command_script = (
         'import os, subprocess, sys, time\n'
         'helper = subprocess.Popen([sys.executable, "-c", '
-        '"import os, sys, time\\n'
+        '"import os, time\\n'
         'if os.fork() == 0:\\n'
-        '    os.setsid()\\n'
         f'    open({str(grandchild_pid_file)!r}, \\"w\\").write(str(os.getpid()))\\n'
         '    time.sleep(3600)\\n'
         '"])\n'
         'helper.wait()\n'
         'time.sleep(3600)\n'
     )
-    worker = subprocess.Popen([sys.executable, '-c', script])
+    worker_script = (
+        'import subprocess, sys, time\n'
+        f'subprocess.Popen([sys.executable, "-c", {command_script!r}], start_new_session=True)\n'
+        'time.sleep(3600)\n'
+    )
+    worker = subprocess.Popen([sys.executable, '-c', worker_script])
     deadline = time.monotonic() + 10
     while not grandchild_pid_file.exists() or not grandchild_pid_file.read_text():
         if time.monotonic() > deadline:
@@ -110,9 +118,9 @@ def _spawn_orphaning_tree(tmp_path: Path) -> tuple[subprocess.Popen[bytes], Path
 
 @pytest.mark.medium
 @pytest.mark.skipif(sys.platform == 'win32', reason='POSIX process tree')
-class DescribeKillingAWorkerWhoseTestStartedADaemon:
-    def it_kills_the_daemonized_grandchild_too(self, tmp_path: Path) -> None:
-        worker, grandchild_pid_file = _spawn_orphaning_tree(tmp_path)
+class DescribeKillingAWorkerWhoseTestCommandOrphanedAGrandchild:
+    def it_kills_the_grandchild_that_stayed_in_the_commands_process_group(self, tmp_path: Path) -> None:
+        worker, grandchild_pid_file = _spawn_command_with_orphaned_grandchild(tmp_path)
         grandchild_pid = int(grandchild_pid_file.read_text())
         try:
             kill_process_tree(worker.pid)
