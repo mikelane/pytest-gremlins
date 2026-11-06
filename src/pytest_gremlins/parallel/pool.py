@@ -42,7 +42,7 @@ from pytest_gremlins.parallel.lightweight import (
     build_lightweight_command,
     describe_runner_error,
 )
-from pytest_gremlins.parallel.worker_kill import kill_process_tree
+from pytest_gremlins.parallel.worker_kill import kill_process_trees
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.xdist_options import env_without_xdist_addopts
 
@@ -463,8 +463,7 @@ class WorkerPool:
                 )
             )
         self._breaking_generation = self._generation
-        for worker_pid in worker_pids:
-            kill_process_tree(worker_pid)
+        kill_process_trees(worker_pids)
         old_executor.shutdown(wait=True, cancel_futures=True)
         self._start_executor()
         for job in self._unfinished_jobs():

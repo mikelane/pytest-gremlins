@@ -923,10 +923,10 @@ with no change to how timeouts are re-run alone and counted, and a warning names
 terminal summary.
 
 To end the hang, the parent kills the hung worker and the processes below it (its test command and what that
-started), then starts a fresh worker pool. A process that moves itself out of that tree, such as a daemon that
-starts its own session or double-forks, is not found and keeps running; so does a test command's child whose own
-parent died first and was adopted by init. The parent lists the tree with `ps`, or from `/proc` where `ps` is
-missing (slim container images).
+started), then starts a fresh worker pool. It also signals the process groups of those processes, so a
+grandchild whose parent died first is found while it stays in its test command's group. A process that starts its
+own session or detaches as a daemon is not found and keeps running. The parent lists the tree with `ps`, or from `/proc`
+where `ps` is missing (slim container images).
 
 Gremlins in flight on the other workers are handled by how long they have run. One that has already run for its
 whole mutant timeout would be scored a timeout by its own test run, so it is scored a timeout now instead of

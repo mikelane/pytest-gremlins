@@ -8,6 +8,7 @@ its own session escapes, and so does one that left the command's group after its
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import contextlib
 import logging
 import os
@@ -27,18 +28,33 @@ _IS_WINDOWS = sys.platform == 'win32'
 
 
 def kill_process_tree(root_pid: int) -> None:
-    """SIGKILL ``root_pid`` and all of its descendants (``taskkill /T /F`` on Windows)."""
+    """SIGKILL ``root_pid``, its descendants and their process groups (``taskkill /T /F`` on Windows)."""
+    kill_process_trees([root_pid])
+
+
+def kill_process_trees(root_pids: Iterable[int]) -> None:
+    """Kill several process trees, listing every tree before any process is killed.
+
+    Killing one pool worker breaks the executor, whose manager then terminates the other workers. A worker that
+    dies that way is no longer the parent of its test command, so the command can be found only if the trees
+    were listed first.
+    """
+    roots = list(root_pids)
     if _IS_WINDOWS:
-        _taskkill_tree(root_pid)
+        for root_pid in roots:
+            _taskkill_tree(root_pid)
         return
-    descendants = descendants_of(root_pid)
-    process_groups = _groups_to_signal(root_pid, descendants)
+    descendants_by_root = {root_pid: descendants_of(root_pid) for root_pid in roots}
+    process_groups: set[int] = set()
+    for root_pid, descendants in descendants_by_root.items():
+        process_groups |= _groups_to_signal(root_pid, descendants)
     for group in process_groups:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(group, signal.SIGKILL)
-    for pid in [*descendants, root_pid]:
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.kill(pid, signal.SIGKILL)
+    for root_pid, descendants in descendants_by_root.items():
+        for pid in [*descendants, root_pid]:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGKILL)
 
 
 def _groups_to_signal(root_pid: int, descendants: list[int]) -> set[int]:
@@ -87,6 +103,11 @@ def _children_by_parent() -> dict[int, list[int]] | None:
 
 
 def _parent_links_from_ps() -> list[tuple[int, int]] | None:
+    """Read the parent links ``ps`` prints, using its output even when it exits non-zero.
+
+    ``ps`` exits with 1 when a process ends while it lists, which happens on a busy machine; the rest of the
+    listing is still good, and discarding it would leave the worker's test command running.
+    """
     for ps_command in (PS_COMMAND, FIXED_PATH_PS_COMMAND):
         try:
             listing = subprocess.run(  # Intentional: lists the process table
@@ -94,7 +115,7 @@ def _parent_links_from_ps() -> list[tuple[int, int]] | None:
                 capture_output=True,
                 text=True,
                 timeout=_PS_TIMEOUT_SECONDS,
-                check=True,
+                check=False,
             ).stdout
         except (OSError, subprocess.SubprocessError):
             continue
@@ -103,7 +124,8 @@ def _parent_links_from_ps() -> list[tuple[int, int]] | None:
             columns = line.split()
             if len(columns) == _PS_COLUMNS and all(column.isdigit() for column in columns):
                 links.append((int(columns[0]), int(columns[1])))
-        return links
+        if links:
+            return links
     return None
 
 

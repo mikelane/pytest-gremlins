@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 
@@ -102,7 +103,7 @@ class DescribeAParallelRunWithAHungWorker:
         assert 'hung-worker watchdog scored gremlin' in output
         assert sum(verdicts(output).values()) == 3
         worker_pid, test_command_pid = (int(pid) for pid in pids_file.read_text().split())
-        assert _all_gone([worker_pid, test_command_pid])
+        assert _all_gone([worker_pid, test_command_pid]), _describe([worker_pid, test_command_pid])
 
 
 def _all_gone(pids: list[int]) -> bool:
@@ -113,6 +114,16 @@ def _all_gone(pids: list[int]) -> bool:
             return True
         time.sleep(0.1)
     return False
+
+
+def _describe(pids: list[int]) -> str:
+    listing = subprocess.run(
+        ['ps', '-o', 'pid,ppid,pgid,stat,command', '-p', ','.join(map(str, pids))],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return listing.stdout
 
 
 def _is_alive(pid: int) -> bool:

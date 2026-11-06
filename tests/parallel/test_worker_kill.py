@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -48,3 +50,41 @@ class DescribeDescendantsFromProc:
 
         assert worker_kill.descendants_of(10) == []
         assert 'Cannot list the descendants of worker 10' in caplog.text
+
+
+@pytest.mark.medium
+class DescribeDescendantsFromPs:
+    def it_uses_the_listing_when_ps_exits_nonzero_because_a_process_ended_meanwhile(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def busy_machine_ps(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(command, returncode=1, stdout='  10     1\n  11    10\n  12    11\n')
+
+        monkeypatch.setattr(subprocess, 'run', busy_machine_ps)
+
+        assert sorted(worker_kill.descendants_of(10)) == [11, 12]
+
+
+@pytest.mark.small
+class DescribeKillingSeveralWorkers:
+    def it_lists_every_workers_descendants_before_it_kills_anything(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Killing one worker breaks the executor, whose manager then terminates the others; a worker that dies
+        # that way can no longer be walked, and its test command would be left running.
+        events: list[str] = []
+
+        def list_descendants(root: int) -> list[int]:
+            events.append(f'list {root}')
+            return [root + 1]
+
+        def record_kill(pid: int, _signal: int) -> None:
+            events.append(f'kill {pid}')
+
+        monkeypatch.setattr(worker_kill, '_IS_WINDOWS', False)
+        monkeypatch.setattr(worker_kill, 'descendants_of', list_descendants)
+        monkeypatch.setattr(worker_kill, '_groups_to_signal', lambda _root, _descendants: set())
+        monkeypatch.setattr(os, 'kill', record_kill)
+
+        worker_kill.kill_process_trees([100, 200])
+
+        assert events[:2] == ['list 100', 'list 200']
+        assert sorted(events[2:]) == ['kill 100', 'kill 101', 'kill 200', 'kill 201']
