@@ -11,6 +11,7 @@ from contextlib import closing
 import os
 from pathlib import Path
 import re
+import select
 import signal
 import sqlite3
 import subprocess
@@ -23,6 +24,7 @@ pytestmark = pytest.mark.usefixtures('utf8_child_output')
 
 WAIT_LIMIT_SECONDS = 180
 POLL_SECONDS = 0.2
+READ_CHUNK_BYTES = 4096
 
 _CALC = """
 def add(a, b):
@@ -125,12 +127,22 @@ class DescribeKilledParallelRun:
 
 
 def _first_cache_hit_count(process: subprocess.Popen[bytes]) -> int:
+    """Return the cache-hit count the run prints, failing at a hard deadline even if the run goes silent.
+
+    Reads the pipe with ``select`` and ``os.read`` so a child that prints nothing cannot block past the
+    deadline. The caller kills the child.
+    """
     assert process.stdout is not None
+    descriptor = process.stdout.fileno()
     deadline = time.monotonic() + WAIT_LIMIT_SECONDS
-    for raw_line in process.stdout:
-        match = re.search(r'(\d+) gremlins from cache', raw_line.decode('utf-8', 'replace'))
+    collected = b''
+    while (remaining := deadline - time.monotonic()) > 0:
+        readable, _, _ = select.select([descriptor], [], [], remaining)
+        chunk = os.read(descriptor, READ_CHUNK_BYTES) if readable else b''
+        if not chunk:
+            break
+        collected += chunk
+        match = re.search(rb'(\d+) gremlins from cache', collected)
         if match:
             return int(match.group(1))
-        if time.monotonic() > deadline:
-            break
-    pytest.fail('the second run never reported its cache hits')
+    pytest.fail(f'the second run never reported its cache hits. Output so far:\n{collected.decode("utf-8", "replace")}')

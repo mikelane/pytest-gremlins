@@ -4210,6 +4210,23 @@ def _run_parallel_mutation_testing(  # pragma: no cover
     return results
 
 
+def _collect_one_result(
+    future: Future[WorkerResult],
+    gremlin: Gremlin,
+    selected_tests: list[str],
+    aggregator: ResultAggregator,
+    gremlin_session: GremlinSession,
+) -> bool:
+    """Add one finished future to the aggregator; return whether its verdict was final and handed to the cache."""
+    try:
+        worker_result = future.result()
+        aggregator.add_result(worker_result)
+    except Exception as execution_error:
+        aggregator.add_error(gremlin.gremlin_id, execution_error)
+        return False
+    return _cache_final_worker_result(gremlin, worker_result, selected_tests, gremlin_session)
+
+
 def _collect_pooled_results(
     futures: Mapping[Future[WorkerResult], str],
     aggregator: ResultAggregator,
@@ -4232,18 +4249,11 @@ def _collect_pooled_results(
             done, pending_futures = wait(pending_futures, timeout=flusher.every_seconds, return_when=FIRST_COMPLETED)
             for future in done:
                 gremlin_id = futures[future]
-                try:
-                    worker_result = future.result()
-                    aggregator.add_result(worker_result)
-                except Exception as execution_error:
-                    aggregator.add_error(gremlin_id, execution_error)
-                else:
-                    if _cache_final_worker_result(
-                        gremlin_by_id[gremlin_id], worker_result, gremlin_tests[gremlin_id], gremlin_session
-                    ):
-                        cached_early.add(gremlin_id)
-                        flusher.note_result()
-
+                if _collect_one_result(
+                    future, gremlin_by_id[gremlin_id], gremlin_tests[gremlin_id], aggregator, gremlin_session
+                ):
+                    cached_early.add(gremlin_id)
+                    flusher.note_result()
                 completed, total = aggregator.get_progress()
                 print(f'\rpytest-gremlins: Progress {completed}/{total}', end='', flush=True)
             flusher.flush_if_due()
