@@ -1140,7 +1140,6 @@ def pytest_configure(config: pytest.Config) -> None:
     xdist_active = xdist_numprocesses not in (None, 0)
 
     rootdir = _get_rootdir(config)
-    _reject_argument_files_gremlin_runs_cannot_read(config, rootdir)
 
     cli_max_pardons_pct, cli_max_pardons = _read_validated_pardon_limits(config)
 
@@ -1424,6 +1423,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
     if source_files:
+        _reject_argument_files_gremlin_runs_cannot_read(session.config, rootdir)
         tests = [(item.path, node_id) for item, node_id in zip(session.items, normalized_node_ids, strict=True)]
         _reject_node_ids_gremlin_runs_cannot_resolve(tests, rootdir)
 
@@ -2767,6 +2767,7 @@ def _rebuild_state_from_xdist_workers(
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
     if source_files:
+        _reject_argument_files_gremlin_runs_cannot_read(session.config, rootdir)
         _reject_node_ids_gremlin_runs_cannot_resolve(_xdist_tests_by_claimed_file(normalized, rootdir), rootdir)
     _hash_sources_and_tests_for_cache(
         gremlin_session,
@@ -3174,7 +3175,10 @@ def _unexpanded_inherited_arguments(config: pytest.Config) -> list[str]:
 
 
 def _reject_argument_files_gremlin_runs_cannot_read(config: pytest.Config, rootdir: Path) -> None:
-    """Stop the run when an inherited relative ``@file`` exists only from the session's starting directory (#686)."""
+    """Stop a run that has sources to mutate when an inherited relative ``@file`` exists only from the session's start.
+
+    The file is looked up from the directory the session started in and from the rootdir (#686, #973).
+    """
     session_dir = config.invocation_params.dir
     unreadable = argument_files_only_the_session_can_read(_unexpanded_inherited_arguments(config), session_dir, rootdir)
     if unreadable:
