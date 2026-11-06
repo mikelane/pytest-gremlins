@@ -6,6 +6,7 @@ as other gremlins have reached the cache file, the way a CI timeout or an OOM ki
 
 from __future__ import annotations
 
+from contextlib import closing
 import os
 from pathlib import Path
 import re
@@ -63,7 +64,7 @@ def _cached_row_count(project: Path) -> int:
     if not database.exists():
         return 0
     try:
-        with sqlite3.connect(f'file:{database}?mode=ro', uri=True) as connection:
+        with closing(sqlite3.connect(f'file:{database}?mode=ro', uri=True)) as connection:
             return int(connection.execute('SELECT COUNT(*) FROM results').fetchone()[0])
     except sqlite3.Error:
         return 0
