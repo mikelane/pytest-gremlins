@@ -918,8 +918,9 @@ The limit above is enforced inside each worker. In `--gremlin-parallel` runs the
 own deadline for every gremlin, so a worker that hangs outside the test run (and so never reaches the limit it
 enforces itself) cannot hold the whole run. Each worker reports when it starts a gremlin, and the parent times
 the gremlin from that moment, not from when it was queued behind other gremlins. A gremlin still running
-10 seconds after its mutant timeout (the grace margin) is scored as a timeout, with no change to how timeouts
-are re-run alone and counted, and a warning names it in the log and in the terminal summary.
+10 seconds after its mutant timeout (the grace margin), counted from its latest start, is scored as a timeout,
+with no change to how timeouts are re-run alone and counted, and a warning names it in the log and in the
+terminal summary.
 
 To end the hang, the parent kills the hung worker and the processes below it (its test command and what that
 started), then starts a fresh worker pool. A process that moves itself out of that tree, such as a daemon that
@@ -931,7 +932,9 @@ Gremlins in flight on the other workers are handled by how long they have run. O
 whole mutant timeout would be scored a timeout by its own test run, so it is scored a timeout now instead of
 getting a second full deadline. One still inside its timeout starts again on the new pool, and its verdict is
 unaffected. A healthy gremlin therefore waits less than one mutant timeout before the pool is rebuilt and at
-most one timeout plus the grace margin after it. Gremlins that were still queued are unaffected.
+most one timeout plus the grace margin after it. A gremlin's deadline restarts only when another gremlin's hang
+rebuilds the pool while it is still inside its timeout; every rebuild scores at least one gremlin for good,
+so the run always progresses. Gremlins that were still queued are unaffected.
 
 The guarantee covers a gremlin whose worker started it. A worker that cannot even report the start is not
 watched. `--gremlin-batch` runs do not have this deadline yet: a batch worker that hangs outside the test run
