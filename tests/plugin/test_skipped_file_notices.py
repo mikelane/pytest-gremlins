@@ -22,6 +22,8 @@ from pytest_gremlins.plugin import (
     pytest_terminal_summary,
 )
 
+pytestmark = pytest.mark.usefixtures('hooks_read_global_session')
+
 
 def _written_lines(reporter: MagicMock) -> list[str]:
     return [written.args[0] for written in reporter.write_line.call_args_list]
