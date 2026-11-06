@@ -381,7 +381,9 @@ process group it still knows. The caller can die by SIGKILL of one pid or of its
   outlives a killed main process does not keep the pipe open. Commands and the watchdog are started with
   `close_fds`, so they never hold a write end.
 - Each worker process has its own watchdog, so a worker that is killed alone has its commands ended too.
-- At a normal exit the pipe is closed and the helper is waited for, so no zombie or `ResourceWarning` is left.
+- At a normal exit the pipe is closed and the helper is waited for, so no zombie or `ResourceWarning` is left. A
+  forked child closes its copy of the pipe through the file object that owns it and silently drops the helper's process
+  handle, which is not its to wait for, so it prints no error or warning either.
 - The watchdog is not started on Windows. There the interrupt and exit cleanup still apply, but a hard kill of the
   gremlins process can leave a test run's processes behind.
 - A command that starts a process in a session of its own (`setsid`) escapes both the timeout kill and the watchdog.

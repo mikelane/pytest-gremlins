@@ -30,17 +30,25 @@ _RUN_ONE_COMMAND = (
 
 
 class DescribeWatchdogAfterFork:
-    @pytest.mark.xfail(
-        strict=True,
-        reason='QA run 5: _forget_inherited_commands os.close()s the fd that the Popen stdin file object still owns, '
-        'so dropping it double-closes and Python prints an OSError traceback in every forked child',
-    )
     def it_writes_nothing_to_stderr_in_a_child_forked_after_a_command_ran(self) -> None:
         # A Linux pool on Python 3.11-3.13 forks its workers (ProcessPoolExecutor's default context) after the main
         # process ran the pre-scan and the control run through run_bounded.
         runner = f'{_RUN_ONE_COMMAND}child = os.fork()\nif child == 0:\n    os._exit(0)\nos.waitpid(child, 0)\n'
 
         completed = subprocess.run(python(runner), capture_output=True, check=False, timeout=STARTUP_DEADLINE_SECONDS)
+
+        assert (completed.returncode, completed.stderr) == (0, b'')
+
+    def it_warns_of_nothing_in_development_mode_in_a_forked_child_that_drops_the_watchdog(self) -> None:
+        # The forked child inherits the watchdog's Popen but is not its parent, so it must not warn "still running".
+        runner = f'{_RUN_ONE_COMMAND}child = os.fork()\nif child == 0:\n    os._exit(0)\nos.waitpid(child, 0)\n'
+
+        completed = subprocess.run(
+            [sys.executable, '-X', 'dev', '-W', 'error::ResourceWarning', '-c', runner],
+            capture_output=True,
+            check=False,
+            timeout=STARTUP_DEADLINE_SECONDS,
+        )
 
         assert (completed.returncode, completed.stderr) == (0, b'')
 

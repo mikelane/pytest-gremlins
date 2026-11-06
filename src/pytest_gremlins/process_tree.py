@@ -167,6 +167,28 @@ for group in groups:
 """The watchdog program: it keeps the process groups it is told about and SIGKILLs them when its stdin closes."""
 
 
+class _WatchdogProcess(subprocess.Popen[bytes]):
+    """The watchdog's ``Popen``, which only the process that started it may finalize.
+
+    A forked child inherits the object but not the watchdog, which is not its child. ``Popen`` would warn that the
+    subprocess is "still running" when the child drops it.
+    """
+
+    def __init__(self, command: Sequence[str]) -> None:
+        self.owner = os.getpid()
+        super().__init__(  # Intentional: starts the watchdog helper
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    def __del__(self) -> None:
+        if self.owner == os.getpid():
+            super().__del__()
+
+
 class _Watchdog:
     """A helper process, in its own session, that ends this process's test commands if this process dies.
 
@@ -176,15 +198,8 @@ class _Watchdog:
 
     def __init__(self) -> None:
         self.owner = os.getpid()
-        self.process = subprocess.Popen(  # Intentional: starts the watchdog helper
-            [sys.executable, '-I', '-S', '-c', _WATCHDOG_SOURCE],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        self.process = _WatchdogProcess([sys.executable, '-I', '-S', '-c', _WATCHDOG_SOURCE])
         assert self.process.stdin is not None  # noqa: S101 - stdin=PIPE
-        self.pipe_fd = self.process.stdin.fileno()
 
     def tell(self, action: str, group: int) -> None:
         assert self.process.stdin is not None  # noqa: S101 - stdin=PIPE
@@ -344,9 +359,11 @@ def _forget_inherited_commands() -> None:
     _live_commands.clear()
     # The child holds a copy of its parent's watchdog pipe. Closing it here keeps the child from holding the pipe open
     # past the parent's death, which would stop the watchdog from ever seeing end-of-file.
-    if _watchdog is not None and _watchdog.owner == os.getppid():
+    # Close it through the file object that owns the descriptor: closing the bare number would leave that object to
+    # close it a second time when it is dropped, possibly after the number was reused.
+    if _watchdog is not None and _watchdog.owner == os.getppid() and _watchdog.process.stdin is not None:
         with contextlib.suppress(OSError, ValueError):
-            os.close(_watchdog.pipe_fd)
+            _watchdog.process.stdin.close()
     _watchdog = None
 
 
