@@ -212,13 +212,13 @@ class _Job:
     pid: int | None = None
     started_at: float | None = None
 
-    def settle(self, result: WorkerResult | None = None, error: BaseException | None = None) -> bool:
+    def settle(self, outcome: WorkerResult | BaseException) -> bool:
         """Resolve the future the caller holds, once; return whether this call did it (a later attempt is ignored)."""
         try:
-            if error is not None:
-                self.outcome.set_exception(error)
+            if isinstance(outcome, BaseException):
+                self.outcome.set_exception(outcome)
             else:
-                self.outcome.set_result(result)  # type: ignore[arg-type]
+                self.outcome.set_result(outcome)
         except InvalidStateError:
             return False
         return True
@@ -453,11 +453,11 @@ class WorkerPool:
             return
         error = inner.exception()
         if error is None:
-            job.settle(result=inner.result())
+            job.settle(inner.result())
         elif isinstance(error, BrokenProcessPool) and generation == self._breaking_generation:
             return  # the watchdog broke this executor on purpose and is about to run the job again
         else:
-            job.settle(error=error)
+            job.settle(error)
 
     def _read_start_reports(self) -> None:
         while not self._reports.empty():
@@ -494,6 +494,17 @@ class WorkerPool:
             for job in self._unfinished_jobs()
             if job not in overdue and job.started_at is not None and now - job.started_at >= self._timeout
         ]
+        self._warn_about_hung_gremlins(overdue, past_their_timeout, now)
+        scored = [job for job in [*overdue, *past_their_timeout] if job.settle(self._timeout_result(job, now))]
+        self._breaking_generation = self._generation
+        kill_process_trees(worker_pids)
+        old_executor.shutdown(wait=True, cancel_futures=True)
+        self._start_executor()
+        for job in self._unfinished_jobs():
+            self._dispatch(job)
+        return scored
+
+    def _warn_about_hung_gremlins(self, overdue: list[_Job], past_their_timeout: list[_Job], now: float) -> None:
         for job in overdue:
             logger.warning(
                 'Gremlin %s ran %.0fs past its start, beyond the %ss mutant timeout plus %ss grace: '
@@ -512,24 +523,14 @@ class WorkerPool:
                 now - (job.started_at or now),
                 self._timeout,
             )
-        scored = [
-            job
-            for job in [*overdue, *past_their_timeout]
-            if job.settle(
-                result=WorkerResult(
-                    gremlin_id=job.gremlin_id,
-                    status=GremlinResultStatus.TIMEOUT,
-                    execution_time_ms=(now - (job.started_at or now)) * 1000,
-                )
-            )
-        ]
-        self._breaking_generation = self._generation
-        kill_process_trees(worker_pids)
-        old_executor.shutdown(wait=True, cancel_futures=True)
-        self._start_executor()
-        for job in self._unfinished_jobs():
-            self._dispatch(job)
-        return scored
+
+    @staticmethod
+    def _timeout_result(job: _Job, now: float) -> WorkerResult:
+        return WorkerResult(
+            gremlin_id=job.gremlin_id,
+            status=GremlinResultStatus.TIMEOUT,
+            execution_time_ms=(now - (job.started_at or now)) * 1000,
+        )
 
     def _worker_pids(self, executor: ProcessPoolExecutor) -> set[int]:
         """Return the pids of every worker of ``executor``, including ones whose start report is not read yet."""
