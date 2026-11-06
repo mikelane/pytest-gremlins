@@ -554,6 +554,18 @@ The cache is stored in `.gremlins_cache/` in your project root. Cache keys inclu
 
 When source or test files change, affected gremlins are re-tested.
 
+**An interrupted run keeps what it finished.** Results are written to the cache while the run is still going, and
+committed to disk every 25 results or every 5 seconds, whichever comes first. If the run is stopped early (Ctrl-C, a CI
+step timeout, an out-of-memory kill), the next run hits the cache for every gremlin that finished before the last
+commit. A parallel run loses at most the last few seconds of results to a kill; a sequential run can also lose the
+gremlin that was running, which takes up to the mutant timeout. If a commit fails (a full disk, a locked database),
+the run prints one `pytest-gremlins: warning: could not write finished results to the cache` line in the terminal
+summary, keeps going and retries the writes, and the cache retries them again when it closes.
+
+With `--gremlin-parallel`, a timed-out gremlin and a gremlin killed at collection are cached only after their verdicts
+are confirmed at the end of the run, so those few are re-tested after an interruption. `--gremlin-batch` caches at the
+end of the run, so an interrupted batch run keeps nothing.
+
 When a source file changes, the rows cached for its old content cannot hit while the file keeps its current content,
 so each run deletes them at start. `results.db` keeps one version of each file instead of growing with every edit.
 This needs no option. Because the older version's rows are gone, switching to a branch with a different version of a

@@ -107,6 +107,23 @@ def _collect_unmutated(
     return run_control(command, node_ids, rootdir, env, node_ids_dir=gremlin_session.instrumented_dir)
 
 
+def is_collection_kill(result: GremlinResult) -> bool:
+    """Return whether the result is a ZAPPED verdict whose killer is the collection phase, not a test."""
+    return result.status == GremlinResultStatus.ZAPPED and result.killing_test == COLLECTION_KILLING_TEST
+
+
+def pooled_verdict_is_final(result: GremlinResult) -> bool:
+    """Return whether :func:`_confirm_pooled_result` leaves this worker verdict exactly as it is.
+
+    Confirmation rewrites only two verdicts: a TIMEOUT (re-run alone, then checked against the unmutated
+    selection) and a collection kill (checked against the unmutated selection). Every other verdict passes
+    through unchanged, so it can be cached the moment its worker returns. Caching a verdict that
+    confirmation could still change would persist a wrong answer across runs, which is worse than a cold
+    cache, so those two wait.
+    """
+    return result.status != GremlinResultStatus.TIMEOUT and not is_collection_kill(result)
+
+
 def _confirm_collection_kill(
     result: GremlinResult,
     node_ids: Sequence[str],
@@ -131,7 +148,7 @@ def _confirm_collection_kill(
     Returns:
         ``result`` unchanged, or an ERROR result when the unmutated selection fails to load.
     """
-    if result.status != GremlinResultStatus.ZAPPED or result.killing_test != COLLECTION_KILLING_TEST:
+    if not is_collection_kill(result):
         return result
     selection = tuple(node_ids)
     if selection not in gremlin_session.unmutated_load_checks:
@@ -165,11 +182,7 @@ def _prefill_collection_kill_confirmations(
         gremlin_session: The current gremlin session, holding the memo and the worker count.
         rootdir: Root directory of the project.
     """
-    selections = {
-        tuple(node_ids): node_ids
-        for result, node_ids in pending
-        if result.status == GremlinResultStatus.ZAPPED and result.killing_test == COLLECTION_KILLING_TEST
-    }
+    selections = {tuple(node_ids): node_ids for result, node_ids in pending if is_collection_kill(result)}
     unchecked = [selection for selection in selections if selection not in gremlin_session.unmutated_load_checks]
     if not unchecked:
         return

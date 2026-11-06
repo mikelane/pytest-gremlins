@@ -68,6 +68,8 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/incremental.py': '9803a880a60d3bd5ede1dd14f3ee02da24a8faed7928d50a9ec93504e5a118c6',  # pragma: allowlist secret  # noqa: E501
     # --
+    'cache/periodic_flush.py': '20f5edde8b7f32596c6940faa3ada471eaf5333de2aacb91b14aa9345bd98417',  # pragma: allowlist secret  # noqa: E501
+    # --
     'cache/store.py': '5f0948aacf44044a8a66ebc1863479e0df29cec9eb4ae73edd63ac2cfab8173b',  # pragma: allowlist secret
     # --
     'cache/types.py': 'e8f2a82731cb4bfaec2a4803fe312826f3a85511224868322aa7eb127339085a',  # pragma: allowlist secret
@@ -162,7 +164,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '674f9f1f0634798cd70e501705ea47b3090ffad2a1bc67d3c8c200a4c1b6015b',  # pragma: allowlist secret
+    'plugin.py': '7cca583411d07ede2107e8c73668cc5d38bbb3eabf22c90c653a06a82f1ef4fe',  # pragma: allowlist secret
     # --
     'process_tree.py': '9afce676657ae67813024206a0f8a3b681aa8685eae27036035d21cb12169374',  # pragma: allowlist secret
     # --
@@ -178,7 +180,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
     # --
-    'verdicts.py': '58826b7d250cdf9a61274423bc42b67e653625feeca150808cb5dec8fc393062',  # pragma: allowlist secret
+    'verdicts.py': '017360118686d694dd750f1c898155fc9e8c43a3b5cc12314d49d3580ad7162a',  # pragma: allowlist secret
     # --
     'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }
@@ -461,7 +463,7 @@ class DescribeCacheVersionGuard:
         before = _guarded_digests()
 
         verdicts_source = package_copy / 'verdicts.py'
-        original = 'if result.status != GremlinResultStatus.ZAPPED or result.killing_test != COLLECTION_KILLING_TEST:'
+        original = 'if not is_collection_kill(result):'
         assert original in verdicts_source.read_text()
         verdicts_source.write_text(verdicts_source.read_text().replace(original, 'if True:'))
 

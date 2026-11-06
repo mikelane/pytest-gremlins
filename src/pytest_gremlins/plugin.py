@@ -10,7 +10,10 @@ import argparse
 import ast
 import base64
 import collections.abc
-from concurrent.futures import as_completed
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    wait,
+)
 from dataclasses import (
     dataclass,
     field,
@@ -57,6 +60,7 @@ from pytest_gremlins.cache.incremental import (
     RerunBudget,
     subprocess_optimize_level,
 )
+from pytest_gremlins.cache.periodic_flush import PeriodicFlusher
 from pytest_gremlins.config import (
     DEFAULT_PRESCAN_WORKERS,
     MAX_PRESCAN_WORKERS,
@@ -108,9 +112,7 @@ from pytest_gremlins.operators.entry_points import (
 )
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
-from pytest_gremlins.parallel.exit_codes import (
-    GREMLIN_COLLECTION_FAILED_EXIT_CODE,
-)
+from pytest_gremlins.parallel.exit_codes import GREMLIN_COLLECTION_FAILED_EXIT_CODE
 from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
 )
@@ -163,6 +165,7 @@ from pytest_gremlins.verdicts import (
     _result_from_cached_row,
     _result_from_worker,
     _test_gremlin,
+    pooled_verdict_is_final,
 )
 from pytest_gremlins.xdist_options import (
     addopts_without_xdist,
@@ -172,13 +175,17 @@ from pytest_gremlins.xdist_options import (
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
+        Mapping,
         Sequence,
     )
+    from collections.abc import Set as AbstractSet
+    from concurrent.futures import Future
 
     import coverage
 
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.operators import GremlinOperator
+    from pytest_gremlins.parallel.pool import WorkerResult
 
 
 DEFAULT_TEST_FILE_PATTERNS = ('test_*.py', '*_test.py')
@@ -4196,18 +4203,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             )
             futures[future] = gremlin.gremlin_id
 
-        # Collect results as they complete
-        for future in as_completed(futures):
-            gremlin_id = futures[future]
-            try:
-                worker_result = future.result()
-                aggregator.add_result(worker_result)
-            except Exception as execution_error:
-                aggregator.add_error(gremlin_id, execution_error)
-
-            # Progress reporting
-            completed, total = aggregator.get_progress()
-            print(f'\rpytest-gremlins: Progress {completed}/{total}', end='', flush=True)
+        early_cached_ids = _collect_pooled_results(futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session)
 
     print()  # New line after progress
 
@@ -4224,9 +4220,63 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             continue
         unconfirmed.append(gremlin_result)
 
-    results.extend(_confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir))
+    results.extend(
+        _confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir, early_cached_ids)
+    )
 
     return results
+
+
+def _collect_one_result(
+    future: Future[WorkerResult],
+    gremlin: Gremlin,
+    selected_tests: list[str],
+    aggregator: ResultAggregator,
+    gremlin_session: GremlinSession,
+) -> bool:
+    """Add one finished future to the aggregator; return whether its verdict was final and handed to the cache."""
+    try:
+        worker_result = future.result()
+        aggregator.add_result(worker_result)
+    except Exception as execution_error:
+        aggregator.add_error(gremlin.gremlin_id, execution_error)
+        return False
+    return _cache_final_worker_result(gremlin, worker_result, selected_tests, gremlin_session)
+
+
+def _collect_pooled_results(
+    futures: Mapping[Future[WorkerResult], str],
+    aggregator: ResultAggregator,
+    gremlin_by_id: Mapping[str, Gremlin],
+    gremlin_tests: Mapping[str, list[str]],
+    gremlin_session: GremlinSession,
+) -> set[str]:
+    """Collect worker results as they complete, caching final verdicts at once; return the ids cached that way.
+
+    A run that is killed or stalls keeps what it finished (#974): each final verdict goes to the cache the
+    moment its worker returns, and the cache is flushed on a timer, so a kill loses at most one flush window.
+    The flush also runs when anything, including ``KeyboardInterrupt``, propagates out of the wait. This
+    runs on the thread that owns the cache's SQLite connection.
+    """
+    flusher = _cache_flusher_for(gremlin_session)
+    early_cached_ids: set[str] = set()
+    pending_futures = set(futures)
+    try:
+        while pending_futures:
+            done, pending_futures = wait(pending_futures, timeout=flusher.every_seconds, return_when=FIRST_COMPLETED)
+            for future in done:
+                gremlin_id = futures[future]
+                if _collect_one_result(
+                    future, gremlin_by_id[gremlin_id], gremlin_tests[gremlin_id], aggregator, gremlin_session
+                ):
+                    early_cached_ids.add(gremlin_id)
+                    flusher.note_result()
+                completed, total = aggregator.get_progress()
+                print(f'\rpytest-gremlins: Progress {completed}/{total}', end='', flush=True)
+            flusher.flush_if_due()
+    finally:
+        flusher.flush()
+    return early_cached_ids
 
 
 def _confirm_and_cache_pooled_results(
@@ -4234,8 +4284,14 @@ def _confirm_and_cache_pooled_results(
     test_commands: dict[str, list[str]],
     gremlin_session: GremlinSession,
     rootdir: Path,
+    early_cached_ids: AbstractSet[str],
 ) -> list[GremlinResult]:
-    """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them."""
+    """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them.
+
+    Results whose gremlin id is in ``early_cached_ids`` were final when their worker returned and were
+    written then (see :func:`_cache_final_worker_result`); confirmation leaves them unchanged, so they
+    are not written twice.
+    """
     _prefill_collection_kill_confirmations(
         [(r, _node_ids_for_tests(r.selected_tests, gremlin_session)) for r in unconfirmed], gremlin_session, rootdir
     )
@@ -4249,10 +4305,43 @@ def _confirm_and_cache_pooled_results(
             rootdir,
         )
         confirmed.append(confirmed_result)
+        if unconfirmed_result.gremlin.gremlin_id in early_cached_ids:
+            continue
         _cache_gremlin_result(
             unconfirmed_result.gremlin, unconfirmed_result.selected_tests, confirmed_result, gremlin_session
         )
     return confirmed
+
+
+def _cache_final_worker_result(
+    gremlin: Gremlin,
+    worker_result: WorkerResult,
+    selected_tests: list[str],
+    gremlin_session: GremlinSession,
+) -> bool:
+    """Cache the worker's verdict now if confirmation cannot change it; return whether it was handed to the cache."""
+    result = _result_from_worker(gremlin, worker_result, selected_tests)
+    if not pooled_verdict_is_final(result):
+        return False
+    _cache_gremlin_result(gremlin, selected_tests, result, gremlin_session)
+    return True
+
+
+def _cache_flusher_for(gremlin_session: GremlinSession) -> PeriodicFlusher:
+    """Return the flusher that commits the session cache's deferred writes, doing nothing when caching is off."""
+    cache = gremlin_session.cache
+    if not gremlin_session.cache_enabled or cache is None:
+        return PeriodicFlusher(lambda: None)
+
+    def queue_failure_notice(flush_error: Exception) -> None:
+        _queue_terminal_notice(
+            gremlin_session,
+            'pytest-gremlins: warning: could not write finished results to the cache '
+            f'({_describe_exception(flush_error)}). The run continues and retries the writes; '
+            'the cache retries them again when it closes.',
+        )
+
+    return PeriodicFlusher(cache.flush, on_first_failure=queue_failure_notice)
 
 
 def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
@@ -4484,7 +4573,8 @@ def _run_mutation_testing(
 ) -> list[GremlinResult]:
     """Run mutation testing for all gremlins.
 
-    Uses incremental caching when enabled to skip unchanged gremlins.
+    Uses incremental caching when enabled to skip unchanged gremlins. Cached results are flushed to disk
+    periodically and when the run is interrupted, so an interrupted run keeps what it finished (#974).
 
     Args:
         session: The pytest session.
@@ -4493,6 +4583,19 @@ def _run_mutation_testing(
     Returns:
         List of results for each gremlin.
     """
+    flusher = _cache_flusher_for(gremlin_session)
+    try:
+        return _run_gremlins_one_by_one(session, gremlin_session, flusher)
+    finally:
+        flusher.flush()
+
+
+def _run_gremlins_one_by_one(
+    session: pytest.Session,
+    gremlin_session: GremlinSession,
+    flusher: PeriodicFlusher,
+) -> list[GremlinResult]:
+    """Run each gremlin in turn, caching every result and flushing through ``flusher``."""
     results: list[GremlinResult] = []
     rootdir = _get_rootdir(session.config)
     base_test_command = _build_test_command(
@@ -4560,6 +4663,8 @@ def _run_mutation_testing(
 
         # Cache the result for next run
         _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
+        flusher.note_result()
+        flusher.flush_if_due()
 
         results.append(gremlin_result)
 
