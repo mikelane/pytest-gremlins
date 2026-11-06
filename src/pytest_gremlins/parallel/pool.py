@@ -358,7 +358,7 @@ class WorkerPool:
         gremlins get a TIMEOUT verdict, and the executor is replaced as described in the class docstring.
 
         Returns:
-            The ids of the gremlins found hung by this call.
+            The ids of the gremlins scored TIMEOUT by this call.
         """
         if self._executor is None:
             return []
@@ -366,9 +366,9 @@ class WorkerPool:
         self._read_start_reports()
         now = time.monotonic()
         overdue = [job for job in self._unfinished_jobs() if self._is_overdue(job, now)]
-        if overdue:
-            self._replace_executor_after_hang(overdue, now)
-        return [job.gremlin_id for job in overdue]
+        if not overdue:
+            return []
+        return [job.gremlin_id for job in self._replace_executor_after_hang(overdue, now)]
 
     def _start_executor(self) -> None:
         context = multiprocessing.get_context()
@@ -419,7 +419,23 @@ class WorkerPool:
     def _is_overdue(self, job: _Job, now: float) -> bool:
         return job.started_at is not None and now - job.started_at > self._timeout + self._grace_seconds
 
-    def _replace_executor_after_hang(self, overdue: list[_Job], now: float) -> None:
+    def _replace_executor_after_hang(self, overdue: list[_Job], now: float) -> list[_Job]:
+        """Score the hung gremlins TIMEOUT, rebuild the executor, and return every gremlin scored.
+
+        Also scored are the gremlins in flight on other workers that have already run for their whole mutant
+        timeout: the timeout their own test run enforces has passed, so they would be scored TIMEOUT anyway, and
+        a fresh start would give them a second full deadline. Only gremlins still within their timeout restart,
+        so a healthy gremlin waits less than one timeout before the rebuild and at most one timeout plus the
+        grace margin after it.
+        """
+        old_executor = self._executor
+        assert old_executor is not None  # noqa: S101
+        worker_pids = self._worker_pids(old_executor)
+        past_their_timeout = [
+            job
+            for job in self._unfinished_jobs()
+            if job not in overdue and job.started_at is not None and now - job.started_at >= self._timeout
+        ]
         for job in overdue:
             logger.warning(
                 'Gremlin %s ran %.0fs past its start, beyond the %ss mutant timeout plus %ss grace: '
@@ -430,21 +446,30 @@ class WorkerPool:
                 self._grace_seconds,
                 job.pid,
             )
+        for job in past_their_timeout:
+            logger.warning(
+                'Gremlin %s was in flight on a worker killed for another hang and had already run %.0fs, '
+                'past the %ss mutant timeout. Recording TIMEOUT instead of restarting it.',
+                job.gremlin_id,
+                now - (job.started_at or now),
+                self._timeout,
+            )
+        scored = [*overdue, *past_their_timeout]
+        for job in scored:
             elapsed_ms = (now - (job.started_at or now)) * 1000
             job.settle(
                 result=WorkerResult(
                     gremlin_id=job.gremlin_id, status=GremlinResultStatus.TIMEOUT, execution_time_ms=elapsed_ms
                 )
             )
-        old_executor = self._executor
-        assert old_executor is not None  # noqa: S101
         self._breaking_generation = self._generation
-        for worker_pid in self._worker_pids(old_executor):
+        for worker_pid in worker_pids:
             kill_process_tree(worker_pid)
         old_executor.shutdown(wait=True, cancel_futures=True)
         self._start_executor()
         for job in self._unfinished_jobs():
             self._dispatch(job)
+        return scored
 
     def _worker_pids(self, executor: ProcessPoolExecutor) -> set[int]:
         """Return the pids of every worker of ``executor``, including ones whose start report is not read yet."""

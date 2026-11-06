@@ -105,6 +105,26 @@ class DescribeAWorkerThatHangsOutsideTheTestRun:
 
 
 @pytest.mark.medium
+class DescribeAnotherGremlinThatHasAlreadyOutlivedItsTimeout:
+    def it_is_scored_timeout_when_the_pool_is_rebuilt_instead_of_getting_a_fresh_start(self, tmp_path: Path) -> None:
+        long_grace = 3
+        with WorkerPool(
+            max_workers=2, timeout=TIMEOUT_SECONDS, grace_seconds=long_grace, worker_target=run_scripted
+        ) as pool:
+            first_hung = _submit(pool, 'first-hung', FOREVER, tmp_path)
+            quick = _submit(pool, 'quick', '1', tmp_path)
+            second_hung = _submit(pool, 'second-hung', FOREVER, tmp_path)
+            submitted_at = time.monotonic()
+            _results(pool, [first_hung, quick, second_hung])
+            settled_after = time.monotonic() - submitted_at
+
+        # first-hung is caught about timeout + grace = 5 s in. second-hung started at 1 s, so it has run 4 s,
+        # past its own 2 s timeout: it is scored then, not restarted (a restart would end it at about 10 s).
+        assert second_hung.result().status == GremlinResultStatus.TIMEOUT
+        assert settled_after < 8
+
+
+@pytest.mark.medium
 class DescribeTheDeadlineClock:
     def it_starts_when_the_gremlin_starts_not_when_it_is_queued(self, tmp_path: Path) -> None:
         with _pool(1) as pool:

@@ -158,7 +158,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/persistent_pool.py': 'ff1309b9440529053e646d0af40990a4cb7068cb6c66e637d3cafe1fa0be220b',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/pool.py': 'eea9bb7d5040c691c7520489631df91dd8bd9fb8e9f96613350d1de2beca2936',  # pragma: allowlist secret
+    'parallel/pool.py': '650310d05a3bac34dc96fc20d95424971637f161c90a5ace032347cf7e9d9fe8',  # pragma: allowlist secret
     # --
     'parallel/pool_config.py': '92d388fc68203d1e6a15ef69ab96ade058d9c3c9f3fb8a86f444f57c8e0fd74a',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -166,7 +166,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/worker_kill.py': '4b270fdbcf4919f672e6ff5149f9f2a55137598daa6285682046a78dcf75a518',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'c566c1be126f03c6b979047c86a0b5a88e7363bb5abc3f12f93f08d725e4f9e9',  # pragma: allowlist secret
+    'plugin.py': '7cf27d55b466315970fb4d2fb50335f5b53d848ba9b0a937a454a8974e78a354',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
