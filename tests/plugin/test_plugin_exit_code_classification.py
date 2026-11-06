@@ -8,9 +8,11 @@ from __future__ import annotations
 import ast
 import subprocess
 from typing import TYPE_CHECKING
+from unittest.mock import create_autospec
 
 import pytest
 
+from pytest_gremlins import process_tree
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.verdicts import (
@@ -50,7 +52,9 @@ class DescribeGremlinExitCodeClassification:
         def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(args=['pytest'], returncode=0, stdout=b'', stderr=b'')
 
-        monkeypatch.setattr('pytest_gremlins.process_tree.run_bounded', fake_run)
+        monkeypatch.setattr(
+            'pytest_gremlins.process_tree.run_bounded', create_autospec(process_tree.run_bounded, side_effect=fake_run)
+        )
 
         result = _test_gremlin(sample_gremlin, ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
 
@@ -67,7 +71,9 @@ class DescribeGremlinExitCodeClassification:
         def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(args=['pytest'], returncode=1, stdout=b'', stderr=b'')
 
-        monkeypatch.setattr('pytest_gremlins.process_tree.run_bounded', fake_run)
+        monkeypatch.setattr(
+            'pytest_gremlins.process_tree.run_bounded', create_autospec(process_tree.run_bounded, side_effect=fake_run)
+        )
 
         result = _test_gremlin(sample_gremlin, ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
 
@@ -87,7 +93,9 @@ class DescribeGremlinExitCodeClassification:
         def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(args=['pytest'], returncode=returncode, stdout=b'', stderr=b'')
 
-        monkeypatch.setattr('pytest_gremlins.process_tree.run_bounded', fake_run)
+        monkeypatch.setattr(
+            'pytest_gremlins.process_tree.run_bounded', create_autospec(process_tree.run_bounded, side_effect=fake_run)
+        )
         monkeypatch.setattr('pytest_gremlins.verdicts.time.monotonic', lambda: next(clock))
 
         result = _test_gremlin(sample_gremlin, ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
@@ -115,7 +123,9 @@ class DescribeGremlinExitCodeClassification:
         def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(args=['pytest'], returncode=exit_code, stdout=b'', stderr=b'')
 
-        monkeypatch.setattr('pytest_gremlins.process_tree.run_bounded', fake_run)
+        monkeypatch.setattr(
+            'pytest_gremlins.process_tree.run_bounded', create_autospec(process_tree.run_bounded, side_effect=fake_run)
+        )
 
         result = _test_gremlin(sample_gremlin, ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
 

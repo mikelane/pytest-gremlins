@@ -114,7 +114,7 @@ class DescribeGeneratedCoverageRc:
         def capture_rc(*_args: object, **_kwargs: object) -> None:
             captured.append((tmp_path / '.coveragerc.gremlins').read_text())
 
-        with patch('pytest_gremlins.process_tree.run_bounded', side_effect=capture_rc):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=capture_rc):
             _run_tests_with_coverage(['t.py::test_a'], tmp_path, coverage_include=coverage_include)
 
         assert 'core = ctrace' in captured[0]

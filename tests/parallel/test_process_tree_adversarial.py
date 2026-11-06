@@ -10,6 +10,13 @@ import sys
 import time
 from typing import TYPE_CHECKING
 
+from process_helpers import (  # type: ignore[import-not-found]
+    STARTUP_DEADLINE_SECONDS,
+    is_gone,
+    kill_quietly,
+    python,
+    wait_for_file,
+)
 import pytest
 
 from pytest_gremlins import process_tree
@@ -18,9 +25,6 @@ from pytest_gremlins.process_tree import run_bounded
 if TYPE_CHECKING:
     from types import FrameType
 
-REAP_DEADLINE_SECONDS = 10
-POLL_SECONDS = 0.1
-STARTUP_DEADLINE_SECONDS = 15
 LONG_SLEEP_SECONDS = 3600
 SHORT_TIMEOUT_SECONDS = 1.0
 MID_GRACE_SECONDS = 1.25
@@ -32,40 +36,8 @@ LARGE_OUTPUT_TIMEOUT_SECONDS = 2.0
 posix_only = pytest.mark.skipif(sys.platform == 'win32', reason='process groups and signals are POSIX')
 
 
-def _python(code: str) -> list[str]:
-    return [sys.executable, '-c', code]
-
-
 def _run(command: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess[bytes]:
     return run_bounded(command, cwd=str(cwd), env=dict(os.environ), timeout=timeout)
-
-
-def _wait_for_file(path: Path) -> str:
-    deadline = time.monotonic() + STARTUP_DEADLINE_SECONDS
-    while time.monotonic() < deadline:
-        if path.exists() and path.read_text():
-            return path.read_text()
-        time.sleep(POLL_SECONDS)
-    msg = f'{path} was not written'
-    raise AssertionError(msg)
-
-
-def _is_gone(pid: int) -> bool:
-    deadline = time.monotonic() + REAP_DEADLINE_SECONDS
-    while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        time.sleep(POLL_SECONDS)
-    return False
-
-
-def _kill_quietly(pid: int) -> None:
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        return
 
 
 def _open_fd_count() -> int:
@@ -73,7 +45,7 @@ def _open_fd_count() -> int:
 
 
 def _time_out_repeatedly(cwd: Path) -> None:
-    sleeper = _python(f'import time; time.sleep({LONG_SLEEP_SECONDS})')
+    sleeper = python(f'import time; time.sleep({LONG_SLEEP_SECONDS})')
     for _ in range(REPEATED_RUNS):
         with pytest.raises(subprocess.TimeoutExpired):
             _run(sleeper, cwd, TINY_TIMEOUT_SECONDS)
@@ -99,22 +71,22 @@ class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
         pid_file = tmp_path / 'command.pid'
         runner = (
             'import os, sys\n'
-            'from pytest_gremlins.process_tree import install_sigterm_cleanup, run_bounded\n'
-            'install_sigterm_cleanup()\n'
+            'from pytest_gremlins.process_tree import install_worker_sigterm_cleanup, run_bounded\n'
+            'install_worker_sigterm_cleanup()\n'
             f'run_bounded([sys.executable, "-c", {_sleeper_writing_pid(pid_file)!r}], cwd={str(tmp_path)!r},'
             f' env=dict(os.environ), timeout={LONG_SLEEP_SECONDS})\n'
         )
-        caller = subprocess.Popen(_python(runner), stderr=subprocess.DEVNULL, start_new_session=True)
+        caller = subprocess.Popen(python(runner), stderr=subprocess.DEVNULL, start_new_session=True)
         command_pid = 0
         try:
-            command_pid = int(_wait_for_file(pid_file))
+            command_pid = int(wait_for_file(pid_file))
             os.killpg(caller.pid, signal.SIGTERM)
             caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
-            is_command_gone = _is_gone(command_pid)
+            is_command_gone = is_gone(command_pid)
         finally:
             caller.kill()
             if command_pid:
-                _kill_quietly(command_pid)
+                kill_quietly(command_pid)
 
         assert is_command_gone
 
@@ -132,17 +104,17 @@ class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
             'worker.start()\n'
             'worker.join()\n'
         )
-        caller = subprocess.Popen(_python(runner), stderr=subprocess.DEVNULL, start_new_session=True)
+        caller = subprocess.Popen(python(runner), stderr=subprocess.DEVNULL, start_new_session=True)
         command_pid = 0
         try:
-            command_pid = int(_wait_for_file(pid_file))
+            command_pid = int(wait_for_file(pid_file))
             os.killpg(caller.pid, signal.SIGINT)
             caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
-            is_command_gone = _is_gone(command_pid)
+            is_command_gone = is_gone(command_pid)
         finally:
             caller.kill()
             if command_pid:
-                _kill_quietly(command_pid)
+                kill_quietly(command_pid)
 
         assert is_command_gone
 
@@ -158,14 +130,14 @@ class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
         command_pid = 0
         try:
             with pytest.raises(KeyboardInterrupt):
-                _run(_python(_sleeper_writing_pid(pid_file, ignore_sigterm=True)), tmp_path, SHORT_TIMEOUT_SECONDS)
-            command_pid = int(_wait_for_file(pid_file))
-            is_command_gone = _is_gone(command_pid)
+                _run(python(_sleeper_writing_pid(pid_file, ignore_sigterm=True)), tmp_path, STARTUP_DEADLINE_SECONDS)
+            command_pid = int(wait_for_file(pid_file))
+            is_command_gone = is_gone(command_pid)
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
             if command_pid:
-                _kill_quietly(command_pid)
+                kill_quietly(command_pid)
 
         assert (is_command_gone, _open_fd_count()) == (True, fds_before)
 
@@ -178,7 +150,7 @@ class DescribeRunBoundedCost:
 
         started = time.monotonic()
         with pytest.raises(subprocess.TimeoutExpired):
-            _run(_python(_sleeper_writing_pid(pid_file)), tmp_path, SHORT_TIMEOUT_SECONDS)
+            _run(python(_sleeper_writing_pid(pid_file)), tmp_path, SHORT_TIMEOUT_SECONDS)
         overhead = time.monotonic() - started - SHORT_TIMEOUT_SECONDS
 
         assert overhead < process_tree.TERMINATE_GRACE_SECONDS
@@ -204,7 +176,7 @@ class DescribeRunBoundedLargeOutput:
     def it_returns_output_larger_than_a_pipe_buffer_intact(self, tmp_path: Path) -> None:
         code = f'import sys; sys.stdout.write("x" * {ONE_MEBIBYTE}); sys.stderr.write("y" * {ONE_MEBIBYTE})'
 
-        completed = _run(_python(code), tmp_path, STARTUP_DEADLINE_SECONDS)
+        completed = _run(python(code), tmp_path, STARTUP_DEADLINE_SECONDS)
 
         assert (len(completed.stdout), len(completed.stderr)) == (ONE_MEBIBYTE, ONE_MEBIBYTE)
 
@@ -215,6 +187,6 @@ class DescribeRunBoundedLargeOutput:
         )
 
         with pytest.raises(subprocess.TimeoutExpired) as expired:
-            _run(_python(code), tmp_path, LARGE_OUTPUT_TIMEOUT_SECONDS)
+            _run(python(code), tmp_path, LARGE_OUTPUT_TIMEOUT_SECONDS)
 
         assert len(expired.value.stdout or b'') == ONE_MEBIBYTE

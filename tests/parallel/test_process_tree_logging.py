@@ -7,9 +7,14 @@ import os
 import signal
 import subprocess
 import sys
-import time
 from typing import TYPE_CHECKING
 
+from process_helpers import (  # type: ignore[import-not-found]
+    STARTUP_DEADLINE_SECONDS,
+    kill_quietly,
+    python,
+    wait_for_file,
+)
 import pytest
 
 from pytest_gremlins import process_tree
@@ -22,35 +27,12 @@ LOGGER_NAME = 'pytest_gremlins.process_tree'
 SHORT_TIMEOUT_SECONDS = 1
 LONG_SLEEP_SECONDS = 3600
 SHORT_DRAIN_SECONDS = 0.5
-POLL_SECONDS = 0.1
-STARTUP_DEADLINE_SECONDS = 15
 
 posix_only = pytest.mark.skipif(sys.platform == 'win32', reason='process groups and signals are POSIX')
 
 
-def _python(code: str) -> list[str]:
-    return [sys.executable, '-c', code]
-
-
 def _run(command: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess[bytes]:
     return run_bounded(command, cwd=str(cwd), env=dict(os.environ), timeout=timeout)
-
-
-def _wait_for_file(path: Path) -> str:
-    deadline = time.monotonic() + STARTUP_DEADLINE_SECONDS
-    while time.monotonic() < deadline:
-        if path.exists() and path.read_text():
-            return path.read_text()
-        time.sleep(POLL_SECONDS)
-    msg = f'{path} was not written'
-    raise AssertionError(msg)
-
-
-def _kill_quietly(pid: int) -> None:
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        return
 
 
 def _messages(caplog: pytest.LogCaptureFixture) -> list[str]:
@@ -70,7 +52,7 @@ class DescribeRunBoundedTimeoutTrace:
         caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
 
         with pytest.raises(subprocess.TimeoutExpired):
-            _run(_python(f'import time; time.sleep({LONG_SLEEP_SECONDS})'), tmp_path, SHORT_TIMEOUT_SECONDS)
+            _run(python(f'import time; time.sleep({LONG_SLEEP_SECONDS})'), tmp_path, SHORT_TIMEOUT_SECONDS)
 
         assert (
             len(_messages_containing(caplog, f'outlasted {SHORT_TIMEOUT_SECONDS}s', f'exit status {-signal.SIGTERM}'))
@@ -82,7 +64,7 @@ class DescribeRunBoundedTimeoutTrace:
     ) -> None:
         caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
 
-        _run(_python('pass'), tmp_path, STARTUP_DEADLINE_SECONDS)
+        _run(python('pass'), tmp_path, STARTUP_DEADLINE_SECONDS)
 
         assert _messages(caplog) == []
 
@@ -101,8 +83,8 @@ class DescribeRunBoundedTimeoutTrace:
         )
         try:
             with pytest.raises(subprocess.TimeoutExpired):
-                _run(_python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
+                _run(python(code), tmp_path, STARTUP_DEADLINE_SECONDS)
         finally:
-            _kill_quietly(int(_wait_for_file(pid_file)))
+            kill_quietly(int(wait_for_file(pid_file)))
 
         assert len(_messages_containing(caplog, 'still open', 'outside its group')) == 1

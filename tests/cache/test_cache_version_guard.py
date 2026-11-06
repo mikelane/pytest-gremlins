@@ -154,17 +154,17 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/lightweight.py': '72dd62804a24be6334d38305fdd058fe70c537e445a73329d1e11c81f22482db',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/persistent_pool.py': '12eefdda56dcc78b84e92664586cc87f304a0a54cf87c1ae9a9c75c4b1dcec8d',  # pragma: allowlist secret  # noqa: E501
+    'parallel/persistent_pool.py': '94ce77176efb2af571a37e220095a8f721efc3b0fac6677a24a4bd24223e6f7d',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/pool.py': '1bb60103a19d09e338d00c12ef7ad10be25ea82f7c3021604e6fc142995ab77b',  # pragma: allowlist secret
+    'parallel/pool.py': '20033e7452a9d89146b0d6aa155deb4050ae51a7f0e77fb494960212bba0857d',  # pragma: allowlist secret
     # --
     'parallel/pool_config.py': '92d388fc68203d1e6a15ef69ab96ade058d9c3c9f3fb8a86f444f57c8e0fd74a',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '72e66f57e821137da28272ac55081d7d9a4bcc0d1dfaedb033e325aff7862137',  # pragma: allowlist secret
+    'plugin.py': '674f9f1f0634798cd70e501705ea47b3090ffad2a1bc67d3c8c200a4c1b6015b',  # pragma: allowlist secret
     # --
-    'process_tree.py': '4d73483268285b290e18da4ebf8e9b80743bf1705784b92fa1bf087e6ecb3c09',  # pragma: allowlist secret
+    'process_tree.py': '9afce676657ae67813024206a0f8a3b681aa8685eae27036035d21cb12169374',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -178,7 +178,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
     # --
-    'verdicts.py': 'a6be1801b762d080d105e6b0f34230461284cbcd9e9e934b68a6bf6e9f935bf4',  # pragma: allowlist secret
+    'verdicts.py': '58826b7d250cdf9a61274423bc42b67e653625feeca150808cb5dec8fc393062',  # pragma: allowlist secret
     # --
     'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
 }

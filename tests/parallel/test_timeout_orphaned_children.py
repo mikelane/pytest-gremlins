@@ -6,9 +6,12 @@ import os
 import signal
 import sys
 import threading
-import time
 from typing import TYPE_CHECKING
 
+from process_helpers import (  # type: ignore[import-not-found]
+    STARTUP_DEADLINE_SECONDS,
+    is_gone,
+)
 import pytest
 
 from pytest_gremlins.parallel.persistent_pool import _run_gremlin_batch
@@ -20,10 +23,8 @@ if TYPE_CHECKING:
     from pytest_gremlins.parallel.pool import WorkerResult
 
 MUTANT_TIMEOUT_SECONDS = 1
-HARD_DEADLINE_SECONDS = 20
+HARD_DEADLINE_SECONDS = 2 * STARTUP_DEADLINE_SECONDS + 5
 LONG_SLEEP_SECONDS = 3600
-REAP_DEADLINE_SECONDS = 10
-POLL_SECONDS = 0.1
 
 # The test process starts a child that inherits stdout and stderr, records its pid, then hangs as a mutant would.
 _HANGING_TEST_PROCESS = """
@@ -49,18 +50,9 @@ def _kill_if_alive(pid_file: Path) -> None:
         return
 
 
-def _is_gone(pid: int) -> bool:
-    deadline = time.monotonic() + REAP_DEADLINE_SECONDS
-    while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        time.sleep(POLL_SECONDS)
-    return False
-
-
-def _run_batch_with_deadline(pid_file: Path, cwd: Path) -> tuple[bool, list[WorkerResult]]:
+def _run_batch_with_deadline(
+    pid_file: Path, cwd: Path, mutant_timeout: int = MUTANT_TIMEOUT_SECONDS
+) -> tuple[bool, list[WorkerResult]]:
     results: list[WorkerResult] = []
 
     def run() -> None:
@@ -70,7 +62,7 @@ def _run_batch_with_deadline(pid_file: Path, cwd: Path) -> tuple[bool, list[Work
                 [sys.executable, '-c', _HANGING_TEST_PROCESS.format(sleep=LONG_SLEEP_SECONDS), str(pid_file)],
                 str(cwd),
                 {},
-                MUTANT_TIMEOUT_SECONDS,
+                mutant_timeout,
             )
         )
 
@@ -102,8 +94,9 @@ class DescribeRunGremlinBatchWithOrphanedChildren:
         try:
             # A hung batch makes the deadline helper kill the grandchild itself, so `has_finished` is what proves
             # the batch, not the helper, ended it.
-            has_finished, _ = _run_batch_with_deadline(pid_file, tmp_path)
-            is_grandchild_gone = _is_gone(_grandchild_pid(pid_file))
+            # The grandchild's pid file must exist when the timeout fires, so the command gets the startup allowance.
+            has_finished, _ = _run_batch_with_deadline(pid_file, tmp_path, STARTUP_DEADLINE_SECONDS)
+            is_grandchild_gone = is_gone(_grandchild_pid(pid_file))
         finally:
             _kill_if_alive(pid_file)
 

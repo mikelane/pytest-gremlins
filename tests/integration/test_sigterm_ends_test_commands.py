@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import signal
 import subprocess
 import sys
-import time
 
+from process_helpers import (  # type: ignore[import-not-found]
+    STARTUP_DEADLINE_SECONDS,
+    is_gone,
+    kill_quietly,
+    wait_for_pid,
+)
 import pytest
 
 pytest_plugins = ['pytester']
 
-STARTUP_DEADLINE_SECONDS = 60
-REAP_DEADLINE_SECONDS = 10
-POLL_SECONDS = 0.1
 
 _SOURCE = 'def add(a, b):\n    return a + b\n'
 
@@ -39,34 +40,6 @@ def test_add():
         time.sleep(3600)
     assert add(2, 3) == 5
 """
-
-
-def _wait_for_pid(path: Path) -> int:
-    deadline = time.monotonic() + STARTUP_DEADLINE_SECONDS
-    while time.monotonic() < deadline:
-        if path.exists() and path.read_text():
-            return int(path.read_text())
-        time.sleep(POLL_SECONDS)
-    msg = f'{path} was not written'
-    raise AssertionError(msg)
-
-
-def _is_gone(pid: int) -> bool:
-    deadline = time.monotonic() + REAP_DEADLINE_SECONDS
-    while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        time.sleep(POLL_SECONDS)
-    return False
-
-
-def _kill_quietly(pid: int) -> None:
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        return
 
 
 @pytest.mark.large
@@ -105,13 +78,13 @@ def it_ends_the_hanging_test_command_when_the_main_process_gets_sigterm(
     )
     command_pid = 0
     try:
-        command_pid = _wait_for_pid(pid_file)
+        command_pid = wait_for_pid(pid_file)
         gremlins_run.send_signal(signal.SIGTERM)
         gremlins_run.wait(timeout=STARTUP_DEADLINE_SECONDS)
-        is_command_gone = _is_gone(command_pid)
+        is_command_gone = is_gone(command_pid)
     finally:
         gremlins_run.kill()
         if command_pid:
-            _kill_quietly(command_pid)
+            kill_quietly(command_pid)
 
     assert (is_command_gone, gremlins_run.returncode) == (True, -signal.SIGTERM)

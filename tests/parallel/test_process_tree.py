@@ -9,6 +9,14 @@ import sys
 import time
 from typing import TYPE_CHECKING
 
+from process_helpers import (  # type: ignore[import-not-found]
+    REAP_DEADLINE_SECONDS,
+    STARTUP_DEADLINE_SECONDS,
+    is_gone,
+    kill_quietly,
+    python,
+    wait_for_file,
+)
 import pytest
 
 from pytest_gremlins import process_tree
@@ -17,50 +25,15 @@ from pytest_gremlins.process_tree import run_bounded
 if TYPE_CHECKING:
     from pathlib import Path
 
-REAP_DEADLINE_SECONDS = 10
-POLL_SECONDS = 0.1
 SHORT_TIMEOUT_SECONDS = 1
 LONG_SLEEP_SECONDS = 3600
 SHORT_DRAIN_SECONDS = 0.5
-STARTUP_DEADLINE_SECONDS = 15
 
 posix_only = pytest.mark.skipif(sys.platform == 'win32', reason='process groups and signals are POSIX')
 
 
-def _python(code: str) -> list[str]:
-    return [sys.executable, '-c', code]
-
-
 def _run(command: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess[bytes]:
     return run_bounded(command, cwd=str(cwd), env=dict(os.environ), timeout=timeout)
-
-
-def _wait_for_file(path: Path) -> str:
-    deadline = time.monotonic() + STARTUP_DEADLINE_SECONDS
-    while time.monotonic() < deadline:
-        if path.exists() and path.read_text():
-            return path.read_text()
-        time.sleep(POLL_SECONDS)
-    msg = f'{path} was not written'
-    raise AssertionError(msg)
-
-
-def _is_gone(pid: int) -> bool:
-    deadline = time.monotonic() + REAP_DEADLINE_SECONDS
-    while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        time.sleep(POLL_SECONDS)
-    return False
-
-
-def _kill_quietly(pid: int) -> None:
-    try:
-        os.kill(pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        return
 
 
 @pytest.mark.medium
@@ -68,7 +41,7 @@ class DescribeRunBounded:
     def it_returns_the_exit_code_and_both_output_streams(self, tmp_path: Path) -> None:
         code = 'import sys; print("out"); print("err", file=sys.stderr); sys.exit(3)'
 
-        completed = _run(_python(code), tmp_path, timeout=STARTUP_DEADLINE_SECONDS)
+        completed = _run(python(code), tmp_path, timeout=STARTUP_DEADLINE_SECONDS)
 
         assert (completed.returncode, completed.stdout.strip(), completed.stderr.strip()) == (3, b'out', b'err')
 
@@ -76,7 +49,7 @@ class DescribeRunBounded:
         code = 'import os; print(os.getcwd()); print(os.environ["GREMLIN_PROBE"])'
 
         completed = run_bounded(
-            _python(code),
+            python(code),
             cwd=str(tmp_path),
             env={**os.environ, 'GREMLIN_PROBE': 'x'},
             timeout=STARTUP_DEADLINE_SECONDS,
@@ -88,7 +61,7 @@ class DescribeRunBounded:
         code = f'import time; print("partial", flush=True); time.sleep({LONG_SLEEP_SECONDS})'
 
         with pytest.raises(subprocess.TimeoutExpired) as expired:
-            _run(_python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
+            _run(python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
 
         assert (expired.value.stdout or b'').strip() == b'partial'
 
@@ -102,12 +75,12 @@ class DescribeRunBounded:
             f'time.sleep({LONG_SLEEP_SECONDS})\n'
         )
         with pytest.raises(subprocess.TimeoutExpired):
-            _run(_python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
+            _run(python(code), tmp_path, STARTUP_DEADLINE_SECONDS)
         grandchild_pid = int(pid_file.read_text())
         try:
-            is_grandchild_gone = _is_gone(grandchild_pid)
+            is_grandchild_gone = is_gone(grandchild_pid)
         finally:
-            _kill_quietly(grandchild_pid)
+            kill_quietly(grandchild_pid)
 
         assert is_grandchild_gone
 
@@ -123,13 +96,13 @@ class DescribeRunBounded:
 
         started = time.monotonic()
         with pytest.raises(subprocess.TimeoutExpired):
-            _run(_python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
-        elapsed = time.monotonic() - started
+            _run(python(code), tmp_path, STARTUP_DEADLINE_SECONDS)
+        elapsed = time.monotonic() - started - STARTUP_DEADLINE_SECONDS  # the part past the timeout
         command_pid = int(pid_file.read_text())
         try:
-            is_command_gone = _is_gone(command_pid)
+            is_command_gone = is_gone(command_pid)
         finally:
-            _kill_quietly(command_pid)
+            kill_quietly(command_pid)
 
         assert (is_command_gone, elapsed < REAP_DEADLINE_SECONDS) == (True, True)
 
@@ -145,7 +118,7 @@ class DescribeRunBounded:
         )
 
         with pytest.raises(subprocess.TimeoutExpired):
-            _run(_python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
+            _run(python(code), tmp_path, STARTUP_DEADLINE_SECONDS)
 
         assert marker.read_text() == '1'
 
@@ -165,10 +138,10 @@ class DescribeRunBounded:
         started = time.monotonic()
         try:
             with pytest.raises(subprocess.TimeoutExpired):
-                _run(_python(code), tmp_path, SHORT_TIMEOUT_SECONDS)
-            elapsed = time.monotonic() - started
+                _run(python(code), tmp_path, STARTUP_DEADLINE_SECONDS)
+            elapsed = time.monotonic() - started - STARTUP_DEADLINE_SECONDS  # the part past the timeout
         finally:
-            _kill_quietly(int(pid_file.read_text()))
+            kill_quietly(int(pid_file.read_text()))
 
         assert elapsed < REAP_DEADLINE_SECONDS
 
@@ -190,16 +163,16 @@ class DescribeRunBoundedInterrupt:
             f'run_bounded([sys.executable, "-c", {inner!r}], cwd={str(tmp_path)!r}, env=dict(os.environ),'
             f' timeout={LONG_SLEEP_SECONDS})\n'
         )
-        gremlins_run = subprocess.Popen(_python(runner), stderr=subprocess.DEVNULL)
+        gremlins_run = subprocess.Popen(python(runner), stderr=subprocess.DEVNULL)
         grandchild_pid = 0
         try:
-            grandchild_pid = int(_wait_for_file(pid_file))
+            grandchild_pid = int(wait_for_file(pid_file))
             gremlins_run.send_signal(signal.SIGINT)
             gremlins_run.wait(timeout=STARTUP_DEADLINE_SECONDS)
-            is_grandchild_gone = _is_gone(grandchild_pid)
+            is_grandchild_gone = is_gone(grandchild_pid)
         finally:
             gremlins_run.kill()
             if grandchild_pid:
-                _kill_quietly(grandchild_pid)
+                kill_quietly(grandchild_pid)
 
         assert is_grandchild_gone

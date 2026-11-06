@@ -2660,8 +2660,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             gremlin_session.enabled = False
         return
 
-    # The pre-scan and the control runs start test commands in their own sessions too, so a SIGTERM must reach them
-    # through the same cleanup as the mutation run.
+    # The control runs and the serial pre-scan start test commands in their own sessions through run_bounded, so a
+    # SIGTERM must reach them through the same cleanup as the mutation run. The sharded pre-scan starts its shards with
+    # a plain Popen, in the caller's session, and is not covered by this (#983).
     with process_tree.sigterm_cleanup():
         has_run_gremlins = _collect_coverage_then_run_gremlins(session, gremlin_session, rootdir)
     if has_run_gremlins:
@@ -2896,12 +2897,11 @@ def _dispatch_mutation_run(
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
     """Pick the execution mode (batch / parallel / default) and run it."""
-    with process_tree.sigterm_cleanup():
-        if gremlin_session.batch_enabled:
-            return _run_batch_mutation_testing(session, gremlin_session)
-        if gremlin_session.parallel_enabled:
-            return _run_parallel_mutation_testing(session, gremlin_session)
-        return _run_mutation_testing(session, gremlin_session)
+    if gremlin_session.batch_enabled:
+        return _run_batch_mutation_testing(session, gremlin_session)
+    if gremlin_session.parallel_enabled:
+        return _run_parallel_mutation_testing(session, gremlin_session)
+    return _run_mutation_testing(session, gremlin_session)
 
 
 def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:

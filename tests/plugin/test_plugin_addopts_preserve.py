@@ -132,7 +132,7 @@ class DescribeCoverageSubprocessPreservesAddopts:
 
             return FakeResult()
 
-        with patch('pytest_gremlins.process_tree.run_bounded', side_effect=fake_subprocess_run):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=fake_subprocess_run):
             _run_tests_with_coverage(
                 ['tests/test_example.py::test_one'],
                 tmp_path,
@@ -155,7 +155,7 @@ class DescribeCoverageSubprocessPreservesAddopts:
 
             return FakeResult()
 
-        with patch('pytest_gremlins.process_tree.run_bounded', side_effect=fake_subprocess_run):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=fake_subprocess_run):
             _run_tests_with_coverage(['tests/test_example.py::test_one'], tmp_path)
 
         cmd = captured_cmd[0]

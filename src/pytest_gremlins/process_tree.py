@@ -5,6 +5,20 @@ pool, a server fixture, a ``subprocess`` call in a test) keeps running after eve
 also keeps the output pipes open, so the final ``communicate()`` of ``subprocess.run`` has no end.
 :func:`run_bounded` puts the command in its own process group (a session on POSIX), kills the group on a
 timeout or an interrupt, and bounds the wait for the pipes to drain.
+
+Because the command leaves the caller's process group, signals sent to that group no longer reach it. The module
+keeps a registry of live commands and ends them (:func:`kill_live_commands`, which SIGKILLs at once) from these
+places:
+
+* An ``atexit`` hook, registered when this module is imported, covers interpreter exit and a ``KeyboardInterrupt``
+  that unwinds the main thread while a command runs in another thread.
+* :func:`sigterm_cleanup` (the main process) and :func:`install_worker_sigterm_cleanup` (the pool worker
+  initializer) handle SIGTERM. The main process's handler also SIGTERMs every ``multiprocessing`` child it has, not
+  only pool workers, so each worker's handler ends the commands it started.
+* An ``os.register_at_fork`` hook, also registered at import, empties the registry in a forked child, which must not
+  end its parent's commands.
+
+SIGKILL cannot be handled and can still leave a command's processes behind.
 """
 
 from __future__ import annotations
@@ -44,8 +58,9 @@ WORKER_STOP_SECONDS = 2.0
 """How long, in total, the SIGTERM cleanup waits for pool workers to end their commands and exit."""
 
 _TASKKILL_TIMEOUT_SECONDS = 10
+"""How long Windows ``taskkill`` may take to end a tree before the direct child alone is killed."""
 
-# Never log from the SIGTERM path (terminate_all and what it calls): the logging module takes locks, and a signal
+# Never log from the SIGTERM path (kill_live_commands and what it calls): the logging module takes locks, and a signal
 # handler can interrupt the thread that holds them.
 logger = logging.getLogger(__name__)
 
@@ -133,7 +148,7 @@ def _own_live_commands() -> list[subprocess.Popen[bytes]]:
         return [process for owner, process in _live_commands.values() if owner == os.getpid()]
 
 
-def terminate_all() -> None:
+def kill_live_commands() -> None:
     """End the process tree of every test command this process has running now.
 
     This is the cleanup for an interrupt or a SIGTERM, which cannot reach a command that runs in its own session.
@@ -144,11 +159,11 @@ def terminate_all() -> None:
             _kill_tree(process)
 
 
-atexit.register(terminate_all)
+atexit.register(kill_live_commands)
 
 
 @contextlib.contextmanager
-def terminate_all_on_error() -> Iterator[None]:
+def kill_live_commands_on_error() -> Iterator[None]:
     """End every running test command if the block raises, including on KeyboardInterrupt.
 
     Wrap a thread pool that runs commands: its ``with`` block waits for the threads before an interrupt
@@ -157,7 +172,7 @@ def terminate_all_on_error() -> Iterator[None]:
     try:
         yield
     except BaseException:
-        terminate_all()
+        kill_live_commands()
         raise
 
 
@@ -165,11 +180,12 @@ def _install_sigterm_handler(previous: _SignalHandler) -> _SignalHandler:
     replaced = signal.getsignal(signal.SIGTERM)
 
     def end_commands_then_terminate(signum: int, frame: FrameType | None) -> None:
-        terminate_all()
+        kill_live_commands()
         _stop_child_processes()
         if callable(previous):
             previous(signum, frame)
-        elif previous != signal.SIG_IGN:
+        else:
+            # Never SIG_IGN: both callers leave an ignored SIGTERM alone and install nothing.
             signal.signal(signal.SIGTERM, signal.SIG_DFL)
             os.kill(os.getpid(), signum)
 
@@ -192,7 +208,7 @@ def _stop_child_processes() -> None:
             child.join(max(0.0, deadline - time.monotonic()))
 
 
-def install_sigterm_cleanup() -> None:
+def install_worker_sigterm_cleanup() -> None:
     """Make SIGTERM end this process's test commands, then terminate the process as usual.
 
     This is the initializer of the worker pools. A worker is killed with its caller's process group (a CI cancel,

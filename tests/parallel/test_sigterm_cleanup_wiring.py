@@ -5,18 +5,35 @@ from __future__ import annotations
 from concurrent.futures import ProcessPoolExecutor
 import signal
 import sys
-from typing import Any
+from types import SimpleNamespace
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    cast,
+)
 
 import pytest
 
-from pytest_gremlins import process_tree
+from pytest_gremlins import (
+    plugin,
+    process_tree,
+    verdicts,
+)
 from pytest_gremlins.parallel import (
     persistent_pool,
     pool,
 )
+from pytest_gremlins.parallel.exit_codes import COLLECTION_KILLING_TEST
 from pytest_gremlins.parallel.persistent_pool import PersistentWorkerPool
 from pytest_gremlins.parallel.pool import WorkerPool
 from pytest_gremlins.parallel.pool_config import PoolConfig
+from pytest_gremlins.reporting.results import (
+    GremlinResult,
+    GremlinResultStatus,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _RecordingExecutor(ProcessPoolExecutor):
@@ -36,7 +53,7 @@ class DescribeWorkerPoolsInstallSigtermCleanup:
         with WorkerPool(max_workers=1):
             pass
 
-        assert _RecordingExecutor.created_with['initializer'] is process_tree.install_sigterm_cleanup
+        assert _RecordingExecutor.created_with['initializer'] is process_tree.install_worker_sigterm_cleanup
 
     def it_gives_the_persistent_pool_workers_the_sigterm_cleanup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_RecordingExecutor, 'created_with', {})  # no stale value from another test
@@ -45,25 +62,52 @@ class DescribeWorkerPoolsInstallSigtermCleanup:
         with PersistentWorkerPool.from_config(PoolConfig(max_workers=1, warmup=False)):
             pass
 
-        assert _RecordingExecutor.created_with['initializer'] is process_tree.install_sigterm_cleanup
+        assert _RecordingExecutor.created_with['initializer'] is process_tree.install_worker_sigterm_cleanup
 
 
 @pytest.mark.small
 @pytest.mark.skipif(sys.platform == 'win32', reason='SIGTERM handlers are POSIX')
 class DescribeMutationRunSigtermCleanup:
-    def it_runs_the_dispatched_mutation_run_under_the_sigterm_cleanup(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from pytest_gremlins import plugin  # noqa: PLC0415 - patched below, only needed here
+    """``pytest_sessionfinish`` holds the cleanup from the pre-scan through the dispatch (see the integration tests)."""
 
+    def it_leaves_the_enclosing_sigterm_cleanup_in_place_while_the_dispatched_run_executes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         seen: list[object] = []
-        before = signal.getsignal(signal.SIGTERM)
 
         def fake_run(*_args: object) -> list[object]:
             seen.append(signal.getsignal(signal.SIGTERM))
             return []
 
         monkeypatch.setattr(plugin, '_run_mutation_testing', fake_run)
-        gremlin_session = type('S', (), {'batch_enabled': False, 'parallel_enabled': False})()
+        gremlin_session = cast('plugin.GremlinSession', SimpleNamespace(batch_enabled=False, parallel_enabled=False))
 
-        plugin._dispatch_mutation_run(None, gremlin_session)  # type: ignore[arg-type]
+        with process_tree.sigterm_cleanup():
+            enclosing = signal.getsignal(signal.SIGTERM)
+            plugin._dispatch_mutation_run(cast('pytest.Session', None), gremlin_session)
 
-        assert (seen[0] is not before, signal.getsignal(signal.SIGTERM)) == (True, before)
+        assert seen == [enclosing]
+
+
+@pytest.mark.small
+class DescribeConfirmationThreadPoolInterrupt:
+    def it_kills_the_live_commands_when_the_confirmation_pool_is_interrupted(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        was_killed: list[bool] = []
+
+        def interrupted(*_args: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(verdicts, '_collect_unmutated', interrupted)
+        monkeypatch.setattr(process_tree, 'kill_live_commands', lambda: was_killed.append(True))
+        collection_kill = cast(
+            'GremlinResult',
+            SimpleNamespace(status=GremlinResultStatus.ZAPPED, killing_test=COLLECTION_KILLING_TEST),
+        )
+        gremlin_session = cast('plugin.GremlinSession', SimpleNamespace(unmutated_load_checks={}, parallel_workers=1))
+
+        with pytest.raises(KeyboardInterrupt):
+            verdicts._prefill_collection_kill_confirmations([(collection_kill, ['t.py::t'])], gremlin_session, tmp_path)
+
+        assert was_killed == [True]

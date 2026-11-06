@@ -14,6 +14,7 @@ from unittest.mock import create_autospec
 
 import pytest
 
+from pytest_gremlins import process_tree
 from pytest_gremlins.cache.incremental import IncrementalCache
 from pytest_gremlins.instrumentation import origin_finder
 from pytest_gremlins.instrumentation.gremlin import Gremlin
@@ -93,7 +94,9 @@ class DescribeRewriteApiBrokenMapping:
                 args=['x'], returncode=REWRITE_API_BROKEN_EXIT_CODE, stdout=b'', stderr=b''
             )
 
-        monkeypatch.setattr('pytest_gremlins.process_tree.run_bounded', fake_run)
+        monkeypatch.setattr(
+            'pytest_gremlins.process_tree.run_bounded', create_autospec(process_tree.run_bounded, side_effect=fake_run)
+        )
 
         result = _test_gremlin(_gremlin(), ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
 

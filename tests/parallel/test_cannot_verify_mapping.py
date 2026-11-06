@@ -6,9 +6,11 @@ import ast
 from pathlib import Path
 import subprocess
 import sys
+from unittest.mock import create_autospec
 
 import pytest
 
+from pytest_gremlins import process_tree
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.parallel import (
     persistent_pool,
@@ -80,7 +82,9 @@ class DescribeCannotVerifyMapping:
                 args=['x'], returncode=LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE, stdout=b'', stderr=REASON.encode()
             )
 
-        monkeypatch.setattr('pytest_gremlins.process_tree.run_bounded', fake_run)
+        monkeypatch.setattr(
+            'pytest_gremlins.process_tree.run_bounded', create_autospec(process_tree.run_bounded, side_effect=fake_run)
+        )
 
         result = _test_gremlin(sample_gremlin, ['pytest'], tmp_path, instrumented_dir=None, timeout=30)
 
