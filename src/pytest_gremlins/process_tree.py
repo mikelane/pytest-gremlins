@@ -15,7 +15,6 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
-import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -59,8 +58,11 @@ def run_bounded(
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as expired:
-        _terminate_tree(process)
-        stdout, stderr = _drain(process)
+        try:
+            _terminate_tree(process)
+        finally:
+            # An interrupt during the grace period still reaps the command and closes its pipes.
+            stdout, stderr = _drain(process)
         raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from expired
     except BaseException:
         _kill_tree(process)
@@ -90,11 +92,18 @@ def _start(command: Sequence[str], *, cwd: str, env: Mapping[str, str]) -> subpr
 
 
 def _terminate_tree(process: subprocess.Popen[bytes]) -> None:
-    """Ask the tree to exit, then force it; Windows has no polite signal for a group."""
-    if sys.platform != 'win32':
-        _signal_group(process, signal.SIGTERM)
-        time.sleep(TERMINATE_GRACE_SECONDS)
-    _kill_tree(process)
+    """Ask the tree to exit, then force it; Windows has no polite signal for a group.
+
+    The grace period ends as soon as the command exits, and the SIGKILL is sent even if the wait is interrupted.
+    Reaping the command first is safe: its group id stays reserved while any member of the group is alive.
+    """
+    try:
+        if sys.platform != 'win32':
+            _signal_group(process, signal.SIGTERM)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                process.wait(timeout=TERMINATE_GRACE_SECONDS)
+    finally:
+        _kill_tree(process)
 
 
 def _kill_tree(process: subprocess.Popen[bytes]) -> None:
