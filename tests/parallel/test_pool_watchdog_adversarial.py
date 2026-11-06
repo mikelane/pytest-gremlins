@@ -9,6 +9,7 @@ from concurrent.futures import (
 import multiprocessing
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import time
@@ -20,7 +21,7 @@ from pytest_gremlins.parallel.pool import (
     WorkerResult,
     _Job,
 )
-from pytest_gremlins.parallel.worker_kill import kill_process_tree
+from pytest_gremlins.parallel.worker_kill import kill_process_trees
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from tests.parallel.watchdog_workers import run_scripted
 
@@ -124,7 +125,7 @@ class DescribeKillingAWorkerWhoseTestCommandOrphanedAGrandchild:
         worker, grandchild_pid_file = _spawn_command_with_orphaned_grandchild(tmp_path)
         grandchild_pid = int(grandchild_pid_file.read_text())
         try:
-            kill_process_tree(worker.pid)
+            kill_process_trees([worker.pid])
             worker.wait(timeout=10)
             time.sleep(0.2)
             alive = _is_alive(grandchild_pid)
@@ -155,7 +156,7 @@ class DescribeKillingAWorkerWhenPsIsUnavailable:
         child_pid = int(child_pid_file.read_text())
         monkeypatch.setenv('PATH', str(tmp_path / 'no-ps-here'))
         try:
-            kill_process_tree(worker.pid)
+            kill_process_trees([worker.pid])
             worker.wait(timeout=10)
             time.sleep(0.2)
             alive = _is_alive(child_pid)
@@ -231,10 +232,17 @@ class DescribeAGremlinWhoseRealVerdictLandsWhileTheWatchdogScoresIt:
         pool._jobs['finishes-at-its-deadline'].started_at = time.monotonic() - 10
         monkeypatch.setattr(pool_module, 'kill_process_trees', lambda _pids: None)
 
+        real_logger = pool_module.logger
+
         class _LandsDuringScoring:
-            def warning(self, *_args: object) -> None:
+            # The first warning is the hung-gremlin one, logged after the gremlin is picked and before it is
+            # settled. Every other logger call goes to the real logger, so new log lines do not break the probe.
+            def warning(self, *_args: object, **_kwargs: object) -> None:
                 if not future.done():
                     future.set_result(_survived('finishes-at-its-deadline'))
+
+            def __getattr__(self, name: str) -> object:
+                return getattr(real_logger, name)
 
         monkeypatch.setattr(pool_module, 'logger', _LandsDuringScoring())
 
@@ -395,8 +403,10 @@ class DescribeAKillThatFailsWhileListingTheProcessTable:
             output, _ = run.communicate(timeout=30)
             finished = True
         except subprocess.TimeoutExpired:
-            os.killpg(run.pid, 9)
+            os.killpg(run.pid, signal.SIGKILL)
             output, _ = run.communicate()
             finished = False
 
         assert finished, f'the run never ended after the watchdog fired; output:\n{output}'
+        assert 'pool exited TIMEOUT' in output, output
+        assert not _is_alive(int((tmp_path / 'hung.pid').read_text()))

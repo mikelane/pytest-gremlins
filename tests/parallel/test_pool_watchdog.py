@@ -6,6 +6,7 @@ from concurrent.futures import (
     Future,
     wait,
 )
+import logging
 import os
 from pathlib import Path
 import time
@@ -17,7 +18,10 @@ from pytest_gremlins.parallel.pool import (
     WorkerResult,
 )
 from pytest_gremlins.reporting.results import GremlinResultStatus
-from tests.parallel.watchdog_workers import run_scripted
+from tests.parallel.watchdog_workers import (
+    run_raising,
+    run_scripted,
+)
 
 HARD_DEADLINE_SECONDS = 40
 TIMEOUT_SECONDS = 2
@@ -75,7 +79,13 @@ class DescribeAWorkerThatHangsOutsideTheTestRun:
         with _pool(2) as pool:
             _results(pool, [_submit(pool, 'hung-gremlin-id', FOREVER, tmp_path)])
 
-        assert 'hung-gremlin-id' in caplog.text
+        warnings = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == 'pytest_gremlins.parallel.pool' and record.levelno == logging.WARNING
+        ]
+        assert warnings, 'the pool logged no warning about the hang'
+        assert 'hung-gremlin-id' in warnings[0]
 
     def it_kills_the_hung_worker(self, tmp_path: Path) -> None:
         with _pool(2) as pool:
@@ -122,6 +132,42 @@ class DescribeAnotherGremlinThatHasAlreadyOutlivedItsTimeout:
         # past its own 2 s timeout: it is scored then, not restarted (a restart would end it at about 10 s).
         assert second_hung.result().status == GremlinResultStatus.TIMEOUT
         assert settled_after < 8
+
+
+@pytest.mark.medium
+class DescribeAWorkerThatRaises:
+    def it_hands_the_error_to_the_callers_future(self, tmp_path: Path) -> None:
+        with WorkerPool(max_workers=1, timeout=TIMEOUT_SECONDS, worker_target=run_raising) as pool:
+            future = _submit(pool, 'raises', '0', tmp_path)
+            wait([future], timeout=HARD_DEADLINE_SECONDS)
+
+        error = future.exception(timeout=0)
+        assert isinstance(error, RuntimeError)
+        assert str(error) == 'worker failed on raises'
+
+
+@pytest.mark.small
+class DescribeServiceOutsideTheContext:
+    def it_returns_no_scored_gremlins_before_the_pool_starts(self) -> None:
+        assert WorkerPool(max_workers=1).service() == []
+
+
+@pytest.mark.small
+class DescribeAWatchdogThatFails:
+    def it_logs_a_warning_and_reraises(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+        def failing_scoring(_pool: WorkerPool) -> list[str]:
+            msg = 'scoring failed'
+            raise RuntimeError(msg)
+
+        monkeypatch.setattr(WorkerPool, '_score_overdue_gremlins', failing_scoring)
+        pool = WorkerPool(max_workers=1)
+        pool._executor = object()  # type: ignore[assignment]
+
+        with pytest.raises(RuntimeError, match='scoring failed'):
+            pool.service()
+
+        assert [record.levelno for record in caplog.records] == [logging.WARNING]
+        assert 'watchdog failed' in caplog.records[0].getMessage()
 
 
 @pytest.mark.medium

@@ -31,7 +31,6 @@ import subprocess
 import time
 from typing import (
     TYPE_CHECKING,
-    Any,
     Self,
 )
 
@@ -66,7 +65,10 @@ The worker enforces the mutant timeout itself and normally returns within a mome
 the kill and the pipe drain after that, so a healthy timeout is never overtaken by the watchdog.
 """
 
-_start_reports: Any = None
+_StartReports = multiprocessing.queues.SimpleQueue[tuple[str, int, float]]
+"""Queue of ``(gremlin_id, worker_pid, monotonic start time)`` reports, from the workers to the parent."""
+
+_start_reports: _StartReports | None = None
 """In a worker: the queue on which it tells the parent which gremlin it started and its own pid."""
 
 
@@ -93,17 +95,18 @@ class WorkerResult:
     error_output: str = ''
 
 
-def _init_worker(report_queue: multiprocessing.queues.SimpleQueue[tuple[str, int, float]]) -> None:  # pragma: no cover
+def _init_worker(report_queue: _StartReports) -> None:  # pragma: no cover
     """Pool worker initializer: remember the queue the worker reports its starts on."""
     global _start_reports  # noqa: PLW0603
     _start_reports = report_queue
 
 
-def _run_watched(  # pragma: no cover
+def _report_start_then_run(  # pragma: no cover
     target: Callable[[str, list[str], str, dict[str, str], int], WorkerResult],
     arguments: tuple[str, list[str], str, dict[str, str], int],
 ) -> WorkerResult:
     """Tell the parent this gremlin started here, then run it; the parent times it from that report."""
+    assert _start_reports is not None  # noqa: S101  # set by _init_worker in every pool worker
     _start_reports.put((arguments[0], os.getpid(), time.monotonic()))
     return target(*arguments)
 
@@ -207,8 +210,7 @@ class _Job:
 
     gremlin_id: str
     arguments: tuple[str, list[str], str, dict[str, str], int]
-    outcome: Future[WorkerResult]
-    generation: int = 0
+    caller_future: Future[WorkerResult]
     pid: int | None = None
     started_at: float | None = None
 
@@ -216,9 +218,9 @@ class _Job:
         """Resolve the future the caller holds, once; return whether this call did it (a later attempt is ignored)."""
         try:
             if isinstance(outcome, BaseException):
-                self.outcome.set_exception(outcome)
+                self.caller_future.set_exception(outcome)
             else:
-                self.outcome.set_result(outcome)
+                self.caller_future.set_result(outcome)
         except InvalidStateError:
             return False
         return True
@@ -274,7 +276,7 @@ class WorkerPool:
         self._grace_seconds = grace_seconds
         self._worker_target = worker_target if worker_target is not None else _run_gremlin_test
         self._executor: ProcessPoolExecutor | None = None
-        self._reports: Any = None
+        self._reports: _StartReports | None = None
         self._generation = 0
         self._breaking_generation = -1
         self._jobs: dict[str, _Job] = {}
@@ -368,12 +370,12 @@ class WorkerPool:
         job = _Job(
             gremlin_id=gremlin_id,
             arguments=(gremlin_id, test_command, rootdir, all_env_vars, self._timeout),
-            outcome=Future(),
+            caller_future=Future(),
         )
         self._jobs[gremlin_id] = job
-        job.outcome.add_done_callback(lambda _outcome: self._settled_ids.append(gremlin_id))
+        job.caller_future.add_done_callback(lambda _settled_future: self._settled_ids.append(gremlin_id))
         self._dispatch(job)
-        return job.outcome
+        return job.caller_future
 
     def service(self) -> list[str]:
         """Enforce the per-gremlin deadline; call it regularly from the thread that collects results.
@@ -411,6 +413,12 @@ class WorkerPool:
         if executor is None:
             return
         worker_pids = self._worker_pids(executor)
+        logger.warning(
+            'The run is ending on an error: killing %d pool worker(s) (pids %s) and their test commands '
+            'instead of waiting for them.',
+            len(worker_pids),
+            sorted(worker_pids),
+        )
         try:
             kill_process_trees(worker_pids)
         except Exception:
@@ -441,25 +449,25 @@ class WorkerPool:
 
     def _dispatch(self, job: _Job) -> None:
         assert self._executor is not None  # noqa: S101
-        job.generation = self._generation
         job.pid = None
         job.started_at = None
-        inner = self._executor.submit(_run_watched, self._worker_target, job.arguments)
-        inner.add_done_callback(partial(self._relay, job, job.generation))
+        executor_future = self._executor.submit(_report_start_then_run, self._worker_target, job.arguments)
+        executor_future.add_done_callback(partial(self._relay_to_caller_future, job, self._generation))
 
-    def _relay(self, job: _Job, generation: int, inner: Future[WorkerResult]) -> None:
+    def _relay_to_caller_future(self, job: _Job, generation: int, executor_future: Future[WorkerResult]) -> None:
         """Hand an executor future's outcome to the caller's future (runs on an executor thread)."""
-        if generation != self._generation or inner.cancelled():
+        if generation != self._generation or executor_future.cancelled():
             return
-        error = inner.exception()
+        error = executor_future.exception()
         if error is None:
-            job.settle(inner.result())
+            job.settle(executor_future.result())
         elif isinstance(error, BrokenProcessPool) and generation == self._breaking_generation:
             return  # the watchdog broke this executor on purpose and is about to run the job again
         else:
             job.settle(error)
 
     def _read_start_reports(self) -> None:
+        assert self._reports is not None  # noqa: S101  # created with the executor, which service() checked
         while not self._reports.empty():
             gremlin_id, pid, started_at = self._reports.get()
             job = self._jobs.get(gremlin_id)
@@ -472,7 +480,7 @@ class WorkerPool:
             self._jobs.pop(self._settled_ids.popleft(), None)
 
     def _unfinished_jobs(self) -> list[_Job]:
-        return [job for job in self._jobs.values() if not job.outcome.done()]
+        return [job for job in self._jobs.values() if not job.caller_future.done()]
 
     def _is_overdue(self, job: _Job, now: float) -> bool:
         return job.started_at is not None and now - job.started_at > self._timeout + self._grace_seconds
@@ -500,8 +508,16 @@ class WorkerPool:
         kill_process_trees(worker_pids)
         old_executor.shutdown(wait=True, cancel_futures=True)
         self._start_executor()
-        for job in self._unfinished_jobs():
+        restarted = self._unfinished_jobs()
+        for job in restarted:
             self._dispatch(job)
+        logger.warning(
+            'Replaced the worker pool after a hang: killed worker pid(s) %s, scored %d gremlin(s) TIMEOUT, '
+            'restarted %d gremlin(s) on the new workers.',
+            sorted(worker_pids),
+            len(scored),
+            len(restarted),
+        )
         return scored
 
     def _warn_about_hung_gremlins(self, overdue: list[_Job], past_their_timeout: list[_Job], now: float) -> None:

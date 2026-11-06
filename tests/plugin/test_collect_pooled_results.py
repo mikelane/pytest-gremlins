@@ -318,7 +318,36 @@ class DescribeCollectPooledResults:
         )
 
         assert [(r.gremlin_id, r.status) for r in aggregator.get_results()] == [('g1', GremlinResultStatus.TIMEOUT)]
-        assert any('g1' in notice and 'hung' in notice for notice in gremlin_session.terminal_notices)
+        assert len(gremlin_session.terminal_notices) == 1, gremlin_session.terminal_notices
+        assert 'hung-worker watchdog scored gremlin g1 ' in gremlin_session.terminal_notices[0]
+
+    @pytest.mark.usefixtures('cache_calls')
+    def it_keeps_the_shorter_flush_interval_when_it_is_below_the_watchdog_tick(
+        self, gremlin_session: GremlinSession
+    ) -> None:
+        stuck: Future[WorkerResult] = Future()
+        seen_kwargs: list[dict[str, object]] = []
+        flusher = PeriodicFlusher(lambda: None, every_seconds=plugin.WATCHDOG_TICK_SECONDS / 4)
+
+        def scripted_wait(*_: object, **kwargs: object) -> _WaitOutcome:
+            seen_kwargs.append(kwargs)
+            raise KeyboardInterrupt
+
+        with (
+            patch.object(plugin, 'wait', new=scripted_wait),
+            patch.object(plugin, '_cache_flusher_for', return_value=flusher),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            _collect_pooled_results(
+                {stuck: 'g1'},
+                ResultAggregator(total_gremlins=1),
+                {'g1': _gremlin('g1')},
+                {'g1': []},
+                gremlin_session,
+                service=list,
+            )
+
+        assert seen_kwargs[0]['timeout'] == pytest.approx(plugin.WATCHDOG_TICK_SECONDS / 4)
 
 
 @pytest.mark.small

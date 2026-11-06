@@ -8,8 +8,10 @@ its own session escapes, and so does one that left the command's group after its
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-import contextlib
+from collections.abc import (
+    Callable,
+    Iterable,
+)
 import logging
 import os
 from pathlib import Path
@@ -27,13 +29,10 @@ PROC_ROOT = Path('/proc')
 _IS_WINDOWS = sys.platform == 'win32'
 
 
-def kill_process_tree(root_pid: int) -> None:
-    """SIGKILL ``root_pid``, its descendants and their process groups (``taskkill /T /F`` on Windows)."""
-    kill_process_trees([root_pid])
-
-
 def kill_process_trees(root_pids: Iterable[int]) -> None:
-    """Kill several process trees, listing every tree before any process is killed.
+    """SIGKILL each root, its descendants and their process groups (``taskkill /T /F`` on Windows).
+
+    Every tree is listed before any process is killed.
 
     Killing one pool worker breaks the executor, whose manager then terminates the other workers. A worker that
     dies that way is no longer the parent of its test command, so the command can be found only if the trees
@@ -49,12 +48,20 @@ def kill_process_trees(root_pids: Iterable[int]) -> None:
     for root_pid, descendants in descendants_by_root.items():
         process_groups |= _groups_to_signal(root_pid, descendants)
     for group in process_groups:
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(group, signal.SIGKILL)
+        _signal_or_warn(os.killpg, group, 'process group')
     for root_pid, descendants in descendants_by_root.items():
         for pid in [*descendants, root_pid]:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.kill(pid, signal.SIGKILL)
+            _signal_or_warn(os.kill, pid, 'process')
+
+
+def _signal_or_warn(send: Callable[[int, int], None], target: int, kind: str) -> None:
+    """SIGKILL ``target``; one already gone is fine, one this process may not signal survives and is logged."""
+    try:
+        send(target, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        logger.warning('Not permitted to kill %s %s; it may outlive the run.', kind, target)
 
 
 def _groups_to_signal(root_pid: int, descendants: list[int]) -> set[int]:
@@ -80,7 +87,7 @@ def descendants_of(root_pid: int) -> list[int]:
     """Return every descendant pid of ``root_pid`` (POSIX), found through the parent links of the process table."""
     children_by_parent = _children_by_parent()
     if children_by_parent is None:
-        logger.warning('Cannot list the descendants of worker %s: no `ps` and no /proc', root_pid)
+        logger.warning('Cannot list the descendants of worker %s: neither `ps` nor /proc gave a process list', root_pid)
         return []
     found: list[int] = []
     frontier = [root_pid]
@@ -117,9 +124,10 @@ def _parent_links_from_ps() -> list[tuple[int, int]] | None:
                 timeout=_PS_TIMEOUT_SECONDS,
                 check=False,
             ).stdout
-        except (OSError, subprocess.SubprocessError):
+        except (OSError, subprocess.SubprocessError) as error:
+            logger.debug('Cannot list the process table with %s: %s', ps_command, error)
             continue
-        links = []
+        links: list[tuple[int, int]] = []
         for line in listing.splitlines():
             columns = line.split()
             if len(columns) == _PS_COLUMNS and all(column.isdigit() for column in columns):
@@ -132,7 +140,7 @@ def _parent_links_from_ps() -> list[tuple[int, int]] | None:
 def _parent_links_from_proc() -> list[tuple[int, int]] | None:
     if not PROC_ROOT.is_dir():
         return None
-    links = []
+    links: list[tuple[int, int]] = []
     for entry in PROC_ROOT.iterdir():
         if not entry.name.isdigit():
             continue
@@ -149,10 +157,12 @@ def _parent_links_from_proc() -> list[tuple[int, int]] | None:
 
 
 def _taskkill_tree(root_pid: int) -> None:
-    with contextlib.suppress(OSError, subprocess.SubprocessError):
+    try:
         subprocess.run(  # Intentional: ends a Windows process tree
             ['taskkill', '/PID', str(root_pid), '/T', '/F'],  # noqa: S607  # nosec B607
             capture_output=True,
             timeout=_PS_TIMEOUT_SECONDS,
             check=False,
         )
+    except (OSError, subprocess.SubprocessError):
+        logger.warning('Cannot run taskkill on worker %s; its test command may outlive it.', root_pid, exc_info=True)

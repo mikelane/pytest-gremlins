@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 
@@ -62,7 +63,7 @@ class DescribeAWatchdogThatFailsWhileKilling:
             output, _ = run.communicate(timeout=HARD_DEADLINE_SECONDS)
             finished = True
         except subprocess.TimeoutExpired:
-            os.killpg(run.pid, 9)
+            os.killpg(run.pid, signal.SIGKILL)
             output, _ = run.communicate()
             finished = False
 

@@ -29,6 +29,18 @@ def run_scripted(
     return WorkerResult(gremlin_id=gremlin_id, status=GremlinResultStatus.SURVIVED, execution_time_ms=seconds * 1000)
 
 
+def run_raising(
+    gremlin_id: str,
+    test_command: list[str],  # noqa: ARG001
+    rootdir: str,  # noqa: ARG001
+    env_vars: dict[str, str],  # noqa: ARG001
+    timeout: int,  # noqa: ARG001
+) -> WorkerResult:
+    """Raise out of the worker, as an unexpected failure outside the test run would."""
+    msg = f'worker failed on {gremlin_id}'
+    raise RuntimeError(msg)
+
+
 def run_with_test_command(
     gremlin_id: str,
     test_command: list[str],
