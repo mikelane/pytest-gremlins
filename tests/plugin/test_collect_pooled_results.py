@@ -63,6 +63,10 @@ def gremlin_session(cache: IncrementalCache) -> GremlinSession:
     session: GremlinSession = create_autospec(GremlinSession, instance=True)
     session.cache = cache
     session.cache_enabled = True
+    # Real values: autospec only exposes default_factory dataclass fields on Python 3.14 and later.
+    session.source_hashes = {}
+    session.terminal_notices = []
+    session.load_failures_attributable = True
     return session
 
 
