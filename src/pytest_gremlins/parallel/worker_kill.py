@@ -137,11 +137,12 @@ def _parent_links_from_proc() -> list[tuple[int, int]] | None:
         if not entry.name.isdigit():
             continue
         try:
-            stat_line = (entry / 'stat').read_text()
+            stat_line = (entry / 'stat').read_bytes()
         except OSError:
             continue
-        # "pid (comm) state ppid ...": comm may hold spaces and parentheses, so split after the last ")".
-        fields_after_comm = stat_line.rpartition(')')[2].split()
+        # "pid (comm) state ppid ...": comm is any bytes, even spaces, parentheses and non-UTF-8, so split after the
+        # last ")" and decode only the numeric fields.
+        fields_after_comm = stat_line.rpartition(b')')[2].split()
         if len(fields_after_comm) > 1 and fields_after_comm[1].isdigit():
             links.append((int(entry.name), int(fields_after_comm[1])))
     return links

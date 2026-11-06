@@ -18,6 +18,7 @@ from concurrent.futures import (
     ProcessPoolExecutor,
 )
 from concurrent.futures.process import BrokenProcessPool
+import contextlib
 from dataclasses import dataclass
 from functools import partial
 import logging
@@ -25,6 +26,7 @@ import multiprocessing
 import multiprocessing.queues
 import os
 from pathlib import Path
+import signal
 import subprocess
 import time
 from typing import (
@@ -204,15 +206,16 @@ class _Job:
     pid: int | None = None
     started_at: float | None = None
 
-    def settle(self, result: WorkerResult | None = None, error: BaseException | None = None) -> None:
-        """Resolve the future the caller holds, once; later attempts are ignored."""
+    def settle(self, result: WorkerResult | None = None, error: BaseException | None = None) -> bool:
+        """Resolve the future the caller holds, once; return whether this call did it (a later attempt is ignored)."""
         try:
             if error is not None:
                 self.outcome.set_exception(error)
             else:
                 self.outcome.set_result(result)  # type: ignore[arg-type]
         except InvalidStateError:
-            return
+            return False
+        return True
 
 
 class WorkerPool:
@@ -362,6 +365,17 @@ class WorkerPool:
         """
         if self._executor is None:
             return []
+        try:
+            return self._score_overdue_gremlins()
+        except Exception:
+            logger.warning(
+                'The worker watchdog failed; killing every worker so the run cannot wait on a hung one.',
+                exc_info=True,
+            )
+            self._abandon_workers()
+            raise
+
+    def _score_overdue_gremlins(self) -> list[str]:
         self._forget_settled_jobs()
         self._read_start_reports()
         now = time.monotonic()
@@ -369,6 +383,16 @@ class WorkerPool:
         if not overdue:
             return []
         return [job.gremlin_id for job in self._replace_executor_after_hang(overdue, now)]
+
+    def _abandon_workers(self) -> None:
+        """Last resort after a watchdog failure: SIGKILL every worker and drop the executor without waiting on it."""
+        executor, self._executor = self._executor, None
+        if executor is None:
+            return
+        for worker_pid in self._worker_pids(executor):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(worker_pid, getattr(signal, 'SIGKILL', signal.SIGTERM))
+        executor.shutdown(wait=False, cancel_futures=True)
 
     def _start_executor(self) -> None:
         context = multiprocessing.get_context()
@@ -454,14 +478,17 @@ class WorkerPool:
                 now - (job.started_at or now),
                 self._timeout,
             )
-        scored = [*overdue, *past_their_timeout]
-        for job in scored:
-            elapsed_ms = (now - (job.started_at or now)) * 1000
-            job.settle(
+        scored = [
+            job
+            for job in [*overdue, *past_their_timeout]
+            if job.settle(
                 result=WorkerResult(
-                    gremlin_id=job.gremlin_id, status=GremlinResultStatus.TIMEOUT, execution_time_ms=elapsed_ms
+                    gremlin_id=job.gremlin_id,
+                    status=GremlinResultStatus.TIMEOUT,
+                    execution_time_ms=(now - (job.started_at or now)) * 1000,
                 )
             )
+        ]
         self._breaking_generation = self._generation
         kill_process_trees(worker_pids)
         old_executor.shutdown(wait=True, cancel_futures=True)
