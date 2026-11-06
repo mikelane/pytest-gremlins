@@ -340,6 +340,7 @@ class PersistentWorkerPool:
         self._executor = ProcessPoolExecutor(
             max_workers=self._max_workers,
             mp_context=self._mp_context,
+            initializer=process_tree.install_sigterm_cleanup,
         )
         self._running = True
 

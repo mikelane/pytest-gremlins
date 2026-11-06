@@ -80,25 +80,18 @@ def _sleeper_writing_pid(pid_file: Path, *, ignore_sigterm: bool = False) -> str
     )
 
 
-ESCAPES_GROUP_SIGNALS = pytest.mark.xfail(
-    strict=True,
-    reason='#975: start_new_session takes the command out of the caller group, so signals sent to that group '
-    'no longer reach it (regression vs subprocess.run on main); fix design is open',
-)
-
-
 @pytest.mark.medium
 @posix_only
 class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
-    @ESCAPES_GROUP_SIGNALS
     def it_ends_the_command_when_the_callers_process_group_is_terminated(self, tmp_path: Path) -> None:
         # `timeout 600 pytest --gremlins`, a CI cancel or a supervisor stopping a process group: the signal goes
-        # to the caller's group. A pool worker has no SIGTERM handler, so it dies without reaching run_bounded's
-        # cleanup. With subprocess.run the test command shared that group and died with it.
+        # to the caller's group. The pool worker initializer installs the SIGTERM cleanup, so the worker ends its
+        # command before it dies. With subprocess.run the test command shared that group and died with it.
         pid_file = tmp_path / 'command.pid'
         runner = (
             'import os, sys\n'
-            'from pytest_gremlins.process_tree import run_bounded\n'
+            'from pytest_gremlins.process_tree import install_sigterm_cleanup, run_bounded\n'
+            'install_sigterm_cleanup()\n'
             f'run_bounded([sys.executable, "-c", {_sleeper_writing_pid(pid_file)!r}], cwd={str(tmp_path)!r},'
             f' env=dict(os.environ), timeout={LONG_SLEEP_SECONDS})\n'
         )
@@ -116,7 +109,6 @@ class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
 
         assert gone
 
-    @ESCAPES_GROUP_SIGNALS
     def it_ends_a_command_run_from_a_worker_thread_on_a_terminal_interrupt(self, tmp_path: Path) -> None:
         # verdicts._confirm_collection_kills runs control runs in a ThreadPoolExecutor. A terminal Ctrl-C sends
         # SIGINT to the foreground group; only the main thread sees KeyboardInterrupt, so run_bounded in the

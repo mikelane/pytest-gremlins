@@ -347,6 +347,19 @@ group (`start_new_session` on POSIX, `CREATE_NEW_PROCESS_GROUP` on Windows). On 
 whole group is ended, so children of a timed-out test do not pile up, and reading the output afterwards is bounded
 so a stray process holding the pipes cannot stall a worker. This lives in `pytest_gremlins.process_tree`.
 
+Because a command in its own session no longer shares the caller's process group, signals sent to that group do not
+reach it. `process_tree` keeps a registry of the live commands, each recorded with the process that started it, and
+ends them in these cases:
+
+- A SIGTERM to a pool worker (the pool initializer installs a handler): the worker ends its commands, then terminates
+  as SIGTERM would.
+- A SIGTERM to the pytest process while gremlins run (main thread only; the previous handler is called afterwards, or
+  the default action runs, and is restored when the run ends). SIGINT stays with pytest.
+- An interrupt while control runs execute in a thread pool, and interpreter exit: every command still running is ended.
+
+Windows has no SIGTERM delivery to Python, so there only the interrupt and exit cleanup apply. SIGKILL (an OOM kill,
+`kill -9`) cannot be handled and can leave a test run's processes behind, as it could before.
+
 ## Performance Characteristics
 
 ### Scaling

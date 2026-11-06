@@ -193,7 +193,9 @@ class WorkerPool:
 
     def __enter__(self) -> Self:
         """Enter the context manager, starting the worker pool."""
-        self._executor = ProcessPoolExecutor(max_workers=self._max_workers)
+        self._executor = ProcessPoolExecutor(
+            max_workers=self._max_workers, initializer=process_tree.install_sigterm_cleanup
+        )
         return self
 
     def __exit__(

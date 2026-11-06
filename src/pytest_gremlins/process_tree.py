@@ -9,19 +9,27 @@ timeout or an interrupt, and bounds the wait for the pipes to drain.
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import os
 from pathlib import Path
 import signal
 import subprocess
 import sys
+import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import (
+        Callable,
+        Iterator,
         Mapping,
         Sequence,
     )
+    from types import FrameType
+    from typing import TypeAlias
+
+    _SignalHandler: TypeAlias = Callable[[int, FrameType | None], object] | int | signal.Handlers | None
 
 TERMINATE_GRACE_SECONDS = 0.5
 """How long the group gets to exit after SIGTERM before SIGKILL (POSIX)."""
@@ -30,6 +38,12 @@ PIPE_DRAIN_SECONDS = 5.0
 """How long to wait for the output pipes to close after the kill."""
 
 _TASKKILL_TIMEOUT_SECONDS = 10
+
+_live_commands: dict[int, tuple[int, subprocess.Popen[bytes]]] = {}
+"""Commands that are running now, by pid, with the pid of the process that started each."""
+
+# Reentrant: a signal handler runs on the main thread, possibly while that thread holds the lock.
+_live_commands_lock = threading.RLock()
 
 
 def run_bounded(
@@ -55,6 +69,16 @@ def run_bounded(
             the output read before the kill is attached.
     """
     process = _start(command, cwd=cwd, env=env)
+    _register(process)
+    try:
+        return _wait_for(process, command, timeout)
+    finally:
+        _unregister(process)
+
+
+def _wait_for(
+    process: subprocess.Popen[bytes], command: Sequence[str], timeout: float
+) -> subprocess.CompletedProcess[bytes]:
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as expired:
@@ -69,6 +93,109 @@ def run_bounded(
         _drain(process)
         raise
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _register(process: subprocess.Popen[bytes]) -> None:
+    with _live_commands_lock:
+        _live_commands[process.pid] = (os.getpid(), process)
+
+
+def _unregister(process: subprocess.Popen[bytes]) -> None:
+    with _live_commands_lock:
+        _live_commands.pop(process.pid, None)
+
+
+def live_command_count() -> int:
+    """Return how many test commands this process has running now."""
+    return len(_own_live_commands())
+
+
+def _own_live_commands() -> list[subprocess.Popen[bytes]]:
+    # A forked pool worker inherits its parent's registry; those commands are not its to end.
+    with _live_commands_lock:
+        return [process for owner, process in _live_commands.values() if owner == os.getpid()]
+
+
+def terminate_all() -> None:
+    """End the process tree of every test command this process has running now.
+
+    This is the cleanup for an interrupt or a SIGTERM, which cannot reach a command that runs in its own session.
+    It also runs when the interpreter exits. It cannot help when the process is killed with SIGKILL.
+    """
+    for process in _own_live_commands():
+        with contextlib.suppress(OSError):
+            _kill_tree(process)
+
+
+atexit.register(terminate_all)
+
+
+@contextlib.contextmanager
+def terminate_all_on_error() -> Iterator[None]:
+    """End every running test command if the block raises, including on KeyboardInterrupt.
+
+    Wrap a thread pool that runs commands: its ``with`` block waits for the threads before an interrupt
+    propagates, and a thread never sees the interrupt itself.
+    """
+    try:
+        yield
+    except BaseException:
+        terminate_all()
+        raise
+
+
+def _install_sigterm_handler(previous: _SignalHandler) -> _SignalHandler:
+    replaced = signal.getsignal(signal.SIGTERM)
+
+    def end_commands_then_terminate(signum: int, frame: FrameType | None) -> None:
+        terminate_all()
+        if callable(previous):
+            previous(signum, frame)
+        elif previous != signal.SIG_IGN:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
+
+    signal.signal(signal.SIGTERM, end_commands_then_terminate)
+    return replaced
+
+
+def install_sigterm_cleanup() -> None:
+    """Make SIGTERM end this process's test commands, then terminate the process as usual.
+
+    This is the initializer of the worker pools. A worker is killed with its caller's process group (a CI cancel,
+    ``timeout``, ``killpg``), and its commands run in their own sessions, so they would otherwise run on.
+    """
+    if sys.platform != 'win32':
+        _install_sigterm_handler(signal.SIG_DFL)
+
+
+@contextlib.contextmanager
+def sigterm_cleanup() -> Iterator[None]:
+    """End this process's test commands on SIGTERM, then hand the signal to the handler that was installed before.
+
+    A previous handler is called; with none (or the default) the default action runs, so the exit status stays
+    that of SIGTERM. The previous handler is restored afterwards. Handlers can only be set from the main thread, so
+    this does nothing anywhere else, and on Windows. SIGINT is left to pytest.
+    """
+    if sys.platform == 'win32' or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    previous = signal.getsignal(signal.SIGTERM)
+    replaced = _install_sigterm_handler(previous)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, replaced if replaced is not None else signal.SIG_DFL)
+
+
+def _forget_inherited_commands() -> None:
+    global _live_commands_lock  # noqa: PLW0603 - a lock held by another thread at fork time stays locked
+    _live_commands_lock = threading.RLock()
+    _live_commands.clear()
+
+
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(after_in_child=_forget_inherited_commands)
 
 
 def _start(command: Sequence[str], *, cwd: str, env: Mapping[str, str]) -> subprocess.Popen[bytes]:

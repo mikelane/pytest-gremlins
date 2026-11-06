@@ -174,7 +174,7 @@ def _prefill_collection_kill_confirmations(
     if not unchecked:
         return
     worker_count = min(len(unchecked), gremlin_session.parallel_workers or os.cpu_count() or 4)
-    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+    with process_tree.terminate_all_on_error(), ThreadPoolExecutor(max_workers=worker_count) as executor:
         outcomes = executor.map(
             lambda selection: _collect_unmutated(gremlin_session, rootdir, selections[selection]), unchecked
         )

@@ -2879,11 +2879,12 @@ def _dispatch_mutation_run(
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
     """Pick the execution mode (batch / parallel / default) and run it."""
-    if gremlin_session.batch_enabled:
-        return _run_batch_mutation_testing(session, gremlin_session)
-    if gremlin_session.parallel_enabled:
-        return _run_parallel_mutation_testing(session, gremlin_session)
-    return _run_mutation_testing(session, gremlin_session)
+    with process_tree.sigterm_cleanup():
+        if gremlin_session.batch_enabled:
+            return _run_batch_mutation_testing(session, gremlin_session)
+        if gremlin_session.parallel_enabled:
+            return _run_parallel_mutation_testing(session, gremlin_session)
+        return _run_mutation_testing(session, gremlin_session)
 
 
 def _make_node_ids_relative(node_ids: list[str], rootdir: Path) -> list[str]:

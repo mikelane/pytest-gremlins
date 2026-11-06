@@ -872,13 +872,15 @@ mutant_timeout = 120
 The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
 the TOML key. A changed rerun count or delay judges every gremlin again.
 
-When a run hits the limit, gremlins ends the whole process tree of that test run, not only the pytest process:
-the group gets SIGTERM, half a second to exit, then SIGKILL. On Windows the tree is ended with `taskkill /T`.
-Child processes a test started (a server fixture, a multiprocessing pool, a `subprocess` call) no longer keep
-running after the timeout, and they cannot hold the run up by keeping its output open. A process that
-detaches itself from the group (for example with `setsid`) is not killed, but gremlins stops waiting for its
-output after 5 seconds. An interrupted run (Ctrl-C) ends its in-flight test runs the same way. The verdict is
-unchanged: the gremlin is reported as a timeout.
+When a run hits the limit, gremlins ends the whole process tree of that test run, not only the pytest process: the
+group gets SIGTERM, half a second to exit, then SIGKILL. On Windows the tree is ended with `taskkill /T`. Child
+processes a test started (a server fixture, a multiprocessing pool, a `subprocess` call) no longer keep running
+after the timeout, and they cannot hold the run up by keeping its output open. A process that detaches itself from
+the group (for example with `setsid`) is not killed, but gremlins stops waiting for its output after 5 seconds. An
+interrupted run (Ctrl-C) or a SIGTERM sent to gremlins or to its worker processes ends its in-flight test runs the
+same way, so a CI cancel or `timeout pytest --gremlins` leaves nothing running. SIGKILL cannot be handled: a
+process killed that way can leave a test run's processes behind, as it could before. The verdict is unchanged: the
+gremlin is reported as a timeout.
 
 The incremental cache stores the timeout each verdict was reached under and reuses a verdict at a different timeout
 only when the new limit cannot change it. A zapped, survived or error verdict is reused when the gremlin's run took
