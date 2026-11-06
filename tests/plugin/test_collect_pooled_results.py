@@ -269,6 +269,57 @@ class DescribeCollectPooledResults:
 
         assert seen_kwargs[0]['timeout'] == pytest.approx(7.5)
 
+    @pytest.mark.usefixtures('cache_calls')
+    def it_services_the_watchdog_before_every_wait_and_wakes_up_often_enough_for_it(
+        self, gremlin_session: GremlinSession
+    ) -> None:
+        stuck: Future[WorkerResult] = Future()
+        seen_kwargs: list[dict[str, object]] = []
+        events: list[str] = []
+        flusher = PeriodicFlusher(lambda: None, every_seconds=7.5)
+
+        def service() -> list[str]:
+            events.append('service')
+            return []
+
+        def scripted_wait(*_: object, **kwargs: object) -> _WaitOutcome:
+            events.append('wait')
+            seen_kwargs.append(kwargs)
+            raise KeyboardInterrupt
+
+        with (
+            patch.object(plugin, 'wait', new=scripted_wait),
+            patch.object(plugin, '_cache_flusher_for', return_value=flusher),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            _collect_pooled_results(
+                {stuck: 'g1'},
+                ResultAggregator(total_gremlins=1),
+                {'g1': _gremlin('g1')},
+                {'g1': []},
+                gremlin_session,
+                service=service,
+            )
+
+        assert events == ['service', 'wait']
+        assert seen_kwargs[0]['timeout'] == pytest.approx(plugin.WATCHDOG_TICK_SECONDS)
+
+    @pytest.mark.usefixtures('cache_calls')
+    def it_collects_a_verdict_the_watchdog_settles(self, gremlin_session: GremlinSession) -> None:
+        hung: Future[WorkerResult] = Future()
+        aggregator = ResultAggregator(total_gremlins=1)
+
+        def settle_as_timeout() -> list[str]:
+            hung.set_result(WorkerResult('g1', GremlinResultStatus.TIMEOUT))
+            return ['g1']
+
+        _collect_pooled_results(
+            {hung: 'g1'}, aggregator, {'g1': _gremlin('g1')}, {'g1': []}, gremlin_session, service=settle_as_timeout
+        )
+
+        assert [(r.gremlin_id, r.status) for r in aggregator.get_results()] == [('g1', GremlinResultStatus.TIMEOUT)]
+        assert any('g1' in notice and 'hung' in notice for notice in gremlin_session.terminal_notices)
+
 
 @pytest.mark.small
 class DescribeConfirmAndCachePooledResults:

@@ -912,6 +912,24 @@ If you see downgrades, raise the limit (or speed up the slow tests): a real hang
 so a longer one costs you no kills. The trade-off is time, since in parallel and batch mode each
 genuine hang costs one extra solo run, up to the limit.
 
+#### A hung worker cannot stall a parallel run
+
+The limit above is enforced inside each worker. In `--gremlin-parallel` runs the parent process also keeps its
+own deadline for every gremlin, so a worker that hangs outside the test run (and so never reaches the limit it
+enforces itself) cannot hold the whole run. Each worker reports when it starts a gremlin, and the parent times
+the gremlin from that moment, not from when it was queued behind other gremlins. A gremlin still running
+10 seconds after its mutant timeout (the grace margin) is scored as a timeout, with no change to how timeouts
+are re-run alone and counted, and a warning names it in the log and in the terminal summary.
+
+To end the hang, the parent kills the hung worker and every process it started, then starts a fresh worker pool.
+Gremlins that were queued, and gremlins in flight on the other workers, run again on the new pool, so their
+verdicts are unaffected; the only cost is the time already spent on the ones that were in flight. When the run
+ends no worker is left behind.
+
+The guarantee covers a gremlin whose worker started it. A worker that cannot even report the start is not
+watched. `--gremlin-batch` runs do not have this deadline yet: a batch worker that hangs outside the test run
+still stalls that run.
+
 ### Batch Execution
 
 Batch mode groups gremlins into batches and hands each batch to a worker as one task. It does not

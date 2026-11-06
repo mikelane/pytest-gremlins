@@ -139,6 +139,9 @@ class _ImmediatePool:
     def __exit__(self, *_exc: object) -> None:
         return None
 
+    def service(self) -> list[str]:
+        return []
+
     def submit(self, *, gremlin_id: str, **_kwargs: Any) -> Future[WorkerResult]:
         self.submitted.append(gremlin_id)
         future: Future[WorkerResult] = Future()
