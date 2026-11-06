@@ -4357,7 +4357,7 @@ def _print_dropped_tests(dropped: list[str], runnable_candidates: list[str]) -> 
     print(f'  Covering minus selected ({len(dropped)} dropped):')
     for key in dropped:
         print(f'    dropped    : {key!r}')
-        print(f'    stripped   : {_drop_bracketed_suffix(key)!r}')
+        print(f'    stripped   : {strip_marker_suffix(key)!r}')
         print(f'    close match: {_close_matches_display(key, runnable_candidates)}')
 
 
@@ -4440,23 +4440,6 @@ def _format_cache_report(*, cache_hits: int, settled_without_running: int, to_te
     """
     settled = f', {settled_without_running} settled without running' if settled_without_running else ''
     return f'pytest-gremlins: {cache_hits} gremlins from cache{settled}, {to_test} to test'
-
-
-def _drop_bracketed_suffix(nodeid: str) -> str:
-    """Return ``nodeid`` with a trailing ``' [...]'`` marker suffix removed.
-
-    Shares its rule (:func:`strip_marker_suffix`) with the coverage subprocess
-    bootstrap (`_strip_nodeid_markers`).  Used only by
-    :func:`_emit_selection_explainer` to show the reader the shape the
-    subprocess would record for a drifted key.
-
-    Examples:
-        >>> _drop_bracketed_suffix('tests/test_foo.py::test_bar [SMALL]')
-        'tests/test_foo.py::test_bar'
-        >>> _drop_bracketed_suffix('tests/test_foo.py::test_bar')
-        'tests/test_foo.py::test_bar'
-    """
-    return strip_marker_suffix(nodeid)
 
 
 def _run_mutation_testing(
@@ -4550,23 +4533,11 @@ def _run_mutation_testing(
 def _node_id_for_test(test_name: str, gremlin_session: GremlinSession) -> str:
     """Resolve a selected test name to its node id, or '' when it has none.
 
-    Test names can be in different formats (simple function, module.function, TestClass.method), so this
-    tries variations to find the corresponding node ID.
+    Every caller passes the selection :func:`_select_tests_for_gremlin_prioritized` already filtered to keys of
+    ``test_node_ids`` (#571), so no fallback to a bare or dotted name is needed (#589). A name that is not a key
+    still resolves to '', which keeps its gremlin out of the cache.
     """
-    node_id = gremlin_session.test_node_ids.get(test_name, '')
-    if not node_id:
-        simple_name = test_name.rsplit('.', maxsplit=1)[-1]
-        node_id = gremlin_session.test_node_ids.get(simple_name, '')
-    if not node_id:
-        # Coverage map may use bare function names (old-format dynamic_context)
-        # while test_node_ids is keyed by full node ID.  Use the reverse index
-        # for O(1) lookup instead of O(n) linear suffix scan.
-        candidates = gremlin_session.test_name_to_node_ids.get(test_name, [])
-        if not candidates:
-            candidates = gremlin_session.test_name_to_node_ids.get(test_name.rsplit('.', maxsplit=1)[-1], [])
-        if candidates:
-            node_id = candidates[0]
-    return node_id
+    return gremlin_session.test_node_ids.get(test_name, '')
 
 
 def _build_test_hashes_for_gremlin(
