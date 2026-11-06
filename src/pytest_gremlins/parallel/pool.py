@@ -11,6 +11,7 @@ content is ever deserialized.
 
 from __future__ import annotations
 
+from collections import deque
 from concurrent.futures import (
     Future,
     InvalidStateError,
@@ -262,6 +263,7 @@ class WorkerPool:
         self._generation = 0
         self._breaking_generation = -1
         self._jobs: dict[str, _Job] = {}
+        self._settled_ids: deque[str] = deque()
         self._shutdown_called = False
 
     @property
@@ -345,6 +347,7 @@ class WorkerPool:
             outcome=Future(),
         )
         self._jobs[gremlin_id] = job
+        job.outcome.add_done_callback(lambda _outcome: self._settled_ids.append(gremlin_id))
         self._dispatch(job)
         return job.outcome
 
@@ -359,6 +362,7 @@ class WorkerPool:
         """
         if self._executor is None:
             return []
+        self._forget_settled_jobs()
         self._read_start_reports()
         now = time.monotonic()
         overdue = [job for job in self._unfinished_jobs() if self._is_overdue(job, now)]
@@ -403,6 +407,11 @@ class WorkerPool:
             job = self._jobs.get(gremlin_id)
             if job is not None and job.pid is None:
                 job.pid, job.started_at = pid, started_at
+
+    def _forget_settled_jobs(self) -> None:
+        """Drop jobs whose future is settled, so each call scans only the gremlins still in flight."""
+        while self._settled_ids:
+            self._jobs.pop(self._settled_ids.popleft(), None)
 
     def _unfinished_jobs(self) -> list[_Job]:
         return [job for job in self._jobs.values() if not job.outcome.done()]
