@@ -59,14 +59,14 @@ class PeriodicFlusher:
         on_first_failure: Callable[[Exception], None] | None = None,
     ) -> None:
         """Start the interval now, with nothing pending."""
-        self._flush = flush
+        self._commit_writes = flush
         self._every_results = every_results
         self.every_seconds = every_seconds
         self._clock = clock
         self._pending = 0
         self._last_flush = clock()
         self._retry_not_before = 0.0
-        self._warned = False
+        self._has_warned = False
         self._on_first_failure = on_first_failure
 
     def note_result(self) -> None:
@@ -78,15 +78,15 @@ class PeriodicFlusher:
         now = self._clock()
         if now < self._retry_not_before:
             return
-        interval_elapsed = now - self._last_flush >= self.every_seconds
-        if self._pending >= self._every_results or (self._pending and interval_elapsed):
+        has_interval_elapsed = now - self._last_flush >= self.every_seconds
+        if self._pending >= self._every_results or (self._pending and has_interval_elapsed):
             self.flush()
 
     def flush(self) -> None:
         """Flush now if anything is pending; a failure is logged once and leaves the results pending."""
         if self._pending:
             try:
-                self._flush()
+                self._commit_writes()
             except (sqlite3.Error, OSError) as flush_error:
                 self._note_failure(flush_error)
                 return
@@ -95,14 +95,14 @@ class PeriodicFlusher:
 
     def _note_failure(self, flush_error: Exception) -> None:
         self._retry_not_before = self._clock() + self.every_seconds
-        if self._warned:
+        if self._has_warned:
             logger.debug(
                 'Cache flush failed again (%s: %s); the writes stay pending for the next flush',
                 type(flush_error).__name__,
                 flush_error,
             )
             return
-        self._warned = True
+        self._has_warned = True
         if self._on_first_failure is not None:
             self._on_first_failure(flush_error)
         logger.warning(

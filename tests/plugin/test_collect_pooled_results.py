@@ -278,7 +278,7 @@ class DescribeConfirmAndCachePooledResults:
         test_commands: dict[str, list[str]] = {'g1': [], 'g2': []}
 
         confirmed = _confirm_and_cache_pooled_results(
-            results, test_commands, gremlin_session, rootdir=Path(), already_cached={'g1'}
+            results, test_commands, gremlin_session, rootdir=Path(), early_cached_ids={'g1'}
         )
 
         assert cache_calls == ['g2']

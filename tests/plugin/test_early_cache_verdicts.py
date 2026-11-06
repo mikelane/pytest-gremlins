@@ -12,13 +12,16 @@ from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.parallel.exit_codes import COLLECTION_KILLING_TEST
 from pytest_gremlins.plugin import (
     GremlinSession,
-    _verdict_is_final,
 )
 from pytest_gremlins.reporting.results import (
     GremlinResult,
     GremlinResultStatus,
 )
-from pytest_gremlins.verdicts import _confirm_pooled_result
+from pytest_gremlins.verdicts import (
+    _confirm_pooled_result,
+    is_collection_kill,
+    pooled_verdict_is_final,
+)
 
 
 def _result(status: GremlinResultStatus, killing_test: str | None = None) -> GremlinResult:
@@ -53,13 +56,13 @@ class DescribeVerdictIsFinal:
     def it_accepts_verdicts_the_confirmation_never_changes(
         self, status: GremlinResultStatus, killing_test: str | None
     ) -> None:
-        assert _verdict_is_final(_result(status, killing_test)) is True
+        assert pooled_verdict_is_final(_result(status, killing_test)) is True
 
     @pytest.mark.parametrize(('status', 'killing_test'), _PENDING_RESULTS)
     def it_rejects_verdicts_the_confirmation_may_change(
         self, status: GremlinResultStatus, killing_test: str | None
     ) -> None:
-        assert _verdict_is_final(_result(status, killing_test)) is False
+        assert pooled_verdict_is_final(_result(status, killing_test)) is False
 
     def it_classifies_every_status(self) -> None:
         classified = {param.values[0] for param in [*_FINAL_RESULTS, *_PENDING_RESULTS]}
@@ -76,3 +79,19 @@ class DescribeVerdictIsFinal:
         confirmed = _confirm_pooled_result(result, [], [], session, Path())
 
         assert confirmed is result
+
+
+@pytest.mark.small
+class DescribeIsCollectionKill:
+    def it_accepts_a_zapped_result_killed_by_the_collection_phase(self) -> None:
+        assert is_collection_kill(_result(GremlinResultStatus.ZAPPED, COLLECTION_KILLING_TEST)) is True
+
+    @pytest.mark.parametrize(
+        ('status', 'killing_test'),
+        [
+            pytest.param(GremlinResultStatus.ZAPPED, 'tests/test_a.py::test_a', id='zapped-by-a-test'),
+            pytest.param(GremlinResultStatus.SURVIVED, COLLECTION_KILLING_TEST, id='not-zapped'),
+        ],
+    )
+    def it_rejects_every_other_result(self, status: GremlinResultStatus, killing_test: str) -> None:
+        assert is_collection_kill(_result(status, killing_test)) is False

@@ -109,10 +109,7 @@ from pytest_gremlins.operators.entry_points import (
 )
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
-from pytest_gremlins.parallel.exit_codes import (
-    COLLECTION_KILLING_TEST,
-    GREMLIN_COLLECTION_FAILED_EXIT_CODE,
-)
+from pytest_gremlins.parallel.exit_codes import GREMLIN_COLLECTION_FAILED_EXIT_CODE
 from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
 )
@@ -165,6 +162,7 @@ from pytest_gremlins.verdicts import (
     _result_from_cached_row,
     _result_from_worker,
     _test_gremlin,
+    pooled_verdict_is_final,
 )
 from pytest_gremlins.xdist_options import (
     addopts_without_xdist,
@@ -4186,7 +4184,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             )
             futures[future] = gremlin.gremlin_id
 
-        cached_early = _collect_pooled_results(futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session)
+        early_cached_ids = _collect_pooled_results(futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session)
 
     print()  # New line after progress
 
@@ -4204,7 +4202,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
         unconfirmed.append(gremlin_result)
 
     results.extend(
-        _confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir, cached_early)
+        _confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir, early_cached_ids)
     )
 
     return results
@@ -4242,7 +4240,7 @@ def _collect_pooled_results(
     runs on the thread that owns the cache's SQLite connection.
     """
     flusher = _cache_flusher_for(gremlin_session)
-    cached_early: set[str] = set()
+    early_cached_ids: set[str] = set()
     pending_futures = set(futures)
     try:
         while pending_futures:
@@ -4252,14 +4250,14 @@ def _collect_pooled_results(
                 if _collect_one_result(
                     future, gremlin_by_id[gremlin_id], gremlin_tests[gremlin_id], aggregator, gremlin_session
                 ):
-                    cached_early.add(gremlin_id)
+                    early_cached_ids.add(gremlin_id)
                     flusher.note_result()
                 completed, total = aggregator.get_progress()
                 print(f'\rpytest-gremlins: Progress {completed}/{total}', end='', flush=True)
             flusher.flush_if_due()
     finally:
         flusher.flush()
-    return cached_early
+    return early_cached_ids
 
 
 def _confirm_and_cache_pooled_results(
@@ -4267,11 +4265,11 @@ def _confirm_and_cache_pooled_results(
     test_commands: dict[str, list[str]],
     gremlin_session: GremlinSession,
     rootdir: Path,
-    already_cached: AbstractSet[str],
+    early_cached_ids: AbstractSet[str],
 ) -> list[GremlinResult]:
     """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them.
 
-    Results whose gremlin id is in ``already_cached`` were final when their worker returned and were
+    Results whose gremlin id is in ``early_cached_ids`` were final when their worker returned and were
     written then (see :func:`_cache_final_worker_result`); confirmation leaves them unchanged, so they
     are not written twice.
     """
@@ -4288,27 +4286,12 @@ def _confirm_and_cache_pooled_results(
             rootdir,
         )
         confirmed.append(confirmed_result)
-        if unconfirmed_result.gremlin.gremlin_id in already_cached:
+        if unconfirmed_result.gremlin.gremlin_id in early_cached_ids:
             continue
         _cache_gremlin_result(
             unconfirmed_result.gremlin, unconfirmed_result.selected_tests, confirmed_result, gremlin_session
         )
     return confirmed
-
-
-def _verdict_is_final(result: GremlinResult) -> bool:
-    """Return whether the confirmation step leaves this worker verdict exactly as it is.
-
-    Confirmation (:func:`~pytest_gremlins.verdicts._confirm_pooled_result`) rewrites only two verdicts: a
-    TIMEOUT (re-run alone, then checked against the unmutated selection) and a collection kill (a ZAPPED
-    result whose killer is the collection phase, checked against the unmutated selection). Every other
-    verdict passes through unchanged, so it can be cached the moment its worker returns. Caching a
-    verdict that confirmation could still change would persist a wrong answer across runs, which is worse
-    than a cold cache, so the two rewritable ones wait.
-    """
-    is_timeout = result.status == GremlinResultStatus.TIMEOUT
-    is_collection_kill = result.status == GremlinResultStatus.ZAPPED and result.killing_test == COLLECTION_KILLING_TEST
-    return not (is_timeout or is_collection_kill)
 
 
 def _cache_final_worker_result(
@@ -4319,7 +4302,7 @@ def _cache_final_worker_result(
 ) -> bool:
     """Cache the worker's verdict now if confirmation cannot change it; return whether it was handed to the cache."""
     result = _result_from_worker(gremlin, worker_result, selected_tests)
-    if not _verdict_is_final(result):
+    if not pooled_verdict_is_final(result):
         return False
     _cache_gremlin_result(gremlin, selected_tests, result, gremlin_session)
     return True
