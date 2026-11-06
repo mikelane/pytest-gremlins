@@ -21,6 +21,8 @@ from pytest_gremlins.plugin import (
     pytest_xdist_node_collection_finished,
 )
 
+pytestmark = pytest.mark.usefixtures('hooks_read_global_session')
+
 
 @pytest.mark.small
 class DescribeXdistItemIds:

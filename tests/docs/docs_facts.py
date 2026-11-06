@@ -37,10 +37,10 @@ FLAG_MENTION = re.compile(r'(?<![\w-])(--(?:gremlins?|strict-pardons|max-pardons
 DEFAULT_COLUMN_HEADER = 'Default'
 
 _HELP_DEFAULT = re.compile(r'\(default: ([^,)]+)')
-_TABLE_ROW_FLAG = re.compile(r'^\|\s*`(--[a-z0-9-]+)`\s*\|')
 _DEFAULT_COMMENT = re.compile(r'^#\s*Default:\s*(.+)$')
 _TOML_ASSIGNMENT = re.compile(r'^([A-Za-z0-9_-]+)\s*=')
-_FENCE = re.compile(r'^\s*```(\w*)')
+_FENCE = re.compile(r'^\s*(`{3,}|~{3,})(.*)$')
+_MULTI_LINE_VALUE_OPENERS = ('[', '{', '"""', "'''")
 
 
 class DocsFormatError(ValueError):
@@ -138,9 +138,12 @@ def hidden_flags() -> frozenset[str]:
 
 
 def documented_flags(page: Path = CONFIGURATION_PAGE) -> frozenset[str]:
-    """Return the flags that start a row of an options table on ``page``."""
-    rows = (_TABLE_ROW_FLAG.match(line) for line in page.read_text(encoding='utf-8').splitlines())
-    return frozenset(row.group(1) for row in rows if row)
+    """Return the flags that start a row of a ``Default`` table on ``page``.
+
+    A flag listed only in a table without a ``Default`` column does not count, so every documented flag has a
+    default the drift checks compare with the code.
+    """
+    return frozenset(name for name in default_cells(page) if name.startswith('--'))
 
 
 def flags_mentioned_in_docs(docs_root: Path = DOCS_ROOT) -> dict[str, list[str]]:
@@ -153,20 +156,40 @@ def flags_mentioned_in_docs(docs_root: Path = DOCS_ROOT) -> dict[str, list[str]]
 
 
 def fenced_blocks(page: Path) -> list[tuple[str, list[tuple[int, str]]]]:
-    """Return ``(language, [(line_number, line), ...])`` for every fenced code block on ``page``."""
+    """Return ``(language, [(line_number, line), ...])`` for every fenced code block on ``page``.
+
+    A block opened with backticks closes only at backticks, and one opened with tildes only at tildes. The
+    language tag is lowercased.
+    """
     blocks: list[tuple[str, list[tuple[int, str]]]] = []
-    language: str | None = None
+    opening_marker: str | None = None
+    language = ''
     lines: list[tuple[int, str]] = []
     for number, line in enumerate(page.read_text(encoding='utf-8').splitlines(), start=1):
         fence = _FENCE.match(line)
-        if fence and language is None:
-            language, lines = fence.group(1), []
-        elif fence and language is not None:
+        if fence and opening_marker is None:
+            opening_marker, language, lines = fence.group(1), _language(fence.group(2)), []
+        elif fence and _closes(opening_marker, fence.group(1), fence.group(2)):
             blocks.append((language, lines))
-            language = None
-        elif language is not None:
+            opening_marker = None
+        elif opening_marker is not None:
             lines.append((number, line))
     return blocks
+
+
+def _language(info_string: str) -> str:
+    """Return the leading language tag of an opening fence's info string, lowercased."""
+    return re.split(r'\W', info_string.strip(), maxsplit=1)[0].lower()
+
+
+def _closes(opening_marker: str | None, marker: str, trailing_text: str) -> bool:
+    """Return whether a fence line closes a block: same character, at least as long, and no info string."""
+    return (
+        opening_marker is not None
+        and not trailing_text.strip()
+        and marker[0] == opening_marker[0]
+        and len(marker) >= len(opening_marker)
+    )
 
 
 def _location(page: Path, line_number: int) -> str:
@@ -198,9 +221,10 @@ def _cells(line: str) -> list[str]:
 def default_cells(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
     """Map each name in the first column of a ``Default`` table on ``page`` to its raw Default cell.
 
-    The Default column is the one whose header is ``Default``, wherever it sits.
+    The Default column is the one whose header is ``Default``, wherever it sits. A name may have only one row.
     """
     cells: dict[str, str] = {}
+    line_by_name: dict[str, int] = {}
     default_column: int | None = None
     for number, line in enumerate(page.read_text(encoding='utf-8').splitlines(), start=1):
         columns = _cells(line)
@@ -212,7 +236,13 @@ def default_cells(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
             if default_column >= len(columns):
                 msg = f'{_location(page, number)}: row has no {DEFAULT_COLUMN_HEADER} cell: {line.strip()}'
                 raise DocsFormatError(msg)
-            cells[columns[0].strip('`')] = columns[default_column]
+            name = columns[0].strip('`')
+            if name in line_by_name:
+                first_row = line_by_name[name]
+                msg = f'{_location(page, number)}: {name} already has a {DEFAULT_COLUMN_HEADER} row at line {first_row}'
+                raise DocsFormatError(msg)
+            line_by_name[name] = number
+            cells[name] = columns[default_column]
     return cells
 
 
@@ -249,31 +279,73 @@ def toml_default_comments(page: Path = CONFIGURATION_PAGE) -> dict[str, str]:
     for language, lines in fenced_blocks(page):
         if language != 'toml':
             continue
-        stated: str | None = None
+        pending = _PendingDefault()
         for _, line in lines:
-            comment = _DEFAULT_COMMENT.match(line.strip())
-            assignment = _TOML_ASSIGNMENT.match(line)
+            text = line.strip()
+            comment = _DEFAULT_COMMENT.match(text)
+            assignment = _TOML_ASSIGNMENT.match(text)
             if comment:
-                stated = comment.group(1)
-            elif assignment and stated is not None:
-                comments[assignment.group(1)] = stated
-                stated = None
-            elif _interrupts_default_comment(line):
-                stated = None
+                pending = _PendingDefault(comment.group(1))
+            elif assignment and pending.stated is not None:
+                comments[assignment.group(1)] = pending.stated
+                pending = _PendingDefault()
+            else:
+                pending = pending.after(text)
     return comments
 
 
-def _interrupts_default_comment(line: str) -> bool:
-    """Return whether ``line`` separates a ``# Default:`` comment from the assignment below it.
+@dataclass(frozen=True)
+class _PendingDefault:
+    """A ``# Default:`` comment waiting for the assignment it describes.
 
-    Explanatory comment lines continue the Default comment. A commented-out assignment does not.
+    Explanatory comment lines may follow it, and a blank line may sit right above the assignment. A blank line
+    between the Default and any other comment line ends the wait: the Default belonged to a deleted key, and the
+    comment starts the next key's paragraph.
     """
-    text = line.strip()
-    if not text:
+
+    stated: str | None = None
+    explained: bool = False
+    blank_seen: bool = False
+
+    def after(self, text: str) -> _PendingDefault:
+        """Return the pending Default after a line that is neither a Default comment nor an assignment."""
+        if self.stated is None or self._ends_at(text):
+            return _PendingDefault()
+        if text:
+            return _PendingDefault(self.stated, explained=True, blank_seen=self.blank_seen)
+        return _PendingDefault(self.stated, explained=self.explained, blank_seen=True)
+
+    def _ends_at(self, text: str) -> bool:
+        if not text:
+            return self.explained
+        if not text.startswith('#'):
+            return True
+        body = text.lstrip('#').strip()
+        return self.blank_seen or body.startswith('[') or _is_commented_out_setting(body)
+
+
+def _is_commented_out_setting(text: str) -> bool:
+    """Return whether ``text`` is a TOML assignment, not prose that happens to start with ``word =``."""
+    assignment = _TOML_ASSIGNMENT.match(text)
+    if not assignment:
         return False
-    if not text.startswith('#'):
-        return True
-    return _TOML_ASSIGNMENT.match(text.lstrip('#').lstrip()) is not None
+    try:
+        tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        value = text[assignment.end() :].strip()
+        if value.startswith('['):
+            return _parses_once_the_array_closes(text)
+        return value in _MULTI_LINE_VALUE_OPENERS
+    return True
+
+
+def _parses_once_the_array_closes(text: str) -> bool:
+    """Return whether ``text`` opens a TOML array that parses once its closing bracket is on the next line."""
+    try:
+        tomllib.loads(f'{text}\n]')
+    except tomllib.TOMLDecodeError:
+        return False
+    return True
 
 
 def keys_the_loader_ignores(workdir: Path, page: Path = CONFIGURATION_PAGE) -> frozenset[str]:

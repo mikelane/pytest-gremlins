@@ -19,6 +19,8 @@ from pytest_gremlins.reporting.results import (
     GremlinResultStatus,
 )
 
+pytestmark = pytest.mark.usefixtures('hooks_read_global_session')
+
 
 def _make_pardoned_gremlin() -> Gremlin:
     node = ast.parse('a // b', mode='eval').body

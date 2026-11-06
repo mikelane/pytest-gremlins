@@ -6,8 +6,8 @@
 
 !!! warning "Historical report"
     This report describes v1.9.0. Since v1.10.1, `--gremlin-executor=fork` and
-    `--gremlin-executor=inprocess` exit with a usage error, pending
-    [#532](https://github.com/mikelane/pytest-gremlins/issues/532): they did not run the mutated
+    `--gremlin-executor=inprocess` exit with a usage error; they were removed in
+    [#532](https://github.com/mikelane/pytest-gremlins/issues/532) because they did not run the mutated
     code, so their results were wrong. The only working executor is `subprocess` (what `auto`
     resolves to). Wherever this report mentions the `inprocess` or `fork` executors as a speedup,
     that speedup was never real and isn't available today. The measurements below are of the
@@ -129,6 +129,31 @@ change. This sample uses the default `subprocess` executor.
    Collection" recommendations (reuse pytest-cov data, parallel coverage via xdist, sampling)
    had shipped at the time of this report.
 
+## Parallel Coverage Pre-Scan (#527)
+
+`--gremlin-prescan-workers N` splits the coverage pre-scan across N serial processes and combines their
+coverage data (see [Parallel Coverage Pre-Scan](../guide/configuration.md#parallel-coverage-pre-scan)). It
+was measured separately from the profile above, on a synthetic suite built for the purpose.
+
+| Pre-scan workers | Wall clock (3 runs) | Mean | Speedup |
+| ---------------- | ------------------- | ---- | ------- |
+| 1 (default)      | 37.6 s, 37.6 s, 37.9 s | 37.7 s | 1.0x |
+| 2                | 19.2 s, 19.4 s, 19.5 s | 19.4 s | 1.9x |
+| 4                | 10.1 s, 10.1 s, 10.2 s | 10.1 s | 3.7x |
+
+- **Suite:** 4,000 tests in 40 files, each running a few lines of a three-function package and sleeping
+  4 ms, so the pre-scan is bound by test time rather than coverage tracing. Tests share no state, which is the
+  best case for sharding; a suite with a slow session fixture pays that fixture once per shard, and its
+  fixture lines are credited to the first test of every shard.
+- **Method:** the plugin's `_run_tests_with_coverage` was called directly, so the timings cover the pre-scan
+  and reading its data back, not the mutation run. Before any timing was accepted, the coverage map was
+  checked: it held all 4,000 tests and 31,600 covered lines, and was identical at 1, 2 and 4 workers.
+  This suite has no session or package fixtures; with them the sharded map is a superset of the serial one.
+- **Machine:** Apple M2 Max, 12 cores, 64 GB, macOS, Python 3.14.0, pytest 9.1.1, coverage.py 7.17.0. The
+  machine was shared, with a load average between 4 and 9 during the runs, so read the speedups as
+  indicative. Sleep-bound tests parallelize better than CPU-bound ones, which share cores with the other
+  work on the machine.
+
 ## Recommendations
 
 ### Priority 1: Optimize Coverage Collection
@@ -137,7 +162,7 @@ This is now the largest remaining lever, at 91% of total runtime:
 
 - **Reuse existing coverage data** if tests already ran with coverage as part of the normal
   test suite invocation.
-- **Parallel coverage collection** via pytest-xdist.
+- **Parallel coverage collection**, now available as `--gremlin-prescan-workers` (#527, measured above).
 - **Incremental/cached coverage** keyed by content hash, to skip full re-collection when
   unchanged files dominate.
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pytest_gremlins import plugin
+from pytest_gremlins import verdicts
 
 TARGET = """
 def classify(n):
@@ -36,14 +36,14 @@ class DescribeLightweightRunnerDisabled:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         commands: list[list[str] | None] = []
-        real_build = plugin.build_lightweight_command  # type: ignore[attr-defined]
+        real_build = verdicts.build_lightweight_command  # type: ignore[attr-defined]
 
         def spy(test_command: list[str], env_vars: dict[str, str]) -> list[str] | None:
             command = real_build(test_command, env_vars)
             commands.append(command)
             return command
 
-        monkeypatch.setattr(plugin, 'build_lightweight_command', spy)
+        monkeypatch.setattr(verdicts, 'build_lightweight_command', spy)
         pytester_with_markers.makepyfile(sample=TARGET)
         pytester_with_markers.mkdir('tests')
         pytester_with_markers.path.joinpath('tests', 'test_sample.py').write_text(PLAIN_TESTS)

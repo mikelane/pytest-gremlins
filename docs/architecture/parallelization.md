@@ -228,15 +228,15 @@ result (roughly 5x in one measurement), in exchange for verdicts that come from 
 The eligibility predicate (`is_lightweight_safe`), the runner script generator and the
 `70` "cannot verify" exit code are kept, unused, as groundwork for that redesign.
 
-### Fork and in-process executors are disabled
+### Fork and in-process executors were removed
 
 `--gremlin-executor=fork` and `--gremlin-executor=inprocess` fail at startup with a usage error
 (exit code 4) that names the value you passed and points to `--gremlin-executor=subprocess`, the
 default. They toggled a flag in the pytest process, whose modules are never instrumented, so they
-did not run the mutated code and could report every gremlin as a survivor. The redesign is
-tracked in [#532](https://github.com/mikelane/pytest-gremlins/issues/532). The `ForkExecutor` and
-`InProcessExecutor` classes remain in the code base for that work but are not reachable from the
-command line.
+did not run the mutated code and could report every gremlin as a survivor. They were removed in
+[#532](https://github.com/mikelane/pytest-gremlins/issues/532), along with the `ForkExecutor` and
+`InProcessExecutor` classes. Any future faster per-mutant path is tracked in
+[#538](https://github.com/mikelane/pytest-gremlins/issues/538).
 
 ### Code that runs in `multiprocessing` spawn children
 

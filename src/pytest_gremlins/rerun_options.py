@@ -4,15 +4,16 @@ A mutant is zapped when a covering test fails.  A flaky test that fails for reas
 mutation would zap every mutant it covers, unless the gremlin run reruns it the way the baseline did.
 Rerun options in the project's ``addopts`` and ``PYTEST_ADDOPTS`` already reach gremlin runs, and so do the
 ini settings of any config file pytest finds on its own, because a gremlin run discovers the same file.
-This module carries the rerun options typed on the command line, and, only when a ``-c`` config file holds
-the settings where the gremlin runs usually cannot read it, the rerun ini settings as ``--override-ini`` arguments.
+This module carries the rerun options typed on the command line.  Under ``-c`` the gremlin runs are given the same
+config file (issue #951), so they read the rerun ini settings from it and nothing is copied as ``--override-ini``.
+:func:`resolve_rerun_ini` remains for a session whose ``-c`` file cannot be forwarded: it carries the rerun ini
+settings as ``--override-ini`` arguments.
 pytest strips and splits the value of ``-o``, so a list setting whose items would change (issue #658)
 is not carried.
-A gremlin run under ``-c`` usually finds the project's own config file, which the baseline never read, so
+Such a gremlin run would find the project's own config file, which the baseline never read, so
 every rerun ini key that is not carried is reset to empty: a filter list (``only_rerun``, ``rerun_except``)
 then means no filter, an empty count means no reruns, and an empty delay or backoff factor means the
 plugin's defaults (no delay, factor 1.0), exactly what the baseline ran with.
-(A ``-c`` that reaches a gremlin run through ``PYTEST_ADDOPTS`` is read by that run too.)
 A key is left alone when a parsed option already sets it, wherever it came from (the command line,
 ``addopts`` of the ``-c`` file or ``PYTEST_ADDOPTS``), because pytest-rerunfailures reads the option before
 the ini key and the gremlin runs receive those sources themselves.
@@ -28,26 +29,19 @@ from collections.abc import (
 )
 from dataclasses import dataclass
 import json
-import locale
 import math
 from pathlib import Path
 import re
-import sys
 from typing import (
     TYPE_CHECKING,
     cast,
 )
 
+from pytest_gremlins.argument_files import expand_argument_files
 from pytest_gremlins.config import MAX_TIMEOUT_SECONDS
 
 if TYPE_CHECKING:
     import pytest
-
-_ARGUMENT_FILE_PREFIX = '@'
-
-# argparse opens an ``@file`` with the locale encoding (strict) before Python 3.12 and with the filesystem
-# encoding and error handler from 3.12 on.
-_ARGPARSE_READS_LOCALE_ENCODING = sys.version_info < (3, 12)
 
 # Every pytest-rerunfailures option that takes a value.  ``--fail-on-flaky`` is left out because it
 # turns a test that passed on a rerun into exit code 7, which a gremlin run would not read as a kill;
@@ -89,43 +83,6 @@ _MAX_NAMED_TESTS = 10
 
 # pytest-rerunfailures' default ``reruns_delay_backoff_factor``: every rerun waits the same delay.
 _NO_BACKOFF = 1.0
-
-
-def _argparse_file_decoding() -> tuple[str, str]:
-    """Return the encoding and error handler the running Python's argparse reads an ``@file`` with."""
-    if _ARGPARSE_READS_LOCALE_ENCODING:
-        return locale.getpreferredencoding(False), 'strict'
-    return sys.getfilesystemencoding(), sys.getfilesystemencodeerrors()
-
-
-def expand_argument_files(args: Sequence[str], base_dir: Path, files_being_read: tuple[Path, ...] = ()) -> list[str]:
-    """Replace each ``@file`` argument with the lines of that file, the way pytest's parser does.
-
-    A file is decoded the way the running Python's argparse decodes it: with the locale encoding, strictly,
-    before Python 3.12, and with the filesystem encoding and error handler from 3.12 on.
-    A file that cannot be read or decoded, or that is already being read further up (a cycle), contributes
-    nothing.
-    pytest itself rejects an unreadable ``@file`` as a usage error and recurses without end on a cycle,
-    so a file pytest read from ``base_dir`` can fail to read here only if it changed after pytest parsed it.
-    ``base_dir`` may differ from the directory pytest read from (the plugin passes the rootdir, while pytest
-    expanded from the session's current directory), so a read can also fail for that reason.
-    Either way the unreadable file is skipped.
-    """
-    expanded: list[str] = []
-    for arg in args:
-        if not arg.startswith(_ARGUMENT_FILE_PREFIX):
-            expanded.append(arg)
-            continue
-        argument_file = base_dir / arg[len(_ARGUMENT_FILE_PREFIX) :]
-        if argument_file in files_being_read:
-            continue
-        try:
-            encoding, errors = _argparse_file_decoding()
-            lines = argument_file.read_text(encoding=encoding, errors=errors).splitlines()
-        except (OSError, UnicodeDecodeError):
-            continue
-        expanded.extend(expand_argument_files(lines, base_dir, (*files_being_read, argument_file)))
-    return expanded
 
 
 def rerun_options_in(args: Sequence[str], *, base_dir: Path | None = None) -> list[str]:
@@ -299,8 +256,10 @@ def resolve_rerun_ini(
 ) -> RerunIniResolution:
     r"""Resolve the pytest-rerunfailures ini settings the main session holds into what gremlin runs are given.
 
-    A gremlin run starts its own pytest, which is not given ``-c`` or ``--config-file`` (unless it comes
-    through ``PYTEST_ADDOPTS``) and so does not read that file.  Passing the resolved values on the command
+    Used only when the session's ``-c`` file cannot be forwarded to gremlin runs (they are normally given the
+    same ``-c``, issue #951, and read the settings themselves).  A gremlin run then starts its own pytest, which
+    is not given ``-c`` or ``--config-file`` (unless it comes through ``PYTEST_ADDOPTS``) and so does not read
+    that file.  Passing the resolved values on the command
     line gives that run the settings the baseline ran with.  Each key is read once and lands in exactly one
     place:
 
@@ -313,8 +272,8 @@ def resolve_rerun_ini(
     * ``unforwardable_keys``: the key is a list whose items pytest would change on the way (see
       :func:`survives_override_ini`).  It is left out of ``overrides`` because a changed pattern reruns fewer
       failures than the baseline did and so zaps gremlins the tests did not earn.
-    * ``resets``: an empty ``--override-ini`` for each key that is unset, unreadable or unforwardable.  Under
-      ``-c`` a gremlin run finds the project's own config file, which can restrict reruns or add a delay where
+    * ``resets``: an empty ``--override-ini`` for each key that is unset, unreadable or unforwardable.  Without
+      the ``-c`` file a gremlin run finds the project's own config file, which can restrict reruns or add a delay where
       the baseline had none.  ``--override-ini=key=`` makes pytest-rerunfailures fall back to what the baseline
       ran with: an empty ``only_rerun`` or ``rerun_except`` list is no filter, an empty ``reruns`` is no reruns
       (``int('')`` fails and the plugin ignores the error), and an empty ``reruns_delay`` or

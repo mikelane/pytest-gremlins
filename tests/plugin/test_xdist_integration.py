@@ -356,6 +356,7 @@ class DescribePytestConfigureDoesNotExitWithXdist:
 
 
 @pytest.mark.small
+@pytest.mark.usefixtures('hooks_read_global_session')
 class DescribeSessionFinishSetsTotalTestsInXdistMode:
     """pytest_sessionfinish sets total_tests from xdist_item_ids in xdist two-phase mode.
 

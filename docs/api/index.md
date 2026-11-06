@@ -74,8 +74,6 @@ pytest_gremlins/
 │   ├── batch_executor.py # Batch execution
 │   ├── distribution.py   # Work distribution
 │   ├── exit_codes.py     # Bootstrap subprocess exit codes
-│   ├── fork_executor.py  # Fork-per-batch executor
-│   ├── inprocess_executor.py# In-process executor via toggling
 │   ├── lightweight.py    # Lightweight runner command builder
 │   ├── runner_eligibility.py# Which tests the lightweight runner judges
 │   └── aggregator.py     # Result aggregation

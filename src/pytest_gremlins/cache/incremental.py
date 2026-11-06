@@ -140,6 +140,13 @@ Before #668 those runs had no xdist, so a test using ``worker_id`` or ``testrun_
 Only those sessions miss once; every other session keeps its key.
 """
 
+CONFIG_FILE_KEY_PART = 'config-file-951'
+"""Key part added only to sessions that forward ``-c``/``--config-file`` to gremlin runs (#951).
+
+Before #951 those runs read an auto-discovered config file instead of the ``-c`` file, so a verdict cached then may
+differ from the one the runs now reach. Only those sessions miss once; sessions without ``-c`` keep their key.
+"""
+
 
 RerunBudget: TypeAlias = tuple[int, float]
 """``(reruns, reruns_delay)`` a gremlin run may use; see ``pytest_gremlins.rerun_options.session_rerun_budget``."""
@@ -248,6 +255,14 @@ def _holds_at_timeout(
 
     The same limit always holds. At another limit only a non-TIMEOUT verdict that finished strictly inside the new
     limit holds; an elapsed time equal to the limit is a miss, and an unknown elapsed time is a miss.
+
+    A TIMEOUT verdict is reused only at the identical limit. That is deliberate: reuse at another limit would
+    need the unmutated confirmation run's time stored with the result, and exact-limit reuse is the conservative
+    choice (#795).
+
+    SAFETY: the stored ``execution_time_ms`` may be a total over reruns, so it is at least any single attempt's
+    time. Comparing it strictly below the new limit therefore never reuses a verdict a cold run would not
+    reach. If elapsed time ever became smaller than a single attempt's time, this rule would need revisiting.
     """
     if stored_timeout == mutant_timeout:
         return True
@@ -280,6 +295,7 @@ class IncrementalCache:
     - versions: ``CACHE_VERSION`` and operator-package versions (any change retires the whole cache)
     - PYTESTER_KEY_PART: present only while the session loads the pytester plugin (#891)
     - XDIST_KEY_PART: present only when gremlin runs load xdist themselves because autoload is disabled (#668)
+    - CONFIG_FILE_KEY_PART: present only when the session forwards ``-c``/``--config-file`` to gremlin runs (#951)
     - RUNNER_FIDELITY_VERSION: execution-semantics marker, so verdicts from an older
       runner are recomputed once
 
@@ -306,6 +322,7 @@ class IncrementalCache:
         *,
         loaded_conftests: Iterable[Path] = (),
         xdist_loader_loaded: Callable[[], bool] = _never_loaded,
+        config_file_forwarded: bool = False,
     ) -> None:
         """Initialize the incremental cache.
 
@@ -326,9 +343,12 @@ class IncrementalCache:
                 conftest pytest loads later, during collection, is not included.
             xdist_loader_loaded: Reports whether gremlin runs load xdist themselves (plugin autoload disabled and
                 xdist loaded in the session); such sessions add ``XDIST_KEY_PART`` (#668).
+            config_file_forwarded: Whether gremlin runs are given the session's ``-c`` file; such sessions add
+                ``CONFIG_FILE_KEY_PART`` (#951).
         """
         self._pytester_loaded = pytester_loaded
         self._xdist_loader_loaded = xdist_loader_loaded
+        self._config_file_forwarded = config_file_forwarded
         self._cache_dir = cache_dir
         self._hasher = ContentHasher()
         self._store = ResultStore(cache_dir / 'results.db')
@@ -390,11 +410,12 @@ class IncrementalCache:
         reruns, reruns_delay = _effective_rerun_budget(rerun_budget)
         pytester_part = f':{PYTESTER_KEY_PART}' if self._pytester_loaded() else ''
         xdist_part = f':{XDIST_KEY_PART}' if self._xdist_loader_loaded() else ''
+        config_file_part = f':{CONFIG_FILE_KEY_PART}' if self._config_file_forwarded else ''
         return (
             f'{gremlin_id}:{source_hash}:{combined_test_hash}'
             f':opt={optimize_level}:reruns={reruns}x{reruns_delay}:rr={rerun_settings}'
             f'{self._operators_key_part}:v={self._versions_hash}{pytester_part}{xdist_part}'
-            f':{RUNNER_FIDELITY_VERSION}'
+            f'{config_file_part}:{RUNNER_FIDELITY_VERSION}'
         )
 
     def get_cached_result(

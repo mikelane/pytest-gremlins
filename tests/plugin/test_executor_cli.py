@@ -42,7 +42,7 @@ class DescribeGremlinExecutorOption:
         opt_kwargs = added_options['--gremlin-executor']
         assert opt_kwargs['default'] == 'auto'
 
-    def it_accepts_four_choices(self) -> None:
+    def it_leaves_value_checking_to_the_startup_validation(self) -> None:
         parser = MagicMock(spec=Parser)
         group = MagicMock(spec=OptionGroup)
         parser.getgroup.return_value = group
@@ -51,4 +51,4 @@ class DescribeGremlinExecutorOption:
 
         added_options = {c.args[0]: c.kwargs for c in group.addoption.call_args_list if c.args}
         opt_kwargs = added_options['--gremlin-executor']
-        assert set(opt_kwargs['choices']) == {'auto', 'subprocess', 'fork', 'inprocess'}
+        assert 'choices' not in opt_kwargs
