@@ -32,11 +32,6 @@ def platform_without_sigkill(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int,
 
 @pytest.mark.small
 class DescribeSigkillPidsWithoutSigkill:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AttributeError,
-        reason='AQA run 5: sigkill_pids sends signal.SIGKILL, which Windows lacks; _sigkill fell back to SIGTERM',
-    )
     def it_signals_every_pid_when_the_platform_has_no_sigkill(
         self, platform_without_sigkill: list[tuple[int, int]]
     ) -> None:
@@ -44,11 +39,6 @@ class DescribeSigkillPidsWithoutSigkill:
 
         assert platform_without_sigkill == [(101, signal.SIGTERM), (102, signal.SIGTERM)]
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason='AQA run 5: kill_children_of swallows the AttributeError from signal.SIGKILL and kills nothing',
-    )
     def it_signals_the_descendants_when_the_platform_has_no_sigkill(
         self, platform_without_sigkill: list[tuple[int, int]], monkeypatch: pytest.MonkeyPatch
     ) -> None:

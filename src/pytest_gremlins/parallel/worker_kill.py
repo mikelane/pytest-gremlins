@@ -69,10 +69,15 @@ def kill_children_of(root_pids: Iterable[int]) -> None:
             logger.warning('Cannot list the descendants of worker %s.', root_pid, exc_info=True)
 
 
+def _kill_signal() -> int:
+    """Return SIGKILL, or SIGTERM where there is none (Windows, where it ends the process outright)."""
+    return getattr(signal, 'SIGKILL', signal.SIGTERM)
+
+
 def _signal_or_warn(send: Callable[[int, int], None], target: int, kind: str) -> None:
     """SIGKILL ``target``; one already gone is fine, one this process may not signal survives and is logged."""
     try:
-        send(target, signal.SIGKILL)
+        send(target, _kill_signal())
     except ProcessLookupError:
         pass
     except PermissionError:
