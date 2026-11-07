@@ -18,7 +18,6 @@ from concurrent.futures import (
     ProcessPoolExecutor,
 )
 from concurrent.futures.process import BrokenProcessPool
-import contextlib
 from dataclasses import dataclass
 from functools import partial
 import logging
@@ -26,7 +25,6 @@ import multiprocessing
 import multiprocessing.queues
 import os
 from pathlib import Path
-import signal
 import subprocess
 import time
 from typing import (
@@ -44,8 +42,9 @@ from pytest_gremlins.parallel.lightweight import (
     describe_runner_error,
 )
 from pytest_gremlins.parallel.worker_kill import (
-    descendants_of,
+    kill_children_of,
     kill_process_trees,
+    sigkill_pids,
 )
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.xdist_options import env_without_xdist_addopts
@@ -53,7 +52,6 @@ from pytest_gremlins.xdist_options import env_without_xdist_addopts
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
-        Iterable,
     )
 
 logger = logging.getLogger(__name__)
@@ -224,12 +222,6 @@ class _Job:
         except InvalidStateError:
             return False
         return True
-
-
-def _sigkill(pids: Iterable[int]) -> None:
-    for pid in pids:
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.kill(pid, getattr(signal, 'SIGKILL', signal.SIGTERM))
 
 
 class WorkerPool:
@@ -423,18 +415,9 @@ class WorkerPool:
             kill_process_trees(worker_pids)
         except Exception:
             logger.warning('Cannot end the process trees of the pool workers; killing descendants.', exc_info=True)
-            self._kill_children_of(worker_pids)
-        _sigkill(worker_pids)
+            kill_children_of(worker_pids)
+        sigkill_pids(worker_pids)
         executor.shutdown(wait=False, cancel_futures=True)
-
-    @staticmethod
-    def _kill_children_of(worker_pids: set[int]) -> None:
-        """Best effort, one worker at a time: kill what ``descendants_of`` finds, and never raise."""
-        for worker_pid in worker_pids:
-            try:
-                _sigkill(descendants_of(worker_pid))
-            except Exception:
-                logger.warning('Cannot list the descendants of worker %s.', worker_pid, exc_info=True)
 
     def _start_executor(self) -> None:
         context = multiprocessing.get_context()

@@ -204,3 +204,54 @@ class DescribeKillingSeveralWorkers:
 
         assert events[:2] == ['list 100', 'list 200']
         assert sorted(events[2:]) == ['kill 100', 'kill 101', 'kill 200', 'kill 201']
+
+
+@pytest.mark.small
+class DescribeKillingPidsDirectly:
+    def it_warns_about_a_pid_it_may_not_signal_and_still_kills_the_rest(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        killed: list[int] = []
+
+        def kill_refusing_101(pid: int, _signal: int) -> None:
+            if pid == 101:
+                raise PermissionError(pid)
+            killed.append(pid)
+
+        monkeypatch.setattr(os, 'kill', kill_refusing_101)
+
+        worker_kill.sigkill_pids([100, 101, 102])
+
+        assert killed == [100, 102]
+        assert [record.levelno for record in caplog.records] == [logging.WARNING]
+        assert '101' in caplog.records[0].getMessage()
+
+
+@pytest.mark.small
+class DescribeKillingTheChildrenOfWorkers:
+    def it_kills_what_it_finds_under_each_worker(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        killed: list[int] = []
+        monkeypatch.setattr(worker_kill, 'descendants_of', lambda root: [root + 1, root + 2])
+        monkeypatch.setattr(os, 'kill', lambda pid, _signal: killed.append(pid))
+
+        worker_kill.kill_children_of([100, 200])
+
+        assert sorted(killed) == [101, 102, 201, 202]
+
+    def it_warns_and_goes_on_when_it_cannot_list_one_workers_descendants(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        killed: list[int] = []
+
+        def list_failing_for_100(root: int) -> list[int]:
+            if root == 100:
+                raise RuntimeError('unreadable')
+            return [root + 1]
+
+        monkeypatch.setattr(worker_kill, 'descendants_of', list_failing_for_100)
+        monkeypatch.setattr(os, 'kill', lambda pid, _signal: killed.append(pid))
+
+        worker_kill.kill_children_of([100, 200])
+
+        assert killed == [201]
+        assert 'Cannot list the descendants of worker 100' in caplog.text

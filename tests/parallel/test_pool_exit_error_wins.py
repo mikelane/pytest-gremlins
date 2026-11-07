@@ -8,6 +8,7 @@ import os
 import pytest
 
 from pytest_gremlins.parallel import pool as pool_module
+from pytest_gremlins.parallel import worker_kill
 from pytest_gremlins.parallel.pool import WorkerPool
 
 
@@ -74,7 +75,7 @@ class DescribeAbandoningTheWorkersWhenTheTreeKillFails:
             raise RuntimeError(msg)
 
         monkeypatch.setattr(pool_module, 'kill_process_trees', failing_kill)
-        monkeypatch.setattr(pool_module, 'descendants_of', lambda worker_pid: [worker_pid + 1])
+        monkeypatch.setattr(worker_kill, 'descendants_of', lambda worker_pid: [worker_pid + 1])
         monkeypatch.setattr(os, 'kill', lambda pid, _signal: killed.append(pid))
         pool = WorkerPool(max_workers=1)
         executor = _RecordingExecutor([100])
@@ -94,7 +95,7 @@ class DescribeAbandoningTheWorkersWhenTheTreeKillFails:
             raise RuntimeError(msg)
 
         monkeypatch.setattr(pool_module, 'kill_process_trees', failing)
-        monkeypatch.setattr(pool_module, 'descendants_of', failing)
+        monkeypatch.setattr(worker_kill, 'descendants_of', failing)
         monkeypatch.setattr(os, 'kill', lambda pid, _signal: killed.append(pid))
         pool = WorkerPool(max_workers=1)
         pool._executor = _RecordingExecutor([100])  # type: ignore[assignment]

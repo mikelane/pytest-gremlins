@@ -54,6 +54,21 @@ def kill_process_trees(root_pids: Iterable[int]) -> None:
             _signal_or_warn(os.kill, pid, 'process')
 
 
+def sigkill_pids(pids: Iterable[int]) -> None:
+    """SIGKILL each pid on its own, with no tree walk; one already gone is fine and a refusal is logged."""
+    for pid in pids:
+        _signal_or_warn(os.kill, pid, 'process')
+
+
+def kill_children_of(root_pids: Iterable[int]) -> None:
+    """Best effort, one root at a time: kill what ``descendants_of`` finds below it, and never raise."""
+    for root_pid in root_pids:
+        try:
+            sigkill_pids(descendants_of(root_pid))
+        except Exception:
+            logger.warning('Cannot list the descendants of worker %s.', root_pid, exc_info=True)
+
+
 def _signal_or_warn(send: Callable[[int, int], None], target: int, kind: str) -> None:
     """SIGKILL ``target``; one already gone is fine, one this process may not signal survives and is logged."""
     try:
