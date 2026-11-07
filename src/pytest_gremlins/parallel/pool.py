@@ -313,7 +313,7 @@ class WorkerPool:
             try:
                 self._abandon_workers()
             except Exception:
-                logger.warning('Cannot abandon the pool workers; the original error is reported.', exc_info=True)
+                logger.warning('Cannot kill the pool workers; the error that ended the run is raised.', exc_info=True)
         self.shutdown(wait=True)
 
     def shutdown(self, wait: bool = True) -> None:
@@ -391,7 +391,7 @@ class WorkerPool:
         try:
             return self._score_overdue_gremlins()
         except Exception:
-            logger.warning('The worker watchdog failed; the pool abandons its workers on exit.', exc_info=True)
+            logger.warning('The worker watchdog failed; the pool kills its workers on exit.', exc_info=True)
             raise
 
     def _score_overdue_gremlins(self) -> list[str]:
@@ -422,7 +422,7 @@ class WorkerPool:
         try:
             kill_process_trees(worker_pids)
         except Exception:
-            logger.warning('Cannot end the process trees of the pool workers; trying their children.', exc_info=True)
+            logger.warning('Cannot end the process trees of the pool workers; killing descendants.', exc_info=True)
             self._kill_children_of(worker_pids)
         _sigkill(worker_pids)
         executor.shutdown(wait=False, cancel_futures=True)
@@ -515,7 +515,7 @@ class WorkerPool:
             self._dispatch(job)
         logger.warning(
             'Replaced the worker pool after a hang: killed worker pid(s) %s, scored %d gremlin(s) TIMEOUT, '
-            'restarted %d gremlin(s) on the new workers.',
+            'resubmitted %d unfinished gremlin(s) to the new pool.',
             sorted(worker_pids),
             len(scored),
             len(restarted),
@@ -525,9 +525,9 @@ class WorkerPool:
     def _warn_about_hung_gremlins(self, overdue: list[_Job], past_their_timeout: list[_Job], now: float) -> None:
         for job in overdue:
             logger.warning(
-                'Gremlin %s ran %.0fs past its start, beyond the %ss mutant timeout plus %ss grace: '
-                'its worker (pid %s) is hung. The worker is killed and the pooled result is TIMEOUT; '
-                'the gremlin is then re-run alone to settle its verdict.',
+                'Gremlin %s has run for %.0fs, past its %ss mutant timeout plus %ss grace, so its worker '
+                '(pid %s) is treated as hung and killed. The pooled result is TIMEOUT; the gremlin is re-run '
+                'alone to settle its verdict.',
                 job.gremlin_id,
                 now - (job.started_at or now),
                 self._timeout,
@@ -536,9 +536,9 @@ class WorkerPool:
             )
         for job in past_their_timeout:
             logger.warning(
-                'Gremlin %s was in flight on a worker killed for another hang and had already run %.0fs, '
-                'past the %ss mutant timeout. The pooled result is TIMEOUT instead of a restart; '
-                'the gremlin is then re-run alone to settle its verdict.',
+                'Gremlin %s had run for %.0fs, past its %ss mutant timeout, when the worker pool was replaced '
+                'after another gremlin hung. The pooled result is TIMEOUT instead of a restart; the gremlin is '
+                're-run alone to settle its verdict.',
                 job.gremlin_id,
                 now - (job.started_at or now),
                 self._timeout,

@@ -4314,7 +4314,7 @@ def _queue_hung_worker_notices(hung_gremlin_ids: Sequence[str], gremlin_session:
         _queue_terminal_notice(
             gremlin_session,
             f'pytest-gremlins: warning: the hung-worker watchdog killed the worker of gremlin {gremlin_id} after it '
-            'outlived its mutant timeout. The gremlin is re-run alone to settle its verdict.',
+            'ran past its mutant timeout. The gremlin is re-run alone to settle its verdict.',
         )
 
 

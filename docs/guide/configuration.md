@@ -914,35 +914,38 @@ genuine hang costs one extra solo run, up to the limit.
 
 #### A hung worker cannot stall a parallel run
 
-The limit above is enforced inside each worker. In `--gremlin-parallel` runs the parent process also keeps its
-own deadline for every gremlin, so a worker that hangs outside the test run (and so never reaches the limit it
-enforces itself) cannot hold the whole run. Each worker reports when it starts a gremlin, and the parent times
-the gremlin from that moment, not from when it was queued behind other gremlins. A gremlin still running
-10 seconds after its mutant timeout (the grace margin), counted from its latest start, has its worker killed
-and counts as a timeout in the pooled run. Like any pooled timeout it is then re-run alone, so its final
-verdict is the one that run gives. A warning names the gremlin in the log and in the terminal summary.
+The limit above is enforced inside each worker. A worker that hangs outside its test run never reaches that
+limit, so in `--gremlin-parallel` runs the parent process also keeps a deadline for each gremlin. Each worker
+reports when it starts a gremlin, and the parent times the gremlin from its latest start, not from when it was
+queued. If a gremlin is still running 10 seconds (the grace margin) after its mutant timeout, the parent kills
+its worker and the gremlin counts as a timeout in the pooled run. Like any pooled timeout, it is then re-run
+alone, and that run gives its final verdict. A warning names the gremlin in the log and in the terminal summary.
 
-To end the hang, the parent kills the hung worker and the processes below it (its test command and what that
-started), then starts a fresh worker pool. It also signals the process groups of those processes, so a
-grandchild whose parent died first is found while it stays in its test command's group. A process that starts its
-own session or detaches as a daemon is not found and keeps running. The parent lists the tree with `ps`, or from `/proc`
-where `ps` is missing (slim container images).
-If the watchdog itself fails (for example the process table cannot be read), it logs a warning with the
-traceback and re-raises. The same holds for any other error that ends a parallel run early, including an
-interrupt: the pool does not wait for its workers on the way out but ends their process trees where it can,
-kills the workers, and exits, so a hung worker never holds the run and its test command is not left running.
+To end the hang, the parent kills every worker in the pool and the processes below them (each test command and
+anything it started), then starts a fresh pool. It also signals the process groups of those processes, so it
+still finds a grandchild whose parent died first, as long as the grandchild stays in its test command's process
+group. A process that starts its own session or detaches as a daemon is not found and keeps running. The parent
+lists the process tree with `ps`, or reads `/proc` where `ps` is missing (slim container images).
 
-Gremlins in flight on the other workers are handled by how long they have run. One that has already run for its
-whole mutant timeout would be scored a timeout by its own test run, so it counts as a timeout in the pooled run
-now (and is re-run alone like any other) instead of getting a second full deadline. One still inside its timeout
-starts again on the new pool, and its verdict is unaffected. A healthy gremlin therefore waits less than one
-mutant timeout before the pool is rebuilt and at most one timeout plus the grace margin after it. A gremlin's
-deadline restarts only when another gremlin's hang rebuilds the pool while it is still inside its timeout;
-every rebuild scores at least one gremlin for good, so the run always progresses. Gremlins that were still queued are unaffected.
+If the watchdog itself fails (for example, the process table cannot be read), it logs a warning with the
+traceback and re-raises the error. Any other error that ends a parallel run early, including an interrupt, is
+handled the same way: the pool does not wait for its workers. It ends their process trees where it can, kills
+the workers, and exits, so a hung worker cannot hold the run open and its test command is not left running.
 
-The guarantee covers a gremlin whose worker started it. A worker that cannot even report the start is not
-watched. `--gremlin-batch` runs do not have this deadline yet: a batch worker that hangs outside the test run
-still stalls that run.
+Gremlins in flight on the other workers are handled by how long they have run:
+
+- One that has already run for its whole mutant timeout counts as a timeout in the pooled run now, since its own
+  test run would score it a timeout anyway. It is re-run alone like any other pooled timeout, instead of getting
+  a second full deadline.
+- One still inside its timeout starts again on the new pool, and its verdict is unaffected. It loses less than
+  one mutant timeout of work, and its deadline restarts.
+
+Gremlins still in the queue are unaffected. A gremlin's deadline restarts only when another gremlin's hang
+rebuilds the pool, and each rebuild settles at least one gremlin for good, so the run always makes progress.
+
+The deadline covers only gremlins whose worker reported the start. A worker that hangs before it can report is
+not watched. `--gremlin-batch` runs do not have this deadline yet, so a batch worker that hangs outside its test
+run still stalls the run.
 
 ### Batch Execution
 
