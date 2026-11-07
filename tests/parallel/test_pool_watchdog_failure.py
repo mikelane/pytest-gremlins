@@ -10,6 +10,8 @@ import sys
 
 import pytest
 
+from tests.process_liveness import is_alive
+
 HARD_DEADLINE_SECONDS = 40
 
 _RUN_WHERE_THE_KILL_FAILS = """
@@ -70,12 +72,4 @@ class DescribeAWatchdogThatFailsWhileKilling:
         assert finished, f'the run waited on the hung worker after the watchdog failed; output:\n{output}'
         assert 'service raised: the process table is unreadable' in output
         hung_pid = int((tmp_path / 'hung.pid').read_text())
-        assert not _is_alive(hung_pid)
-
-
-def _is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
+        assert not is_alive(hung_pid)

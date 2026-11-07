@@ -8,7 +8,6 @@ left running.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +16,7 @@ import time
 import pytest
 
 from tests.integration._helpers import verdicts
+from tests.process_liveness import is_alive
 
 pytestmark = [
     pytest.mark.usefixtures('utf8_child_output'),
@@ -110,7 +110,7 @@ def _all_gone(pids: list[int]) -> bool:
     """Wait up to the reaping grace for every pid to disappear; a freshly killed process is reaped by init."""
     deadline = time.monotonic() + REAPING_GRACE_SECONDS
     while time.monotonic() < deadline:
-        if not any(_is_alive(pid) for pid in pids):
+        if not any(is_alive(pid) for pid in pids):
             return True
         time.sleep(0.1)
     return False
@@ -124,11 +124,3 @@ def _describe(pids: list[int]) -> str:
         check=False,
     )
     return listing.stdout
-
-
-def _is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True

@@ -24,6 +24,7 @@ from pytest_gremlins.parallel.pool import (
 from pytest_gremlins.parallel.worker_kill import kill_process_trees
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from tests.parallel.watchdog_workers import run_scripted
+from tests.process_liveness import is_alive
 
 HARD_DEADLINE_SECONDS = 50
 SLACK_SECONDS = 3
@@ -54,14 +55,6 @@ def _drive(pool: WorkerPool, futures: list[Future[WorkerResult]]) -> dict[int, f
         now = time.monotonic()
         finished_at.update({id(future): now for future in done})
     return finished_at
-
-
-def _is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
 
 
 @pytest.mark.large
@@ -128,7 +121,7 @@ class DescribeKillingAWorkerWhoseTestCommandOrphanedAGrandchild:
             kill_process_trees([worker.pid])
             worker.wait(timeout=10)
             time.sleep(0.2)
-            alive = _is_alive(grandchild_pid)
+            alive = is_alive(grandchild_pid)
         finally:
             subprocess.run(['kill', '-9', str(grandchild_pid)], check=False, capture_output=True)  # noqa: S607
 
@@ -159,7 +152,7 @@ class DescribeKillingAWorkerWhenPsIsUnavailable:
             kill_process_trees([worker.pid])
             worker.wait(timeout=10)
             time.sleep(0.2)
-            alive = _is_alive(child_pid)
+            alive = is_alive(child_pid)
         finally:
             subprocess.run(['/bin/kill', '-9', str(child_pid)], check=False, capture_output=True)
 
@@ -331,7 +324,7 @@ class DescribeARebuildThatRestartsAHealthyGremlin:
         child_pids = [int(path.read_text()) for path in tmp_path.glob('*.child')]
         healthy_attempts = len(list(tmp_path.glob('healthy.*.child')))
         time.sleep(0.5)
-        alive = [pid for pid in child_pids if _is_alive(pid)]
+        alive = [pid for pid in child_pids if is_alive(pid)]
         for pid in alive:
             subprocess.run(['/bin/kill', '-9', str(pid)], check=False, capture_output=True)
 
@@ -401,4 +394,4 @@ class DescribeAKillThatFailsWhileListingTheProcessTable:
 
         assert finished, f'the run never ended after the watchdog fired; output:\n{output}'
         assert 'pool exited TIMEOUT' in output, output
-        assert not _is_alive(int((tmp_path / 'hung.pid').read_text()))
+        assert not is_alive(int((tmp_path / 'hung.pid').read_text()))

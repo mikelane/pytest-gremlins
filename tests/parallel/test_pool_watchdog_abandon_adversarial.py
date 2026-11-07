@@ -12,6 +12,8 @@ import time
 
 import pytest
 
+from tests.process_liveness import is_alive
+
 HARD_DEADLINE_SECONDS = 40
 SETTLE_SECONDS = 5
 
@@ -73,7 +75,7 @@ class DescribeAWatchdogThatAbandonsAHungWorkerWithATestCommand:
         child_pids = [int(marker.read_text()) for marker in tmp_path.glob('hung.*.child')]
         try:
             time.sleep(SETTLE_SECONDS)
-            survivors = [pid for pid in child_pids if _is_alive(pid)]
+            survivors = [pid for pid in child_pids if is_alive(pid)]
         finally:
             for pid in child_pids:
                 with contextlib.suppress(ProcessLookupError, PermissionError):
@@ -137,12 +139,4 @@ class DescribeLeavingThePoolOnAnErrorWhileAWorkerIsHung:
 
         assert finished, f'leaving the pool on an error waited on the hung worker; output:\n{output}'
         assert 'the pool context raised: the collect loop failed' in output
-        assert not _is_alive(int((tmp_path / 'hung.pid').read_text()))
-
-
-def _is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
+        assert not is_alive(int((tmp_path / 'hung.pid').read_text()))

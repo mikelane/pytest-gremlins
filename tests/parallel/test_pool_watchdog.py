@@ -7,7 +7,6 @@ from concurrent.futures import (
     wait,
 )
 import logging
-import os
 from pathlib import Path
 import time
 
@@ -22,6 +21,7 @@ from tests.parallel.watchdog_workers import (
     run_raising,
     run_scripted,
 )
+from tests.process_liveness import is_alive
 
 HARD_DEADLINE_SECONDS = 40
 TIMEOUT_SECONDS = 2
@@ -57,14 +57,6 @@ def _results(pool: WorkerPool, futures: list[Future[WorkerResult]]) -> list[Work
     return [future.result() for future in futures]
 
 
-def _is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
-
-
 @pytest.mark.medium
 class DescribeAWorkerThatHangsOutsideTheTestRun:
     def it_records_timeout_for_the_hung_gremlin_and_still_finishes_the_others(self, tmp_path: Path) -> None:
@@ -92,7 +84,7 @@ class DescribeAWorkerThatHangsOutsideTheTestRun:
             _results(pool, [_submit(pool, 'hung', FOREVER, tmp_path)])
             hung_pid = int((tmp_path / 'hung.pid').read_text())
 
-        assert not _is_alive(hung_pid)
+        assert not is_alive(hung_pid)
 
     def it_runs_gremlins_that_were_queued_behind_the_hung_one(self, tmp_path: Path) -> None:
         with _pool(1) as pool:
