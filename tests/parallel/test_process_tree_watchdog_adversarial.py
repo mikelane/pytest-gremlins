@@ -128,3 +128,34 @@ class DescribeWatchdogThatDied:
         completed = subprocess.run(python(runner), capture_output=True, check=False, timeout=STARTUP_DEADLINE_SECONDS)
 
         assert (completed.returncode, completed.stdout.strip()) == (0, b'alive')
+
+    @pytest.mark.xfail(
+        sys.platform == 'darwin',
+        strict=True,
+        reason='QA run 6: macOS raises a pipe-write SIGPIPE on the process, not the writing thread, so blocking it'
+        ' in the worker thread does not stop the unblocked main thread from taking the default action',
+    )
+    def it_survives_telling_a_watchdog_that_died_unnoticed_from_a_worker_thread_when_sigpipe_is_default(self) -> None:
+        # The mutation run calls run_bounded from a thread pool, so the write happens off the main thread.
+        runner = (
+            'import os, signal, sys, threading, time\n'
+            'signal.signal(signal.SIGPIPE, signal.SIG_DFL)\n'
+            f'{_RUN_ONE_COMMAND}'
+            'watchdog = process_tree.watchdog_pid()\n'
+            'os.kill(watchdog, signal.SIGKILL)\n'
+            'time.sleep(0.5)\n'
+            'def tell():\n'
+            '    try:\n'
+            '        process_tree._watchdog.tell("+", 999999)\n'
+            '    except OSError:\n'
+            '        pass\n'
+            'worker = threading.Thread(target=tell)\n'
+            'worker.start()\n'
+            'worker.join()\n'
+            'time.sleep(0.2)\n'
+            'print("alive")\n'
+        )
+
+        completed = subprocess.run(python(runner), capture_output=True, check=False, timeout=STARTUP_DEADLINE_SECONDS)
+
+        assert (completed.returncode, completed.stdout.strip()) == (0, b'alive')
