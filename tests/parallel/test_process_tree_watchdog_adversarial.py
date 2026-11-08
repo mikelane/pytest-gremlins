@@ -54,10 +54,6 @@ class DescribeWatchdogAfterFork:
 
 
 class DescribeWatchdogThatDied:
-    @pytest.mark.xfail(
-        strict=True,
-        reason='QA run 5: a dead watchdog is never replaced, so commands started afterwards are unprotected',
-    )
     def it_ends_a_later_command_when_the_caller_is_sigkilled_after_its_first_watchdog_died(
         self, tmp_path: Path
     ) -> None:
@@ -96,10 +92,6 @@ class DescribeWatchdogThatDied:
 
         assert is_command_gone
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason='QA run 5: with SIGPIPE at its default action, telling a dead watchdog kills the caller by SIGPIPE',
-    )
     def it_keeps_running_commands_when_the_watchdog_died_and_sigpipe_is_default(self) -> None:
         # Some CLIs and plugins restore SIGPIPE to SIG_DFL to avoid BrokenPipeError tracebacks.
         runner = (
@@ -116,3 +108,23 @@ class DescribeWatchdogThatDied:
         completed = subprocess.run(python(runner), capture_output=True, check=False, timeout=STARTUP_DEADLINE_SECONDS)
 
         assert completed.returncode == 0
+
+    def it_survives_telling_a_watchdog_that_died_unnoticed_when_sigpipe_is_default(self) -> None:
+        # The watchdog dies between the liveness check and the write: the write itself meets a broken pipe.
+        runner = (
+            'import os, signal, sys, time\n'
+            'signal.signal(signal.SIGPIPE, signal.SIG_DFL)\n'
+            f'{_RUN_ONE_COMMAND}'
+            'watchdog = process_tree.watchdog_pid()\n'
+            'os.kill(watchdog, signal.SIGKILL)\n'
+            'time.sleep(0.5)\n'
+            'try:\n'
+            '    process_tree._watchdog.tell("+", 999999)\n'
+            'except OSError:\n'
+            '    pass\n'
+            'print("alive")\n'
+        )
+
+        completed = subprocess.run(python(runner), capture_output=True, check=False, timeout=STARTUP_DEADLINE_SECONDS)
+
+        assert (completed.returncode, completed.stdout.strip()) == (0, b'alive')

@@ -178,6 +178,7 @@ class _WatchdogProcess(subprocess.Popen[bytes]):
         self.owner = os.getpid()
         super().__init__(  # Intentional: starts the watchdog helper
             command,
+            bufsize=0,  # unbuffered: a failed write leaves nothing for a later close() to flush into a broken pipe
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -203,8 +204,26 @@ class _Watchdog:
 
     def tell(self, action: str, group: int) -> None:
         assert self.process.stdin is not None  # noqa: S101 - stdin=PIPE
-        self.process.stdin.write(f'{action}{group}\n'.encode())
-        self.process.stdin.flush()
+        # A write to a pipe whose reader died raises SIGPIPE, which kills a process that left it at the default action
+        # (some CLIs and plugins do). Block it for the write and swallow the one the write raised.
+        was_pending = signal.SIGPIPE in signal.sigpending()
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGPIPE})
+        try:
+            self.process.stdin.write(f'{action}{group}\n'.encode())
+            self.process.stdin.flush()
+        finally:
+            if not was_pending and signal.SIGPIPE in signal.sigpending():
+                signal.sigwait({signal.SIGPIPE})  # returns at once: it is pending
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+    def has_died(self) -> bool:
+        return self.process.poll() is not None
+
+    def discard(self) -> None:
+        """Release a watchdog that died: close the pipe to it. ``poll`` has already reaped it."""
+        with contextlib.suppress(OSError, ValueError):
+            if self.process.stdin is not None:
+                self.process.stdin.close()
 
 
 _watchdog: _Watchdog | None = None
@@ -218,20 +237,31 @@ def watchdog_pid() -> int | None:
 
 
 def _tell_watchdog(action: str, group: int) -> None:
-    """Tell the watchdog about a command's process group; best effort, since the run itself does not need it."""
+    """Tell the watchdog about a command's process group; best effort, since the run itself does not need it.
+
+    A watchdog that died is replaced, and the commands still running are handed to the new one, so they stay
+    protected.
+    """
     global _watchdog  # noqa: PLW0603 - one watchdog per process
     if sys.platform == 'win32':
         return
     with _live_commands_lock:
-        if _watchdog is None or _watchdog.owner != os.getpid():
-            if action == '-':
+        if _watchdog is not None and _watchdog.owner == os.getpid() and _watchdog.has_died():
+            _watchdog.discard()
+            _watchdog = None
+        is_new = _watchdog is None or _watchdog.owner != os.getpid()
+        if is_new:
+            if action == '-' and not _own_live_commands():
                 return
             with contextlib.suppress(OSError):
                 _watchdog = _Watchdog()
         current = _watchdog
-        if current is not None:
+        if current is None:
+            return
+        groups = [process.pid for process in _own_live_commands()] if is_new else [group]
+        for known_group in groups:
             with contextlib.suppress(OSError, ValueError):
-                current.tell(action, group)
+                current.tell('+' if is_new else action, known_group)
 
 
 def live_command_count() -> int:
