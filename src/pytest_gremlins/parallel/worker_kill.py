@@ -27,6 +27,8 @@ PS_COMMAND = 'ps'
 FIXED_PATH_PS_COMMAND = '/bin/ps'
 PROC_ROOT = Path('/proc')
 _IS_WINDOWS = sys.platform == 'win32'
+_WINERROR_INVALID_PARAMETER = 87
+"""What Windows ``os.kill`` raises, as a plain OSError, for a pid that has already exited."""
 
 
 def kill_process_trees(root_pids: Iterable[int]) -> None:
@@ -82,6 +84,9 @@ def _signal_or_warn(send: Callable[[int, int], None], target: int, kind: str) ->
         pass
     except PermissionError:
         logger.warning('Not permitted to kill %s %s; it may outlive the run.', kind, target)
+    except OSError as error:
+        if getattr(error, 'winerror', None) != _WINERROR_INVALID_PARAMETER:
+            logger.warning('Cannot kill %s %s (%s); it may outlive the run.', kind, target, error)
 
 
 def _groups_to_signal(root_pid: int, descendants: list[int]) -> set[int]:

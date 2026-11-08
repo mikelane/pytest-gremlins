@@ -255,3 +255,42 @@ class DescribeKillingTheChildrenOfWorkers:
 
         assert killed == [201]
         assert 'Cannot list the descendants of worker 100' in caplog.text
+
+
+class _WindowsInvalidParameterError(OSError):
+    """What ``os.kill`` raises on Windows for a pid that exited: a plain OSError with winerror 87."""
+
+    winerror = 87
+
+
+@pytest.mark.small
+class DescribeKillingAPidThatExitedOnWindows:
+    def it_treats_winerror_87_as_already_gone(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        def kill_exited(_pid: int, _signal: int) -> None:
+            raise _WindowsInvalidParameterError(22, 'The parameter is incorrect')
+
+        monkeypatch.setattr(os, 'kill', kill_exited)
+
+        worker_kill.sigkill_pids([100])
+
+        assert caplog.records == []
+
+    def it_still_warns_about_any_other_os_error_and_goes_on(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        killed: list[int] = []
+
+        def kill_failing_for_100(pid: int, _signal: int) -> None:
+            if pid == 100:
+                raise OSError(5, 'Access is denied')
+            killed.append(pid)
+
+        monkeypatch.setattr(os, 'kill', kill_failing_for_100)
+
+        worker_kill.sigkill_pids([100, 101])
+
+        assert killed == [101]
+        assert [record.levelno for record in caplog.records] == [logging.WARNING]
+        assert '100' in caplog.records[0].getMessage()
