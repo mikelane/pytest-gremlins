@@ -129,12 +129,6 @@ class DescribeWatchdogThatDied:
 
         assert (completed.returncode, completed.stdout.strip()) == (0, b'alive')
 
-    @pytest.mark.xfail(
-        sys.platform == 'darwin',
-        strict=True,
-        reason='QA run 6: macOS raises a pipe-write SIGPIPE on the process, not the writing thread, so blocking it'
-        ' in the worker thread does not stop the unblocked main thread from taking the default action',
-    )
     def it_survives_telling_a_watchdog_that_died_unnoticed_from_a_worker_thread_when_sigpipe_is_default(self) -> None:
         # The mutation run calls run_bounded from a thread pool, so the write happens off the main thread.
         runner = (

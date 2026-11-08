@@ -46,7 +46,10 @@ if TYPE_CHECKING:
         Sequence,
     )
     from types import FrameType
-    from typing import TypeAlias
+    from typing import (
+        IO,
+        TypeAlias,
+    )
 
     _SignalHandler: TypeAlias = Callable[[int, FrameType | None], object] | int | signal.Handlers | None
 
@@ -167,6 +170,41 @@ for group in groups:
 """The watchdog program: it keeps the process groups it is told about and SIGKILLs them when its stdin closes."""
 
 
+_DARWIN_F_SETNOSIGPIPE = 73  # <sys/fcntl.h>; the ``fcntl`` module exposes it only in newer Pythons
+
+
+def _suppress_sigpipe_on_write(pipe: IO[bytes] | None) -> None:
+    """Make a write to a closed ``pipe`` fail with ``BrokenPipeError`` instead of raising SIGPIPE, where supported.
+
+    macOS delivers a pipe-write SIGPIPE to the process rather than reliably to the writing thread, so masking it in
+    the writer does not protect a process that left SIGPIPE at the default action. ``F_SETNOSIGPIPE`` does.
+    """
+    if sys.platform != 'darwin' or pipe is None:
+        return
+    import fcntl  # noqa: PLC0415 - POSIX only
+
+    with contextlib.suppress(OSError):
+        fcntl.fcntl(pipe.fileno(), getattr(fcntl, 'F_SETNOSIGPIPE', _DARWIN_F_SETNOSIGPIPE), 1)
+
+
+@contextlib.contextmanager
+def _sigpipe_blocked() -> Iterator[None]:
+    """Block SIGPIPE in this thread and consume one raised inside, restoring the mask even if interrupted.
+
+    Linux delivers a pipe-write SIGPIPE to the writing thread, so blocking it there turns the signal into ``EPIPE``.
+    """
+    was_pending = signal.SIGPIPE in signal.sigpending()
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGPIPE})
+    try:
+        try:
+            yield
+        finally:
+            if not was_pending and signal.SIGPIPE in signal.sigpending():
+                signal.sigwait({signal.SIGPIPE})  # returns at once: it is pending
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+
 class _WatchdogProcess(subprocess.Popen[bytes]):
     """The watchdog's ``Popen``, which only the process that started it may finalize.
 
@@ -184,6 +222,7 @@ class _WatchdogProcess(subprocess.Popen[bytes]):
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
+        _suppress_sigpipe_on_write(self.stdin)
 
     def __del__(self) -> None:
         if self.owner == os.getpid():
@@ -205,16 +244,10 @@ class _Watchdog:
     def tell(self, action: str, group: int) -> None:
         assert self.process.stdin is not None  # noqa: S101 - stdin=PIPE
         # A write to a pipe whose reader died raises SIGPIPE, which kills a process that left it at the default action
-        # (some CLIs and plugins do). Block it for the write and swallow the one the write raised.
-        was_pending = signal.SIGPIPE in signal.sigpending()
-        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGPIPE})
-        try:
+        # (some CLIs and plugins do). macOS is covered by F_SETNOSIGPIPE on the pipe; elsewhere block it for the write.
+        with _sigpipe_blocked():
             self.process.stdin.write(f'{action}{group}\n'.encode())
             self.process.stdin.flush()
-        finally:
-            if not was_pending and signal.SIGPIPE in signal.sigpending():
-                signal.sigwait({signal.SIGPIPE})  # returns at once: it is pending
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
 
     def has_died(self) -> bool:
         return self.process.poll() is not None

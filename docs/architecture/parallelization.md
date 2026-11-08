@@ -380,6 +380,12 @@ process group it still knows. The caller can die by SIGKILL of one pid or of its
 - A forked pool worker closes the copy of its parent's pipe at fork time (`os.register_at_fork`), so a worker that
   outlives a killed main process does not keep the pipe open. Commands and the watchdog are started with
   `close_fds`, so they never hold a write end.
+- A watchdog that died is replaced the next time a command starts or ends, and the commands still running are
+  handed to the new one, so they stay protected.
+- Writing to a watchdog that died raises SIGPIPE, which would kill a process that left it at the default action. On
+  macOS the pipe is marked `F_SETNOSIGPIPE`, so the write fails with `BrokenPipeError` instead (macOS delivers the
+  signal to the process, not the writing thread, so masking it is not enough). Elsewhere the writing thread blocks
+  SIGPIPE for the write, consumes the one it raised and always restores its mask, even when interrupted.
 - Each worker process has its own watchdog, so a worker that is killed alone has its commands ended too.
 - At a normal exit the pipe is closed and the helper is waited for, so no zombie or `ResourceWarning` is left. A
   forked child closes its copy of the pipe through the file object that owns it and silently drops the helper's process
@@ -592,3 +598,5 @@ Combined with mutation switching, coverage guidance, and incremental analysis, p
 execution makes mutation testing practical even for large codebases.
 
 The result: 8 cores means roughly 8x faster analysis. A 16-minute sequential run becomes 2 minutes.
+
+<!-- cspell:ignore SIGPIPE SETNOSIGPIPE -->
