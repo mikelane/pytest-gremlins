@@ -60,6 +60,8 @@ _OUTPUT_TAIL_BYTES = 1000
 _SHARD_OUTPUT_NAME = 'output.log'
 
 logger = logging.getLogger(__name__)
+# Without a handler, logging.lastResort prints the warning to stderr, duplicating the print below.
+logger.addHandler(logging.NullHandler())
 
 
 def run_prescan_shards(
