@@ -224,7 +224,8 @@ class DescribeRunPrescanShards:
         assert data_files is not None
         cache_options = [_recorded(path)['argv'][-3:-1] for path in data_files]
         assert cache_options == [
-            ['-o', f'cache_dir={tmp_path / "scratch" / str(index) / "cache"}'] for index in range(2)
+            ['-o', f'cache_dir={tmp_path / "scratch" / "0" / "cache"}'],
+            ['-o', f'cache_dir={tmp_path / "scratch" / "1" / "cache"}'],
         ]
 
     def it_stops_every_shard_from_writing_bytecode_into_the_project(self, tmp_path: Path) -> None:
@@ -237,8 +238,9 @@ class DescribeRunPrescanShards:
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.WARNING, logger=sharded_prescan.__name__):
-            _run(tmp_path, [['ok'], ['crash']])
+            data_files = _run(tmp_path, [['ok'], ['crash']])
 
+        assert data_files is None
         assert 'shard 1 exited with code 2' in caplog.text
         assert 'WinError 5 access denied' in caplog.text
 
@@ -262,7 +264,7 @@ class DescribeRunPrescanShards:
 
         assert 'shard 0 left no coverage data' in caplog.text
 
-    def it_logs_nothing_when_every_shard_succeeds(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    def it_logs_nothing_when_every_shard_finishes(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level(logging.DEBUG, logger=sharded_prescan.__name__):
             _run(tmp_path, [['ok'], ['testsfail']])
 
