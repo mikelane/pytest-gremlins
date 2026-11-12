@@ -926,6 +926,41 @@ If you see downgrades, raise the limit (or speed up the slow tests): a real hang
 so a longer one costs you no kills. The trade-off is time, since in parallel and batch mode each
 genuine hang costs one extra solo run, up to the limit.
 
+#### A hung worker cannot stall a parallel run
+
+The limit above is enforced inside each worker. A worker that hangs outside its test run never reaches that
+limit, so in `--gremlin-parallel` runs the parent process also keeps a deadline for each gremlin. Each worker
+reports when it starts a gremlin, and the parent times the gremlin from its latest start, not from when it was
+queued. If a gremlin is still running 10 seconds (the grace margin) after its mutant timeout, the parent kills
+its worker and the gremlin counts as a timeout in the pooled run. Like any pooled timeout, it is then re-run
+alone, and that run gives its final verdict. A warning names the gremlin in the log and in the terminal summary.
+
+To end the hang, the parent kills every worker in the pool and the processes below them (each test command and
+anything it started), then starts a fresh pool. It also signals the process groups of those processes, so it
+still finds a grandchild whose parent died first, as long as the grandchild stays in its test command's process
+group. A process that starts its own session or detaches as a daemon is not found and keeps running. The parent
+lists the process tree with `ps`, or reads `/proc` where `ps` is missing (slim container images).
+
+If the watchdog itself fails (for example, the process table cannot be read), it logs a warning with the
+traceback and re-raises the error. Any other error that ends a parallel run early, including an interrupt, is
+handled the same way: the pool does not wait for its workers. It ends their process trees where it can, kills
+the workers, and exits, so a hung worker cannot hold the run open and its test command is not left running.
+
+Gremlins in flight on the other workers are handled by how long they have run:
+
+- One that has already run for its whole mutant timeout counts as a timeout in the pooled run now, since its own
+  test run would score it a timeout anyway. It is re-run alone like any other pooled timeout, instead of getting
+  a second full deadline.
+- One still inside its timeout starts again on the new pool, and its verdict is unaffected. It loses less than
+  one mutant timeout of work, and its deadline restarts.
+
+Gremlins still in the queue are unaffected. A gremlin's deadline restarts only when another gremlin's hang
+rebuilds the pool, and each rebuild settles at least one gremlin for good, so the run always makes progress.
+
+The deadline covers only gremlins whose worker reported the start. A worker that hangs before it can report is
+not watched. `--gremlin-batch` runs do not have this deadline yet, so a batch worker that hangs outside its test
+run still stalls the run.
+
 ### Batch Execution
 
 Batch mode groups gremlins into batches and hands each batch to a worker as one task. It does not

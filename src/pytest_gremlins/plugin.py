@@ -4119,6 +4119,10 @@ def _run_batch_mutation_testing(  # pragma: no cover
     return results
 
 
+WATCHDOG_TICK_SECONDS = 1.0
+"""How often the result loop checks the pool's per-gremlin deadlines (#976)."""
+
+
 def _run_parallel_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
@@ -4203,7 +4207,9 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             )
             futures[future] = gremlin.gremlin_id
 
-        early_cached_ids = _collect_pooled_results(futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session)
+        early_cached_ids = _collect_pooled_results(
+            futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session, service=pool.service
+        )
 
     print()  # New line after progress
 
@@ -4250,6 +4256,8 @@ def _collect_pooled_results(
     gremlin_by_id: Mapping[str, Gremlin],
     gremlin_tests: Mapping[str, list[str]],
     gremlin_session: GremlinSession,
+    *,
+    service: Callable[[], Sequence[str]] | None = None,
 ) -> set[str]:
     """Collect worker results as they complete, caching final verdicts at once; return the ids cached that way.
 
@@ -4257,13 +4265,19 @@ def _collect_pooled_results(
     moment its worker returns, and the cache is flushed on a timer, so a kill loses at most one flush window.
     The flush also runs when anything, including ``KeyboardInterrupt``, propagates out of the wait. This
     runs on the thread that owns the cache's SQLite connection.
+
+    ``service`` is the pool's watchdog (#976). It runs before every wait, which then wakes at least every
+    ``WATCHDOG_TICK_SECONDS``, so a hung worker is noticed within a tick of its deadline.
     """
     flusher = _cache_flusher_for(gremlin_session)
+    wake_every = flusher.every_seconds if service is None else min(flusher.every_seconds, WATCHDOG_TICK_SECONDS)
     early_cached_ids: set[str] = set()
     pending_futures = set(futures)
     try:
         while pending_futures:
-            done, pending_futures = wait(pending_futures, timeout=flusher.every_seconds, return_when=FIRST_COMPLETED)
+            if service is not None:
+                _queue_hung_worker_notices(service(), gremlin_session)
+            done, pending_futures = wait(pending_futures, timeout=wake_every, return_when=FIRST_COMPLETED)
             for future in done:
                 gremlin_id = futures[future]
                 if _collect_one_result(
@@ -4311,6 +4325,16 @@ def _confirm_and_cache_pooled_results(
             unconfirmed_result.gremlin, unconfirmed_result.selected_tests, confirmed_result, gremlin_session
         )
     return confirmed
+
+
+def _queue_hung_worker_notices(hung_gremlin_ids: Sequence[str], gremlin_session: GremlinSession) -> None:
+    """Tell the terminal summary whose workers the hung-worker watchdog killed; the pool already logged each."""
+    for gremlin_id in hung_gremlin_ids:
+        _queue_terminal_notice(
+            gremlin_session,
+            f'pytest-gremlins: warning: the hung-worker watchdog killed the worker of gremlin {gremlin_id} after it '
+            'ran past its mutant timeout. The gremlin is re-run alone to settle its verdict.',
+        )
 
 
 def _cache_final_worker_result(
