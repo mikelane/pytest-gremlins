@@ -5,6 +5,131 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.14.0 (2026-11-12)
+
+**An interrupted run now keeps the results it finished, the coverage pre-scan can be sharded across processes, a hung
+worker or runaway mutant is ended at its deadline, and the cache sees helper modules, conftest files and config files it
+used to miss.**
+
+(cache kept: no verdict stored by v1.13.2 is reused wrongly. Every cache-key change adds an input to the key or a
+key part that only the affected sessions carry, so an affected entry misses once and every other session keeps its
+keys byte for byte. Gremlin ids, mutations and verdict rules are unchanged: built-in operator output is identical,
+and deep operator chains keep their ids and only add gremlins to files that failed to instrument before. The other
+guarded changes, which are config validation, the executor removal, the pre-scan rootdir, writing results during
+the run and the per-hook session lookup, change no stored verdict.)
+
+### Upgrade notes
+
+- **A bad `--gremlin-operators` name now stops the run, and empty entries in `--gremlin-operators` and
+  `--gremlin-targets` are dropped.** An unknown operator exits 4 with the list of valid names instead of being
+  ignored. `--gremlin-targets=src/pkg/a.py,` used to turn the trailing empty entry into `.` and mutate the whole
+  project. It now targets only `src/pkg/a.py`, so such runs report fewer gremlins. (#785, #940)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#key-spelling-validation-and-unknown-keys)
+- **`--gremlin-executor=fork` and `--gremlin-executor=inprocess` are removed.** Neither could run a gremlin, and
+  both already failed at configure time. They now exit 4 with a message that says so. An unknown executor value
+  without `--gremlins` is no longer rejected, as with every other `--gremlin-*` option. (#532, #955)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#performance-options)
+- **Projects with helper modules, collected-test helpers or conftest-defined operators miss the cache once.** Editing
+  a non-test `.py` file under the test root, a helper defined in a collected test file, a conftest that defines an
+  operator, or a project module that such a conftest imports now changes the key of the affected gremlins. Before,
+  the cached verdict was replayed. Projects with none of these keep their cache. (#760, #899, #910, #911, #922, #924,
+  #926, #933)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
+- **Sessions that use `-c` or load xdist with plugin autoload off miss the cache once.** Gremlin runs now read the
+  `-c` file and load xdist as the session does, so verdicts cached from the old runs are recomputed. Other sessions
+  keep their cache. (#668, #685, #951, #925, #928, #954)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#pytest-xdist-when-plugin-autoload-is-disabled)
+
+### Feature
+
+- **`--gremlin-prescan-workers N` shards the coverage pre-scan across parallel processes.** On a 4,000-test suite
+  the pre-scan took 37.7 s with one worker, 19.4 s with two and 10.1 s with four. The default of 1 is unchanged. If
+  any shard fails, test selection is turned off with the same notices as a failed single-process pre-scan.
+  (#527, #952)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#parallel-coverage-pre-scan)
+- **The cache file no longer grows with every edit.** After collection, the rows left behind by an edited source
+  file are deleted, so `results.db` holds only rows a later run can read. (#930, #934)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#pruning-stranded-rows)
+- **Reports show a custom operator's own description.** A custom operator's `get_description(original, mutated)` text
+  replaces `<name> mutation`, so two gremlins on one call chain read differently. (#765, #921)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/extensibility/#method-details)
+
+### Fix
+
+- **A hung worker in a parallel run is now ended at the per-gremlin deadline.** A gremlin whose worker stopped
+  answering used to hold up the whole run. (#976, #987)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
+- **A mutant could run past `--gremlin-mutant-timeout`.** The watchdog that was meant to stop it never ran. It is
+  replaced, and it no longer dies on a broken pipe. (#975)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
+- **An interrupted run lost every finished result.** The cache was written once, at the end. Final verdicts are now
+  cached as they arrive and committed every 25 results or 5 seconds, so Ctrl-C, SIGTERM, an OOM kill or a CI timeout
+  loses at most the last few seconds. A failed cache write prints one warning. `--gremlin-batch` still caches only at
+  the end. (#974, #985)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#incremental-caching)
+- **A nested pytest run could swap out the outer run's gremlin session.** Pytester, an in-process `pytest.main` or a
+  leftover inner `Config` could make the outer run test no gremlins and exit 0. Each hook now reads the session
+  from its own config. (#560, #972)
+  (no docs: no option, default, verdict or output changes; nested runs now get the report they always should have)
+- **Long operator chains crashed instrumentation.** A file with about 120 chained `+` terms or 245 `|` terms hit the
+  recursion limit. Those now instrument normally, and a file too deep to unparse is skipped like any other
+  unreadable file. (#814, #923)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#warning-a-file-was-skipped-and-not-mutation-tested)
+- **Gremlin runs read a different config file than the session when you passed `-c`.** The `-c` file is now
+  forwarded to every gremlin run and to the coverage pre-scan. (#951, #954)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
+- **Every gremlin scored ERROR with `--rootdir` above a project that has its own ini file.** The pre-scan now gets
+  the session rootdir, so node ids match. (#947, #950)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#error-gremlin-runs-start-in-the-rootdir)
+- **Every gremlin scored ERROR when the session ran from another directory than the rootdir.** An `@file` argument or
+  test file the gremlin runs cannot resolve from the rootdir now stops the run with one clear error. (#686, #690,
+  #948)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#error-gremlin-runs-start-in-the-rootdir)
+- **Tests using `worker_id` or `testrun_uid` were scored as kills or survivors when xdist was not auto-loaded.** Gremlin
+  runs and the coverage pre-scan now load xdist as the session does, including when `-p no:xdist` comes from
+  `addopts` or `PYTEST_ADDOPTS`. (#668, #685, #927, #925, #928, #931)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#pytest-xdist-when-plugin-autoload-is-disabled)
+- **Editing a helper under the test root, in a collected test file, or in a conftest replayed a stale verdict.**
+  Those edits now change the cache key, and so does a project module imported by a conftest-defined operator.
+  (#760, #899, #910, #911, #922, #924, #926, #933)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/api/cache/#invalidation-rules)
+- **A run with zero gremlins left a stale report in place.** The HTML and JSON reports you asked for are now written
+  with zero gremlins. (#889, #912)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/reports/#report-contents)
+- **A non-table `[tool.pytest-gremlins]` entry caused an INTERNALERROR, and `operators = []` was silent.** A
+  non-table entry read through `-c` now exits 4 with a message. An empty `operators` list still runs every operator
+  and now says so. (#796, #919)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#key-spelling-validation-and-unknown-keys)
+- **The pre-scan hid every assert-rewrite warning.** A `filterwarnings = ["error"]` setting now sees warnings about
+  your own modules again, and only the plugin's own warning is ignored. (#838, #914)
+  (no docs: restores pytest's own warning behavior in the pre-scan; no documented option or output changes)
+- **Windows checkouts with `core.autocrlf=true` missed the cache.** Python sources are now pinned to LF at checkout.
+  (#482, #823)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#cache-never-warms-across-checkouts-on-windows)
+
+### Documentation
+
+- Added an HTML report screenshot to the Reports page and moved the beginner questions to their own FAQ page.
+  (#957, #959)
+- Documented `--gremlin-no-coverage-filter` and `--gremlin-explain`. (#415, #844)
+- Fixed drift between the docs and the code, completed the API module map and softened the batch speed claims.
+  (#870, #943, #945, #949)
+- Docs pages now get social card images on Read the Docs. (#956, #960)
+
+### Internal
+
+- Removed the fork and inprocess executor code, split verdict construction into `verdicts.py`, and moved the
+  argument-file helpers to their own module. (#688, #942, #939, #955)
+- Moved the injected `__gremlin_active__` header off real source lines, and typed the `sources.json` entries.
+  (#614, #920)
+- Type-check tests and gate mypy over `src` and `tests`. (#821, #932)
+- Test hygiene: shared integration helpers, deterministic cache performance checks, a tighter docs-default checker
+  and docs drift checks, plus fixes for flaky tests. (#596, #606, #558, #700, #721, #618, #726, #764, #774, #834,
+  #865, #915, #937, #938, #946, #953, #916, #918, #908, #909, #829, #836, #837, #842, #813, #819)
+- CI: a CI and workflow tidy batch, the uv pin, a release cache gate, tox path arguments that narrow the small and
+  medium envs, pre-commit hooks that run tools from `uv.lock`, and a `setup-uv` bump. (#631, #839, #869, #877, #907,
+  #913, #929, #847, #962)
+
 ## v1.13.2 (2026-10-30)
 
 **Custom operators that no installed package owns can no longer be served stale cached verdicts, pytester-based test
