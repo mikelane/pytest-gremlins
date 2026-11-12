@@ -12,6 +12,7 @@ from collections.abc import Callable
 import importlib
 import importlib.machinery
 import inspect
+import itertools
 import json
 from pathlib import Path
 import pickle
@@ -80,37 +81,44 @@ def _elapsed(action: Callable[[], None], clock: Callable[[], float]) -> float:
     return clock() - started
 
 
-def _median_paired_ratio(
+def _paired_timing_ratio(
     candidate: Callable[[], None],
     baseline: Callable[[], None],
     repeats: int,
     clock: Callable[[], float] = time.perf_counter,
 ) -> float:
-    """Return the median over ``repeats`` of candidate time divided by baseline time, each pair timed back to back.
+    """Return the lower of two ratio estimates from ``repeats`` alternating candidate/baseline pairs.
 
-    A pair sees the same machine load, so slow drift cancels in its ratio. The median then drops the pairs a noisy
-    neighbour hit, and, unlike a ratio of best times, one unusually fast run cannot skew the result. The order within
-    a pair alternates so neither side always runs second.
+    One estimate is the best-of ratio, the fastest candidate run over the fastest baseline run. The other is the
+    median of the per-pair ratios. Each fails differently. Under heavy contention almost every run is stretched at
+    random on either side, so a median can land well off the true ratio while the fastest runs of both sides stay
+    clean. With light noise, one unusually fast run on one side skews the best-of ratio while the median holds.
+    A real regression slows every candidate run, so it shows in both estimates, and taking the lower one reports
+    it only when neither estimate can blame noise. The order within a pair alternates so neither side always
+    runs second.
     """
-    ratios = []
+    candidate_times = []
+    baseline_times = []
     for repeat in range(repeats):
         if repeat % 2:
-            baseline_time = _elapsed(baseline, clock)
-            candidate_time = _elapsed(candidate, clock)
+            baseline_times.append(_elapsed(baseline, clock))
+            candidate_times.append(_elapsed(candidate, clock))
         else:
-            candidate_time = _elapsed(candidate, clock)
-            baseline_time = _elapsed(baseline, clock)
-        ratios.append(candidate_time / baseline_time)
-    return statistics.median(ratios)
+            candidate_times.append(_elapsed(candidate, clock))
+            baseline_times.append(_elapsed(baseline, clock))
+    best_of_ratio = min(candidate_times) / min(baseline_times)
+    paired_median_ratio = statistics.median(c / b for c, b in zip(candidate_times, baseline_times, strict=True))
+    return min(best_of_ratio, paired_median_ratio)
 
 
 def _import_time_ratio_to_legacy(encoded_tree: str, legacy_tree: str, origin: str) -> float:
-    """Return the median loader import time over the PR #610 import time, measured in alternating pairs.
+    """Return the loader import time over the PR #610 import time, measured in alternating pairs.
 
-    Both import the same module on the same machine, and the median of paired runs shrugs off the runs that CPU
-    contention slowed, so the ratio reflects the cost of the compressed format and not the load on the machine.
+    Both import the same module on the same machine, and the lower of the best-of and paired-median ratios shrugs
+    off the runs that CPU contention slowed, so the ratio reflects the cost of the compressed format and not the
+    load on the machine.
     """
-    return _median_paired_ratio(
+    return _paired_timing_ratio(
         lambda: _loader_import(encoded_tree, origin),
         lambda: _legacy_import(legacy_tree, origin),
         repeats=TIMING_REPEATS,
@@ -141,34 +149,66 @@ class _ScriptedClock:
 
 
 @pytest.mark.small
-class DescribeMedianPairedRatio:
+class DescribePairedTimingRatio:
     def it_ignores_one_unusually_fast_baseline_run_that_skews_a_best_of_ratio(self):
         clock = _ScriptedClock()
         baseline = clock.timed([1.0, 0.8, 1.0, 1.0, 1.0])
         candidate = clock.timed([1.0] * 5)
 
-        assert _median_paired_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(1.0)
+        assert _paired_timing_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(1.0)
 
     def it_ignores_a_minority_of_runs_slowed_by_a_noisy_neighbour(self):
         clock = _ScriptedClock()
         baseline = clock.timed([1.0] * 5)
         candidate = clock.timed([1.0, 5.0, 1.0, 5.0, 1.0])
 
-        assert _median_paired_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(1.0)
+        assert _paired_timing_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(1.0)
 
     def it_reports_a_real_slowdown_far_above_the_allowed_regression(self):
         clock = _ScriptedClock()
         baseline = clock.timed([1.0] * 5)
         candidate = clock.timed([3.0] * 5)
 
-        assert _median_paired_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(3.0)
+        assert _paired_timing_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(3.0)
 
     def it_reports_a_slowdown_even_when_noise_hits_a_minority_of_runs(self):
         clock = _ScriptedClock()
         baseline = clock.timed([1.0, 1.0, 0.5, 1.0, 1.0])
         candidate = clock.timed([1.5, 1.5, 1.5, 9.0, 1.5])
 
-        assert _median_paired_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(1.5)
+        assert _paired_timing_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(1.5)
+
+    def it_pairs_each_candidate_run_with_the_baseline_run_beside_it_instead_of_comparing_medians(self):
+        clock = _ScriptedClock()
+        candidate = clock.timed([4.0, 6.0, 8.0])
+        baseline = clock.timed([2.0, 3.0, 1.0])
+
+        assert _paired_timing_ratio(candidate, baseline, repeats=3, clock=clock) == pytest.approx(2.0)
+
+    def it_returns_the_mean_of_the_two_middle_ratios_for_an_even_number_of_repeats(self):
+        clock = _ScriptedClock()
+        candidate = clock.timed([3.0, 4.0, 5.0, 9.0])
+        baseline = clock.timed([2.0, 2.0, 2.0, 1.0])
+
+        assert _paired_timing_ratio(candidate, baseline, repeats=4, clock=clock) == pytest.approx(2.25)
+
+    def it_alternates_which_side_runs_first_in_each_pair(self):
+        calls: list[str] = []
+        ticks = itertools.count()
+
+        _paired_timing_ratio(
+            lambda: calls.append('candidate'),
+            lambda: calls.append('baseline'),
+            repeats=4,
+            clock=lambda: float(next(ticks)),
+        )
+
+        assert calls == [
+            'candidate', 'baseline',
+            'baseline', 'candidate',
+            'candidate', 'baseline',
+            'baseline', 'candidate',
+        ]  # fmt: skip
 
 
 @pytest.mark.medium
