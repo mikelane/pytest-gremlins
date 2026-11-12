@@ -34,6 +34,7 @@ from collections.abc import (
     Sequence,
 )
 import gc
+import logging
 from pathlib import Path
 import shutil
 import subprocess
@@ -54,6 +55,10 @@ from pytest_gremlins.node_id_file import command_with_node_ids_file
 # (2 interrupted, such as a collection error; 3 internal error; 4 usage error) means the shard did not run its tests.
 _FINISHED_EXIT_CODES = frozenset({0, 1})
 _POLL_INTERVAL_SECONDS = 0.05
+_STDERR_TAIL_BYTES = 1000
+_SHARD_STDERR_NAME = 'stderr.log'
+
+logger = logging.getLogger(__name__)
 
 
 def run_prescan_shards(
@@ -89,6 +94,7 @@ def run_prescan_shards(
     deadline = time.monotonic() + timeout
     processes: list[subprocess.Popen[bytes]] = []
     data_files: list[Path] = []
+    failures: list[str] = []
     try:
         for index, shard in enumerate(shards):
             shard_dir = scratch_dir / str(index)
@@ -97,9 +103,12 @@ def run_prescan_shards(
             basetemp = shard_dir / 'b' if basetemp_root is None else basetemp_root / str(index)
             processes.append(_start_shard(command, shard, shard_dir, data_files[-1], basetemp, cwd=cwd, env=env))
         finished_cleanly = _wait_for_all(processes, deadline, timeout)
+        failures = _describe_failed_shards(processes, data_files, scratch_dir)
     finally:
         _stop_all(processes)
     if not finished_cleanly or not all(path.is_file() for path in data_files):
+        for failure in failures:
+            logger.warning('pre-scan %s', failure)
         return None
     return data_files
 
@@ -210,6 +219,36 @@ def _release_unreadable_data_connections() -> None:
         gc.collect()
 
 
+def _describe_failed_shards(
+    processes: Sequence[subprocess.Popen[bytes]], data_files: Sequence[Path], scratch_dir: Path
+) -> list[str]:
+    """Describe each shard that already exited abnormally or without data, with a bounded stderr tail."""
+    failures: list[str] = []
+    for index, (process, data_file) in enumerate(zip(processes, data_files, strict=True)):
+        exit_code = process.poll()
+        if exit_code is None:
+            continue
+        if exit_code not in _FINISHED_EXIT_CODES:
+            reason = f'exited with code {exit_code}'
+        elif not data_file.is_file():
+            reason = 'left no coverage data'
+        else:
+            continue
+        stderr_tail = _stderr_tail(scratch_dir / str(index) / _SHARD_STDERR_NAME)
+        failures.append(f'shard {index} {reason}; stderr tail: {stderr_tail!r}')
+    return failures
+
+
+def _stderr_tail(stderr_file: Path) -> str:
+    try:
+        with stderr_file.open('rb') as stream:
+            stream.seek(0, 2)
+            stream.seek(max(0, stream.tell() - _STDERR_TAIL_BYTES))
+            return stream.read().decode('utf-8', errors='replace')
+    except OSError:
+        return ''
+
+
 def _start_shard(
     command: Sequence[str],
     node_ids: Sequence[str],
@@ -220,13 +259,18 @@ def _start_shard(
     cwd: Path,
     env: Mapping[str, str],
 ) -> subprocess.Popen[bytes]:
-    return subprocess.Popen(  # Intentional: runs a pytest pre-scan command
-        [*command_with_node_ids_file(command, node_ids, shard_dir), f'--basetemp={basetemp}'],
-        cwd=str(cwd),
-        env={**env, 'COVERAGE_FILE': str(data_file)},
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    # pytest-cache and bytecode writes are the only state shards would otherwise share through the project rootdir;
+    # Windows file locking turns a race on them into a shard crash.
+    shard_env = {**env, 'COVERAGE_FILE': str(data_file), 'PYTHONDONTWRITEBYTECODE': '1'}
+    cache_options = ['-o', f'cache_dir={shard_dir / "cache"}']
+    with (shard_dir / _SHARD_STDERR_NAME).open('wb') as stderr_file:
+        return subprocess.Popen(  # Intentional: runs a pytest pre-scan command
+            [*command_with_node_ids_file(command, node_ids, shard_dir), *cache_options, f'--basetemp={basetemp}'],
+            cwd=str(cwd),
+            env=shard_env,
+            stdout=subprocess.DEVNULL,
+            stderr=stderr_file,
+        )
 
 
 def _wait_for_all(processes: Sequence[subprocess.Popen[bytes]], deadline: float, timeout: float) -> bool:

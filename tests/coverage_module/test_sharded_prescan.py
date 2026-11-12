@@ -6,6 +6,7 @@ from collections.abc import Sequence
 import gc
 import getpass
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -35,8 +36,20 @@ behaviour = ids[0]
 data_file = pathlib.Path(os.environ['COVERAGE_FILE'])
 if behaviour == 'hang':
     time.sleep(60)
+if behaviour == 'crash':
+    sys.stderr.write('x' * 5000 + 'WinError 5 access denied')
 if behaviour != 'nodata':
-    data_file.write_text(json.dumps({'ids': ids, 'cwd': os.getcwd(), 'argv': sys.argv[1:]}), encoding='utf-8')
+    data_file.write_text(
+        json.dumps(
+            {
+                'ids': ids,
+                'cwd': os.getcwd(),
+                'argv': sys.argv[1:],
+                'dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
+            }
+        ),
+        encoding='utf-8',
+    )
 sys.exit({'crash': 2, 'testsfail': 1}.get(behaviour, 0))
 """
 
@@ -71,6 +84,11 @@ def _run(tmp_path: Path, shards: list[list[str]], *, timeout: int = 30) -> list[
 def _last_basetemp(data_file: Path) -> str:
     argv: list[str] = json.loads(data_file.read_text(encoding='utf-8'))['argv']
     return [argument for argument in argv if argument.startswith('--basetemp=')][-1]
+
+
+def _recorded(data_file: Path) -> dict[str, Any]:
+    recorded: dict[str, Any] = json.loads(data_file.read_text(encoding='utf-8'))
+    return recorded
 
 
 @pytest.mark.medium
@@ -199,6 +217,48 @@ class DescribeRunPrescanShards:
         assert data_files is not None
         argv = json.loads(data_files[0].read_text(encoding='utf-8'))['argv']
         assert argv[-1].startswith('--basetemp=')
+
+    def it_points_each_shard_pytest_cache_into_its_own_shard_directory(self, tmp_path: Path) -> None:
+        data_files = _run(tmp_path, [['ok', 'a'], ['ok', 'b']])
+
+        assert data_files is not None
+        cache_options = [_recorded(path)['argv'][-3:-1] for path in data_files]
+        assert cache_options == [
+            ['-o', f'cache_dir={tmp_path / "scratch" / str(index) / "cache"}'] for index in range(2)
+        ]
+
+    def it_stops_every_shard_from_writing_bytecode_into_the_project(self, tmp_path: Path) -> None:
+        data_files = _run(tmp_path, [['ok', 'a'], ['ok', 'b']])
+
+        assert data_files is not None
+        assert [_recorded(path)['dont_write_bytecode'] for path in data_files] == ['1', '1']
+
+    def it_logs_the_exit_code_and_stderr_tail_of_a_crashed_shard(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger=sharded_prescan.__name__):
+            _run(tmp_path, [['ok'], ['crash']])
+
+        assert 'shard 1 exited with code 2' in caplog.text
+        assert 'WinError 5 access denied' in caplog.text
+
+    def it_bounds_the_stderr_tail_it_logs(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.WARNING, logger=sharded_prescan.__name__):
+            _run(tmp_path, [['crash']])
+
+        assert 'x' * 2000 not in caplog.text
+
+    def it_logs_a_shard_that_left_no_data(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.WARNING, logger=sharded_prescan.__name__):
+            _run(tmp_path, [['nodata']])
+
+        assert 'shard 0 left no coverage data' in caplog.text
+
+    def it_logs_nothing_when_every_shard_succeeds(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.DEBUG, logger=sharded_prescan.__name__):
+            _run(tmp_path, [['ok'], ['testsfail']])
+
+        assert caplog.text == ''
 
     def it_treats_failing_tests_as_a_finished_shard(self, tmp_path: Path) -> None:
         assert _run(tmp_path, [['ok'], ['testsfail']]) is not None
