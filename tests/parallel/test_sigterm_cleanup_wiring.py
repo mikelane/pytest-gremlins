@@ -51,7 +51,20 @@ class DescribeWorkerPoolsInstallSigtermCleanup:
         with WorkerPool(max_workers=1):
             pass
 
-        assert _RecordingExecutor.created_with['initializer'] is process_tree.install_worker_sigterm_cleanup
+        assert _RecordingExecutor.created_with['initializer'] is pool._init_worker
+
+    def it_keeps_the_sigterm_cleanup_when_the_worker_also_reports_its_starts(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[str] = []
+        monkeypatch.setattr(process_tree, 'install_worker_sigterm_cleanup', lambda: calls.append('sigterm cleanup'))
+        monkeypatch.setattr(pool, '_start_reports', None)
+        reports = object()
+
+        pool._init_worker(cast('Any', reports))
+
+        assert calls == ['sigterm cleanup']
+        assert pool._start_reports is reports
 
     def it_gives_the_persistent_pool_workers_the_sigterm_cleanup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_RecordingExecutor, 'created_with', {})  # no stale value from another test
