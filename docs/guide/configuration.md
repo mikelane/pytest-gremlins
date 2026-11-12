@@ -851,8 +851,9 @@ Trade-offs to weigh before raising it:
   get slower, not faster.
 - Shards run at the same time. A suite whose tests share a database, a TCP port or a fixed temp file can fail or
   interfere when several copies run concurrently. Leave the option at `1` for those suites.
-- When a shard fails, the run prints `pytest-gremlins: pre-scan shard N exited with code C` to stderr with the last
-  1000 bytes of that shard's output, and coverage-guided selection is disabled.
+- When a shard fails, the run prints `pytest-gremlins: pre-scan shard N exited with code C` (or
+  `pytest-gremlins: pre-scan shard N left no coverage data`) to stderr with the last 1000 bytes of that shard's
+  output, and coverage-guided selection is disabled.
 - Shards run in the same directory and each writes its own coverage data file, so tests that write to the project
   tree can collide.
 

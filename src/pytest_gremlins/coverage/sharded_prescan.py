@@ -35,6 +35,7 @@ from collections.abc import (
 )
 import gc
 import logging
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -247,7 +248,7 @@ def _describe_failed_shards(
 def _output_tail(output_file: Path) -> str:
     try:
         with output_file.open('rb') as stream:
-            stream.seek(0, 2)
+            stream.seek(0, os.SEEK_END)
             stream.seek(max(0, stream.tell() - _OUTPUT_TAIL_BYTES))
             return stream.read().decode('utf-8', errors='replace')
     except OSError:
