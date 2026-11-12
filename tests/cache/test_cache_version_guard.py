@@ -98,7 +98,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'coverage/selector.py': 'b35af2f065bb47abe40ba63c83d0dc95cacc12de744e261f65aba879f149707b',  # pragma: allowlist secret  # noqa: E501
     # --
-    'coverage/sharded_prescan.py': '5cdc57ff92e26aeadefc02b2f41e6e0178d101bd2705c75eef7ed7ac243d7a8b',  # pragma: allowlist secret  # noqa: E501
+    'coverage/sharded_prescan.py': '63e827a31225dfa66a3314ed485e4125a9f5204c6bb47b5a92e47979942ca804',  # pragma: allowlist secret  # noqa: E501
     # --
     'coverage/subprocess_bootstrap.py': 'c0eeeb6ae0d1ee099c901d2a76432502d05309897111be48b9eb616ab37c1463',  # pragma: allowlist secret  # noqa: E501
     # --
