@@ -38,6 +38,7 @@ import logging
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import warnings
@@ -55,8 +56,8 @@ from pytest_gremlins.node_id_file import command_with_node_ids_file
 # (2 interrupted, such as a collection error; 3 internal error; 4 usage error) means the shard did not run its tests.
 _FINISHED_EXIT_CODES = frozenset({0, 1})
 _POLL_INTERVAL_SECONDS = 0.05
-_STDERR_TAIL_BYTES = 1000
-_SHARD_STDERR_NAME = 'stderr.log'
+_OUTPUT_TAIL_BYTES = 1000
+_SHARD_OUTPUT_NAME = 'output.log'
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,8 @@ def run_prescan_shards(
     if not finished_cleanly or not all(path.is_file() for path in data_files):
         for failure in failures:
             logger.warning('pre-scan %s', failure)
+            # The log record is invisible in a default run, and "no data" would blame the wrong cause.
+            print(f'pytest-gremlins: pre-scan {failure}', file=sys.stderr)
         return None
     return data_files
 
@@ -222,7 +225,7 @@ def _release_unreadable_data_connections() -> None:
 def _describe_failed_shards(
     processes: Sequence[subprocess.Popen[bytes]], data_files: Sequence[Path], scratch_dir: Path
 ) -> list[str]:
-    """Describe each shard that already exited abnormally or without data, with a bounded stderr tail."""
+    """Describe each shard that already exited abnormally or without data, with a bounded tail of its output."""
     failures: list[str] = []
     for index, (process, data_file) in enumerate(zip(processes, data_files, strict=True)):
         exit_code = process.poll()
@@ -234,16 +237,16 @@ def _describe_failed_shards(
             reason = 'left no coverage data'
         else:
             continue
-        stderr_tail = _stderr_tail(scratch_dir / str(index) / _SHARD_STDERR_NAME)
-        failures.append(f'shard {index} {reason}; stderr tail: {stderr_tail!r}')
+        output_tail = _output_tail(scratch_dir / str(index) / _SHARD_OUTPUT_NAME)
+        failures.append(f'shard {index} {reason}; output tail: {output_tail!r}')
     return failures
 
 
-def _stderr_tail(stderr_file: Path) -> str:
+def _output_tail(output_file: Path) -> str:
     try:
-        with stderr_file.open('rb') as stream:
+        with output_file.open('rb') as stream:
             stream.seek(0, 2)
-            stream.seek(max(0, stream.tell() - _STDERR_TAIL_BYTES))
+            stream.seek(max(0, stream.tell() - _OUTPUT_TAIL_BYTES))
             return stream.read().decode('utf-8', errors='replace')
     except OSError:
         return ''
@@ -263,13 +266,14 @@ def _start_shard(
     # Windows file locking turns a race on them into a shard crash.
     shard_env = {**env, 'COVERAGE_FILE': str(data_file), 'PYTHONDONTWRITEBYTECODE': '1'}
     cache_options = ['-o', f'cache_dir={shard_dir / "cache"}']
-    with (shard_dir / _SHARD_STDERR_NAME).open('wb') as stderr_file:
+    # pytest writes collection errors and INTERNALERROR tracebacks to stdout, so both streams go to one log.
+    with (shard_dir / _SHARD_OUTPUT_NAME).open('wb') as output_file:
         return subprocess.Popen(  # Intentional: runs a pytest pre-scan command
             [*command_with_node_ids_file(command, node_ids, shard_dir), *cache_options, f'--basetemp={basetemp}'],
             cwd=str(cwd),
             env=shard_env,
-            stdout=subprocess.DEVNULL,
-            stderr=stderr_file,
+            stdout=output_file,
+            stderr=subprocess.STDOUT,
         )
 
 

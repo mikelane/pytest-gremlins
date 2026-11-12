@@ -246,7 +246,15 @@ class DescribeRunPrescanShards:
         with caplog.at_level(logging.WARNING, logger=sharded_prescan.__name__):
             _run(tmp_path, [['crash']])
 
-        assert 'x' * 2000 not in caplog.text
+        tail = 'x' * (1000 - len('WinError 5 access denied')) + 'WinError 5 access denied'
+        assert f"output tail: '{tail}'" in caplog.text
+
+    def it_prints_the_failed_shard_and_its_exit_code_to_stderr(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _run(tmp_path, [['ok'], ['crash']])
+
+        assert 'shard 1 exited with code 2' in capsys.readouterr().err
 
     def it_logs_a_shard_that_left_no_data(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level(logging.WARNING, logger=sharded_prescan.__name__):
