@@ -8,12 +8,14 @@ metric that grows more than 20% above its baseline fails.
 
 import ast
 import base64
+from collections.abc import Callable
 import importlib
 import importlib.machinery
 import inspect
 import json
 from pathlib import Path
 import pickle
+import statistics
 import subprocess
 import sys
 import time
@@ -72,26 +74,101 @@ def _loader_import(encoded_tree: str, origin: str) -> None:
     loader.exec_module(module)
 
 
-def _import_time_ratio_to_legacy(encoded_tree: str, legacy_tree: str, origin: str) -> float:
-    """Return the best loader import time over the best PR #610 import time, the two measured alternately.
+def _elapsed(action: Callable[[], None], clock: Callable[[], float]) -> float:
+    started = clock()
+    action()
+    return clock() - started
 
-    Both import the same module on the same machine, and the best of many alternating runs drops the runs that
-    CPU contention slowed, so the ratio reflects the cost of the compressed format and not the load on the machine.
+
+def _median_paired_ratio(
+    candidate: Callable[[], None],
+    baseline: Callable[[], None],
+    repeats: int,
+    clock: Callable[[], float] = time.perf_counter,
+) -> float:
+    """Return the median over ``repeats`` of candidate time divided by baseline time, each pair timed back to back.
+
+    A pair sees the same machine load, so slow drift cancels in its ratio. The median then drops the pairs a noisy
+    neighbour hit, and, unlike a ratio of best times, one unusually fast run cannot skew the result. The order within
+    a pair alternates so neither side always runs second.
     """
-    best_loader = best_legacy = float('inf')
-    for _ in range(TIMING_REPEATS):
-        started = time.perf_counter()
-        _loader_import(encoded_tree, origin)
-        best_loader = min(best_loader, time.perf_counter() - started)
-        started = time.perf_counter()
-        _legacy_import(legacy_tree, origin)
-        best_legacy = min(best_legacy, time.perf_counter() - started)
-    return best_loader / best_legacy
+    ratios = []
+    for repeat in range(repeats):
+        if repeat % 2:
+            baseline_time = _elapsed(baseline, clock)
+            candidate_time = _elapsed(candidate, clock)
+        else:
+            candidate_time = _elapsed(candidate, clock)
+            baseline_time = _elapsed(baseline, clock)
+        ratios.append(candidate_time / baseline_time)
+    return statistics.median(ratios)
+
+
+def _import_time_ratio_to_legacy(encoded_tree: str, legacy_tree: str, origin: str) -> float:
+    """Return the median loader import time over the PR #610 import time, measured in alternating pairs.
+
+    Both import the same module on the same machine, and the median of paired runs shrugs off the runs that CPU
+    contention slowed, so the ratio reflects the cost of the compressed format and not the load on the machine.
+    """
+    return _median_paired_ratio(
+        lambda: _loader_import(encoded_tree, origin),
+        lambda: _legacy_import(legacy_tree, origin),
+        repeats=TIMING_REPEATS,
+    )
 
 
 def _baseline() -> dict[str, dict[str, float]]:
     baseline: dict[str, dict[str, float]] = json.loads(BASELINE_FILE.read_text())
     return baseline
+
+
+class _ScriptedClock:
+    """A fake clock whose timed callables each advance it by the next duration in their script."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def timed(self, durations: list[float]) -> Callable[[], None]:
+        remaining = iter(durations)
+
+        def run() -> None:
+            self.now += next(remaining)
+
+        return run
+
+
+@pytest.mark.small
+class DescribeMedianPairedRatio:
+    def it_ignores_one_unusually_fast_baseline_run_that_skews_a_best_of_ratio(self):
+        clock = _ScriptedClock()
+        baseline = clock.timed([1.0, 0.8, 1.0, 1.0, 1.0])
+        candidate = clock.timed([1.0] * 5)
+
+        assert _median_paired_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(1.0)
+
+    def it_ignores_a_minority_of_runs_slowed_by_a_noisy_neighbour(self):
+        clock = _ScriptedClock()
+        baseline = clock.timed([1.0] * 5)
+        candidate = clock.timed([1.0, 5.0, 1.0, 5.0, 1.0])
+
+        assert _median_paired_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(1.0)
+
+    def it_reports_a_real_slowdown_far_above_the_allowed_regression(self):
+        clock = _ScriptedClock()
+        baseline = clock.timed([1.0] * 5)
+        candidate = clock.timed([3.0] * 5)
+
+        assert _median_paired_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(3.0)
+
+    def it_reports_a_slowdown_even_when_noise_hits_a_minority_of_runs(self):
+        clock = _ScriptedClock()
+        baseline = clock.timed([1.0, 1.0, 0.5, 1.0, 1.0])
+        candidate = clock.timed([1.5, 1.5, 1.5, 9.0, 1.5])
+
+        assert _median_paired_ratio(candidate, baseline, repeats=5, clock=clock) == pytest.approx(1.5)
 
 
 @pytest.mark.medium
