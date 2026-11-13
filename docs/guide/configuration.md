@@ -851,6 +851,9 @@ Trade-offs to weigh before raising it:
   get slower, not faster.
 - Shards run at the same time. A suite whose tests share a database, a TCP port or a fixed temp file can fail or
   interfere when several copies run concurrently. Leave the option at `1` for those suites.
+- When a shard fails, the run prints `pytest-gremlins: pre-scan shard N exited with code C` (or
+  `pytest-gremlins: pre-scan shard N left no coverage data`) to stderr with the last 1000 bytes of that shard's
+  output, and coverage-guided selection is disabled.
 - Shards run in the same directory and each writes its own coverage data file, so tests that write to the project
   tree can collide.
 
@@ -884,6 +887,20 @@ mutant_timeout = 120
 The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
 the TOML key. A changed rerun count or delay judges every gremlin again.
 
+When a run hits the limit, gremlins ends the whole process tree of that test run, not only the pytest process: the
+group gets SIGTERM, half a second to exit, then SIGKILL. On Windows the tree is ended with `taskkill /T`. Child
+processes a test started (a server fixture, a multiprocessing pool, a `subprocess` call) no longer keep running
+after the timeout, and they cannot hold the run up by keeping its output open. A process that detaches itself from
+the group (for example with `setsid`) is not killed, but gremlins stops waiting for its output after 5 seconds. An
+interrupted run (Ctrl-C) or a SIGTERM sent to gremlins or to its worker processes ends its in-flight test runs the
+same way, so a CI cancel or `timeout pytest --gremlins` leaves nothing running, also under `--gremlin-parallel`
+(the workers get the SIGTERM too). A SIGTERM that the caller set to be ignored is left ignored. A SIGKILL cannot be
+handled, but it does not leave test runs behind on Linux and macOS either: each process that runs test commands
+keeps a small watchdog process, in its own session, that kills the commands' process groups as soon as that process
+dies, however it died (a CI job timeout, `timeout -s KILL`, an OOM kill, `kill -9` of the whole group or of one
+pid). The watchdog is not started on Windows, where a hard kill of gremlins can still leave test runs behind. The
+verdict is unchanged: the gremlin is reported as a timeout.
+
 The incremental cache stores the timeout each verdict was reached under and reuses a verdict at a different timeout
 only when the new limit cannot change it. A zapped, survived or error verdict is reused when the gremlin's run took
 strictly less than the new limit; a run that took exactly the new limit, or whose time is unknown, is judged
@@ -911,6 +928,41 @@ score. Downgraded results are not written to the incremental cache.
 If you see downgrades, raise the limit (or speed up the slow tests): a real hang outlasts any limit,
 so a longer one costs you no kills. The trade-off is time, since in parallel and batch mode each
 genuine hang costs one extra solo run, up to the limit.
+
+#### A hung worker cannot stall a parallel run
+
+The limit above is enforced inside each worker. A worker that hangs outside its test run never reaches that
+limit, so in `--gremlin-parallel` runs the parent process also keeps a deadline for each gremlin. Each worker
+reports when it starts a gremlin, and the parent times the gremlin from its latest start, not from when it was
+queued. If a gremlin is still running 10 seconds (the grace margin) after its mutant timeout, the parent kills
+its worker and the gremlin counts as a timeout in the pooled run. Like any pooled timeout, it is then re-run
+alone, and that run gives its final verdict. A warning names the gremlin in the log and in the terminal summary.
+
+To end the hang, the parent kills every worker in the pool and the processes below them (each test command and
+anything it started), then starts a fresh pool. It also signals the process groups of those processes, so it
+still finds a grandchild whose parent died first, as long as the grandchild stays in its test command's process
+group. A process that starts its own session or detaches as a daemon is not found and keeps running. The parent
+lists the process tree with `ps`, or reads `/proc` where `ps` is missing (slim container images).
+
+If the watchdog itself fails (for example, the process table cannot be read), it logs a warning with the
+traceback and re-raises the error. Any other error that ends a parallel run early, including an interrupt, is
+handled the same way: the pool does not wait for its workers. It ends their process trees where it can, kills
+the workers, and exits, so a hung worker cannot hold the run open and its test command is not left running.
+
+Gremlins in flight on the other workers are handled by how long they have run:
+
+- One that has already run for its whole mutant timeout counts as a timeout in the pooled run now, since its own
+  test run would score it a timeout anyway. It is re-run alone like any other pooled timeout, instead of getting
+  a second full deadline.
+- One still inside its timeout starts again on the new pool, and its verdict is unaffected. It loses less than
+  one mutant timeout of work, and its deadline restarts.
+
+Gremlins still in the queue are unaffected. A gremlin's deadline restarts only when another gremlin's hang
+rebuilds the pool, and each rebuild settles at least one gremlin for good, so the run always makes progress.
+
+The deadline covers only gremlins whose worker reported the start. A worker that hangs before it can report is
+not watched. `--gremlin-batch` runs do not have this deadline yet, so a batch worker that hangs outside its test
+run still stalls the run.
 
 ### Batch Execution
 

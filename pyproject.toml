@@ -338,6 +338,11 @@ exclude_lines = [
 exclude_also = [
     # Protocol class declarations (method bodies excluded via ellipsis pattern above)
     "class.*\\(Protocol\\):",
+    # Platform pragmas: `# pragma: posix cover` marks code that only runs where POSIX process groups and signals exist,
+    # and `# pragma: win32 cover` marks code that only runs on Windows. Each is excluded only when measuring on the
+    # other platform, so the code stays measured wherever it runs. The CI coverage step sets
+    # GREMLINS_COVERAGE_OTHER_PLATFORM to `posix` on Windows runners; unset, it means `win32` (Linux and macOS).
+    "# pragma: ${GREMLINS_COVERAGE_OTHER_PLATFORM-win32} cover",
 ]
 # Subprocess code (pool workers, parallel/batch execution) is marked with
 # pragma: no cover since coverage.py cannot track code running in subprocesses.

@@ -48,7 +48,10 @@ import zlib
 from coverage.exceptions import CoverageException
 import pytest
 
-from pytest_gremlins import node_id_args
+from pytest_gremlins import (
+    node_id_args,
+    process_tree,
+)
 from pytest_gremlins.argument_files import expand_argument_files
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import (
@@ -2664,6 +2667,25 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             gremlin_session.enabled = False
         return
 
+    # The control runs and the serial pre-scan start test commands in their own sessions through run_bounded, so a
+    # SIGTERM must reach them through the same cleanup as the mutation run. The sharded pre-scan starts its shards with
+    # a plain Popen, in the caller's session, and is not covered by this (#983).
+    with process_tree.sigterm_cleanup():
+        has_run_gremlins = _collect_coverage_then_run_gremlins(session, gremlin_session, rootdir)
+    if has_run_gremlins:
+        _report_unmapped_selections(gremlin_session)
+
+
+def _collect_coverage_then_run_gremlins(
+    session: pytest.Session, gremlin_session: GremlinSession, rootdir: Path
+) -> bool:
+    """Run the coverage pre-scan, check the unmutated suite loads, then run every gremlin.
+
+    Returns:
+        True once the gremlins ran, so their results are on ``gremlin_session``. False when ``--gremlin-explain``
+        stopped after the pre-scan, so no gremlin ran.
+    """
+    config = session.config
     _collect_coverage(gremlin_session, rootdir)
 
     # If pytest-cov is active (--cov was passed), reload its in-memory coverage
@@ -2680,11 +2702,11 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         cov_plugin.cov.load()
 
     if _maybe_short_circuit_for_explain(gremlin_session):
-        return
+        return False
 
     _verify_suite_loads_unmutated(session, gremlin_session)
     gremlin_session.results = _dispatch_mutation_run(session, gremlin_session)
-    _report_unmapped_selections(gremlin_session)
+    return True
 
 
 def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: GremlinSession) -> None:
@@ -3745,13 +3767,11 @@ def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, time
     """
     try:
         with tempfile.TemporaryDirectory(prefix='pytest_gremlins_prescan_', ignore_cleanup_errors=True) as node_ids_dir:
-            subprocess.run(  # Intentional: runs pytest test commands
+            process_tree.run_bounded(
                 command_with_node_ids_file(command, node_ids, Path(node_ids_dir)),
                 cwd=str(rootdir),
-                capture_output=True,
-                timeout=timeout,
-                check=False,
                 env=_prescan_env(),
+                timeout=timeout,
             )
     except subprocess.TimeoutExpired as expired:
         raise CoveragePrescanTimeoutError(timeout) from expired
@@ -4100,6 +4120,10 @@ def _run_batch_mutation_testing(  # pragma: no cover
     return results
 
 
+WATCHDOG_TICK_SECONDS = 1.0
+"""How often the result loop checks the pool's per-gremlin deadlines (#976)."""
+
+
 def _run_parallel_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
@@ -4184,7 +4208,9 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             )
             futures[future] = gremlin.gremlin_id
 
-        early_cached_ids = _collect_pooled_results(futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session)
+        early_cached_ids = _collect_pooled_results(
+            futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session, service=pool.service
+        )
 
     print()  # New line after progress
 
@@ -4231,6 +4257,8 @@ def _collect_pooled_results(
     gremlin_by_id: Mapping[str, Gremlin],
     gremlin_tests: Mapping[str, list[str]],
     gremlin_session: GremlinSession,
+    *,
+    service: Callable[[], Sequence[str]] | None = None,
 ) -> set[str]:
     """Collect worker results as they complete, caching final verdicts at once; return the ids cached that way.
 
@@ -4238,13 +4266,19 @@ def _collect_pooled_results(
     moment its worker returns, and the cache is flushed on a timer, so a kill loses at most one flush window.
     The flush also runs when anything, including ``KeyboardInterrupt``, propagates out of the wait. This
     runs on the thread that owns the cache's SQLite connection.
+
+    ``service`` is the pool's watchdog (#976). It runs before every wait, which then wakes at least every
+    ``WATCHDOG_TICK_SECONDS``, so a hung worker is noticed within a tick of its deadline.
     """
     flusher = _cache_flusher_for(gremlin_session)
+    wake_every = flusher.every_seconds if service is None else min(flusher.every_seconds, WATCHDOG_TICK_SECONDS)
     early_cached_ids: set[str] = set()
     pending_futures = set(futures)
     try:
         while pending_futures:
-            done, pending_futures = wait(pending_futures, timeout=flusher.every_seconds, return_when=FIRST_COMPLETED)
+            if service is not None:
+                _queue_hung_worker_notices(service(), gremlin_session)
+            done, pending_futures = wait(pending_futures, timeout=wake_every, return_when=FIRST_COMPLETED)
             for future in done:
                 gremlin_id = futures[future]
                 if _collect_one_result(
@@ -4292,6 +4326,16 @@ def _confirm_and_cache_pooled_results(
             unconfirmed_result.gremlin, unconfirmed_result.selected_tests, confirmed_result, gremlin_session
         )
     return confirmed
+
+
+def _queue_hung_worker_notices(hung_gremlin_ids: Sequence[str], gremlin_session: GremlinSession) -> None:
+    """Tell the terminal summary whose workers the hung-worker watchdog killed; the pool already logged each."""
+    for gremlin_id in hung_gremlin_ids:
+        _queue_terminal_notice(
+            gremlin_session,
+            f'pytest-gremlins: warning: the hung-worker watchdog killed the worker of gremlin {gremlin_id} after it '
+            'ran past its mutant timeout. The gremlin is re-run alone to settle its verdict.',
+        )
 
 
 def _cache_final_worker_result(
