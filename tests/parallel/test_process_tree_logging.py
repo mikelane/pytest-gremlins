@@ -7,6 +7,7 @@ import os
 import signal
 import subprocess
 import sys
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from process_helpers import (  # type: ignore[import-not-found]
@@ -88,3 +89,59 @@ class DescribeRunBoundedTimeoutTrace:
             kill_quietly(int(wait_for_file(pid_file)))
 
         assert len(_messages_containing(caplog, 'still open', 'outside its group')) == 1
+
+
+DEAD_WATCHDOG_PID = 424242
+
+
+class _DeadWatchdog:
+    def __init__(self) -> None:
+        self.owner = os.getpid()
+        self.process = SimpleNamespace(pid=DEAD_WATCHDOG_PID)
+
+    def has_died(self) -> bool:
+        return True
+
+    def discard(self) -> None:
+        return None
+
+
+class _LiveWatchdog:
+    def __init__(self) -> None:
+        self.owner = os.getpid()
+
+    def has_died(self) -> bool:
+        return False
+
+    def tell(self, action: str, group: int) -> None:
+        self.told = (action, group)
+
+
+def _fail_to_start() -> _LiveWatchdog:
+    raise OSError('no python to start')
+
+
+@pytest.mark.small
+@posix_only
+class DescribeWatchdogTrace:
+    def it_logs_that_the_watchdog_helper_could_not_start(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+        monkeypatch.setattr(process_tree, '_watchdog', None)
+        monkeypatch.setattr(process_tree, '_Watchdog', _fail_to_start)
+
+        process_tree._tell_watchdog('+', os.getpid())
+
+        assert len(_messages_containing(caplog, 'Could not start the watchdog', 'no python to start')) == 1
+
+    def it_logs_that_a_dead_watchdog_was_replaced(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+        monkeypatch.setattr(process_tree, '_watchdog', _DeadWatchdog())
+        monkeypatch.setattr(process_tree, '_Watchdog', _LiveWatchdog)
+
+        process_tree._tell_watchdog('+', os.getpid())
+
+        assert len(_messages_containing(caplog, f'watchdog helper (pid {DEAD_WATCHDOG_PID}) had died')) == 1

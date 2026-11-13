@@ -275,26 +275,45 @@ def _tell_watchdog(action: str, group: int) -> None:
     A watchdog that died is replaced, and the commands still running are handed to the new one, so they stay
     protected.
     """
-    global _watchdog  # noqa: PLW0603 - one watchdog per process
     if sys.platform == 'win32':
         return
+    died_pid, start_error = _update_watchdog(action, group)
+    # Logged after the lock is released: a thread that waits on a logging lock while holding the registry lock would
+    # deadlock a SIGTERM handler that interrupts the logging thread and then waits on the registry lock.
+    if died_pid is not None:
+        logger.debug('The watchdog helper (pid %d) had died; starting a new one for the test commands', died_pid)
+    if start_error is not None:
+        logger.debug(
+            'Could not start the watchdog helper; a SIGKILL of this process would leave its commands running: %s',
+            start_error,
+        )
+
+
+def _update_watchdog(action: str, group: int) -> tuple[int | None, OSError | None]:
+    """Replace a dead watchdog, then tell the current one; return the dead one's pid and any error starting one."""
+    global _watchdog  # noqa: PLW0603 - one watchdog per process
+    died_pid: int | None = None
     with _live_commands_lock:
         if _watchdog is not None and _watchdog.owner == os.getpid() and _watchdog.has_died():
+            died_pid = _watchdog.process.pid
             _watchdog.discard()
             _watchdog = None
         is_new = _watchdog is None or _watchdog.owner != os.getpid()
         if is_new:
             if action == '-' and not _own_live_commands():
-                return
-            with contextlib.suppress(OSError):
+                return died_pid, None
+            try:
                 _watchdog = _Watchdog()
+            except OSError as error:
+                return died_pid, error
         current = _watchdog
         if current is None:
-            return
+            return died_pid, None
         groups = [process.pid for process in _own_live_commands()] if is_new else [group]
         for known_group in groups:
             with contextlib.suppress(OSError, ValueError):
                 current.tell('+' if is_new else action, known_group)
+    return died_pid, None
 
 
 def live_command_count() -> int:
