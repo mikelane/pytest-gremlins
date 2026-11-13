@@ -431,7 +431,7 @@ def sigterm_cleanup() -> Iterator[None]:
     replaced = _install_sigterm_handler(previous)  # pragma: posix cover
     try:  # pragma: posix cover
         yield
-    finally:
+    finally:  # pragma: posix cover
         signal.signal(signal.SIGTERM, replaced if replaced is not None else signal.SIG_DFL)
 
 
