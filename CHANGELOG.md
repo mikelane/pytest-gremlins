@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **This release publishes everything listed under 1.14.0. Nothing in the package changes beyond that.**
 
-1.14.0 was tagged but never published to PyPI. Two release-gate tests failed on the tagged commit, so upgrading from
-1.13.2 brings in everything listed under 1.14.0 below, including its upgrade notes.
+1.14.0 was tagged but never published to PyPI, because two release-gate tests failed on the tagged commit. Upgrading
+from 1.13.2 therefore brings in every 1.14.0 change. Read the
+[1.14.0 notes](https://pytest-gremlins.readthedocs.io/en/latest/changelog/#v1140-2026-11-13) before upgrading,
+especially their upgrade notes.
 
 ### Internal
 
