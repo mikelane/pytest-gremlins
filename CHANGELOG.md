@@ -60,8 +60,10 @@ that timed out before still scores TIMEOUT, and a hung worker never produced a v
 ### Fix
 
 - **A hung worker in a parallel run is now ended at the per-gremlin deadline.** A gremlin whose worker stopped
-  answering used to hold up the whole run. The parent now ends the worker 10 seconds after the mutant timeout,
-  scores the gremlin TIMEOUT, rebuilds the pool and re-dispatches the gremlins that were in flight. (#976, #987)
+  answering used to hold up the whole run. The parent now ends the worker 10 seconds after the mutant timeout and
+  scores the gremlin TIMEOUT in the pooled run, and a solo confirmation run decides the final verdict. It rebuilds
+  the pool and re-dispatches only the gremlins in flight that are still inside their timeout. Those that already
+  used their whole timeout score TIMEOUT. (#976, #987)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#a-hung-worker-cannot-stall-a-parallel-run)
 - **A mutant could run past `--gremlin-mutant-timeout`, in one case for 74 minutes with a 30 second timeout.** The
   timeout ended only the test command's own process, so a child it started could keep the output open and hold
@@ -71,8 +73,7 @@ that timed out before still scores TIMEOUT, and a hung worker never produced a v
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
 - **A failed pre-scan shard said nothing about why.** Each shard now runs with its own pytest cache directory and
   no bytecode writes, so shards no longer share writable state. When a shard exits with an unexpected code or leaves
-  no coverage data, one line on stderr names the shard and shows the tail of its output, which is also kept in
-  `output.log` in the shard directory. (#996, #998)
+  no coverage data, one line on stderr names the shard and shows the last 1000 bytes of its output. (#996, #998)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#parallel-coverage-pre-scan)
 - **An interrupted run lost every finished result.** The cache was written once, at the end. Final verdicts are now
   cached as they arrive and committed every 25 results or 5 seconds, so Ctrl-C, SIGTERM, an OOM kill or a CI timeout
