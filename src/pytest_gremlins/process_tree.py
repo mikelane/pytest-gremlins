@@ -101,37 +101,41 @@ def run_bounded(
         subprocess.TimeoutExpired: If the command outlasted ``timeout``. Its process tree has been killed, and
             the output read before the kill is attached.
     """
-    process = _start(command, cwd=cwd, env=env)
-    _register(process)
-    try:
-        return _wait_for(process, command, timeout)
-    finally:
-        _unregister(process)
+    return _wait_for(_start(command, cwd=cwd, env=env), command, timeout)
 
 
 def _wait_for(
     process: subprocess.Popen[bytes], command: Sequence[str], timeout: float
 ) -> subprocess.CompletedProcess[bytes]:
+    """Register the command and wait for it, leaving it killed, reaped and unregistered on every exit.
+
+    The outer handler covers the whole body, including the instants between catching the timeout and starting to end
+    the tree, so an interrupt landing anywhere still kills the group and reaps the command. Registering the command
+    is inside it too, for the same reason. A command that returned normally has already exited.
+    """
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired as expired:
         try:
+            _register(process)
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as expired:
             _terminate_tree(process)
-        finally:
-            # An interrupt during the grace period still reaps the command and closes its pipes.
             stdout, stderr = _drain(process)
-        # The exit status tells whether SIGTERM was enough (-15) or the group needed SIGKILL (-9).
-        logger.debug(
-            'Test command (pid %d) outlasted %ss; its process group was ended, exit status %s',
-            process.pid,
-            timeout,
-            process.returncode,
-        )
-        raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from expired
+            # The exit status tells whether SIGTERM was enough (-15) or the group needed SIGKILL (-9).
+            logger.debug(
+                'Test command (pid %d) outlasted %ss; its process group was ended, exit status %s',
+                process.pid,
+                timeout,
+                process.returncode,
+            )
+            raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from expired
+    except subprocess.TimeoutExpired:
+        raise
     except BaseException:
         _kill_tree(process)
         _drain(process)
         raise
+    finally:
+        _unregister(process)
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
