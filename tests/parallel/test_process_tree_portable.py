@@ -28,6 +28,7 @@ class FakeProcess:
         self.stdout = FakePipe()
         self.stderr = FakePipe()
         self.was_killed = False
+        self.was_reaped = False
         self._communicate_error = communicate_error
 
     def communicate(self, timeout: float | None = None) -> tuple[bytes, bytes]:  # noqa: ARG002 - Popen's signature
@@ -36,6 +37,7 @@ class FakeProcess:
         return b'out', b'err'
 
     def wait(self, timeout: float | None = None) -> int:  # noqa: ARG002 - Popen's signature
+        self.was_reaped = True
         return self.returncode
 
     def kill(self) -> None:
@@ -96,6 +98,14 @@ class DescribeDrain:
         output = process_tree._drain(as_popen(process))
 
         assert output == (b'partial', b'')
+
+    def it_still_reaps_the_killed_command_when_the_drain_is_interrupted(self) -> None:
+        process = FakeProcess(communicate_error=KeyboardInterrupt())
+
+        with pytest.raises(KeyboardInterrupt):
+            process_tree._drain(as_popen(process))
+
+        assert process.was_reaped is True
 
     @pytest.mark.skipif(sys.platform == 'win32', reason='only POSIX closes the pipes of the abandoned command')
     def it_closes_the_pipes_it_gave_up_on(self) -> None:

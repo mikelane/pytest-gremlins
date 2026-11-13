@@ -525,6 +525,10 @@ def _drain(process: subprocess.Popen[bytes]) -> tuple[bytes, bytes]:
     except subprocess.TimeoutExpired as still_open:
         _abandon_pipes(process)
         return still_open.stdout or b'', still_open.stderr or b''
+    except BaseException:
+        # An interrupt must not leave the killed command as a zombie that nothing will ever reap.
+        _abandon_pipes(process)
+        raise
     return stdout, stderr
 
 
