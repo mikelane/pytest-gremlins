@@ -8,6 +8,7 @@ evaluates and skips, would hide measured Windows code from the Windows report.
 
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 from typing import cast
 import warnings
@@ -32,9 +33,12 @@ def _load_config(monkeypatch: pytest.MonkeyPatch, other_platform: str | None) ->
 
 
 def _excluded_lines(cov: coverage.Coverage) -> set[int]:
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')  # no data was collected: only the exclusion analysis is wanted
-        _, _, excluded, _, _ = cov.analysis2(str(PROCESS_TREE))
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')  # no data was collected: only the exclusion analysis is wanted
+            _, _, excluded, _, _ = cov.analysis2(str(PROCESS_TREE))
+    finally:
+        cov.get_data().close(force=True)  # the analysis opens a database connection that nothing else closes
     return set(excluded)
 
 
@@ -97,6 +101,17 @@ class DescribePosixCoverPragma:
         excluded = _excluded_lines(_load_config(monkeypatch, 'posix'))
 
         assert _line_of(posix_only_statement) in excluded
+
+    def it_leaves_no_database_connection_open_after_the_analysis(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cov = _load_config(monkeypatch, 'posix')
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            _excluded_lines(cov)
+            del cov
+            gc.collect()
+
+        assert [str(warning.message) for warning in caught if 'unclosed database' in str(warning.message)] == []
 
     def it_adds_the_posix_pragma_to_the_exclude_list_when_measuring_on_windows(
         self, monkeypatch: pytest.MonkeyPatch
