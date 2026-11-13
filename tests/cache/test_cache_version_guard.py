@@ -168,7 +168,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'plugin.py': '4d7e884b3404303eb34832cbc9340728defa7a0389221cf3f26a6176887081ee',  # pragma: allowlist secret
     # --
-    'process_tree.py': '591380e4685a122478e2f93e0e14864560577a7befcf862fc76d290638e93713',  # pragma: allowlist secret
+    'process_tree.py': '6907cd2c4e765b184724f701adf3fe0137ea6640a83b0954f5ec92b346edf5e6',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --

@@ -173,7 +173,7 @@ for group in groups:
 _DARWIN_F_SETNOSIGPIPE = 73  # <sys/fcntl.h>; the ``fcntl`` module exposes it only in newer Pythons
 
 
-def _suppress_sigpipe_on_write(pipe: IO[bytes] | None) -> None:
+def _suppress_sigpipe_on_write(pipe: IO[bytes] | None) -> None:  # pragma: posix cover
     """Make a write to a closed ``pipe`` fail with ``BrokenPipeError`` instead of raising SIGPIPE, where supported.
 
     macOS delivers a pipe-write SIGPIPE to the process rather than reliably to the writing thread, so masking it in
@@ -188,7 +188,7 @@ def _suppress_sigpipe_on_write(pipe: IO[bytes] | None) -> None:
 
 
 @contextlib.contextmanager
-def _sigpipe_blocked() -> Iterator[None]:
+def _sigpipe_blocked() -> Iterator[None]:  # pragma: posix cover
     """Block SIGPIPE in this thread and consume one raised inside, restoring the mask even if interrupted.
 
     Linux delivers a pipe-write SIGPIPE to the writing thread, so blocking it there turns the signal into ``EPIPE``.
@@ -205,7 +205,7 @@ def _sigpipe_blocked() -> Iterator[None]:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
 
 
-class _WatchdogProcess(subprocess.Popen[bytes]):
+class _WatchdogProcess(subprocess.Popen[bytes]):  # pragma: posix cover
     """The watchdog's ``Popen``, which only the process that started it may finalize.
 
     A forked child inherits the object but not the watchdog, which is not its child. ``Popen`` would warn that the
@@ -229,7 +229,7 @@ class _WatchdogProcess(subprocess.Popen[bytes]):
             super().__del__()
 
 
-class _Watchdog:
+class _Watchdog:  # pragma: posix cover
     """A helper process, in its own session, that ends this process's test commands if this process dies.
 
     The write end of its stdin is the deadman pipe. It reaches end-of-file only when every holder of the write end
@@ -269,7 +269,7 @@ def watchdog_pid() -> int | None:
     return current.process.pid if current is not None and current.owner == os.getpid() else None
 
 
-def _tell_watchdog(action: str, group: int) -> None:
+def _tell_watchdog(action: str, group: int) -> None:  # pragma: posix cover
     """Tell the watchdog about a command's process group; best effort, since the run itself does not need it.
 
     A watchdog that died is replaced, and the commands still running are handed to the new one, so they stay
@@ -289,7 +289,7 @@ def _tell_watchdog(action: str, group: int) -> None:
         )
 
 
-def _update_watchdog(action: str, group: int) -> tuple[int | None, OSError | None]:
+def _update_watchdog(action: str, group: int) -> tuple[int | None, OSError | None]:  # pragma: posix cover
     """Replace a dead watchdog, then tell the current one; return the dead one's pid and any error starting one."""
     global _watchdog  # noqa: PLW0603 - one watchdog per process
     died_pid: int | None = None
@@ -343,10 +343,10 @@ def _stop_watchdog() -> None:
     current = _watchdog
     if current is None or current.owner != os.getpid():
         return
-    with contextlib.suppress(OSError, ValueError):
+    with contextlib.suppress(OSError, ValueError):  # pragma: posix cover
         if current.process.stdin is not None:
             current.process.stdin.close()
-    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+    with contextlib.suppress(subprocess.TimeoutExpired, OSError):  # pragma: posix cover
         current.process.wait(timeout=WATCHDOG_STOP_SECONDS)
 
 
@@ -369,7 +369,7 @@ def kill_live_commands_on_error() -> Iterator[None]:
         raise
 
 
-def _install_sigterm_handler(previous: _SignalHandler) -> _SignalHandler:
+def _install_sigterm_handler(previous: _SignalHandler) -> _SignalHandler:  # pragma: posix cover
     replaced = signal.getsignal(signal.SIGTERM)
 
     def end_commands_then_terminate(signum: int, frame: FrameType | None) -> None:
@@ -386,7 +386,7 @@ def _install_sigterm_handler(previous: _SignalHandler) -> _SignalHandler:
     return replaced
 
 
-def _stop_child_processes() -> None:
+def _stop_child_processes() -> None:  # pragma: posix cover
     """SIGTERM the multiprocessing children (the pool workers) so their own cleanup ends their commands."""
     try:
         children = multiprocessing.active_children()
@@ -408,7 +408,7 @@ def install_worker_sigterm_cleanup() -> None:
     ``timeout``, ``killpg``), and its commands run in their own sessions, so they would otherwise run on.
     """
     if sys.platform != 'win32' and signal.getsignal(signal.SIGTERM) != signal.SIG_IGN:
-        _install_sigterm_handler(signal.SIG_DFL)
+        _install_sigterm_handler(signal.SIG_DFL)  # pragma: posix cover
 
 
 @contextlib.contextmanager
@@ -428,14 +428,14 @@ def sigterm_cleanup() -> Iterator[None]:
     ):
         yield
         return
-    replaced = _install_sigterm_handler(previous)
-    try:
+    replaced = _install_sigterm_handler(previous)  # pragma: posix cover
+    try:  # pragma: posix cover
         yield
     finally:
         signal.signal(signal.SIGTERM, replaced if replaced is not None else signal.SIG_DFL)
 
 
-def _forget_inherited_commands() -> None:
+def _forget_inherited_commands() -> None:  # pragma: posix cover
     global _live_commands_lock, _watchdog  # noqa: PLW0603 - a lock held by another thread at fork time stays locked
     _live_commands_lock = threading.RLock()
     _live_commands.clear()
@@ -450,7 +450,7 @@ def _forget_inherited_commands() -> None:
 
 
 if hasattr(os, 'register_at_fork'):
-    os.register_at_fork(after_in_child=_forget_inherited_commands)
+    os.register_at_fork(after_in_child=_forget_inherited_commands)  # pragma: posix cover
 
 
 def _start(command: Sequence[str], *, cwd: str, env: Mapping[str, str]) -> subprocess.Popen[bytes]:
@@ -463,7 +463,7 @@ def _start(command: Sequence[str], *, cwd: str, env: Mapping[str, str]) -> subpr
             stderr=subprocess.PIPE,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
         )
-    return subprocess.Popen(  # Intentional: runs pytest test commands
+    return subprocess.Popen(  # Intentional: runs pytest test commands  # pragma: posix cover
         command,
         cwd=cwd,
         env=dict(env),
@@ -480,7 +480,7 @@ def _terminate_tree(process: subprocess.Popen[bytes]) -> None:
     Reaping the command first is safe: its group id stays reserved while any member of the group is alive.
     """
     try:
-        if sys.platform != 'win32':
+        if sys.platform != 'win32':  # pragma: posix cover
             _signal_group(process, signal.SIGTERM)
             with contextlib.suppress(subprocess.TimeoutExpired):
                 process.wait(timeout=TERMINATE_GRACE_SECONDS)
@@ -491,11 +491,11 @@ def _terminate_tree(process: subprocess.Popen[bytes]) -> None:
 def _kill_tree(process: subprocess.Popen[bytes]) -> None:
     if sys.platform == 'win32':
         _taskkill_tree(process)
-    else:
+    else:  # pragma: posix cover
         _signal_group(process, signal.SIGKILL)
 
 
-def _signal_group(process: subprocess.Popen[bytes], signal_number: int) -> None:
+def _signal_group(process: subprocess.Popen[bytes], signal_number: int) -> None:  # pragma: posix cover
     # The command is its own group leader (start_new_session), so its pid is the group id.
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(process.pid, signal_number)
@@ -534,7 +534,7 @@ def _abandon_pipes(process: subprocess.Popen[bytes]) -> None:
         process.pid,
         PIPE_DRAIN_SECONDS,
     )
-    if sys.platform != 'win32':
+    if sys.platform != 'win32':  # pragma: posix cover
         for pipe in (process.stdout, process.stderr):
             if pipe is not None:
                 pipe.close()
