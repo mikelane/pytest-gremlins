@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 def sigint_is_not_ignored() -> Generator[None, None, None]:
     """Give a test run that was started with SIGINT ignored the usual Ctrl-C handler (#1004).
 
-    A shell starts a background job (``pytest &``, ``nohup``) with SIGINT ignored, and every child inherits that
+    A non-interactive shell starts a background job (``pytest &``) with SIGINT ignored, and every child inherits that
     across ``exec``. A caller that ignores SIGINT can never be interrupted, so the tests that interrupt
     ``run_bounded`` would wait forever for something that cannot happen, on every Python version. A Python handler,
     unlike an ignored signal, is reset to the default by ``exec``, so the children get Python's own handler again.
