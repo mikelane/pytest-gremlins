@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -43,6 +44,15 @@ class FakeProcess:
 
 def as_popen(process: FakeProcess) -> subprocess.Popen[bytes]:
     return cast('subprocess.Popen[bytes]', process)
+
+
+def fake_subprocess(run: object) -> SimpleNamespace:
+    """Stand in for the ``subprocess`` module as ``process_tree`` sees it, leaving the global ``subprocess.run`` alone.
+
+    Patching ``subprocess.run`` itself would make monkeypatch restore the small-test guard that pytest-test-categories
+    installs, and the guard would then break every later medium test that spawns a process.
+    """
+    return SimpleNamespace(run=run, TimeoutExpired=subprocess.TimeoutExpired)
 
 
 class FakePipe:
@@ -109,7 +119,7 @@ class DescribeTaskkillTree:
         def failing_run(*_args: object, **_kwargs: object) -> None:
             raise failure
 
-        monkeypatch.setattr('pytest_gremlins.process_tree.subprocess.run', failing_run)
+        monkeypatch.setattr(process_tree, 'subprocess', fake_subprocess(run=failing_run))
         process = FakeProcess()
 
         process_tree._taskkill_tree(as_popen(process))
@@ -122,7 +132,7 @@ class DescribeTaskkillTree:
         def recording_run(command: list[str], **_kwargs: object) -> None:
             commands.append(command)
 
-        monkeypatch.setattr('pytest_gremlins.process_tree.subprocess.run', recording_run)
+        monkeypatch.setattr(process_tree, 'subprocess', fake_subprocess(run=recording_run))
         process = FakeProcess()
 
         process_tree._taskkill_tree(as_popen(process))
