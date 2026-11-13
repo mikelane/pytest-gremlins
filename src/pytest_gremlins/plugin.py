@@ -2682,7 +2682,8 @@ def _collect_coverage_then_run_gremlins(
     """Run the coverage pre-scan, check the unmutated suite loads, then run every gremlin.
 
     Returns:
-        False when ``--gremlin-explain`` stopped after the pre-scan, so no gremlin ran.
+        True once the gremlins ran, so their results are on ``gremlin_session``. False when ``--gremlin-explain``
+        stopped after the pre-scan, so no gremlin ran.
     """
     config = session.config
     _collect_coverage(gremlin_session, rootdir)
