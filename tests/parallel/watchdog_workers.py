@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 
+from pytest_gremlins import process_tree
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
@@ -60,3 +61,38 @@ def run_with_test_command(
     child.kill()
     child.wait()
     return WorkerResult(gremlin_id=gremlin_id, status=GremlinResultStatus.SURVIVED, execution_time_ms=seconds * 1000)
+
+
+# Ignores SIGTERM, starts a SIGTERM-ignoring grandchild that stays in the command's process group, writes both
+# pids, then hangs.
+_HANGING_COMMAND = """
+import os, signal, subprocess, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+grandchild = subprocess.Popen([sys.executable, '-c', (
+    'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(3600)'
+)])
+open(sys.argv[1], 'w').write(f'{os.getpid()} {grandchild.pid}')
+time.sleep(3600)
+"""
+
+
+def run_hanging_command_in_run_bounded(
+    gremlin_id: str,
+    test_command: list[str],
+    rootdir: str,
+    env_vars: dict[str, str],  # noqa: ARG001
+    timeout: int,  # noqa: ARG001
+) -> WorkerResult:
+    """Run a hanging test command through ``run_bounded`` with ``test_command[0]`` seconds as its own timeout.
+
+    The command writes ``<command pid> <grandchild pid>`` to ``<rootdir>/<gremlin_id>.pids``. Given a timeout far
+    past the pool's, a TIMEOUT verdict can only come from the pool's per-gremlin deadline killing this worker.
+    """
+    pid_file = str(Path(rootdir, f'{gremlin_id}.pids'))
+    process_tree.run_bounded(
+        [sys.executable, '-c', _HANGING_COMMAND, pid_file],
+        cwd=rootdir,
+        env=dict(os.environ),
+        timeout=float(test_command[0]),
+    )
+    return WorkerResult(gremlin_id=gremlin_id, status=GremlinResultStatus.SURVIVED)

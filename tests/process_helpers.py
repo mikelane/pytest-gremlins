@@ -76,6 +76,12 @@ def kill_quietly(pid: int) -> None:
         return
 
 
+def kill_all_quietly(pids: list[int]) -> None:
+    """Force-kill every pid in ``pids`` that is still there, as ``kill_quietly`` does for one."""
+    for pid in pids:
+        kill_quietly(pid)
+
+
 def pids_with_env_marker(marker: str) -> list[int]:
     """Return the pids of this user's other processes whose environment mentions ``marker`` (POSIX, via ``ps``).
 

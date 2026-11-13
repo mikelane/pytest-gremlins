@@ -172,7 +172,6 @@ class DescribeRunBoundedInterrupt:
             is_grandchild_gone = is_gone(grandchild_pid)
         finally:
             gremlins_run.kill()
-            if grandchild_pid:
-                kill_quietly(grandchild_pid)
+            kill_quietly(grandchild_pid)
 
         assert is_grandchild_gone

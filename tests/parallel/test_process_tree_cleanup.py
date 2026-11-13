@@ -135,7 +135,7 @@ class DescribeLiveCommandRegistry:
 
 
 @pytest.mark.small
-class DescribeTerminateAllOnError:
+class DescribeKillLiveCommandsOnError:
     def it_ends_every_command_when_the_block_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         ended: list[bool] = []
         monkeypatch.setattr(process_tree, 'kill_live_commands', lambda: ended.append(True))
@@ -176,8 +176,7 @@ class DescribeSigtermCleanup:
             is_command_gone = is_gone(command_pid)
         finally:
             caller.kill()
-            if command_pid:
-                kill_quietly(command_pid)
+            kill_quietly(command_pid)
 
         assert (is_command_gone, returncode) == (True, -signal.SIGTERM)
 
@@ -202,8 +201,7 @@ class DescribeSigtermCleanup:
             is_command_gone = is_gone(command_pid)
         finally:
             caller.kill()
-            if command_pid:
-                kill_quietly(command_pid)
+            kill_quietly(command_pid)
 
         # Exit status 0 is the previous handler's sys.exit(0): the cleanup did not also re-raise SIGTERM after it.
         assert (is_command_gone, seen_file.exists(), returncode) == (True, True, 0)
@@ -262,8 +260,7 @@ class DescribeSigtermCleanup:
         finally:
             caller.kill()
             caller.wait(timeout=REAP_DEADLINE_SECONDS)
-            if command_pid:
-                kill_quietly(command_pid)
+            kill_quietly(command_pid)
 
         assert has_survived
 
@@ -307,14 +304,14 @@ class DescribeSigtermCleanupLimits:
             command_pid = int(wait_for_file(pid_file))
             caller.send_signal(signal.SIGTERM)
             time.sleep(POLL_SECONDS * 10)
-            is_still_running = caller.poll() is None and survives_for(command_pid, SURVIVAL_OBSERVATION_SECONDS)
+            caller_status = caller.poll()
+            is_command_alive = survives_for(command_pid, SURVIVAL_OBSERVATION_SECONDS)
         finally:
             caller.kill()
             caller.wait(timeout=REAP_DEADLINE_SECONDS)
-            if command_pid:
-                kill_quietly(command_pid)
+            kill_quietly(command_pid)
 
-        assert is_still_running
+        assert (caller_status, is_command_alive) == (None, True)
 
     def it_terminates_multiprocessing_children_when_the_main_process_gets_sigterm(self, tmp_path: Path) -> None:
         pid_file = tmp_path / 'child.pid'
@@ -340,8 +337,7 @@ class DescribeSigtermCleanupLimits:
             is_worker_gone = is_gone(worker_pid)
         finally:
             caller.kill()
-            if worker_pid:
-                kill_quietly(worker_pid)
+            kill_quietly(worker_pid)
 
         assert (is_worker_gone, returncode) == (True, -signal.SIGTERM)
 

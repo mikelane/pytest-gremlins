@@ -19,7 +19,7 @@ import sys
 import time
 
 from process_helpers import (  # type: ignore[import-not-found]
-    kill_quietly,
+    kill_all_quietly,
     wait_until_no_process_has_env_marker,
 )
 import pytest
@@ -132,8 +132,7 @@ class DescribeKilledParallelRun:
             _kill_group(second_run)
 
         leftover = wait_until_no_process_has_env_marker(f'{_RUN_MARKER_NAME}={_RUN_MARKER_VALUE}')
-        for pid in leftover:
-            kill_quietly(pid)
+        kill_all_quietly(leftover)
 
         assert (rows_kept > 0, hits == rows_kept, leftover) == (True, True, [])
 

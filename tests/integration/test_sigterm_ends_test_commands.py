@@ -84,7 +84,6 @@ def it_ends_the_hanging_test_command_when_the_main_process_gets_sigterm(
         is_command_gone = is_gone(command_pid)
     finally:
         gremlins_run.kill()
-        if command_pid:
-            kill_quietly(command_pid)
+        kill_quietly(command_pid)
 
     assert (is_command_gone, gremlins_run.returncode) == (True, -signal.SIGTERM)

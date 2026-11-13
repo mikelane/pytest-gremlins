@@ -20,11 +20,11 @@ def _is_blocked() -> bool:
 
 
 class DescribeSigpipeBlocked:
-    def it_restores_the_mask_after_the_block(self) -> None:
+    def it_blocks_sigpipe_inside_the_block_and_restores_the_mask_after_it(self) -> None:
         with process_tree._sigpipe_blocked():
-            assert _is_blocked()
+            is_blocked_inside = _is_blocked()
 
-        assert not _is_blocked()
+        assert (is_blocked_inside, _is_blocked()) == (True, False)
 
     def it_restores_the_mask_when_the_body_raises(self) -> None:
         with pytest.raises(OSError, match='broken'), process_tree._sigpipe_blocked():

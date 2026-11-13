@@ -27,7 +27,10 @@ if TYPE_CHECKING:
 
 LONG_SLEEP_SECONDS = 3600
 SHORT_TIMEOUT_SECONDS = 1.0
-MID_GRACE_SECONDS = 1.25
+GRACE_PROBE_TIMEOUT_SECONDS = 2.0
+"""Long enough for the command to write its pid file before the timeout fires, under CI load."""
+MID_GRACE_SECONDS = GRACE_PROBE_TIMEOUT_SECONDS + process_tree.TERMINATE_GRACE_SECONDS / 2
+"""Half-way through the SIGTERM grace period that follows the timeout."""
 ONE_MEBIBYTE = 1024 * 1024
 REPEATED_RUNS = 20
 TINY_TIMEOUT_SECONDS = 0.05
@@ -90,8 +93,7 @@ class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
             is_command_gone = is_gone(command_pid)
         finally:
             caller.kill()
-            if command_pid:
-                kill_quietly(command_pid)
+            kill_quietly(command_pid)
 
         assert is_command_gone
 
@@ -118,8 +120,7 @@ class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
             is_command_gone = is_gone(command_pid)
         finally:
             caller.kill()
-            if command_pid:
-                kill_quietly(command_pid)
+            kill_quietly(command_pid)
 
         assert is_command_gone
 
@@ -136,14 +137,13 @@ class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
         command_pid = 0
         try:
             with pytest.raises(KeyboardInterrupt):
-                _run(python(_sleeper_writing_pid(pid_file, ignore_sigterm=True)), tmp_path, STARTUP_DEADLINE_SECONDS)
+                _run(python(_sleeper_writing_pid(pid_file, ignore_sigterm=True)), tmp_path, GRACE_PROBE_TIMEOUT_SECONDS)
             command_pid = int(wait_for_file(pid_file))
             is_command_gone = is_gone(command_pid)
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
-            if command_pid:
-                kill_quietly(command_pid)
+            kill_quietly(command_pid)
 
         assert (is_command_gone, _open_fd_count()) == (True, fds_before)
 

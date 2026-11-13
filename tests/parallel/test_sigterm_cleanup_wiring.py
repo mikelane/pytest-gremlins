@@ -63,8 +63,7 @@ class DescribeWorkerPoolsInstallSigtermCleanup:
 
         pool._init_worker(cast('Any', reports))
 
-        assert calls == ['sigterm cleanup']
-        assert pool._start_reports is reports
+        assert (calls, pool._start_reports is reports) == (['sigterm cleanup'], True)
 
     def it_gives_the_persistent_pool_workers_the_sigterm_cleanup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_RecordingExecutor, 'created_with', {})  # no stale value from another test
