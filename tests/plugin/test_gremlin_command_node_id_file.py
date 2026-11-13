@@ -110,7 +110,7 @@ class DescribeRunUnmutated:
         def capture(command: list[str], **_kwargs: object) -> None:
             captured.extend(command)
 
-        with patch('pytest_gremlins.control_run.subprocess.run', autospec=True, side_effect=capture):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=capture):
             run_unmutated(BASE_COMMAND, node_ids, tmp_path, {}, timeout=5, **kwargs)
         return captured
 
@@ -135,7 +135,7 @@ class DescribeRunControlCommand:
             captured.append(command)
             return subprocess.CompletedProcess(command, 0, b'', b'')
 
-        with patch('pytest_gremlins.control_run.subprocess.run', autospec=True, side_effect=finish):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=finish):
             run_control(BASE_COMMAND, node_ids, tmp_path, {}, timeout=5, **kwargs)
         return captured
 
@@ -160,7 +160,7 @@ class DescribeRunControlCommand:
     def it_reports_a_launch_failure_as_a_run_that_does_not_load(self, tmp_path: Path) -> None:
         too_long = OSError(206, 'The filename or extension is too long')
 
-        with patch('pytest_gremlins.control_run.subprocess.run', autospec=True, side_effect=too_long):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=too_long):
             outcome = run_control(BASE_COMMAND, [], tmp_path, {}, timeout=5)
 
         assert outcome.loads_cleanly is False
@@ -176,7 +176,7 @@ class DescribeCollectUnmutatedCommand:
             captured.extend(command)
             return subprocess.CompletedProcess(command, 0, b'', b'')
 
-        with patch('pytest_gremlins.control_run.subprocess.run', autospec=True, side_effect=finish):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=finish):
             _collect_unmutated(session, tmp_path, REPORTED_NODE_IDS)
 
         assert not set(REPORTED_NODE_IDS) & set(captured)
@@ -201,7 +201,7 @@ class DescribeTimeoutConfirmationCommand:
             captured.extend(command)
             return subprocess.CompletedProcess(command, 0)
 
-        with patch('pytest_gremlins.control_run.subprocess.run', autospec=True, side_effect=finish):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=finish):
             _confirm_timeout_kill(
                 GremlinResult(gremlin=gremlin, status=GremlinResultStatus.TIMEOUT),
                 REPORTED_NODE_IDS,

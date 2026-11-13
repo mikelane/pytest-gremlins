@@ -342,6 +342,60 @@ that repeats counts as `TIMEOUT` (a kill) only when the gremlin's tests, run wit
 mutant, finish within half the timeout. Otherwise the gremlin is reported as `ERROR`. See
 [Error: Test timeout exceeded](../guide/troubleshooting.md#error-test-timeout-exceeded).
 
+Every test run (gremlin, timeout confirmation, control run and coverage pre-scan) starts in its own process
+group (`start_new_session` on POSIX, `CREATE_NEW_PROCESS_GROUP` on Windows). On a timeout or an interrupt the
+whole group is ended, so children of a timed-out test do not pile up, and reading the output afterwards is bounded
+so a stray process holding the pipes cannot stall a worker. This lives in `pytest_gremlins.process_tree`.
+
+Because a command in its own session no longer shares the caller's process group, signals sent to that group do not
+reach it. `process_tree` keeps a registry of the live commands, each recorded with the process that started it, and
+ends them in these cases:
+
+- A SIGTERM to a pool worker (the pool initializer installs a handler): the worker ends its commands, then terminates
+  as SIGTERM would.
+- A SIGTERM to the pytest process from the coverage pre-scan until the last gremlin has run (main thread only;
+  the previous handler is called afterwards, or the default action runs, and is restored when the run ends).
+  It ends the main process's own commands, then sends SIGTERM to its child processes (the pool workers) and waits up
+  to 2 seconds for them to end theirs and exit, so under `--gremlin-parallel` no worker's command runs on. SIGINT
+  stays with pytest.
+- Where SIGTERM is ignored (`SIG_IGN`), nothing is installed and no command is ended: the caller asked for the signal
+  to have no effect, and a run is not turned into an error result that could be cached.
+- An interrupt while control runs execute in a thread pool, and interpreter exit: every command still running is ended.
+
+A SIGTERM that arrives in the instant between a command being started and being recorded in the registry
+is not handled, and that command is not ended. The window is a few microseconds and a pool worker's command is
+affected the same way. It is not closed because blocking SIGTERM around the start would be inherited by the command
+(a signal mask survives `exec`), so its own SIGTERM would stop working.
+
+SIGKILL cannot be handled, so it is covered by a deadman pipe instead. The first time a process runs a test command it
+starts a watchdog helper (`python -I -S`, in its own session) and keeps the write end of the pipe on the helper's stdin.
+It tells the watchdog `+pgid` when a command starts and `-pgid` when it has been reaped. The helper blocks reading the
+pipe; the pipe reaches end-of-file only when every holder of the write end is gone, and then the helper SIGKILLs each
+process group it still knows. The caller can die by SIGKILL of one pid or of its whole group (a CI job timeout,
+`timeout -s KILL`), an OOM kill or a crash; the watchdog is not in the caller's group, so it survives all of them.
+
+- The watchdog is a separate process, so it still runs when a mutant keeps the test command inside a C loop that
+  holds the GIL (catastrophic regex backtracking). The mutant timeout, enforced by the caller, ends such a command in
+  the normal case.
+- A forked pool worker closes the copy of its parent's pipe at fork time (`os.register_at_fork`), so a worker that
+  outlives a killed main process does not keep the pipe open. Commands and the watchdog are started with
+  `close_fds`, so they never hold a write end.
+- A watchdog that died is replaced the next time a command starts or ends, and the commands still running are
+  handed to the new one, so they stay protected.
+- Writing to a watchdog that died raises SIGPIPE, which would kill a process that left it at the default action. On
+  macOS the pipe is marked `F_SETNOSIGPIPE`, so the write fails with `BrokenPipeError` instead (macOS delivers the
+  signal to the process, not the writing thread, so masking it is not enough). Elsewhere the writing thread blocks
+  SIGPIPE for the write, consumes the one it raised and always restores its mask, even when interrupted.
+- Each worker process has its own watchdog, so a worker that is killed alone has its commands ended too.
+- At a normal exit the pipe is closed and the helper is waited for, so no zombie or `ResourceWarning` is left. A
+  forked child closes its copy of the pipe through the file object that owns it and silently drops the helper's process
+  handle, which is not its to wait for, so it prints no error or warning either.
+- The watchdog is not started on Windows. There the interrupt and exit cleanup still apply, but a hard kill of the
+  gremlins process can leave a test run's processes behind.
+- A command that starts a process in a session of its own (`setsid`) escapes both the timeout kill and the watchdog.
+- The watchdog trusts that a process group id is not reused between the command being reaped and the `-pgid`
+  message reaching it, which is microseconds.
+
 ## Performance Characteristics
 
 ### Scaling
@@ -544,3 +598,5 @@ Combined with mutation switching, coverage guidance, and incremental analysis, p
 execution makes mutation testing practical even for large codebases.
 
 The result: 8 cores means roughly 8x faster analysis. A 16-minute sequential run becomes 2 minutes.
+
+<!-- cspell:ignore SIGPIPE SETNOSIGPIPE -->

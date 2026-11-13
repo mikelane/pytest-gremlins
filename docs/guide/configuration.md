@@ -887,6 +887,20 @@ mutant_timeout = 120
 The value must be a positive integer number of seconds, at most 86400 (one day); the CLI flag wins over
 the TOML key. A changed rerun count or delay judges every gremlin again.
 
+When a run hits the limit, gremlins ends the whole process tree of that test run, not only the pytest process: the
+group gets SIGTERM, half a second to exit, then SIGKILL. On Windows the tree is ended with `taskkill /T`. Child
+processes a test started (a server fixture, a multiprocessing pool, a `subprocess` call) no longer keep running
+after the timeout, and they cannot hold the run up by keeping its output open. A process that detaches itself from
+the group (for example with `setsid`) is not killed, but gremlins stops waiting for its output after 5 seconds. An
+interrupted run (Ctrl-C) or a SIGTERM sent to gremlins or to its worker processes ends its in-flight test runs the
+same way, so a CI cancel or `timeout pytest --gremlins` leaves nothing running, also under `--gremlin-parallel`
+(the workers get the SIGTERM too). A SIGTERM that the caller set to be ignored is left ignored. A SIGKILL cannot be
+handled, but it does not leave test runs behind on Linux and macOS either: each process that runs test commands
+keeps a small watchdog process, in its own session, that kills the commands' process groups as soon as that process
+dies, however it died (a CI job timeout, `timeout -s KILL`, an OOM kill, `kill -9` of the whole group or of one
+pid). The watchdog is not started on Windows, where a hard kill of gremlins can still leave test runs behind. The
+verdict is unchanged: the gremlin is reported as a timeout.
+
 The incremental cache stores the timeout each verdict was reached under and reuses a verdict at a different timeout
 only when the new limit cannot change it. A zapped, survived or error verdict is reused when the gremlin's run took
 strictly less than the new limit; a run that took exactly the new limit, or whose time is unknown, is judged

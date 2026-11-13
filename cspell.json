@@ -13,6 +13,9 @@
     "build/**"
   ],
   "words": [
+    "pgid",
+    "taskkill",
+    "setsid",
     "Anders",
     "PYTHONOPTIMIZE",
     "ASGI",

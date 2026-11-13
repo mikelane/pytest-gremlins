@@ -39,6 +39,7 @@ from typing import (
 if TYPE_CHECKING:
     import multiprocessing
 
+from pytest_gremlins import process_tree
 from pytest_gremlins.instrumentation.spawn_hook import export_spawn_hook
 from pytest_gremlins.parallel.exit_codes import (
     COLLECTION_KILLING_TEST,
@@ -105,14 +106,7 @@ def _run_gremlin_batch(  # pragma: no cover
         export_spawn_hook(env)
 
         try:
-            result = subprocess.run(  # Intentional: runs pytest test commands
-                effective_command,
-                cwd=rootdir,
-                env=env,
-                capture_output=True,
-                timeout=timeout,
-                check=False,
-            )
+            result = process_tree.run_bounded(effective_command, cwd=rootdir, env=env, timeout=timeout)
 
             execution_time_ms = (time.monotonic() - start_time) * 1000
 
@@ -346,6 +340,7 @@ class PersistentWorkerPool:
         self._executor = ProcessPoolExecutor(
             max_workers=self._max_workers,
             mp_context=self._mp_context,
+            initializer=process_tree.install_worker_sigterm_cleanup,
         )
         self._running = True
 

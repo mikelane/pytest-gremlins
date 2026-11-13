@@ -48,7 +48,10 @@ import zlib
 from coverage.exceptions import CoverageException
 import pytest
 
-from pytest_gremlins import node_id_args
+from pytest_gremlins import (
+    node_id_args,
+    process_tree,
+)
 from pytest_gremlins.argument_files import expand_argument_files
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import (
@@ -2664,6 +2667,25 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             gremlin_session.enabled = False
         return
 
+    # The control runs and the serial pre-scan start test commands in their own sessions through run_bounded, so a
+    # SIGTERM must reach them through the same cleanup as the mutation run. The sharded pre-scan starts its shards with
+    # a plain Popen, in the caller's session, and is not covered by this (#983).
+    with process_tree.sigterm_cleanup():
+        has_run_gremlins = _collect_coverage_then_run_gremlins(session, gremlin_session, rootdir)
+    if has_run_gremlins:
+        _report_unmapped_selections(gremlin_session)
+
+
+def _collect_coverage_then_run_gremlins(
+    session: pytest.Session, gremlin_session: GremlinSession, rootdir: Path
+) -> bool:
+    """Run the coverage pre-scan, check the unmutated suite loads, then run every gremlin.
+
+    Returns:
+        True once the gremlins ran, so their results are on ``gremlin_session``. False when ``--gremlin-explain``
+        stopped after the pre-scan, so no gremlin ran.
+    """
+    config = session.config
     _collect_coverage(gremlin_session, rootdir)
 
     # If pytest-cov is active (--cov was passed), reload its in-memory coverage
@@ -2680,11 +2702,11 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         cov_plugin.cov.load()
 
     if _maybe_short_circuit_for_explain(gremlin_session):
-        return
+        return False
 
     _verify_suite_loads_unmutated(session, gremlin_session)
     gremlin_session.results = _dispatch_mutation_run(session, gremlin_session)
-    _report_unmapped_selections(gremlin_session)
+    return True
 
 
 def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: GremlinSession) -> None:
@@ -3745,13 +3767,11 @@ def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, time
     """
     try:
         with tempfile.TemporaryDirectory(prefix='pytest_gremlins_prescan_', ignore_cleanup_errors=True) as node_ids_dir:
-            subprocess.run(  # Intentional: runs pytest test commands
+            process_tree.run_bounded(
                 command_with_node_ids_file(command, node_ids, Path(node_ids_dir)),
                 cwd=str(rootdir),
-                capture_output=True,
-                timeout=timeout,
-                check=False,
                 env=_prescan_env(),
+                timeout=timeout,
             )
     except subprocess.TimeoutExpired as expired:
         raise CoveragePrescanTimeoutError(timeout) from expired
