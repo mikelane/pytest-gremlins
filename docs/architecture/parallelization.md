@@ -362,10 +362,24 @@ ends them in these cases:
   to have no effect, and a run is not turned into an error result that could be cached.
 - An interrupt while control runs execute in a thread pool, and interpreter exit: every command still running is ended.
 
-A SIGTERM that arrives in the instant between a command being started and being recorded in the registry
-is not handled, and that command is not ended. The window is a few microseconds and a pool worker's command is
-affected the same way. It is not closed because blocking SIGTERM around the start would be inherited by the command
-(a signal mask survives `exec`), so its own SIGTERM would stop working.
+A SIGINT or SIGTERM that arrives between a command being started and being recorded in the registry is held back.
+While `run_bounded` starts a command, it swaps the process's Python-level SIGINT and SIGTERM handlers for ones that
+only record the signal. Right after the command is registered, and inside the guard that kills and reaps it, the
+original handlers are put back and each recorded signal is delivered to them. If a handler raises, the command is
+killed and reaped as for any other interrupt. A pool worker calls `run_bounded` on its own main thread, so its
+commands get this protection too.
+
+The swap is not a signal mask. Blocking SIGTERM around the start would be inherited by the command (a signal mask
+survives `exec`), so its own SIGTERM would stop working. Handlers are reset by `exec`, so the command starts with
+the default dispositions.
+
+The window is still open in three cases, and a signal arriving in it leaves the command running and not recorded:
+
+- `run_bounded` is called off the main thread. Python runs signal handlers only on the main thread, so there is
+  nothing to swap.
+- The signal's current handler is the default action or `SIG_IGN`. Only handlers written in Python are swapped,
+  and the default action terminates the process without running Python code.
+- Windows. The swap is skipped there.
 
 SIGKILL cannot be handled, so it is covered by a deadman pipe instead. The first time a process runs a test command it
 starts a watchdog helper (`python -I -S`, in its own session) and keeps the write end of the pipe on the helper's stdin.
