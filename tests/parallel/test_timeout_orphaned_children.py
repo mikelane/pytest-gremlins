@@ -57,7 +57,7 @@ def _kill_if_alive(pid_file: Path) -> None:
         return
     try:
         os.kill(_grandchild_pid(pid_file), _FORCE_KILL)
-    except (ProcessLookupError, PermissionError, ValueError):
+    except (OSError, ValueError):  # OSError: the process already exited (WinError 87 on Windows)
         return
 
 

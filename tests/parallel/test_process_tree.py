@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from process_helpers import (  # type: ignore[import-not-found]
     REAP_DEADLINE_SECONDS,
     STARTUP_DEADLINE_SECONDS,
+    environment_without_coverage_hook,
     is_gone,
     kill_quietly,
     python,
@@ -33,7 +34,7 @@ posix_only = pytest.mark.skipif(sys.platform == 'win32', reason='process groups 
 
 
 def _run(command: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess[bytes]:
-    return run_bounded(command, cwd=str(cwd), env=dict(os.environ), timeout=timeout)
+    return run_bounded(command, cwd=str(cwd), env=environment_without_coverage_hook(), timeout=timeout)
 
 
 @pytest.mark.medium

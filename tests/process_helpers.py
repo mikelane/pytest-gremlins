@@ -26,6 +26,15 @@ def python(code: str) -> list[str]:
     return [sys.executable, '-c', code]
 
 
+def environment_without_coverage_hook() -> dict[str, str]:
+    """Return this process's environment minus ``COVERAGE_PROCESS_START``.
+
+    CI sets it to a relative path; a child started in another directory then prints a coverage startup
+    ConfigError to stderr, which breaks exact stderr and byte-count assertions on that child.
+    """
+    return {name: value for name, value in os.environ.items() if name != 'COVERAGE_PROCESS_START'}
+
+
 def wait_for_file(path: Path) -> str:
     """Return the text of ``path`` once it is non-empty, failing after ``STARTUP_DEADLINE_SECONDS``."""
     deadline = time.monotonic() + STARTUP_DEADLINE_SECONDS
@@ -72,7 +81,7 @@ def kill_quietly(pid: int) -> None:
         return
     try:
         os.kill(pid, _FORCE_KILL)
-    except (ProcessLookupError, PermissionError):
+    except OSError:  # already gone: ProcessLookupError on POSIX, "parameter is incorrect" on Windows
         return
 
 
