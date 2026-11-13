@@ -370,16 +370,19 @@ killed and reaped as for any other interrupt. A pool worker calls `run_bounded` 
 commands get this protection too.
 
 The swap is not a signal mask. Blocking SIGTERM around the start would be inherited by the command (a signal mask
-survives `exec`), so its own SIGTERM would stop working. Handlers are reset by `exec`, so the command starts with
-the default dispositions.
+survives `exec`), so its own SIGTERM would stop working. Handlers are reset by `exec`, so the swapped signals
+start at their default dispositions in the command.
 
 The window is still open in three cases, and a signal arriving in it leaves the command running and not recorded:
 
 - `run_bounded` is called off the main thread. Python runs signal handlers only on the main thread, so there is
   nothing to swap.
-- The signal's current handler is the default action or `SIG_IGN`. Only handlers written in Python are swapped,
+- The signal's current handler is the default action (`SIG_DFL`). Only handlers written in Python are swapped,
   and the default action terminates the process without running Python code.
 - Windows. The swap is skipped there.
+
+A signal set to `SIG_IGN` needs no deferral: it is discarded, so nothing is raised and the command is registered
+normally.
 
 SIGKILL cannot be handled, so it is covered by a deadman pipe instead. The first time a process runs a test command it
 starts a watchdog helper (`python -I -S`, in its own session) and keeps the write end of the pipe on the helper's stdin.
