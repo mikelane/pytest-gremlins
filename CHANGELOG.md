@@ -5,18 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.14.0 (2026-11-12)
+## v1.14.0 (2026-11-13)
 
 **An interrupted run now keeps the results it finished, the coverage pre-scan can be sharded across processes, a hung
-worker or runaway mutant is ended at its deadline, and the cache sees helper modules, conftest files and config files it
-used to miss.**
+worker or runaway mutant is ended at its deadline along with everything it started, and the cache sees helper
+modules, conftest files and config files it used to miss.**
 
 (cache kept: no verdict stored by v1.13.2 is reused wrongly. Every cache-key change adds an input to the key or a
 key part that only the affected sessions carry, so an affected entry misses once and every other session keeps its
 keys byte for byte. Gremlin ids, mutations and verdict rules are unchanged: built-in operator output is identical,
 and deep operator chains keep their ids and only add gremlins to files that failed to instrument before. The other
 guarded changes, which are config validation, the executor removal, the pre-scan rootdir, writing results during
-the run and the per-hook session lookup, change no stored verdict.)
+the run, the per-hook session lookup, the per-gremlin deadline for a hung worker, ending the whole process tree of
+a timed-out or interrupted run, and the isolation and failure log of pre-scan shards, change no stored verdict:
+they change how a run is ended, which processes it leaves behind and what it prints when a shard fails. A gremlin
+that timed out before still scores TIMEOUT, and a hung worker never produced a verdict to store.)
 
 ### Upgrade notes
 
@@ -57,11 +60,20 @@ the run and the per-hook session lookup, change no stored verdict.)
 ### Fix
 
 - **A hung worker in a parallel run is now ended at the per-gremlin deadline.** A gremlin whose worker stopped
-  answering used to hold up the whole run. (#976, #987)
+  answering used to hold up the whole run. The parent now ends the worker 10 seconds after the mutant timeout,
+  scores the gremlin TIMEOUT, rebuilds the pool and re-dispatches the gremlins that were in flight. (#976, #987)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#a-hung-worker-cannot-stall-a-parallel-run)
+- **A mutant could run past `--gremlin-mutant-timeout`, in one case for 74 minutes with a 30 second timeout.** The
+  timeout ended only the test command's own process, so a child it started could keep the output open and hold
+  the run up. Every test run now starts in its own process group, and a timeout, Ctrl-C or SIGTERM ends the whole
+  tree. On Linux and macOS a small watchdog also ends the commands if gremlins itself is killed by SIGKILL. (#975,
+  #999)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
-- **A mutant could run past `--gremlin-mutant-timeout`.** The watchdog that was meant to stop it never ran. It is
-  replaced, and it no longer dies on a broken pipe. (#975)
-  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
+- **A failed pre-scan shard said nothing about why.** Each shard now runs with its own pytest cache directory and
+  no bytecode writes, so shards no longer share writable state. When a shard exits with an unexpected code or leaves
+  no coverage data, one line on stderr names the shard and shows the tail of its output, which is also kept in
+  `output.log` in the shard directory. (#996, #998)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#parallel-coverage-pre-scan)
 - **An interrupted run lost every finished result.** The cache was written once, at the end. Final verdicts are now
   cached as they arrive and committed every 25 results or 5 seconds, so Ctrl-C, SIGTERM, an OOM kill or a CI timeout
   loses at most the last few seconds. A failed cache write prints one warning. `--gremlin-batch` still caches only at
@@ -115,6 +127,8 @@ the run and the per-hook session lookup, change no stored verdict.)
 - Fixed drift between the docs and the code, completed the API module map and softened the batch speed claims.
   (#870, #943, #945, #949)
 - Docs pages now get social card images on Read the Docs. (#956, #960)
+- Described the signal deferral at the start of a test command on the parallelization page the way the code works
+  after the process-tree fix. (#1001, #1003)
 
 ### Internal
 
@@ -126,6 +140,8 @@ the run and the per-hook session lookup, change no stored verdict.)
 - Test hygiene: shared integration helpers, deterministic cache performance checks, a tighter docs-default checker
   and docs drift checks, plus fixes for flaky tests. (#596, #606, #558, #700, #721, #618, #726, #764, #774, #834,
   #865, #915, #937, #938, #946, #953, #916, #918, #908, #909, #829, #836, #837, #842, #813, #819)
+- The interrupt tests in `tests/parallel` no longer hang when pytest is started as a background job with SIGINT
+  ignored. (#1004, #1005)
 - CI: a CI and workflow tidy batch, the uv pin, a release cache gate, tox path arguments that narrow the small and
   medium envs, pre-commit hooks that run tools from `uv.lock`, and a `setup-uv` bump. (#631, #839, #869, #877, #907,
   #913, #929, #847, #962)
