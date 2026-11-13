@@ -52,6 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -82,6 +84,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -114,6 +118,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.11', '3.12', '3.13', '3.14']
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -130,6 +136,15 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
+
+      - name: Verify interpreter matches the matrix
+        shell: bash
+        run: |
+          actual=$(uv run python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+          if [ "$actual" != "${{ matrix.python-version }}" ]; then
+            echo "::error::Job asked for Python ${{ matrix.python-version }} but the venv runs $actual"
+            exit 1
+          fi
 
       - name: Run tests with coverage
         shell: bash
@@ -206,6 +221,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       # Full history and tags: the cache gate below compares the code with the previous release tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -249,6 +266,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -273,6 +292,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.13'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -322,6 +343,8 @@ jobs:
     outputs:
       guarded: ${{ steps.guarded.outputs.guarded }}
       base-sha: ${{ steps.base.outputs.sha }}
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -369,6 +392,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: verdict-changes
     if: needs.verdict-changes.outputs.guarded == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
