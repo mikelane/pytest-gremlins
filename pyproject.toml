@@ -1,6 +1,6 @@
 [project]
 name = "pytest-gremlins"
-version = "1.13.2"
+version = "1.14.0"
 description = "Fast-first mutation testing for pytest. Let the gremlins loose, see which ones survive."
 readme = "README.md"
 license = { text = "MIT" }
