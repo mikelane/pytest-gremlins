@@ -241,7 +241,7 @@ def _describe_failed_shards(
         else:
             continue
         output_tail = _output_tail(scratch_dir / str(index) / _SHARD_OUTPUT_NAME)
-        failures.append(f'shard {index} {reason}; output tail: {output_tail!r}')
+        failures.append(f'shard {index} {reason}; output tail: {output_tail!a}')
     return failures
 
 

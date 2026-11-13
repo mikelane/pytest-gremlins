@@ -31,6 +31,13 @@ _CRASHING_SHARD_TEST = f'import os\n\n\ndef test_crash():\n    if {_IN_SHARD}:\n
 # A stand-in shard command that prints to stdout and exits 5, so no pytest runs inside the shard.
 _FAILING_COMMAND = [sys.executable, '-c', 'import sys; print("STDOUT-MARKER"); sys.exit(5)']
 
+# A shard on a Windows cp1252 console writes bytes (0x95 is a bullet) that are not valid UTF-8.
+_NON_UTF8_OUTPUT_COMMAND = [
+    sys.executable,
+    '-c',
+    'import sys; sys.stdout.buffer.write(b"\\x95 bullet \\xe9\\n"); sys.stdout.flush(); sys.exit(5)',
+]
+
 
 def _run_real_shard(tmp_path: Path) -> list[Path] | None:
     scratch = tmp_path / 'scratch'
@@ -55,7 +62,12 @@ def _run_failing_shard(tmp_path: Path) -> list[Path] | None:
     )
 
 
-def _run_gremlins_with_a_crashing_shard(pytester: pytest.Pytester, *extra_args: str) -> pytest.RunResult:
+def _run_gremlins_with_a_crashing_shard(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, *extra_args: str
+) -> pytest.RunResult:
+    # Third-party plugins print non-ASCII bullets; pytester decodes the child's output as UTF-8, but a Windows
+    # console child would write cp1252.
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
     pytester.makepyfile(sample='def double(value):\n    return value * 2\n')
     pytester.makepyfile(test_a='from sample import double\n\n\ndef test_a():\n    assert double(2) == 4\n')
     pytester.makepyfile(test_b=_CRASHING_SHARD_TEST)
@@ -129,6 +141,20 @@ class DescribeFailedShardRecord:
         assert data_files is None
         assert capfd.readouterr().err.count('shard 0 exited with code 5') == 1
 
+    def it_prints_only_ascii_when_the_shard_output_is_not_utf8(
+        self, tmp_path: Path, capfd: pytest.CaptureFixture[str]
+    ) -> None:
+        scratch = tmp_path / 'scratch'
+        scratch.mkdir()
+
+        run_prescan_shards(
+            _NON_UTF8_OUTPUT_COMMAND, [['t.py::t']], cwd=tmp_path, timeout=60, env=dict(os.environ), scratch_dir=scratch
+        )
+
+        stderr = capfd.readouterr().err
+        assert 'shard 0 exited with code 5' in stderr
+        assert stderr.isascii()
+
 
 @pytest.mark.medium
 class DescribeFailedShardInAGremlinsRun:
@@ -140,9 +166,9 @@ class DescribeFailedShardInAGremlinsRun:
         ],
     )
     def it_prints_the_failed_shard_and_its_exit_code_to_stderr_exactly_once(
-        self, pytester: pytest.Pytester, extra_args: tuple[str, ...]
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, extra_args: tuple[str, ...]
     ) -> None:
-        result = _run_gremlins_with_a_crashing_shard(pytester, *extra_args)
+        result = _run_gremlins_with_a_crashing_shard(pytester, monkeypatch, *extra_args)
 
         assert result.stderr.str().count('shard 1 exited with code 7') == 1
         assert result.stdout.str().count('shard 1 exited with code 7') == 0
