@@ -101,21 +101,79 @@ def run_bounded(
         subprocess.TimeoutExpired: If the command outlasted ``timeout``. Its process tree has been killed, and
             the output read before the kill is attached.
     """
-    return _wait_for(_start(command, cwd=cwd, env=env), command, timeout)
+    with _interrupts_deferred() as deferral:
+        return _wait_for(_start(command, cwd=cwd, env=env), command, timeout, deferral)
+
+
+_DEFERRED_SIGNALS = (signal.SIGINT, signal.SIGTERM)
+
+
+class _InterruptDeferral:
+    """Holds SIGINT and SIGTERM back from the main thread while a command is being started, then replays them.
+
+    The command lives in its own session, so a Ctrl-C or SIGTERM no longer reaches it. Between the child's creation
+    (inside ``Popen``) and the guarded ``try`` of :func:`_wait_for`, an exception raised by the signal handler would
+    leave the command running and unregistered. Python signal handlers run only in the main thread, so there the
+    handlers are swapped for ones that only record the signal; :meth:`replay` puts the originals back and re-raises
+    what arrived, from inside the guard. The swap is not a signal mask: a child inherits its parent's mask across
+    ``exec``, so blocking the signals would start the command with them blocked and stop it from ever ending
+    gracefully. Handlers, unlike masks, are reset by ``exec``. Only handlers written in Python are swapped: a signal
+    set to its default action or to ignored has no exception to defer.
+    """
+
+    def __init__(self) -> None:
+        self._replaced: dict[int, _SignalHandler] = {}
+        self._arrived: list[int] = []
+
+    def begin(self) -> None:  # pragma: posix cover
+        if sys.platform == 'win32' or threading.current_thread() is not threading.main_thread():
+            return
+        for signum in _DEFERRED_SIGNALS:
+            original = signal.getsignal(signum)
+            if callable(original):
+                self._replaced[signum] = original
+                signal.signal(signum, self._record)
+
+    def _record(self, signum: int, _frame: FrameType | None) -> None:  # pragma: posix cover
+        self._arrived.append(signum)
+
+    def restore(self) -> None:  # pragma: posix cover
+        for signum, original in self._replaced.items():
+            signal.signal(signum, original)
+        self._replaced.clear()
+
+    def replay(self) -> None:  # pragma: posix cover
+        """Put the original handlers back and deliver, to them, the signals that arrived meanwhile."""
+        self.restore()
+        arrived, self._arrived = self._arrived, []
+        for signum in arrived:
+            signal.raise_signal(signum)
+
+
+@contextlib.contextmanager
+def _interrupts_deferred() -> Iterator[_InterruptDeferral]:
+    deferral = _InterruptDeferral()
+    deferral.begin()
+    try:
+        yield deferral
+    finally:
+        deferral.replay()
 
 
 def _wait_for(
-    process: subprocess.Popen[bytes], command: Sequence[str], timeout: float
+    process: subprocess.Popen[bytes], command: Sequence[str], timeout: float, deferral: _InterruptDeferral | None = None
 ) -> subprocess.CompletedProcess[bytes]:
     """Register the command and wait for it, leaving it killed, reaped and unregistered on every exit.
 
     The outer handler covers the whole body, including the instants between catching the timeout and starting to end
     the tree, so an interrupt landing anywhere still kills the group and reaps the command. Registering the command
-    is inside it too, for the same reason. A command that returned normally has already exited.
+    is inside it too, for the same reason, and so is delivering the interrupts held back while the command started.
+    A command that returned normally has already exited.
     """
     try:
         try:
             _register(process)
+            (deferral or _InterruptDeferral()).replay()
             stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired as expired:
             _terminate_tree(process)
