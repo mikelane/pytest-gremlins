@@ -269,7 +269,7 @@ def watchdog_pid() -> int | None:
     return current.process.pid if current is not None and current.owner == os.getpid() else None
 
 
-def _tell_watchdog(action: str, group: int) -> None:  # pragma: posix cover
+def _tell_watchdog(action: str, group: int) -> None:
     """Tell the watchdog about a command's process group; best effort, since the run itself does not need it.
 
     A watchdog that died is replaced, and the commands still running are handed to the new one, so they stay
@@ -277,12 +277,12 @@ def _tell_watchdog(action: str, group: int) -> None:  # pragma: posix cover
     """
     if sys.platform == 'win32':
         return
-    died_pid, start_error = _update_watchdog(action, group)
+    died_pid, start_error = _update_watchdog(action, group)  # pragma: posix cover
     # Logged after the lock is released: a thread that waits on a logging lock while holding the registry lock would
     # deadlock a SIGTERM handler that interrupts the logging thread and then waits on the registry lock.
-    if died_pid is not None:
+    if died_pid is not None:  # pragma: posix cover
         logger.debug('The watchdog helper (pid %d) had died; starting a new one for the test commands', died_pid)
-    if start_error is not None:
+    if start_error is not None:  # pragma: posix cover
         logger.debug(
             'Could not start the watchdog helper; a SIGKILL of this process would leave its commands running: %s',
             start_error,
@@ -480,9 +480,9 @@ def _terminate_tree(process: subprocess.Popen[bytes]) -> None:
     Reaping the command first is safe: its group id stays reserved while any member of the group is alive.
     """
     try:
-        if sys.platform != 'win32':  # pragma: posix cover
-            _signal_group(process, signal.SIGTERM)
-            with contextlib.suppress(subprocess.TimeoutExpired):
+        if sys.platform != 'win32':
+            _signal_group(process, signal.SIGTERM)  # pragma: posix cover
+            with contextlib.suppress(subprocess.TimeoutExpired):  # pragma: posix cover
                 process.wait(timeout=TERMINATE_GRACE_SECONDS)
     finally:
         _kill_tree(process)
@@ -534,8 +534,8 @@ def _abandon_pipes(process: subprocess.Popen[bytes]) -> None:
         process.pid,
         PIPE_DRAIN_SECONDS,
     )
-    if sys.platform != 'win32':  # pragma: posix cover
-        for pipe in (process.stdout, process.stderr):
+    if sys.platform != 'win32':
+        for pipe in (process.stdout, process.stderr):  # pragma: posix cover
             if pipe is not None:
                 pipe.close()
     with contextlib.suppress(subprocess.TimeoutExpired):

@@ -69,7 +69,7 @@ class DescribeDrain:
     def it_returns_what_the_command_wrote(self) -> None:
         assert process_tree._drain(FakeProcess()) == (b'out', b'err')  # type: ignore[arg-type]
 
-    def it_returns_partial_output_and_closes_pipes_held_open_by_an_outsider(self) -> None:
+    def it_returns_partial_output_when_an_outsider_holds_the_pipes_open(self) -> None:
         still_open = subprocess.TimeoutExpired(['cmd'], 1.0, output=b'partial', stderr=None)
         process = FakeProcess(communicate_error=still_open)
 
