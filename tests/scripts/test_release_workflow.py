@@ -387,7 +387,11 @@ class DescribeReleaseWorkflowCiGate:
 
         assert 'scripts/check_ci_passed.py' in run
         assert '"$RELEASE_SHA"' in run
-        assert 'RELEASE_SHA=$(git rev-parse HEAD)' in _step_named('ci-gate', 'Resolve the tagged commit')['run']
+
+    def it_resolves_the_release_sha_from_the_checked_out_tag(self) -> None:
+        run = _step_named('ci-gate', 'Resolve the tagged commit')['run']
+
+        assert 'RELEASE_SHA=$(git rev-parse HEAD)' in run
 
     def it_passes_the_token_through_the_environment(self) -> None:
         step = _step_named('ci-gate', 'Require a passing main CI run for the tagged commit')
@@ -396,9 +400,9 @@ class DescribeReleaseWorkflowCiGate:
         assert '${{' not in step['run']
 
     def it_has_no_condition_or_failure_override_on_the_gate_steps(self) -> None:
-        for step in _steps('ci-gate'):
-            assert 'if' not in step
-            assert 'continue-on-error' not in step
+        overridden = [step.get('name') for step in _steps('ci-gate') if {'if', 'continue-on-error'} & step.keys()]
+
+        assert overridden == []
 
     def it_grants_the_gate_job_only_the_read_permissions_it_needs(self) -> None:
         assert _jobs()['ci-gate']['permissions'] == {'actions': 'read', 'contents': 'read'}

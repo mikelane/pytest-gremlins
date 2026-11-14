@@ -71,6 +71,44 @@ class FakeGitHub:
         return {'total_count': len(answer), 'workflow_runs': answer}
 
 
+class FailsOnceThenServes:
+    """Raises a transient ``URLError`` on the first call, then delegates every later call to ``fetch``."""
+
+    def __init__(self, fetch: Callable[[str], Any]) -> None:
+        self._fetch = fetch
+        self.calls = 0
+
+    def __call__(self, path: str) -> Any:
+        self.calls += 1
+        if self.calls == 1:
+            raise urllib.error.URLError('boom')
+        return self._fetch(path)
+
+
+def _always_unreachable(_path: str) -> Any:
+    raise urllib.error.URLError('boom')
+
+
+def _filler_jobs(count: int) -> list[dict[str, str]]:
+    return [{'name': f'Filler {n}', 'conclusion': 'success'} for n in range(count)]
+
+
+def _ci_jobs() -> dict[str, Any]:
+    return yaml.safe_load(CI_WORKFLOW.read_text())['jobs']  # type: ignore[no-any-return]
+
+
+def _ci_matrix_job_names() -> set[str]:
+    jobs = _ci_jobs()
+    test_matrix = jobs['test']['strategy']['matrix']
+    python_names = {
+        f'Test (Python {version}, {os_name})'
+        for os_name in test_matrix['os']
+        for version in test_matrix['python-version']
+    }
+    pytest_names = {f'Test (pytest {version})' for version in jobs['pytest-compat']['strategy']['matrix']['pytest']}
+    return python_names | pytest_names
+
+
 def _fetch_for(runs: list[dict[str, Any]], jobs: list[dict[str, str]] | None = None) -> FakeGitHub:
     return FakeGitHub([runs], {run['id']: jobs if jobs is not None else _jobs() for run in runs})
 
@@ -160,12 +198,13 @@ class DescribeCheckCi:
         assert outcome.state == 'pending'
 
     def it_reads_every_page_of_jobs(self) -> None:
-        many = [{'name': f'Filler {n}', 'conclusion': 'success'} for n in range(ci.PER_PAGE)] + _jobs()
+        many = _filler_jobs(ci.PER_PAGE) + _jobs()
         fetch = FakeGitHub([[_run()]], {1: many})
 
         outcome = ci.check_ci(fetch, REPO, SHA)
 
         assert outcome.state == 'passed'
+        assert f'/repos/{REPO}/actions/runs/1/jobs?filter=latest&per_page={ci.PER_PAGE}&page=2' in fetch.paths
 
     def it_ignores_jobs_that_are_not_part_of_the_test_matrix(self) -> None:
         jobs = [*_jobs(), {'name': 'Security Audit', 'conclusion': 'failure'}]
@@ -267,23 +306,16 @@ class DescribeWaitForCi:
         assert 'timed out' in outcome.message
 
     def it_retries_a_transient_api_error(self) -> None:
-        good = _fetch_for([_run()])
-        calls = {'n': 0}
+        flaky = FailsOnceThenServes(_fetch_for([_run()]))
 
-        def flaky(path: str) -> Any:
-            calls['n'] += 1
-            if calls['n'] == 1:
-                raise urllib.error.URLError('boom')
-            return good(path)
+        outcome = self._wait(flaky)
 
-        assert self._wait(flaky).state == 'passed'
+        assert outcome.state == 'passed'
+        assert flaky.calls > 1
 
     def it_raises_cannot_check_after_repeated_api_errors(self) -> None:
-        def broken(_path: str) -> Any:
-            raise urllib.error.URLError('boom')
-
         with pytest.raises(ci.CannotCheckError):
-            self._wait(broken)
+            self._wait(_always_unreachable)
 
 
 @pytest.mark.medium
@@ -291,28 +323,19 @@ class DescribeExpectedTestJobs:
     """The expected job names must track the matrices in ci.yml, so a matrix change cannot silently shrink the gate."""
 
     def it_matches_the_job_names_the_ci_matrices_produce(self) -> None:
-        jobs = yaml.safe_load(CI_WORKFLOW.read_text())['jobs']
-        test_matrix = jobs['test']['strategy']['matrix']
-        python_names = {
-            f'Test (Python {version}, {os_name})'
-            for os_name in test_matrix['os']
-            for version in test_matrix['python-version']
-        }
-        pytest_names = {f'Test (pytest {version})' for version in jobs['pytest-compat']['strategy']['matrix']['pytest']}
+        assert set(ci.EXPECTED_TEST_JOBS) == _ci_matrix_job_names()
 
-        assert set(ci.EXPECTED_TEST_JOBS) == python_names | pytest_names
+    @pytest.mark.parametrize('job', ['test', 'pytest-compat'])
+    def it_requires_the_ci_matrix_to_have_no_include_or_exclude_entries(self, job: str) -> None:
+        matrix = _ci_jobs()[job]['strategy']['matrix']
 
-    def it_requires_the_ci_matrices_to_have_no_include_or_exclude_entries(self) -> None:
-        jobs = yaml.safe_load(CI_WORKFLOW.read_text())['jobs']
-
-        for job in ('test', 'pytest-compat'):
-            assert {'include', 'exclude'}.isdisjoint(jobs[job]['strategy']['matrix'])
+        assert {'include', 'exclude'}.isdisjoint(matrix)
 
     def it_has_no_duplicates(self) -> None:
         assert len(set(ci.EXPECTED_TEST_JOBS)) == len(ci.EXPECTED_TEST_JOBS)
 
     def it_pins_the_job_name_templates_in_ci_yml(self) -> None:
-        jobs = yaml.safe_load(CI_WORKFLOW.read_text())['jobs']
+        jobs = _ci_jobs()
 
         assert jobs['test']['name'] == 'Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})'
         assert jobs['pytest-compat']['name'] == 'Test (pytest ${{ matrix.pytest }})'
@@ -340,20 +363,29 @@ class DescribeMain:
     def it_exits_two_when_the_api_cannot_be_reached(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        def broken(_path: str) -> Any:
-            raise urllib.error.URLError('boom')
+        code = self._main(monkeypatch, _always_unreachable)
 
-        assert self._main(monkeypatch, broken) == 2
-        assert capsys.readouterr().err.strip() != ''
+        assert code == 2
+        assert capsys.readouterr().err.startswith('error: ')
 
-    def it_exits_two_when_no_token_is_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def it_exits_two_naming_the_token_when_no_token_is_available(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         monkeypatch.delenv('GITHUB_TOKEN', raising=False)
         monkeypatch.setenv('GITHUB_REPOSITORY', REPO)
 
-        assert ci.main([SHA]) == 2
+        code = ci.main([SHA])
 
-    def it_exits_two_for_a_malformed_sha(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert code == 2
+        assert 'GITHUB_TOKEN' in capsys.readouterr().err
+
+    def it_exits_two_naming_the_bad_value_for_a_malformed_sha(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         monkeypatch.setenv('GITHUB_TOKEN', 'token')
         monkeypatch.setenv('GITHUB_REPOSITORY', REPO)
 
-        assert ci.main(['main']) == 2
+        code = ci.main(['main'])
+
+        assert code == 2
+        assert "'main' is not a full 40-character commit SHA" in capsys.readouterr().err

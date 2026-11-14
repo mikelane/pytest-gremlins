@@ -89,7 +89,7 @@ class DescribeCheckNoWipTests:
         result = _run_script(tmp_path)
 
         assert result.returncode == 2
-        assert result.stderr.strip() != ''
+        assert 'while collecting wip tests' in result.stderr
 
 
 @pytest.mark.small
@@ -139,6 +139,16 @@ class DescribeFeatureFileScan:
             (_feature('Feature: F', '', '  @a', '  @wip', '  Scenario: S', '    Given a thing'), 4),
             (_feature('Feature: F', '', '  @wip # not done', '  Scenario: S', '    Given a thing'), 3),
         ],
+        ids=[
+            'feature',
+            'scenario',
+            'scenario-second-tag',
+            'scenario-outline-first-tag',
+            'rule',
+            'examples',
+            'second-tag-line',
+            'trailing-comment',
+        ],
     )
     def it_finds_a_wip_tag_on_a_feature_rule_scenario_or_examples_line(
         self, tmp_path: Path, content: str, line: int
@@ -159,6 +169,15 @@ class DescribeFeatureFileScan:
             _feature('Feature: F', '', '  Scenario: S', '    Given the tag @wip is mentioned in a step'),
             _feature('Feature: This feature talks about @wip', '', '  Scenario: S', '    Given a thing'),
             _feature('Feature: F', '', '  @smoke', '  Scenario: S', '    Given a thing'),
+        ],
+        ids=[
+            'commented-out',
+            'longer-tag',
+            'tags-containing-wip',
+            'email-in-step',
+            'tag-text-in-step',
+            'tag-text-in-title',
+            'other-tag',
         ],
     )
     def it_ignores_comments_look_alikes_and_text_that_is_not_a_tag(self, tmp_path: Path, content: str) -> None:
