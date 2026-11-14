@@ -139,7 +139,7 @@ jobs:
           # Excludes `# pragma: posix cover` code from the report on Windows, and `# pragma: win32 cover` elsewhere.
           GREMLINS_COVERAGE_OTHER_PLATFORM: ${{ runner.os == 'Windows' && 'posix' || 'win32' }}
         run: |
-          uv run coverage run -m pytest tests -m "small or medium and not wip" -v
+          uv run coverage run -m pytest tests -m "small or medium and not wip" -n auto --dist loadgroup -v
           uv run coverage combine --quiet || echo "::warning::No coverage data to combine (expected in some environments)"
           uv run coverage report --show-missing
           uv run coverage xml
@@ -199,7 +199,7 @@ jobs:
       - name: Run tests
         env:
           PYTHONPATH: .
-        run: uv run --no-sync pytest tests -m "small or medium and not wip" -v
+        run: uv run --no-sync pytest tests -m "small or medium and not wip" -n auto --dist loadgroup -v
 
   docs:
     name: Documentation
