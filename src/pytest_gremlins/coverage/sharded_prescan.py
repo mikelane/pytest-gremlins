@@ -204,7 +204,11 @@ def combine_shard_data(data_files: Sequence[Path], combined: Path) -> None:
 
 def _combined_without_error(data_files: Sequence[Path], combined: Path) -> bool:
     try:
-        combine_shard_data(data_files, combined)
+        with warnings.catch_warnings():
+            # coverage.py leaves the connection to an unreadable shard open in a reference cycle. An automatic
+            # collection while it reads the next shard would finalize that connection under the caller's filters.
+            warnings.simplefilter('ignore', ResourceWarning)
+            combine_shard_data(data_files, combined)
     except (CoverageException, OSError):
         combined.unlink(missing_ok=True)
         succeeded = False

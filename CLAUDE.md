@@ -88,6 +88,10 @@ uv run pytest tests -m "small or medium"
 # Run all tests
 uv run pytest
 
+# What CI runs for the Test jobs: the suite in parallel across xdist workers.
+# Never put -n in pyproject addopts: it would leak into pytester and user-like child runs.
+uv run pytest tests -m "small or medium and not wip" -n auto --dist loadgroup
+
 # Type checking (strict; pyproject.toml points it at src and tests)
 uv run mypy
 
@@ -111,6 +115,14 @@ uv run mkdocs build --strict
 # so pytest-test-categories flags pdb reading its config file as a violation.
 uv run pytest --doctest-modules src/pytest_gremlins --override-ini="test_categories_enforcement=disabled"
 ```
+
+## CI Test Parallelism
+
+The `Test` and `Test (pytest ...)` jobs in `ci.yml` run the suite with `-n auto --dist loadgroup`. A test that cannot
+share a process with others takes `@pytest.mark.xdist_group(name=...)`, so it runs serially inside one worker; it is
+never skipped. `tests/conftest.py` scrubs `PYTEST_XDIST_WORKER`, `PYTEST_XDIST_WORKER_COUNT` and
+`PYTEST_XDIST_TESTRUNUID` per test, because pytest-test-categories treats `PYTEST_XDIST_WORKER` as proof that a
+process is a worker, and pytester or subprocess children would otherwise take the worker path.
 
 ## CI Caching
 
