@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.14.1 (2026-11-13)
+
+**This release publishes everything listed under 1.14.0. Nothing in the package changes beyond that.**
+
+1.14.0 was tagged but never published to PyPI, because two release-gate tests failed on the tagged commit. Upgrading
+from 1.13.2 therefore brings in every 1.14.0 change. Read the
+[1.14.0 notes](https://pytest-gremlins.readthedocs.io/en/latest/changelog/#v1140-2026-11-13) before upgrading,
+especially their upgrade notes.
+
+### Internal
+
+- The `check_cache_kept.py` tests no longer read the repository's real release tags. Two of them started failing as
+  soon as `v1.14.0` was tagged, which stopped that release. (#1007, #1009)
+
 ## v1.14.0 (2026-11-13)
 
 **An interrupted run now keeps the results it finished, the coverage pre-scan can be sharded across processes, a hung
