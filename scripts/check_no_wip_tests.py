@@ -77,7 +77,7 @@ def find_wip_tests(repo: Path) -> list[str]:
 
     The command line clears ``addopts`` and ``PYTEST_ADDOPTS`` so an extra ``-q`` cannot change the output format.
     """
-    result = subprocess.run(
+    collection = subprocess.run(
         [
             sys.executable,
             '-m',
@@ -97,19 +97,20 @@ def find_wip_tests(repo: Path) -> list[str]:
         text=True,
         check=False,
     )
-    if result.returncode == PYTEST_NO_TESTS_COLLECTED:
+    if collection.returncode == PYTEST_NO_TESTS_COLLECTED:
         return []
-    if result.returncode != 0:
+    if collection.returncode != 0:
         raise CannotCheckError(
-            f'pytest exited {result.returncode} while collecting wip tests:\n{result.stdout}\n{result.stderr}'
+            f'pytest exited {collection.returncode} while collecting wip tests:\n'
+            f'{collection.stdout}\n{collection.stderr}'
         )
-    collected = parse_collected_ids(result.stdout)
-    if not collected:
+    collected_ids = parse_collected_ids(collection.stdout)
+    if not collected_ids:
         raise CannotCheckError(
             f'pytest exited 0 but no test IDs could be read from its output, so the wip check cannot tell what was '
-            f'collected:\n{result.stdout}'
+            f'collected:\n{collection.stdout}'
         )
-    return collected
+    return collected_ids
 
 
 def _tagged_nodes(node: object) -> Iterator[dict[str, Any]]:
@@ -155,7 +156,7 @@ def find_wip_feature_tags(repo: Path) -> list[str]:
     Raises:
         CannotCheckError: If a feature file cannot be read, is not valid UTF-8, or is not valid Gherkin.
     """
-    found: list[str] = []
+    tag_locations: list[str] = []
     for path in sorted((repo / FEATURES_DIRECTORY).rglob('*.feature')):
         relative = path.relative_to(repo).as_posix()
         try:
@@ -163,11 +164,11 @@ def find_wip_feature_tags(repo: Path) -> list[str]:
         except (OSError, UnicodeDecodeError) as error:
             raise CannotCheckError(f'cannot read {relative}: {error}') from error
         try:
-            lines = _wip_tag_lines_in(text)
+            wip_line_numbers = _wip_tag_lines_in(text)
         except CannotCheckError as error:
             raise CannotCheckError(f'cannot parse {relative}: {error}') from error
-        found.extend(f'{relative}:{number}' for number in lines)
-    return found
+        tag_locations.extend(f'{relative}:{line_number}' for line_number in wip_line_numbers)
+    return tag_locations
 
 
 def _report_failure(wip_tests: list[str]) -> None:

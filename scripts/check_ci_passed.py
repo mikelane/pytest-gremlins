@@ -85,7 +85,7 @@ class Outcome:
     message: str
 
 
-def _unexpected(what: str, answer: object) -> CannotCheckError:
+def _unexpected_shape_error(what: str, answer: object) -> CannotCheckError:
     return CannotCheckError(f'GitHub API answered with an unexpected shape for {what}: {answer!r:.200}')
 
 
@@ -97,11 +97,11 @@ def _entries(answer: object, key: str, field: str, field_type: type) -> list[dic
     """
     entries = answer.get(key) if isinstance(answer, dict) else None
     if not isinstance(entries, list):
-        raise _unexpected(key, answer)
+        raise _unexpected_shape_error(key, answer)
     for entry in entries:
-        value = entry.get(field) if isinstance(entry, dict) else None
-        if not isinstance(value, field_type) or isinstance(value, bool):
-            raise _unexpected(f'an entry of {key}', entry)
+        field_value = entry.get(field) if isinstance(entry, dict) else None
+        if not isinstance(field_value, field_type) or isinstance(field_value, bool):
+            raise _unexpected_shape_error(f'an entry of {key}', entry)
     return entries
 
 
@@ -111,9 +111,9 @@ def _list_jobs(fetch: Fetch, repo: str, run_id: int) -> list[dict[str, Any]]:
     page = 1
     while True:
         answer = fetch(f'/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page={PER_PAGE}&page={page}')
-        batch = _entries(answer, 'jobs', 'name', str)
-        jobs.extend(batch)
-        if len(batch) < PER_PAGE:
+        page_jobs = _entries(answer, 'jobs', 'name', str)
+        jobs.extend(page_jobs)
+        if len(page_jobs) < PER_PAGE:
             return jobs
         page += 1
 
@@ -155,17 +155,17 @@ def check_ci(fetch: Fetch, repo: str, sha: str) -> Outcome:
     runs = _entries(answer, 'workflow_runs', 'id', int)
     if not runs:
         return Outcome('missing', f'No {WORKFLOW_FILE} push run found for {sha} yet')
-    still_running = False
+    is_any_run_in_progress = False
     failures: list[str] = []
     for run in runs:
         if run.get('status') != 'completed':
-            still_running = True
+            is_any_run_in_progress = True
             continue
         problems = _completed_run_problems(fetch, repo, run)
         if not problems:
             return Outcome('passed', f'{WORKFLOW_FILE} passed for {sha} ({run.get("html_url", run["id"])})')
         failures.append(f'{run.get("html_url", run["id"])}: {"; ".join(problems)}')
-    if still_running:
+    if is_any_run_in_progress:
         return Outcome('pending', f'{WORKFLOW_FILE} is still running for {sha}')
     return Outcome('failed', f'No passing {WORKFLOW_FILE} run for {sha}:\n  ' + '\n  '.join(failures))
 
@@ -257,13 +257,13 @@ def github_fetcher(token: str) -> Fetch:
     Raises:
         CannotCheckError: If ``GITHUB_API_URL`` is not an https URL.
     """
-    base = os.environ.get('GITHUB_API_URL', 'https://api.github.com').rstrip('/')
-    if not base.startswith('https://'):
-        raise CannotCheckError(f'GITHUB_API_URL must be an https URL, got {base!r}')
+    api_base_url = os.environ.get('GITHUB_API_URL', 'https://api.github.com').rstrip('/')
+    if not api_base_url.startswith('https://'):
+        raise CannotCheckError(f'GITHUB_API_URL must be an https URL, got {api_base_url!r}')
 
     def fetch(path: str) -> Any:  # noqa: ANN401 - parsed JSON has no useful static type
         request = urllib.request.Request(  # noqa: S310
-            base + path,
+            api_base_url + path,
             headers={
                 'Authorization': f'Bearer {token}',
                 'Accept': 'application/vnd.github+json',
