@@ -347,3 +347,26 @@ class DescribeReleaseWorkflowCoverageEnvironment:
         step = _step_named('test', 'Run tests with coverage (small + medium, matching PR CI)')
 
         assert step['env']['GREMLINS_COVERAGE_OTHER_PLATFORM'] == "${{ runner.os == 'Windows' && 'posix' || 'win32' }}"
+
+
+@pytest.mark.medium
+class DescribeReleaseWorkflowWipGate:
+    """A release fails when the tagged commit contains a ``wip`` test, before any other release job starts."""
+
+    WIP_STEP = 'Refuse a release that contains wip tests'
+
+    def it_runs_the_wip_check_on_the_tagged_commit_before_the_docs_build(self) -> None:
+        checkout = _step_index('verify-tag', lambda step: step.get('name') == 'Check out the tagged commit')
+        wip = _step_index('verify-tag', lambda step: step.get('name') == self.WIP_STEP)
+        docs_build = _step_index('verify-tag', lambda step: step.get('name') == 'Build the docs site')
+
+        assert checkout < wip < docs_build
+
+    def it_runs_the_wip_script_in_the_project_environment(self) -> None:
+        assert _step_named('verify-tag', self.WIP_STEP)['run'] == 'uv run python scripts/check_no_wip_tests.py'
+
+    def it_has_no_condition_or_failure_override_on_the_wip_step(self) -> None:
+        step = _step_named('verify-tag', self.WIP_STEP)
+
+        assert 'if' not in step
+        assert 'continue-on-error' not in step

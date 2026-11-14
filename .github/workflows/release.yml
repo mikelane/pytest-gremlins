@@ -82,6 +82,11 @@ jobs:
       - name: Check out the tagged commit
         run: git checkout --detach "refs/tags/$RELEASE_TAG"
 
+      # wip gate. `wip` marks scenarios for an unfinished feature: PRs may carry them, a release must not. It only
+      # collects (seconds), runs before the slow gates below, and has no input, variable or condition that skips it.
+      - name: Refuse a release that contains wip tests
+        run: uv run python scripts/check_no_wip_tests.py
+
       - name: Build the docs site
         run: uv run --only-group docs mkdocs build --strict --site-dir "$RUNNER_TEMP/site"
 
