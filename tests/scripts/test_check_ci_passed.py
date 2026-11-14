@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 import http.client
 import importlib.util
+import io
 from pathlib import Path
 import re
 import sys
@@ -356,6 +357,16 @@ class DescribeExpectedTestJobs:
         assert jobs['pytest-compat']['name'] == 'Test (pytest ${{ matrix.pytest }})'
 
 
+class _BytesResponse(io.BytesIO):
+    """A context-manager response whose body is raw bytes, like ``urlopen`` returns."""
+
+    def __enter__(self) -> _BytesResponse:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+
 @pytest.mark.small
 class DescribeMain:
     def _main(self, monkeypatch: pytest.MonkeyPatch, fetch: Callable[[str], Any], *argv: str) -> int:
@@ -379,6 +390,18 @@ class DescribeMain:
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         code = self._main(monkeypatch, _always_unreachable)
+
+        assert code == 2
+        assert capsys.readouterr().err.startswith('error: ')
+
+    def it_exits_two_when_the_api_body_is_not_valid_utf8(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setenv('GITHUB_TOKEN', 'token')
+        monkeypatch.setenv('GITHUB_REPOSITORY', REPO)
+        monkeypatch.setattr(ci.urllib.request, 'urlopen', lambda *_a, **_k: _BytesResponse(b'{"x": "\xff"}'))
+
+        code = ci.main([SHA, '--timeout', '0', '--interval', '0'])
 
         assert code == 2
         assert capsys.readouterr().err.startswith('error: ')
