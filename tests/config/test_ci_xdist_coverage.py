@@ -71,18 +71,18 @@ class DescribeCiXdistCoverage:
         inherited = {name: value for name, value in os.environ.items() if name != 'COVERAGE_COVERAGE'}
         env = {**inherited, **_ci_coverage_step_env(), 'COVERAGE_PROCESS_START': 'pyproject.toml', 'PYTHONPATH': '.'}
         env.pop('COVERAGE_RCFILE', None)
-        run = [sys.executable, '-m', 'coverage']
-        subprocess.run(
-            [*run, 'run', '-m', 'pytest', '-q', '-n', '1', '--dist', 'loadgroup', '-p', 'no:cacheprovider'],
+        coverage_command = [sys.executable, '-m', 'coverage']
+        coverage_run_options = ['-m', 'pytest', '-q', '-n', '1', '--dist', 'loadgroup', '-p', 'no:cacheprovider']
+        measured = subprocess.run(
+            [*coverage_command, 'run', *coverage_run_options],
             cwd=tmp_path,
             env=env,
             capture_output=True,
-            check=True,
+            text=True,
+            check=False,
         )
-        subprocess.run([*run, 'combine', '--quiet'], cwd=tmp_path, env=env, capture_output=True, check=False)
-
-        report = subprocess.run(
-            [*run, 'report', '--fail-under=0', '--format=total'],
+        combined = subprocess.run(
+            [*coverage_command, 'combine', '--quiet'],
             cwd=tmp_path,
             env=env,
             capture_output=True,
@@ -90,4 +90,17 @@ class DescribeCiXdistCoverage:
             check=False,
         )
 
-        assert (report.returncode, report.stdout.strip()) == (0, '100')
+        report = subprocess.run(
+            [*coverage_command, 'report', '--fail-under=0', '--format=total'],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert (measured.returncode, report.returncode, report.stdout.strip()) == (0, 0, '100'), (
+            f'coverage run: {measured.stdout}{measured.stderr}\n'
+            f'coverage combine: {combined.stdout}{combined.stderr}\n'
+            f'coverage report: {report.stdout}{report.stderr}'
+        )
