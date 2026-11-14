@@ -143,6 +143,9 @@ class DescribeReleaseWorkflowSkipPropagation:
     def it_does_not_gate_the_ci_gate_job_on_a_condition(self) -> None:
         assert 'if' not in _jobs()['ci-gate']
 
+    def it_does_not_let_a_failed_ci_gate_job_count_as_passed(self) -> None:
+        assert 'continue-on-error' not in _jobs()['ci-gate']
+
     def it_creates_the_github_release_only_after_a_successful_pypi_publish(self) -> None:
         condition = _condition(_jobs()['github-release'])
 
@@ -385,13 +388,12 @@ class DescribeReleaseWorkflowCiGate:
     def it_runs_the_gate_script_for_the_tagged_commit(self) -> None:
         run = _step_named('ci-gate', 'Require a passing main CI run for the tagged commit')['run']
 
-        assert 'scripts/check_ci_passed.py' in run
-        assert '"$RELEASE_SHA"' in run
+        assert run == 'python3 scripts/check_ci_passed.py "$RELEASE_SHA"'
 
     def it_resolves_the_release_sha_from_the_checked_out_tag(self) -> None:
         run = _step_named('ci-gate', 'Resolve the tagged commit')['run']
 
-        assert 'RELEASE_SHA=$(git rev-parse HEAD)' in run
+        assert run == 'echo "RELEASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"'
 
     def it_passes_the_token_through_the_environment(self) -> None:
         step = _step_named('ci-gate', 'Require a passing main CI run for the tagged commit')

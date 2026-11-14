@@ -6,6 +6,7 @@ The GitHub API is replaced by a fake ``fetch`` that serves canned JSON, so no te
 from __future__ import annotations
 
 from collections.abc import Callable
+import email.message
 import http.client
 import importlib.util
 import io
@@ -92,6 +93,37 @@ def _always_unreachable(_path: str) -> Any:
     raise urllib.error.URLError('boom')
 
 
+class AlwaysUnreachable:
+    """Raises ``URLError`` on every call and counts the calls."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, _path: str) -> Any:
+        self.calls += 1
+        raise urllib.error.URLError('boom')
+
+
+class ScriptedFetch:
+    """Each runs-listing call takes the next step: an exception is raised, anything else is served as the runs."""
+
+    def __init__(self, steps: list[Exception | list[dict[str, Any]]], jobs: dict[int, list[dict[str, str]]]) -> None:
+        self._steps = steps
+        self._github = FakeGitHub([[]], jobs)
+
+    def __call__(self, path: str) -> Any:
+        if '/jobs' in path:
+            return self._github(path)
+        step = self._steps.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return {'total_count': len(step), 'workflow_runs': step}
+
+
+def _http_error(code: int) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError('https://api.github.com/x', code, 'error', email.message.Message(), io.BytesIO())
+
+
 def _filler_jobs(count: int) -> list[dict[str, str]]:
     return [{'name': f'Filler {n}', 'conclusion': 'success'} for n in range(count)]
 
@@ -165,7 +197,7 @@ class DescribeCheckCi:
         outcome = ci.check_ci(fetch, REPO, SHA)
 
         assert outcome.state == 'failed'
-        assert 'Test (pytest 8.4.2)' in outcome.message
+        assert outcome.message.count('missing from the run') == len(ci.EXPECTED_TEST_JOBS)
 
     def it_fails_when_one_expected_test_job_is_missing(self) -> None:
         missing = 'Test (pytest latest)'
@@ -266,7 +298,7 @@ class DescribeWaitForCi:
 
         self._wait(fetch, timeout=ci.DEFAULT_TIMEOUT_SECONDS)
 
-        assert fetch.run_polls <= ci.NO_RUN_GRACE_SECONDS / 10.0 + 1
+        assert fetch.run_polls == ci.NO_RUN_GRACE_SECONDS // 10 + 1
 
     def it_keeps_the_grace_period_at_ten_minutes(self) -> None:
         assert ci.NO_RUN_GRACE_SECONDS == 10 * 60
@@ -299,6 +331,8 @@ class DescribeWaitForCi:
 
         assert outcome.state == 'failed'
         assert SHA in outcome.message
+        assert 'timed out' in outcome.message
+        assert 'has no main CI run' not in outcome.message
 
     def it_fails_when_the_run_is_still_in_progress_at_the_timeout(self) -> None:
         running = [_run(status='in_progress', conclusion=None)]
@@ -330,8 +364,40 @@ class DescribeWaitForCi:
         assert flaky.calls > 1
 
     def it_raises_cannot_check_after_repeated_api_errors(self) -> None:
-        with pytest.raises(ci.CannotCheckError):
-            self._wait(_always_unreachable)
+        fetch = AlwaysUnreachable()
+
+        with pytest.raises(ci.CannotCheckError, match='GitHub API request failed'):
+            self._wait(fetch)
+
+        assert fetch.calls == ci.MAX_CONSECUTIVE_API_ERRORS
+
+    def it_resets_the_error_count_after_a_successful_poll(self) -> None:
+        running = [_run(status='in_progress', conclusion=None)]
+        error = urllib.error.URLError('boom')
+        fetch = ScriptedFetch([error, error, running, error, error, [_run()]], {1: _jobs()})
+
+        outcome = self._wait(fetch)
+
+        assert outcome.state == 'passed'
+
+    @pytest.mark.parametrize('code', [500, 503, 429])
+    def it_retries_a_server_error_or_rate_limit(self, code: int) -> None:
+        with _http_error(code) as error:
+            flaky = FailsOnceThenServes(_fetch_for([_run()]), error)
+
+            outcome = self._wait(flaky)
+
+        assert outcome.state == 'passed'
+
+    @pytest.mark.parametrize('code', [401, 403, 404, 499])
+    def it_raises_cannot_check_without_retrying_a_client_error(self, code: int) -> None:
+        with _http_error(code) as error:
+            flaky = FailsOnceThenServes(_fetch_for([_run()]), error)
+
+            with pytest.raises(ci.CannotCheckError, match=str(code)):
+                self._wait(flaky)
+
+        assert flaky.calls == 1
 
 
 @pytest.mark.medium
@@ -375,16 +441,89 @@ class DescribeMain:
         monkeypatch.setenv('GITHUB_REPOSITORY', REPO)
         return int(ci.main([SHA, '--timeout', '0', '--interval', '0', *argv]))
 
-    def it_exits_zero_when_ci_passed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assert self._main(monkeypatch, _fetch_for([_run()])) == 0
+    def it_exits_zero_and_names_the_passing_run_when_ci_passed(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = self._main(monkeypatch, _fetch_for([_run()]))
+
+        assert code == 0
+        assert capsys.readouterr().out == f'ci.yml passed for {SHA} (https://example/runs/1)\n'
 
     def it_exits_one_and_names_the_sha_when_ci_did_not_pass(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
+        monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
+
         code = self._main(monkeypatch, _fetch_for([_run(conclusion='failure')]))
 
+        out = capsys.readouterr().out
         assert code == 1
-        assert SHA in capsys.readouterr().out
+        assert SHA in out
+        assert '::error' not in out
+
+    def it_adds_an_escaped_actions_annotation_when_running_in_github_actions(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+
+        self._main(monkeypatch, _fetch_for([_run(conclusion='failure')]))
+
+        assert capsys.readouterr().out.splitlines()[-1] == (
+            f'::error title=Release CI gate failed::No passing ci.yml run for {SHA}:%0A'
+            '  https://example/runs/1: run concluded failure'
+        )
+
+    def it_queries_the_repo_given_on_the_command_line_over_the_environment(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fetch = _fetch_for([_run()])
+
+        self._main(monkeypatch, fetch, '--repo', 'other/name')
+
+        assert fetch.paths[0].startswith('/repos/other/name/actions/workflows/ci.yml/runs?')
+
+    def it_exits_two_naming_the_repository_when_none_is_given(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setenv('GITHUB_TOKEN', 'token')
+        monkeypatch.delenv('GITHUB_REPOSITORY', raising=False)
+
+        code = ci.main([SHA])
+
+        assert code == 2
+        assert 'a repository (--repo or GITHUB_REPOSITORY)' in capsys.readouterr().err
+
+    def it_sends_an_authenticated_request_to_the_configured_api_root(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, Any] = {}
+
+        def urlopen(request: Any, timeout: float) -> _BytesResponse:
+            captured['request'] = request
+            captured['timeout'] = timeout
+            return _BytesResponse(b'{"workflow_runs": []}')
+
+        monkeypatch.setenv('GITHUB_API_URL', 'https://ghe.example/api/v3/')
+        monkeypatch.setattr(ci.urllib.request, 'urlopen', urlopen)
+
+        ci.github_fetcher('secret')('/repos/o/r')
+
+        request = captured['request']
+        assert request.full_url == 'https://ghe.example/api/v3/repos/o/r'
+        assert request.get_header('Authorization') == 'Bearer secret'
+        assert request.get_header('Accept') == 'application/vnd.github+json'
+        assert request.get_header('X-github-api-version') == '2022-11-28'
+        assert captured['timeout'] == ci.REQUEST_TIMEOUT_SECONDS
+
+    def it_exits_two_when_the_api_root_is_not_https(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setenv('GITHUB_TOKEN', 'token')
+        monkeypatch.setenv('GITHUB_REPOSITORY', REPO)
+        monkeypatch.setenv('GITHUB_API_URL', 'http://api.github.com')
+
+        code = ci.main([SHA])
+
+        assert code == 2
+        assert "GITHUB_API_URL must be an https URL, got 'http://api.github.com'" in capsys.readouterr().err
 
     def it_exits_two_when_the_api_cannot_be_reached(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

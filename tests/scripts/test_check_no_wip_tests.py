@@ -57,6 +57,7 @@ class DescribeCheckNoWipTests:
         result = _run_script(tmp_path)
 
         assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout == 'No wip tests found\n'
 
     def it_exits_zero_when_there_are_no_tests_at_all(self, tmp_path: Path) -> None:
         result = _run_script(tmp_path)
@@ -283,7 +284,15 @@ class DescribeFeatureFileScan:
         result = _run_script(tmp_path)
 
         assert result.returncode == 2
-        assert 'bad.feature' in result.stderr
+        assert 'cannot read features/bad.feature' in result.stderr
+
+    def it_exits_two_when_a_feature_path_cannot_be_read(self, tmp_path: Path) -> None:
+        (tmp_path / 'features' / 'directory.feature').mkdir(parents=True)
+
+        result = _run_script(tmp_path)
+
+        assert result.returncode == 2
+        assert 'cannot read features/directory.feature' in result.stderr
 
     def it_exits_two_when_a_feature_file_is_malformed(self, tmp_path: Path) -> None:
         _write(tmp_path, 'features/malformed.feature', 'this is not gherkin\n')
@@ -291,7 +300,7 @@ class DescribeFeatureFileScan:
         result = _run_script(tmp_path)
 
         assert result.returncode == 2
-        assert 'malformed.feature' in result.stderr
+        assert 'cannot parse features/malformed.feature' in result.stderr
 
     def it_exits_two_for_a_malformed_file_even_when_another_file_holds_a_wip_tag(self, tmp_path: Path) -> None:
         _write(tmp_path, 'features/a_unfinished.feature', _feature('@wip', 'Feature: F'))
@@ -329,8 +338,22 @@ class DescribeAnnotationEscaping:
 
         _load_script()._report_failure([test_id])
 
-        annotation = next(line for line in capsys.readouterr().out.splitlines() if line.startswith('::error'))
-        assert escaped in annotation
+        annotation = capsys.readouterr().out.splitlines()[0]
+        assert annotation == (
+            '::error title=Release contains wip tests::1 wip test(s) or tag(s) found; '
+            f'a release must not ship an unfinished feature:%0A  {escaped}'
+        )
+
+    def it_prints_no_annotation_outside_github_actions(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
+
+        _load_script()._report_failure(['t.py::a', 't.py::b'])
+
+        assert capsys.readouterr().out == (
+            '2 wip test(s) or tag(s) found; a release must not ship an unfinished feature:\n  t.py::a\n  t.py::b\n'
+        )
 
 
 QUIET_ADDOPTS_CONFIG = """[pytest]
