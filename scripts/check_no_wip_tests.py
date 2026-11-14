@@ -38,7 +38,9 @@ WIP_TAG = '@wip'
 # A tag line holds only ``@tag`` tokens, optionally followed by a ``# comment``.
 TRAILING_COMMENT = re.compile(r'\s+#.*$')
 # Tags attach to the Gherkin element on the next line that is not a blank, a comment or another tag line.
-TAGGABLE_ELEMENT = re.compile(r'(Feature|Rule|Scenario Outline|Scenario Template|Scenario|Examples?)\s*:')
+TAGGABLE_ELEMENT = re.compile(
+    r'(Feature|Business Need|Ability|Rule|Scenario Outline|Scenario Template|Scenario|Examples|Scenarios|Example)\s*:'
+)
 DOCSTRING_FENCES = ('"""', '```')
 # A doc string can only open directly after a step line; elsewhere a fence-looking line is plain description text.
 STEP_LINE = re.compile(r'(Given|When|Then|And|But|\*)(\s|$)')

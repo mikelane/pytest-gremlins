@@ -286,6 +286,25 @@ class DescribeFeatureFileScan:
 
         assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:4']
 
+    @pytest.mark.parametrize(
+        ('content', 'line'),
+        [
+            (
+                _feature(
+                    'Feature: F', '  Scenario Outline: o', '    Given <x>', '', '  @wip', '  Scenarios:', '    | x |'
+                ),
+                5,
+            ),
+            (_feature('@wip', 'Business Need: F', '  Scenario: s', '    Given x'), 1),
+            (_feature('@wip', 'Ability: F', '  Scenario: s', '    Given x'), 1),
+        ],
+        ids=['scenarios', 'business-need', 'ability'],
+    )
+    def it_finds_a_wip_tag_on_an_english_keyword_synonym(self, tmp_path: Path, content: str, line: int) -> None:
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == [f'features/a.feature:{line}']
+
     @pytest.mark.parametrize('step', ['Given', 'When', 'Then', 'And', 'But', '*'])
     def it_opens_a_docstring_after_any_step_keyword(self, tmp_path: Path, step: str) -> None:
         content = _feature(
