@@ -18,6 +18,7 @@ from typing import Any
 import warnings
 
 import coverage
+import coverage.control
 import pytest
 
 from pytest_gremlins.coverage import sharded_prescan
@@ -409,6 +410,19 @@ class DescribeRunShardedPrescan:
     def it_leaves_no_unclosed_database_connection_behind_when_the_shard_data_cannot_be_combined(
         self, tmp_path: Path
     ) -> None:
+        assert self._resource_warnings_from_failed_combine(tmp_path) == []
+
+    def it_raises_no_resource_warning_when_the_collector_runs_while_coverage_reads_the_shards(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real_warn = coverage.control.Coverage._warn
+
+        def warn_after_a_collection(instance: Any, *args: Any, **kwargs: Any) -> None:
+            gc.collect()
+            real_warn(instance, *args, **kwargs)
+
+        monkeypatch.setattr(coverage.control.Coverage, '_warn', warn_after_a_collection)
+
         assert self._resource_warnings_from_failed_combine(tmp_path) == []
 
     def it_does_not_count_an_unrelated_earlier_leak_collected_during_the_run(
