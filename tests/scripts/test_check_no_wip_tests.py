@@ -251,3 +251,26 @@ class DescribeFeatureFileScan:
         path.write_bytes(b'\xef\xbb\xbf@wip\nFeature: F\n')
 
         assert _load_script().find_wip_feature_tags(tmp_path) == ['features/bom.feature:1']
+
+
+@pytest.mark.small
+class DescribeAnnotationEscaping:
+    """The ``::error`` annotation must escape ``%``, CR and LF or GitHub Actions misreads the message."""
+
+    @pytest.mark.parametrize(
+        ('test_id', 'escaped'),
+        [
+            ('t.py::test[50%]', 't.py::test[50%25]'),
+            ('t.py::test[a\rb]', 't.py::test[a%0Db]'),
+            ('t.py::test[a\nb]', 't.py::test[a%0Ab]'),
+        ],
+    )
+    def it_escapes_special_characters_in_the_annotation(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], test_id: str, escaped: str
+    ) -> None:
+        monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+
+        _load_script()._report_failure([test_id])
+
+        annotation = next(line for line in capsys.readouterr().out.splitlines() if line.startswith('::error'))
+        assert escaped in annotation
