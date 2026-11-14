@@ -272,7 +272,8 @@ matrix, update it in the same PR. `verify-tag`, `large-tests`, `benchmark` and `
 
 A release also fails if any `wip` test exists. `scripts/check_no_wip_tests.py` runs in `verify-tag` on the tagged
 commit, before the docs build, and runs `pytest -m wip --collect-only -q` (seconds, runs nothing). Any collected test,
-including a Gherkin `@wip` scenario, fails the release and is listed by ID. There is no bypass: an urgent fix that
+or a `@wip` tag found by reading `features/**/*.feature` (no pytest-bdd needed), fails the release and is listed.
+There is no bypass: an urgent fix that
 cannot wait for an unfinished feature is released from a branch off the previous release tag, not from main.
 
 **Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`

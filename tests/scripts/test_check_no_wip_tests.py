@@ -23,22 +23,6 @@ FINISHED_TEST = """
 def test_finished_feature():
     assert True
 """
-GHERKIN_FEATURE = """
-Feature: Unfinished feature
-
-  @wip
-  Scenario: Not done yet
-    Given a thing
-"""
-GHERKIN_STEPS = """
-from pytest_bdd import given, scenarios
-
-scenarios('unfinished.feature')
-
-@given('a thing')
-def _thing():
-    return None
-"""
 
 
 def _load_script() -> ModuleType:
@@ -107,16 +91,6 @@ class DescribeCheckNoWipTests:
         assert result.returncode == 2
         assert result.stderr.strip() != ''
 
-    def it_catches_a_gherkin_scenario_tagged_wip(self, tmp_path: Path) -> None:
-        pytest.importorskip('pytest_bdd')
-        _write(tmp_path, 'tests/unfinished.feature', GHERKIN_FEATURE)
-        _write(tmp_path, 'tests/test_unfinished.py', GHERKIN_STEPS)
-
-        result = _run_script(tmp_path)
-
-        assert result.returncode == 1
-        assert 'test_not_done_yet' in result.stdout
-
 
 @pytest.mark.small
 class DescribeParseCollectedIds:
@@ -131,3 +105,123 @@ class DescribeParseCollectedIds:
         output = '/venv/plugin.py:171: PytestWarning: Test has no size marker: tests/a.py::test_x\ntests/a.py::test_y\n'
 
         assert script.parse_collected_ids(output) == ['tests/a.py::test_y']
+
+
+def _feature(*lines: str) -> str:
+    return '\n'.join(lines) + '\n'
+
+
+@pytest.mark.medium
+class DescribeFeatureFileScan:
+    """``@wip`` in a ``.feature`` file is caught by reading the file, so it needs no pytest-bdd."""
+
+    @pytest.mark.parametrize(
+        ('content', 'line'),
+        [
+            (_feature('@wip', 'Feature: Unfinished', '', '  Scenario: S', '    Given a thing'), 1),
+            (_feature('Feature: F', '', '  @wip', '  Scenario: S', '    Given a thing'), 3),
+            (_feature('Feature: F', '', '  @smoke @wip', '  Scenario: S', '    Given a thing'), 3),
+            (_feature('Feature: F', '', '  @wip @smoke', '  Scenario Outline: S', '    Given <x>'), 3),
+            (_feature('Feature: F', '', '  @wip', '  Rule: R', '    Scenario: S', '      Given a thing'), 3),
+            (
+                _feature(
+                    'Feature: F',
+                    '',
+                    '  Scenario: S',
+                    '    Given a thing',
+                    '',
+                    '    @wip',
+                    '    Examples:',
+                    '      | x |',
+                ),
+                6,
+            ),
+            (_feature('Feature: F', '', '  @a', '  @wip', '  Scenario: S', '    Given a thing'), 4),
+            (_feature('Feature: F', '', '  @wip # not done', '  Scenario: S', '    Given a thing'), 3),
+        ],
+    )
+    def it_finds_a_wip_tag_on_a_feature_rule_scenario_or_examples_line(
+        self, tmp_path: Path, content: str, line: int
+    ) -> None:
+        _write(tmp_path, 'features/unfinished.feature', content)
+
+        hits = _load_script().find_wip_feature_tags(tmp_path)
+
+        assert hits == [f'features/unfinished.feature:{line}']
+
+    @pytest.mark.parametrize(
+        'content',
+        [
+            _feature('Feature: F', '', '  # @wip', '  Scenario: S', '    Given a thing'),
+            _feature('Feature: F', '', '  @wipe', '  Scenario: S', '    Given a thing'),
+            _feature('Feature: F', '', '  @wip2 @not_wip', '  Scenario: S', '    Given a thing'),
+            _feature('Feature: F', '', '  Scenario: S', '    Given an email a@wip.example'),
+            _feature('Feature: F', '', '  Scenario: S', '    Given the tag @wip is mentioned in a step'),
+            _feature('Feature: This feature talks about @wip', '', '  Scenario: S', '    Given a thing'),
+            _feature('Feature: F', '', '  @smoke', '  Scenario: S', '    Given a thing'),
+        ],
+    )
+    def it_ignores_comments_look_alikes_and_text_that_is_not_a_tag(self, tmp_path: Path, content: str) -> None:
+        _write(tmp_path, 'features/finished.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == []
+
+    def it_scans_feature_files_in_nested_directories(self, tmp_path: Path) -> None:
+        _write(tmp_path, 'features/deep/er/unfinished.feature', _feature('@wip', 'Feature: F'))
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/deep/er/unfinished.feature:1']
+
+    def it_reports_every_hit_in_every_file_in_a_stable_order(self, tmp_path: Path) -> None:
+        _write(tmp_path, 'features/b.feature', _feature('@wip', 'Feature: B'))
+        _write(
+            tmp_path,
+            'features/a.feature',
+            _feature('Feature: A', '@wip', 'Scenario: S', 'Given x', '@wip', 'Scenario: T'),
+        )
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == [
+            'features/a.feature:2',
+            'features/a.feature:5',
+            'features/b.feature:1',
+        ]
+
+    def it_finds_nothing_without_a_features_directory(self, tmp_path: Path) -> None:
+        assert _load_script().find_wip_feature_tags(tmp_path) == []
+
+    def it_fails_the_script_with_exit_one_naming_file_and_line(self, tmp_path: Path) -> None:
+        _write(tmp_path, 'tests/test_finished.py', FINISHED_TEST)
+        _write(tmp_path, 'features/unfinished.feature', _feature('Feature: F', '', '  @wip', '  Scenario: S'))
+
+        result = _run_script(tmp_path)
+
+        assert result.returncode == 1
+        assert 'features/unfinished.feature:3' in result.stdout
+
+    def it_lists_collected_tests_and_feature_tags_together(self, tmp_path: Path) -> None:
+        _write(tmp_path, 'tests/test_unfinished.py', WIP_TEST)
+        _write(tmp_path, 'features/unfinished.feature', _feature('@wip', 'Feature: F'))
+
+        result = _run_script(tmp_path)
+
+        assert result.returncode == 1
+        assert 'tests/test_unfinished.py::test_unfinished_feature' in result.stdout
+        assert 'features/unfinished.feature:1' in result.stdout
+
+    def it_still_fails_on_a_feature_tag_when_collection_is_broken(self, tmp_path: Path) -> None:
+        _write(tmp_path, 'tests/test_broken.py', 'def test_broken(:\n')
+        _write(tmp_path, 'features/unfinished.feature', _feature('@wip', 'Feature: F'))
+
+        result = _run_script(tmp_path)
+
+        assert result.returncode == 1
+        assert 'features/unfinished.feature:1' in result.stdout
+
+    def it_exits_two_when_a_feature_file_cannot_be_decoded(self, tmp_path: Path) -> None:
+        path = tmp_path / 'features' / 'bad.feature'
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b'\xff\xfe\x00bad')
+
+        result = _run_script(tmp_path)
+
+        assert result.returncode == 2
+        assert 'bad.feature' in result.stderr

@@ -138,8 +138,10 @@ The large tier does not run in `ci.yml`, so the release still runs it (`large-te
 **A release fails if any `wip` test exists.** Pull requests may carry `wip` tests: they mark BDD scenarios for a
 feature that is not finished, and CI deselects them. A release must not ship an unfinished feature. The first checks
 of the `verify-tag` job run `pytest -m wip --collect-only -q` on the tagged commit, which runs no tests and takes
-seconds. If it collects any test, the release fails and lists the test IDs. Gherkin scenarios tagged `@wip` count,
-because pytest-bdd turns the tag into the `wip` marker. There is no bypass. To ship an urgent fix while a feature is
+seconds. It also reads `features/**/*.feature` for a `@wip` tag on a Feature, Rule, Scenario or Examples, so a
+scenario that nothing runs yet is caught without pytest-bdd. Comments and text that is not a tag do not count. If it
+finds any test or tag, the release fails and lists the test IDs and the `file:line` of each tag. There is no bypass.
+To ship an urgent fix while a feature is
 unfinished, release from a branch off the previous release tag, not from main. To run the check locally, run
 `uv run python scripts/check_no_wip_tests.py`.
 
