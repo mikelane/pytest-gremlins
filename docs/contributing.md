@@ -112,6 +112,35 @@ before the tag is created, and the `verify-tag` job of `release.yml`. There is n
 variable or workflow input skips it. To run it locally, fetch the tags and run
 `uv run python scripts/check_cache_kept.py --newest`. A lowered marker is rejected by the per-PR check, not by this one.
 
+## Release CI Gate and wip Tests
+
+A release does not rerun the OS and Python test matrix. Main CI already ran it on the commit the tag points at, so the
+`ci-gate` job of `release.yml` asks GitHub whether that run passed. `scripts/check_ci_passed.py` looks up the `ci.yml`
+`push` run by the commit SHA, not by branch, and passes only when
+
+- the run concluded `success`, and
+- every `Test (Python ..., ...)` and `Test (pytest ...)` job in it concluded `success`.
+
+`ci.yml` skips its test jobs when no source file changed, and a skipped job leaves the run green. So a skipped or
+missing test job fails the gate, even when `All Checks Passed` is green. If the run is still in progress, the gate
+waits for it for up to four hours. If no passing run exists, it fails and names the SHA. There is no bypass: no flag,
+environment variable or workflow input skips it. To release a commit with no passing main CI run, get CI to pass for
+that commit first.
+
+The expected job names live in `scripts/check_ci_passed.py` and are pinned to the matrices in `ci.yml` by a test.
+When you change a matrix in `ci.yml`, update `EXPECTED_TEST_JOBS` in the same PR.
+
+The large tier does not run in `ci.yml`, so the release still runs it (`large-tests`), along with `benchmark` and
+`attrs-compat`.
+
+**A release fails if any `wip` test exists.** Pull requests may carry `wip` tests: they mark BDD scenarios for a
+feature that is not finished, and CI deselects them. A release must not ship an unfinished feature. The first checks
+of the `verify-tag` job run `pytest -m wip --collect-only -q` on the tagged commit, which runs no tests and takes
+seconds. If it collects any test, the release fails and lists the test IDs. Gherkin scenarios tagged `@wip` count,
+because pytest-bdd turns the tag into the `wip` marker. There is no bypass. To ship an urgent fix while a feature is
+unfinished, release from a branch off the previous release tag, not from main. To run the check locally, run
+`uv run python scripts/check_no_wip_tests.py`.
+
 ## Code of Conduct
 
 Please read and follow our [Code of Conduct](https://github.com/mikelane/pytest-gremlins/blob/main/CODE_OF_CONDUCT.md).

@@ -861,8 +861,9 @@ refuses to continue if either is wrong.
 
 **What happens:** The script uses commitizen to bump the version in `pyproject.toml` and
 `src/pytest_gremlins/__init__.py`, regenerate `CHANGELOG.md`, create a version commit and
-tag, and push both to origin. The tag push triggers the `release.yml` pipeline, which runs
-tests, publishes to PyPI, and creates a GitHub Release.
+tag, and push both to origin. The tag push triggers the `release.yml` pipeline, which checks the tag,
+requires a passing main CI run for the tagged commit, runs the large tier, benchmarks and attrs
+compatibility, publishes to PyPI, and creates a GitHub Release.
 
 ### How to Release (GitHub Actions)
 
@@ -959,6 +960,34 @@ under the gated headings. The reason is public and is reviewed in the changelog 
 the docs gate (`ci.yml` on a `CHANGELOG.md` change with `--newest`, `cut-release.yml`, and `verify-tag`), exits 1 naming
 the changed files, exits 2 when it could not run, and has no bypass. With `--newest`, a topmost entry that is already
 tagged passes; the changes after it are checked once the next entry is added.
+
+### Release Gates: Main CI and wip Tests
+
+The release does not rerun the OS x Python test matrix (small and medium tiers). `ci.yml` already ran it on
+the commit the tag points at, and two copies of the test step drift apart (#1012). The `ci-gate` job of
+`release.yml` runs `scripts/check_ci_passed.py` for the tagged commit. It looks up the `ci.yml` `push` run by
+SHA, so a tag on a release branch works if CI ran for its commit, and passes only when the run concluded
+`success` and every `Test (Python ..., ...)` and `Test (pytest ...)` job concluded `success`. A skipped or missing
+test job fails the gate, because `ci.yml` skips the matrix when no source file changed and the run stays green. An
+in-progress run is waited for (up to four hours); with no passing run the gate fails and names the SHA. It exits 2
+when it could not query GitHub, which is never a pass.
+
+- **No bypass.** No input, variable or condition skips the gate, and `skip_test_pypi` does not touch it. `build`
+  needs `ci-gate`, so every publish job sits behind it and `verify-tag`
+  (`tests/scripts/test_release_workflow.py` pins this).
+- **Expected jobs.** `EXPECTED_TEST_JOBS` in the script is pinned to the `ci.yml` matrices by a test. Changing
+  a matrix without updating it fails a PR.
+- **Still run by the release:** `verify-tag` (tag, changelog docs gate, cache-kept gate, wip gate),
+  `large-tests`, `benchmark` and `attrs-compat`. The last three start after `verify-tag`, in parallel with
+  `ci-gate`.
+- **Permissions.** `ci-gate` has `actions: read` and `contents: read` only.
+
+**A release fails if any `wip` test exists.** `wip` marks BDD scenarios for an unfinished feature (`pyproject.toml`).
+PRs pass with them; a release must not ship them. `scripts/check_no_wip_tests.py` runs in `verify-tag` on the tagged
+commit, before the docs build and the other gates, and runs `pytest -m wip --collect-only -q`. It collects only,
+so it takes seconds. Any collected test fails the release and is listed by ID. Gherkin `@wip` scenarios count
+(pytest-bdd maps the tag to the marker). No bypass: an urgent fix goes out from a branch off the previous release tag,
+not from main.
 
 ### When to Release
 
