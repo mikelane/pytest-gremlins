@@ -141,6 +141,6 @@ jobs:
         run: |
           echo "### Released ${NEW_TAG}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "The tag push triggers the release pipeline, which runs tests, publishes to PyPI, and creates a GitHub Release." >> "$GITHUB_STEP_SUMMARY"
+          echo "The tag push triggers the release pipeline, which checks the tag, requires a passing main CI run for the tagged commit, and runs the large tier, benchmarks and attrs compatibility before publishing to PyPI and creating the GitHub Release." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "[Monitor the release pipeline](https://github.com/mikelane/pytest-gremlins/actions/workflows/release.yml)" >> "$GITHUB_STEP_SUMMARY"

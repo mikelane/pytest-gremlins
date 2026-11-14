@@ -54,6 +54,7 @@ docs = [
 dev = [
     {include-group = "docs"},
     "commitizen>=4.18.1",
+    "gherkin-official>=43.0.0",
     "isort>=9.0.1",
     "jsonschema>=4.26.0",
     "mypy>=2.3.1",
