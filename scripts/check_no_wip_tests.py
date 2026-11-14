@@ -35,11 +35,8 @@ import sys
 PYTEST_NO_TESTS_COLLECTED = 5
 FEATURES_DIRECTORY = 'features'
 WIP_TAG = '@wip'
-# A tag line holds only ``@tag`` tokens, optionally followed by a ``# comment``.
-TRAILING_COMMENT = re.compile(r'\s+#.*$')
-# A whitespace-separated token is one or more ``@tag`` pieces run together, as Gherkin reads ``@a@b``.
-TAG_TOKEN = re.compile(r'(?:@[^@\s]+)+')
-TAG_PATTERN = re.compile(r'@[^@\s]+')
+# Gherkin drops a ``# comment`` that follows whitespace on a tag line.
+TAG_LINE_COMMENT = re.compile(r'\s#')
 # Tags attach to the Gherkin element on the next line that is not a blank, a comment or another tag line.
 TAGGABLE_ELEMENT = re.compile(
     r'(Feature|Business Need|Ability|Rule|Scenario Outline|Scenario Template|Scenario|Examples|Scenarios|Example):'
@@ -125,14 +122,21 @@ def find_wip_tests(repo: Path) -> list[str]:
 
 
 def _tag_tokens(line: str) -> list[str] | None:
-    """Return the tags on a tag line, or None when the line is not made only of ``@tag`` tokens.
+    """Return the tags on a tag line, or None when the line is not a tag line.
 
-    Gherkin splits a token on ``@`` too, so ``@smoke@wip`` is the two tags ``@smoke`` and ``@wip``.
+    Mirrors gherkin-official: a line is a tag line when its stripped text starts with ``@``. The text is split on
+    ``@`` after the comment is dropped, so ``@smoke@wip``, ``@wip@``, ``@@wip`` and ``@ wip`` all tag ``@wip``.
+
+    Raises:
+        CannotCheckError: If a tag holds whitespace, which Gherkin rejects, so the file cannot be checked.
     """
-    tokens = TRAILING_COMMENT.sub('', line.strip()).split()
-    if not tokens or not all(TAG_TOKEN.fullmatch(token) for token in tokens):
+    stripped = line.strip()
+    if not stripped.startswith('@'):
         return None
-    return [tag for token in tokens for tag in TAG_PATTERN.findall(token)]
+    pieces = [piece.strip() for piece in TAG_LINE_COMMENT.split(stripped, maxsplit=1)[0].split('@')[1:]]
+    if any(len(piece.split()) > 1 for piece in pieces):
+        raise CannotCheckError(f'a tag may not contain whitespace: {stripped!r}')
+    return [f'@{piece}' for piece in pieces]
 
 
 def _in_step_container(stripped: str, in_steps: bool) -> bool:
@@ -165,7 +169,10 @@ def _wip_tag_lines_in(text: str) -> list[int]:
             continue
         in_steps = _in_step_container(stripped, in_steps)
         after_step = in_steps and STEP_LINE.match(stripped) is not None
-        tokens = _tag_tokens(line)
+        try:
+            tokens = _tag_tokens(line)
+        except CannotCheckError as error:
+            raise CannotCheckError(f'{number}: {error}') from error
         if tokens is not None:
             if WIP_TAG in tokens:
                 pending.append(number)
@@ -195,7 +202,10 @@ def find_wip_feature_tags(repo: Path) -> list[str]:
             text = path.read_text(encoding='utf-8-sig')
         except (OSError, UnicodeDecodeError) as error:
             raise CannotCheckError(f'cannot read {relative}: {error}') from error
-        found.extend(f'{relative}:{number}' for number in _wip_tag_lines_in(text))
+        try:
+            found.extend(f'{relative}:{number}' for number in _wip_tag_lines_in(text))
+        except CannotCheckError as error:
+            raise CannotCheckError(f'cannot parse {relative}:{error}') from error
     return found
 
 

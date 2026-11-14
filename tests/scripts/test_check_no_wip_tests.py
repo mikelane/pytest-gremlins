@@ -176,6 +176,33 @@ class DescribeFeatureFileScan:
         assert _load_script().find_wip_feature_tags(tmp_path) == [f'features/packed.feature:{line}']
 
     @pytest.mark.parametrize(
+        'tag_line',
+        ['@wip @', '@wip@', '@@wip', '@ wip', '@smoke @ @wip'],
+        ids=['trailing-lone-at', 'packed-trailing-at', 'doubled-at', 'space-after-at', 'lone-at-between-tags'],
+    )
+    def it_finds_a_wip_tag_on_a_line_with_a_stray_at_sign(self, tmp_path: Path, tag_line: str) -> None:
+        _write(
+            tmp_path,
+            'features/stray.feature',
+            _feature('Feature: F', '', f'  {tag_line}', '  Scenario: S', '    Given a'),
+        )
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/stray.feature:3']
+
+    @pytest.mark.parametrize('tag_line', ['@wip later', '@smoke wip'], ids=['word-after-tag', 'word-after-other-tag'])
+    def it_cannot_check_a_tag_line_whose_tag_contains_whitespace(self, tmp_path: Path, tag_line: str) -> None:
+        _write(
+            tmp_path,
+            'features/bad.feature',
+            _feature('Feature: F', '', f'  {tag_line}', '  Scenario: S', '    Given a'),
+        )
+
+        script = _load_script()
+
+        with pytest.raises(script.CannotCheckError, match=r'bad\.feature:3'):
+            script.find_wip_feature_tags(tmp_path)
+
+    @pytest.mark.parametrize(
         'content',
         [
             _feature('Feature: F', '', '  # @wip', '  Scenario: S', '    Given a thing'),
