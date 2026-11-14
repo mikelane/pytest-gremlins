@@ -265,16 +265,16 @@ passes only when the run concluded `success` and every `Test (Python ..., ...)` 
 `success`. A skipped or missing test job fails it, because `ci.yml` skips the matrix when no source changed and the run
 stays green. A queued or in-progress run is waited for (up to four hours). If no run exists at all, it waits 10
 minutes, then fails saying the SHA has no main CI run (a tag on a branch other than main); with no passing run it
-fails and names the SHA. Exit 2
-means it could not query GitHub, never a pass. There is no bypass, and `build` needs `ci-gate`, so every publish job
-sits behind it. `EXPECTED_TEST_JOBS` in the script is pinned to the `ci.yml` matrices by a test: when you change a
-matrix, update it in the same PR. `verify-tag`, `large-tests`, `benchmark` and `attrs-compat` still run in the release.
+fails and names the SHA. Exit 2 means it could not query GitHub, never a pass. There is no bypass, and `build` needs
+`ci-gate`, so every publish job sits behind it. `EXPECTED_TEST_JOBS` in the script is pinned to the `ci.yml` matrices
+by a test: when you change a matrix, update it in the same PR. `verify-tag`, `large-tests`, `benchmark` and
+`attrs-compat` still run in the release.
 
 A release also fails if any `wip` test exists. `scripts/check_no_wip_tests.py` runs in `verify-tag` on the tagged
 commit, before the docs build, and runs `pytest -m wip --collect-only -q` (seconds, runs nothing). Any collected test,
 or a `@wip` tag found by reading `features/**/*.feature` (no pytest-bdd needed), fails the release and is listed.
-There is no bypass: an urgent fix that
-cannot wait for an unfinished feature is released from a branch off the previous release tag, not from main.
+There is no bypass: an urgent fix that cannot wait for an unfinished feature is released from a branch off the
+previous release tag, not from main.
 
 **Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`
 pre-commit hook blocks commits to `main` and leaves a dirty version bump to revert.

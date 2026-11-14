@@ -125,9 +125,8 @@ A release does not rerun the OS and Python test matrix. Main CI already ran it o
 missing test job fails the gate, even when `All Checks Passed` is green. If the run is still in progress, the gate
 waits for it for up to four hours. If no run exists at all, for example because the tag is on a branch other than
 main, it waits 10 minutes and then fails saying the SHA has no main CI run. If no passing run exists, it fails and
-names the SHA. There is no bypass: no flag,
-environment variable or workflow input skips it. To release a commit with no passing main CI run, get CI to pass for
-that commit first.
+names the SHA. There is no bypass: no flag, environment variable or workflow input skips it. To release a commit
+with no passing main CI run, get CI to pass for that commit first.
 
 The expected job names live in `scripts/check_ci_passed.py` and are pinned to the matrices in `ci.yml` by a test.
 When you change a matrix in `ci.yml`, update `EXPECTED_TEST_JOBS` in the same PR.
@@ -141,9 +140,8 @@ of the `verify-tag` job run `pytest -m wip --collect-only -q` on the tagged comm
 seconds. It also reads `features/**/*.feature` for a `@wip` tag on a Feature, Rule, Scenario or Examples, so a
 scenario that nothing runs yet is caught without pytest-bdd. Comments and text that is not a tag do not count. If it
 finds any test or tag, the release fails and lists the test IDs and the `file:line` of each tag. There is no bypass.
-To ship an urgent fix while a feature is
-unfinished, release from a branch off the previous release tag, not from main. To run the check locally, run
-`uv run python scripts/check_no_wip_tests.py`.
+To ship an urgent fix while a feature is unfinished, release from a branch off the previous release tag, not from
+main. To run the check locally, run `uv run python scripts/check_no_wip_tests.py`.
 
 ## Code of Conduct
 
