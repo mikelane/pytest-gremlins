@@ -302,6 +302,12 @@ class DescribeExpectedTestJobs:
 
         assert set(ci.EXPECTED_TEST_JOBS) == python_names | pytest_names
 
+    def it_requires_the_ci_matrices_to_have_no_include_or_exclude_entries(self) -> None:
+        jobs = yaml.safe_load(CI_WORKFLOW.read_text())['jobs']
+
+        for job in ('test', 'pytest-compat'):
+            assert {'include', 'exclude'}.isdisjoint(jobs[job]['strategy']['matrix'])
+
     def it_has_no_duplicates(self) -> None:
         assert len(set(ci.EXPECTED_TEST_JOBS)) == len(ci.EXPECTED_TEST_JOBS)
 
