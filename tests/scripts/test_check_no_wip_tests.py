@@ -272,6 +272,49 @@ class DescribeFeatureFileScan:
 
         assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:8']
 
+    @pytest.mark.parametrize('fence', ['"""Docstrings""" are left alone: no gremlin targets them.', '```text'])
+    def it_does_not_open_a_docstring_on_a_description_line(self, tmp_path: Path, fence: str) -> None:
+        content = _feature(
+            'Feature: F',
+            f'  {fence}',
+            '',
+            '  @wip',
+            '  Scenario: Unfinished',
+            '    Given a thing',
+        )
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:4']
+
+    @pytest.mark.parametrize('step', ['Given', 'When', 'Then', 'And', 'But', '*'])
+    def it_opens_a_docstring_after_any_step_keyword(self, tmp_path: Path, step: str) -> None:
+        content = _feature(
+            'Feature: F',
+            '  Scenario: S',
+            f'    {step} a source',
+            '      """',
+            '      @wip',
+            '      """',
+        )
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == []
+
+    def it_opens_a_docstring_after_a_step_followed_by_a_comment_or_blank_line(self, tmp_path: Path) -> None:
+        content = _feature(
+            'Feature: F',
+            '  Scenario: S',
+            '    Given a source',
+            '',
+            '    # explain the source',
+            '      """',
+            '      @wip',
+            '      """',
+        )
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == []
+
 
 @pytest.mark.small
 class DescribeAnnotationEscaping:

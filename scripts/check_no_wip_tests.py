@@ -40,6 +40,8 @@ TRAILING_COMMENT = re.compile(r'\s+#.*$')
 # Tags attach to the Gherkin element on the next line that is not a blank, a comment or another tag line.
 TAGGABLE_ELEMENT = re.compile(r'(Feature|Rule|Scenario Outline|Scenario Template|Scenario|Examples?)\s*:')
 DOCSTRING_FENCES = ('"""', '```')
+# A doc string can only open directly after a step line; elsewhere a fence-looking line is plain description text.
+STEP_LINE = re.compile(r'(Given|When|Then|And|But|\*)(\s|$)')
 # A node ID is one whitespace-free token holding ``::``; a warning that merely quotes an ID has a space before it.
 TEST_ID_LINE = re.compile(r'\S+::')
 
@@ -125,10 +127,11 @@ def _wip_tag_lines_in(text: str) -> list[int]:
     hits: list[int] = []
     pending: list[int] = []
     open_fence: str | None = None
+    after_step = False
     for number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         fence = next((fence for fence in DOCSTRING_FENCES if stripped.startswith(fence)), None)
-        if open_fence is None and fence is not None:
+        if open_fence is None and fence is not None and after_step:
             open_fence = fence
             continue
         if open_fence is not None:
@@ -137,6 +140,7 @@ def _wip_tag_lines_in(text: str) -> list[int]:
             continue
         if not stripped or stripped.startswith('#'):
             continue
+        after_step = STEP_LINE.match(stripped) is not None
         tokens = _tag_tokens(line)
         if tokens is not None:
             if WIP_TAG in tokens:
