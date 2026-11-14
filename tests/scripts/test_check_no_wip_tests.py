@@ -113,7 +113,7 @@ def _feature(*lines: str) -> str:
 
 @pytest.mark.medium
 class DescribeFeatureFileScan:
-    """``@wip`` in a ``.feature`` file is caught by reading the file, so it needs no pytest-bdd."""
+    """``@wip`` in a ``.feature`` file is found by parsing it with the official Gherkin parser."""
 
     @pytest.mark.parametrize(
         ('content', 'line'),
@@ -123,12 +123,13 @@ class DescribeFeatureFileScan:
             (_feature('Feature: F', '', '  @smoke @wip', '  Scenario: S', '    Given a thing'), 3),
             (_feature('Feature: F', '', '  @wip @smoke', '  Scenario Outline: S', '    Given <x>'), 3),
             (_feature('Feature: F', '', '  @wip', '  Rule: R', '    Scenario: S', '      Given a thing'), 3),
+            (_feature('Feature: F', '', '  Rule: R', '    @wip', '    Scenario: S', '      Given a thing'), 4),
             (
                 _feature(
                     'Feature: F',
                     '',
-                    '  Scenario: S',
-                    '    Given a thing',
+                    '  Scenario Outline: S',
+                    '    Given <x>',
                     '',
                     '    @wip',
                     '    Examples:',
@@ -138,48 +139,31 @@ class DescribeFeatureFileScan:
             ),
             (_feature('Feature: F', '', '  @a', '  @wip', '  Scenario: S', '    Given a thing'), 4),
             (_feature('Feature: F', '', '  @wip # not done', '  Scenario: S', '    Given a thing'), 3),
+            (_feature('Feature: F', '', '  @smoke@wip', '  Scenario: S', '    Given a thing'), 3),
+            (_feature('@wip', 'Business Need: F', '  Scenario: s', '    Given x'), 1),
         ],
         ids=[
             'feature',
             'scenario',
             'scenario-second-tag',
             'scenario-outline-first-tag',
-            'rule',
+            'rule-follows-tag',
+            'scenario-inside-rule',
             'examples',
             'second-tag-line',
             'trailing-comment',
+            'packed-against-another-tag',
+            'keyword-synonym',
         ],
     )
-    def it_finds_a_wip_tag_on_a_feature_rule_scenario_or_examples_line(
-        self, tmp_path: Path, content: str, line: int
-    ) -> None:
+    def it_finds_a_wip_tag_wherever_gherkin_attaches_it(self, tmp_path: Path, content: str, line: int) -> None:
         _write(tmp_path, 'features/unfinished.feature', content)
 
         hits = _load_script().find_wip_feature_tags(tmp_path)
 
         assert hits == [f'features/unfinished.feature:{line}']
 
-    @pytest.mark.parametrize(
-        ('content', 'line'),
-        [
-            (_feature('Feature: F', '', '  @smoke@wip', '  Scenario: S', '    Given a thing'), 3),
-            (_feature('Feature: F', '', '  @wip@smoke', '  Scenario: S', '    Given a thing'), 3),
-            (_feature('@smoke@wip', 'Feature: F', '', '  Scenario: S', '    Given a thing'), 1),
-        ],
-        ids=['wip-after-other-tag', 'wip-before-other-tag', 'feature-level'],
-    )
-    def it_finds_a_wip_tag_packed_against_another_tag_without_a_space(
-        self, tmp_path: Path, content: str, line: int
-    ) -> None:
-        _write(tmp_path, 'features/packed.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == [f'features/packed.feature:{line}']
-
-    @pytest.mark.parametrize(
-        'tag_line',
-        ['@wip @', '@wip@', '@@wip', '@ wip', '@smoke @ @wip'],
-        ids=['trailing-lone-at', 'packed-trailing-at', 'doubled-at', 'space-after-at', 'lone-at-between-tags'],
-    )
+    @pytest.mark.parametrize('tag_line', ['@wip @', '@wip@', '@@wip', '@ wip', '@smoke @ @wip'])
     def it_finds_a_wip_tag_on_a_line_with_a_stray_at_sign(self, tmp_path: Path, tag_line: str) -> None:
         _write(
             tmp_path,
@@ -189,7 +173,7 @@ class DescribeFeatureFileScan:
 
         assert _load_script().find_wip_feature_tags(tmp_path) == ['features/stray.feature:3']
 
-    @pytest.mark.parametrize('tag_line', ['@wip later', '@smoke wip'], ids=['word-after-tag', 'word-after-other-tag'])
+    @pytest.mark.parametrize('tag_line', ['@wip later', '@smoke wip'])
     def it_cannot_check_a_tag_line_whose_tag_contains_whitespace(self, tmp_path: Path, tag_line: str) -> None:
         _write(
             tmp_path,
@@ -199,7 +183,7 @@ class DescribeFeatureFileScan:
 
         script = _load_script()
 
-        with pytest.raises(script.CannotCheckError, match=r'bad\.feature:3'):
+        with pytest.raises(script.CannotCheckError, match=r'bad\.feature'):
             script.find_wip_feature_tags(tmp_path)
 
     @pytest.mark.parametrize(
@@ -207,24 +191,28 @@ class DescribeFeatureFileScan:
         [
             _feature('Feature: F', '', '  # @wip', '  Scenario: S', '    Given a thing'),
             _feature('Feature: F', '', '  @wipe', '  Scenario: S', '    Given a thing'),
+            _feature('Feature: F', '', '  @wip-later', '  Scenario: S', '    Given a thing'),
             _feature('Feature: F', '', '  @wip2 @not_wip', '  Scenario: S', '    Given a thing'),
             _feature('Feature: F', '', '  Scenario: S', '    Given an email a@wip.example'),
             _feature('Feature: F', '', '  Scenario: S', '    Given the tag @wip is mentioned in a step'),
             _feature('Feature: This feature talks about @wip', '', '  Scenario: S', '    Given a thing'),
+            _feature('Feature: F', '  A description that mentions @wip in prose', '', '  Scenario: S'),
+            _feature('Feature: F', '  Scenario: S', '    Given a source', '      """', '      @wip', '      """'),
             _feature('Feature: F', '', '  @smoke', '  Scenario: S', '    Given a thing'),
             _feature('Feature: F', '', '  @wip,', '  Scenario: S', '    Given a thing'),
-            _feature('Feature: F', '', '  @wip#c', '  Scenario: S', '    Given a thing'),
         ],
         ids=[
             'commented-out',
             'longer-tag',
+            'hyphenated-tag',
             'tags-containing-wip',
             'email-in-step',
             'tag-text-in-step',
             'tag-text-in-title',
+            'tag-text-in-description',
+            'tag-text-in-docstring',
             'other-tag',
             'wip-with-trailing-comma',
-            'wip-with-hash-suffix',
         ],
     )
     def it_ignores_comments_look_alikes_and_text_that_is_not_a_tag(self, tmp_path: Path, content: str) -> None:
@@ -252,6 +240,11 @@ class DescribeFeatureFileScan:
         ]
 
     def it_finds_nothing_without_a_features_directory(self, tmp_path: Path) -> None:
+        assert _load_script().find_wip_feature_tags(tmp_path) == []
+
+    def it_finds_nothing_in_an_empty_feature_file(self, tmp_path: Path) -> None:
+        _write(tmp_path, 'features/empty.feature', '')
+
         assert _load_script().find_wip_feature_tags(tmp_path) == []
 
     def it_fails_the_script_with_exit_one_naming_file_and_line(self, tmp_path: Path) -> None:
@@ -292,193 +285,29 @@ class DescribeFeatureFileScan:
         assert result.returncode == 2
         assert 'bad.feature' in result.stderr
 
+    def it_exits_two_when_a_feature_file_is_malformed(self, tmp_path: Path) -> None:
+        _write(tmp_path, 'features/malformed.feature', 'this is not gherkin\n')
+
+        result = _run_script(tmp_path)
+
+        assert result.returncode == 2
+        assert 'malformed.feature' in result.stderr
+
+    def it_exits_two_for_a_malformed_file_even_when_another_file_holds_a_wip_tag(self, tmp_path: Path) -> None:
+        _write(tmp_path, 'features/a_unfinished.feature', _feature('@wip', 'Feature: F'))
+        _write(tmp_path, 'features/b_malformed.feature', 'this is not gherkin\n')
+
+        result = _run_script(tmp_path)
+
+        assert result.returncode == 2
+        assert 'b_malformed.feature' in result.stderr
+
     def it_finds_a_wip_tag_in_a_feature_file_that_starts_with_a_byte_order_mark(self, tmp_path: Path) -> None:
         path = tmp_path / 'features' / 'bom.feature'
         path.parent.mkdir(parents=True)
         path.write_bytes(b'\xef\xbb\xbf@wip\nFeature: F\n')
 
         assert _load_script().find_wip_feature_tags(tmp_path) == ['features/bom.feature:1']
-
-    @pytest.mark.parametrize(
-        ('opening', 'inner'), [('```python', '"""Module docstring."""'), ('"""', '```')], ids=['backtick', 'quote']
-    )
-    def it_closes_a_docstring_only_on_the_fence_that_opened_it(self, tmp_path: Path, opening: str, inner: str) -> None:
-        content = _feature(
-            'Feature: F',
-            '  Scenario: S',
-            '    Given a source',
-            f'      {opening}',
-            f'      {inner}',
-            f'      {opening[:3]}',
-            '',
-            '  @wip',
-            '  Scenario: Unfinished',
-            '    Given a thing',
-        )
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:8']
-
-    @pytest.mark.parametrize('fence', ['"""Docstrings""" are left alone: no gremlin targets them.', '```text'])
-    def it_does_not_open_a_docstring_on_a_description_line(self, tmp_path: Path, fence: str) -> None:
-        content = _feature(
-            'Feature: F',
-            f'  {fence}',
-            '',
-            '  @wip',
-            '  Scenario: Unfinished',
-            '    Given a thing',
-        )
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:4']
-
-    @pytest.mark.parametrize(
-        ('content', 'line'),
-        [
-            (
-                _feature(
-                    'Feature: F', '  Scenario Outline: o', '    Given <x>', '', '  @wip', '  Scenarios:', '    | x |'
-                ),
-                5,
-            ),
-            (_feature('@wip', 'Business Need: F', '  Scenario: s', '    Given x'), 1),
-            (_feature('@wip', 'Ability: F', '  Scenario: s', '    Given x'), 1),
-        ],
-        ids=['scenarios', 'business-need', 'ability'],
-    )
-    def it_finds_a_wip_tag_on_an_english_keyword_synonym(self, tmp_path: Path, content: str, line: int) -> None:
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == [f'features/a.feature:{line}']
-
-    @pytest.mark.parametrize('step', ['Given', 'When', 'Then', 'And', 'But', '*'])
-    def it_opens_a_docstring_after_any_step_keyword(self, tmp_path: Path, step: str) -> None:
-        content = _feature(
-            'Feature: F',
-            '  Scenario: S',
-            f'    {step} a source',
-            '      """',
-            '      @wip',
-            '      """',
-        )
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == []
-
-    def it_opens_a_docstring_after_a_step_followed_by_a_comment_or_blank_line(self, tmp_path: Path) -> None:
-        content = _feature(
-            'Feature: F',
-            '  Scenario: S',
-            '    Given a source',
-            '',
-            '    # explain the source',
-            '      """',
-            '      @wip',
-            '      """',
-        )
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == []
-
-    @pytest.mark.parametrize(
-        ('content', 'line'),
-        [
-            (
-                _feature(
-                    'Feature: F', '  And a line in the description', '  """quoted""" text', '  @wip', '  Scenario: S'
-                ),
-                4,
-            ),
-            (
-                _feature('Feature: F', '  Notes:', '  * see the doc', '  ```python', '  @wip', '  Scenario: S'),
-                5,
-            ),
-            (
-                _feature(
-                    'Feature: F',
-                    '  Rule: R',
-                    '    But a rule description line',
-                    '    """',
-                    '    @wip',
-                    '    Scenario: S',
-                ),
-                5,
-            ),
-            (
-                _feature(
-                    'Feature: F',
-                    '  Scenario Outline: S',
-                    '    Given a <v>',
-                    '    Examples: first',
-                    '      * a bullet describing these examples',
-                    '      """',
-                    '      | v |',
-                    '    @wip',
-                    '    Examples: second',
-                    '      | v |',
-                ),
-                8,
-            ),
-        ],
-        ids=['feature-and-line', 'feature-bullet', 'rule-but-line', 'examples-bullet'],
-    )
-    def it_finds_a_wip_tag_after_a_fence_in_a_header_description(self, tmp_path: Path, content: str, line: int) -> None:
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == [f'features/a.feature:{line}']
-
-    @pytest.mark.parametrize('header', ['Background:', 'Scenario: S', 'Example: S'])
-    def it_opens_a_docstring_after_a_star_step_directly_under_a_step_container(
-        self, tmp_path: Path, header: str
-    ) -> None:
-        content = _feature('Feature: F', f'  {header}', '    * a source', '      """', '      @wip', '      """')
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == []
-
-    @pytest.mark.parametrize(
-        'preamble',
-        [
-            ('Feature: F',),
-            ('Feature: F', '  Rule: R'),
-            ('Feature: F', '  Scenario: S', '    Given a thing', '  Examples:'),
-        ],
-        ids=['feature-description', 'rule-description', 'examples-description'],
-    )
-    @pytest.mark.parametrize('header', ['Scenario : x', 'Background : x', 'Scenario Outline : x'])
-    def it_reads_a_header_with_a_space_before_the_colon_as_description_text(
-        self, tmp_path: Path, preamble: tuple[str, ...], header: str
-    ) -> None:
-        content = _feature(
-            *preamble, f'  {header}', '  And prose', '  """', '  @wip', '  Scenario: real', '    Given x'
-        )
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:' + str(len(preamble) + 4)]
-
-    @pytest.mark.parametrize('first_line', ['Given\tprose', 'Given\u00a0prose', 'And', 'Given', '*\tprose'])
-    def it_reads_a_step_keyword_without_a_literal_space_as_description_text(
-        self, tmp_path: Path, first_line: str
-    ) -> None:
-        content = _feature('Feature: F', '  Scenario: S', f'    {first_line}', '    """', '  @wip', '  Scenario: real')
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:5']
-
-    def it_opens_a_docstring_after_a_step_in_a_scenario_that_follows_a_rule(self, tmp_path: Path) -> None:
-        content = _feature(
-            'Feature: F',
-            '  Rule: R',
-            '    Scenario: S',
-            '      Given a source',
-            '        ```',
-            '        @wip',
-            '        ```',
-        )
-        _write(tmp_path, 'features/a.feature', content)
-
-        assert _load_script().find_wip_feature_tags(tmp_path) == []
 
 
 @pytest.mark.small

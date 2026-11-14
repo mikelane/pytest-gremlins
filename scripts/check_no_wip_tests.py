@@ -5,10 +5,11 @@
 release must not ship an unfinished feature. The check has two parts, and runs nothing, so it takes seconds:
 
 * it collects with ``pytest -m wip --collect-only -q``, which catches any test carrying a ``wip`` marker.
-* it reads ``features/**/*.feature`` directly for a ``@wip`` tag on a Feature, Rule, Scenario or Examples. This
-  direct scan is what catches ``@wip`` scenarios; it does not rely on pytest collecting them, so it needs no
-  pytest-bdd. Only tag lines count: a comment, a longer tag such as ``@wipe``, and ``@wip`` inside step or
-  description text do not.
+* it parses ``features/**/*.feature`` with the official Gherkin parser (``gherkin-official``) for a ``@wip`` tag on
+  a Feature, Rule, Scenario, Scenario Outline or Examples. This direct scan is what catches ``@wip`` scenarios; it
+  does not rely on pytest collecting them, so it needs no pytest-bdd. Only real tags count: a comment, a longer tag
+  such as ``@wipe``, and ``@wip`` inside step, description or doc string text do not. A file the parser rejects
+  cannot be checked, so it exits 2.
 
 Nothing skips this check: it has no flag, environment variable or input that turns it off. An urgent fix that cannot
 wait for an unfinished feature is released from a branch off the previous release tag, not from main. That path
@@ -26,27 +27,17 @@ printed on stderr). Exit 2 is never a pass. A ``@wip`` tag still exits 1 when co
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+from typing import Any
 
 PYTEST_NO_TESTS_COLLECTED = 5
 FEATURES_DIRECTORY = 'features'
 WIP_TAG = '@wip'
-# Gherkin drops a ``# comment`` that follows whitespace on a tag line.
-TAG_LINE_COMMENT = re.compile(r'\s#')
-# Tags attach to the Gherkin element on the next line that is not a blank, a comment or another tag line.
-TAGGABLE_ELEMENT = re.compile(
-    r'(Feature|Business Need|Ability|Rule|Scenario Outline|Scenario Template|Scenario|Examples|Scenarios|Example):'
-)
-# Headers whose body holds steps. Under Feature, Rule, Examples and Scenarios the same words are description text.
-STEP_CONTAINER = re.compile(r'(Background|Scenario Outline|Scenario Template|Scenario|Example):')
-DOCSTRING_FENCES = ('"""', '```')
-# Gherkin matches ``keyword:`` with no space before the colon and a step only as ``keyword`` plus a literal space.
-# A doc string can only open directly after a step line inside a step container; elsewhere a fence is description text.
-STEP_LINE = re.compile(r'(Given|When|Then|And|But|\*) ')
 # A node ID is one whitespace-free token holding ``::``; a warning that merely quotes an ID has a space before it.
 TEST_ID_LINE = re.compile(r'\S+::')
 
@@ -121,66 +112,35 @@ def find_wip_tests(repo: Path) -> list[str]:
     return collected
 
 
-def _tag_tokens(line: str) -> list[str] | None:
-    """Return the tags on a tag line, or None when the line is not a tag line.
-
-    Mirrors gherkin-official: a line is a tag line when its stripped text starts with ``@``. The text is split on
-    ``@`` after the comment is dropped, so ``@smoke@wip``, ``@wip@``, ``@@wip`` and ``@ wip`` all tag ``@wip``.
-
-    Raises:
-        CannotCheckError: If a tag holds whitespace, which Gherkin rejects, so the file cannot be checked.
-    """
-    stripped = line.strip()
-    if not stripped.startswith('@'):
-        return None
-    pieces = [piece.strip() for piece in TAG_LINE_COMMENT.split(stripped, maxsplit=1)[0].split('@')[1:]]
-    if any(len(piece.split()) > 1 for piece in pieces):
-        raise CannotCheckError(f'a tag may not contain whitespace: {stripped!r}')
-    return [f'@{piece}' for piece in pieces]
-
-
-def _in_step_container(stripped: str, in_steps: bool) -> bool:
-    """Return whether the line after ``stripped`` is inside a step container (Background, Scenario, Example)."""
-    if STEP_CONTAINER.match(stripped):
-        return True
-    if TAGGABLE_ELEMENT.match(stripped):
-        return False
-    return in_steps
+def _tagged_nodes(node: object) -> Iterator[dict[str, Any]]:
+    """Yield every dict in a Gherkin AST that carries a ``tags`` list: Feature, Rule, Scenario and Examples."""
+    if isinstance(node, dict):
+        if 'tags' in node:
+            yield node
+        for value in node.values():
+            yield from _tagged_nodes(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _tagged_nodes(item)
 
 
 def _wip_tag_lines_in(text: str) -> list[int]:
-    """Return the 1-based numbers of the ``@wip`` tag lines in feature text that attach to a Gherkin element."""
-    hits: list[int] = []
-    pending: list[int] = []
-    open_fence: str | None = None
-    after_step = False
-    in_steps = False
-    for number, line in enumerate(text.splitlines(), start=1):
-        stripped = line.strip()
-        fence = next((fence for fence in DOCSTRING_FENCES if stripped.startswith(fence)), None)
-        if open_fence is None and fence is not None and after_step:
-            open_fence = fence
-            continue
-        if open_fence is not None:
-            if fence == open_fence:
-                open_fence = None
-            continue
-        if not stripped or stripped.startswith('#'):
-            continue
-        in_steps = _in_step_container(stripped, in_steps)
-        after_step = in_steps and STEP_LINE.match(stripped) is not None
-        try:
-            tokens = _tag_tokens(line)
-        except CannotCheckError as error:
-            raise CannotCheckError(f'{number}: {error}') from error
-        if tokens is not None:
-            if WIP_TAG in tokens:
-                pending.append(number)
-            continue
-        if TAGGABLE_ELEMENT.match(stripped):
-            hits.extend(pending)
-        pending = []
-    return hits
+    """Return the sorted line numbers of the ``@wip`` tags in feature text, as the Gherkin parser reads it.
+
+    Raises:
+        CannotCheckError: If the text is not valid Gherkin.
+    """
+    # Imported here because gherkin reads its language data file on import, and the small tests load this module.
+    from gherkin.errors import ParserError  # noqa: PLC0415
+    from gherkin.parser import Parser  # noqa: PLC0415
+
+    try:
+        document = Parser().parse(text)
+    except ParserError as error:
+        raise CannotCheckError(str(error)) from error
+    return sorted(
+        tag['location']['line'] for node in _tagged_nodes(document) for tag in node['tags'] if tag['name'] == WIP_TAG
+    )
 
 
 def find_wip_feature_tags(repo: Path) -> list[str]:
@@ -190,10 +150,10 @@ def find_wip_feature_tags(repo: Path) -> list[str]:
         repo: The repository root holding the ``features`` directory.
 
     Returns:
-        A POSIX ``relative/path.feature:line`` entry per ``@wip`` tag line, sorted by file.
+        A POSIX ``relative/path.feature:line`` entry per ``@wip`` tag, sorted by file, then line.
 
     Raises:
-        CannotCheckError: If a feature file cannot be read or is not valid UTF-8.
+        CannotCheckError: If a feature file cannot be read, is not valid UTF-8, or is not valid Gherkin.
     """
     found: list[str] = []
     for path in sorted((repo / FEATURES_DIRECTORY).rglob('*.feature')):
@@ -203,9 +163,10 @@ def find_wip_feature_tags(repo: Path) -> list[str]:
         except (OSError, UnicodeDecodeError) as error:
             raise CannotCheckError(f'cannot read {relative}: {error}') from error
         try:
-            found.extend(f'{relative}:{number}' for number in _wip_tag_lines_in(text))
+            lines = _wip_tag_lines_in(text)
         except CannotCheckError as error:
-            raise CannotCheckError(f'cannot parse {relative}:{error}') from error
+            raise CannotCheckError(f'cannot parse {relative}: {error}') from error
+        found.extend(f'{relative}:{number}' for number in lines)
     return found
 
 
