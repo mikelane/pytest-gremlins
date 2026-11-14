@@ -160,6 +160,22 @@ class DescribeFeatureFileScan:
         assert hits == [f'features/unfinished.feature:{line}']
 
     @pytest.mark.parametrize(
+        ('content', 'line'),
+        [
+            (_feature('Feature: F', '', '  @smoke@wip', '  Scenario: S', '    Given a thing'), 3),
+            (_feature('Feature: F', '', '  @wip@smoke', '  Scenario: S', '    Given a thing'), 3),
+            (_feature('@smoke@wip', 'Feature: F', '', '  Scenario: S', '    Given a thing'), 1),
+        ],
+        ids=['wip-after-other-tag', 'wip-before-other-tag', 'feature-level'],
+    )
+    def it_finds_a_wip_tag_packed_against_another_tag_without_a_space(
+        self, tmp_path: Path, content: str, line: int
+    ) -> None:
+        _write(tmp_path, 'features/packed.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == [f'features/packed.feature:{line}']
+
+    @pytest.mark.parametrize(
         'content',
         [
             _feature('Feature: F', '', '  # @wip', '  Scenario: S', '    Given a thing'),
@@ -169,6 +185,8 @@ class DescribeFeatureFileScan:
             _feature('Feature: F', '', '  Scenario: S', '    Given the tag @wip is mentioned in a step'),
             _feature('Feature: This feature talks about @wip', '', '  Scenario: S', '    Given a thing'),
             _feature('Feature: F', '', '  @smoke', '  Scenario: S', '    Given a thing'),
+            _feature('Feature: F', '', '  @wip,', '  Scenario: S', '    Given a thing'),
+            _feature('Feature: F', '', '  @wip#c', '  Scenario: S', '    Given a thing'),
         ],
         ids=[
             'commented-out',
@@ -178,6 +196,8 @@ class DescribeFeatureFileScan:
             'tag-text-in-step',
             'tag-text-in-title',
             'other-tag',
+            'wip-with-trailing-comma',
+            'wip-with-hash-suffix',
         ],
     )
     def it_ignores_comments_look_alikes_and_text_that_is_not_a_tag(self, tmp_path: Path, content: str) -> None:

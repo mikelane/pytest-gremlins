@@ -37,6 +37,9 @@ FEATURES_DIRECTORY = 'features'
 WIP_TAG = '@wip'
 # A tag line holds only ``@tag`` tokens, optionally followed by a ``# comment``.
 TRAILING_COMMENT = re.compile(r'\s+#.*$')
+# A whitespace-separated token is one or more ``@tag`` pieces run together, as Gherkin reads ``@a@b``.
+TAG_TOKEN = re.compile(r'(?:@[^@\s]+)+')
+TAG_PATTERN = re.compile(r'@[^@\s]+')
 # Tags attach to the Gherkin element on the next line that is not a blank, a comment or another tag line.
 TAGGABLE_ELEMENT = re.compile(
     r'(Feature|Business Need|Ability|Rule|Scenario Outline|Scenario Template|Scenario|Examples|Scenarios|Example):'
@@ -122,9 +125,14 @@ def find_wip_tests(repo: Path) -> list[str]:
 
 
 def _tag_tokens(line: str) -> list[str] | None:
-    """Return the tags on a tag line, or None when the line is not made only of ``@tag`` tokens."""
+    """Return the tags on a tag line, or None when the line is not made only of ``@tag`` tokens.
+
+    Gherkin splits a token on ``@`` too, so ``@smoke@wip`` is the two tags ``@smoke`` and ``@wip``.
+    """
     tokens = TRAILING_COMMENT.sub('', line.strip()).split()
-    return tokens if tokens and all(token.startswith('@') and len(token) > 1 for token in tokens) else None
+    if not tokens or not all(TAG_TOKEN.fullmatch(token) for token in tokens):
+        return None
+    return [tag for token in tokens for tag in TAG_PATTERN.findall(token)]
 
 
 def _in_step_container(stripped: str, in_steps: bool) -> bool:
