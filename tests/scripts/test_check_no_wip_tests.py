@@ -334,6 +334,76 @@ class DescribeFeatureFileScan:
 
         assert _load_script().find_wip_feature_tags(tmp_path) == []
 
+    @pytest.mark.parametrize(
+        ('content', 'line'),
+        [
+            (
+                _feature(
+                    'Feature: F', '  And a line in the description', '  """quoted""" text', '  @wip', '  Scenario: S'
+                ),
+                4,
+            ),
+            (
+                _feature('Feature: F', '  Notes:', '  * see the doc', '  ```python', '  @wip', '  Scenario: S'),
+                5,
+            ),
+            (
+                _feature(
+                    'Feature: F',
+                    '  Rule: R',
+                    '    But a rule description line',
+                    '    """',
+                    '    @wip',
+                    '    Scenario: S',
+                ),
+                5,
+            ),
+            (
+                _feature(
+                    'Feature: F',
+                    '  Scenario Outline: S',
+                    '    Given a <v>',
+                    '    Examples: first',
+                    '      * a bullet describing these examples',
+                    '      """',
+                    '      | v |',
+                    '    @wip',
+                    '    Examples: second',
+                    '      | v |',
+                ),
+                8,
+            ),
+        ],
+        ids=['feature-and-line', 'feature-bullet', 'rule-but-line', 'examples-bullet'],
+    )
+    def it_finds_a_wip_tag_after_a_fence_in_a_header_description(self, tmp_path: Path, content: str, line: int) -> None:
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == [f'features/a.feature:{line}']
+
+    @pytest.mark.parametrize('header', ['Background:', 'Scenario: S', 'Example: S'])
+    def it_opens_a_docstring_after_a_star_step_directly_under_a_step_container(
+        self, tmp_path: Path, header: str
+    ) -> None:
+        content = _feature('Feature: F', f'  {header}', '    * a source', '      """', '      @wip', '      """')
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == []
+
+    def it_opens_a_docstring_after_a_step_in_a_scenario_that_follows_a_rule(self, tmp_path: Path) -> None:
+        content = _feature(
+            'Feature: F',
+            '  Rule: R',
+            '    Scenario: S',
+            '      Given a source',
+            '        ```',
+            '        @wip',
+            '        ```',
+        )
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == []
+
 
 @pytest.mark.small
 class DescribeAnnotationEscaping:

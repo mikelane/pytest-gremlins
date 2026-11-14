@@ -41,8 +41,10 @@ TRAILING_COMMENT = re.compile(r'\s+#.*$')
 TAGGABLE_ELEMENT = re.compile(
     r'(Feature|Business Need|Ability|Rule|Scenario Outline|Scenario Template|Scenario|Examples|Scenarios|Example)\s*:'
 )
+# Headers whose body holds steps. Under Feature, Rule, Examples and Scenarios the same words are description text.
+STEP_CONTAINER = re.compile(r'(Background|Scenario Outline|Scenario Template|Scenario|Example)\s*:')
 DOCSTRING_FENCES = ('"""', '```')
-# A doc string can only open directly after a step line; elsewhere a fence-looking line is plain description text.
+# A doc string can only open directly after a step line inside a step container; elsewhere a fence is description text.
 STEP_LINE = re.compile(r'(Given|When|Then|And|But|\*)(\s|$)')
 # A node ID is one whitespace-free token holding ``::``; a warning that merely quotes an ID has a space before it.
 TEST_ID_LINE = re.compile(r'\S+::')
@@ -124,12 +126,22 @@ def _tag_tokens(line: str) -> list[str] | None:
     return tokens if tokens and all(token.startswith('@') and len(token) > 1 for token in tokens) else None
 
 
+def _in_step_container(stripped: str, in_steps: bool) -> bool:
+    """Return whether the line after ``stripped`` is inside a step container (Background, Scenario, Example)."""
+    if STEP_CONTAINER.match(stripped):
+        return True
+    if TAGGABLE_ELEMENT.match(stripped):
+        return False
+    return in_steps
+
+
 def _wip_tag_lines_in(text: str) -> list[int]:
     """Return the 1-based numbers of the ``@wip`` tag lines in feature text that attach to a Gherkin element."""
     hits: list[int] = []
     pending: list[int] = []
     open_fence: str | None = None
     after_step = False
+    in_steps = False
     for number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         fence = next((fence for fence in DOCSTRING_FENCES if stripped.startswith(fence)), None)
@@ -142,7 +154,8 @@ def _wip_tag_lines_in(text: str) -> list[int]:
             continue
         if not stripped or stripped.startswith('#'):
             continue
-        after_step = STEP_LINE.match(stripped) is not None
+        in_steps = _in_step_container(stripped, in_steps)
+        after_step = in_steps and STEP_LINE.match(stripped) is not None
         tokens = _tag_tokens(line)
         if tokens is not None:
             if WIP_TAG in tokens:
