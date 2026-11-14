@@ -231,12 +231,19 @@ class _Git:
     """Stand-ins for the git-reading helpers, so main() runs without a repository."""
 
     def __init__(
-        self, monkeypatch: pytest.MonkeyPatch, *, changed: list[str], head: object, tag: str | None = 'v1.13.1'
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        changed: list[str],
+        head: object,
+        tag: str | None = 'v1.13.1',
+        tagged: bool = False,
     ) -> None:
         monkeypatch.setattr(checker, 'previous_release_tag', lambda *_: tag)
         monkeypatch.setattr(checker, 'released_markers', lambda *_: PREVIOUS)
         monkeypatch.setattr(checker, '_changed_guarded_files', lambda *_: changed)
         monkeypatch.setattr(checker, '_head_markers', lambda: head)
+        monkeypatch.setattr(checker, '_is_tagged', lambda *_: tagged)
 
 
 @pytest.fixture
@@ -290,6 +297,13 @@ class DescribeMain:
         _Git(monkeypatch, changed=CHANGED, head=PREVIOUS)
 
         assert checker.main(['9.9.9', '--changelog', str(changelog)]) == 2
+
+    def it_exits_0_when_the_newest_entry_is_already_released(
+        self, monkeypatch: pytest.MonkeyPatch, changelog: Path
+    ) -> None:
+        _Git(monkeypatch, changed=CHANGED, head=PREVIOUS, tagged=True)
+
+        assert checker.main(['--newest', '--changelog', str(changelog)]) == 0
 
     @pytest.mark.parametrize('flag', ['--skip', '--force', '--bypass', '--no-check'])
     def it_has_no_flag_that_skips_the_check(self, flag: str) -> None:
