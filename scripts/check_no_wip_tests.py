@@ -71,11 +71,27 @@ def find_wip_tests(repo: Path) -> list[str]:
         The node ID of each collected ``wip`` test; empty when pytest collected none.
 
     Raises:
-        CannotCheckError: If pytest exits with any code other than 0 or 5 (no tests collected).
+        CannotCheckError: If pytest exits with any code other than 0 or 5 (no tests collected), or exits 0 but
+            its output holds no test IDs (the output format is not the one this parser reads).
+
+    The command line clears ``addopts`` and ``PYTEST_ADDOPTS`` so an extra ``-q`` cannot change the output format.
     """
     result = subprocess.run(
-        [sys.executable, '-m', 'pytest', '-m', 'wip', '--collect-only', '-q', '-p', 'no:cacheprovider'],
+        [
+            sys.executable,
+            '-m',
+            'pytest',
+            '-m',
+            'wip',
+            '--collect-only',
+            '-q',
+            '-p',
+            'no:cacheprovider',
+            '-o',
+            'addopts=',
+        ],
         cwd=repo,
+        env={name: value for name, value in os.environ.items() if name != 'PYTEST_ADDOPTS'},
         capture_output=True,
         text=True,
         check=False,
@@ -86,7 +102,13 @@ def find_wip_tests(repo: Path) -> list[str]:
         raise CannotCheckError(
             f'pytest exited {result.returncode} while collecting wip tests:\n{result.stdout}\n{result.stderr}'
         )
-    return parse_collected_ids(result.stdout)
+    collected = parse_collected_ids(result.stdout)
+    if not collected:
+        raise CannotCheckError(
+            f'pytest exited 0 but no test IDs could be read from its output, so the wip check cannot tell what was '
+            f'collected:\n{result.stdout}'
+        )
+    return collected
 
 
 def _tag_tokens(line: str) -> list[str] | None:

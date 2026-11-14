@@ -274,3 +274,34 @@ class DescribeAnnotationEscaping:
 
         annotation = next(line for line in capsys.readouterr().out.splitlines() if line.startswith('::error'))
         assert escaped in annotation
+
+
+QUIET_ADDOPTS_CONFIG = """[pytest]
+markers = wip: unfinished
+addopts = -q
+"""
+
+
+@pytest.mark.medium
+class DescribeCollectionOutputFormat:
+    """Extra ``-q`` from addopts or PYTEST_ADDOPTS makes ``--collect-only`` print ``file: N``, which has no IDs."""
+
+    def it_finds_a_wip_test_when_the_project_adds_q_to_addopts(self, tmp_path: Path) -> None:
+        _write(tmp_path, 'pytest.ini', QUIET_ADDOPTS_CONFIG)
+        _write(tmp_path, 'tests/test_a.py', WIP_TEST)
+
+        assert _load_script().find_wip_tests(tmp_path) == ['tests/test_a.py::test_unfinished_feature']
+
+    def it_finds_a_wip_test_when_pytest_addopts_adds_q(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv('PYTEST_ADDOPTS', '-q')
+        _write(tmp_path, 'tests/test_a.py', WIP_TEST)
+
+        assert _load_script().find_wip_tests(tmp_path) == ['tests/test_a.py::test_unfinished_feature']
+
+    def it_raises_when_pytest_collected_items_but_no_ids_parse(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        script = _load_script()
+        answer = subprocess.CompletedProcess(args=[], returncode=0, stdout='tests/test_a.py: 1\n', stderr='')
+        monkeypatch.setattr(script.subprocess, 'run', lambda *_args, **_kwargs: answer)
+
+        with pytest.raises(script.CannotCheckError, match='no test IDs'):
+            script.find_wip_tests(Path())
