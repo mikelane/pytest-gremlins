@@ -137,11 +137,15 @@ The large tier does not run in `ci.yml`, so the release still runs it (`large-te
 **A release fails if any `wip` test exists.** Pull requests may carry `wip` tests: they mark BDD scenarios for a
 feature that is not finished, and CI deselects them. A release must not ship an unfinished feature. The first checks
 of the `verify-tag` job run `pytest -m wip --collect-only -q` on the tagged commit, which runs no tests and takes
-seconds. It also reads `features/**/*.feature` for a `@wip` tag on a Feature, Rule, Scenario or Examples, so a
-scenario that nothing runs yet is caught without pytest-bdd. Comments and text that is not a tag do not count. If it
-finds any test or tag, the release fails and lists the test IDs and the `file:line` of each tag. There is no bypass.
-To ship an urgent fix while a feature is unfinished, release from a branch off the previous release tag, not from
-main. To run the check locally, run `uv run python scripts/check_no_wip_tests.py`.
+seconds, and fails the release on any test that carries a `wip` marker. It also reads `features/**/*.feature`
+directly for a `@wip` tag on a Feature, Rule, Scenario or Examples. That direct scan is what catches `@wip`
+scenarios, including ones that nothing runs yet; it does not depend on pytest collecting them and needs no
+pytest-bdd. Comments and text that is not a tag do not count. If it finds any test or tag, the release fails and
+lists the test IDs and the `file:line` of each tag. There is no bypass. To ship an urgent fix while a feature is
+unfinished, release from a branch off the previous release tag, not from main. That path depends on #1015 (`ci.yml`
+must run for that branch); until then the CI gate fails such a tag after its 10-minute grace. Re-dispatching
+`release.yml` for a tag cut before this change fails closed, because the gate scripts do not exist at that tag. To
+run the check locally, run `uv run python scripts/check_no_wip_tests.py`.
 
 ## Code of Conduct
 

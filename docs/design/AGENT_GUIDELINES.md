@@ -986,10 +986,13 @@ and names the SHA. It exits 2 when it could not query GitHub, which is never a p
 **A release fails if any `wip` test exists.** `wip` marks BDD scenarios for an unfinished feature (`pyproject.toml`).
 PRs pass with them; a release must not ship them. `scripts/check_no_wip_tests.py` runs in `verify-tag` on the tagged
 commit, before the docs build and the other gates, and runs `pytest -m wip --collect-only -q`. It collects only,
-so it takes seconds. It also reads `features/**/*.feature` for a `@wip` tag on a Feature, Rule, Scenario or Examples
-line (tag lines only, comments ignored), so it needs no pytest-bdd. Any collected test or tag fails the release and is
-listed by ID or `file:line`. No bypass: an urgent fix goes out from a branch off the previous release tag,
-not from main.
+so it takes seconds, and any test carrying a `wip` marker fails the release. It also reads `features/**/*.feature`
+for a `@wip` tag on a Feature, Rule, Scenario or Examples line (tag lines only, comments ignored). That direct scan is
+what catches `@wip` scenarios; it does not depend on pytest collecting them and needs no pytest-bdd. Any collected test
+or tag fails the release and is listed by ID or `file:line`. No bypass: an urgent fix goes out from a branch off the
+previous release tag, not from main. That path depends on #1015 (`ci.yml` must run for that branch); until then the CI
+gate fails such a tag after the 10-minute grace. Re-dispatching `release.yml` for a tag cut before this change fails
+closed, because the gate scripts do not exist at that tag.
 
 ### When to Release
 

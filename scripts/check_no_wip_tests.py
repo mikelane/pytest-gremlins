@@ -4,14 +4,17 @@
 ``wip`` marks scenarios for a feature that is not finished. Pull requests may carry them (CI deselects them), but a
 release must not ship an unfinished feature. The check has two parts, and runs nothing, so it takes seconds:
 
-* it collects with ``pytest -m wip --collect-only -q``. pytest-bdd turns a Gherkin ``@wip`` tag into the ``wip``
-  marker, so scenarios wired to pytest-bdd are collected too.
-* it reads ``features/**/*.feature`` directly for a ``@wip`` tag on a Feature, Rule, Scenario or Examples, so
-  scenarios that nothing collects yet are caught without pytest-bdd. Only tag lines count: a comment, a longer tag such
-  as ``@wipe``, and ``@wip`` inside step or description text do not.
+* it collects with ``pytest -m wip --collect-only -q``, which catches any test carrying a ``wip`` marker.
+* it reads ``features/**/*.feature`` directly for a ``@wip`` tag on a Feature, Rule, Scenario or Examples. This
+  direct scan is what catches ``@wip`` scenarios; it does not rely on pytest collecting them, so it needs no
+  pytest-bdd. Only tag lines count: a comment, a longer tag such as ``@wipe``, and ``@wip`` inside step or
+  description text do not.
 
 Nothing skips this check: it has no flag, environment variable or input that turns it off. An urgent fix that cannot
-wait for an unfinished feature is released from a branch off the previous release tag, not from main.
+wait for an unfinished feature is released from a branch off the previous release tag, not from main. That path
+depends on #1015 (``ci.yml`` must run for that branch); until then ``check_ci_passed.py`` fails such a tag after its
+10-minute grace. Re-dispatching ``release.yml`` for a tag cut before this gate existed fails closed: the gate scripts
+do not exist at that tag.
 
 Usage: ``check_no_wip_tests.py [--repo PATH]``
 

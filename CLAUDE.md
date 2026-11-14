@@ -271,10 +271,13 @@ by a test: when you change a matrix, update it in the same PR. `verify-tag`, `la
 `attrs-compat` still run in the release.
 
 A release also fails if any `wip` test exists. `scripts/check_no_wip_tests.py` runs in `verify-tag` on the tagged
-commit, before the docs build, and runs `pytest -m wip --collect-only -q` (seconds, runs nothing). Any collected test,
-or a `@wip` tag found by reading `features/**/*.feature` (no pytest-bdd needed), fails the release and is listed.
-There is no bypass: an urgent fix that cannot wait for an unfinished feature is released from a branch off the
-previous release tag, not from main.
+commit, before the docs build, and runs `pytest -m wip --collect-only -q` (seconds, runs nothing). Any collected test
+carrying a `wip` marker fails the release, and so does a `@wip` tag found by reading `features/**/*.feature`. That
+direct scan is what catches `@wip` scenarios (no pytest-bdd needed, and it does not depend on pytest collecting them).
+Findings are listed. There is no bypass: an urgent fix that cannot wait for an unfinished feature is released from a
+branch off the previous release tag, not from main. That path depends on #1015 (`ci.yml` must run for that branch);
+until then the CI gate fails such a tag after the 10-minute grace. Re-dispatching `release.yml` for a tag cut before
+this change fails closed, because the gate scripts do not exist at that tag.
 
 **Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`
 pre-commit hook blocks commits to `main` and leaves a dirty version bump to revert.
