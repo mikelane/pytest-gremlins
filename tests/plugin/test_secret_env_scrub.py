@@ -16,6 +16,7 @@ from secret_env_scrub import (  # type: ignore[import-not-found]
 _TESTS_DIRECTORY = Path(__file__).resolve().parents[1]
 _TESTS_CONFTEST = _TESTS_DIRECTORY / 'conftest.py'
 _SCRUB_MODULE = _TESTS_DIRECTORY / 'secret_env_scrub.py'
+_XDIST_ENV_MODULE = _TESTS_DIRECTORY / 'xdist_env.py'
 _FAKE_SECRET_VALUE = 'fake-secret-value-0123456789'  # noqa: S105  # pragma: allowlist secret
 _CHILD_TIMEOUT_SECONDS = 120
 _CHILD_PLATFORM_VARIABLES = ('PATH', 'SYSTEMROOT')
@@ -52,7 +53,7 @@ def _child_environment() -> dict[str, str]:
 
 
 def _copy_scrub_support_into(directory: Path) -> None:
-    for source in (_TESTS_CONFTEST, _SCRUB_MODULE):
+    for source in (_TESTS_CONFTEST, _SCRUB_MODULE, _XDIST_ENV_MODULE):
         (directory / source.name).write_text(source.read_text(encoding='utf-8'), encoding='utf-8')
 
 

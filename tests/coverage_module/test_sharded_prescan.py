@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import (
+    Iterator,
+    Sequence,
+)
 import gc
 import getpass
 import json
 import logging
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -17,6 +21,7 @@ from typing import Any
 import warnings
 
 import coverage
+import coverage.control
 import pytest
 
 from pytest_gremlins.coverage import sharded_prescan
@@ -66,6 +71,14 @@ def started_shards(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen[byt
 
     monkeypatch.setattr(subprocess, 'Popen', recording_popen)
     return started
+
+
+@pytest.fixture
+def automatic_collection_disabled() -> Iterator[None]:
+    """Keep the garbage collector from running on its own, so a leak lingers until a test collects it."""
+    gc.disable()
+    yield
+    gc.enable()
 
 
 def _run(tmp_path: Path, shards: list[list[str]], *, timeout: int = 30) -> list[Path] | None:
@@ -394,12 +407,48 @@ class DescribeRunShardedPrescan:
         assert self._run(tmp_path, ['ok', 'ok2'], combined) is False
         assert not combined.exists()
 
-    def it_leaves_no_unclosed_database_connection_behind_when_the_shard_data_cannot_be_combined(
-        self, tmp_path: Path
-    ) -> None:
+    def _resource_warnings_from_failed_combine(self, tmp_path: Path) -> list[str]:
+        # Clear leaks from earlier tests first, with their warnings ignored, so pytest cannot report them here.
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', ResourceWarning)
+            gc.collect()
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter('always')
             self._run(tmp_path, ['ok', 'ok2'], tmp_path / 'combined')
             gc.collect()
+        return [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)]
 
-        assert [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)] == []
+    def it_leaves_no_unclosed_database_connection_behind_when_the_shard_data_cannot_be_combined(
+        self, tmp_path: Path
+    ) -> None:
+        assert self._resource_warnings_from_failed_combine(tmp_path) == []
+
+    def it_raises_no_resource_warning_when_the_collector_runs_while_coverage_reads_the_shards(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real_warn = coverage.control.Coverage._warn
+
+        def warn_after_a_collection(instance: Any, *args: Any, **kwargs: Any) -> None:
+            gc.collect()
+            real_warn(instance, *args, **kwargs)
+
+        monkeypatch.setattr(coverage.control.Coverage, '_warn', warn_after_a_collection)
+
+        assert self._resource_warnings_from_failed_combine(tmp_path) == []
+
+    @pytest.mark.usefixtures('automatic_collection_disabled')
+    def it_does_not_count_an_unrelated_earlier_leak_collected_during_the_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real_combine = sharded_prescan.combine_shard_data
+
+        def combine_after_an_automatic_collection(*args: Any, **kwargs: Any) -> None:
+            gc.collect()
+            real_combine(*args, **kwargs)
+
+        monkeypatch.setattr(sharded_prescan, 'combine_shard_data', combine_after_an_automatic_collection)
+        earlier_test_leak: list[object] = [sqlite3.connect(':memory:')]
+        earlier_test_leak.append(earlier_test_leak)
+        del earlier_test_leak
+
+        assert self._resource_warnings_from_failed_combine(tmp_path) == []

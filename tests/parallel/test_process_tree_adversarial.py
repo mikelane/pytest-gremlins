@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import os
 from pathlib import Path
 import signal
@@ -45,6 +46,8 @@ def _run(command: list[str], cwd: Path, timeout: float) -> subprocess.CompletedP
 
 
 def _open_fd_count() -> int:
+    """Count open descriptors after collecting garbage, so descriptors held by earlier tests' cycles do not skew it."""
+    gc.collect()
     return len(list(Path('/dev/fd').iterdir()))
 
 
