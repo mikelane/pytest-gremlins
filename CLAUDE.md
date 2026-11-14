@@ -271,6 +271,26 @@ the docs gate (`ci.yml` on a `CHANGELOG.md` change with `--newest`, `cut-release
 the changed files, exits 2 when it could not run, and has no bypass. With `--newest`, a topmost entry that is already
 tagged passes; the changes after it are checked once the next entry is added.
 
+**Release CI gate and wip gate.** `release.yml` does not rerun the OS x Python test matrix. Its `ci-gate` job runs
+`scripts/check_ci_passed.py` for the tagged commit: it looks up the `ci.yml` `push` run by SHA (not by branch) and
+passes only when the run concluded `success` and every `Test (Python ..., ...)` and `Test (pytest ...)` job concluded
+`success`. A skipped or missing test job fails it, because `ci.yml` skips the matrix when no source changed and the run
+stays green. A queued or in-progress run is waited for (up to four hours). If no run exists at all, it waits 10
+minutes, then fails saying the SHA has no main CI run (a tag on a branch other than main); with no passing run it
+fails and names the SHA. Exit 2 means it could not query GitHub, never a pass. There is no bypass, and `build` needs
+`ci-gate`, so every publish job sits behind it. `EXPECTED_TEST_JOBS` in the script is pinned to the `ci.yml` matrices
+by a test: when you change a matrix, update it in the same PR. `verify-tag`, `large-tests`, `benchmark` and
+`attrs-compat` still run in the release.
+
+A release also fails if any `wip` test exists. `scripts/check_no_wip_tests.py` runs in `verify-tag` on the tagged
+commit, before the docs build, and runs `pytest -m wip --collect-only -q` (seconds, runs nothing). Any collected test
+carrying a `wip` marker fails the release, and so does a `@wip` tag found by reading `features/**/*.feature`. That
+direct scan is what catches `@wip` scenarios (no pytest-bdd needed, and it does not depend on pytest collecting them).
+Findings are listed. There is no bypass: an urgent fix that cannot wait for an unfinished feature is released from a
+branch off the previous release tag, not from main. That path depends on #1015 (`ci.yml` must run for that branch);
+until then the CI gate fails such a tag after the 10-minute grace. Re-dispatching `release.yml` for a tag cut before
+this change fails closed, because the gate scripts do not exist at that tag.
+
 **Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`
 pre-commit hook blocks commits to `main` and leaves a dirty version bump to revert.
 
@@ -321,8 +341,9 @@ PyPI steps skipped:
 - Safe to re-dispatch: the PyPI publish uses `skip-existing`, so a run that already uploaded but
   failed later (for example at the GitHub Release) can be re-run to finish. PyPI keeps the files
   from the first upload; the rebuilt files are not re-uploaded there.
-- The dispatched run re-runs the full gate (tests, benchmarks, attrs compatibility) on the
-  tagged commit, so it takes as long as a normal release.
+- The dispatched run re-runs the release-only gates (large tier, benchmarks, attrs compatibility) on the
+  tagged commit and re-checks that main CI passed for it. It does not rerun the OS x Python matrix, so it
+  takes about as long as the large tier and the benchmarks.
 - With `skip_test_pypi=true`, `publish-test-pypi` and `verify-test-pypi` are skipped. The
   `verify-wheel` job runs in every release and replaces the install check by installing the
   built wheel into a fresh venv and comparing its `__version__` to the tag.

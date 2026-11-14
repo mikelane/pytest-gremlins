@@ -629,6 +629,18 @@ wheels = [
 ]
 
 [[package]]
+name = "gherkin-official"
+version = "43.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/cf/974241bcfdeb0d9994b1268128b5d7c7d280b90c86eafc3af68f8d40f0a9/gherkin_official-43.0.0.tar.gz", hash = "sha256:a928f06282cd9d1f848eacd5b80dac39f318cbfc053187defa5122c8019b6e43", size = 36540, upload-time = "2026-11-13T01:07:45.661Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e4/c6/663271fd9bd4c28483e99546c9ea6fa107339383c36c30106bc205901767/gherkin_official-43.0.0-py3-none-any.whl", hash = "sha256:ec0e20c765c062cc457408a930ef376ccbbddd813f40e2bfedf3c72e481f96b2", size = 40021, upload-time = "2026-11-13T01:07:44.559Z" },
+]
+
+[[package]]
 name = "ghp-import"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1871,6 +1883,7 @@ docs = [
 [package.dev-dependencies]
 dev = [
     { name = "commitizen" },
+    { name = "gherkin-official" },
     { name = "isort" },
     { name = "jsonschema" },
     { name = "mkdocs" },
@@ -1912,6 +1925,7 @@ provides-extras = ["docs"]
 [package.metadata.requires-dev]
 dev = [
     { name = "commitizen", specifier = ">=4.18.1" },
+    { name = "gherkin-official", specifier = ">=43.0.0" },
     { name = "isort", specifier = ">=9.0.1" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "mkdocs", specifier = ">=1.5.0" },
