@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import (
+    Iterator,
+    Sequence,
+)
 import gc
 import getpass
 import json
@@ -68,6 +71,14 @@ def started_shards(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen[byt
 
     monkeypatch.setattr(subprocess, 'Popen', recording_popen)
     return started
+
+
+@pytest.fixture
+def automatic_collection_disabled() -> Iterator[None]:
+    """Keep the garbage collector from running on its own, so a leak lingers until a test collects it."""
+    gc.disable()
+    yield
+    gc.enable()
 
 
 def _run(tmp_path: Path, shards: list[list[str]], *, timeout: int = 30) -> list[Path] | None:
@@ -425,6 +436,7 @@ class DescribeRunShardedPrescan:
 
         assert self._resource_warnings_from_failed_combine(tmp_path) == []
 
+    @pytest.mark.usefixtures('automatic_collection_disabled')
     def it_does_not_count_an_unrelated_earlier_leak_collected_during_the_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -435,12 +447,8 @@ class DescribeRunShardedPrescan:
             real_combine(*args, **kwargs)
 
         monkeypatch.setattr(sharded_prescan, 'combine_shard_data', combine_after_an_automatic_collection)
-        gc.disable()
         earlier_test_leak: list[object] = [sqlite3.connect(':memory:')]
         earlier_test_leak.append(earlier_test_leak)
         del earlier_test_leak
 
-        try:
-            assert self._resource_warnings_from_failed_combine(tmp_path) == []
-        finally:
-            gc.enable()
+        assert self._resource_warnings_from_failed_combine(tmp_path) == []
