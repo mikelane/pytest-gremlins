@@ -102,7 +102,7 @@ def find_wip_feature_tags(repo: Path) -> list[str]:
     for path in sorted((repo / FEATURES_DIRECTORY).rglob('*.feature')):
         relative = path.relative_to(repo).as_posix()
         try:
-            text = path.read_text(encoding='utf-8')
+            text = path.read_text(encoding='utf-8-sig')
         except (OSError, UnicodeDecodeError) as error:
             raise CannotCheckError(f'cannot read {relative}: {error}') from error
         found.extend(f'{relative}:{number}' for number in _wip_tag_lines_in(text))

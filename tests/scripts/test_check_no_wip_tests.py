@@ -225,3 +225,10 @@ class DescribeFeatureFileScan:
 
         assert result.returncode == 2
         assert 'bad.feature' in result.stderr
+
+    def it_finds_a_wip_tag_in_a_feature_file_that_starts_with_a_byte_order_mark(self, tmp_path: Path) -> None:
+        path = tmp_path / 'features' / 'bom.feature'
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b'\xef\xbb\xbf@wip\nFeature: F\n')
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/bom.feature:1']
