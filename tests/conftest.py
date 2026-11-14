@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from secret_env_scrub import scrub_secret_env  # type: ignore[import-not-found]
+from xdist_env import hide_outer_xdist_worker_env  # type: ignore[import-not-found]  # noqa: F401
 
 from pytest_gremlins import plugin
 from pytest_gremlins.instrumentation.transformer import get_default_registry
@@ -77,21 +78,6 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         return 1  # small or unmarked runs first
 
     items.sort(key=_size_priority)
-
-
-XDIST_WORKER_ENV_NAMES = ('PYTEST_XDIST_WORKER', 'PYTEST_XDIST_WORKER_COUNT', 'PYTEST_XDIST_TESTRUNUID')
-
-
-@pytest.fixture(autouse=True)
-def hide_outer_xdist_worker_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the outer xdist worker's identity out of the test and of every child it starts.
-
-    pytest-test-categories decides "this process is an xdist worker" from ``PYTEST_XDIST_WORKER`` alone, so a
-    pytester or subprocess run started inside an outer ``-n`` worker would take the worker path. Scrubbing per test
-    leaves the outer worker's own session hooks, which run between tests, untouched.
-    """
-    for name in XDIST_WORKER_ENV_NAMES:
-        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)
