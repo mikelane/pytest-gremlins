@@ -123,7 +123,9 @@ A release does not rerun the OS and Python test matrix. Main CI already ran it o
 
 `ci.yml` skips its test jobs when no source file changed, and a skipped job leaves the run green. So a skipped or
 missing test job fails the gate, even when `All Checks Passed` is green. If the run is still in progress, the gate
-waits for it for up to four hours. If no passing run exists, it fails and names the SHA. There is no bypass: no flag,
+waits for it for up to four hours. If no run exists at all, for example because the tag is on a branch other than
+main, it waits 10 minutes and then fails saying the SHA has no main CI run. If no passing run exists, it fails and
+names the SHA. There is no bypass: no flag,
 environment variable or workflow input skips it. To release a commit with no passing main CI run, get CI to pass for
 that commit first.
 

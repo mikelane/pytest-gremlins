@@ -89,10 +89,10 @@ class DescribeCheckCi:
 
         assert fetch.paths[0] == f'/repos/{REPO}/actions/workflows/ci.yml/runs?head_sha={SHA}&event=push&per_page=100'
 
-    def it_is_pending_when_no_run_exists_yet(self) -> None:
+    def it_reports_a_missing_run_when_none_exists_yet(self) -> None:
         outcome = ci.check_ci(_fetch_for([]), REPO, SHA)
 
-        assert outcome.state == 'pending'
+        assert outcome.state == 'missing'
         assert SHA in outcome.message
 
     def it_is_pending_while_the_run_is_in_progress(self) -> None:
@@ -210,12 +210,53 @@ class DescribeWaitForCi:
         assert outcome.state == 'failed'
         assert fetch.run_polls == 1
 
-    def it_fails_naming_the_sha_when_no_run_appears_before_the_timeout(self) -> None:
+    def it_fails_naming_the_sha_when_no_run_appears_within_the_grace_period(self) -> None:
+        fetch = FakeGitHub([[]], {})
+
+        outcome = self._wait(fetch, timeout=ci.DEFAULT_TIMEOUT_SECONDS)
+
+        assert outcome.state == 'failed'
+        assert SHA in outcome.message
+        assert 'has no main CI run' in outcome.message
+
+    def it_stops_polling_for_a_missing_run_after_the_grace_period_not_the_long_timeout(self) -> None:
+        fetch = FakeGitHub([[]], {})
+
+        self._wait(fetch, timeout=ci.DEFAULT_TIMEOUT_SECONDS)
+
+        assert fetch.run_polls <= ci.NO_RUN_GRACE_SECONDS / 10.0 + 1
+
+    def it_keeps_the_grace_period_at_ten_minutes(self) -> None:
+        assert ci.NO_RUN_GRACE_SECONDS == 10 * 60
+
+    def it_waits_for_a_run_that_appears_within_the_grace_period(self) -> None:
+        late = [[], [], [_run(status='queued', conclusion=None)], [_run()]]
+
+        outcome = self._wait(FakeGitHub(late, {1: _jobs()}))
+
+        assert outcome.state == 'passed'
+
+    def it_keeps_waiting_past_the_grace_period_for_a_run_that_exists(self) -> None:
+        running = [_run(status='in_progress', conclusion=None)]
+        polls = [[], *([running] * 100), [_run()]]
+
+        outcome = self._wait(FakeGitHub(polls, {1: _jobs()}), timeout=ci.DEFAULT_TIMEOUT_SECONDS)
+
+        assert outcome.state == 'passed'
+
+    def it_restarts_the_grace_period_when_a_run_disappears_after_appearing(self) -> None:
+        running = [_run(status='in_progress', conclusion=None)]
+        polls = [[], running, [], [_run()]]
+
+        outcome = self._wait(FakeGitHub(polls, {1: _jobs()}))
+
+        assert outcome.state == 'passed'
+
+    def it_fails_when_the_run_never_appears_before_a_short_timeout(self) -> None:
         outcome = self._wait(FakeGitHub([[]], {}), timeout=30.0)
 
         assert outcome.state == 'failed'
         assert SHA in outcome.message
-        assert 'timed out' in outcome.message
 
     def it_fails_when_the_run_is_still_in_progress_at_the_timeout(self) -> None:
         running = [_run(status='in_progress', conclusion=None)]

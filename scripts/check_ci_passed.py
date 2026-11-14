@@ -11,9 +11,10 @@ for the SHA
   conclusion ``success``. ``ci.yml`` skips those jobs when its change filter sees no source change, and a skipped job
   leaves the run green, so a missing, skipped, failed or cancelled test job fails the gate.
 
-A run that is still in progress, or not yet registered, is waited for until ``--timeout``. If no qualifying run exists
-by then, the gate fails and names the SHA. Nothing skips this check: it has no flag, environment variable or input
-that turns it off.
+A run that is queued or in progress is waited for until ``--timeout``. If no run exists at all, the gate waits only
+``NO_RUN_GRACE_SECONDS`` (10 minutes, for a run CI is about to register) and then fails saying the SHA has no main CI
+run, as for a tag on a branch other than main. If no qualifying run exists by the timeout, it fails and names the SHA.
+Nothing skips this check: it has no flag, environment variable or input that turns it off.
 
 ``EXPECTED_TEST_JOBS`` is pinned to the matrices in ``ci.yml`` by tests/scripts/test_check_ci_passed.py, so changing a
 matrix without updating it fails a pull request.
@@ -51,6 +52,9 @@ WORKFLOW_FILE = 'ci.yml'
 PER_PAGE = 100
 DEFAULT_TIMEOUT_SECONDS = 4 * 60 * 60
 DEFAULT_INTERVAL_SECONDS = 60.0
+# How long to wait for a ci.yml push run to appear at all. A run that exists (queued or in progress) is waited for
+# up to the full timeout; a SHA that never gets one (a tag on a branch other than main) fails after this.
+NO_RUN_GRACE_SECONDS = 10 * 60
 MAX_CONSECUTIVE_API_ERRORS = 3
 REQUEST_TIMEOUT_SECONDS = 30
 HTTP_SERVER_ERROR_MIN = 500
@@ -74,9 +78,9 @@ class CannotCheckError(Exception):
 
 @dataclass(frozen=True)
 class Outcome:
-    """The gate's answer for one poll: ``passed``, ``failed`` or ``pending``, with a human-readable reason."""
+    """One poll's answer: passed, failed, pending (a run exists) or missing (no run yet), and a reason."""
 
-    state: Literal['passed', 'failed', 'pending']
+    state: Literal['passed', 'failed', 'pending', 'missing']
     message: str
 
 
@@ -116,7 +120,7 @@ def check_ci(fetch: Fetch, repo: str, sha: str) -> Outcome:
     )
     runs = list(answer['workflow_runs'])
     if not runs:
-        return Outcome('pending', f'No {WORKFLOW_FILE} push run found for {sha} yet')
+        return Outcome('missing', f'No {WORKFLOW_FILE} push run found for {sha} yet')
     still_running = False
     failures: list[str] = []
     for run in runs:
@@ -150,6 +154,7 @@ def wait_for_ci(
 ) -> Outcome:
     """Poll until the gate has an answer, the timeout passes, or the API keeps failing."""
     deadline = monotonic() + timeout_seconds
+    absent_since: float | None = None
     consecutive_errors = 0
     while True:
         try:
@@ -160,10 +165,18 @@ def wait_for_ci(
             if not _is_retryable(error) or consecutive_errors >= MAX_CONSECUTIVE_API_ERRORS:
                 raise CannotCheckError(f'GitHub API request failed: {error!r}') from error
         else:
-            if outcome.state != 'pending':
+            if outcome.state in ('passed', 'failed'):
                 return outcome
             print(outcome.message, flush=True)
-            if monotonic() + interval_seconds > deadline:
+            now = monotonic()
+            absent_since = (now if absent_since is None else absent_since) if outcome.state == 'missing' else None
+            if absent_since is not None and now + interval_seconds > absent_since + NO_RUN_GRACE_SECONDS:
+                return Outcome(
+                    'failed',
+                    f'{sha} has no main CI run: no {WORKFLOW_FILE} push run appeared within '
+                    f'{NO_RUN_GRACE_SECONDS // 60} minutes. Is the tag on a branch other than main?',
+                )
+            if now + interval_seconds > deadline:
                 return Outcome(
                     'failed', f'Gave up (timed out) waiting for {WORKFLOW_FILE} to pass for {sha}: {outcome.message}'
                 )

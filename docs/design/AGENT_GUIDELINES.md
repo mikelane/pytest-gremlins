@@ -969,7 +969,9 @@ the commit the tag points at, and two copies of the test step drift apart (#1012
 SHA, so a tag on a release branch works if CI ran for its commit, and passes only when the run concluded
 `success` and every `Test (Python ..., ...)` and `Test (pytest ...)` job concluded `success`. A skipped or missing
 test job fails the gate, because `ci.yml` skips the matrix when no source file changed and the run stays green. An
-in-progress run is waited for (up to four hours); with no passing run the gate fails and names the SHA. It exits 2
+queued or in-progress run is waited for (up to four hours); if no run exists at all it waits 10 minutes, then fails
+saying the SHA has no main CI run (for example a tag on a branch other than main); with no passing run the gate fails
+and names the SHA. It exits 2
 when it could not query GitHub, which is never a pass.
 
 - **No bypass.** No input, variable or condition skips the gate, and `skip_test_pypi` does not touch it. `build`
