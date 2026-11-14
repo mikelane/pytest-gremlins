@@ -337,3 +337,13 @@ class DescribeReleaseWorkflowLargeTierGate:
         commands = [step.get('run', '') for step in _steps('large-tests')]
 
         assert 'uv run pytest tests -m large -v' in commands
+
+
+@pytest.mark.medium
+class DescribeReleaseWorkflowCoverageEnvironment:
+    """The release test step excludes other-platform pragmas like PR CI does (issue #1012)."""
+
+    def it_sets_the_other_platform_variable_from_the_runner_os(self) -> None:
+        step = _step_named('test', 'Run tests with coverage (small + medium, matching PR CI)')
+
+        assert step['env']['GREMLINS_COVERAGE_OTHER_PLATFORM'] == "${{ runner.os == 'Windows' && 'posix' || 'win32' }}"

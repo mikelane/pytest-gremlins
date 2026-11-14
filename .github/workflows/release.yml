@@ -127,6 +127,8 @@ jobs:
         env:
           COVERAGE_PROCESS_START: pyproject.toml
           PYTHONPATH: .
+          # Excludes `# pragma: posix cover` code from the report on Windows, and `# pragma: win32 cover` elsewhere.
+          GREMLINS_COVERAGE_OTHER_PLATFORM: ${{ runner.os == 'Windows' && 'posix' || 'win32' }}
         run: |
           uv run coverage run -m pytest tests -m "small or medium" -v
           # Expected: coverage combine exits non-zero with a single data file.
