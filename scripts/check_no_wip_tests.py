@@ -181,7 +181,11 @@ def _report_failure(wip_tests: list[str]) -> None:
 
 
 def main() -> int:
-    """Check the repository given on the command line."""
+    """Check the repository given on the command line.
+
+    Returns:
+        The process exit code: 0 when no wip test or tag exists, 1 when one does, 2 when the check could not run.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', type=Path, default=Path.cwd())
     args = parser.parse_args()

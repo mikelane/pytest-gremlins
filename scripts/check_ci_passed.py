@@ -89,7 +89,7 @@ def _unexpected(what: str, answer: object) -> CannotCheckError:
     return CannotCheckError(f'GitHub API answered with an unexpected shape for {what}: {answer!r:.200}')
 
 
-def _entries(answer: Any, key: str, field: str, field_type: type) -> list[dict[str, Any]]:  # noqa: ANN401
+def _entries(answer: object, key: str, field: str, field_type: type) -> list[dict[str, Any]]:
     """Return ``answer[key]`` once every entry is an object whose ``field`` is a ``field_type`` (and not a bool).
 
     Raises:
@@ -228,7 +228,10 @@ def wait_for_ci(
                 return outcome
             print(outcome.message, flush=True)
             now = monotonic()
-            absent_since = (now if absent_since is None else absent_since) if outcome.state == 'missing' else None
+            if outcome.state != 'missing':
+                absent_since = None
+            elif absent_since is None:
+                absent_since = now
             if absent_since is not None and now + interval_seconds > absent_since + NO_RUN_GRACE_SECONDS:
                 return Outcome(
                     'failed',
@@ -304,7 +307,14 @@ def _require_inputs(args: argparse.Namespace) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the gate for the SHA given on the command line."""
+    """Run the gate for the SHA given on the command line.
+
+    Args:
+        argv: The command-line arguments; ``None`` reads ``sys.argv``.
+
+    Returns:
+        The process exit code: 0 when CI passed, 1 when it did not, 2 when the check could not run.
+    """
     args = _parse_args(argv)
     try:
         token = _require_inputs(args)
