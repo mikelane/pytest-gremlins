@@ -136,6 +136,9 @@ jobs:
         env:
           COVERAGE_PROCESS_START: pyproject.toml
           PYTHONPATH: .
+          # Keeps each xdist worker saving its coverage data. Without it, any test that builds a coverage.Coverage
+          # object (several do) switches off the worker's saving, and the report loses everything that worker ran.
+          COVERAGE_COVERAGE: '1'
           # Excludes `# pragma: posix cover` code from the report on Windows, and `# pragma: win32 cover` elsewhere.
           GREMLINS_COVERAGE_OTHER_PLATFORM: ${{ runner.os == 'Windows' && 'posix' || 'win32' }}
         run: |
