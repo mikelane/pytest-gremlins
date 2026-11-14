@@ -28,7 +28,9 @@ class DescribeXdistWorkerEnvIsolation:
 
     @pytest.mark.parametrize('name', XDIST_WORKER_ENV_NAMES)
     def it_hides_the_outer_worker_variable_from_the_test(self, name: str) -> None:
-        assert name not in os.environ
+        is_visible = name in os.environ
+
+        assert is_visible is False
 
     @pytest.mark.parametrize('name', XDIST_WORKER_ENV_NAMES)
     def it_restores_nothing_a_test_sets_itself(self, name: str, monkeypatch: pytest.MonkeyPatch) -> None:
