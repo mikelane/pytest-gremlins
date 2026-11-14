@@ -33,6 +33,12 @@ _INNER_TEST = (
 )
 
 
+@pytest.fixture
+def utf8_child_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make child pytest sessions write UTF-8, so the Windows cp1252 bullets pytester decodes as UTF-8 survive."""
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+
+
 def _export_outer_worker_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Give a child the environment an xdist worker has, and let its conftest import the shared helper."""
     for name in XDIST_WORKER_ENV_NAMES:
@@ -59,6 +65,7 @@ class DescribeXdistWorkerEnvIsolation:
 class DescribeXdistWorkerEnvScrub:
     """The scrub fixture removes the worker variables even when the outer run is serial."""
 
+    @pytest.mark.usefixtures('utf8_child_output')
     def it_hides_variables_set_in_the_environment_from_an_inner_test(
         self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -78,6 +85,7 @@ class DescribeXdistWorkerEnvInChildren:
     Like the in-process checks above, these only fail when the outer run is under ``-n``.
     """
 
+    @pytest.mark.usefixtures('utf8_child_output')
     def it_keeps_the_variables_out_of_a_pytester_subprocess(self, pytester: pytest.Pytester) -> None:
         pytester.makepyfile(test_child=_PRINT_XDIST_ENV + 'def test_child():\n    pass\n')
 
