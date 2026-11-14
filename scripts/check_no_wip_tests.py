@@ -39,13 +39,14 @@ WIP_TAG = '@wip'
 TRAILING_COMMENT = re.compile(r'\s+#.*$')
 # Tags attach to the Gherkin element on the next line that is not a blank, a comment or another tag line.
 TAGGABLE_ELEMENT = re.compile(
-    r'(Feature|Business Need|Ability|Rule|Scenario Outline|Scenario Template|Scenario|Examples|Scenarios|Example)\s*:'
+    r'(Feature|Business Need|Ability|Rule|Scenario Outline|Scenario Template|Scenario|Examples|Scenarios|Example):'
 )
 # Headers whose body holds steps. Under Feature, Rule, Examples and Scenarios the same words are description text.
-STEP_CONTAINER = re.compile(r'(Background|Scenario Outline|Scenario Template|Scenario|Example)\s*:')
+STEP_CONTAINER = re.compile(r'(Background|Scenario Outline|Scenario Template|Scenario|Example):')
 DOCSTRING_FENCES = ('"""', '```')
+# Gherkin matches ``keyword:`` with no space before the colon and a step only as ``keyword`` plus a literal space.
 # A doc string can only open directly after a step line inside a step container; elsewhere a fence is description text.
-STEP_LINE = re.compile(r'(Given|When|Then|And|But|\*)(\s|$)')
+STEP_LINE = re.compile(r'(Given|When|Then|And|But|\*) ')
 # A node ID is one whitespace-free token holding ``::``; a warning that merely quotes an ID has a space before it.
 TEST_ID_LINE = re.compile(r'\S+::')
 

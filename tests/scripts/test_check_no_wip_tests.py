@@ -390,6 +390,35 @@ class DescribeFeatureFileScan:
 
         assert _load_script().find_wip_feature_tags(tmp_path) == []
 
+    @pytest.mark.parametrize(
+        'preamble',
+        [
+            ('Feature: F',),
+            ('Feature: F', '  Rule: R'),
+            ('Feature: F', '  Scenario: S', '    Given a thing', '  Examples:'),
+        ],
+        ids=['feature-description', 'rule-description', 'examples-description'],
+    )
+    @pytest.mark.parametrize('header', ['Scenario : x', 'Background : x', 'Scenario Outline : x'])
+    def it_reads_a_header_with_a_space_before_the_colon_as_description_text(
+        self, tmp_path: Path, preamble: tuple[str, ...], header: str
+    ) -> None:
+        content = _feature(
+            *preamble, f'  {header}', '  And prose', '  """', '  @wip', '  Scenario: real', '    Given x'
+        )
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:' + str(len(preamble) + 4)]
+
+    @pytest.mark.parametrize('first_line', ['Given\tprose', 'Given\u00a0prose', 'And', 'Given', '*\tprose'])
+    def it_reads_a_step_keyword_without_a_literal_space_as_description_text(
+        self, tmp_path: Path, first_line: str
+    ) -> None:
+        content = _feature('Feature: F', '  Scenario: S', f'    {first_line}', '    """', '  @wip', '  Scenario: real')
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:5']
+
     def it_opens_a_docstring_after_a_step_in_a_scenario_that_follows_a_rule(self, tmp_path: Path) -> None:
         content = _feature(
             'Feature: F',
