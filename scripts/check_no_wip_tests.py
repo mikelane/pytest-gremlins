@@ -46,12 +46,33 @@ class CannotCheckError(Exception):
 
 
 def parse_collected_ids(output: str) -> list[str]:
-    """Return the test IDs from ``--collect-only -q`` output, dropping the summary line."""
+    r"""Return the test IDs from ``--collect-only -q`` output, dropping the summary line.
+
+    Args:
+        output: The stdout of ``pytest --collect-only -q``.
+
+    Returns:
+        Each line that is a node ID, in collection order.
+
+    Examples:
+        >>> parse_collected_ids('tests/test_a.py::test_one\n\n1 test collected in 0.01s\n')
+        ['tests/test_a.py::test_one']
+    """
     return [line for line in output.splitlines() if TEST_ID_LINE.match(line)]
 
 
 def find_wip_tests(repo: Path) -> list[str]:
-    """Return the ID of every ``wip`` test collected in ``repo``."""
+    """Return the ID of every ``wip`` test collected in ``repo``.
+
+    Args:
+        repo: The repository root to run ``pytest`` in.
+
+    Returns:
+        The node ID of each collected ``wip`` test; empty when pytest collected none.
+
+    Raises:
+        CannotCheckError: If pytest exits with any code other than 0 or 5 (no tests collected).
+    """
     result = subprocess.run(
         [sys.executable, '-m', 'pytest', '-m', 'wip', '--collect-only', '-q', '-p', 'no:cacheprovider'],
         cwd=repo,
@@ -97,7 +118,17 @@ def _wip_tag_lines_in(text: str) -> list[int]:
 
 
 def find_wip_feature_tags(repo: Path) -> list[str]:
-    """Return ``file:line`` for every ``@wip`` tag in ``features/**/*.feature``, without importing pytest-bdd."""
+    """Return ``file:line`` for every ``@wip`` tag in ``features/**/*.feature``, without importing pytest-bdd.
+
+    Args:
+        repo: The repository root holding the ``features`` directory.
+
+    Returns:
+        A POSIX ``relative/path.feature:line`` entry per ``@wip`` tag line, sorted by file.
+
+    Raises:
+        CannotCheckError: If a feature file cannot be read or is not valid UTF-8.
+    """
     found: list[str] = []
     for path in sorted((repo / FEATURES_DIRECTORY).rglob('*.feature')):
         relative = path.relative_to(repo).as_posix()
@@ -110,10 +141,12 @@ def find_wip_feature_tags(repo: Path) -> list[str]:
 
 
 def _report_failure(wip_tests: list[str]) -> None:
+    """Print the wip findings, plus a GitHub Actions error annotation when running in Actions."""
     listing = '\n'.join(f'  {test_id}' for test_id in wip_tests)
     message = f'{len(wip_tests)} wip test(s) or tag(s) found; a release must not ship an unfinished feature:\n{listing}'
     if os.environ.get('GITHUB_ACTIONS') == 'true':
-        print(f'::error title=Release contains wip tests::{message.replace(chr(10), "%0A")}')
+        escaped = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        print(f'::error title=Release contains wip tests::{escaped}')
     print(message)
 
 

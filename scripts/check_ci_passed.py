@@ -85,6 +85,7 @@ class Outcome:
 
 
 def _list_jobs(fetch: Fetch, repo: str, run_id: int) -> list[dict[str, Any]]:
+    """Return every latest-attempt job of a run, following pagination."""
     jobs: list[dict[str, Any]] = []
     page = 1
     while True:
@@ -97,8 +98,9 @@ def _list_jobs(fetch: Fetch, repo: str, run_id: int) -> list[dict[str, Any]]:
 
 
 def _test_job_problems(jobs: list[dict[str, Any]]) -> list[str]:
+    """Return one line per ``EXPECTED_TEST_JOBS`` entry that is missing or did not conclude ``success``."""
     conclusions = {job['name']: job.get('conclusion') for job in jobs}
-    problems = []
+    problems: list[str] = []
     for name in EXPECTED_TEST_JOBS:
         if name not in conclusions:
             problems.append(f'{name}: missing from the run')
@@ -108,13 +110,24 @@ def _test_job_problems(jobs: list[dict[str, Any]]) -> list[str]:
 
 
 def _completed_run_problems(fetch: Fetch, repo: str, run: dict[str, Any]) -> list[str]:
+    """Return why a completed run does not pass the gate; empty when it does."""
     if run.get('conclusion') != 'success':
         return [f'run concluded {run.get("conclusion")}']
     return _test_job_problems(_list_jobs(fetch, repo, int(run['id'])))
 
 
 def check_ci(fetch: Fetch, repo: str, sha: str) -> Outcome:
-    """Evaluate the ``ci.yml`` push runs for ``sha`` once."""
+    """Evaluate the ``ci.yml`` push runs for ``sha`` once.
+
+    Args:
+        fetch: GETs a GitHub API path and returns the parsed JSON.
+        repo: The repository as ``OWNER/NAME``.
+        sha: The full commit SHA to look up.
+
+    Returns:
+        ``passed`` if any completed run passes, ``pending`` if none passes and one is still running,
+        ``missing`` if no run exists, and ``failed`` otherwise.
+    """
     answer = fetch(
         f'/repos/{repo}/actions/workflows/{WORKFLOW_FILE}/runs?head_sha={sha}&event=push&per_page={PER_PAGE}'
     )
@@ -137,6 +150,7 @@ def check_ci(fetch: Fetch, repo: str, sha: str) -> Outcome:
 
 
 def _is_retryable(error: Exception) -> bool:
+    """Return whether an API error may clear on retry: a 5xx, a 429, or a non-HTTP error."""
     if isinstance(error, urllib.error.HTTPError):
         return error.code >= HTTP_SERVER_ERROR_MIN or error.code == HTTP_TOO_MANY_REQUESTS
     return True
@@ -152,7 +166,24 @@ def wait_for_ci(
     sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> Outcome:
-    """Poll until the gate has an answer, the timeout passes, or the API keeps failing."""
+    """Poll until the gate has an answer, the timeout passes, or the API keeps failing.
+
+    Args:
+        fetch: GETs a GitHub API path and returns the parsed JSON.
+        repo: The repository as ``OWNER/NAME``.
+        sha: The full commit SHA to look up.
+        timeout_seconds: How long to wait for a passing or failing run.
+        interval_seconds: How long to sleep between polls.
+        sleep: Sleeps for the given seconds; injectable for tests.
+        monotonic: Returns a monotonic clock reading; injectable for tests.
+
+    Returns:
+        A ``passed`` or ``failed`` outcome. Timing out, or no run appearing within ``NO_RUN_GRACE_SECONDS``, is
+        ``failed``.
+
+    Raises:
+        CannotCheckError: If an API error is not retryable or ``MAX_CONSECUTIVE_API_ERRORS`` happen in a row.
+    """
     deadline = monotonic() + timeout_seconds
     absent_since: float | None = None
     consecutive_errors = 0
@@ -184,7 +215,17 @@ def wait_for_ci(
 
 
 def github_fetcher(token: str) -> Fetch:
-    """Return a ``fetch(path)`` that GETs ``path`` from the GitHub API and parses the JSON answer."""
+    """Return a ``fetch(path)`` that GETs ``path`` from the GitHub API and parses the JSON answer.
+
+    Args:
+        token: The bearer token sent with every request.
+
+    Returns:
+        The fetch function, rooted at ``GITHUB_API_URL`` (default ``https://api.github.com``).
+
+    Raises:
+        CannotCheckError: If ``GITHUB_API_URL`` is not an https URL.
+    """
     base = os.environ.get('GITHUB_API_URL', 'https://api.github.com').rstrip('/')
     if not base.startswith('https://'):
         raise CannotCheckError(f'GITHUB_API_URL must be an https URL, got {base!r}')
@@ -205,6 +246,7 @@ def github_fetcher(token: str) -> Fetch:
 
 
 def _report_failure(message: str) -> None:
+    """Print the failure, plus a GitHub Actions error annotation when running in Actions."""
     print(message)
     if os.environ.get('GITHUB_ACTIONS') == 'true':
         escaped = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
@@ -212,6 +254,7 @@ def _report_failure(message: str) -> None:
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    """Parse the command line; ``None`` reads ``sys.argv``."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('sha', help='the full commit SHA the release tag points at')
     parser.add_argument(
