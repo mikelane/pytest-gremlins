@@ -140,8 +140,8 @@ class DescribeReleaseWorkflowSkipPropagation:
     def it_runs_verify_tag_on_every_event(self) -> None:
         assert 'if' not in _jobs()['verify-tag']
 
-    def it_does_not_gate_the_test_job_on_a_condition(self) -> None:
-        assert 'if' not in _jobs()['test']
+    def it_does_not_gate_the_ci_gate_job_on_a_condition(self) -> None:
+        assert 'if' not in _jobs()['ci-gate']
 
     def it_creates_the_github_release_only_after_a_successful_pypi_publish(self) -> None:
         condition = _condition(_jobs()['github-release'])
@@ -180,7 +180,7 @@ class DescribeReleaseWorkflowPublishGate:
 class DescribeReleaseWorkflowCheckout:
     def it_finds_the_jobs_that_check_out_the_release(self) -> None:
         assert set(_job_ids_with_checkout(excluding='verify-tag')) == {
-            'test',
+            'ci-gate',
             'benchmark',
             'attrs-compat',
             'large-tests',
@@ -340,16 +340,6 @@ class DescribeReleaseWorkflowLargeTierGate:
 
 
 @pytest.mark.medium
-class DescribeReleaseWorkflowCoverageEnvironment:
-    """The release test step excludes other-platform pragmas like PR CI does (issue #1012)."""
-
-    def it_sets_the_other_platform_variable_from_the_runner_os(self) -> None:
-        step = _step_named('test', 'Run tests with coverage (small + medium, matching PR CI)')
-
-        assert step['env']['GREMLINS_COVERAGE_OTHER_PLATFORM'] == "${{ runner.os == 'Windows' && 'posix' || 'win32' }}"
-
-
-@pytest.mark.medium
 class DescribeReleaseWorkflowWipGate:
     """A release fails when the tagged commit contains a ``wip`` test, before any other release job starts."""
 
@@ -370,3 +360,67 @@ class DescribeReleaseWorkflowWipGate:
 
         assert 'if' not in step
         assert 'continue-on-error' not in step
+
+
+PUBLISH_PATH_JOB_IDS = [
+    'build',
+    'verify-wheel',
+    'publish-test-pypi',
+    'verify-test-pypi',
+    'publish-pypi',
+    'github-release',
+]
+
+
+@pytest.mark.medium
+class DescribeReleaseWorkflowCiGate:
+    """A release requires main CI's test matrix to have passed for the tagged commit instead of rerunning it (#1014)."""
+
+    def it_no_longer_reruns_the_test_matrix(self) -> None:
+        assert 'test' not in _jobs()
+
+    def it_waits_for_the_tag_to_verify_before_checking_ci(self) -> None:
+        assert _needs(_jobs()['ci-gate']) == ['verify-tag']
+
+    def it_runs_the_gate_script_for_the_tagged_commit(self) -> None:
+        run = _step_named('ci-gate', 'Require a passing main CI run for the tagged commit')['run']
+
+        assert 'scripts/check_ci_passed.py' in run
+        assert '"$RELEASE_SHA"' in run
+        assert 'RELEASE_SHA=$(git rev-parse HEAD)' in _step_named('ci-gate', 'Resolve the tagged commit')['run']
+
+    def it_passes_the_token_through_the_environment(self) -> None:
+        step = _step_named('ci-gate', 'Require a passing main CI run for the tagged commit')
+
+        assert step['env']['GITHUB_TOKEN'] == '${{ github.token }}'  # noqa: S105 - a workflow expression, not a secret
+        assert '${{' not in step['run']
+
+    def it_has_no_condition_or_failure_override_on_the_gate_steps(self) -> None:
+        for step in _steps('ci-gate'):
+            assert 'if' not in step
+            assert 'continue-on-error' not in step
+
+    def it_grants_the_gate_job_only_the_read_permissions_it_needs(self) -> None:
+        assert _jobs()['ci-gate']['permissions'] == {'actions': 'read', 'contents': 'read'}
+
+    def it_gives_the_gate_job_a_timeout_longer_than_the_script_wait(self) -> None:
+        assert _jobs()['ci-gate']['timeout-minutes'] > 240
+
+    @pytest.mark.parametrize('job_id', PUBLISH_PATH_JOB_IDS)
+    def it_makes_every_publish_path_job_depend_on_the_gate_and_the_tag_check(self, job_id: str) -> None:
+        ancestors = _ancestors(_jobs(), job_id)
+
+        assert {'ci-gate', 'verify-tag'} <= ancestors
+
+    def it_makes_the_build_job_wait_for_the_gate_directly(self) -> None:
+        assert 'ci-gate' in _needs(_jobs()['build'])
+
+    def it_does_not_make_the_gate_wait_for_any_job_but_the_tag_check(self) -> None:
+        assert _ancestors(_jobs(), 'ci-gate') == {'verify-tag'}
+
+    @pytest.mark.parametrize('job_id', ['benchmark', 'attrs-compat', 'large-tests'])
+    def it_runs_the_release_only_jobs_alongside_the_gate_after_the_tag_check(self, job_id: str) -> None:
+        assert _needs(_jobs()[job_id]) == ['verify-tag']
+
+    def it_keeps_every_release_only_job_in_front_of_the_build(self) -> None:
+        assert {'benchmark', 'attrs-compat', 'large-tests'} <= set(_needs(_jobs()['build']))
