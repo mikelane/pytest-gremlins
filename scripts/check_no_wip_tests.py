@@ -121,12 +121,18 @@ def _wip_tag_lines_in(text: str) -> list[int]:
     """Return the 1-based numbers of the ``@wip`` tag lines in feature text that attach to a Gherkin element."""
     hits: list[int] = []
     pending: list[int] = []
-    in_docstring = False
+    open_fence: str | None = None
     for number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
-        if stripped.startswith(DOCSTRING_FENCES):
-            in_docstring = not in_docstring
-        if in_docstring or not stripped or stripped.startswith('#'):
+        fence = next((fence for fence in DOCSTRING_FENCES if stripped.startswith(fence)), None)
+        if open_fence is None and fence is not None:
+            open_fence = fence
+            continue
+        if open_fence is not None:
+            if fence == open_fence:
+                open_fence = None
+            continue
+        if not stripped or stripped.startswith('#'):
             continue
         tokens = _tag_tokens(line)
         if tokens is not None:

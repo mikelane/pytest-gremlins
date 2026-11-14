@@ -252,6 +252,26 @@ class DescribeFeatureFileScan:
 
         assert _load_script().find_wip_feature_tags(tmp_path) == ['features/bom.feature:1']
 
+    @pytest.mark.parametrize(
+        ('opening', 'inner'), [('```python', '"""Module docstring."""'), ('"""', '```')], ids=['backtick', 'quote']
+    )
+    def it_closes_a_docstring_only_on_the_fence_that_opened_it(self, tmp_path: Path, opening: str, inner: str) -> None:
+        content = _feature(
+            'Feature: F',
+            '  Scenario: S',
+            '    Given a source',
+            f'      {opening}',
+            f'      {inner}',
+            f'      {opening[:3]}',
+            '',
+            '  @wip',
+            '  Scenario: Unfinished',
+            '    Given a thing',
+        )
+        _write(tmp_path, 'features/a.feature', content)
+
+        assert _load_script().find_wip_feature_tags(tmp_path) == ['features/a.feature:8']
+
 
 @pytest.mark.small
 class DescribeAnnotationEscaping:
