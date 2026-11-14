@@ -36,6 +36,7 @@ from collections.abc import (
     Sequence,
 )
 from dataclasses import dataclass
+import http.client
 import json
 import os
 import re
@@ -191,7 +192,7 @@ def wait_for_ci(
         try:
             outcome = check_ci(fetch, repo, sha)
             consecutive_errors = 0
-        except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError) as error:
+        except (urllib.error.URLError, OSError, http.client.HTTPException, json.JSONDecodeError, KeyError) as error:
             consecutive_errors += 1
             if not _is_retryable(error) or consecutive_errors >= MAX_CONSECUTIVE_API_ERRORS:
                 raise CannotCheckError(f'GitHub API request failed: {error!r}') from error

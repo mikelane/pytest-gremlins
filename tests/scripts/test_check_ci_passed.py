@@ -6,6 +6,7 @@ The GitHub API is replaced by a fake ``fetch`` that serves canned JSON, so no te
 from __future__ import annotations
 
 from collections.abc import Callable
+import http.client
 import importlib.util
 from pathlib import Path
 import re
@@ -72,16 +73,17 @@ class FakeGitHub:
 
 
 class FailsOnceThenServes:
-    """Raises a transient ``URLError`` on the first call, then delegates every later call to ``fetch``."""
+    """Raises a transient error on the first call (``URLError`` by default), then delegates to ``fetch``."""
 
-    def __init__(self, fetch: Callable[[str], Any]) -> None:
+    def __init__(self, fetch: Callable[[str], Any], error: Exception | None = None) -> None:
         self._fetch = fetch
+        self._error = error or urllib.error.URLError('boom')
         self.calls = 0
 
     def __call__(self, path: str) -> Any:
         self.calls += 1
         if self.calls == 1:
-            raise urllib.error.URLError('boom')
+            raise self._error
         return self._fetch(path)
 
 
@@ -307,6 +309,19 @@ class DescribeWaitForCi:
 
     def it_retries_a_transient_api_error(self) -> None:
         flaky = FailsOnceThenServes(_fetch_for([_run()]))
+
+        outcome = self._wait(flaky)
+
+        assert outcome.state == 'passed'
+        assert flaky.calls > 1
+
+    @pytest.mark.parametrize(
+        'error',
+        [http.client.IncompleteRead(b'{"workflow_ru'), http.client.BadStatusLine('x'), http.client.ResponseNotReady()],
+        ids=['IncompleteRead', 'BadStatusLine', 'ResponseNotReady'],
+    )
+    def it_retries_an_http_client_error_like_any_other_network_error(self, error: Exception) -> None:
+        flaky = FailsOnceThenServes(_fetch_for([_run()]), error)
 
         outcome = self._wait(flaky)
 
