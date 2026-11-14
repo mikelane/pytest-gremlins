@@ -85,13 +85,33 @@ class Outcome:
     message: str
 
 
+def _unexpected(what: str, answer: object) -> CannotCheckError:
+    return CannotCheckError(f'GitHub API answered with an unexpected shape for {what}: {answer!r:.200}')
+
+
+def _entries(answer: Any, key: str, field: str, field_type: type) -> list[dict[str, Any]]:  # noqa: ANN401
+    """Return ``answer[key]`` once every entry is an object whose ``field`` is a ``field_type`` (and not a bool).
+
+    Raises:
+        CannotCheckError: If the answer is not an object, ``key`` is not a list, or an entry has the wrong shape.
+    """
+    entries = answer.get(key) if isinstance(answer, dict) else None
+    if not isinstance(entries, list):
+        raise _unexpected(key, answer)
+    for entry in entries:
+        value = entry.get(field) if isinstance(entry, dict) else None
+        if not isinstance(value, field_type) or isinstance(value, bool):
+            raise _unexpected(f'an entry of {key}', entry)
+    return entries
+
+
 def _list_jobs(fetch: Fetch, repo: str, run_id: int) -> list[dict[str, Any]]:
     """Return every latest-attempt job of a run, following pagination."""
     jobs: list[dict[str, Any]] = []
     page = 1
     while True:
         answer = fetch(f'/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page={PER_PAGE}&page={page}')
-        batch = list(answer['jobs'])
+        batch = _entries(answer, 'jobs', 'name', str)
         jobs.extend(batch)
         if len(batch) < PER_PAGE:
             return jobs
@@ -132,7 +152,7 @@ def check_ci(fetch: Fetch, repo: str, sha: str) -> Outcome:
     answer = fetch(
         f'/repos/{repo}/actions/workflows/{WORKFLOW_FILE}/runs?head_sha={sha}&event=push&per_page={PER_PAGE}'
     )
-    runs = list(answer['workflow_runs'])
+    runs = _entries(answer, 'workflow_runs', 'id', int)
     if not runs:
         return Outcome('missing', f'No {WORKFLOW_FILE} push run found for {sha} yet')
     still_running = False

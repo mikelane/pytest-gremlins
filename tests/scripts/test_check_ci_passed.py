@@ -383,6 +383,45 @@ class DescribeMain:
         assert code == 2
         assert capsys.readouterr().err.startswith('error: ')
 
+    @pytest.mark.parametrize(
+        'runs_answer',
+        [
+            {'workflow_runs': None},
+            {'workflow_runs': 'oops'},
+            {'workflow_runs': [None]},
+            {'workflow_runs': [{'id': 'abc', 'status': 'completed', 'conclusion': 'success'}]},
+            {'workflow_runs': [{'id': None, 'status': 'completed', 'conclusion': 'success'}]},
+            {'workflow_runs': [{'id': True, 'status': 'completed', 'conclusion': 'success'}]},
+            ['not', 'an', 'object'],
+        ],
+        ids=['null-runs', 'string-runs', 'null-run', 'string-id', 'null-id', 'bool-id', 'list-answer'],
+    )
+    def it_exits_two_when_the_runs_answer_has_an_unexpected_shape(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], runs_answer: Any
+    ) -> None:
+        code = self._main(monkeypatch, lambda _path: runs_answer)
+
+        assert code == 2
+        assert 'unexpected' in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        'jobs_answer',
+        [{'jobs': None}, {'jobs': 'oops'}, {'jobs': [None]}, {'jobs': [{'conclusion': 'success'}]}, 'nope'],
+        ids=['null-jobs', 'string-jobs', 'null-job', 'nameless-job', 'string-answer'],
+    )
+    def it_exits_two_when_the_jobs_answer_has_an_unexpected_shape(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], jobs_answer: Any
+    ) -> None:
+        runs_fetch = _fetch_for([_run()])
+
+        def fetch(path: str) -> Any:
+            return jobs_answer if '/jobs' in path else runs_fetch(path)
+
+        code = self._main(monkeypatch, fetch)
+
+        assert code == 2
+        assert 'unexpected' in capsys.readouterr().err
+
     def it_exits_two_naming_the_token_when_no_token_is_available(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
