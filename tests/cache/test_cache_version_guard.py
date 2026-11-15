@@ -102,7 +102,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'coverage/sharded_prescan.py': '8895101cb7a5a550d9c7bf42209cdd49b16259402e5c56678fc81a6784919103',  # pragma: allowlist secret  # noqa: E501
     # --
-    'coverage/subprocess_bootstrap.py': 'c0eeeb6ae0d1ee099c901d2a76432502d05309897111be48b9eb616ab37c1463',  # pragma: allowlist secret  # noqa: E501
+    'coverage/subprocess_bootstrap.py': '770df8420f40e841bc6d69f50baf311300a2de9d99745bd209615173ce8f3421',  # pragma: allowlist secret  # noqa: E501
     # --
     'coverage/types.py': '6300b3a3c2f3a3ccd433e43fb172f367243f4f3eb10cd588306790ae415453ae',  # pragma: allowlist secret
     # --
@@ -168,7 +168,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/worker_kill.py': '04582134f7fa45932ce0c9cb2a6108017f2714571401e01ae5374c2f0b27339d',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'b1d8577655d85d5c99751749a242a7897510495f5600aea4ae3ad8a5b42aa49c',  # pragma: allowlist secret
+    'plugin.py': '322446f09277f8124151124587c5790bd622f16831cfeb8b587697d5dbb38ae2',  # pragma: allowlist secret
     # --
     'process_tree.py': 'f48a64afd8d30e9aac97f5d7d8ed245ee4f3283b73dc293f7c0f3553cf1a433e',  # pragma: allowlist secret
     # --
