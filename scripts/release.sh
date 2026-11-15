@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Cut a release: bump version, update CHANGELOG.md, push commit + tag.
-# The tag push triggers the release.yml pipeline (tests, PyPI publish, GitHub Release).
+# The tag push triggers the release.yml pipeline (tag check, main CI gate, release-only checks,
+# PyPI publish, GitHub Release).
 #
 # Usage: ./scripts/release.sh [--patch|--minor|--major]
 # Default: auto-detect bump type from conventional commits
