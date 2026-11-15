@@ -54,7 +54,7 @@ class DescribeToxTestenv:
         assert '4.6.2' in specifier
         assert '5.0' not in specifier
 
-    @pytest.mark.parametrize('distribution', ['pre-commit', 'jsonschema'])
+    @pytest.mark.parametrize('distribution', ['pre-commit', 'jsonschema', 'gherkin-official'])
     def it_installs_distributions_imported_by_the_suite(self, distribution: str) -> None:
         declared_requirements = _tox_testenv_requirements()
         assert canonicalize_name(distribution) in declared_requirements, (

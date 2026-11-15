@@ -16,6 +16,7 @@ import sys
 import time
 from typing import TYPE_CHECKING
 
+from pytest_gremlins import process_tree
 from pytest_gremlins.cache.incremental import MILLISECONDS_PER_SECOND
 from pytest_gremlins.cache.types import CachedGremlinResult
 from pytest_gremlins.control_run import (
@@ -106,6 +107,23 @@ def _collect_unmutated(
     return run_control(command, node_ids, rootdir, env, node_ids_dir=gremlin_session.instrumented_dir)
 
 
+def is_collection_kill(result: GremlinResult) -> bool:
+    """Return whether the result is a ZAPPED verdict whose killer is the collection phase, not a test."""
+    return result.status == GremlinResultStatus.ZAPPED and result.killing_test == COLLECTION_KILLING_TEST
+
+
+def pooled_verdict_is_final(result: GremlinResult) -> bool:
+    """Return whether :func:`_confirm_pooled_result` leaves this worker verdict exactly as it is.
+
+    Confirmation rewrites only two verdicts: a TIMEOUT (re-run alone, then checked against the unmutated
+    selection) and a collection kill (checked against the unmutated selection). Every other verdict passes
+    through unchanged, so it can be cached the moment its worker returns. Caching a verdict that
+    confirmation could still change would persist a wrong answer across runs, which is worse than a cold
+    cache, so those two wait.
+    """
+    return result.status != GremlinResultStatus.TIMEOUT and not is_collection_kill(result)
+
+
 def _confirm_collection_kill(
     result: GremlinResult,
     node_ids: Sequence[str],
@@ -130,7 +148,7 @@ def _confirm_collection_kill(
     Returns:
         ``result`` unchanged, or an ERROR result when the unmutated selection fails to load.
     """
-    if result.status != GremlinResultStatus.ZAPPED or result.killing_test != COLLECTION_KILLING_TEST:
+    if not is_collection_kill(result):
         return result
     selection = tuple(node_ids)
     if selection not in gremlin_session.unmutated_load_checks:
@@ -164,16 +182,12 @@ def _prefill_collection_kill_confirmations(
         gremlin_session: The current gremlin session, holding the memo and the worker count.
         rootdir: Root directory of the project.
     """
-    selections = {
-        tuple(node_ids): node_ids
-        for result, node_ids in pending
-        if result.status == GremlinResultStatus.ZAPPED and result.killing_test == COLLECTION_KILLING_TEST
-    }
+    selections = {tuple(node_ids): node_ids for result, node_ids in pending if is_collection_kill(result)}
     unchecked = [selection for selection in selections if selection not in gremlin_session.unmutated_load_checks]
     if not unchecked:
         return
     worker_count = min(len(unchecked), gremlin_session.parallel_workers or os.cpu_count() or 4)
-    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+    with process_tree.kill_live_commands_on_error(), ThreadPoolExecutor(max_workers=worker_count) as executor:
         outcomes = executor.map(
             lambda selection: _collect_unmutated(gremlin_session, rootdir, selections[selection]), unchecked
         )
@@ -494,14 +508,7 @@ def _run_gremlin_subprocess(
     effective_command = lightweight_cmd if lightweight_cmd is not None else test_command
 
     try:
-        subprocess_outcome = subprocess.run(  # Intentional: runs pytest test commands
-            effective_command,
-            cwd=str(rootdir),
-            env=env,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
+        subprocess_outcome = process_tree.run_bounded(effective_command, cwd=str(rootdir), env=env, timeout=timeout)
 
         # pytest uses specific exit codes. Only exit code 1 means tests ran
         # and failed (i.e. the mutation was caught). Other non-zero exit codes

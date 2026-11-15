@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from secret_env_scrub import scrub_secret_env  # type: ignore[import-not-found]
+from xdist_env import hide_outer_xdist_worker_env  # type: ignore[import-not-found]  # noqa: F401
 
 from pytest_gremlins import plugin
 from pytest_gremlins.instrumentation.transformer import get_default_registry

@@ -1,10 +1,9 @@
 """The release-step execution tests run bash and POSIX venv paths (.venv/bin/python), so they must skip on Windows.
 
-CI (ci.yml and release.yml's ``test`` job) runs ``-m "small or medium"`` on windows-latest. There ``uv venv``
-creates ``.venv\\Scripts\\python.exe``, the subprocess env drops SYSTEMROOT, and PATH is joined with ':' after a
-drive-letter path, so these tests cannot pass. This check fakes ``sys.platform == 'win32'`` while the test modules
-are imported and
-asserts the bash-executing tests are skipped rather than run.
+CI (ci.yml) runs ``-m "small or medium"`` on windows-latest. There ``uv venv`` creates
+``.venv\\Scripts\\python.exe``, the subprocess env drops SYSTEMROOT, and PATH is joined with ':' after a
+drive-letter path, so these tests cannot pass. This check fakes ``sys.platform == 'win32'`` while the test
+modules are imported and asserts the bash-executing tests are skipped rather than run.
 """
 
 from __future__ import annotations
