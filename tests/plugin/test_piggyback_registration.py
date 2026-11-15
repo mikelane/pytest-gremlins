@@ -25,6 +25,8 @@ from pytest_gremlins.plugin import (
     pytest_sessionstart,
 )
 
+pytestmark = pytest.mark.usefixtures('hooks_read_global_session')
+
 
 @pytest.mark.small
 class DescribeGremlinSessionCoverageMode:

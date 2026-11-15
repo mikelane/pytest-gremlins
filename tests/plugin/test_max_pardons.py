@@ -30,6 +30,8 @@ from pytest_gremlins.plugin import (
 )
 from pytest_gremlins.reporting.score import MutationScore
 
+pytestmark = pytest.mark.usefixtures('hooks_read_global_session')
+
 
 @pytest.mark.small
 class DescribeMaxPardons:

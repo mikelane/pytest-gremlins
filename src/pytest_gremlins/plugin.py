@@ -10,7 +10,10 @@ import argparse
 import ast
 import base64
 import collections.abc
-from concurrent.futures import as_completed
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    wait,
+)
 from dataclasses import (
     dataclass,
     field,
@@ -38,13 +41,17 @@ import tempfile
 import tokenize
 from typing import (
     TYPE_CHECKING,
+    Protocol,
 )
 import zlib
 
 from coverage.exceptions import CoverageException
 import pytest
 
-from pytest_gremlins import node_id_args
+from pytest_gremlins import (
+    node_id_args,
+    process_tree,
+)
 from pytest_gremlins.addopts import inherited_addopts_tokens
 from pytest_gremlins.argument_files import expand_argument_files
 from pytest_gremlins.cache.hasher import ContentHasher
@@ -54,6 +61,7 @@ from pytest_gremlins.cache.incremental import (
     RerunBudget,
     subprocess_optimize_level,
 )
+from pytest_gremlins.cache.periodic_flush import PeriodicFlusher
 from pytest_gremlins.config import (
     DEFAULT_PRESCAN_WORKERS,
     MAX_PRESCAN_WORKERS,
@@ -105,9 +113,7 @@ from pytest_gremlins.operators.entry_points import (
 )
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
-from pytest_gremlins.parallel.exit_codes import (
-    GREMLIN_COLLECTION_FAILED_EXIT_CODE,
-)
+from pytest_gremlins.parallel.exit_codes import GREMLIN_COLLECTION_FAILED_EXIT_CODE
 from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
 )
@@ -160,6 +166,7 @@ from pytest_gremlins.verdicts import (
     _result_from_cached_row,
     _result_from_worker,
     _test_gremlin,
+    pooled_verdict_is_final,
 )
 from pytest_gremlins.xdist_options import (
     addopts_without_xdist,
@@ -169,13 +176,17 @@ from pytest_gremlins.xdist_options import (
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
+        Mapping,
         Sequence,
     )
+    from collections.abc import Set as AbstractSet
+    from concurrent.futures import Future
 
     import coverage
 
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.operators import GremlinOperator
+    from pytest_gremlins.parallel.pool import WorkerResult
 
 
 DEFAULT_TEST_FILE_PATTERNS = ('test_*.py', '*_test.py')
@@ -522,6 +533,11 @@ def _set_session(session: GremlinSession | None) -> None:
     _gremlin_session = session
 
 
+def _session_for(config: pytest.Config) -> GremlinSession | None:
+    """Return the session ``config`` owns, or None when gremlins never installed one for it."""
+    return config.stash.get(_own_session_key, None)
+
+
 def _install_session(config: pytest.Config, session: GremlinSession) -> None:
     """Make ``session`` the current session and the one ``config`` owns."""
     config.stash[_own_session_key] = session
@@ -540,11 +556,13 @@ def _release_session(config: pytest.Config) -> None:
     for configured in _configured_configs:
         if configured.stash[_displaced_session_key] is owned:
             configured.stash[_displaced_session_key] = displaced
-    _cleanup_instrumented_dir(owned.instrumented_dir)
-    if owned.cache is not None:
-        owned.cache.close()
-    if _get_session() is owned:
-        _set_session(displaced)
+    try:
+        _cleanup_instrumented_dir(owned.instrumented_dir)
+        if owned.cache is not None:
+            owned.cache.close()
+    finally:
+        if _get_session() is owned:
+            _set_session(displaced)
 
 
 class _BaselineRecorder:
@@ -559,7 +577,7 @@ class _BaselineRecorder:
         self._config = config
 
     def _enabled_session(self) -> GremlinSession | None:
-        gremlin_session = self._config.stash.get(_own_session_key, None)
+        gremlin_session = _session_for(self._config)
         if gremlin_session is None or not gremlin_session.enabled:
             return None
         return gremlin_session
@@ -1299,7 +1317,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     Args:
         session: The pytest session object.
     """
-    gremlin_session = _get_session()
+    gremlin_session = _session_for(session.config)
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
@@ -1315,10 +1333,16 @@ def pytest_sessionstart(session: pytest.Session) -> None:
         session.config.pluginmanager.register(context_plugin)
 
 
+class _ControllerReportingNode(Protocol):
+    """The part of xdist's ``WorkerController`` gremlins reads: the controller Config it reports to."""
+
+    config: pytest.Config
+
+
 if _XDIST_AVAILABLE:
 
     @pytest.hookimpl(optionalhook=True)
-    def pytest_xdist_node_collection_finished(node: object, ids: list[str]) -> None:  # noqa: ARG001
+    def pytest_xdist_node_collection_finished(node: _ControllerReportingNode, ids: list[str]) -> None:
         """Capture item IDs reported by the first xdist worker after it finishes collection.
 
         xdist workers each collect all test items independently and report them
@@ -1326,10 +1350,10 @@ if _XDIST_AVAILABLE:
         first worker's list and ignore subsequent calls.
 
         Args:
-            node: The xdist worker node (unused; all workers collect the same items).
+            node: The xdist worker node; its Config is the controller's, which owns the session.
             ids: The list of test node IDs collected by this worker.
         """
-        gremlin_session = _get_session()
+        gremlin_session = _session_for(node.config)
         if gremlin_session is None or not gremlin_session.enabled:
             return
 
@@ -1375,7 +1399,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     and normalises node IDs but skips gremlin generation — that happens in
     ``pytest_sessionfinish`` once worker item IDs are available.
     """
-    gremlin_session = _get_session()
+    gremlin_session = _session_for(session.config)
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
@@ -2616,7 +2640,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     mutation testing as normal.  Phase 1 (xdist test run) and Phase 2 (gremlins
     mutations) are therefore temporally isolated with no shared mutable state.
     """
-    gremlin_session = _get_session()
+    gremlin_session = _session_for(session.config)
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
@@ -2644,6 +2668,25 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             gremlin_session.enabled = False
         return
 
+    # The control runs and the serial pre-scan start test commands in their own sessions through run_bounded, so a
+    # SIGTERM must reach them through the same cleanup as the mutation run. The sharded pre-scan starts its shards with
+    # a plain Popen, in the caller's session, and is not covered by this (#983).
+    with process_tree.sigterm_cleanup():
+        has_run_gremlins = _collect_coverage_then_run_gremlins(session, gremlin_session, rootdir)
+    if has_run_gremlins:
+        _report_unmapped_selections(gremlin_session)
+
+
+def _collect_coverage_then_run_gremlins(
+    session: pytest.Session, gremlin_session: GremlinSession, rootdir: Path
+) -> bool:
+    """Run the coverage pre-scan, check the unmutated suite loads, then run every gremlin.
+
+    Returns:
+        True once the gremlins ran, so their results are on ``gremlin_session``. False when ``--gremlin-explain``
+        stopped after the pre-scan, so no gremlin ran.
+    """
+    config = session.config
     _collect_coverage(gremlin_session, rootdir)
 
     # If pytest-cov is active (--cov was passed), reload its in-memory coverage
@@ -2660,11 +2703,11 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         cov_plugin.cov.load()
 
     if _maybe_short_circuit_for_explain(gremlin_session):
-        return
+        return False
 
     _verify_suite_loads_unmutated(session, gremlin_session)
     gremlin_session.results = _dispatch_mutation_run(session, gremlin_session)
-    _report_unmapped_selections(gremlin_session)
+    return True
 
 
 def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: GremlinSession) -> None:
@@ -3721,13 +3764,11 @@ def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, time
     """
     try:
         with tempfile.TemporaryDirectory(prefix='pytest_gremlins_prescan_', ignore_cleanup_errors=True) as node_ids_dir:
-            subprocess.run(  # Intentional: runs pytest test commands
+            process_tree.run_bounded(
                 command_with_node_ids_file(command, node_ids, Path(node_ids_dir)),
                 cwd=str(rootdir),
-                capture_output=True,
-                timeout=timeout,
-                check=False,
                 env=_prescan_env(),
+                timeout=timeout,
             )
     except subprocess.TimeoutExpired as expired:
         raise CoveragePrescanTimeoutError(timeout) from expired
@@ -4076,6 +4117,10 @@ def _run_batch_mutation_testing(  # pragma: no cover
     return results
 
 
+WATCHDOG_TICK_SECONDS = 1.0
+"""How often the result loop checks the pool's per-gremlin deadlines (#976)."""
+
+
 def _run_parallel_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
@@ -4160,18 +4205,9 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             )
             futures[future] = gremlin.gremlin_id
 
-        # Collect results as they complete
-        for future in as_completed(futures):
-            gremlin_id = futures[future]
-            try:
-                worker_result = future.result()
-                aggregator.add_result(worker_result)
-            except Exception as execution_error:
-                aggregator.add_error(gremlin_id, execution_error)
-
-            # Progress reporting
-            completed, total = aggregator.get_progress()
-            print(f'\rpytest-gremlins: Progress {completed}/{total}', end='', flush=True)
+        early_cached_ids = _collect_pooled_results(
+            futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session, service=pool.service
+        )
 
     print()  # New line after progress
 
@@ -4188,9 +4224,71 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             continue
         unconfirmed.append(gremlin_result)
 
-    results.extend(_confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir))
+    results.extend(
+        _confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir, early_cached_ids)
+    )
 
     return results
+
+
+def _collect_one_result(
+    future: Future[WorkerResult],
+    gremlin: Gremlin,
+    selected_tests: list[str],
+    aggregator: ResultAggregator,
+    gremlin_session: GremlinSession,
+) -> bool:
+    """Add one finished future to the aggregator; return whether its verdict was final and handed to the cache."""
+    try:
+        worker_result = future.result()
+        aggregator.add_result(worker_result)
+    except Exception as execution_error:
+        aggregator.add_error(gremlin.gremlin_id, execution_error)
+        return False
+    return _cache_final_worker_result(gremlin, worker_result, selected_tests, gremlin_session)
+
+
+def _collect_pooled_results(
+    futures: Mapping[Future[WorkerResult], str],
+    aggregator: ResultAggregator,
+    gremlin_by_id: Mapping[str, Gremlin],
+    gremlin_tests: Mapping[str, list[str]],
+    gremlin_session: GremlinSession,
+    *,
+    service: Callable[[], Sequence[str]] | None = None,
+) -> set[str]:
+    """Collect worker results as they complete, caching final verdicts at once; return the ids cached that way.
+
+    A run that is killed or stalls keeps what it finished (#974): each final verdict goes to the cache the
+    moment its worker returns, and the cache is flushed on a timer, so a kill loses at most one flush window.
+    The flush also runs when anything, including ``KeyboardInterrupt``, propagates out of the wait. This
+    runs on the thread that owns the cache's SQLite connection.
+
+    ``service`` is the pool's watchdog (#976). It runs before every wait, which then wakes at least every
+    ``WATCHDOG_TICK_SECONDS``, so a hung worker is noticed within a tick of its deadline.
+    """
+    flusher = _cache_flusher_for(gremlin_session)
+    wake_every = flusher.every_seconds if service is None else min(flusher.every_seconds, WATCHDOG_TICK_SECONDS)
+    early_cached_ids: set[str] = set()
+    pending_futures = set(futures)
+    try:
+        while pending_futures:
+            if service is not None:
+                _queue_hung_worker_notices(service(), gremlin_session)
+            done, pending_futures = wait(pending_futures, timeout=wake_every, return_when=FIRST_COMPLETED)
+            for future in done:
+                gremlin_id = futures[future]
+                if _collect_one_result(
+                    future, gremlin_by_id[gremlin_id], gremlin_tests[gremlin_id], aggregator, gremlin_session
+                ):
+                    early_cached_ids.add(gremlin_id)
+                    flusher.note_result()
+                completed, total = aggregator.get_progress()
+                print(f'\rpytest-gremlins: Progress {completed}/{total}', end='', flush=True)
+            flusher.flush_if_due()
+    finally:
+        flusher.flush()
+    return early_cached_ids
 
 
 def _confirm_and_cache_pooled_results(
@@ -4198,8 +4296,14 @@ def _confirm_and_cache_pooled_results(
     test_commands: dict[str, list[str]],
     gremlin_session: GremlinSession,
     rootdir: Path,
+    early_cached_ids: AbstractSet[str],
 ) -> list[GremlinResult]:
-    """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them."""
+    """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them.
+
+    Results whose gremlin id is in ``early_cached_ids`` were final when their worker returned and were
+    written then (see :func:`_cache_final_worker_result`); confirmation leaves them unchanged, so they
+    are not written twice.
+    """
     _prefill_collection_kill_confirmations(
         [(r, _node_ids_for_tests(r.selected_tests, gremlin_session)) for r in unconfirmed], gremlin_session, rootdir
     )
@@ -4213,10 +4317,53 @@ def _confirm_and_cache_pooled_results(
             rootdir,
         )
         confirmed.append(confirmed_result)
+        if unconfirmed_result.gremlin.gremlin_id in early_cached_ids:
+            continue
         _cache_gremlin_result(
             unconfirmed_result.gremlin, unconfirmed_result.selected_tests, confirmed_result, gremlin_session
         )
     return confirmed
+
+
+def _queue_hung_worker_notices(hung_gremlin_ids: Sequence[str], gremlin_session: GremlinSession) -> None:
+    """Tell the terminal summary whose workers the hung-worker watchdog killed; the pool already logged each."""
+    for gremlin_id in hung_gremlin_ids:
+        _queue_terminal_notice(
+            gremlin_session,
+            f'pytest-gremlins: warning: the hung-worker watchdog killed the worker of gremlin {gremlin_id} after it '
+            'ran past its mutant timeout. The gremlin is re-run alone to settle its verdict.',
+        )
+
+
+def _cache_final_worker_result(
+    gremlin: Gremlin,
+    worker_result: WorkerResult,
+    selected_tests: list[str],
+    gremlin_session: GremlinSession,
+) -> bool:
+    """Cache the worker's verdict now if confirmation cannot change it; return whether it was handed to the cache."""
+    result = _result_from_worker(gremlin, worker_result, selected_tests)
+    if not pooled_verdict_is_final(result):
+        return False
+    _cache_gremlin_result(gremlin, selected_tests, result, gremlin_session)
+    return True
+
+
+def _cache_flusher_for(gremlin_session: GremlinSession) -> PeriodicFlusher:
+    """Return the flusher that commits the session cache's deferred writes, doing nothing when caching is off."""
+    cache = gremlin_session.cache
+    if not gremlin_session.cache_enabled or cache is None:
+        return PeriodicFlusher(lambda: None)
+
+    def queue_failure_notice(flush_error: Exception) -> None:
+        _queue_terminal_notice(
+            gremlin_session,
+            'pytest-gremlins: warning: could not write finished results to the cache '
+            f'({_describe_exception(flush_error)}). The run continues and retries the writes; '
+            'the cache retries them again when it closes.',
+        )
+
+    return PeriodicFlusher(cache.flush, on_first_failure=queue_failure_notice)
 
 
 def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
@@ -4448,7 +4595,8 @@ def _run_mutation_testing(
 ) -> list[GremlinResult]:
     """Run mutation testing for all gremlins.
 
-    Uses incremental caching when enabled to skip unchanged gremlins.
+    Uses incremental caching when enabled to skip unchanged gremlins. Cached results are flushed to disk
+    periodically and when the run is interrupted, so an interrupted run keeps what it finished (#974).
 
     Args:
         session: The pytest session.
@@ -4457,6 +4605,19 @@ def _run_mutation_testing(
     Returns:
         List of results for each gremlin.
     """
+    flusher = _cache_flusher_for(gremlin_session)
+    try:
+        return _run_gremlins_one_by_one(session, gremlin_session, flusher)
+    finally:
+        flusher.flush()
+
+
+def _run_gremlins_one_by_one(
+    session: pytest.Session,
+    gremlin_session: GremlinSession,
+    flusher: PeriodicFlusher,
+) -> list[GremlinResult]:
+    """Run each gremlin in turn, caching every result and flushing through ``flusher``."""
     results: list[GremlinResult] = []
     rootdir = _get_rootdir(session.config)
     base_test_command = _build_test_command(
@@ -4524,6 +4685,8 @@ def _run_mutation_testing(
 
         # Cache the result for next run
         _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
+        flusher.note_result()
+        flusher.flush_if_due()
 
         results.append(gremlin_result)
 
@@ -4951,7 +5114,7 @@ def pytest_terminal_summary(  # noqa: C901, PLR0912, PLR0915
     config: pytest.Config,
 ) -> None:
     """Add mutation testing results to terminal output."""
-    gremlin_session = _get_session()
+    gremlin_session = _session_for(config)
     if gremlin_session is None or not gremlin_session.enabled:
         return
 
