@@ -168,7 +168,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/worker_kill.py': '04582134f7fa45932ce0c9cb2a6108017f2714571401e01ae5374c2f0b27339d',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'bd5803ad2626dfbfe5cc2e5e38975e0366ef91ac191fcba0a8afc81cb5e9ea16',  # pragma: allowlist secret
+    'plugin.py': 'ffcd68eeac1672a082624632cab51f9e5c0a9506e00eaac26a60b7f9ca265247',  # pragma: allowlist secret
     # --
     'process_tree.py': 'f48a64afd8d30e9aac97f5d7d8ed245ee4f3283b73dc293f7c0f3553cf1a433e',  # pragma: allowlist secret
     # --
@@ -180,7 +180,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'reporting/types.py': 'f732c4d57c6173836ac0244f4176fded3e86da043c768d9b55386f42a57d0492',  # pragma: allowlist secret  # noqa: E501
     # --
-    'rerun_options.py': '1142242889b03fd29c4a954f8faa9e0e58cde6b68b27960e20b58e9a36c37ee9',  # pragma: allowlist secret
+    'rerun_options.py': '94dbe2adc8b8b31ea2b4e574270ff76f970e70d80c521acb1bdc303529386cfd',  # pragma: allowlist secret
     # --
     'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
     # --

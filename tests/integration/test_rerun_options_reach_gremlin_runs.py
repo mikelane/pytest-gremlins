@@ -81,7 +81,7 @@ class DescribeRerunOptionsInAddopts:
 
 @pytest.mark.medium
 class DescribeRerunIniKeysInAConfigFileNamedOnTheCommandLine:
-    """Gremlin runs never read the ``-c`` file, so the settings it holds must be forwarded to them."""
+    """Gremlin runs are given the ``-c`` file (#951), so they read the settings it holds."""
 
     @pytest.mark.parametrize('config_args', [('-c', 'ci.ini'), ('--config-file=ci.ini',)])
     def it_leaves_the_mutants_the_flaky_test_cannot_catch_alive(

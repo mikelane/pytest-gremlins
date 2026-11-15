@@ -13,21 +13,13 @@ from pytest_gremlins.plugin import (
     GremlinSession,
     _BaselineRecorder,
     _own_session_key,
-    _rerun_ini_warnings_for,
     _rerun_options_for,
     _run_prescan_reporting_problems,
     _skip_mutation_unless_baseline_is_green,
 )
-from pytest_gremlins.rerun_options import unforwarded_rerun_key_warning
 from pytest_gremlins.verdicts import (
     _build_test_command,
 )
-
-_ALL_RERUN_KEYS = ('reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except')
-
-
-def _resets(*keys: str) -> list[str]:
-    return [f'--override-ini={key}=' for key in keys]
 
 
 @pytest.mark.small
@@ -87,45 +79,6 @@ class DescribeRerunOptionsFor:
 
         assert _rerun_options_for(config) == ['--reruns=2']
 
-    def it_forwards_rerun_ini_settings_as_ini_overrides_so_a_config_file_reaches_gremlin_runs(self) -> None:
-        config = _config(
-            registered_plugin='rerunfailures', args=['-c', 'ci.ini'], ini={'reruns': '2'}, inifilename='ci.ini'
-        )
-
-        assert _rerun_options_for(config) == [
-            '--override-ini=reruns=2',
-            '--override-ini=reruns_delay=',
-            '--override-ini=reruns_delay_backoff_factor=',
-            '--override-ini=only_rerun=',
-            '--override-ini=rerun_except=',
-        ]
-
-    def it_leaves_out_an_ini_count_the_command_line_option_replaces(self) -> None:
-        config = _config(
-            registered_plugin='rerunfailures', args=['--reruns', '3'], ini={'reruns': '1'}, inifilename='ci.ini'
-        )
-
-        assert _rerun_options_for(config) == [
-            '--override-ini=reruns_delay=',
-            '--override-ini=reruns_delay_backoff_factor=',
-            '--override-ini=only_rerun=',
-            '--override-ini=rerun_except=',
-            '--reruns=3',
-        ]
-
-    def it_does_not_repeat_an_ini_setting_the_command_line_already_overrides(self) -> None:
-        config = _config(
-            registered_plugin='rerunfailures', args=['-o', 'reruns=2'], ini={'reruns': '2'}, inifilename='ci.ini'
-        )
-
-        assert _rerun_options_for(config) == [
-            '--override-ini=reruns_delay=',
-            '--override-ini=reruns_delay_backoff_factor=',
-            '--override-ini=only_rerun=',
-            '--override-ini=rerun_except=',
-            '--override-ini=reruns=2',
-        ]
-
     def it_forwards_no_ini_settings_when_pytest_rerunfailures_is_not_loaded(self) -> None:
         config = _config(registered_plugin=None, args=[], ini={'reruns': '2'})
 
@@ -146,109 +99,6 @@ class DescribeRerunIniSettingsWithoutAConfigFileOption:
         config = _config(registered_plugin='rerunfailures', args=['--reruns', '3'], ini={'reruns': '1'})
 
         assert _rerun_options_for(config) == ['--reruns=3']
-
-    def it_warns_about_nothing(self) -> None:
-        config = _config(registered_plugin='rerunfailures', args=[], ini={'rerun_except': ['xyz ']})
-
-        assert _rerun_ini_warnings_for(config) == []
-
-
-@pytest.mark.small
-class DescribeRerunIniSettingsUnderAConfigFileOption:
-    def it_leaves_out_a_list_setting_pytest_would_change_and_forwards_the_rest(self) -> None:
-        ini: dict[str, str | list[str]] = {'reruns': '2', 'rerun_except': ['xyz '], 'only_rerun': ['Timeout']}
-        config = _config(registered_plugin='rerunfailures', args=[], ini=ini, inifilename='ci.toml')
-
-        assert _rerun_options_for(config) == [
-            '--override-ini=reruns=2',
-            '--override-ini=only_rerun=Timeout',
-            '--override-ini=reruns_delay=',
-            '--override-ini=reruns_delay_backoff_factor=',
-            '--override-ini=rerun_except=',
-        ]
-
-    def it_resets_a_list_setting_the_config_file_leaves_unset_so_the_project_file_cannot_fill_it_in(self) -> None:
-        config = _config(registered_plugin='rerunfailures', args=[], ini={'reruns': '2'}, inifilename='ci.ini')
-
-        assert _rerun_options_for(config) == [
-            '--override-ini=reruns=2',
-            '--override-ini=reruns_delay=',
-            '--override-ini=reruns_delay_backoff_factor=',
-            '--override-ini=only_rerun=',
-            '--override-ini=rerun_except=',
-        ]
-
-    def it_puts_the_resets_before_the_command_line_so_the_command_line_wins(self) -> None:
-        config = _config(registered_plugin='rerunfailures', args=['--only-rerun', 'Timeout'], inifilename='ci.ini')
-
-        assert _rerun_options_for(config) == [
-            '--override-ini=reruns=',
-            '--override-ini=reruns_delay=',
-            '--override-ini=reruns_delay_backoff_factor=',
-            '--override-ini=rerun_except=',
-            '--only-rerun=Timeout',
-        ]
-
-    def it_does_not_warn_about_a_key_a_command_line_option_replaces(self) -> None:
-        config = _config(
-            registered_plugin='rerunfailures',
-            args=['--rerun-except', 'safe'],
-            ini={'rerun_except': ['xyz ']},
-            inifilename='ci.toml',
-        )
-
-        assert _rerun_ini_warnings_for(config) == []
-
-    def it_warns_once_per_left_out_key(self) -> None:
-        ini: dict[str, str | list[str]] = {'rerun_except': [' a'], 'only_rerun': ['b\r']}
-        config = _config(registered_plugin='rerunfailures', args=[], ini=ini, inifilename='ci.toml')
-
-        warnings = _rerun_ini_warnings_for(config)
-
-        assert warnings == [unforwarded_rerun_key_warning('only_rerun'), unforwarded_rerun_key_warning('rerun_except')]
-
-    def it_does_not_warn_about_a_key_the_command_line_overrides(self) -> None:
-        config = _config(
-            registered_plugin='rerunfailures',
-            args=['-o', 'rerun_except=safe'],
-            ini={'rerun_except': ['xyz ']},
-            inifilename='ci.toml',
-        )
-
-        assert _rerun_ini_warnings_for(config) == []
-
-    @pytest.mark.parametrize('key', ['only_rerun', 'rerun_except'])
-    def it_does_not_warn_about_a_key_a_parsed_option_replaces_from_addopts(self, key: str) -> None:
-        config = _config(
-            registered_plugin='rerunfailures',
-            args=['-c', 'ci.toml'],
-            ini={key: ['xyz ']},
-            inifilename='ci.toml',
-            parsed_options={key: ['flaky']},
-        )
-
-        assert _rerun_ini_warnings_for(config) == []
-
-    def it_does_not_reset_or_forward_a_key_a_parsed_option_sets_from_addopts(self) -> None:
-        config = _config(
-            registered_plugin='rerunfailures',
-            args=['-c', 'ci.toml'],
-            ini={'reruns': '2', 'only_rerun': ['xyz ']},
-            inifilename='ci.toml',
-            parsed_options={'only_rerun': ['flaky'], 'reruns': 3},
-        )
-
-        assert _rerun_options_for(config) == _resets('reruns_delay', 'reruns_delay_backoff_factor', 'rerun_except')
-
-    def it_resets_every_unset_key_so_the_project_file_fills_in_none(self) -> None:
-        config = _config(registered_plugin='rerunfailures', args=['-c', 'ci.ini'], inifilename='ci.ini')
-
-        assert _rerun_options_for(config) == _resets(*_ALL_RERUN_KEYS)
-
-    def it_does_not_warn_when_pytest_rerunfailures_is_not_loaded(self) -> None:
-        config = _config(registered_plugin=None, args=[], ini={'rerun_except': ['xyz ']}, inifilename='ci.toml')
-
-        assert _rerun_ini_warnings_for(config) == []
 
 
 def _report(node_id: str, outcome: str) -> pytest.TestReport:
@@ -338,14 +188,3 @@ class DescribeRerunIniSettingsWhenTheConfigFileIsForwarded:
         )
 
         assert _rerun_options_for(config) == ['--reruns=3']
-
-    def it_warns_about_no_key_because_the_file_arrives_unchanged(self) -> None:
-        config = _config(
-            registered_plugin='rerunfailures',
-            args=[],
-            ini={'rerun_except': ['xyz ']},
-            inifilename='ci.toml',
-            inipath=Path('/project/ci.toml'),
-        )
-
-        assert _rerun_ini_warnings_for(config) == []

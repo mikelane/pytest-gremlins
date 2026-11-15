@@ -6,17 +6,6 @@ Rerun options in the project's ``addopts`` and ``PYTEST_ADDOPTS`` already reach 
 ini settings of any config file pytest finds on its own, because a gremlin run discovers the same file.
 This module carries the rerun options typed on the command line.  Under ``-c`` the gremlin runs are given the same
 config file (issue #951), so they read the rerun ini settings from it and nothing is copied as ``--override-ini``.
-:func:`resolve_rerun_ini` remains for a session whose ``-c`` file cannot be forwarded: it carries the rerun ini
-settings as ``--override-ini`` arguments.
-pytest strips and splits the value of ``-o``, so a list setting whose items would change (issue #658)
-is not carried.
-Such a gremlin run would find the project's own config file, which the baseline never read, so
-every rerun ini key that is not carried is reset to empty: a filter list (``only_rerun``, ``rerun_except``)
-then means no filter, an empty count means no reruns, and an empty delay or backoff factor means the
-plugin's defaults (no delay, factor 1.0), exactly what the baseline ran with.
-A key is left alone when a parsed option already sets it, wherever it came from (the command line,
-``addopts`` of the ``-c`` file or ``PYTEST_ADDOPTS``), because pytest-rerunfailures reads the option before
-the ini key and the gremlin runs receive those sources themselves.
 """
 
 from __future__ import annotations
@@ -27,7 +16,6 @@ from collections.abc import (
     Iterable,
     Sequence,
 )
-from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -60,22 +48,16 @@ _RERUN_VALUE_OPTIONS = frozenset(
     }
 )
 
-# The order the settings are forwarded in; the list-valued keys are ``linelist`` ini options.
+# The ini keys pytest-rerunfailures reads; the list-valued ones are ``linelist`` ini options.
 _FORWARDED_INI_KEYS = ('reruns', 'reruns_delay', 'reruns_delay_backoff_factor', 'only_rerun', 'rerun_except')
 # pytest-rerunfailures also reads these ini keys, so ``-o reruns=2`` is a command-line rerun option too.
 _RERUN_INI_KEYS = frozenset(_FORWARDED_INI_KEYS)
-# The command-line option pytest-rerunfailures reads before the ini key of the same setting.  Each such
-# option is the ini key spelled as a long option, and its argparse ``dest`` is the ini key itself.
-_OPTION_FOR_INI_KEY = {f'--{key.replace("_", "-")}': key for key in _FORWARDED_INI_KEYS}
 _SHORT_OVERRIDE_INI = '-o'
 _OVERRIDE_INI_ARGUMENT = '--override-ini='
 _OVERRIDE_INI_OPTIONS = frozenset({_SHORT_OVERRIDE_INI, '--override-ini'})
 
 # argparse reads ``-qo reruns=2`` as ``-q -o reruns=2``; only pytest's flags without a value may precede the ``o``.
 _CLUSTERED_OVERRIDE_INI_PATTERN = re.compile(r'-[xqvlshV]*o(?P<attached>.*)', re.DOTALL)
-
-# A line break inside an item splits it in two; a NUL byte makes the subprocess launch fail.
-_UNSAFE_ITEM_CHARACTERS = frozenset('\n\r\x00')
 
 _CARRIED_OPTIONS = _RERUN_VALUE_OPTIONS | _OVERRIDE_INI_OPTIONS
 
@@ -145,217 +127,6 @@ def _carried_form(name: str, value: str) -> str | None:
     if value.partition('=')[0] not in _RERUN_INI_KEYS:
         return None
     return f'{_OVERRIDE_INI_ARGUMENT}{value}'
-
-
-def survives_override_ini(items: Sequence[str]) -> bool:
-    r"""Return whether ``-o key=<items joined by newlines>`` makes pytest read back exactly ``items``.
-
-    pytest splits the value of ``-o`` for a ``linelist`` key on newlines, strips each line and drops the
-    empty ones.  An item with leading or trailing whitespace, with a line break inside, or an empty item
-    therefore arrives changed.  An item with a NUL byte cannot be passed on a command line at all.
-
-    Args:
-        items: The items of a ``linelist`` ini setting, as ``config.getini`` returns them.
-
-    Returns:
-        True when every item is non-empty, has no surrounding whitespace and holds no line break or NUL byte.
-
-    Example:
-        >>> survives_override_ini(['Timeout', 'bad gateway'])
-        True
-        >>> survives_override_ini(['xyz '])
-        False
-        >>> survives_override_ini(['a\nb'])
-        False
-    """
-    return all(item and item == item.strip() and not _UNSAFE_ITEM_CHARACTERS.intersection(item) for item in items)
-
-
-def rerun_keys_set_in(option: object) -> set[str]:
-    """Return the rerun ini keys whose parsed command-line option is set in ``option``.
-
-    pytest-rerunfailures reads ``config.option.<key>`` before the ini key, so a key whose option holds a
-    value is overridden, no matter whether the option came from the command line, ``addopts`` or
-    ``PYTEST_ADDOPTS``.  An option left at its default of None is not set; a falsy value such as ``0`` is.
-
-    Args:
-        option: The parsed options, such as ``config.option``.
-
-    Returns:
-        The keys of the rerun ini settings whose option is set.
-
-    Example:
-        >>> from types import SimpleNamespace
-        >>> sorted(rerun_keys_set_in(SimpleNamespace(reruns=0, only_rerun=None)))
-        ['reruns']
-    """
-    return {key for key in _FORWARDED_INI_KEYS if getattr(option, key, None) is not None}
-
-
-def _keys_overridden_by(overridden_by: Sequence[str], option_keys_set: Collection[str] = ()) -> set[str]:
-    """Return the rerun ini keys that an option from :func:`rerun_options_in` or a parsed option overrides.
-
-    Both ``--override-ini=key=...`` and the option pytest-rerunfailures reads instead of the key
-    (``--only-rerun`` for ``only_rerun``) count, and so does every key in ``option_keys_set``.
-    """
-    overridden_keys: set[str] = set(option_keys_set)
-    for option in overridden_by:
-        if option.startswith(_OVERRIDE_INI_ARGUMENT):
-            overridden_keys.add(option.removeprefix(_OVERRIDE_INI_ARGUMENT).partition('=')[0])
-        elif (key := _OPTION_FOR_INI_KEY.get(option.partition('=')[0])) is not None:
-            overridden_keys.add(key)
-    return overridden_keys
-
-
-def _read_not_overridden(
-    read_ini: Callable[[str], object],
-    overridden_by: Sequence[str],
-    option_keys_set: Collection[str],
-) -> list[tuple[str, object]]:
-    """Return each rerun ini key that nothing overrides and the installed plugin registers, with its value.
-
-    A key ``read_ini`` cannot read as a string (``TypeError``) reads as None; a key the plugin does not
-    register (``ValueError``) is skipped.
-    """
-    already_overridden = _keys_overridden_by(overridden_by, option_keys_set)
-    unoverridden_settings: list[tuple[str, object]] = []
-    for key in _FORWARDED_INI_KEYS:
-        if key in already_overridden:
-            continue
-        try:
-            unoverridden_settings.append((key, read_ini(key)))
-        except TypeError:
-            unoverridden_settings.append((key, None))
-        except ValueError:
-            continue
-    return unoverridden_settings
-
-
-def _is_changed_by_override_ini(value: object) -> bool:
-    """Return whether ``value`` is a ``linelist`` value whose items ``-o`` would not pass unchanged."""
-    return isinstance(value, list) and not survives_override_ini(value)
-
-
-@dataclass(frozen=True)
-class RerunIniResolution:
-    """What the gremlin runs are given for the rerun ini keys, from :func:`resolve_rerun_ini`.
-
-    Attributes:
-        overrides: ``--override-ini=key=value`` arguments carrying the settings the main session resolved.
-        resets: ``--override-ini=key=`` arguments for each key the gremlin runs must not read from another file.
-        unforwardable_keys: The keys left out of ``overrides`` because ``-o`` would change their items.
-    """
-
-    overrides: tuple[str, ...]
-    resets: tuple[str, ...]
-    unforwardable_keys: tuple[str, ...]
-
-
-def resolve_rerun_ini(
-    read_ini: Callable[[str], object], *, overridden_by: Sequence[str] = (), option_keys_set: Collection[str] = ()
-) -> RerunIniResolution:
-    r"""Resolve the pytest-rerunfailures ini settings the main session holds into what gremlin runs are given.
-
-    Used only when the session's ``-c`` file cannot be forwarded to gremlin runs (they are normally given the
-    same ``-c``, issue #951, and read the settings themselves).  A gremlin run then starts its own pytest, which
-    is not given ``-c`` or ``--config-file`` (unless it comes through ``PYTEST_ADDOPTS``) and so does not read
-    that file.  Passing the resolved values on the command
-    line gives that run the settings the baseline ran with.  Each key is read once and lands in exactly one
-    place:
-
-    * ``overrides``: the key is set, and carried as ``--override-ini``.  A setting that is unset or empty is
-      left out.  So is one the installed pytest-rerunfailures does not register (``config.getini`` raises
-      ``ValueError`` for it), and one pytest cannot read as a string (``config.getini`` raises ``TypeError``
-      for a number in native ``[tool.pytest]`` TOML, which pytest-rerunfailures also skips).  A ``linelist``
-      setting (``only_rerun``, ``rerun_except``) is written one pattern per line, which is how pytest splits
-      the value of ``-o``, so a pattern containing a space survives.
-    * ``unforwardable_keys``: the key is a list whose items pytest would change on the way (see
-      :func:`survives_override_ini`).  It is left out of ``overrides`` because a changed pattern reruns fewer
-      failures than the baseline did and so zaps gremlins the tests did not earn.
-    * ``resets``: an empty ``--override-ini`` for each key that is unset, unreadable or unforwardable.  Without
-      the ``-c`` file a gremlin run finds the project's own config file, which can restrict reruns or add a delay where
-      the baseline had none.  ``--override-ini=key=`` makes pytest-rerunfailures fall back to what the baseline
-      ran with: an empty ``only_rerun`` or ``rerun_except`` list is no filter, an empty ``reruns`` is no reruns
-      (``int('')`` fails and the plugin ignores the error), and an empty ``reruns_delay`` or
-      ``reruns_delay_backoff_factor`` is a delay of 0 and a factor of 1.0 (``float('')`` fails likewise).
-      Every rerun key the plugin registers is then either forwarded or reset.
-
-    Args:
-        read_ini: Reads an ini key as the main session resolved it, such as ``config.getini``.
-        overridden_by: Options from :func:`rerun_options_in`.  A key one of them already overrides, as
-            ``--override-ini`` or as the option of the same name (``--only-rerun``), is left out of all three
-            results, so the command line is not contradicted or repeated.
-        option_keys_set: Keys whose parsed option is set (see :func:`rerun_keys_set_in`), left out for
-            the same reason.
-
-    Returns:
-        The overrides, resets and unforwardable keys, each in the order the settings are forwarded in.
-
-    Example:
-        >>> resolution = resolve_rerun_ini({'reruns': '2', 'only_rerun': ['Timeout', 'bad gateway']}.get)
-        >>> resolution.overrides
-        ('--override-ini=reruns=2', '--override-ini=only_rerun=Timeout\nbad gateway')
-        >>> resolution = resolve_rerun_ini({'reruns': '2', 'rerun_except': ['xyz ']}.get)
-        >>> resolution.unforwardable_keys, resolution.resets[-1]
-        (('rerun_except',), '--override-ini=rerun_except=')
-    """
-    overrides: list[str] = []
-    resets: list[str] = []
-    unforwardable_keys: list[str] = []
-    for key, value in _read_not_overridden(read_ini, overridden_by, option_keys_set):
-        if _is_changed_by_override_ini(value):
-            unforwardable_keys.append(key)
-            resets.append(f'{_OVERRIDE_INI_ARGUMENT}{key}=')
-        elif value in (None, '', []):
-            resets.append(f'{_OVERRIDE_INI_ARGUMENT}{key}=')
-        else:
-            override_value = '\n'.join(value) if isinstance(value, list) else value
-            overrides.append(f'{_OVERRIDE_INI_ARGUMENT}{key}={override_value}')
-    return RerunIniResolution(tuple(overrides), tuple(resets), tuple(unforwardable_keys))
-
-
-def rerun_ini_as_gremlin_runs_read(read_ini: Callable[[str], object], resets: Sequence[str]) -> Callable[[str], object]:
-    """Return ``read_ini`` as the gremlin runs see it: a key in ``resets`` reads as empty.
-
-    A reset (:func:`resolve_rerun_ini`) makes the gremlin runs ignore what the main session resolved for the key, so
-    the incremental cache must key on the empty value, not on the file's (issue #677).
-
-    Args:
-        read_ini: Reads an ini key as the main session resolved it, such as ``config.getini``.
-        resets: The ``--override-ini=key=`` arguments from :func:`resolve_rerun_ini`.
-
-    Returns:
-        A reader that gives ``''`` for each reset key and defers to ``read_ini`` for the rest.
-
-    Example:
-        >>> ini = {'rerun_except': ['xyz '], 'reruns': '2'}.get
-        >>> read = rerun_ini_as_gremlin_runs_read(ini, ['--override-ini=rerun_except='])
-        >>> read('rerun_except'), read('reruns')
-        ('', '2')
-    """
-    reset_keys = _keys_overridden_by(resets)
-
-    def read(key: str) -> object:
-        return '' if key in reset_keys else read_ini(key)
-
-    return read
-
-
-def unforwarded_rerun_key_warning(key: str) -> str:
-    """Return the one-line warning that ``key`` is not carried into gremlin runs.
-
-    Example:
-        >>> unforwarded_rerun_key_warning('rerun_except').startswith('pytest-gremlins: warning:')
-        True
-    """
-    return (
-        f'pytest-gremlins: warning: the ini setting {key!r} is not carried into gremlin runs because some of its '
-        'patterns cannot be passed unchanged on the command line (pytest strips and splits them, and a NUL byte '
-        'cannot be passed at all); gremlin runs use no filter for it, so they rerun more failures than '
-        'the baseline did, and some gremlins may survive that your tests would zap. To fix this, remove leading '
-        'and trailing whitespace, line breaks, NUL bytes and empty items from its patterns, or move the setting to '
-        'a config file pytest finds without -c'
-    )
 
 
 def baseline_rerun_warning(rerun_test_ids: Collection[str]) -> str | None:
