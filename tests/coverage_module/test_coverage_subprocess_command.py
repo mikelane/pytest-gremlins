@@ -41,7 +41,7 @@ class DescribeRunTestsWithCoverageCommand:
         def capture_cmd(cmd: list[str], **_kwargs: object) -> None:
             captured_cmd.extend(cmd)
 
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=capture_cmd):
             _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path)
 
         assert '-p' in captured_cmd
@@ -55,7 +55,7 @@ class DescribeRunTestsWithCoverageCommand:
         def capture_cmd(cmd: list[str], **_kwargs: object) -> None:
             captured_cmd.extend(cmd)
 
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=capture_cmd):
             _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path)
 
         p_indices = [i for i, v in enumerate(captured_cmd) if v == '-p']
@@ -71,7 +71,7 @@ class DescribeRunTestsWithCoverageCommand:
             if coveragerc_path.exists():
                 captured_content.append(coveragerc_path.read_text())
 
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=capture_cmd):
             _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path)
 
         assert captured_content, 'coveragerc was not written before subprocess.run'
@@ -86,7 +86,7 @@ class DescribeRunTestsWithCoverageCommand:
             if coveragerc_path.exists():
                 captured_content.append(coveragerc_path.read_text())
 
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=capture_cmd):
             _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path)
 
         assert captured_content
@@ -103,7 +103,7 @@ class DescribeRunTestsWithCoverageCommand:
                 captured_content.append(coveragerc_path.read_text())
 
         include = ['/abs/src/foo.py', '/abs/src/bar.py']
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=capture_cmd):
             _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path, coverage_include=include)
 
         assert captured_content
@@ -150,7 +150,7 @@ def _prescan_command(tmp_path: Path, preserved_addopts: str) -> list[str]:
     def capture_cmd(cmd: list[str], **_kwargs: object) -> None:
         captured_cmd.extend(cmd)
 
-    with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
+    with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=capture_cmd):
         _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path, preserved_addopts=preserved_addopts)
     return captured_cmd
 
@@ -227,7 +227,7 @@ class DescribeRunTestsWithCoverageXdistStripping:
         monkeypatch.setenv('COVERAGE_CORE', 'sysmon')
         monkeypatch.setenv('GREMLIN_SENTINEL', 'kept')
 
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True) as run:
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True) as run:
             _run_tests_with_coverage([], tmp_path)
 
         env = run.call_args.kwargs['env']

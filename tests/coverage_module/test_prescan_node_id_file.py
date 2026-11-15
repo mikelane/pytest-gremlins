@@ -56,32 +56,32 @@ def spy() -> _PrescanSpy:
 @pytest.mark.medium
 class DescribePrescanNodeIdsFile:
     def it_keeps_every_node_id_off_the_command_line(self, tmp_path: Path, spy: _PrescanSpy) -> None:
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=spy):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=spy):
             _run_tests_with_coverage(REPORTED_NODE_IDS, tmp_path)
 
         assert not set(REPORTED_NODE_IDS) & set(spy.command)
 
     def it_keeps_the_command_within_the_windows_limit(self, tmp_path: Path, spy: _PrescanSpy) -> None:
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=spy):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=spy):
             _run_tests_with_coverage(REPORTED_NODE_IDS, tmp_path)
 
         assert len(' '.join(spy.command)) < WINDOWS_MAX_CMDLINE
 
     def it_gives_the_launcher_every_node_id_in_order(self, tmp_path: Path, spy: _PrescanSpy) -> None:
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=spy):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=spy):
             _run_tests_with_coverage(REPORTED_NODE_IDS, tmp_path)
 
         assert spy.node_ids == REPORTED_NODE_IDS
 
     def it_runs_the_launcher_under_coverage_instead_of_pytest_itself(self, tmp_path: Path, spy: _PrescanSpy) -> None:
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=spy):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=spy):
             _run_tests_with_coverage(REPORTED_NODE_IDS, tmp_path)
 
         run_index = spy.command.index('run')
         assert spy.command[run_index + 2 : run_index + 4] == ['-m', 'pytest_gremlins.coverage.prescan_main']
 
     def it_keeps_the_context_plugin_and_disables_the_gremlins_plugin(self, tmp_path: Path, spy: _PrescanSpy) -> None:
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=spy):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=spy):
             _run_tests_with_coverage(REPORTED_NODE_IDS, tmp_path)
 
         assert spy.command[spy.command.index('-p') : spy.command.index('-p') + 4] == [
@@ -92,7 +92,7 @@ class DescribePrescanNodeIdsFile:
         ]
 
     def it_removes_the_node_ids_file_afterwards(self, tmp_path: Path, spy: _PrescanSpy) -> None:
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=spy):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=spy):
             _run_tests_with_coverage(REPORTED_NODE_IDS, tmp_path)
 
         assert spy.node_ids_file is not None
@@ -100,7 +100,7 @@ class DescribePrescanNodeIdsFile:
         assert not spy.node_ids_file.parent.exists()
 
     def it_puts_no_option_on_the_command_for_an_empty_suite(self, tmp_path: Path, spy: _PrescanSpy) -> None:
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=spy):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=spy):
             _run_tests_with_coverage([], tmp_path)
 
         assert spy.node_ids_file is None
@@ -111,7 +111,7 @@ class DescribePrescanNodeIdsFile:
             raise subprocess.TimeoutExpired(command, 1)
 
         with (
-            patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=time_out),
+            patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=time_out),
             pytest.raises(CoveragePrescanTimeoutError),
         ):
             _run_tests_with_coverage(REPORTED_NODE_IDS, tmp_path, timeout=1)
@@ -128,7 +128,7 @@ class DescribePrescanLaunchFailure:
 
     def it_raises_a_launch_error_naming_the_cause(self, tmp_path: Path) -> None:
         with (
-            patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=self.LAUNCH_ERROR),
+            patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=self.LAUNCH_ERROR),
             pytest.raises(CoveragePrescanLaunchError, match='too long'),
         ):
             _run_tests_with_coverage(REPORTED_NODE_IDS, tmp_path)
@@ -139,7 +139,7 @@ class DescribePrescanLaunchFailure:
             raise self.LAUNCH_ERROR
 
         with (
-            patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=fail_to_start),
+            patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=fail_to_start),
             pytest.raises(CoveragePrescanLaunchError),
         ):
             _run_tests_with_coverage(REPORTED_NODE_IDS, tmp_path)
@@ -152,7 +152,7 @@ class DescribePrescanLaunchFailure:
         session = GremlinSession(enabled=True)
         session.test_node_ids = {node_id: node_id for node_id in REPORTED_NODE_IDS}
 
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=self.LAUNCH_ERROR):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=self.LAUNCH_ERROR):
             _collect_coverage(session, tmp_path)
 
         assert session.test_selector is not None
@@ -181,7 +181,7 @@ class DescribePrescanLaunchFailure:
     ) -> None:
         session = GremlinSession(enabled=True)
 
-        with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=self.LAUNCH_ERROR):
+        with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=self.LAUNCH_ERROR):
             _collect_coverage(session, tmp_path)
 
         assert 'returned no data' not in capsys.readouterr().err

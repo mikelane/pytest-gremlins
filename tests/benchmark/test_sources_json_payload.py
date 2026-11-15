@@ -110,6 +110,31 @@ class DescribeSourcesJsonPayload:
         assert ratio <= _baseline()[module_name]['size_ratio'] * ALLOWED_REGRESSION
 
     @pytest.mark.parametrize('module_name', FIXTURE_MODULES)
+    def it_imports_the_same_module_the_parent_instrumented(self, tmp_path, module_name):
+        path, tree = _instrumented_tree(module_name)
+        entry = _written_entries(tmp_path)[str(Path(path).absolute())]
+        expected: dict[str, Any] = {'__name__': 'fixture'}
+        exec(compile(ast.fix_missing_locations(_inject(tree)), path, 'exec', dont_inherit=True), expected)  # noqa: S102
+        loader = GremlinLoader(entry['tree'], source='')
+        module = ModuleType('fixture')
+        module.__spec__ = importlib.machinery.ModuleSpec('fixture', loader, origin=path)
+
+        loader.exec_module(module)
+
+        assert {name for name in vars(module) if not name.startswith('__')} == {
+            name for name in expected if not name.startswith('__')
+        }
+
+
+@pytest.mark.large
+class DescribeSourcesJsonPayloadTiming:
+    """Timing ratios, which only mean something when no other test loads the CPU.
+
+    They run in the large tier (nightly and on release), which is serial, not in the PR matrix, where xdist workers
+    contend for the CPU and push the ratios past the limit (#1016, #1019).
+    """
+
+    @pytest.mark.parametrize('module_name', FIXTURE_MODULES)
     def it_does_not_slow_decode_and_compile_more_than_20_percent_over_the_baseline_ratio(
         self, tmp_path, module_name, record_property
     ):
@@ -127,7 +152,7 @@ class DescribeSourcesJsonPayload:
                 sys.executable,
                 '-m',
                 'pytest',
-                f'{Path(__file__)}::DescribeSourcesJsonPayload',
+                f'{Path(__file__)}::DescribeSourcesJsonPayloadTiming',
                 '-k',
                 'does_not_slow_decode_and_compile',
                 '-p',
@@ -154,22 +179,6 @@ class DescribeSourcesJsonPayload:
         monkeypatch.setattr(GremlinLoader, 'exec_module', slowed)
         ratio = _import_time_ratio_to_legacy(entry['tree'], _legacy_tree(_inject(tree)), path)
         assert ratio > _baseline()['textwrap']['decode_compile_ratio'] * ALLOWED_REGRESSION
-
-    @pytest.mark.parametrize('module_name', FIXTURE_MODULES)
-    def it_imports_the_same_module_the_parent_instrumented(self, tmp_path, module_name):
-        path, tree = _instrumented_tree(module_name)
-        entry = _written_entries(tmp_path)[str(Path(path).absolute())]
-        expected: dict[str, Any] = {'__name__': 'fixture'}
-        exec(compile(ast.fix_missing_locations(_inject(tree)), path, 'exec', dont_inherit=True), expected)  # noqa: S102
-        loader = GremlinLoader(entry['tree'], source='')
-        module = ModuleType('fixture')
-        module.__spec__ = importlib.machinery.ModuleSpec('fixture', loader, origin=path)
-
-        loader.exec_module(module)
-
-        assert {name for name in vars(module) if not name.startswith('__')} == {
-            name for name in expected if not name.startswith('__')
-        }
 
 
 def _inject(tree: ast.Module) -> ast.Module:
