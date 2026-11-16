@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import sys
 import threading
 import time
 from typing import (
@@ -35,6 +36,7 @@ from pytest_gremlins.verdicts import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 LOADS = ControlRunOutcome(loads_cleanly=True, output='', seconds=0.1)
@@ -71,6 +73,19 @@ def fake_control(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     control = create_autospec(run_control, return_value=LOADS)
     monkeypatch.setattr('pytest_gremlins.verdicts.run_control', control)
     return cast('MagicMock', control)
+
+
+@pytest.fixture
+def tiny_switch_interval() -> Iterator[None]:
+    """Let a worker thread run on right after a failure, before the calling thread wakes to see it.
+
+    That is the race behind starting an extra confirmation after the first one failed; a tiny interval makes it
+    repeatable without sleeping.
+    """
+    previous_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    yield
+    sys.setswitchinterval(previous_interval)
 
 
 @pytest.mark.medium
@@ -175,5 +190,16 @@ class DescribePrefillInterruption:
 
         with pytest.raises(error):
             _prefill_collection_kill_confirmations(_pending(6), _session(tmp_path, workers=1), tmp_path)
+
+        assert fake_control.call_count == 1
+
+    @pytest.mark.usefixtures('tiny_switch_interval')
+    def it_starts_no_further_confirmation_when_the_worker_outruns_the_calling_thread(
+        self, fake_control: MagicMock, tmp_path: Path
+    ) -> None:
+        fake_control.side_effect = RuntimeError('stop')
+
+        with pytest.raises(RuntimeError):
+            _prefill_collection_kill_confirmations(_pending(50), _session(tmp_path, workers=1), tmp_path)
 
         assert fake_control.call_count == 1

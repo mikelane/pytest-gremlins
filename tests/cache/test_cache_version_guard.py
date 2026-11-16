@@ -184,7 +184,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
     # --
-    'verdicts.py': '017360118686d694dd750f1c898155fc9e8c43a3b5cc12314d49d3580ad7162a',  # pragma: allowlist secret
+    'verdicts.py': 'c841fba52a62522ba4b657a64223ea1219eaab80531fb8776408d9f73abe9fbb',  # pragma: allowlist secret
     # --
     'xdist_options.py': '7f8d6cb78badd89966c2b1a9b43325f44a18ae6efc913910757588ae8f842a18',  # pragma: allowlist secret
 }
