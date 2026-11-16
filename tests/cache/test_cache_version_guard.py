@@ -62,7 +62,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'argument_files.py': '1bd1374b822df8936a6967d37d38c95b04ba7b325d0cbceb677c4e32f6ecf2a6',  # pragma: allowlist secret
     # --
-    'ast_copy.py': 'f94a3572585f293c0798490a1685f4d77eb970f67c0f53556dcef29826998832',  # pragma: allowlist secret
+    'ast_copy.py': '6139e7f26a662c0f6448f749f4ebea66e48b63ea99ce47412339fff74947545f',  # pragma: allowlist secret
     # --
     'cache/__init__.py': '62df21d4f76d4423b6066843acd9402dc17a026cadba50937fa4efe3841ae428',  # pragma: allowlist secret
     # --
