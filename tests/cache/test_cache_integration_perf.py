@@ -1,7 +1,8 @@
 """Integration performance tests for incremental cache.
 
 These tests simulate the actual cache usage pattern from the plugin
-to identify where time is being lost.
+to identify where time is being lost. Those that compare against a time limit run in the large tier
+(serial, not in the PR matrix where xdist workers contend for the CPU; #1022).
 """
 
 from pathlib import Path
@@ -28,6 +29,84 @@ def _write_source_files(src_dir: Path, count: int) -> list[Path]:
 @pytest.mark.medium
 class DescribePluginCachePattern:
     """Tests that simulate the actual plugin cache usage pattern."""
+
+    def it_reads_each_source_file_once_when_hashing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Hashing 50 files costs one read per file; counting reads does not depend on machine load."""
+        paths = _write_source_files(tmp_path / 'src', count=50)
+        reads: list[Path] = []
+        real_read_bytes = Path.read_bytes
+
+        def counting_read_bytes(self: Path) -> bytes:
+            reads.append(self)
+            return real_read_bytes(self)
+
+        monkeypatch.setattr(Path, 'read_bytes', counting_read_bytes)
+
+        ContentHasher().hash_files(paths)
+
+        assert sorted(reads) == paths
+
+
+@pytest.mark.medium
+class DescribeCacheKeyEfficiency:
+    """Tests for efficient cache key computation."""
+
+    def it_produces_deterministic_cache_keys(self, tmp_path: Path) -> None:
+        """Same inputs always produce same cache key."""
+        cache_dir = tmp_path / '.gremlins_cache'
+
+        with IncrementalCache(cache_dir) as cache:
+            key1 = cache._build_cache_key(
+                'gremlin_1',
+                'source_hash',
+                {'test_a': 'hash_a', 'test_b': 'hash_b'},
+            )
+            key2 = cache._build_cache_key(
+                'gremlin_1',
+                'source_hash',
+                {'test_b': 'hash_b', 'test_a': 'hash_a'},  # Different order
+            )
+
+        assert key1 == key2, 'Cache key must be order-independent'
+
+    def it_distinguishes_different_inputs_by_cache_key(self, tmp_path: Path) -> None:
+        """Different inputs produce different cache keys."""
+        cache_dir = tmp_path / '.gremlins_cache'
+
+        with IncrementalCache(cache_dir) as cache:
+            key1 = cache._build_cache_key('g1', 'src', {'t1': 'h1'})
+            key2 = cache._build_cache_key('g2', 'src', {'t1': 'h1'})  # Different gremlin
+            key3 = cache._build_cache_key('g1', 'src2', {'t1': 'h1'})  # Different source
+            key4 = cache._build_cache_key('g1', 'src', {'t1': 'h2'})  # Different test hash
+            key5 = cache._build_cache_key('g1', 'src', {'t2': 'h1'})  # Different test name (same hash)
+
+        keys = {key1, key2, key3, key4, key5}
+        # All 5 keys should be unique - including key5 which has different test name
+        assert len(keys) == 5, f'All keys should be unique: {keys}'
+
+
+@pytest.mark.medium
+class DescribeBatchOperations:
+    """Tests for batch cache operations."""
+
+    def it_looks_up_every_cached_gremlin_in_a_lookup_loop(self, tmp_path: Path) -> None:
+        """A lookup loop over 100 cached gremlins returns a result for each."""
+        cache_dir = tmp_path / '.gremlins_cache'
+        num_gremlins = 100
+
+        with IncrementalCache(cache_dir) as cache:
+            for i in range(num_gremlins):
+                cache.cache_result(f'g_{i}', 'src_hash', {'test': 'hash'}, partial_entry(status='zapped'))
+
+        with IncrementalCache(cache_dir) as cache:
+            results = [cache.get_cached_result(f'g_{i}', 'src_hash', {'test': 'hash'}) for i in range(num_gremlins)]
+
+        assert results == [partial_entry(status='zapped')] * num_gremlins
+
+
+@pytest.mark.large
+class DescribePluginCacheTiming:
+    """Speed of the plugin cache usage pattern."""
 
     def it_completes_faster_on_warm_run_than_cold_run(self, tmp_path: Path) -> None:
         """Warm run with cache hits is at least 10x faster than cold run."""
@@ -116,22 +195,6 @@ class DescribePluginCachePattern:
         per_gremlin_ms = (elapsed / num_gremlins) * 1000
         assert per_gremlin_ms < 1.0, f'Cache overhead per gremlin: {per_gremlin_ms:.3f}ms (target: <1ms)'
 
-    def it_reads_each_source_file_once_when_hashing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Hashing 50 files costs one read per file; counting reads does not depend on machine load."""
-        paths = _write_source_files(tmp_path / 'src', count=50)
-        reads: list[Path] = []
-        real_read_bytes = Path.read_bytes
-
-        def counting_read_bytes(self: Path) -> bytes:
-            reads.append(self)
-            return real_read_bytes(self)
-
-        monkeypatch.setattr(Path, 'read_bytes', counting_read_bytes)
-
-        ContentHasher().hash_files(paths)
-
-        assert sorted(reads) == paths
-
     def it_upfront_hashing_vs_lazy_hashing(self) -> None:
         """Lazy hashing (hash on demand) is faster when cache hit rate is high."""
         num_files = 20
@@ -155,74 +218,19 @@ class DescribePluginCachePattern:
         # even when cache hit rate is 100%
         assert upfront_hash_time < 0.001, f'Upfront re-hashing took {upfront_hash_time * 1000:.3f}ms'
 
-
-@pytest.mark.medium
-class DescribeCacheKeyEfficiency:
-    """Tests for efficient cache key computation."""
-
-    def it_produces_deterministic_cache_keys(self, tmp_path: Path) -> None:
-        """Same inputs always produce same cache key."""
-        cache_dir = tmp_path / '.gremlins_cache'
-
-        with IncrementalCache(cache_dir) as cache:
-            key1 = cache._build_cache_key(
-                'gremlin_1',
-                'source_hash',
-                {'test_a': 'hash_a', 'test_b': 'hash_b'},
-            )
-            key2 = cache._build_cache_key(
-                'gremlin_1',
-                'source_hash',
-                {'test_b': 'hash_b', 'test_a': 'hash_a'},  # Different order
-            )
-
-        assert key1 == key2, 'Cache key must be order-independent'
-
-    def it_distinguishes_different_inputs_by_cache_key(self, tmp_path: Path) -> None:
-        """Different inputs produce different cache keys."""
-        cache_dir = tmp_path / '.gremlins_cache'
-
-        with IncrementalCache(cache_dir) as cache:
-            key1 = cache._build_cache_key('g1', 'src', {'t1': 'h1'})
-            key2 = cache._build_cache_key('g2', 'src', {'t1': 'h1'})  # Different gremlin
-            key3 = cache._build_cache_key('g1', 'src2', {'t1': 'h1'})  # Different source
-            key4 = cache._build_cache_key('g1', 'src', {'t1': 'h2'})  # Different test hash
-            key5 = cache._build_cache_key('g1', 'src', {'t2': 'h1'})  # Different test name (same hash)
-
-        keys = {key1, key2, key3, key4, key5}
-        # All 5 keys should be unique - including key5 which has different test name
-        assert len(keys) == 5, f'All keys should be unique: {keys}'
-
-
-@pytest.mark.medium
-class DescribeBatchOperations:
-    """Tests for batch cache operations."""
-
-    def it_looks_up_cache_in_batches(self, tmp_path: Path) -> None:
-        """Batch lookups are efficient for high cache hit scenarios."""
+    def it_looks_up_100_cached_gremlins_in_under_50ms(self, tmp_path: Path) -> None:
+        """100 lookups are fast for a high cache hit scenario."""
         cache_dir = tmp_path / '.gremlins_cache'
         num_gremlins = 100
 
-        # Pre-populate cache
         with IncrementalCache(cache_dir) as cache:
             for i in range(num_gremlins):
-                cache.cache_result(
-                    f'g_{i}',
-                    'src_hash',
-                    {'test': 'hash'},
-                    partial_entry(status='zapped'),
-                )
+                cache.cache_result(f'g_{i}', 'src_hash', {'test': 'hash'}, partial_entry(status='zapped'))
 
-        # Simulate batch lookup pattern
         with IncrementalCache(cache_dir) as cache:
             start = time.perf_counter()
-            results = []
             for i in range(num_gremlins):
-                result = cache.get_cached_result(f'g_{i}', 'src_hash', {'test': 'hash'})
-                if result:
-                    results.append(result)
+                cache.get_cached_result(f'g_{i}', 'src_hash', {'test': 'hash'})
             elapsed = time.perf_counter() - start
 
-        assert len(results) == num_gremlins
-        # 100 lookups should be under 50ms
         assert elapsed < 0.05, f'Batch lookups took {elapsed * 1000:.1f}ms (target: <50ms)'

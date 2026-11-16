@@ -1,17 +1,25 @@
 """Tests for batch operations in ResultStore.
 
-These tests verify that batch operations are supported and faster than
-individual operations.
+These tests verify that batch operations are supported and commit less often than
+individual operations. They count COMMIT statements, not seconds.
 """
 
 from pathlib import Path
-import time
 
 import pytest
 
 from pytest_gremlins.cache.store import ResultStore
 
 from .cached_entries import partial_entry
+
+NUM_ENTRIES = 100
+
+
+def commit_statements(store: ResultStore) -> list[str]:
+    """Record every COMMIT the store's connection executes from now on."""
+    commits: list[str] = []
+    store._conn.set_trace_callback(lambda statement: commits.append(statement) if statement == 'COMMIT' else None)
+    return commits
 
 
 @pytest.mark.medium
@@ -36,33 +44,26 @@ class DescribeStoreBatchOperations:
             assert store.get('key1') == partial_entry(status='zapped')
             assert store.get('key2') == partial_entry(status='survived')
 
-    def it_batch_writes_are_faster_than_individual(self, tmp_path: Path) -> None:
-        """Batch writes with deferred commit are faster than individual commits."""
-        db_path = tmp_path / 'results.db'
-        num_entries = 100
+    def it_commits_once_per_individual_put(self, tmp_path: Path) -> None:
+        """Each put commits on its own."""
+        with ResultStore(tmp_path / 'results.db') as store:
+            commits = commit_statements(store)
 
-        # Time individual writes (current behavior)
-        with ResultStore(db_path) as store:
-            store.clear()
-            start = time.perf_counter()
-            for i in range(num_entries):
+            for i in range(NUM_ENTRIES):
                 store.put(f'individual_key_{i}', partial_entry(value=i))
-            individual_time = time.perf_counter() - start
 
-        # Time batch writes (deferred commits)
-        with ResultStore(db_path) as store:
-            store.clear()
-            start = time.perf_counter()
-            for i in range(num_entries):
+        assert len(commits) == NUM_ENTRIES
+
+    def it_commits_a_deferred_batch_once_on_flush(self, tmp_path: Path) -> None:
+        """Deferred puts share a single commit, made by flush."""
+        with ResultStore(tmp_path / 'results.db') as store:
+            commits = commit_statements(store)
+
+            for i in range(NUM_ENTRIES):
                 store.put_deferred(f'batch_key_{i}', partial_entry(value=i))
             store.flush()
-            batch_time = time.perf_counter() - start
 
-        # Batch should be faster (fewer commits)
-        assert batch_time < individual_time, (
-            f'Batch writes ({batch_time * 1000:.1f}ms) should be faster than '
-            f'individual writes ({individual_time * 1000:.1f}ms)'
-        )
+        assert len(commits) == 1
 
     def it_close_flushes_pending_writes(self, tmp_path: Path) -> None:
         """Closing the store flushes any pending deferred writes."""
