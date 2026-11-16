@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import (
+    Iterator,
+    Sequence,
+)
 import gc
 import getpass
 import json
+import logging
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -16,6 +21,7 @@ from typing import Any
 import warnings
 
 import coverage
+import coverage.control
 import pytest
 
 from pytest_gremlins.coverage import sharded_prescan
@@ -35,8 +41,20 @@ behaviour = ids[0]
 data_file = pathlib.Path(os.environ['COVERAGE_FILE'])
 if behaviour == 'hang':
     time.sleep(60)
+if behaviour == 'crash':
+    sys.stderr.write('x' * 5000 + 'WinError 5 access denied')
 if behaviour != 'nodata':
-    data_file.write_text(json.dumps({'ids': ids, 'cwd': os.getcwd(), 'argv': sys.argv[1:]}), encoding='utf-8')
+    data_file.write_text(
+        json.dumps(
+            {
+                'ids': ids,
+                'cwd': os.getcwd(),
+                'argv': sys.argv[1:],
+                'dont_write_bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE'),
+            }
+        ),
+        encoding='utf-8',
+    )
 sys.exit({'crash': 2, 'testsfail': 1}.get(behaviour, 0))
 """
 
@@ -55,6 +73,14 @@ def started_shards(monkeypatch: pytest.MonkeyPatch) -> list[subprocess.Popen[byt
     return started
 
 
+@pytest.fixture
+def automatic_collection_disabled() -> Iterator[None]:
+    """Keep the garbage collector from running on its own, so a leak lingers until a test collects it."""
+    gc.disable()
+    yield
+    gc.enable()
+
+
 def _run(tmp_path: Path, shards: list[list[str]], *, timeout: int = 30) -> list[Path] | None:
     scratch = tmp_path / 'scratch'
     scratch.mkdir(exist_ok=True)
@@ -71,6 +97,11 @@ def _run(tmp_path: Path, shards: list[list[str]], *, timeout: int = 30) -> list[
 def _last_basetemp(data_file: Path) -> str:
     argv: list[str] = json.loads(data_file.read_text(encoding='utf-8'))['argv']
     return [argument for argument in argv if argument.startswith('--basetemp=')][-1]
+
+
+def _recorded(data_file: Path) -> dict[str, Any]:
+    recorded: dict[str, Any] = json.loads(data_file.read_text(encoding='utf-8'))
+    return recorded
 
 
 @pytest.mark.medium
@@ -200,6 +231,58 @@ class DescribeRunPrescanShards:
         argv = json.loads(data_files[0].read_text(encoding='utf-8'))['argv']
         assert argv[-1].startswith('--basetemp=')
 
+    def it_points_each_shard_pytest_cache_into_its_own_shard_directory(self, tmp_path: Path) -> None:
+        data_files = _run(tmp_path, [['ok', 'a'], ['ok', 'b']])
+
+        assert data_files is not None
+        cache_options = [_recorded(path)['argv'][-3:-1] for path in data_files]
+        assert cache_options == [
+            ['-o', f'cache_dir={tmp_path / "scratch" / "0" / "cache"}'],
+            ['-o', f'cache_dir={tmp_path / "scratch" / "1" / "cache"}'],
+        ]
+
+    def it_stops_every_shard_from_writing_bytecode_into_the_project(self, tmp_path: Path) -> None:
+        data_files = _run(tmp_path, [['ok', 'a'], ['ok', 'b']])
+
+        assert data_files is not None
+        assert [_recorded(path)['dont_write_bytecode'] for path in data_files] == ['1', '1']
+
+    def it_logs_the_exit_code_and_stderr_tail_of_a_crashed_shard(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger=sharded_prescan.__name__):
+            data_files = _run(tmp_path, [['ok'], ['crash']])
+
+        assert data_files is None
+        assert 'shard 1 exited with code 2' in caplog.text
+        assert 'WinError 5 access denied' in caplog.text
+
+    def it_bounds_the_stderr_tail_it_logs(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.WARNING, logger=sharded_prescan.__name__):
+            _run(tmp_path, [['crash']])
+
+        tail = 'x' * (1000 - len('WinError 5 access denied')) + 'WinError 5 access denied'
+        assert f"output tail: '{tail}'" in caplog.text
+
+    def it_prints_the_failed_shard_and_its_exit_code_to_stderr(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _run(tmp_path, [['ok'], ['crash']])
+
+        assert 'shard 1 exited with code 2' in capsys.readouterr().err
+
+    def it_logs_a_shard_that_left_no_data(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.WARNING, logger=sharded_prescan.__name__):
+            _run(tmp_path, [['nodata']])
+
+        assert 'shard 0 left no coverage data' in caplog.text
+
+    def it_logs_nothing_when_every_shard_finishes(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.DEBUG, logger=sharded_prescan.__name__):
+            _run(tmp_path, [['ok'], ['testsfail']])
+
+        assert caplog.text == ''
+
     def it_treats_failing_tests_as_a_finished_shard(self, tmp_path: Path) -> None:
         assert _run(tmp_path, [['ok'], ['testsfail']]) is not None
 
@@ -215,6 +298,7 @@ class DescribeRunPrescanShards:
         outcome = _run(tmp_path, [['hang'], ['crash']], timeout=30)
 
         assert outcome is None
+        # Hang guard, not a speed requirement: waiting out the hung shard would take the full 30 s timeout.
         assert time.monotonic() - started < 20
 
     def it_raises_a_timeout_when_the_shards_outlast_the_limit(self, tmp_path: Path) -> None:
@@ -324,12 +408,48 @@ class DescribeRunShardedPrescan:
         assert self._run(tmp_path, ['ok', 'ok2'], combined) is False
         assert not combined.exists()
 
-    def it_leaves_no_unclosed_database_connection_behind_when_the_shard_data_cannot_be_combined(
-        self, tmp_path: Path
-    ) -> None:
+    def _resource_warnings_from_failed_combine(self, tmp_path: Path) -> list[str]:
+        # Clear leaks from earlier tests first, with their warnings ignored, so pytest cannot report them here.
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', ResourceWarning)
+            gc.collect()
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter('always')
             self._run(tmp_path, ['ok', 'ok2'], tmp_path / 'combined')
             gc.collect()
+        return [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)]
 
-        assert [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)] == []
+    def it_leaves_no_unclosed_database_connection_behind_when_the_shard_data_cannot_be_combined(
+        self, tmp_path: Path
+    ) -> None:
+        assert self._resource_warnings_from_failed_combine(tmp_path) == []
+
+    def it_raises_no_resource_warning_when_the_collector_runs_while_coverage_reads_the_shards(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real_warn = coverage.control.Coverage._warn
+
+        def warn_after_a_collection(instance: Any, *args: Any, **kwargs: Any) -> None:
+            gc.collect()
+            real_warn(instance, *args, **kwargs)
+
+        monkeypatch.setattr(coverage.control.Coverage, '_warn', warn_after_a_collection)
+
+        assert self._resource_warnings_from_failed_combine(tmp_path) == []
+
+    @pytest.mark.usefixtures('automatic_collection_disabled')
+    def it_does_not_count_an_unrelated_earlier_leak_collected_during_the_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real_combine = sharded_prescan.combine_shard_data
+
+        def combine_after_an_automatic_collection(*args: Any, **kwargs: Any) -> None:
+            gc.collect()
+            real_combine(*args, **kwargs)
+
+        monkeypatch.setattr(sharded_prescan, 'combine_shard_data', combine_after_an_automatic_collection)
+        earlier_test_leak: list[object] = [sqlite3.connect(':memory:')]
+        earlier_test_leak.append(earlier_test_leak)
+        del earlier_test_leak
+
+        assert self._resource_warnings_from_failed_combine(tmp_path) == []

@@ -10,7 +10,10 @@ import argparse
 import ast
 import base64
 import collections.abc
-from concurrent.futures import as_completed
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    wait,
+)
 from dataclasses import (
     dataclass,
     field,
@@ -45,7 +48,11 @@ import zlib
 from coverage.exceptions import CoverageException
 import pytest
 
-from pytest_gremlins import node_id_args
+from pytest_gremlins import (
+    node_id_args,
+    process_tree,
+)
+from pytest_gremlins.addopts import inherited_addopts_tokens
 from pytest_gremlins.argument_files import expand_argument_files
 from pytest_gremlins.cache.hasher import ContentHasher
 from pytest_gremlins.cache.incremental import (
@@ -54,6 +61,7 @@ from pytest_gremlins.cache.incremental import (
     RerunBudget,
     subprocess_optimize_level,
 )
+from pytest_gremlins.cache.periodic_flush import PeriodicFlusher
 from pytest_gremlins.config import (
     DEFAULT_PRESCAN_WORKERS,
     MAX_PRESCAN_WORKERS,
@@ -105,9 +113,7 @@ from pytest_gremlins.operators.entry_points import (
 )
 from pytest_gremlins.parallel.aggregator import ResultAggregator
 from pytest_gremlins.parallel.batch_executor import BatchExecutor
-from pytest_gremlins.parallel.exit_codes import (
-    GREMLIN_COLLECTION_FAILED_EXIT_CODE,
-)
+from pytest_gremlins.parallel.exit_codes import GREMLIN_COLLECTION_FAILED_EXIT_CODE
 from pytest_gremlins.parallel.lightweight import (
     LIGHTWEIGHT_CANNOT_VERIFY_EXIT_CODE,
 )
@@ -159,6 +165,7 @@ from pytest_gremlins.verdicts import (
     _result_from_cached_row,
     _result_from_worker,
     _test_gremlin,
+    pooled_verdict_is_final,
 )
 from pytest_gremlins.xdist_options import (
     addopts_without_xdist,
@@ -168,13 +175,17 @@ from pytest_gremlins.xdist_options import (
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
+        Mapping,
         Sequence,
     )
+    from collections.abc import Set as AbstractSet
+    from concurrent.futures import Future
 
     import coverage
 
     from pytest_gremlins.instrumentation.gremlin import Gremlin
     from pytest_gremlins.operators import GremlinOperator
+    from pytest_gremlins.parallel.pool import WorkerResult
 
 
 DEFAULT_TEST_FILE_PATTERNS = ('test_*.py', '*_test.py')
@@ -1139,7 +1150,6 @@ def pytest_configure(config: pytest.Config) -> None:
     xdist_active = xdist_numprocesses not in (None, 0)
 
     rootdir = _get_rootdir(config)
-    _reject_argument_files_gremlin_runs_cannot_read(config, rootdir)
 
     cli_max_pardons_pct, cli_max_pardons = _read_validated_pardon_limits(config)
 
@@ -1423,6 +1433,7 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
     if source_files:
+        _reject_argument_files_gremlin_runs_cannot_read(session.config, rootdir)
         tests = [(item.path, node_id) for item, node_id in zip(session.items, normalized_node_ids, strict=True)]
         _reject_node_ids_gremlin_runs_cannot_resolve(tests, rootdir)
 
@@ -2656,6 +2667,25 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             gremlin_session.enabled = False
         return
 
+    # The control runs and the serial pre-scan start test commands in their own sessions through run_bounded, so a
+    # SIGTERM must reach them through the same cleanup as the mutation run. The sharded pre-scan starts its shards with
+    # a plain Popen, in the caller's session, and is not covered by this (#983).
+    with process_tree.sigterm_cleanup():
+        has_run_gremlins = _collect_coverage_then_run_gremlins(session, gremlin_session, rootdir)
+    if has_run_gremlins:
+        _report_unmapped_selections(gremlin_session)
+
+
+def _collect_coverage_then_run_gremlins(
+    session: pytest.Session, gremlin_session: GremlinSession, rootdir: Path
+) -> bool:
+    """Run the coverage pre-scan, check the unmutated suite loads, then run every gremlin.
+
+    Returns:
+        True once the gremlins ran, so their results are on ``gremlin_session``. False when ``--gremlin-explain``
+        stopped after the pre-scan, so no gremlin ran.
+    """
+    config = session.config
     _collect_coverage(gremlin_session, rootdir)
 
     # If pytest-cov is active (--cov was passed), reload its in-memory coverage
@@ -2672,11 +2702,11 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         cov_plugin.cov.load()
 
     if _maybe_short_circuit_for_explain(gremlin_session):
-        return
+        return False
 
     _verify_suite_loads_unmutated(session, gremlin_session)
     gremlin_session.results = _dispatch_mutation_run(session, gremlin_session)
-    _report_unmapped_selections(gremlin_session)
+    return True
 
 
 def _verify_suite_loads_unmutated(session: pytest.Session, gremlin_session: GremlinSession) -> None:
@@ -2766,6 +2796,7 @@ def _rebuild_state_from_xdist_workers(
     source_files = _discover_source_files(session, gremlin_session)
     gremlin_session.source_files = source_files
     if source_files:
+        _reject_argument_files_gremlin_runs_cannot_read(session.config, rootdir)
         _reject_node_ids_gremlin_runs_cannot_resolve(_xdist_tests_by_claimed_file(normalized, rootdir), rootdir)
     _hash_sources_and_tests_for_cache(
         gremlin_session,
@@ -3165,15 +3196,14 @@ def _arguments_gremlin_runs_inherit(config: pytest.Config) -> list[str]:
 
 def _unexpanded_inherited_arguments(config: pytest.Config) -> list[str]:
     """Return the ``addopts`` and ``PYTEST_ADDOPTS`` tokens, with each ``@file`` argument still unexpanded."""
-    try:
-        pytest_addopts_args = shlex.split(os.environ.get('PYTEST_ADDOPTS', ''))
-    except ValueError:
-        pytest_addopts_args = []
-    return [*config.getini('addopts'), *pytest_addopts_args]
+    return [*config.getini('addopts'), *inherited_addopts_tokens(os.environ)]
 
 
 def _reject_argument_files_gremlin_runs_cannot_read(config: pytest.Config, rootdir: Path) -> None:
-    """Stop the run when an inherited relative ``@file`` exists only from the session's starting directory (#686)."""
+    """Stop a run that has sources to mutate when an inherited relative ``@file`` exists only from the session's start.
+
+    The file is looked up from the directory the session started in and from the rootdir (#686, #973).
+    """
     session_dir = config.invocation_params.dir
     unreadable = argument_files_only_the_session_can_read(_unexpanded_inherited_arguments(config), session_dir, rootdir)
     if unreadable:
@@ -3737,13 +3767,11 @@ def _launch_prescan(command: list[str], node_ids: list[str], rootdir: Path, time
     """
     try:
         with tempfile.TemporaryDirectory(prefix='pytest_gremlins_prescan_', ignore_cleanup_errors=True) as node_ids_dir:
-            subprocess.run(  # Intentional: runs pytest test commands
+            process_tree.run_bounded(
                 command_with_node_ids_file(command, node_ids, Path(node_ids_dir)),
                 cwd=str(rootdir),
-                capture_output=True,
-                timeout=timeout,
-                check=False,
                 env=_prescan_env(),
+                timeout=timeout,
             )
     except subprocess.TimeoutExpired as expired:
         raise CoveragePrescanTimeoutError(timeout) from expired
@@ -4092,6 +4120,10 @@ def _run_batch_mutation_testing(  # pragma: no cover
     return results
 
 
+WATCHDOG_TICK_SECONDS = 1.0
+"""How often the result loop checks the pool's per-gremlin deadlines (#976)."""
+
+
 def _run_parallel_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
@@ -4176,18 +4208,9 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             )
             futures[future] = gremlin.gremlin_id
 
-        # Collect results as they complete
-        for future in as_completed(futures):
-            gremlin_id = futures[future]
-            try:
-                worker_result = future.result()
-                aggregator.add_result(worker_result)
-            except Exception as execution_error:
-                aggregator.add_error(gremlin_id, execution_error)
-
-            # Progress reporting
-            completed, total = aggregator.get_progress()
-            print(f'\rpytest-gremlins: Progress {completed}/{total}', end='', flush=True)
+        early_cached_ids = _collect_pooled_results(
+            futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session, service=pool.service
+        )
 
     print()  # New line after progress
 
@@ -4204,9 +4227,71 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             continue
         unconfirmed.append(gremlin_result)
 
-    results.extend(_confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir))
+    results.extend(
+        _confirm_and_cache_pooled_results(unconfirmed, test_commands, gremlin_session, rootdir, early_cached_ids)
+    )
 
     return results
+
+
+def _collect_one_result(
+    future: Future[WorkerResult],
+    gremlin: Gremlin,
+    selected_tests: list[str],
+    aggregator: ResultAggregator,
+    gremlin_session: GremlinSession,
+) -> bool:
+    """Add one finished future to the aggregator; return whether its verdict was final and handed to the cache."""
+    try:
+        worker_result = future.result()
+        aggregator.add_result(worker_result)
+    except Exception as execution_error:
+        aggregator.add_error(gremlin.gremlin_id, execution_error)
+        return False
+    return _cache_final_worker_result(gremlin, worker_result, selected_tests, gremlin_session)
+
+
+def _collect_pooled_results(
+    futures: Mapping[Future[WorkerResult], str],
+    aggregator: ResultAggregator,
+    gremlin_by_id: Mapping[str, Gremlin],
+    gremlin_tests: Mapping[str, list[str]],
+    gremlin_session: GremlinSession,
+    *,
+    service: Callable[[], Sequence[str]] | None = None,
+) -> set[str]:
+    """Collect worker results as they complete, caching final verdicts at once; return the ids cached that way.
+
+    A run that is killed or stalls keeps what it finished (#974): each final verdict goes to the cache the
+    moment its worker returns, and the cache is flushed on a timer, so a kill loses at most one flush window.
+    The flush also runs when anything, including ``KeyboardInterrupt``, propagates out of the wait. This
+    runs on the thread that owns the cache's SQLite connection.
+
+    ``service`` is the pool's watchdog (#976). It runs before every wait, which then wakes at least every
+    ``WATCHDOG_TICK_SECONDS``, so a hung worker is noticed within a tick of its deadline.
+    """
+    flusher = _cache_flusher_for(gremlin_session)
+    wake_every = flusher.every_seconds if service is None else min(flusher.every_seconds, WATCHDOG_TICK_SECONDS)
+    early_cached_ids: set[str] = set()
+    pending_futures = set(futures)
+    try:
+        while pending_futures:
+            if service is not None:
+                _queue_hung_worker_notices(service(), gremlin_session)
+            done, pending_futures = wait(pending_futures, timeout=wake_every, return_when=FIRST_COMPLETED)
+            for future in done:
+                gremlin_id = futures[future]
+                if _collect_one_result(
+                    future, gremlin_by_id[gremlin_id], gremlin_tests[gremlin_id], aggregator, gremlin_session
+                ):
+                    early_cached_ids.add(gremlin_id)
+                    flusher.note_result()
+                completed, total = aggregator.get_progress()
+                print(f'\rpytest-gremlins: Progress {completed}/{total}', end='', flush=True)
+            flusher.flush_if_due()
+    finally:
+        flusher.flush()
+    return early_cached_ids
 
 
 def _confirm_and_cache_pooled_results(
@@ -4214,8 +4299,14 @@ def _confirm_and_cache_pooled_results(
     test_commands: dict[str, list[str]],
     gremlin_session: GremlinSession,
     rootdir: Path,
+    early_cached_ids: AbstractSet[str],
 ) -> list[GremlinResult]:
-    """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them."""
+    """Confirm pooled results (collection-kill confirmations prefilled concurrently), then cache them.
+
+    Results whose gremlin id is in ``early_cached_ids`` were final when their worker returned and were
+    written then (see :func:`_cache_final_worker_result`); confirmation leaves them unchanged, so they
+    are not written twice.
+    """
     _prefill_collection_kill_confirmations(
         [(r, _node_ids_for_tests(r.selected_tests, gremlin_session)) for r in unconfirmed], gremlin_session, rootdir
     )
@@ -4229,10 +4320,53 @@ def _confirm_and_cache_pooled_results(
             rootdir,
         )
         confirmed.append(confirmed_result)
+        if unconfirmed_result.gremlin.gremlin_id in early_cached_ids:
+            continue
         _cache_gremlin_result(
             unconfirmed_result.gremlin, unconfirmed_result.selected_tests, confirmed_result, gremlin_session
         )
     return confirmed
+
+
+def _queue_hung_worker_notices(hung_gremlin_ids: Sequence[str], gremlin_session: GremlinSession) -> None:
+    """Tell the terminal summary whose workers the hung-worker watchdog killed; the pool already logged each."""
+    for gremlin_id in hung_gremlin_ids:
+        _queue_terminal_notice(
+            gremlin_session,
+            f'pytest-gremlins: warning: the hung-worker watchdog killed the worker of gremlin {gremlin_id} after it '
+            'ran past its mutant timeout. The gremlin is re-run alone to settle its verdict.',
+        )
+
+
+def _cache_final_worker_result(
+    gremlin: Gremlin,
+    worker_result: WorkerResult,
+    selected_tests: list[str],
+    gremlin_session: GremlinSession,
+) -> bool:
+    """Cache the worker's verdict now if confirmation cannot change it; return whether it was handed to the cache."""
+    result = _result_from_worker(gremlin, worker_result, selected_tests)
+    if not pooled_verdict_is_final(result):
+        return False
+    _cache_gremlin_result(gremlin, selected_tests, result, gremlin_session)
+    return True
+
+
+def _cache_flusher_for(gremlin_session: GremlinSession) -> PeriodicFlusher:
+    """Return the flusher that commits the session cache's deferred writes, doing nothing when caching is off."""
+    cache = gremlin_session.cache
+    if not gremlin_session.cache_enabled or cache is None:
+        return PeriodicFlusher(lambda: None)
+
+    def queue_failure_notice(flush_error: Exception) -> None:
+        _queue_terminal_notice(
+            gremlin_session,
+            'pytest-gremlins: warning: could not write finished results to the cache '
+            f'({_describe_exception(flush_error)}). The run continues and retries the writes; '
+            'the cache retries them again when it closes.',
+        )
+
+    return PeriodicFlusher(cache.flush, on_first_failure=queue_failure_notice)
 
 
 def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
@@ -4356,7 +4490,7 @@ def _print_dropped_tests(dropped: list[str], runnable_candidates: list[str]) -> 
     print(f'  Covering minus selected ({len(dropped)} dropped):')
     for key in dropped:
         print(f'    dropped    : {key!r}')
-        print(f'    stripped   : {_drop_bracketed_suffix(key)!r}')
+        print(f'    stripped   : {strip_marker_suffix(key)!r}')
         print(f'    close match: {_close_matches_display(key, runnable_candidates)}')
 
 
@@ -4441,30 +4575,14 @@ def _format_cache_report(*, cache_hits: int, settled_without_running: int, to_te
     return f'pytest-gremlins: {cache_hits} gremlins from cache{settled}, {to_test} to test'
 
 
-def _drop_bracketed_suffix(nodeid: str) -> str:
-    """Return ``nodeid`` with a trailing ``' [...]'`` marker suffix removed.
-
-    Shares its rule (:func:`strip_marker_suffix`) with the coverage subprocess
-    bootstrap (`_strip_nodeid_markers`).  Used only by
-    :func:`_emit_selection_explainer` to show the reader the shape the
-    subprocess would record for a drifted key.
-
-    Examples:
-        >>> _drop_bracketed_suffix('tests/test_foo.py::test_bar [SMALL]')
-        'tests/test_foo.py::test_bar'
-        >>> _drop_bracketed_suffix('tests/test_foo.py::test_bar')
-        'tests/test_foo.py::test_bar'
-    """
-    return strip_marker_suffix(nodeid)
-
-
 def _run_mutation_testing(
     session: pytest.Session,
     gremlin_session: GremlinSession,
 ) -> list[GremlinResult]:
     """Run mutation testing for all gremlins.
 
-    Uses incremental caching when enabled to skip unchanged gremlins.
+    Uses incremental caching when enabled to skip unchanged gremlins. Cached results are flushed to disk
+    periodically and when the run is interrupted, so an interrupted run keeps what it finished (#974).
 
     Args:
         session: The pytest session.
@@ -4473,6 +4591,19 @@ def _run_mutation_testing(
     Returns:
         List of results for each gremlin.
     """
+    flusher = _cache_flusher_for(gremlin_session)
+    try:
+        return _run_gremlins_one_by_one(session, gremlin_session, flusher)
+    finally:
+        flusher.flush()
+
+
+def _run_gremlins_one_by_one(
+    session: pytest.Session,
+    gremlin_session: GremlinSession,
+    flusher: PeriodicFlusher,
+) -> list[GremlinResult]:
+    """Run each gremlin in turn, caching every result and flushing through ``flusher``."""
     results: list[GremlinResult] = []
     rootdir = _get_rootdir(session.config)
     base_test_command = _build_test_command(
@@ -4540,6 +4671,8 @@ def _run_mutation_testing(
 
         # Cache the result for next run
         _cache_gremlin_result(gremlin, selected_tests, gremlin_result, gremlin_session)
+        flusher.note_result()
+        flusher.flush_if_due()
 
         results.append(gremlin_result)
 
@@ -4549,23 +4682,11 @@ def _run_mutation_testing(
 def _node_id_for_test(test_name: str, gremlin_session: GremlinSession) -> str:
     """Resolve a selected test name to its node id, or '' when it has none.
 
-    Test names can be in different formats (simple function, module.function, TestClass.method), so this
-    tries variations to find the corresponding node ID.
+    Every caller passes the selection :func:`_select_tests_for_gremlin_prioritized` already filtered to keys of
+    ``test_node_ids`` (#571), so no fallback to a bare or dotted name is needed (#589). A name that is not a key
+    still resolves to '', which keeps its gremlin out of the cache.
     """
-    node_id = gremlin_session.test_node_ids.get(test_name, '')
-    if not node_id:
-        simple_name = test_name.rsplit('.', maxsplit=1)[-1]
-        node_id = gremlin_session.test_node_ids.get(simple_name, '')
-    if not node_id:
-        # Coverage map may use bare function names (old-format dynamic_context)
-        # while test_node_ids is keyed by full node ID.  Use the reverse index
-        # for O(1) lookup instead of O(n) linear suffix scan.
-        candidates = gremlin_session.test_name_to_node_ids.get(test_name, [])
-        if not candidates:
-            candidates = gremlin_session.test_name_to_node_ids.get(test_name.rsplit('.', maxsplit=1)[-1], [])
-        if candidates:
-            node_id = candidates[0]
-    return node_id
+    return gremlin_session.test_node_ids.get(test_name, '')
 
 
 def _build_test_hashes_for_gremlin(

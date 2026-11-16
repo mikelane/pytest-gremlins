@@ -58,6 +58,8 @@ RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
 # One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
 # between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
 RECORDED_DIGESTS: dict[str, str] = {
+    'addopts.py': '05843979478c59fc70ab4ed4fbbe14567a8220feab7748d528d9ac2b623b1525',  # pragma: allowlist secret
+    # --
     'argument_files.py': '1bd1374b822df8936a6967d37d38c95b04ba7b325d0cbceb677c4e32f6ecf2a6',  # pragma: allowlist secret
     # --
     'ast_copy.py': 'f94a3572585f293c0798490a1685f4d77eb970f67c0f53556dcef29826998832',  # pragma: allowlist secret
@@ -68,6 +70,8 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/incremental.py': '9803a880a60d3bd5ede1dd14f3ee02da24a8faed7928d50a9ec93504e5a118c6',  # pragma: allowlist secret  # noqa: E501
     # --
+    'cache/periodic_flush.py': '20f5edde8b7f32596c6940faa3ada471eaf5333de2aacb91b14aa9345bd98417',  # pragma: allowlist secret  # noqa: E501
+    # --
     'cache/store.py': '5f0948aacf44044a8a66ebc1863479e0df29cec9eb4ae73edd63ac2cfab8173b',  # pragma: allowlist secret
     # --
     'cache/types.py': 'e8f2a82731cb4bfaec2a4803fe312826f3a85511224868322aa7eb127339085a',  # pragma: allowlist secret
@@ -76,7 +80,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'config.py': 'f6f54470b3eaa24032742ef90b9b36df7b7215c9d9802b0dcb411b870891cde3',  # pragma: allowlist secret
     # --
-    'control_run.py': '95174e647a5cea01a3bfb54a0498df39c92f7c57168bf2dbaea3ddcbc0584270',  # pragma: allowlist secret
+    'control_run.py': '64aed4241657eb3c9b7de7d56d5a63760bc01fe5dfb98495ac322aba36528762',  # pragma: allowlist secret
     # --
     'coverage/__init__.py': 'aafaa74217e1e3936ede3a3506ba602f27eb43416b0b4b2ebbcadd1817d35854',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -96,13 +100,13 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'coverage/selector.py': 'b35af2f065bb47abe40ba63c83d0dc95cacc12de744e261f65aba879f149707b',  # pragma: allowlist secret  # noqa: E501
     # --
-    'coverage/sharded_prescan.py': '5cdc57ff92e26aeadefc02b2f41e6e0178d101bd2705c75eef7ed7ac243d7a8b',  # pragma: allowlist secret  # noqa: E501
+    'coverage/sharded_prescan.py': '8895101cb7a5a550d9c7bf42209cdd49b16259402e5c56678fc81a6784919103',  # pragma: allowlist secret  # noqa: E501
     # --
-    'coverage/subprocess_bootstrap.py': 'c0eeeb6ae0d1ee099c901d2a76432502d05309897111be48b9eb616ab37c1463',  # pragma: allowlist secret  # noqa: E501
+    'coverage/subprocess_bootstrap.py': '770df8420f40e841bc6d69f50baf311300a2de9d99745bd209615173ce8f3421',  # pragma: allowlist secret  # noqa: E501
     # --
     'coverage/types.py': '6300b3a3c2f3a3ccd433e43fb172f367243f4f3eb10cd588306790ae415453ae',  # pragma: allowlist secret
     # --
-    'gremlins_options.py': 'a222a60f665711808dac20c94eb44b072fe4483cfd9de134a15bb3c8172075a0',  # pragma: allowlist secret  # noqa: E501
+    'gremlins_options.py': 'd41ae14e96aa699bb1c8d0c0042acc233d118337d12d64c6d1c0f10eecb2409b',  # pragma: allowlist secret  # noqa: E501
     # --
     'instrumentation/__init__.py': '22aab29f2f7b08257f748738722eff5fede51bc1c5d90010a588fc38c92d42aa',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -154,15 +158,19 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/lightweight.py': '72dd62804a24be6334d38305fdd058fe70c537e445a73329d1e11c81f22482db',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/persistent_pool.py': 'ff1309b9440529053e646d0af40990a4cb7068cb6c66e637d3cafe1fa0be220b',  # pragma: allowlist secret  # noqa: E501
+    'parallel/persistent_pool.py': '94ce77176efb2af571a37e220095a8f721efc3b0fac6677a24a4bd24223e6f7d',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/pool.py': 'dd1e32efef562fe73506be11431bcc516d87b064bbd0edc5f1ff73711989344a',  # pragma: allowlist secret
+    'parallel/pool.py': '56ae0611b06d35cc3d263319da52a509a23da2141f43bfa8f05bb03c7a6509a6',  # pragma: allowlist secret
     # --
     'parallel/pool_config.py': '92d388fc68203d1e6a15ef69ab96ade058d9c3c9f3fb8a86f444f57c8e0fd74a',  # pragma: allowlist secret  # noqa: E501
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '2675541887ffd1cf9f598379ce6e28935997350e1740483e20c727d1187750d4',  # pragma: allowlist secret
+    'parallel/worker_kill.py': '04582134f7fa45932ce0c9cb2a6108017f2714571401e01ae5374c2f0b27339d',  # pragma: allowlist secret  # noqa: E501
+    # --
+    'plugin.py': '9cc9b08c05aad6439e73f6cf655593675faca1246a56ec925adbd9173356d1a0',  # pragma: allowlist secret
+    # --
+    'process_tree.py': 'f48a64afd8d30e9aac97f5d7d8ed245ee4f3283b73dc293f7c0f3553cf1a433e',  # pragma: allowlist secret
     # --
     'reporting/__init__.py': '89554da09af979ba49dee1f14ae15bfc210a64f59b7de9f99e7fd1ab31480401',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -176,9 +184,9 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
     # --
-    'verdicts.py': '6c4bdbca003af52104d2b21ecef3b7db6f99d6c1c954f825e84c0464d611610c',  # pragma: allowlist secret
+    'verdicts.py': '9bde7db77e785f743c8e8572b72760fee1c6b1590b2ae74298f0641ef722ae85',  # pragma: allowlist secret
     # --
-    'xdist_options.py': 'cf57d1eb13c67982575c1b48f20cc462bc1dec5043f5c457f541067007101c41',  # pragma: allowlist secret
+    'xdist_options.py': '7f8d6cb78badd89966c2b1a9b43325f44a18ae6efc913910757588ae8f842a18',  # pragma: allowlist secret
 }
 
 
@@ -459,7 +467,7 @@ class DescribeCacheVersionGuard:
         before = _guarded_digests()
 
         verdicts_source = package_copy / 'verdicts.py'
-        original = 'if result.status != GremlinResultStatus.ZAPPED or result.killing_test != COLLECTION_KILLING_TEST:'
+        original = 'if not is_collection_kill(result):'
         assert original in verdicts_source.read_text()
         verdicts_source.write_text(verdicts_source.read_text().replace(original, 'if True:'))
 

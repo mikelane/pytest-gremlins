@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
+import sys
 import threading
-import time
 from typing import (
     TYPE_CHECKING,
     cast,
@@ -35,11 +35,12 @@ from pytest_gremlins.verdicts import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 LOADS = ControlRunOutcome(loads_cleanly=True, output='', seconds=0.1)
 FAILS = ControlRunOutcome(loads_cleanly=False, output='ImportError: nope', seconds=0.1)
-SLOW_SECONDS = 0.3
+HANG_GUARD_SECONDS = 60
 
 
 def _gremlin(gremlin_id: str) -> Gremlin:
@@ -73,28 +74,45 @@ def fake_control(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return cast('MagicMock', control)
 
 
+@pytest.fixture
+def tiny_switch_interval() -> Iterator[None]:
+    """Let a worker thread run on right after a failure, before the calling thread wakes to see it.
+
+    That is the race behind starting an extra confirmation after the first one failed; a tiny interval makes it
+    repeatable without sleeping.
+    """
+    previous_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    yield
+    sys.setswitchinterval(previous_interval)
+
+
 @pytest.mark.medium
 class DescribePrefillCollectionKillConfirmations:
-    def it_runs_distinct_confirmations_in_about_n_over_workers_times_one_run(
+    def it_runs_as_many_confirmations_at_once_as_there_are_workers(
         self, fake_control: MagicMock, tmp_path: Path
     ) -> None:
-        def slow(*_args: object, **_kwargs: object) -> ControlRunOutcome:
-            time.sleep(SLOW_SECONDS)
+        workers = 4
+        # Every call waits for the other workers' calls, so it only gets past the barrier if they overlap. The
+        # barrier timeout is a hang guard: it breaks the barrier, and fails the test, when they never do.
+        all_running = threading.Barrier(workers, timeout=HANG_GUARD_SECONDS)
+
+        def wait_for_the_other_workers(*_args: object, **_kwargs: object) -> ControlRunOutcome:
+            all_running.wait()
             return LOADS
 
-        fake_control.side_effect = slow
-        session = _session(tmp_path, workers=4)
+        fake_control.side_effect = wait_for_the_other_workers
+        session = _session(tmp_path, workers=workers)
 
-        started = time.monotonic()
         _prefill_collection_kill_confirmations(_pending(8), session, tmp_path)
-        elapsed = time.monotonic() - started
 
-        assert elapsed < SLOW_SECONDS * 8 / 2
+        assert fake_control.call_count == 8
 
     def it_never_runs_more_confirmations_at_once_than_the_configured_workers(
         self, fake_control: MagicMock, tmp_path: Path
     ) -> None:
         lock = threading.Lock()
+        pair_is_running = threading.Barrier(2, timeout=HANG_GUARD_SECONDS)
         running = 0
         peak = 0
 
@@ -103,7 +121,7 @@ class DescribePrefillCollectionKillConfirmations:
             with lock:
                 running += 1
                 peak = max(peak, running)
-            time.sleep(0.05)
+            pair_is_running.wait()
             with lock:
                 running -= 1
             return LOADS
@@ -175,5 +193,16 @@ class DescribePrefillInterruption:
 
         with pytest.raises(error):
             _prefill_collection_kill_confirmations(_pending(6), _session(tmp_path, workers=1), tmp_path)
+
+        assert fake_control.call_count == 1
+
+    @pytest.mark.usefixtures('tiny_switch_interval')
+    def it_starts_no_further_confirmation_when_the_worker_outruns_the_calling_thread(
+        self, fake_control: MagicMock, tmp_path: Path
+    ) -> None:
+        fake_control.side_effect = RuntimeError('stop')
+
+        with pytest.raises(RuntimeError):
+            _prefill_collection_kill_confirmations(_pending(50), _session(tmp_path, workers=1), tmp_path)
 
         assert fake_control.call_count == 1

@@ -53,7 +53,7 @@ def prescan_cmd(tmp_path: Path) -> list[str]:
     def capture_cmd(cmd: list[str], **_kwargs: object) -> None:
         captured_cmd.extend(cmd)
 
-    with patch('pytest_gremlins.plugin.subprocess.run', autospec=True, side_effect=capture_cmd):
+    with patch('pytest_gremlins.process_tree.run_bounded', autospec=True, side_effect=capture_cmd):
         _run_tests_with_coverage(['tests/test_a.py::test_one'], tmp_path)
     return captured_cmd
 

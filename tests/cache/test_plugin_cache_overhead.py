@@ -1,6 +1,8 @@
 """Tests measuring actual cache overhead in plugin usage pattern.
 
-These tests identify why the cache makes things slower instead of faster.
+These tests identify why the cache makes things slower instead of faster. Those that compare against a time
+limit run in the large tier (serial, not in the PR matrix where xdist workers contend for the CPU; #1022);
+the others count operations.
 """
 
 from pathlib import Path
@@ -15,7 +17,7 @@ from pytest_gremlins.cache.store import ResultStore
 from .cached_entries import partial_entry
 
 
-@pytest.mark.medium
+@pytest.mark.large
 class DescribeUpfrontHashingOverhead:
     """Tests for upfront file hashing overhead."""
 
@@ -65,25 +67,23 @@ class DescribeUpfrontHashingOverhead:
 class DescribeSqliteCommitOverhead:
     """Tests for SQLite commit overhead."""
 
-    def it_individual_commits_are_slow(self, tmp_path: Path) -> None:
-        """Individual commits per write are slower than batch commits."""
-        db_path = tmp_path / 'results.db'
+    def it_commits_after_every_individual_write(self, tmp_path: Path) -> None:
+        """Each put commits on its own, which is the overhead put_deferred avoids.
 
-        # Current behavior: commit after each write
-        with ResultStore(db_path) as store:
-            start = time.perf_counter()
+        Counting COMMIT statements does not depend on how slow the runner's disk is.
+        """
+        commits: list[str] = []
+
+        def record_commit(statement: str) -> None:
+            if statement == 'COMMIT':
+                commits.append(statement)
+
+        with ResultStore(tmp_path / 'results.db') as store:
+            store._conn.set_trace_callback(record_commit)
             for i in range(100):
                 store.put(f'key_{i}', partial_entry(status='zapped', test=f'test_{i}'))
-            individual_time = time.perf_counter() - start
 
-        # Note: Windows filesystem I/O is significantly slower than macOS/Linux.
-        # CI runners show extreme variance - Windows Python 3.14 has taken 15s+.
-        # This test documents that individual commits have overhead, not a strict
-        # performance requirement. Use generous 30s threshold for CI stability.
-        assert individual_time < 30.0, (
-            f'Individual commits took {individual_time * 1000:.1f}ms for 100 entries. '
-            'This demonstrates SQLite commit overhead.'
-        )
+        assert len(commits) == 100
 
 
 @pytest.mark.medium
@@ -124,7 +124,7 @@ class DescribeCacheKeyComputationOverhead:
         assert len(keys) == num_gremlins
 
 
-@pytest.mark.medium
+@pytest.mark.large
 class DescribeTotalCacheOverhead:
     """Tests measuring total cache overhead vs no-cache baseline."""
 
@@ -183,7 +183,7 @@ class DescribeTotalCacheOverhead:
         )
 
 
-@pytest.mark.medium
+@pytest.mark.large
 class DescribeCacheWithBatchOperations:
     """Tests demonstrating potential for batch optimization."""
 

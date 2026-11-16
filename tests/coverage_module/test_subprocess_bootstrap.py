@@ -16,33 +16,9 @@ import coverage
 import pytest
 
 from pytest_gremlins.coverage.subprocess_bootstrap import (
-    _strip_nodeid_markers,
     _SubprocessContextPlugin,
     pytest_sessionstart,
 )
-
-
-@pytest.mark.small
-class DescribeStripNodeidMarkers:
-    """Tests for _strip_nodeid_markers."""
-
-    def it_strips_test_category_marker(self) -> None:
-        assert _strip_nodeid_markers('test_module.py::test_add [SMALL]') == 'test_module.py::test_add'
-
-    def it_strips_medium_marker(self) -> None:
-        assert _strip_nodeid_markers('test_module.py::test_add [MEDIUM]') == 'test_module.py::test_add'
-
-    def it_leaves_plain_nodeid_unchanged(self) -> None:
-        assert _strip_nodeid_markers('test_module.py::test_add') == 'test_module.py::test_add'
-
-    def it_leaves_parametrized_nodeid_unchanged(self) -> None:
-        assert _strip_nodeid_markers('test_module.py::test_add[param1]') == 'test_module.py::test_add[param1]'
-
-    def it_keeps_a_parametrize_id_containing_a_space_and_bracket(self) -> None:
-        assert _strip_nodeid_markers('test_module.py::test_add[x [y]]') == 'test_module.py::test_add[x [y]]'
-
-    def it_strips_only_the_marker_after_a_parametrize_id_containing_a_space_and_bracket(self) -> None:
-        assert _strip_nodeid_markers('test_module.py::test_add[x [y]] [SMALL]') == 'test_module.py::test_add[x [y]]'
 
 
 @pytest.mark.small

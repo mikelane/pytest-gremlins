@@ -16,6 +16,7 @@ import subprocess
 import time
 from typing import TYPE_CHECKING
 
+from pytest_gremlins import process_tree
 from pytest_gremlins.node_id_file import command_with_node_ids_file
 
 if TYPE_CHECKING:
@@ -120,13 +121,8 @@ def run_unmutated(
     """
     started = time.monotonic()
     try:
-        subprocess.run(  # Intentional: runs the pytest bootstrap
-            command_with_node_ids_file(command, node_ids, node_ids_dir),
-            cwd=str(cwd),
-            env=dict(env),
-            capture_output=True,
-            timeout=timeout,
-            check=False,
+        process_tree.run_bounded(
+            command_with_node_ids_file(command, node_ids, node_ids_dir), cwd=str(cwd), env=env, timeout=timeout
         )
     except subprocess.TimeoutExpired:
         return UnmutatedRunOutcome(timed_out=True, seconds=time.monotonic() - started)
@@ -170,13 +166,11 @@ def run_control(
     """
     started = time.monotonic()
     try:
-        completed = subprocess.run(  # Intentional: runs the pytest bootstrap
+        completed = process_tree.run_bounded(
             command_with_node_ids_file([*command, '--collect-only', '--tb=short'], node_ids, node_ids_dir),
             cwd=str(cwd),
-            env=dict(env),
-            capture_output=True,
+            env=env,
             timeout=timeout,
-            check=False,
         )
     except subprocess.TimeoutExpired:
         return ControlRunOutcome(False, f'control run timed out after {timeout}s', time.monotonic() - started)

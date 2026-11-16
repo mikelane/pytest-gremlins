@@ -1,4 +1,8 @@
-"""Tests for cache key computation memoization."""
+"""Timing of cache key computation, in the large tier (#1022).
+
+The deterministic check, one hash operation per key, is
+``DescribeCacheKeyComputationOverhead`` in ``test_plugin_cache_overhead.py``.
+"""
 
 from pathlib import Path
 import time
@@ -8,7 +12,7 @@ import pytest
 from pytest_gremlins.cache.incremental import IncrementalCache
 
 
-@pytest.mark.medium
+@pytest.mark.large
 class DescribeCacheKeyMemoization:
     """Tests for memoized cache key computation."""
 

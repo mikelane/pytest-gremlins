@@ -6,7 +6,6 @@ That covers a command-line ``-p no:rerunfailures``, ``--disable-plugin-autoload`
 from __future__ import annotations
 
 from pathlib import Path
-import time
 from types import SimpleNamespace
 
 import pytest
@@ -181,10 +180,9 @@ class DescribeGremlinRunsUnderABlockWithOtherRunModes:
         # Wider than the siblings' 8/3: worker start-up on a loaded runner can eat a 3s timeout. Workers do
         # have a per-mutant timeout, but this session runs with -p no:rerunfailures, so the timeout is not
         # widened: an unblocked rerun is cut at the 20s timeout and reported as a Timeout, leaving no Zapped
-        # gremlins. Zapped > 0 is the primary signal; elapsed time below the delay is a backup.
+        # gremlins, which is what Zapped > 0 catches without comparing wall-clock time.
         pytester.makeini(f'[pytest]\nreruns = 1\nreruns_delay = {PARALLEL_RERUNS_DELAY_SECONDS}\n')
 
-        started = time.monotonic()
         result = pytester.runpytest_subprocess(
             *GREMLIN_ARGS,
             '--gremlin-mutant-timeout',
@@ -194,10 +192,8 @@ class DescribeGremlinRunsUnderABlockWithOtherRunModes:
             '2',
             *BLOCK_RERUNFAILURES,
         )
-        elapsed = time.monotonic() - started
 
         output = result.stdout.str()
-        assert elapsed < PARALLEL_RERUNS_DELAY_SECONDS
         assert verdicts(output)['Zapped'] > 0
 
     def it_applies_the_block_to_batched_runs(self, pytester_with_markers: pytest.Pytester) -> None:
