@@ -6,7 +6,6 @@ PoolConfig to use optimized settings like custom start methods and warmup.
 
 from __future__ import annotations
 
-import sys
 import time
 from typing import TYPE_CHECKING
 from unittest.mock import (
@@ -59,6 +58,9 @@ class DescribePersistentWorkerPoolWithConfig:
         assert pool.timeout == 120
 
 
+WARMUP_HANG_GUARD_SECONDS = 60.0
+
+
 @pytest.mark.medium
 class DescribePersistentWorkerPoolWarmup:
     """Tests for worker warmup functionality."""
@@ -100,9 +102,8 @@ class DescribePersistentWorkerPoolWarmup:
             pass
         elapsed = time.monotonic() - start
 
-        # Windows CI runners are significantly slower; use generous threshold
-        threshold = 10.0 if sys.platform == 'win32' else 2.0
-        assert elapsed < threshold
+        # Hang guard, not a speed requirement: the limit is far above a normal warmup, so only a hang trips it.
+        assert elapsed < WARMUP_HANG_GUARD_SECONDS
 
 
 @pytest.mark.small

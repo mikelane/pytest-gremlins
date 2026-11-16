@@ -95,17 +95,15 @@ class DescribeRunBounded:
             f'time.sleep({LONG_SLEEP_SECONDS})\n'
         )
 
-        started = time.monotonic()
         with pytest.raises(subprocess.TimeoutExpired):
             _run(python(code), tmp_path, STARTUP_DEADLINE_SECONDS)
-        elapsed = time.monotonic() - started - STARTUP_DEADLINE_SECONDS  # the part past the timeout
         command_pid = int(pid_file.read_text())
         try:
             is_command_gone = is_gone(command_pid)
         finally:
             kill_quietly(command_pid)
 
-        assert (is_command_gone, elapsed < REAP_DEADLINE_SECONDS) == (True, True)
+        assert is_command_gone
 
     @posix_only
     def it_sends_sigterm_before_the_force_kill(self, tmp_path: Path) -> None:
@@ -144,6 +142,8 @@ class DescribeRunBounded:
         finally:
             kill_quietly(int(pid_file.read_text()))
 
+        # Hang guard, not a speed requirement: the drain wait is SHORT_DRAIN_SECONDS, so a wait for the escaped
+        # process's whole sleep would overshoot this limit by orders of magnitude.
         assert elapsed < REAP_DEADLINE_SECONDS
 
 

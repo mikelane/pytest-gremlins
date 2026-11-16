@@ -341,6 +341,12 @@ class DescribeSigtermCleanupLimits:
 
         assert (is_worker_gone, returncode) == (True, -signal.SIGTERM)
 
+
+# The elapsed bound is the assertion (a per-worker bound would double it), so it runs in the large tier,
+# where no other test loads the CPU (#1022).
+@pytest.mark.large
+@posix_only
+class DescribeSigtermCleanupWorkerStopDeadline:
     def it_stops_waiting_for_workers_that_ignore_sigterm_after_the_worker_stop_deadline(self, tmp_path: Path) -> None:
         # Two workers ignore SIGTERM, so each join runs out. WORKER_STOP_SECONDS bounds the wait in total: an
         # unbounded join hangs the main process forever, and a per-worker bound doubles it.

@@ -9,14 +9,11 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import subprocess
-import time
 
 import pytest
 
-# Performance baseline in seconds. Fail if >3x this value.
-# Set conservatively high initially; tighten after observing CI runs.
-PERF_BASELINE_SECONDS = 60.0
-PERF_THRESHOLD_MULTIPLIER = 3.0
+# Hang guard in seconds: the subprocess is killed past this, far above a normal run.
+HANG_GUARD_SECONDS = 180
 
 
 @pytest.mark.medium
@@ -25,8 +22,6 @@ class DescribeAttrsSmokeTest:
 
     def it_finds_gremlins_with_zero_errors(self, attrs_venv: Path, attrs_checkout: Path) -> None:
         python = str(attrs_venv / 'bin' / 'python')
-        start = time.monotonic()
-
         result = subprocess.run(
             [
                 python,
@@ -43,11 +38,10 @@ class DescribeAttrsSmokeTest:
             cwd=str(attrs_checkout),
             capture_output=True,
             text=True,
-            timeout=int(PERF_BASELINE_SECONDS * PERF_THRESHOLD_MULTIPLIER),
+            timeout=HANG_GUARD_SECONDS,  # a hang guard, not a speed assertion
             check=False,
         )
 
-        elapsed = time.monotonic() - start
         output = result.stdout + result.stderr
 
         # Parse gremlin results from output
@@ -62,9 +56,3 @@ class DescribeAttrsSmokeTest:
         # Assertions
         assert error_count == 0, f'Expected 0 errors, got {error_count}. Output:\n{output}'
         assert zapped_count + survived_count > 0, f'No gremlins found. Output:\n{output}'
-
-        # Performance gate
-        assert elapsed < PERF_BASELINE_SECONDS * PERF_THRESHOLD_MULTIPLIER, (
-            f'Smoke test took {elapsed:.1f}s, exceeding {PERF_THRESHOLD_MULTIPLIER}x '
-            f'baseline of {PERF_BASELINE_SECONDS}s'
-        )

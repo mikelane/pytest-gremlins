@@ -155,16 +155,6 @@ class DescribeRunBoundedUnderSignalsAimedAtTheCaller:
 @pytest.mark.medium
 @posix_only
 class DescribeRunBoundedCost:
-    def it_returns_promptly_when_the_command_exits_on_sigterm(self, tmp_path: Path) -> None:
-        pid_file = tmp_path / 'command.pid'
-
-        started = time.monotonic()
-        with pytest.raises(subprocess.TimeoutExpired):
-            _run(python(_sleeper_writing_pid(pid_file)), tmp_path, SHORT_TIMEOUT_SECONDS)
-        overhead = time.monotonic() - started - SHORT_TIMEOUT_SECONDS
-
-        assert overhead < process_tree.TERMINATE_GRACE_SECONDS
-
     def it_leaves_no_file_descriptors_open_after_repeated_timeouts(self, tmp_path: Path) -> None:
         _start_the_watchdog(tmp_path)
         before = _open_fd_count()
@@ -181,6 +171,22 @@ class DescribeRunBoundedCost:
             _run([str(tmp_path / 'no-such-python')], tmp_path, SHORT_TIMEOUT_SECONDS)
 
         assert _open_fd_count() == before
+
+
+# A speed bound (the SIGTERM grace period is 0.5 s, so the margin is tight on a loaded runner), so it runs in
+# the large tier, where no other test loads the CPU (#1022).
+@pytest.mark.large
+@posix_only
+class DescribeRunBoundedPromptness:
+    def it_returns_promptly_when_the_command_exits_on_sigterm(self, tmp_path: Path) -> None:
+        pid_file = tmp_path / 'command.pid'
+
+        started = time.monotonic()
+        with pytest.raises(subprocess.TimeoutExpired):
+            _run(python(_sleeper_writing_pid(pid_file)), tmp_path, SHORT_TIMEOUT_SECONDS)
+        overhead = time.monotonic() - started - SHORT_TIMEOUT_SECONDS
+
+        assert overhead < process_tree.TERMINATE_GRACE_SECONDS
 
 
 @pytest.mark.medium

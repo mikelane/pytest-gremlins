@@ -127,9 +127,13 @@ class DescribeInstrumentedTreeGrowth:
         assert growth_ratio <= 5
 
 
-@pytest.mark.medium
+@pytest.mark.large
 class DescribeThirtyTermSumInstrumentsQuickly:
-    """Instrumenting a thirty-term sum stays well under a second."""
+    """Instrumenting a thirty-term sum stays well under a second.
+
+    A speed bound, so it runs in the large tier, where no other test loads the CPU (#1022). The growth
+    tests above pin the same behavior deterministically, by tree size.
+    """
 
     def it_instruments_a_thirty_term_sum_in_under_a_second(self) -> None:
         started = time.perf_counter()
