@@ -248,7 +248,23 @@ class DescribeNestedGremlinsUnderEverySwitchedConstruct:
 
 @pytest.mark.medium
 class DescribeInstrumentAndWritePath:
-    """Instrumenting and writing a long chain stays fast and the written sources stay small."""
+    """Writing an instrumented long chain keeps the written sources small."""
+
+    def it_writes_a_twenty_term_sum_into_small_sources(self, tmp_path: Path) -> None:
+        module_path = tmp_path / 'mymod.py'
+        source = _chained_operation_source('+', 20)
+        module_path.write_text(source)
+
+        _, tree = transform_source(source, str(module_path))
+        instrumented_sources_dir = _write_instrumented_sources({str(module_path): tree}, tmp_path)
+
+        assert (instrumented_sources_dir / 'sources.json').stat().st_size < 1_000_000
+
+
+# A speed bound, so it runs in the large tier, where no other test loads the CPU (#1022).
+@pytest.mark.large
+class DescribeInstrumentAndWriteIsQuick:
+    """Instrumenting and writing a long chain stays well under a second."""
 
     def it_instruments_and_writes_a_twenty_term_sum_well_under_a_second(self, tmp_path: Path) -> None:
         module_path = tmp_path / 'mymod.py'
@@ -257,8 +273,6 @@ class DescribeInstrumentAndWritePath:
 
         started = time.perf_counter()
         _, tree = transform_source(source, str(module_path))
-        instrumented_sources_dir = _write_instrumented_sources({str(module_path): tree}, tmp_path)
-        elapsed = time.perf_counter() - started
+        _write_instrumented_sources({str(module_path): tree}, tmp_path)
 
-        assert elapsed < 1
-        assert (instrumented_sources_dir / 'sources.json').stat().st_size < 1_000_000
+        assert time.perf_counter() - started < 1
