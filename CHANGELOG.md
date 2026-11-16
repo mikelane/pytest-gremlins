@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.14.3 (2026-11-16)
+
+**Instrumentation no longer hangs when another library has linked AST nodes to their parents.**
+
+v1.14.2 was tagged but never published to PyPI: its release run hung on this bug. This release is the first to ship
+the v1.14.2 changes listed below.
+
+(cache kept: no stored verdict, gremlin id or cache key changes. `copy_ast` now copies only each node's declared
+fields; a normal tree copies exactly as before, and a process where the hang occurred never finished, so it never
+wrote a cache entry.)
+
+### Fix
+
+- **Instrumentation hung in a process where another library had linked AST nodes to their parents.** Libraries such
+  as griffe and `executing` set a `parent` attribute on AST nodes, and Python shares one `Load` node across every
+  parsed tree, so copying a tree followed that link into the other library's tree and never finished. Affected
+  v1.14.0 to v1.14.2. (#1027, #1028)
+  (no docs: fixes a hang and changes no documented behavior)
+
+## v1.14.2 (2026-11-16)
+
+**A `--gremlins` run with nothing to mutate no longer stops on the rootdir `@file` check, and a failed collection-kill
+check no longer starts extra test collections.**
+
+(cache kept: no stored verdict, gremlin id or cache key changes. The rootdir `@file` check only moved to after source
+discovery, so it decides whether a run stops, never what a gremlin scores. The collection-kill fix stops queued checks
+after the first failure or interrupt; it changes how a failed check ends, not the verdict any check produces. The
+`PYTEST_ADDOPTS` parsing and node-id helper changes are refactors that keep every caller's output identical, and the
+sharded coverage pre-scan only filters a `ResourceWarning`.)
+
+### Fix
+
+- **A `--gremlins` run with no sources to mutate stopped with exit 4 on the rootdir `@file` check.** The check now
+  runs only when there are sources to mutate, as the node-id check already did, so such a run ends with "No gremlins
+  found" and exits 0 again. Runs with sources still stop with exit 4 and the same message. With `-n`, the stop now
+  comes after the test session instead of at startup. (#973, #977)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/troubleshooting/#error-gremlin-runs-start-in-the-rootdir)
+- **A failed or interrupted collection-kill check could start another unmutated test collection.** Checks still
+  queued after the first failure, Ctrl-C included, now stop instead of starting a new pytest subprocess. (#1022,
+  #1024)
+  (no docs: stops extra subprocesses after a failure and changes no documented behavior)
+
+### Internal
+
+- `PYTEST_ADDOPTS` is parsed in one place for its three readers. (#936, #970)
+- Removed node-id fallbacks that production could no longer reach, and two wrappers around
+  `strip_marker_suffix`. (#589, #978)
+- The release workflow gates on main CI's test matrix for the tagged commit instead of rerunning it, and fails if any
+  `wip` test exists. Its own copy of the matrix had drifted from CI's: it lacked `GREMLINS_COVERAGE_OTHER_PLATFORM`,
+  which failed v1.14.1's first release run on Windows coverage. (#1012, #1013, #1014, #1017)
+- CI test jobs run in parallel with pytest-xdist, and small and medium tests no longer assert wall-clock durations.
+  (#1016, #1019, #1021, #1022, #1024)
+- Bumped pytest, mypy, ruff, coverage, tox, tox-uv, types-pyyaml and softprops/action-gh-release. (#963, #964,
+  #989-#994)
+
 ## v1.14.1 (2026-11-13)
 
 **This release publishes everything listed under 1.14.0. Nothing in the package changes beyond that.**
