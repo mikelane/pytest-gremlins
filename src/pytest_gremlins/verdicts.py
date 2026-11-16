@@ -174,7 +174,8 @@ def _prefill_collection_kill_confirmations(
     Collection confirmations measure no time, so they can overlap; timeout confirmations compare
     durations and must stay solo, so they are not touched here. Worker threads only run the
     subprocess; the memo is written from the calling thread, so it needs no lock. Concurrency is
-    bounded by the configured worker count. :func:`_confirm_collection_kill` then reads the warm memo
+    bounded by the configured worker count. Once one confirmation fails or is interrupted, no further one
+    starts; those already running finish. :func:`_confirm_collection_kill` then reads the warm memo
     and decides each verdict exactly as before.
 
     Args:
@@ -188,9 +189,18 @@ def _prefill_collection_kill_confirmations(
         return
     worker_count = min(len(unchecked), gremlin_session.parallel_workers or os.cpu_count() or 4)
     with process_tree.kill_live_commands_on_error(), ThreadPoolExecutor(max_workers=worker_count) as executor:
-        outcomes = executor.map(
-            lambda selection: _collect_unmutated(gremlin_session, rootdir, selections[selection]), unchecked
-        )
+        first_failure: list[BaseException] = []
+
+        def collect_unless_failed(selection: tuple[str, ...]) -> ControlRunOutcome:
+            if first_failure:
+                raise first_failure[0]
+            try:
+                return _collect_unmutated(gremlin_session, rootdir, selections[selection])
+            except BaseException as error:
+                first_failure.append(error)
+                raise
+
+        outcomes = executor.map(collect_unless_failed, unchecked)
         gremlin_session.unmutated_load_checks.update(zip(unchecked, outcomes, strict=True))
 
 

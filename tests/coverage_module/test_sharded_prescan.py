@@ -298,6 +298,7 @@ class DescribeRunPrescanShards:
         outcome = _run(tmp_path, [['hang'], ['crash']], timeout=30)
 
         assert outcome is None
+        # Hang guard, not a speed requirement: waiting out the hung shard would take the full 30 s timeout.
         assert time.monotonic() - started < 20
 
     def it_raises_a_timeout_when_the_shards_outlast_the_limit(self, tmp_path: Path) -> None:

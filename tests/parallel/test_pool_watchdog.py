@@ -106,7 +106,9 @@ class DescribeAWorkerThatHangsOutsideTheTestRun:
         assert statuses == [GremlinResultStatus.TIMEOUT, GremlinResultStatus.SURVIVED, GremlinResultStatus.SURVIVED]
 
 
-@pytest.mark.medium
+# The settle-time bound below separates "scored" (about 5 s) from "restarted" (about 10 s): a speed
+# assertion, so it runs in the large tier, where no other test loads the CPU (#1022).
+@pytest.mark.large
 class DescribeAnotherGremlinThatHasAlreadyOutlivedItsTimeout:
     def it_is_scored_timeout_when_the_pool_is_rebuilt_instead_of_getting_a_fresh_start(self, tmp_path: Path) -> None:
         long_grace = 3
