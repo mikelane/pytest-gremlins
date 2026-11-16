@@ -97,6 +97,85 @@ class DescribeOperatorRegistry:
         assert 'fake' in names
         assert 'another_fake' in names
 
+    @pytest.mark.parametrize('error_type', [ImportError, ValueError, RuntimeError])
+    @pytest.mark.parametrize('enabled', [None, ['fake', 'broken', 'another_fake']])
+    def it_skips_an_operator_whose_constructor_raises(self, error_type, enabled):
+        class BrokenOperator(FakeOperator):
+            def __init__(self):
+                raise error_type('missing optional dependency')
+
+        registry = OperatorRegistry()
+        registry.register(BrokenOperator, name='broken')
+        registry.register(FakeOperator)
+        registry.register(AnotherFakeOperator)
+
+        with pytest.warns(UserWarning, match=f'broken.*{error_type.__name__}.*missing optional dependency') as caught:
+            operators = registry.get_all(enabled=enabled)
+
+        assert [operator.name for operator in operators] == ['fake', 'another_fake']
+        assert len(caught) == 1
+        assert caught[0].filename == __file__
+
+    def it_does_not_construct_a_disabled_broken_operator(self):
+        class BrokenOperator(FakeOperator):
+            def __init__(self):
+                raise ImportError('missing optional dependency')
+
+        registry = OperatorRegistry()
+        registry.register(BrokenOperator, name='broken')
+        registry.register(FakeOperator)
+
+        assert [operator.name for operator in registry.get_all(enabled=['fake'])] == ['fake']
+
+    def it_returns_an_empty_list_when_every_selected_constructor_fails(self):
+        class BrokenOperator(FakeOperator):
+            def __init__(self):
+                raise ImportError('missing optional dependency')
+
+        registry = OperatorRegistry()
+        registry.register(BrokenOperator, name='broken')
+
+        with pytest.warns(UserWarning, match="Operator 'broken'"):
+            assert registry.get_all() == []
+
+    @pytest.mark.parametrize('error_type', [KeyboardInterrupt, SystemExit])
+    def it_propagates_base_exceptions_from_constructors(self, error_type):
+        class InterruptedOperator(FakeOperator):
+            def __init__(self):
+                raise error_type('stop')
+
+        registry = OperatorRegistry()
+        registry.register(InterruptedOperator, name='interrupted')
+
+        with pytest.raises(error_type, match='stop'):
+            registry.get_all()
+
+    def it_preserves_constructor_errors_when_requesting_a_single_operator(self):
+        class BrokenOperator(FakeOperator):
+            def __init__(self):
+                raise ImportError('missing optional dependency')
+
+        registry = OperatorRegistry()
+        registry.register(BrokenOperator, name='broken')
+
+        with pytest.raises(ImportError, match='missing optional dependency'):
+            registry.get('broken')
+
+    def it_retries_a_constructor_on_a_later_call(self, monkeypatch):
+        class RecoveringOperator(FakeOperator):
+            def __init__(self):
+                raise ImportError('missing optional dependency')
+
+        registry = OperatorRegistry()
+        registry.register(RecoveringOperator, name='recovering')
+
+        with pytest.warns(UserWarning, match="Operator 'recovering'"):
+            assert registry.get_all() == []
+
+        monkeypatch.setattr(RecoveringOperator, '__init__', lambda _self: None)
+
+        assert isinstance(registry.get_all()[0], RecoveringOperator)
+
     def it_returns_only_specified_operators_when_enabled_filter_set(self):
         registry = OperatorRegistry()
         registry.register(FakeOperator)
