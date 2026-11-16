@@ -74,10 +74,12 @@ class DescribeSqliteCommitOverhead:
         """
         commits: list[str] = []
 
+        def record_commit(statement: str) -> None:
+            if statement == 'COMMIT':
+                commits.append(statement)
+
         with ResultStore(tmp_path / 'results.db') as store:
-            store._conn.set_trace_callback(
-                lambda statement: commits.append(statement) if statement == 'COMMIT' else None
-            )
+            store._conn.set_trace_callback(record_commit)
             for i in range(100):
                 store.put(f'key_{i}', partial_entry(status='zapped', test=f'test_{i}'))
 

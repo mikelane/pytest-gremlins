@@ -18,7 +18,12 @@ NUM_ENTRIES = 100
 def commit_statements(store: ResultStore) -> list[str]:
     """Record every COMMIT the store's connection executes from now on."""
     commits: list[str] = []
-    store._conn.set_trace_callback(lambda statement: commits.append(statement) if statement == 'COMMIT' else None)
+
+    def record_commit(statement: str) -> None:
+        if statement == 'COMMIT':
+            commits.append(statement)
+
+    store._conn.set_trace_callback(record_commit)
     return commits
 
 

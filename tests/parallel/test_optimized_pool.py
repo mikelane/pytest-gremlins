@@ -21,6 +21,8 @@ from pytest_gremlins.parallel.pool_config import PoolConfig
 if TYPE_CHECKING:
     from pathlib import Path
 
+WARMUP_HANG_GUARD_SECONDS = 60.0
+
 
 @pytest.mark.small
 class DescribePersistentWorkerPoolWithConfig:
@@ -56,9 +58,6 @@ class DescribePersistentWorkerPoolWithConfig:
         pool = PersistentWorkerPool(max_workers=8, timeout=120)
         assert pool.max_workers == 8
         assert pool.timeout == 120
-
-
-WARMUP_HANG_GUARD_SECONDS = 60.0
 
 
 @pytest.mark.medium
