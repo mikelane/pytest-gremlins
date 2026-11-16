@@ -7,6 +7,7 @@ sessions.  Without its ``pythonpath`` they could not import the project, and eve
 
 from __future__ import annotations
 
+import configparser
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -65,25 +66,71 @@ class DescribeAConfigFileGivenWithDashC:
         assert verdicts(result.stdout.str()) == SCORED_VERDICTS, result.stdout.str() + result.stderr.str()
 
 
+def _session_config(
+    rootdir: Path, inipath: Path | None, *, given_config_file: str | None = None, confcutdir: str | None = None
+) -> pytest.Config:
+    """A session config as pytest resolves it: the ``confcutdir`` defaults to the config file's directory."""
+    default_confcutdir = inipath.parent if inipath else rootdir
+    resolved_confcutdir = confcutdir or default_confcutdir.as_posix()
+    return cast(
+        'pytest.Config',
+        SimpleNamespace(
+            option=SimpleNamespace(inifilename=given_config_file),
+            inipath=inipath,
+            rootpath=rootdir,
+            known_args_namespace=SimpleNamespace(confcutdir=resolved_confcutdir),
+            invocation_params=SimpleNamespace(dir=rootdir),
+        ),
+    )
+
+
 @pytest.mark.small
 class DescribeTheConfigFileOptions:
     def it_names_the_config_file_the_session_was_given(self, tmp_path: Path) -> None:
         ini = tmp_path / 'gremlin.ini'
-        config = cast('pytest.Config', SimpleNamespace(option=SimpleNamespace(inifilename=str(ini)), inipath=ini))
+        config = _session_config(tmp_path, ini, given_config_file=str(ini))
 
-        assert plugin._config_file_options(config) == ['-c', ini.as_posix()]
+        assert plugin._config_file_options(config)[:2] == ['-c', ini.as_posix()]
 
-    def it_names_nothing_when_the_session_discovered_its_own_config_file(self, tmp_path: Path) -> None:
+    def it_names_the_config_file_the_session_discovered(self, tmp_path: Path) -> None:
         discovered = tmp_path / 'pytest.ini'
-        config = cast('pytest.Config', SimpleNamespace(option=SimpleNamespace(inifilename=None), inipath=discovered))
+        config = _session_config(tmp_path, discovered)
 
-        assert plugin._config_file_options(config) == []
+        assert plugin._config_file_options(config)[:2] == ['-c', discovered.as_posix()]
+
+    def it_pins_the_rootdir_and_confcutdir_of_a_session_without_a_config_file(self, tmp_path: Path) -> None:
+        config = _session_config(tmp_path, None)
+
+        assert plugin._config_file_options(config)[2:] == [
+            f'--rootdir={tmp_path.as_posix()}',
+            f'--confcutdir={tmp_path.as_posix()}',
+        ]
+
+    def it_pins_the_confcutdir_the_session_was_given_rather_than_the_config_file_directory(
+        self, tmp_path: Path
+    ) -> None:
+        config = _session_config(tmp_path, tmp_path / 'pkg1' / 'pytest.ini', confcutdir='lib')
+
+        assert plugin._config_file_options(config)[3] == f'--confcutdir={(tmp_path / "lib").as_posix()}'
 
     def it_puts_the_config_file_in_a_gremlin_run_command_once(self) -> None:
         command = verdicts_module._build_test_command(None, '', config_file_options=['-c', 'gremlin.ini'])
 
         assert command.count('-c') == 1
         assert command[command.index('-c') + 1] == 'gremlin.ini'
+
+
+@pytest.mark.medium
+class DescribeTheFileGivenWhenTheSessionReadNoConfigFile:
+    def it_names_a_file_without_settings_when_the_session_read_no_config_file(self, tmp_path: Path) -> None:
+        config = _session_config(tmp_path, None)
+
+        no_config_file = Path(plugin._config_file_options(config)[1])
+        sections = configparser.ConfigParser()
+        sections.read(no_config_file, encoding='utf-8')
+
+        assert no_config_file.is_file()
+        assert sections.sections() == []
 
 
 @pytest.mark.medium

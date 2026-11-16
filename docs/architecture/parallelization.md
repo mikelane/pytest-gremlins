@@ -276,7 +276,7 @@ loads `sitecustomize`, so a child started with any of them still runs the origin
 
 ### Cached results
 
-The incremental cache key includes a runner fidelity version (`rf20`), so verdicts cached by
+The incremental cache key includes a runner fidelity version (`rf21`), so verdicts cached by
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 So are timeouts cached before they were confirmed against the unmutated tests (#565).
 So are verdicts cached while instrumented modules had no `__file__` (#525), when target code that read it
@@ -310,6 +310,11 @@ So are verdicts cached when a gremlin subprocess that crashed outside a test, su
 not register during pytest startup, was scored ZAPPED (#656); it is now an ERROR.
 So are verdicts cached before the key carried the rerun budget (#671); a kill reached without reruns was
 served to a run that reruns flaky tests whenever both settings scaled to the same timeout.
+So are all verdicts cached before gremlin runs were given the config file your session read (#1023). A gremlin
+run used to look for a config file starting from the tests it ran, so it could read a nested `pytest.ini` your
+session never read, with its own rerun count, `xfail_strict` or `filterwarnings`, and could skip a `conftest.py`
+above that file. Which projects were affected depends on where their tests sit, so every project misses the cache
+once after upgrading.
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that
 failed to collect, or a changed parametrize id) are recorded as ZAPPED with the killing test
 `<collection>`; ones cached as ERROR before that change are recomputed too.

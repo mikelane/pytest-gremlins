@@ -391,8 +391,8 @@ def _build_test_command(
         doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs
             (see :func:`_doctest_ini_overrides`), kept outside ``addopts`` because pytest before 9.1 ignores a
             ``-o`` nested in an ``addopts`` value (issue #719).
-        config_file_options: ``-c <config file>`` of the session, so gremlin runs read the config file
-            the session was given (issue #951).
+        config_file_options: ``-c`` with the session's config file, and its rootdir and ``confcutdir``, so
+            gremlin runs read the config the session read (#951, #1023).
         rerun_options: pytest-rerunfailures options typed on the command line (see
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended last so they win over
             ``addopts`` as they do in the baseline run.  A flaky test then has to fail on every

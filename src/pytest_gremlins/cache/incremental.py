@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from pytest_gremlins.operators.protocol import GremlinOperator
 
 
-RUNNER_FIDELITY_VERSION = 'rf20'
+RUNNER_FIDELITY_VERSION = 'rf21'
 """Bump when a change to how tests are executed can alter cached verdicts.
 
 This marker covers test execution and outcome-to-verdict mapping (``parallel/``, ``control_run.py``);
@@ -105,7 +105,13 @@ gremlin (#594).  The resolved doctest settings also key the cache, so changing t
 Verdicts cached while an in-process pytester session (``runpytest()``, ``inline_run()``) inside a gremlin run let its
 assertion-rewrite hook serve an instrumented target uninstrumented (#615) are retired without a new marker: a session
 that loads the pytester plugin adds ``PYTESTER_KEY_PART`` to every key, so only those projects miss once (#891).
-Every other project keeps the ``rf20`` key it had under v1.13.1.
+Every other project kept the ``rf20`` key it had under v1.13.1.
+
+``rf21`` retires verdicts cached while gremlin runs found their own config file from the node ids they ran rather
+than reading the session's (#1023).  A nested ``pytest.ini`` the session never read gave them its rerun count,
+``xfail_strict``, ``filterwarnings`` and other settings, and a ``confcutdir`` that kept a ``conftest.py`` above it
+from loading, so a verdict could be ZAPPED by a setting the baseline never ran with.  Which sessions were affected
+depends on where their test files sit, which is not known when the cache key is built, so every key retires.
 """
 
 PYTESTER_KEY_PART = 'pytester-615'
