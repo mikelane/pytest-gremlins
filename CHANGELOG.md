@@ -13,7 +13,8 @@ check no longer starts extra test collections.**
 (cache kept: no stored verdict, gremlin id or cache key changes. The rootdir `@file` check only moved to after source
 discovery, so it decides whether a run stops, never what a gremlin scores. The collection-kill fix stops queued checks
 after the first failure or interrupt; it changes how a failed check ends, not the verdict any check produces. The
-`PYTEST_ADDOPTS` parsing and node-id helper changes are refactors that keep every caller's output identical.)
+`PYTEST_ADDOPTS` parsing and node-id helper changes are refactors that keep every caller's output identical, and the
+sharded coverage pre-scan only filters a `ResourceWarning`.)
 
 ### Fix
 
@@ -33,7 +34,8 @@ after the first failure or interrupt; it changes how a failed check ends, not th
 - Removed node-id fallbacks that production could no longer reach, and two wrappers around
   `strip_marker_suffix`. (#589, #978)
 - The release workflow gates on main CI's test matrix for the tagged commit instead of rerunning it, and fails if any
-  `wip` test exists. (#1014, #1017, #1012, #1013)
+  `wip` test exists. (#1014, #1017)
+- The release workflow's test jobs set `GREMLINS_COVERAGE_OTHER_PLATFORM`, as CI's already did. (#1012, #1013)
 - CI test jobs run in parallel with pytest-xdist, and small and medium tests no longer assert wall-clock durations.
   (#1016, #1019, #1021, #1022, #1024)
 - Bumped pytest, mypy, ruff, coverage, tox, tox-uv, types-pyyaml and softprops/action-gh-release. (#963, #964,
