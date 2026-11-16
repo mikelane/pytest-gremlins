@@ -240,6 +240,16 @@ class DescribeCollectCoverageTimeoutWarning:
             '(the limit is capped at 86400s; lower --reruns or --reruns-delay)'
         ]
 
+    def it_does_not_advise_raising_a_limit_configured_at_the_maximum(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        messages = self._collect_with_timeout(tmp_path, 86400, capsys)
+
+        assert messages == [
+            'pytest-gremlins: coverage pre-scan exceeded 86400s; coverage-guided test selection disabled '
+            '(the limit is already at the 86400s maximum)'
+        ]
+
     def it_forwards_the_session_timeout_to_the_pre_scan(self, tmp_path: Path) -> None:
         session = GremlinSession(enabled=True, coverage_timeout=45)
 
