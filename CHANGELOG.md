@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.14.3 (2026-11-16)
+
+**Instrumentation no longer hangs when another library has linked AST nodes to their parents.**
+
+v1.14.2 was tagged but never published to PyPI: its release run hung on this bug. This release is the first to ship
+the v1.14.2 changes listed below.
+
+(cache kept: no stored verdict, gremlin id or cache key changes. `copy_ast` now copies only each node's declared
+fields; a normal tree copies exactly as before, and a process where the hang occurred never finished, so it never
+wrote a cache entry.)
+
+### Fix
+
+- **Instrumentation hung in a process where another library had linked AST nodes to their parents.** Libraries such
+  as griffe and `executing` set a `parent` attribute on AST nodes, and Python shares one `Load` node across every
+  parsed tree, so copying a tree followed that link into the other library's tree and never finished. Affected
+  v1.14.0 to v1.14.2. (#1027, #1028)
+  (no docs: fixes a hang and changes no documented behavior)
+
 ## v1.14.2 (2026-11-16)
 
 **A `--gremlins` run with nothing to mutate no longer stops on the rootdir `@file` check, and a failed collection-kill
