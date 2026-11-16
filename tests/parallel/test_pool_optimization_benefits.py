@@ -132,7 +132,7 @@ class DescribePoolConfigIntegrationWithBatchExecutor:
 class DescribePoolPerformanceCharacteristics:
     """Tests documenting expected performance characteristics."""
 
-    # Hang guard, not a speed requirement: far above a normal startup on any runner, so only a hang trips it.
+    # Generous bound, not a speed requirement: only a pathologically slow run trips it.
     WARMUP_HANG_GUARD_SECONDS = 60.0
 
     def it_does_not_start_workers_when_the_pool_is_created(self) -> None:
@@ -146,7 +146,7 @@ class DescribePoolPerformanceCharacteristics:
     def it_completes_startup_with_warmup_in_reasonable_time(self) -> None:
         """Pool startup with warmup completes in reasonable time.
 
-        Warmup should add some overhead but not be excessive. The limit is a hang guard.
+        Warmup should add some overhead but not be excessive. The limit is a generous bound, not a speed requirement.
         """
         config = PoolConfig(max_workers=2, warmup=True)
         pool = PersistentWorkerPool.from_config(config)

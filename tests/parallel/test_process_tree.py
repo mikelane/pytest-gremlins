@@ -142,8 +142,8 @@ class DescribeRunBounded:
         finally:
             kill_quietly(int(pid_file.read_text()))
 
-        # Hang guard, not a speed requirement: the drain wait is SHORT_DRAIN_SECONDS, so a wait for the escaped
-        # process's whole sleep would overshoot this limit by orders of magnitude.
+        # Generous bound, not a speed requirement: the drain wait is SHORT_DRAIN_SECONDS, so only a wait for the
+        # escaped process's whole sleep would overshoot this limit, by orders of magnitude.
         assert elapsed < REAP_DEADLINE_SECONDS
 
 

@@ -101,7 +101,7 @@ class DescribePersistentWorkerPoolWarmup:
             pass
         elapsed = time.monotonic() - start
 
-        # Hang guard, not a speed requirement: the limit is far above a normal warmup, so only a hang trips it.
+        # Generous bound, not a speed requirement: only a pathologically slow run trips it.
         assert elapsed < WARMUP_HANG_GUARD_SECONDS
 
 
