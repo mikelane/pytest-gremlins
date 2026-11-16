@@ -34,8 +34,8 @@ sharded coverage pre-scan only filters a `ResourceWarning`.)
 - Removed node-id fallbacks that production could no longer reach, and two wrappers around
   `strip_marker_suffix`. (#589, #978)
 - The release workflow gates on main CI's test matrix for the tagged commit instead of rerunning it, and fails if any
-  `wip` test exists. (#1014, #1017)
-- The release workflow's test jobs set `GREMLINS_COVERAGE_OTHER_PLATFORM`, as CI's already did. (#1012, #1013)
+  `wip` test exists. Its own copy of the matrix had drifted from CI's: it lacked `GREMLINS_COVERAGE_OTHER_PLATFORM`,
+  which failed v1.14.1's first release run on Windows coverage. (#1012, #1013, #1014, #1017)
 - CI test jobs run in parallel with pytest-xdist, and small and medium tests no longer assert wall-clock durations.
   (#1016, #1019, #1021, #1022, #1024)
 - Bumped pytest, mypy, ruff, coverage, tox, tox-uv, types-pyyaml and softprops/action-gh-release. (#963, #964,
