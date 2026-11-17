@@ -61,6 +61,8 @@ def _config(
         pluginmanager=pluginmanager,
         invocation_params=SimpleNamespace(args=tuple(args), dir=Path()),
         rootdir=Path(),
+        rootpath=Path(),
+        known_args_namespace=SimpleNamespace(confcutdir='.'),
         inipath=inipath,
         getini=lambda name: ini_values.get(name, [] if name in ('only_rerun', 'rerun_except') else ''),
         option=SimpleNamespace(inifilename=inifilename, **(parsed_options or {})),

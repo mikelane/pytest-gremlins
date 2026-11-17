@@ -6,6 +6,7 @@ This file is for test-specific fixtures only.
 
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 import sys
@@ -178,6 +179,9 @@ def make_pytest_config() -> Callable[..., Any]:
         cfg = _Config()
         cfg.option = option  # type: ignore[attr-defined]
         cfg.rootdir = rootdir  # type: ignore[attr-defined]
+        cfg.rootpath = Path(rootdir)  # type: ignore[attr-defined]
+        cfg.inipath = None  # type: ignore[attr-defined]
+        cfg.known_args_namespace = argparse.Namespace(confcutdir=str(rootdir))  # type: ignore[attr-defined]
         cfg.pluginmanager = pm  # type: ignore[attr-defined]
         cfg.stash = pytest.Stash()  # type: ignore[attr-defined]
         return cfg

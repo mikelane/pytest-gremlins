@@ -3,9 +3,10 @@
 A mutant is zapped when a covering test fails.  A flaky test that fails for reasons unrelated to the
 mutation would zap every mutant it covers, unless the gremlin run reruns it the way the baseline did.
 Rerun options in the project's ``addopts`` and ``PYTEST_ADDOPTS`` already reach gremlin runs, and so do the
-ini settings of any config file pytest finds on its own, because a gremlin run discovers the same file.
-This module carries the rerun options typed on the command line.  Under ``-c`` the gremlin runs are given the same
-config file (issue #951), so they read the rerun ini settings from it and nothing is copied as ``--override-ini``.
+ini settings of the session's config file, because a gremlin run is given that file with ``-c`` (issues #951 and
+#1023), or a file without settings when the session read none; left to find one, it could read a nested
+``pytest.ini`` the session never read.  This module carries the rerun options typed on the command line, and nothing
+is copied as ``--override-ini``.
 :func:`resolve_rerun_ini` remains for a session whose ``-c`` file cannot be forwarded: it carries the rerun ini
 settings as ``--override-ini`` arguments.
 pytest strips and splits the value of ``-o``, so a list setting whose items would change (issue #658)

@@ -640,10 +640,12 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
 
 - Options in `addopts` and `PYTEST_ADDOPTS` reach per-gremlin runs as they always did.
 - The rerun ini settings (`reruns`, `reruns_delay`, `reruns_delay_backoff_factor`, `only_rerun`, `rerun_except`)
-  reach them too, because a gremlin run reads the same config file you did. Without `-c`/`--config-file`, it finds
-  the same project config file by itself. With `-c` or `--config-file` (also through `PYTEST_ADDOPTS` or an
-  `@file`), gremlins passes the same `-c` file on to the gremlin runs and the coverage pre-scan, so they read the
-  settings from it and a rerun option typed on the command line still wins over the file, as in pytest. Gremlins
+  reach them too, because a gremlin run reads the same config file you did. Gremlins passes the config file your
+  session read, whether pytest found it or you named it with `-c` or `--config-file` (also through
+  `PYTEST_ADDOPTS` or an `@file`), on to the gremlin runs and the coverage pre-scan with `-c`, together with your
+  session's rootdir and `confcutdir`. A `pytest.ini` nested next to some of your tests is not read unless your
+  session read it, and a session that read no config file gives them a file with no settings. They read the
+  settings from that file, and a rerun option typed on the command line still wins over the file, as in pytest. Gremlins
   no longer copies the settings as `--override-ini`, resets any of them, or warns about a list item it cannot
   carry: the file itself reaches the run, so a pattern such as `rerun_except = ["xyz "]` arrives unchanged.
 - A rerun option that sets a key, wherever it comes from (the command line, the `addopts` of the `-c` file or

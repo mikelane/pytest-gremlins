@@ -54,7 +54,7 @@ EXCLUDED_FROM_GUARD: dict[str, str] = {
 }
 
 RECORDED_CACHE_VERSION = 1
-RECORDED_RUNNER_FIDELITY_VERSION = 'rf20'
+RECORDED_RUNNER_FIDELITY_VERSION = 'rf21'
 # One entry per guarded file, sorted, one per line, with a separator comment between entries: every entry sits
 # between unchanged lines, so git merges re-records of different files, even neighbours, without a conflict.
 RECORDED_DIGESTS: dict[str, str] = {
@@ -68,7 +68,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': '9803a880a60d3bd5ede1dd14f3ee02da24a8faed7928d50a9ec93504e5a118c6',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': '55f59c081d153ee68f40fe66288755983a28f44d58b76e0cf7b96100d7700bec',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/periodic_flush.py': '20f5edde8b7f32596c6940faa3ada471eaf5333de2aacb91b14aa9345bd98417',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -168,7 +168,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/worker_kill.py': '04582134f7fa45932ce0c9cb2a6108017f2714571401e01ae5374c2f0b27339d',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '9cc9b08c05aad6439e73f6cf655593675faca1246a56ec925adbd9173356d1a0',  # pragma: allowlist secret
+    'plugin.py': 'ad5b2a8a42f0c082fcb6cfcc0e5c79d69a3445394342b64cae0e2eda9f83f1de',  # pragma: allowlist secret
     # --
     'process_tree.py': 'f48a64afd8d30e9aac97f5d7d8ed245ee4f3283b73dc293f7c0f3553cf1a433e',  # pragma: allowlist secret
     # --
@@ -180,11 +180,11 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'reporting/types.py': 'f732c4d57c6173836ac0244f4176fded3e86da043c768d9b55386f42a57d0492',  # pragma: allowlist secret  # noqa: E501
     # --
-    'rerun_options.py': '1142242889b03fd29c4a954f8faa9e0e58cde6b68b27960e20b58e9a36c37ee9',  # pragma: allowlist secret
+    'rerun_options.py': '66cc6ab9c56aad4abb1bc99ca82b59f96dbb02e6d7e5c9076dcb7abb12eb2af6',  # pragma: allowlist secret
     # --
     'rootdir_mismatch.py': 'da1d561f97b692fbc303589b14f7434584bebbbfdf3174b62d0998b1be2af6c4',  # pragma: allowlist secret  # noqa: E501
     # --
-    'verdicts.py': '9bde7db77e785f743c8e8572b72760fee1c6b1590b2ae74298f0641ef722ae85',  # pragma: allowlist secret
+    'verdicts.py': '0c5f4bd1413878104c75bf785e742d299402945e5ca13cdc0e5bfbbce8ad6d27',  # pragma: allowlist secret
     # --
     'xdist_options.py': '7f8d6cb78badd89966c2b1a9b43325f44a18ae6efc913910757588ae8f842a18',  # pragma: allowlist secret
 }

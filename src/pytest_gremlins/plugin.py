@@ -340,8 +340,8 @@ class GremlinSession:
             run strip them (see :func:`pytest_gremlins.xdist_options.addopts_without_xdist`).
         doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs,
             passed as top-level arguments because pytest before 9.1 ignores a ``-o`` nested in ``addopts`` (#719).
-        config_file_options: ``-c <config file>`` when the session was given ``-c``/``--config-file``, else empty,
-            so gremlin runs and the coverage pre-scan read the same config file (#951).
+        config_file_options: ``-c`` with the session's config file, and its rootdir and ``confcutdir``, so gremlin
+            runs and the coverage pre-scan read the config the session read (#951, #1023).
     """
 
     enabled: bool = False
@@ -1217,7 +1217,7 @@ def pytest_configure(config: pytest.Config) -> None:
         pytester_loaded=lambda: _pytester_loaded(config),
         loaded_conftests=_loaded_conftests(config),
         xdist_loader_loaded=lambda: bool(xdist_loader_options),
-        config_file_forwarded=bool(_config_file_options(config)),
+        config_file_forwarded=_session_was_given_config_file(config) and bool(_config_file_options(config)),
     )
 
     xdist_worker_int: int | None = xdist_numprocesses if isinstance(xdist_numprocesses, int) else None
@@ -3456,23 +3456,44 @@ def _rerun_ini_settings_are_forwarded(config: pytest.Config) -> bool:
     """Return whether the rerun ini settings are passed to gremlin runs as ``--override-ini`` arguments.
 
     Only when the session was given ``-c`` but the config file is not forwarded to gremlin runs, which cannot
-    happen once :func:`_config_file_options` names the file (#951): a gremlin run reads the rerun settings from
-    the same file as this session, so nothing is overridden, reset or warned about.
+    happen now that :func:`_config_file_options` always names the session's file (#951, #1023): a gremlin run
+    reads the rerun settings from the same file as this session, so nothing is overridden, reset or warned about.
     """
     return _session_was_given_config_file(config) and not _config_file_options(config)
 
 
-def _config_file_options(config: pytest.Config) -> list[str]:
-    """Return ``-c <path>`` for gremlin runs and the pre-scan when the session was given ``-c``/``--config-file``.
+_NO_CONFIG_FILE = Path(__file__).with_name('no_config.ini')
 
-    Child sessions find a config file the way pytest does, so one with another name (``gremlin.ini``) is
-    invisible to them unless named (#951).  Without ``-c`` they discover the same file as the session and
-    nothing is added.  The path is the one the session resolved, absolute, so it does not depend on the child's
-    working directory.
+
+def _config_file_options(config: pytest.Config) -> list[str]:
+    """Return the options that make gremlin runs and the pre-scan read the config the session read.
+
+    That is ``-c`` with the config file the session resolved, discovered or given with ``-c`` (#951), absolute,
+    so it does not depend on the child's working directory.  Left to find one on their own, child sessions would
+    start from their node ids rather than from the session's arguments, and could read a nested ``pytest.ini`` the
+    session never read (#1023).  A session that read no config file gives them ``no_config.ini``, which holds no
+    settings.  A ``-c`` file also sets the rootdir and the ``confcutdir`` to its own directory, so both are pinned
+    to the session's: a child cut off at a nested config file's directory would not load a ``conftest.py`` above it.
+
+    A session given ``-c`` always has a resolved file, because pytest stops when it is missing.  The empty result
+    for one without it keeps the ``--override-ini`` fallback of :func:`_rerun_ini_settings_are_forwarded` (#958)
+    as it was, until that fallback is removed.
     """
-    if not _session_was_given_config_file(config) or config.inipath is None:
+    if _session_was_given_config_file(config) and config.inipath is None:
         return []
-    return ['-c', config.inipath.as_posix()]
+    config_file = config.inipath or _NO_CONFIG_FILE
+    return [
+        '-c',
+        config_file.as_posix(),
+        f'--rootdir={config.rootpath.as_posix()}',
+        f'--confcutdir={_session_confcutdir(config).as_posix()}',
+    ]
+
+
+def _session_confcutdir(config: pytest.Config) -> Path:
+    """Return the session's ``confcutdir`` as an absolute path; pytest resolves a relative one from where it started."""
+    confcutdir: str = config.known_args_namespace.confcutdir
+    return config.invocation_params.dir / confcutdir
 
 
 _DOCTEST_FLAG = '--doctest-modules'
@@ -3538,11 +3559,11 @@ def _rerun_options_for(config: pytest.Config) -> list[str]:
     """Return the rerun settings of ``config`` for gremlin runs, or none if pytest-rerunfailures is not active.
 
     That is the rerun options typed on the command line.  The rerun ini settings are never forwarded as
-    ``--override-ini``: without ``-c`` the gremlin runs read the project config themselves (forwarding its values
-    would only risk pytest altering them, issue #658), and under ``-c`` they are given the same ``-c`` file (see
-    :func:`_config_file_options`, issue #951), so they read the settings from it as the baseline did.  Nothing
-    is reset to empty either, because a reset would discard a setting the ``-c`` file holds.  A key whose parsed
-    option is set, from the command line, ``addopts`` or ``PYTEST_ADDOPTS``, is likewise left to the gremlin
+    ``--override-ini``: the gremlin runs are given the session's config file with ``-c``, or a file without
+    settings when the session read none (see :func:`_config_file_options`, issues #951 and #1023), so they read
+    the settings from it as the baseline did (forwarding its values would only risk pytest altering them, issue
+    #658).  Nothing is reset to empty either, because a reset would discard a setting that file holds.  A key whose
+    parsed option is set, from the command line, ``addopts`` or ``PYTEST_ADDOPTS``, is likewise left to the gremlin
     runs, which get those options themselves, and pytest-rerunfailures reads an option before its ini key.
     Settings are only forwarded when the plugin is loaded in this session, so a project without it
     never receives a flag its gremlin runs would reject as unrecognized (exit code 4).
@@ -3866,8 +3887,8 @@ def _run_tests_with_coverage(
         doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs
             (see :func:`_doctest_ini_overrides`), kept outside ``addopts`` because pytest before 9.1 ignores a
             ``-o`` nested in an ``addopts`` value (issue #719).
-        config_file_options: ``-c <config file>`` of the session (see :func:`_config_file_options`), so the
-            pre-scan reads the config file the session was given (issue #951).
+        config_file_options: ``-c`` with the session's config file, and its rootdir and ``confcutdir`` (see
+            :func:`_config_file_options`), so the pre-scan reads the config the session read (#951, #1023).
         rerun_options: pytest-rerunfailures options from the command line (see
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended so a test that flakes
             before reaching the code under test is rerun, as in the baseline, and still lands in the
