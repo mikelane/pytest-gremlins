@@ -219,6 +219,8 @@ class DescribeGremlinResultReplacePreservesFields:
         assert original_fields == replaced_fields
 
 
+# Deliberate pin: a copy of MUTANT_TIMEOUT_RAISE_ADVICE, not an import, so a change to the user-facing wording
+# fails these tests instead of updating the expected text with it.
 _MUTANT_RAISE = 'Raise {limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout'
 
 
@@ -308,3 +310,14 @@ class DescribeMutantTimeoutAdvice:
         assert advice == (
             'The limit is already at the 86400s maximum; lower any reruns or rerun delays, or speed up these tests.'
         )
+
+    @pytest.mark.parametrize(
+        ('limit', 'attempt_timeout'),
+        [(30, None), (130, 30), (86400, 30000), (86400, 86400), (None, None)],
+    )
+    def it_builds_one_capitalized_sentence_for_every_remedy(self, limit, attempt_timeout):
+        advice = mutant_timeout_advice(limit, attempt_timeout, unscaled_name='the limit', tests='these tests')
+
+        assert advice[0].isupper()
+        assert advice[1].islower()
+        assert advice.endswith(', or speed up these tests.')
