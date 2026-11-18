@@ -433,7 +433,6 @@ class DescribeExemptSectionContent:
         [
             'Plain prose. <!-- a comment --> more prose.',
             '> quoted',
-            '#### Detail',
             '```shell\npytest --gremlins\n```',
             '~~~\n- a bullet-shaped line\n~~~',
             '<!--\nmulti-line\ncomment\n-->',
@@ -442,6 +441,13 @@ class DescribeExemptSectionContent:
     )
     def it_allows_prose_fences_and_comments_that_are_closed(self, section: str, content: str) -> None:
         assert _problems_of(f'### {section}\n\n{content}\n') == ''
+
+    @pytest.mark.parametrize('section', ['Internal', 'Documentation'])
+    def it_rejects_a_heading_other_than_a_known_section_heading(self, section: str) -> None:
+        problems = _problems_of(f'### {section}\n\n#### Detail\n\n- Bumped. (#1)\n')
+
+        assert 'heading' in problems
+        assert 'line 7' in problems
 
     @pytest.mark.parametrize(
         ('opener', 'kind'),
@@ -541,8 +547,11 @@ class DescribeSectionHeadingSyntax:
     def it_names_an_unknown_heading_written_with_extra_syntax(self, heading: str) -> None:
         assert 'unknown section heading' in _problems_of(f'{heading}\n\n- x\n')
 
-    def it_does_not_read_a_hash_without_a_space_as_a_heading(self) -> None:
-        assert 'unknown section heading' not in _problems_of('### Fix\n\n- **Fixed #12.** (no docs: x)\n#hashtag\n')
+    def it_rejects_a_hash_start_that_is_not_a_known_section_heading(self) -> None:
+        problems = _problems_of('### Fix\n\n- **Fixed #12.** (no docs: x)\n#hashtag\n')
+
+        assert 'unknown section heading' not in problems
+        assert 'heading' in problems
 
 
 @pytest.mark.small
@@ -1043,6 +1052,196 @@ class DescribeOneLineCommentBeforeAHeading:
 
 LINK = '[docs](guide/configuration.md#batch-size)'
 ENTRY_V2 = f'## v2.0.0 (2026-11-01)\n\n### Fix\n\n- A {LINK}\n'
+
+
+STRICT_HEADINGS = [
+    '# Feature',
+    '#### Fix',
+    '###Feature',
+    '####Detail',
+    '##v2.0.0',
+    '#\tFeature',
+    '#Feature ###',
+    '###Feature ###',
+    ' ##v2.0.0',
+    '> #Feature',
+    '>- #Feature',
+    '> > #Feature',
+    '- #### Detail',
+    '1. #### Detail',
+    '  - ###Feature',
+]
+STRICT_DELIMITERS = [
+    '=',
+    '===',
+    '= =',
+    '-',
+    '--',
+    '---',
+    '***',
+    '___',
+    '* * *',
+    '- - -',
+    '   ---',
+    '> ---',
+    '> ===',
+    '- ---',
+    '1. ---',
+    '  ---',
+]
+STRICT_CONTINUATION_DELIMITERS = [
+    'A | B\n---',
+    'A | B\n===',
+    '<em>Feature</em>\n---',
+    '<em>Feature</em> | x\n===',
+    '> A | B\n> ---',
+    '> <em>Feature</em>\n> ---',
+    'Feature\n\n=======',
+    'Highlights\n\n---',
+]
+
+
+def _section_body(section: str, content: str, *, before: str | None = None) -> str:
+    """Return ``content`` in ``section``, or in the preamble with a linked ``### Fix`` section after it."""
+    if not section:
+        return f'{content}\n\n### Fix\n\n{LINKED_BULLET}\n'
+    prefix = f'{before}\n\n' if before else ''
+    return f'### {section}\n\n{prefix}{content}\n'
+
+
+@pytest.mark.small
+class DescribeStrictEntryFormat:
+    @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
+    @pytest.mark.parametrize('line', STRICT_HEADINGS)
+    def it_rejects_an_unsupported_hash_start_in_every_section(self, section: str, line: str) -> None:
+        body = _section_body(section, line, before='- **Bumped.** (no docs: x)')
+
+        problems = _problems_of(body)
+
+        assert any('heading' in problem and 'line' in problem for problem in problems.splitlines()), problems
+
+    @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
+    @pytest.mark.parametrize('line', STRICT_DELIMITERS)
+    def it_rejects_a_thematic_break_or_setext_underline_in_every_section(self, section: str, line: str) -> None:
+        body = _section_body(section, line, before=LINKED_BULLET)
+
+        problems = _problems_of(body)
+
+        assert any('thematic break or setext underline' in problem for problem in problems.splitlines()), problems
+
+    @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
+    @pytest.mark.parametrize('content', STRICT_CONTINUATION_DELIMITERS)
+    def it_rejects_a_delimiter_after_pipe_or_inline_html_content(self, section: str, content: str) -> None:
+        body = _section_body(section, content)
+
+        problems = _problems_of(body)
+
+        assert any('thematic break or setext underline' in problem for problem in problems.splitlines()), problems
+
+    @pytest.mark.parametrize('fence', ['> ```\n> code\n> ```', '- ```\n  code\n  ```', '1. ~~~\n   code\n   ~~~'])
+    def it_reports_a_fence_inside_a_container_as_unsupported(self, fence: str) -> None:
+        problems = _problems_of(f'### Internal\n\n{fence}\n\n### Fix\n\n{LINKED_BULLET}\n')
+
+        assert 'code fence opened inside a list item or block quote at line 7 is unsupported' in problems
+
+    def it_does_not_let_a_container_fence_swallow_the_gated_section(self) -> None:
+        body = '### Internal\n\n> ```\n> #Feature\n\n### Fix\n\n- **Changed a thing.** (#3)\n'
+
+        problems = _problems_of(body)
+
+        assert 'Changed a thing' in problems
+        assert 'is unsupported' in problems
+
+    @pytest.mark.parametrize(
+        'literal',
+        [
+            '````markdown\n> ```\n> example\n> ```\n````',
+            '````markdown\n> ```\n````',
+            '~~~markdown\n- ```\n  example\n  ```\n~~~',
+            '<!--\n> ```\n> text\n> ```\n-->',
+            '<!--\n> ```\n-->',
+            '```\n<!--\n> ```\n-->\n```',
+        ],
+    )
+    def it_keeps_literal_container_fence_text_inside_an_outer_fence_or_comment(self, literal: str) -> None:
+        assert _problems_of(f'### Internal\n\n{literal}\n\n### Fix\n\n{LINKED_BULLET}\n') == ''
+
+    def it_still_reports_a_container_fence_after_an_outer_fence_closes(self) -> None:
+        body = f'### Internal\n\n````\n> ```\n````\n\n> ```\n> code\n> ```\n\n### Fix\n\n{LINKED_BULLET}\n'
+
+        assert _problems_of(body) == (
+            'a code fence opened inside a list item or block quote at line 11 is unsupported; start the fence at the '
+            'outer level'
+        )
+
+    def it_still_reports_a_container_fence_after_an_outer_comment_closes(self) -> None:
+        body = f'### Internal\n\n<!--\n> ```\n-->\n\n- ```\n  code\n  ```\n\n### Fix\n\n{LINKED_BULLET}\n'
+
+        assert _problems_of(body) == (
+            'a code fence opened inside a list item or block quote at line 11 is unsupported; start the fence at the '
+            'outer level'
+        )
+
+    @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
+    @pytest.mark.parametrize(
+        'line',
+        [
+            '<h1>Feature</h1>',
+            '<h6>Detail</h6>',
+            '<H2 class="x">Feature</H2>',
+            '<h3 id="anchor">Feature</h3>',
+            '> <h1>Feature</h1>',
+            '- <h4>Detail</h4>',
+            '1. <h5>Detail</h5>',
+        ],
+    )
+    def it_rejects_a_raw_html_heading_in_every_section(self, section: str, line: str) -> None:
+        problems = _problems_of(_section_body(section, line, before='- **Bumped.** (no docs: x)'))
+
+        assert 'raw HTML heading' in problems
+
+    def it_keeps_a_raw_html_tag_that_is_a_code_span(self) -> None:
+        assert _problems_of('### Internal\n\n- Wrote `<h1>Feature</h1>` in a docstring. (#1)\n') == ''
+
+    @pytest.mark.parametrize('line', ['    #720)', '  #720)', '\t#720)', '      #709, #714)'])
+    def it_rejects_a_standalone_issue_number_line(self, line: str) -> None:
+        problems = _problems_of(f'### Internal\n\nParagraph before it.\n\n{line}\n')
+
+        assert 'heading' in problems
+
+    def it_does_not_read_an_issue_number_as_a_continuation_after_a_blank_line(self) -> None:
+        problems = _problems_of('### Internal\n\n- **Bumped.** (no docs: x)\n\n  #716)\n')
+
+        assert 'heading' in problems
+
+    @pytest.mark.parametrize(
+        'continuation',
+        ['- **A.** (#598,\n  #716)', '- **A.** (#701,\n  #709, #714)', '  - **Nested.** (#1,\n    #2)'],
+    )
+    def it_keeps_a_wrapped_bullet_reference(self, continuation: str) -> None:
+        assert _problems_of(f'### Internal\n\n{continuation}\n') == ''
+
+    @pytest.mark.parametrize(
+        'content',
+        [
+            'Plain prose about the release.',
+            '```shell\n# Feature\n---\n#### Detail\n```',
+            '~~~markdown\n##v2.0.0\n~~~',
+            '<!--\n# Feature\n---\n-->',
+            '- **Fixed it.** [docs](guide/configuration.md#batch-size)',
+            '- **Fixed it.** (no docs: restores documented behavior)\n  #716)',
+            '- a wrapped reference. (#598,\n  #716)',
+            '- **Bumped.** (no docs: x)\n  - **Nested.** (no docs: x)',
+        ],
+    )
+    def it_keeps_accepting_prose_and_closed_outer_fences(self, content: str) -> None:
+        assert _problems_of(f'### Internal\n\n{content}\n') == ''
+
+    @pytest.mark.parametrize('heading', ['### Fix', ' ### Internal', '###\tDocumentation', '### Feature ###'])
+    def it_keeps_accepting_the_known_section_headings(self, heading: str) -> None:
+        assert _problems_of(f'{heading}\n\n- **Bumped.** (no docs: x)\n') == ''
+
+
 NOTES_V2 = f'{ENTRY_V2}\n'
 UNLINKED = '- **Fixed a crash on Windows.** (#5)'
 OLDER = '\n## v1.0.0 (2026-01-01)\n\n### Fix\n\n- ok (no docs: r)\n'
@@ -1075,6 +1274,41 @@ def _run_gate_on_bytes(
 
 @pytest.mark.medium
 class DescribeNotesOut:
+    @pytest.mark.parametrize(
+        ('content', 'expected'),
+        [
+            ('#Feature', 'heading'),
+            ('#### Fix', 'heading'),
+            ('###Feature', 'heading'),
+            ('A | B\n---', 'thematic break or setext underline'),
+            ('<em>Feature</em>\n---', 'thematic break or setext underline'),
+            ('> #Feature', 'heading'),
+            ('> <em>Feature</em>\n> ---', 'thematic break or setext underline'),
+            ('---', 'thematic break or setext underline'),
+        ],
+    )
+    def it_fails_the_cli_and_writes_no_notes_for_an_unsupported_shape(
+        self, tmp_path: Path, content: str, expected: str
+    ) -> None:
+        notes = tmp_path / 'notes.md'
+        changelog = f'# Changelog\n\n## v2.0.0 (2026-11-01)\n\n### Internal\n\n- Bumped. (#1)\n\n{content}\n\n{OLDER}'
+
+        result = _run_gate_on_bytes(tmp_path, changelog.encode(), '2.0.0', '--notes-out', str(notes))
+
+        assert result.returncode == 1, result.stdout
+        assert expected in result.stdout
+        assert not notes.exists()
+
+    def it_fails_the_cli_for_a_second_visible_copy_and_writes_no_notes(self, tmp_path: Path) -> None:
+        notes = tmp_path / 'notes.md'
+        changelog = f'# Changelog\n\n{ENTRY_V2}\n##v2.0.0\n\n### Fix\n\n{UNLINKED}\n\n{OLDER}'
+
+        result = _run_gate_on_bytes(tmp_path, changelog.encode(), '2.0.0', '--notes-out', str(notes))
+
+        assert result.returncode == 1, result.stdout
+        assert 'second visible copy' in result.stdout
+        assert not notes.exists()
+
     def it_writes_the_entry_that_passed_the_check(self, tmp_path: Path) -> None:
         notes = tmp_path / 'notes.md'
 
@@ -1204,6 +1438,125 @@ class DescribeHiddenCopyOfTheVersionHeading:
         changelog = f'# Changelog\n\n```\n## v1.5.0\n```\n\n{ENTRY_V2}{OLDER}'
 
         assert checker.find_problems(changelog, '2.0.0', SITE) == []
+
+
+DUPLICATE_VERSION_COPIES = {
+    'dated': '## v2.0.0 (2026-11-02)',
+    'without v': '## 2.0.0 (2026-11-02)',
+    'closing hashes': '## v2.0.0 ##',
+    'no space': '##v2.0.0',
+    'indented': '  ## v2.0.0',
+    'quoted': '> ## v2.0.0',
+    'listed': '- ## v2.0.0',
+}
+
+
+@pytest.mark.small
+class DescribeVisibleDuplicateOfTheVersionEntry:
+    @pytest.mark.parametrize('copy', DUPLICATE_VERSION_COPIES.values(), ids=DUPLICATE_VERSION_COPIES.keys())
+    def it_reports_a_second_visible_copy_of_the_version_heading(self, copy: str) -> None:
+        changelog = f'# Changelog\n\n{ENTRY_V2}\n{copy}\n\n### Fix\n\n{UNLINKED}\n\n{OLDER}'
+
+        problems = _load_checker().find_problems(changelog, '2.0.0', SITE)
+
+        expected = 'second visible copy of the entry version heading is at line 9'
+        assert any(expected in problem for problem in problems), problems
+
+    def it_keeps_publishing_only_the_first_entry(self) -> None:
+        checker = _load_checker()
+        changelog = f'# Changelog\n\n{ENTRY_V2}\n## v2.0.0 (2026-11-02)\n\n### Fix\n\n{UNLINKED}\n\n{OLDER}'
+
+        assert checker.release_notes(changelog, '2.0.0') == NOTES_V2
+
+    def it_does_not_report_the_next_distinct_version(self) -> None:
+        checker = _load_checker()
+        changelog = f'# Changelog\n\n{ENTRY_V2}\n## v1.9.0 (2026-10-01)\n\n### Fix\n\n{UNLINKED}\n'
+
+        assert checker.find_problems(changelog, '2.0.0', SITE) == []
+
+
+@pytest.mark.medium
+class DescribeRendererOracle:
+    """The real docs renderer is a one-way oracle: it proves each reported bypass really renders a heading."""
+
+    MARKDOWN_EXTENSIONS = (
+        'abbr',
+        'admonition',
+        'attr_list',
+        'def_list',
+        'fenced_code',
+        'footnotes',
+        'md_in_html',
+        'tables',
+        'toc',
+        'pymdownx.arithmatex',
+        'pymdownx.betterem',
+        'pymdownx.caret',
+        'pymdownx.critic',
+        'pymdownx.details',
+        'pymdownx.emoji',
+        'pymdownx.highlight',
+        'pymdownx.inlinehilite',
+        'pymdownx.keys',
+        'pymdownx.magiclink',
+        'pymdownx.mark',
+        'pymdownx.progressbar',
+        'pymdownx.smartsymbols',
+        'pymdownx.snippets',
+        'pymdownx.superfences',
+        'pymdownx.tabbed',
+        'pymdownx.tasklist',
+        'pymdownx.tilde',
+    )
+
+    @classmethod
+    def _render(cls, text: str) -> str:
+        markdown = pytest.importorskip('markdown', reason='the docs group renders the oracle samples')
+        return markdown.markdown(
+            text, extensions=list(cls.MARKDOWN_EXTENSIONS), extension_configs={'toc': {'toc_depth': 3}}
+        )
+
+    @pytest.mark.parametrize(
+        ('text', 'tag'),
+        [
+            ('#Feature\n', '<h1'),
+            ('####Detail\n', '<h4'),
+            ('###Feature\n', '<h3'),
+            ('#Feature ###\n', '<h1'),
+            ('#\tFeature\n', '<h1'),
+            ('Feature\n=======\n', '<h1'),
+            ('Highlights\n---\n', '<h2'),
+            ('A | B\n---\n', '<h2'),
+            ('<em>Feature</em>\n---\n', '<h2'),
+            ('> #Feature\n', '<h1'),
+            ('- #### Detail\n', '<h4'),
+            ('> <em>Feature</em>\n> ---\n', '<h2'),
+        ],
+    )
+    def it_renders_a_heading_for_each_rejected_shape(self, text: str, tag: str) -> None:
+        assert tag in self._render(text).lower()
+
+    @pytest.mark.parametrize(
+        ('text', 'tag'),
+        [
+            ('<h1>Feature</h1>\n', '<h1'),
+            ('<h6>Detail</h6>\n', '<h6'),
+            ('<H2 class="x">Feature</H2>\n', '<h2'),
+            ('<h3 id="anchor">Feature</h3>\n', '<h3'),
+            ('> <h1>Feature</h1>\n', '<h1'),
+            ('- <h4>Detail</h4>\n', '<h4'),
+            ('- item\n\n    #720)\n', '<h1'),
+        ],
+    )
+    def it_renders_a_heading_for_html_and_standalone_issue_numbers(self, text: str, tag: str) -> None:
+        assert tag in self._render(text).lower()
+
+    @pytest.mark.parametrize(
+        'text',
+        ['- **A.** (#598,\n  #716)\n', 'Plain prose.\n', 'Use `<h1>` in prose.\n', '````markdown\n> ```\n````\n'],
+    )
+    def it_renders_no_heading_for_accepted_plain_content(self, text: str) -> None:
+        assert '<h' not in self._render(text)
 
 
 @pytest.mark.medium
