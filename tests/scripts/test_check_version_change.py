@@ -294,6 +294,16 @@ class DescribeMain:
         assert _run(head_files) == 1
         assert 'src/pytest_gremlins/plugin.py' in capsys.readouterr().out
 
+    def it_prefixes_the_broken_rule_with_problem_on_stdout(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _FakeGit(
+            monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=[*RELEASE_FILES, 'src/pytest_gremlins/plugin.py']
+        )
+
+        assert _run(head_files) == 1
+        assert f'{guard.PROBLEM_PREFIX}a version change may touch only' in capsys.readouterr().out
+
     def it_exits_0_for_a_stale_branch_whose_base_tip_has_a_newer_version(
         self, monkeypatch: pytest.MonkeyPatch, head_files: Path
     ) -> None:
