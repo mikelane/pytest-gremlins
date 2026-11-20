@@ -287,9 +287,8 @@ def prepare_release(
     _refuse_existing_branch(run, branch)
     commits = _commits_since_last_tag(run)
     changelog_path = repo / 'CHANGELOG.md'
-    new_changelog = insert_entry(
-        changelog_path.read_text(encoding='utf-8', newline=''), render_entry(version, today, commits)
-    )
+    with changelog_path.open(encoding='utf-8', newline='') as changelog_file:
+        new_changelog = insert_entry(changelog_file.read(), render_entry(version, today, commits))
     switched = run(('git', 'switch', '-c', branch))
     if switched.returncode != 0:
         raise ReleaseRefusedError(f'cannot create {branch}: {_detail(switched)}')
