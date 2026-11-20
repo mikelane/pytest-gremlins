@@ -157,6 +157,9 @@ class DescribeReleasePrJob:
     def it_is_needed_by_the_aggregate_job(self) -> None:
         assert 'release-pr' in yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))['jobs'][AGGREGATE_JOB]['needs']
 
+    def it_grants_the_job_read_only_permissions_because_it_runs_pull_request_code(self) -> None:
+        assert _release_pr_job()['permissions'] == {'contents': 'read'}
+
     def it_checks_out_full_history_for_the_cache_gate(self) -> None:
         checkout = next(step for step in _release_pr_job()['steps'] if 'actions/checkout' in step.get('uses', ''))
 

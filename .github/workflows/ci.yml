@@ -425,6 +425,8 @@ jobs:
     name: Release PR Gates
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
     steps:
       # Full history and tags: the guard takes the merge base, and the cache gate compares with the previous release tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
