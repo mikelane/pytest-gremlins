@@ -99,9 +99,10 @@ def module_version(source: str) -> str:
     """Return the module-level ``__version__ = '<str>'`` from the text of a Python module.
 
     Every binding of ``__version__`` anywhere in the module is counted (assignments at any depth, unpacking, loop,
-    ``with``, ``except`` and walrus targets, imports, ``def``, ``class``, ``global``), and there must be exactly one,
-    a top-level ``__version__ = '<str>'`` or ``__version__: str = '<str>'``. Python keeps the last binding, so any
-    other rebinding would hide the real value.
+    ``with``, ``except`` and walrus targets, imports, ``def``, ``class``, ``global``, ``match`` captures), and there
+    must be exactly one, a top-level ``__version__ = '<str>'`` or ``__version__: str = '<str>'``. Python keeps the last
+    binding, so any other rebinding would hide the real value. A star import (``from x import *``) may bind
+    ``__version__`` without naming it, so any star import is refused.
 
     Known gap: a runtime write such as ``globals()['__version__'] = ...`` is not visible to this static check.
 
@@ -123,6 +124,11 @@ def module_version(source: str) -> str:
         tree = ast.parse(source)
     except (SyntaxError, ValueError) as error:
         raise CannotCheckError(f'{INIT_PATH} does not parse: {error}') from error
+    if _has_star_import(tree):
+        raise CannotCheckError(
+            f'{INIT_PATH} has a star import (from x import *), which may bind __version__ and cannot be checked'
+            ' statically'
+        )
     bindings = list(_version_bindings(tree))
     if not bindings:
         raise CannotCheckError(f'{INIT_PATH} has no module-level __version__ assignment')
@@ -143,18 +149,31 @@ def _version_bindings(tree: ast.AST) -> Iterator[ast.AST]:
             yield node
 
 
+def _has_star_import(tree: ast.AST) -> bool:
+    return any(
+        isinstance(node, ast.ImportFrom) and any(alias.name == '*' for alias in node.names) for node in ast.walk(tree)
+    )
+
+
 def _binds_version(node: ast.AST) -> bool:
     if isinstance(node, ast.Name):
         return node.id == VERSION_NAME and not isinstance(node.ctx, ast.Load)
-    if isinstance(node, ast.alias):
-        return (node.asname or node.name.split('.')[0]) == VERSION_NAME
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        return node.name == VERSION_NAME
-    if isinstance(node, ast.ExceptHandler):
-        return node.name == VERSION_NAME
     if isinstance(node, ast.Global):
         return VERSION_NAME in node.names
-    return False
+    return _bound_name(node) == VERSION_NAME
+
+
+def _bound_name(node: ast.AST) -> str | None:
+    """Return the name a non-Name node binds, or None when it binds none."""
+    if isinstance(node, ast.alias):
+        return node.asname or node.name.split('.')[0]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.ExceptHandler)):
+        return node.name
+    if isinstance(node, (ast.MatchAs, ast.MatchStar)):
+        return node.name
+    if isinstance(node, ast.MatchMapping):
+        return node.rest
+    return None
 
 
 def _top_level_value(tree: ast.Module, binding: ast.AST) -> ast.expr | None:

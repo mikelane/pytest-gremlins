@@ -175,6 +175,10 @@ REBINDINGS = {
     'class-named': 'class __version__:\n    pass\n',
     'except-as': 'try:\n    pass\nexcept Exception as __version__:\n    pass\n',
     'global-statement': 'def f():\n    global __version__\n',
+    'match-capture': 'match 1:\n    case __version__:\n        pass\n',
+    'match-star': 'match []:\n    case [*__version__]:\n        pass\n',
+    'match-mapping-rest': 'match {}:\n    case {**__version__}:\n        pass\n',
+    'star-import': 'from os.path import *\n',
 }
 
 
@@ -184,6 +188,10 @@ class DescribeModuleVersion:
     def it_refuses_a_module_that_rebinds_version_after_the_literal(self, rebinding: str) -> None:
         with pytest.raises(guard.CannotCheckError):
             guard.module_version(LITERAL + rebinding)
+
+    def it_names_the_star_import_as_the_reason_it_cannot_check(self) -> None:
+        with pytest.raises(guard.CannotCheckError, match='star import'):
+            guard.module_version(LITERAL + 'from os.path import *\n')
 
     def it_reads_the_module_level_version(self) -> None:
         assert guard.module_version(_init('1.2.3b0')) == '1.2.3b0'
