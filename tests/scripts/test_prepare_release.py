@@ -548,3 +548,67 @@ class DescribeRealRepository:
             ['--branch', 'release/v1.1.0b0', '--base-ref', 'origin/main', '--repo', str(repo)]
         )
         assert guard_exit == 0
+
+
+@pytest.mark.medium
+class DescribeAdversarialEntryGate:
+    @pytest.mark.parametrize('subject', ['fix:repair the parser', 'feat:add a thing', 'Revert "feat: add a thing"'])
+    def it_leaves_an_entry_that_fails_the_docs_gate_for_a_bump_eligible_or_forced_commit(
+        self, tmp_path: Path, subject: str
+    ) -> None:
+        problems = _gate_problems(tmp_path, _entry(_commit(subject)))
+
+        assert problems != []
+
+
+@pytest.mark.medium
+class DescribeAdversarialUndoHint:
+    def it_gives_an_undo_hint_that_works_from_a_detached_head(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
+        monkeypatch.setenv('GIT_CONFIG_SYSTEM', '/dev/null')
+        repo = _real_repo(tmp_path)
+        _git(repo, 'switch', '-q', '--detach', 'main')
+        _git(repo, 'switch', '-q', '-c', 'release/v1.1.0')
+
+        undo = subprocess.run(  # noqa: S602
+            f'{prepare.UNDO_HINT}release/v1.1.0', shell=True, cwd=repo, capture_output=True, text=True, check=False
+        )
+
+        assert undo.returncode == 0, undo.stderr
+
+    def it_gives_the_undo_hint_when_the_changelog_cannot_be_written(self, tmp_path: Path) -> None:
+        repo = _repo(tmp_path)
+        shell = _shell()
+        changelog = repo / 'CHANGELOG.md'
+
+        def run(args: Sequence[str]) -> Any:
+            if tuple(args) == _cz('--files-only', '--yes'):
+                changelog.chmod(0o444)
+            return shell(args)
+
+        with pytest.raises(prepare.ReleaseRefusedError, match='Undo with'):
+            _prepare(repo, run)  # type: ignore[arg-type]
+
+
+@pytest.mark.medium
+class DescribeAdversarialWorkBranchStart:
+    def it_builds_a_branch_that_passes_the_guard_when_started_from_a_work_branch_with_its_own_commit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
+        monkeypatch.setenv('GIT_CONFIG_SYSTEM', '/dev/null')
+        repo = _real_repo(tmp_path)
+        (repo / 'src' / 'pytest_gremlins' / 'work.py').write_text('X = 1\n', encoding='utf-8')
+        _git(repo, 'add', '.')
+        _git(repo, 'commit', '-q', '-m', 'fix: unmerged work')
+
+        code = prepare.main([], repo=repo)
+        _git(repo, 'add', '-u')
+        _git(repo, 'commit', '-q', '-m', 'bump: release')
+        guard_exit = version_guard.main(
+            ['--branch', 'release/v1.1.0', '--base-ref', 'origin/main', '--repo', str(repo)]
+        )
+
+        assert (code, guard_exit) == (0, 0), capsys.readouterr()
