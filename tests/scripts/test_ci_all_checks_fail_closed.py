@@ -165,10 +165,15 @@ class DescribeReleasePrJob:
 
         assert checkout['with']['fetch-depth'] == 0
 
-    def it_never_interpolates_expressions_into_shell_scripts(self) -> None:
-        runs = [step['run'] for step in _release_pr_job()['steps'] if 'run' in step]
+    def it_does_not_persist_the_checkout_token(self) -> None:
+        checkout = next(step for step in _release_pr_job()['steps'] if 'actions/checkout' in step.get('uses', ''))
 
-        assert not [run for run in runs if '${{' in run]
+        assert checkout['with']['persist-credentials'] is False
+
+    def it_never_interpolates_expressions_into_shell_scripts(self) -> None:
+        run_scripts = [step['run'] for step in _release_pr_job()['steps'] if 'run' in step]
+
+        assert [script for script in run_scripts if '${{' in script] == []
 
     def it_passes_the_branch_and_base_through_the_environment(self) -> None:
         env = _release_pr_step('check_version_change.py')['env']
@@ -179,27 +184,37 @@ class DescribeReleasePrJob:
     def it_runs_the_guard_unconditionally(self) -> None:
         assert 'if' not in _release_pr_step('check_version_change.py')
 
+    def it_publishes_the_guard_outputs_under_the_step_id_the_gates_read(self) -> None:
+        # Without --github-output or id: guard, version_changed is never 'true' and every gate silently skips.
+        guard_step = _release_pr_step('check_version_change.py')
+
+        assert guard_step['id'] == 'guard'
+        assert '--github-output "$GITHUB_OUTPUT"' in guard_step['run']
+
+    def it_takes_the_merge_base_with_the_remote_base_branch(self) -> None:
+        assert '--base-ref "origin/$BASE_REF"' in _release_pr_step('check_version_change.py')['run']
+
     @pytest.mark.parametrize(
         'script', ['mkdocs build', 'check_release_docs.py', 'check_cache_kept.py', 'check_no_wip_tests.py']
     )
     def it_runs_the_release_gates_only_when_the_version_changed(self, script: str) -> None:
         assert _release_pr_step(script)['if'] == "steps.guard.outputs.version_changed == 'true'"
 
-    def it_passes_the_version_to_the_gates_through_the_environment(self) -> None:
-        for script in ('check_release_docs.py', 'check_cache_kept.py'):
-            step = _release_pr_step(script)
+    @pytest.mark.parametrize('script', ['check_release_docs.py', 'check_cache_kept.py'])
+    def it_passes_the_version_to_the_gates_through_the_environment(self, script: str) -> None:
+        step = _release_pr_step(script)
 
-            assert step['env']['VERSION'] == '${{ steps.guard.outputs.version }}'
-            assert '"$VERSION"' in step['run']
+        assert step['env']['VERSION'] == '${{ steps.guard.outputs.version }}'
+        assert '"$VERSION"' in step['run']
 
     def it_runs_the_gates_cheapest_first(self) -> None:
         commands = [step['run'] for step in _release_pr_job()['steps'] if 'check_' in step.get('run', '')]
-        order = [
+        gate_order = [
             next(name for name in ('version_change', 'release_docs', 'cache_kept', 'no_wip') if name in run)
             for run in commands
         ]
 
-        assert order == ['version_change', 'release_docs', 'cache_kept', 'no_wip']
+        assert gate_order == ['version_change', 'release_docs', 'cache_kept', 'no_wip']
 
     def it_has_no_bypass_input(self) -> None:
         text = CI_WORKFLOW.read_text(encoding='utf-8')

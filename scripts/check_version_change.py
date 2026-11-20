@@ -49,8 +49,8 @@ from check_release_docs import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RELEASE_FILES = frozenset({'pyproject.toml', 'uv.lock', 'src/pytest_gremlins/__init__.py', 'CHANGELOG.md'})
 INIT_PATH = 'src/pytest_gremlins/__init__.py'
+RELEASE_FILES = frozenset({'pyproject.toml', 'uv.lock', INIT_PATH, 'CHANGELOG.md'})
 PROBLEM_PREFIX = 'PROBLEM: '
 VERSION_NAME = '__version__'
 VERSION_SHAPE = re.compile(r'[0-9A-Za-z.+!_-]+')
@@ -126,11 +126,11 @@ def module_version(source: str | bytes) -> str:
         '1.2.3'
     """
     # Parse the bytes the way Python does, so a PEP 263 coding cookie decides what the statements are.
-    data = source.encode('utf-8') if isinstance(source, str) else source
+    module_bytes = source.encode('utf-8') if isinstance(source, str) else source
     try:
-        encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
-        data.decode(encoding)
-        tree = ast.parse(data)
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(module_bytes).readline)
+        module_bytes.decode(encoding)
+        tree = ast.parse(module_bytes)
     except (SyntaxError, UnicodeDecodeError, LookupError, ValueError) as error:
         raise CannotCheckError(f'{INIT_PATH} does not parse: {error}') from error
     if _has_star_import(tree):
@@ -145,11 +145,11 @@ def module_version(source: str | bytes) -> str:
         raise CannotCheckError(f'{INIT_PATH} has no module-level __version__ assignment')
     if len(bindings) > 1:
         raise CannotCheckError(f'{INIT_PATH} has {len(bindings)} module-level __version__ bindings; there must be one')
-    value = _top_level_value(tree, bindings[0])
-    if value is None:
+    assigned_node = _top_level_value(tree, bindings[0])
+    if assigned_node is None:
         raise CannotCheckError(f'__version__ in {INIT_PATH} must be a top-level assignment')
-    if isinstance(value, ast.Constant) and isinstance(value.value, str):
-        return _checked_shape(value.value, INIT_PATH)
+    if isinstance(assigned_node, ast.Constant) and isinstance(assigned_node.value, str):
+        return _checked_shape(assigned_node.value, INIT_PATH)
     raise CannotCheckError(f'__version__ in {INIT_PATH} is not a string literal')
 
 
@@ -256,16 +256,18 @@ def check_version_change(
             f'__version__ in {INIT_PATH} is {head_module_version}, but [project].version in pyproject.toml is '
             f'{head_version}; they must be equal'
         )
-    expected = release_branch(head_version)
-    if branch != expected:
+    expected_branch = release_branch(head_version)
+    if branch != expected_branch:
         problems.append(
             f'the version changed from {base_version} to {head_version}, '
-            f'so the branch must be {expected}, not {branch!r}'
+            f'so the branch must be {expected_branch}, not {branch!r}'
         )
-    outside = sorted(set(changed_files) - RELEASE_FILES)
-    if outside:
-        allowed = ', '.join(sorted(RELEASE_FILES))
-        problems.append(f'a version change may touch only {allowed}, but it also changes: {", ".join(outside)}')
+    files_outside_release = sorted(set(changed_files) - RELEASE_FILES)
+    if files_outside_release:
+        allowed_files = ', '.join(sorted(RELEASE_FILES))
+        problems.append(
+            f'a version change may touch only {allowed_files}, but it also changes: {", ".join(files_outside_release)}'
+        )
     changelog_problem = _changelog_problem(changelog, head_version)
     if changelog_problem:
         problems.append(changelog_problem)
@@ -285,7 +287,9 @@ def _git(repo: Path, *args: str) -> str:
     except OSError as error:
         raise CannotCheckError(f'cannot run git {args[0]}: {error}') from error
     if completed.returncode != 0:
-        raise CannotCheckError(f'git {" ".join(args)} failed: {completed.stderr.strip()}')
+        # git merge-base exits 1 with no stderr when the refs share no ancestor (a shallow or unrelated history)
+        detail = completed.stderr.strip() or 'no error output (for merge-base: no common ancestor; fetch full history)'
+        raise CannotCheckError(f'git {" ".join(args)} failed with exit {completed.returncode}: {detail}')
     return completed.stdout
 
 
@@ -296,7 +300,7 @@ def _read_bytes(path: Path) -> bytes:
         raise CannotCheckError(f'cannot read {path}: {error}') from error
 
 
-def _read(path: Path) -> str:
+def _read_text(path: Path) -> str:
     try:
         return path.read_bytes().decode('utf-8')
     except (OSError, UnicodeDecodeError) as error:
@@ -313,17 +317,17 @@ def _write_outputs(path: Path | None, *, changed: bool, version: str) -> None:
 def _run(args: argparse.Namespace) -> tuple[list[str], str]:
     """Run the guard; return the broken rules and the message to print on a pass."""
     repo: Path = args.repo
-    head_version = project_version(_read(repo / 'pyproject.toml'))
+    head_version = project_version(_read_text(repo / 'pyproject.toml'))
     head_module_version = module_version(_read_bytes(repo / INIT_PATH))
     merge_base = _git(repo, 'merge-base', args.base_ref, 'HEAD').strip()
     base_version = project_version(_git(repo, 'show', f'{merge_base}:pyproject.toml'))
     base_module_version = module_version(_git(repo, 'show', f'{merge_base}:{INIT_PATH}'))
-    changed = head_version != base_version or head_module_version != base_module_version
-    if not changed:
+    is_version_changed = head_version != base_version or head_module_version != base_module_version
+    if not is_version_changed:
         _write_outputs(args.github_output, changed=False, version=head_version)
         return [], f'The version is {head_version}, unchanged since the merge base.'
     changed_files = _git(repo, 'diff', '--name-only', '--no-renames', f'{merge_base}...HEAD').splitlines()
-    changelog = _read(repo / 'CHANGELOG.md')
+    changelog = _read_text(repo / 'CHANGELOG.md')
     _write_outputs(args.github_output, changed=True, version=head_version)
     problems = check_version_change(
         branch=args.branch,
@@ -350,7 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point; returns 0 on a pass, 1 when a rule is broken, 2 when the check could not run."""
     args = _parse_args(argv)
     try:
-        problems, passed = _run(args)
+        problems, pass_message = _run(args)
     except CannotCheckError as error:
         print(f'could not check the version change: {error}', file=sys.stderr)
         return 2
@@ -362,7 +366,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for problem in problems:
             print(f'{PROBLEM_PREFIX}{problem}')
         return 1
-    print(passed)
+    print(pass_message)
     return 0
 
 

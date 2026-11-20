@@ -104,12 +104,12 @@ class DescribeCheckVersionChange:
         assert 'release/v1.15.0b0' in problems[0]
 
     def it_names_every_file_outside_the_release_set(self) -> None:
-        extra = ['src/pytest_gremlins/plugin.py', 'docs/index.md']
+        extra_files = ['src/pytest_gremlins/plugin.py', 'docs/index.md']
 
-        problems = _check(files=[*RELEASE_FILES, *extra])
+        problems = _check(files=[*RELEASE_FILES, *extra_files])
 
         assert len(problems) == 1
-        assert all(path in problems[0] for path in extra)
+        assert problems[0].endswith('but it also changes: docs/index.md, src/pytest_gremlins/plugin.py')
 
     def it_allows_a_release_that_changes_a_subset_of_the_release_files(self) -> None:
         assert _check(files=['pyproject.toml', 'CHANGELOG.md']) == []
@@ -131,11 +131,15 @@ class DescribeCheckVersionChange:
         problems = _check(branch='feature/x', files=['src/x.py'], changelog=_changelog('1.0.0'))
 
         assert len(problems) == 3
+        assert "so the branch must be release/v1.15.0, not 'feature/x'" in problems[0]
+        assert problems[1].endswith('but it also changes: src/x.py')
+        assert problems[2] == 'the topmost CHANGELOG.md entry is for 1.0.0, not 1.15.0'
 
     def it_reports_a_change_to_only_the_module_version_on_an_ordinary_branch(self) -> None:
         problems = _check(branch='feature/x', base='1.14.3', head='1.14.3', head_module='1.15.0', files=['a.py'])
 
-        assert any('release/v1.14.3' in problem for problem in problems)
+        assert len(problems) == 3
+        assert "so the branch must be release/v1.14.3, not 'feature/x'" in problems[1]
 
     def it_reports_head_versions_that_disagree_naming_both(self) -> None:
         problems = _check(head_module='1.14.3')
@@ -259,7 +263,7 @@ class _FakeGit:
         self.base_init = base_init
         self.changed = changed
         self.failure: Exception | None = None
-        monkeypatch.setattr(guard, '_git', self._run)
+        monkeypatch.setattr(guard, '_git', self._answer_git)
 
     def _base_pyproject_version(self) -> str:
         try:
@@ -268,7 +272,7 @@ class _FakeGit:
             return '1.14.3'
         return version
 
-    def _run(self, _repo: Path, *args: str) -> str:
+    def _answer_git(self, _repo: Path, *args: str) -> str:
         self.calls.append(args)
         if self.failure is not None:
             raise self.failure
@@ -294,8 +298,8 @@ def head_files(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _run(root: Path, *extra: str, branch: str = 'release/v1.15.0') -> int:
-    exit_code: int = guard.main(['--repo', str(root), '--branch', branch, '--base-ref', 'origin/main', *extra])
+def _run(root: Path, *extra_args: str, branch: str = 'release/v1.15.0') -> int:
+    exit_code: int = guard.main(['--repo', str(root), '--branch', branch, '--base-ref', 'origin/main', *extra_args])
     return exit_code
 
 
@@ -427,6 +431,28 @@ class DescribeMain:
         _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
 
         assert _run(head_files) == 2
+
+    def it_exits_2_when_the_non_utf8_comment_byte_is_past_the_lines_the_cookie_scan_reads(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # tokenize.detect_encoding validates only the first two lines, so only the strict decode sees line 3.
+        init = head_files / 'src' / 'pytest_gremlins' / '__init__.py'
+        init.write_bytes(b'"""Doc."""\n\n# caf\xe9\n' + b"__version__ = '1.15.0'\n")
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+
+        assert _run(head_files) == 2
+        assert 'src/pytest_gremlins/__init__.py does not parse' in capsys.readouterr().err
+
+    def it_exits_0_for_a_latin1_cookie_module_with_a_latin1_byte_in_a_comment(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # Python imports this file, so the guard must read its bytes and honour the cookie, not decode it as UTF-8.
+        init = head_files / 'src' / 'pytest_gremlins' / '__init__.py'
+        init.write_bytes(b'# -*- coding: latin-1 -*-\n# caf\xe9\n' + b"__version__ = '1.15.0'\n")
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+
+        assert _run(head_files) == 0
+        assert 'The version changed from 1.14.3 to 1.15.0 on release/v1.15.0' in capsys.readouterr().out
 
     def it_exits_2_and_writes_nothing_when_a_version_contains_a_newline(
         self, monkeypatch: pytest.MonkeyPatch, head_files: Path, tmp_path_factory: pytest.TempPathFactory
