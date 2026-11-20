@@ -165,6 +165,13 @@ class DescribeModuleVersion:
     def it_reads_the_module_level_version(self) -> None:
         assert guard.module_version(_init('1.2.3b0')) == '1.2.3b0'
 
+    def it_reads_an_annotated_module_level_version(self) -> None:
+        assert guard.module_version("__version__: str = '1.2.3'\n") == '1.2.3'
+
+    def it_raises_when_the_module_has_two_module_level_versions(self) -> None:
+        with pytest.raises(guard.CannotCheckError, match='2 module-level __version__'):
+            guard.module_version("__version__ = '1.2.3'\n__version__ = '9.9.9'\n")
+
     @pytest.mark.parametrize(
         'text',
         ['', 'x = 1\n', '__version__ = 3\n', "__version__ = f'{x}'\n", 'def f():\n    __version__ = "1"\n', 'def (:\n'],

@@ -101,7 +101,9 @@ def module_version(source: str) -> str:
         The version string.
 
     Raises:
-        CannotCheckError: When the module does not parse or has no module-level string-literal ``__version__``.
+        CannotCheckError: When the module does not parse, has no module-level ``__version__``, has more than one
+            (Python reads the last one, so an appended second assignment would hide the real value), or its
+            ``__version__`` is not a string-literal assignment.
 
     Examples:
         >>> module_version("__version__ = '1.2.3'")
@@ -111,15 +113,24 @@ def module_version(source: str) -> str:
         tree = ast.parse(source)
     except (SyntaxError, ValueError) as error:
         raise CannotCheckError(f'{INIT_PATH} does not parse: {error}') from error
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
-            isinstance(t, ast.Name) and t.id == '__version__' for t in node.targets
-        ):
-            value = node.value
-            if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                return _checked_shape(value.value, INIT_PATH)
-            raise CannotCheckError(f'__version__ in {INIT_PATH} is not a string literal')
-    raise CannotCheckError(f'{INIT_PATH} has no module-level __version__ assignment')
+    values = [value for node in tree.body for value in _version_values(node)]
+    if not values:
+        raise CannotCheckError(f'{INIT_PATH} has no module-level __version__ assignment')
+    if len(values) > 1:
+        raise CannotCheckError(f'{INIT_PATH} has {len(values)} module-level __version__ assignments; there must be one')
+    value = values[0]
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return _checked_shape(value.value, INIT_PATH)
+    raise CannotCheckError(f'__version__ in {INIT_PATH} is not a string literal')
+
+
+def _version_values(node: ast.stmt) -> list[ast.expr | None]:
+    """Return the value of each ``__version__`` assignment or annotated assignment that ``node`` makes."""
+    if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '__version__' for t in node.targets):
+        return [node.value]
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == '__version__':
+        return [node.value]
+    return []
 
 
 def _changelog_problem(changelog: str, version: str) -> str | None:
