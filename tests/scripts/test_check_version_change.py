@@ -211,6 +211,13 @@ class DescribeModuleVersion:
         with pytest.raises(guard.CannotCheckError):
             guard.module_version(text)
 
+    def it_refuses_a_coding_cookie_that_hides_a_rebinding_from_a_utf8_read(self) -> None:
+        # Under UTF-8 the second assignment is a comment; Python honours the cookie and decodes +AAo- as a newline.
+        source = "# coding: utf-7\n__version__ = '1.14.3'  # +AAo-__version__ = '9.9.9'\n"
+
+        with pytest.raises(guard.CannotCheckError):
+            guard.module_version(source)
+
 
 @pytest.mark.small
 class DescribeVersionShape:

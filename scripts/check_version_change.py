@@ -95,7 +95,7 @@ def project_version(pyproject: str) -> str:
     return _checked_shape(version, 'pyproject.toml')
 
 
-def module_version(source: str) -> str:
+def module_version(source: str | bytes) -> str:
     """Return the module-level ``__version__ = '<str>'`` from the text of a Python module.
 
     Every binding of ``__version__`` anywhere in the module is counted (assignments at any depth, unpacking, loop,
@@ -120,8 +120,10 @@ def module_version(source: str) -> str:
         >>> module_version("__version__ = '1.2.3'")
         '1.2.3'
     """
+    # Parse the bytes the way Python does, so a PEP 263 coding cookie decides what the statements are.
+    data = source.encode('utf-8') if isinstance(source, str) else source
     try:
-        tree = ast.parse(source)
+        tree = ast.parse(data)
     except (SyntaxError, ValueError) as error:
         raise CannotCheckError(f'{INIT_PATH} does not parse: {error}') from error
     if _has_star_import(tree):
@@ -261,6 +263,13 @@ def _git(repo: Path, *args: str) -> str:
     return completed.stdout
 
 
+def _read_bytes(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise CannotCheckError(f'cannot read {path}: {error}') from error
+
+
 def _read(path: Path) -> str:
     try:
         return path.read_bytes().decode('utf-8')
@@ -279,7 +288,7 @@ def _run(args: argparse.Namespace) -> tuple[list[str], str]:
     """Run the guard; return the broken rules and the message to print on a pass."""
     repo: Path = args.repo
     head_version = project_version(_read(repo / 'pyproject.toml'))
-    head_module_version = module_version(_read(repo / INIT_PATH))
+    head_module_version = module_version(_read_bytes(repo / INIT_PATH))
     merge_base = _git(repo, 'merge-base', args.base_ref, 'HEAD').strip()
     base_version = project_version(_git(repo, 'show', f'{merge_base}:pyproject.toml'))
     base_module_version = module_version(_git(repo, 'show', f'{merge_base}:{INIT_PATH}'))
