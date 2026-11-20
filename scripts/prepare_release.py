@@ -34,17 +34,17 @@ import sys
 import textwrap
 import unicodedata
 
-from check_version_change import (
-    INIT_PATH,
-    module_version,
-    project_version,
-    release_branch,
-)
 from check_release_docs import (
     VERSION_HEADING_START,
     CannotCheckError,
     _scan,
     newest_version,
+)
+from check_version_change import (
+    INIT_PATH,
+    module_version,
+    project_version,
+    release_branch,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +57,11 @@ CONVENTIONAL_SUBJECT = re.compile(r'(?P<type>[A-Za-z]+)(?:\([^)\n]*\))?(?P<break
 BREAKING_FOOTER = re.compile(r'^BREAKING[ -]CHANGE:', re.MULTILINE)
 SKIPPED_TYPES = frozenset({'bump'})
 SUMMARY_PLACEHOLDER = '**TODO: one sentence on what changes for users.**'
+CZ = (sys.executable, '-m', 'commitizen')
+LOG_FORMAT = '--format=%H%x1f%s%x1f%b%x1e'
+NO_BUMP_EXIT_CODES = frozenset({3, 21})  # commitizen: NO_COMMITS_FOUND, NO_COMMITS_TO_BUMP
+REF_NOT_FOUND_EXIT_CODE = 2  # git ls-remote --exit-code: no matching ref
+UNDO_HINT = 'git restore . && git switch - && git branch ' + '-D '
 
 
 class ReleaseRefusedError(Exception):
@@ -152,13 +157,6 @@ def insert_entry(changelog: str, entry: str) -> str:
     if '\r\n' in changelog:
         entry = entry.replace('\n', '\r\n')
     return changelog[:cut] + entry + changelog[cut:]
-
-
-CZ = (sys.executable, '-m', 'commitizen')
-LOG_FORMAT = '--format=%H%x1f%s%x1f%b%x1e'
-NO_BUMP_EXIT_CODES = frozenset({3, 21})  # commitizen: NO_COMMITS_FOUND, NO_COMMITS_TO_BUMP
-REF_NOT_FOUND_EXIT_CODE = 2  # git ls-remote --exit-code: no matching ref
-UNDO_HINT = 'git restore . && git switch - && git branch ' + '-D '
 
 
 @dataclass(frozen=True)
