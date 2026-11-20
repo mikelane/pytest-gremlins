@@ -21,7 +21,8 @@ defaults to the ``HEAD_REF`` environment variable. With ``--github-output`` the 
 Exit codes: 0 when the version is unchanged, or changed and all four rules hold; 1 when a rule is broken (each is
 printed on stdout with a ``PROBLEM:`` prefix, naming the offending files); 2 when the check could not run (a git
 failure, a missing or unreadable ``pyproject.toml``, ``__init__.py`` or changelog, a missing or non-literal
-``__version__``, a version that is not PEP 440 shaped, bad arguments; the reason is printed on stderr).
+``__version__``, a star import or an import that names ``__version__`` (a submodule or a name), a version that is not
+PEP 440 shaped, bad arguments; the reason is printed on stderr).
 Exit 2 is never a pass.
 """
 
@@ -102,7 +103,9 @@ def module_version(source: str | bytes) -> str:
     ``with``, ``except`` and walrus targets, imports, ``def``, ``class``, ``global``, ``match`` captures), and there
     must be exactly one, a top-level ``__version__ = '<str>'`` or ``__version__: str = '<str>'``. Python keeps the last
     binding, so any other rebinding would hide the real value. A star import (``from x import *``) may bind
-    ``__version__`` without naming it, so any star import is refused.
+    ``__version__`` without naming it, so any star import is refused. So is any import with ``__version__`` as a
+    dotted module component (``import pkg.__version__``, ``from .__version__ import x``) or as an imported name
+    (``from . import __version__ as v``), because importing a submodule named ``__version__`` rebinds the attribute.
 
     Known gap: a runtime write such as ``globals()['__version__'] = ...`` is not visible to this static check.
 
@@ -131,6 +134,8 @@ def module_version(source: str | bytes) -> str:
             f'{INIT_PATH} has a star import (from x import *), which may bind __version__ and cannot be checked'
             ' statically'
         )
+    if _imports_version(tree):
+        raise CannotCheckError(f'{INIT_PATH} imports a module or name called __version__, which rebinds it')
     bindings = list(_version_bindings(tree))
     if not bindings:
         raise CannotCheckError(f'{INIT_PATH} has no module-level __version__ assignment')
@@ -155,6 +160,23 @@ def _has_star_import(tree: ast.AST) -> bool:
     return any(
         isinstance(node, ast.ImportFrom) and any(alias.name == '*' for alias in node.names) for node in ast.walk(tree)
     )
+
+
+def _imports_version(tree: ast.AST) -> bool:
+    """Return True when an import has ``__version__`` as a module path component or as an imported name.
+
+    Importing ``pytest_gremlins.__version__`` sets the package attribute ``__version__`` to the submodule.
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            parts = [part for alias in node.names for part in alias.name.split('.')]
+        elif isinstance(node, ast.ImportFrom):
+            parts = (node.module or '').split('.') + [alias.name for alias in node.names]
+        else:
+            continue
+        if VERSION_NAME in parts:
+            return True
+    return False
 
 
 def _binds_version(node: ast.AST) -> bool:

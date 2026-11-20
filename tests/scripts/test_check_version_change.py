@@ -218,6 +218,16 @@ class DescribeModuleVersion:
         with pytest.raises(guard.CannotCheckError):
             guard.module_version(source)
 
+    @pytest.mark.parametrize(
+        'submodule_import',
+        ['from .__version__ import x\n', 'import pytest_gremlins.__version__\n', 'from . import __version__ as v\n'],
+        ids=['relative-from-submodule', 'absolute-dotted-import', 'relative-import-as'],
+    )
+    def it_refuses_an_import_of_a_submodule_named_version(self, submodule_import: str) -> None:
+        # Importing pytest_gremlins.__version__ sets the package attribute __version__ to the submodule object.
+        with pytest.raises(guard.CannotCheckError):
+            guard.module_version(LITERAL + submodule_import)
+
 
 @pytest.mark.small
 class DescribeVersionShape:
