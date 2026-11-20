@@ -167,7 +167,7 @@ def _run(args: argparse.Namespace) -> tuple[list[str], str]:
     if not changed:
         _write_outputs(args.github_output, changed=False, version=head_version)
         return [], f'The version is {head_version}, unchanged since the merge base.'
-    changed_files = _git(repo, 'diff', '--name-only', f'{merge_base}...HEAD').splitlines()
+    changed_files = _git(repo, 'diff', '--name-only', '--no-renames', f'{merge_base}...HEAD').splitlines()
     changelog = _read(repo / 'CHANGELOG.md')
     _write_outputs(args.github_output, changed=True, version=head_version)
     problems = check_version_change(

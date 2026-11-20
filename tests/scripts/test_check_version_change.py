@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
 from types import ModuleType
 
@@ -204,7 +205,7 @@ class DescribeMain:
 
         _run(head_files)
 
-        assert ('diff', '--name-only', 'MERGEBASE...HEAD') in fake.calls
+        assert ('diff', '--name-only', '--no-renames', 'MERGEBASE...HEAD') in fake.calls
 
     def it_exits_2_when_git_fails(self, monkeypatch: pytest.MonkeyPatch, head_files: Path) -> None:
         fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
@@ -282,3 +283,40 @@ class DescribeMain:
 
         assert _run(head_files, '--github-output', str(output)) == 1
         assert 'version_changed=true' in output.read_text(encoding='utf-8')
+
+
+def _real_git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ['git', '-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', *args],  # noqa: S607
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.mark.medium
+class DescribeMainWithRealGit:
+    def it_exits_1_naming_a_source_file_renamed_onto_a_release_file(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo = tmp_path / 'repo'
+        (repo / 'src' / 'pytest_gremlins').mkdir(parents=True)
+        (repo / 'pyproject.toml').write_text(_pyproject('1.14.3'), encoding='utf-8')
+        (repo / 'CHANGELOG.md').write_text(_changelog('1.14.3'), encoding='utf-8')
+        (repo / 'src' / 'pytest_gremlins' / '__init__.py').write_text("__version__ = '1.14.3'\n", encoding='utf-8')
+        (repo / 'src' / 'pytest_gremlins' / 'x.py').write_text('x = 1\n' * 20, encoding='utf-8')
+        _real_git(repo, 'init', '-q', '-b', 'main')
+        _real_git(repo, 'add', '.')
+        _real_git(repo, 'commit', '-q', '-m', 'base')
+        _real_git(repo, 'checkout', '-q', '-b', 'release/v1.2.0')
+        _real_git(repo, 'mv', 'src/pytest_gremlins/x.py', 'uv.lock')
+        (repo / 'pyproject.toml').write_text(_pyproject('1.2.0'), encoding='utf-8')
+        (repo / 'CHANGELOG.md').write_text(_changelog('1.2.0'), encoding='utf-8')
+        (repo / 'src' / 'pytest_gremlins' / '__init__.py').write_text("__version__ = '1.2.0'\n", encoding='utf-8')
+        _real_git(repo, 'add', '.')
+        _real_git(repo, 'commit', '-q', '-m', 'release')
+
+        exit_code = guard.main(['--repo', str(repo), '--branch', 'release/v1.2.0', '--base-ref', 'main'])
+
+        assert exit_code == 1
+        assert 'src/pytest_gremlins/x.py' in capsys.readouterr().out
