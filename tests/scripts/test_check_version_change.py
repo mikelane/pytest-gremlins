@@ -302,7 +302,7 @@ class DescribeMain:
         )
 
         assert _run(head_files) == 1
-        assert f'{guard.PROBLEM_PREFIX}a version change may touch only' in capsys.readouterr().out
+        assert 'PROBLEM: a version change may touch only' in capsys.readouterr().out
 
     def it_exits_0_for_a_stale_branch_whose_base_tip_has_a_newer_version(
         self, monkeypatch: pytest.MonkeyPatch, head_files: Path
