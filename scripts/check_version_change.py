@@ -34,11 +34,13 @@ from collections.abc import (
     Iterator,
     Sequence,
 )
+import io
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tokenize
 import tomllib
 
 from check_release_docs import (
@@ -126,8 +128,10 @@ def module_version(source: str | bytes) -> str:
     # Parse the bytes the way Python does, so a PEP 263 coding cookie decides what the statements are.
     data = source.encode('utf-8') if isinstance(source, str) else source
     try:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
+        data.decode(encoding)
         tree = ast.parse(data)
-    except (SyntaxError, ValueError) as error:
+    except (SyntaxError, UnicodeDecodeError, LookupError, ValueError) as error:
         raise CannotCheckError(f'{INIT_PATH} does not parse: {error}') from error
     if _has_star_import(tree):
         raise CannotCheckError(

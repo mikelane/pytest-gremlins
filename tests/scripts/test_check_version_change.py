@@ -418,6 +418,16 @@ class DescribeMain:
 
         assert _run(head_files) == 2
 
+    def it_exits_2_when_the_module_has_a_non_utf8_byte_in_a_comment(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path
+    ) -> None:
+        # Python refuses to import this file (no coding cookie, invalid UTF-8), but ast.parse(bytes) skips comments.
+        init = head_files / 'src' / 'pytest_gremlins' / '__init__.py'
+        init.write_bytes(b'# caf\xe9\n' + _init('1.15.0').encode('utf-8'))
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+
+        assert _run(head_files) == 2
+
     def it_exits_2_and_writes_nothing_when_a_version_contains_a_newline(
         self, monkeypatch: pytest.MonkeyPatch, head_files: Path, tmp_path_factory: pytest.TempPathFactory
     ) -> None:
