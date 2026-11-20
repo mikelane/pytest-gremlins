@@ -29,7 +29,7 @@ def _load(name: str) -> ModuleType:
 sys.path.insert(0, str(SCRIPTS))
 try:
     docs_gate = _load('check_release_docs')
-    _load('check_version_change')
+    version_guard = _load('check_version_change')
     prepare = _load('prepare_release')
 finally:
     sys.path.remove(str(SCRIPTS))
@@ -411,3 +411,108 @@ class DescribePrepareRelease:
         _prepare(_repo(tmp_path), shell)
 
         assert ('git', 'log', LOG_FORMAT) in shell.calls
+
+
+def _main_with(shell: FakeShell, repo: Path, *argv: str) -> int:
+    return int(prepare.main(list(argv), repo=repo, run=shell, today=RELEASE_DATE))
+
+
+@pytest.mark.medium
+class DescribeMain:
+    def it_prints_the_next_steps_and_returns_zero(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        code = _main_with(_shell(), _repo(tmp_path))
+
+        out = capsys.readouterr().out
+        assert code == 0
+        assert 'release/v1.15.0' in out
+        assert 'git commit -S' in out
+        assert 'cache kept' in out
+        assert 'git push' in out
+
+    def it_returns_one_and_explains_a_refusal_on_stderr(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        code = _main_with(_shell(branch=_ok('main\n')), _repo(tmp_path))
+
+        captured = capsys.readouterr()
+        assert code == 1
+        assert 'main' in captured.err
+        assert captured.out == ''
+
+    def it_accepts_lowercase_increments(self, tmp_path: Path) -> None:
+        shell = _shell(flags=('--increment', 'MAJOR'))
+
+        assert _main_with(shell, _repo(tmp_path), '--increment', 'major') == 0
+
+    @pytest.mark.parametrize('argv', [['--prerelease', 'gamma'], ['--increment', 'HUGE']])
+    def it_rejects_values_outside_the_allowed_choices(self, tmp_path: Path, argv: list[str]) -> None:
+        with pytest.raises(SystemExit) as exit_info:
+            _main_with(_shell(), _repo(tmp_path), *argv)
+
+        assert exit_info.value.code == 2
+
+
+def _git(repo: Path, *args: str) -> str:
+    completed = subprocess.run(['git', *args], cwd=repo, capture_output=True, text=True, check=True)  # noqa: S607
+    return completed.stdout
+
+
+def _real_repo(tmp_path: Path) -> Path:
+    origin = tmp_path / 'origin.git'
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-q', '--bare', '-b', 'main', str(origin)], check=True)  # noqa: S607
+    _git(repo, 'init', '-q', '-b', 'main')
+    for key, value in [
+        ('user.name', 'T'),
+        ('user.email', 't@example.com'),
+        ('commit.gpgsign', 'false'),
+        ('tag.gpgsign', 'false'),
+    ]:
+        _git(repo, 'config', key, value)
+    _git(repo, 'remote', 'add', 'origin', str(origin))
+    (repo / 'src' / 'pytest_gremlins').mkdir(parents=True)
+    (repo / 'pyproject.toml').write_text(
+        '[project]\nname = "x"\nversion = "1.0.0"\n\n[tool.commitizen]\nname = "cz_conventional_commits"\n'
+        'version_provider = "pep621"\nversion_files = ["src/pytest_gremlins/__init__.py:__version__"]\n'
+        'tag_format = "v$version"\nannotated_tag = true\n',
+        encoding='utf-8',
+    )
+    (repo / 'src' / 'pytest_gremlins' / '__init__.py').write_text("__version__ = '1.0.0'\n", encoding='utf-8')
+    (repo / 'CHANGELOG.md').write_text('# Changelog\n\n## v1.0.0 (2026-01-01)\n\nFirst.\n', encoding='utf-8')
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-q', '-m', 'feat: first')
+    _git(repo, 'tag', '-a', 'v1.0.0', '-m', 'v1.0.0')
+    _git(repo, 'push', '-q', 'origin', 'main')
+    (repo / 'NEW.md').write_text('new\n', encoding='utf-8')
+    _git(repo, 'add', 'NEW.md')
+    _git(repo, 'commit', '-q', '-m', 'feat: add a thing (#7)')
+    _git(repo, 'push', '-q', 'origin', 'main')
+    _git(repo, 'switch', '-q', '-c', 'work')
+    return repo
+
+
+@pytest.mark.medium
+class DescribeRealRepository:
+    def it_builds_a_branch_that_passes_the_release_pull_request_guard(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
+        monkeypatch.setenv('GIT_CONFIG_SYSTEM', '/dev/null')
+        repo = _real_repo(tmp_path)
+
+        code = prepare.main(['--prerelease', 'beta'], repo=repo)
+
+        assert code == 0, capsys.readouterr().err
+        assert _git(repo, 'branch', '--show-current').strip() == 'release/v1.1.0b0'
+        changed = sorted(line[3:] for line in _git(repo, 'status', '--porcelain').splitlines())
+        assert changed == ['CHANGELOG.md', 'pyproject.toml', 'src/pytest_gremlins/__init__.py']
+        assert _git(repo, 'tag', '--list').split() == ['v1.0.0']
+        assert _git(repo, 'log', '--oneline', 'origin/main..HEAD') == ''
+        assert '`feat: add a thing (#7)`' in ' '.join((repo / 'CHANGELOG.md').read_text(encoding='utf-8').split())
+        _git(repo, 'add', '-u')
+        _git(repo, 'commit', '-q', '-m', 'bump: release')
+        guard_exit = version_guard.main(
+            ['--branch', 'release/v1.1.0b0', '--base-ref', 'origin/main', '--repo', str(repo)]
+        )
+        assert guard_exit == 0

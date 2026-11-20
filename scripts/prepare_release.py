@@ -26,6 +26,7 @@ from collections.abc import (
 )
 from dataclasses import dataclass
 import datetime
+import functools
 from pathlib import Path
 import re
 import subprocess
@@ -46,6 +47,7 @@ from check_release_docs import (
     newest_version,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 SECTION_ORDER = ('Upgrade notes', 'Feature', 'Fix', 'Internal', 'Documentation')
 WRAP_WIDTH = 120
 SHORT_SHA_LENGTH = 7
@@ -292,9 +294,51 @@ def prepare_release(
     return PreparedRelease(version=version, branch=branch, commits=commits)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """CLI entry point."""
-    argparse.ArgumentParser(description=__doc__).parse_args(argv)
+NEXT_STEPS = """\
+Prepared {branch} for {version} with {count} commit(s) since the last tag. Nothing is committed, tagged or pushed.
+
+Next:
+  1. Open CHANGELOG.md: write the one-sentence summary, then rewrite every placeholder bullet. End each bullet under
+     Upgrade notes, Feature or Fix with a docs link or a no-docs exemption, or move it to Internal or Documentation.
+  2. If code that the cache version guards changed since the last release, add a "(cache kept: <reason>)" line
+     before the first ### heading unless CACHE_VERSION or RUNNER_FIDELITY_VERSION was raised.
+  3. Check it: uv run mkdocs build --strict --site-dir site
+               uv run python scripts/check_release_docs.py {version} --site-dir site
+  4. git add CHANGELOG.md pyproject.toml uv.lock src/pytest_gremlins/__init__.py
+     git commit -S -m "bump: version {version}"
+  5. git push -u origin {branch}, then open a pull request.
+"""
+
+
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--increment', type=str.upper, choices=['PATCH', 'MINOR', 'MAJOR'], help='default: auto')
+    parser.add_argument('--prerelease', choices=['alpha', 'beta', 'rc'], help='default: a stable release')
+    return parser.parse_args(argv)
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    repo: Path = REPO_ROOT,
+    run: CommandRunner | None = None,
+    today: datetime.date | None = None,
+) -> int:
+    """CLI entry point; returns 0 when the branch is prepared and 1 when the script refuses."""
+    args = _parse_args(argv)
+    runner = run or functools.partial(run_command, cwd=repo)
+    try:
+        release = prepare_release(
+            repo=repo,
+            increment=args.increment,
+            prerelease=args.prerelease,
+            run=runner,
+            today=today or datetime.date.today(),
+        )
+    except ReleaseRefusedError as error:
+        print(f'prepare_release: {error}', file=sys.stderr)
+        return 1
+    print(NEXT_STEPS.format(branch=release.branch, version=release.version, count=len(release.commits)))
     return 0
 
 
