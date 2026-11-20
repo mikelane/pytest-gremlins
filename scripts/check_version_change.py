@@ -29,7 +29,10 @@ from __future__ import annotations
 
 import argparse
 import ast
-from collections.abc import Sequence
+from collections.abc import (
+    Iterator,
+    Sequence,
+)
 import os
 from pathlib import Path
 import re
@@ -46,6 +49,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_FILES = frozenset({'pyproject.toml', 'uv.lock', 'src/pytest_gremlins/__init__.py', 'CHANGELOG.md'})
 INIT_PATH = 'src/pytest_gremlins/__init__.py'
 PROBLEM_PREFIX = 'PROBLEM: '
+VERSION_NAME = '__version__'
 VERSION_SHAPE = re.compile(r'[0-9A-Za-z.+!_-]+')
 
 
@@ -94,6 +98,13 @@ def project_version(pyproject: str) -> str:
 def module_version(source: str) -> str:
     """Return the module-level ``__version__ = '<str>'`` from the text of a Python module.
 
+    Every binding of ``__version__`` anywhere in the module is counted (assignments at any depth, unpacking, loop,
+    ``with``, ``except`` and walrus targets, imports, ``def``, ``class``, ``global``), and there must be exactly one,
+    a top-level ``__version__ = '<str>'`` or ``__version__: str = '<str>'``. Python keeps the last binding, so any
+    other rebinding would hide the real value.
+
+    Known gap: a runtime write such as ``globals()['__version__'] = ...`` is not visible to this static check.
+
     Args:
         source: The text of the module.
 
@@ -101,9 +112,8 @@ def module_version(source: str) -> str:
         The version string.
 
     Raises:
-        CannotCheckError: When the module does not parse, has no module-level ``__version__``, has more than one
-            (Python reads the last one, so an appended second assignment would hide the real value), or its
-            ``__version__`` is not a string-literal assignment.
+        CannotCheckError: When the module does not parse, has no ``__version__`` binding, has more than one, or its
+            single binding is not a top-level assignment of a string literal.
 
     Examples:
         >>> module_version("__version__ = '1.2.3'")
@@ -113,24 +123,48 @@ def module_version(source: str) -> str:
         tree = ast.parse(source)
     except (SyntaxError, ValueError) as error:
         raise CannotCheckError(f'{INIT_PATH} does not parse: {error}') from error
-    values = [value for node in tree.body for value in _version_values(node)]
-    if not values:
+    bindings = list(_version_bindings(tree))
+    if not bindings:
         raise CannotCheckError(f'{INIT_PATH} has no module-level __version__ assignment')
-    if len(values) > 1:
-        raise CannotCheckError(f'{INIT_PATH} has {len(values)} module-level __version__ assignments; there must be one')
-    value = values[0]
+    if len(bindings) > 1:
+        raise CannotCheckError(f'{INIT_PATH} has {len(bindings)} module-level __version__ bindings; there must be one')
+    value = _top_level_value(tree, bindings[0])
+    if value is None:
+        raise CannotCheckError(f'__version__ in {INIT_PATH} must be a top-level assignment')
     if isinstance(value, ast.Constant) and isinstance(value.value, str):
         return _checked_shape(value.value, INIT_PATH)
     raise CannotCheckError(f'__version__ in {INIT_PATH} is not a string literal')
 
 
-def _version_values(node: ast.stmt) -> list[ast.expr | None]:
-    """Return the value of each ``__version__`` assignment or annotated assignment that ``node`` makes."""
-    if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == '__version__' for t in node.targets):
-        return [node.value]
-    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == '__version__':
-        return [node.value]
-    return []
+def _version_bindings(tree: ast.AST) -> Iterator[ast.AST]:
+    """Yield every node anywhere in ``tree`` that binds or rebinds, or deletes, the name ``__version__``."""
+    for node in ast.walk(tree):
+        if _binds_version(node):
+            yield node
+
+
+def _binds_version(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == VERSION_NAME and not isinstance(node.ctx, ast.Load)
+    if isinstance(node, ast.alias):
+        return (node.asname or node.name.split('.')[0]) == VERSION_NAME
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return node.name == VERSION_NAME
+    if isinstance(node, ast.ExceptHandler):
+        return node.name == VERSION_NAME
+    if isinstance(node, ast.Global):
+        return VERSION_NAME in node.names
+    return False
+
+
+def _top_level_value(tree: ast.Module, binding: ast.AST) -> ast.expr | None:
+    """Return the value when ``binding`` is the target of a top-level assignment, or None otherwise."""
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and statement.targets[0] is binding:
+            return statement.value
+        if isinstance(statement, ast.AnnAssign) and statement.target is binding:
+            return statement.value
+    return None
 
 
 def _changelog_problem(changelog: str, version: str) -> str | None:

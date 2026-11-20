@@ -160,8 +160,31 @@ class DescribeFindVersion:
             guard.project_version(text)
 
 
+LITERAL = "__version__ = '1.14.3'\n"
+
+REBINDINGS = {
+    'tuple-unpacking': "__version__, _unused = '9.9.9', 0\n",
+    'list-unpacking': "[__version__] = ['9.9.9']\n",
+    'augmented-assignment': "__version__ += '.post1'\n",
+    'inside-if': "if True:\n    __version__ = '9.9.9'\n",
+    'inside-try': "try:\n    __version__ = '9.9.9'\nexcept Exception:\n    pass\n",
+    'for-target': "for __version__ in ['9.9.9']:\n    pass\n",
+    'walrus': "(__version__ := '9.9.9')\n",
+    'import-as': 'from os import sep as __version__\n',
+    'def-named': 'def __version__():\n    pass\n',
+    'class-named': 'class __version__:\n    pass\n',
+    'except-as': 'try:\n    pass\nexcept Exception as __version__:\n    pass\n',
+    'global-statement': 'def f():\n    global __version__\n',
+}
+
+
 @pytest.mark.small
 class DescribeModuleVersion:
+    @pytest.mark.parametrize('rebinding', REBINDINGS.values(), ids=REBINDINGS.keys())
+    def it_refuses_a_module_that_rebinds_version_after_the_literal(self, rebinding: str) -> None:
+        with pytest.raises(guard.CannotCheckError):
+            guard.module_version(LITERAL + rebinding)
+
     def it_reads_the_module_level_version(self) -> None:
         assert guard.module_version(_init('1.2.3b0')) == '1.2.3b0'
 
