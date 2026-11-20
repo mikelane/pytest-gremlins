@@ -17,6 +17,7 @@ import yaml
 
 CI_WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'ci.yml'
 AGGREGATE_JOB = 'all-checks'
+RELEASE_PR_JOB = 'release-pr'
 AGGREGATE_JOB_NAME = 'All Checks Passed'
 PR_ONLY_CONTEXTS = ('github.event.pull_request', 'github.head_ref', 'github.base_ref')
 
@@ -56,9 +57,11 @@ class DescribeCiMergeGroupTrigger:
 
     @pytest.mark.parametrize('context', PR_ONLY_CONTEXTS)
     def it_does_not_read_pull_request_only_contexts(self, context: str) -> None:
-        text = CI_WORKFLOW.read_text(encoding='utf-8')
+        # The release-pr job reads them, and runs only on pull_request (pinned in test_ci_all_checks_fail_closed.py).
+        workflow = _workflow()
+        del workflow['jobs'][RELEASE_PR_JOB]
 
-        assert context not in text
+        assert context not in yaml.dump(workflow)
 
     def it_keys_pushes_to_main_on_the_commit_so_back_to_back_merges_each_finish(self) -> None:
         # The queue merges PRs back to back. A group shared by every push to main would cancel the earlier run.

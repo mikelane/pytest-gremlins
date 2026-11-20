@@ -45,6 +45,8 @@ def _verify_script() -> str:
 def _run_verify_script(*, guarded: str, detect_result: str, check_result: str) -> int:
     environment = {
         'CHANGES_RESULT': 'success',
+        'EVENT_NAME': 'push',
+        'RELEASE_PR_RESULT': 'skipped',
         'SRC_CHANGED': 'true',
         'DOCS_CHANGED': 'false',
         'LINT_RESULT': 'success',

@@ -418,10 +418,63 @@ jobs:
           uv run --no-sync python scripts/check_verdict_change.py compare
           "$RUNNER_TEMP/base.json" "$RUNNER_TEMP/head.json" --released-ref "$BASE_SHA"
 
+  # Every pull request runs the guard. Only a pull request that changes the version runs the release gates, so a
+  # `wip` test never blocks an ordinary pull request. The branch name is attacker-controlled: it only ever reaches a
+  # script through `env:`, never through the text of a `run:` step.
+  release-pr:
+    name: Release PR Gates
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      # Full history and tags: the guard takes the merge base, and the cache gate compares with the previous release tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ">=0.13.0"
+          enable-cache: true
+          prune-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Check that only a release pull request changes the version
+        id: guard
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: uv run --no-sync python scripts/check_version_change.py --base-ref "origin/$BASE_REF" --github-output "$GITHUB_OUTPUT"
+
+      - name: Build the docs site
+        if: steps.guard.outputs.version_changed == 'true'
+        run: uv run mkdocs build --strict --site-dir site
+
+      - name: Check the release entry links to the docs
+        if: steps.guard.outputs.version_changed == 'true'
+        env:
+          VERSION: ${{ steps.guard.outputs.version }}
+        run: uv run --no-sync python scripts/check_release_docs.py "$VERSION" --site-dir site
+
+      - name: Check the release raises a cache marker or keeps the cache on purpose
+        if: steps.guard.outputs.version_changed == 'true'
+        env:
+          VERSION: ${{ steps.guard.outputs.version }}
+        run: uv run --no-sync python scripts/check_cache_kept.py "$VERSION"
+
+      - name: Check no wip test ships in the release
+        if: steps.guard.outputs.version_changed == 'true'
+        run: uv run --no-sync python scripts/check_no_wip_tests.py
+
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [changes, lint, typecheck, test, pytest-compat, docs, security, attrs-smoke, verdict-changes, verdict-change]
+    needs: [changes, lint, typecheck, test, pytest-compat, docs, security, attrs-smoke, verdict-changes, verdict-change, release-pr]
     if: always()
     steps:
       - name: Verify all jobs succeeded
@@ -439,6 +492,8 @@ jobs:
           VERDICT_CHANGES_RESULT: ${{ needs.verdict-changes.result }}
           VERDICT_GUARDED: ${{ needs.verdict-changes.outputs.guarded }}
           VERDICT_CHANGE_RESULT: ${{ needs.verdict-change.result }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_PR_RESULT: ${{ needs.release-pr.result }}
         run: |
           # Without a successful Detect Changes the outputs below are empty, so every gated check would look skipped
           if [[ "$CHANGES_RESULT" != "success" ]]; then
@@ -463,6 +518,12 @@ jobs:
           # The verdict check is skipped, not failed, when no path the cache-version guard covers changed
           if [[ "$VERDICT_GUARDED" == "true" ]] && [[ "$VERDICT_CHANGE_RESULT" != "success" ]]; then
             echo "Verdict change check failed"
+            exit 1
+          fi
+
+          # The release PR gates run on every pull request; only push and merge_group runs may skip them
+          if [[ "$EVENT_NAME" != "push" ]] && [[ "$EVENT_NAME" != "merge_group" ]] && [[ "$RELEASE_PR_RESULT" != "success" ]]; then
+            echo "Release PR gates did not succeed: $RELEASE_PR_RESULT"
             exit 1
           fi
 

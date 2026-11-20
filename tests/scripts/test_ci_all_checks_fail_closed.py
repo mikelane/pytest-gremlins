@@ -38,8 +38,18 @@ def _verify_step() -> dict[str, Any]:
     return next(step for step in steps if step['name'] == 'Verify all jobs succeeded')
 
 
-def _run_verify_script(*, changes_result: str, src: str, docs: str, check_result: str) -> int:
+def _run_verify_script(
+    *,
+    changes_result: str,
+    src: str,
+    docs: str,
+    check_result: str,
+    event_name: str = 'push',
+    release_pr_result: str = 'skipped',
+) -> int:
     environment = {
+        'EVENT_NAME': event_name,
+        'RELEASE_PR_RESULT': release_pr_result,
         'SRC_CHANGED': src,
         'DOCS_CHANGED': docs,
         'CHANGES_RESULT': changes_result,
@@ -81,3 +91,114 @@ class DescribeAllChecksFailClosed:
         exit_code = _run_verify_script(changes_result='success', src='true', docs='true', check_result='failure')
 
         assert exit_code == 1
+
+    @pytest.mark.parametrize('release_pr_result', ['failure', 'cancelled', 'skipped'])
+    def it_fails_a_pull_request_unless_the_release_pr_gates_succeeded(self, release_pr_result: str) -> None:
+        exit_code = _run_verify_script(
+            changes_result='success',
+            src='false',
+            docs='false',
+            check_result='skipped',
+            event_name='pull_request',
+            release_pr_result=release_pr_result,
+        )
+
+        assert exit_code == 1
+
+    def it_passes_a_pull_request_when_the_release_pr_gates_succeeded(self) -> None:
+        exit_code = _run_verify_script(
+            changes_result='success',
+            src='false',
+            docs='false',
+            check_result='skipped',
+            event_name='pull_request',
+            release_pr_result='success',
+        )
+
+        assert exit_code == 0
+
+    @pytest.mark.parametrize('event_name', ['push', 'merge_group'])
+    def it_accepts_a_skipped_release_pr_job_off_pull_requests(self, event_name: str) -> None:
+        exit_code = _run_verify_script(
+            changes_result='success',
+            src='false',
+            docs='false',
+            check_result='skipped',
+            event_name=event_name,
+            release_pr_result='skipped',
+        )
+
+        assert exit_code == 0
+
+    def it_passes_the_event_name_and_release_pr_result_to_the_script(self) -> None:
+        env = _verify_step()['env']
+
+        assert env['EVENT_NAME'] == '${{ github.event_name }}'
+        assert env['RELEASE_PR_RESULT'] == '${{ needs.release-pr.result }}'
+
+
+def _release_pr_job() -> dict[str, Any]:
+    job: dict[str, Any] = yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))['jobs']['release-pr']
+    return job
+
+
+def _release_pr_step(fragment: str) -> dict[str, Any]:
+    return next(step for step in _release_pr_job()['steps'] if fragment in step.get('run', ''))
+
+
+@pytest.mark.medium
+class DescribeReleasePrJob:
+    def it_runs_only_on_pull_requests_with_no_changes_filter(self) -> None:
+        job = _release_pr_job()
+
+        assert job['if'] == "github.event_name == 'pull_request'"
+        assert 'needs' not in job
+
+    def it_is_needed_by_the_aggregate_job(self) -> None:
+        assert 'release-pr' in yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))['jobs'][AGGREGATE_JOB]['needs']
+
+    def it_checks_out_full_history_for_the_cache_gate(self) -> None:
+        checkout = next(step for step in _release_pr_job()['steps'] if 'actions/checkout' in step.get('uses', ''))
+
+        assert checkout['with']['fetch-depth'] == 0
+
+    def it_never_interpolates_expressions_into_shell_scripts(self) -> None:
+        runs = [step['run'] for step in _release_pr_job()['steps'] if 'run' in step]
+
+        assert not [run for run in runs if '${{' in run]
+
+    def it_passes_the_branch_and_base_through_the_environment(self) -> None:
+        env = _release_pr_step('check_version_change.py')['env']
+
+        assert env['HEAD_REF'] == '${{ github.head_ref }}'
+        assert env['BASE_REF'] == '${{ github.base_ref }}'
+
+    def it_runs_the_guard_unconditionally(self) -> None:
+        assert 'if' not in _release_pr_step('check_version_change.py')
+
+    @pytest.mark.parametrize(
+        'script', ['mkdocs build', 'check_release_docs.py', 'check_cache_kept.py', 'check_no_wip_tests.py']
+    )
+    def it_runs_the_release_gates_only_when_the_version_changed(self, script: str) -> None:
+        assert _release_pr_step(script)['if'] == "steps.guard.outputs.version_changed == 'true'"
+
+    def it_passes_the_version_to_the_gates_through_the_environment(self) -> None:
+        for script in ('check_release_docs.py', 'check_cache_kept.py'):
+            step = _release_pr_step(script)
+
+            assert step['env']['VERSION'] == '${{ steps.guard.outputs.version }}'
+            assert '"$VERSION"' in step['run']
+
+    def it_runs_the_gates_cheapest_first(self) -> None:
+        commands = [step['run'] for step in _release_pr_job()['steps'] if 'check_' in step.get('run', '')]
+        order = [
+            next(name for name in ('version_change', 'release_docs', 'cache_kept', 'no_wip') if name in run)
+            for run in commands
+        ]
+
+        assert order == ['version_change', 'release_docs', 'cache_kept', 'no_wip']
+
+    def it_has_no_bypass_input(self) -> None:
+        text = CI_WORKFLOW.read_text(encoding='utf-8')
+
+        assert 'workflow_dispatch' not in text
