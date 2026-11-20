@@ -78,6 +78,11 @@ class DescribeParseCommitLog:
     def it_returns_no_commits_for_an_empty_log(self) -> None:
         assert prepare.parse_commit_log('') == []
 
+    def it_keeps_a_unit_separator_inside_a_body(self) -> None:
+        commits = prepare.parse_commit_log('aaa\x1ffix: a\x1fone\x1ftwo\x1e')
+
+        assert commits[0].body == 'one\x1ftwo'
+
     def it_reads_sha_subject_and_body_of_each_commit(self) -> None:
         raw = 'aaa\x1ffeat: add a thing\x1fLonger text\x1e\nbbb\x1ffix: repair\x1f\x1e\n'
 
@@ -411,6 +416,33 @@ class DescribePrepareRelease:
         _prepare(_repo(tmp_path), shell)
 
         assert ('git', 'log', LOG_FORMAT) in shell.calls
+
+
+@pytest.mark.medium
+class DescribeFailureAfterTheBranchExists:
+    def it_refuses_an_unplaceable_changelog_before_creating_the_branch(self, tmp_path: Path) -> None:
+        repo = _repo(tmp_path)
+        (repo / 'CHANGELOG.md').write_text('# Changelog\n\n## Unreleased\n\nx\n\n## v1.0.0\n', encoding='utf-8')
+        shell = _shell()
+
+        with pytest.raises(prepare.ReleaseRefusedError, match='Unreleased'):
+            _prepare(repo, shell)
+
+        assert not shell.ran('git', 'switch')
+
+    def it_gives_the_undo_hint_when_the_bumped_versions_disagree(self, tmp_path: Path) -> None:
+        with pytest.raises(prepare.ReleaseRefusedError, match='Undo with'):
+            _prepare(_repo(tmp_path, project='1.14.3'), _shell())
+
+    def it_preserves_crlf_line_endings_in_the_changelog(self, tmp_path: Path) -> None:
+        repo = _repo(tmp_path)
+        (repo / 'CHANGELOG.md').write_bytes(CHANGELOG.replace('\n', '\r\n').encode())
+
+        _prepare(repo, _shell())
+
+        written = (repo / 'CHANGELOG.md').read_bytes()
+        assert b'\r\n' in written
+        assert written.count(b'\n') == written.count(b'\r\n')
 
 
 def _main_with(shell: FakeShell, repo: Path, *argv: str) -> int:

@@ -78,7 +78,7 @@ def parse_commit_log(raw: str) -> list[Commit]:
     for record in raw.split(RECORD_SEPARATOR):
         if not record.strip():
             continue
-        sha, subject, body = record.strip('\n').split(FIELD_SEPARATOR)
+        sha, subject, body = record.strip('\n').split(FIELD_SEPARATOR, maxsplit=2)
         commits.append(Commit(sha=sha, subject=subject, body=body.strip()))
     return commits
 
@@ -149,6 +149,8 @@ def insert_entry(changelog: str, entry: str) -> str:
     scan = _scan(changelog)
     heading = next(line for line in scan.lines if VERSION_HEADING_START.match(line.heading))
     cut = len(''.join(scan.raw_lines[: heading.number - 1]))
+    if '\r\n' in changelog:
+        entry = entry.replace('\n', '\r\n')
     return changelog[:cut] + entry + changelog[cut:]
 
 
@@ -259,6 +261,13 @@ def _check_bumped_versions(repo: Path, version: str) -> None:
         )
 
 
+def _bump_files(run: CommandRunner, repo: Path, version: str, flags: list[str]) -> None:
+    bumped = run((*CZ, 'bump', '--files-only', '--yes', *flags))
+    if bumped.returncode != 0:
+        raise ReleaseRefusedError(f'cz bump --files-only failed: {_detail(bumped)}')
+    _check_bumped_versions(repo, version)
+
+
 def prepare_release(
     *,
     repo: Path,
@@ -279,18 +288,18 @@ def prepare_release(
     branch = release_branch(version)
     _refuse_existing_branch(run, branch)
     commits = _commits_since_last_tag(run)
+    changelog_path = repo / 'CHANGELOG.md'
+    new_changelog = insert_entry(
+        changelog_path.read_text(encoding='utf-8', newline=''), render_entry(version, today, commits)
+    )
     switched = run(('git', 'switch', '-c', branch))
     if switched.returncode != 0:
         raise ReleaseRefusedError(f'cannot create {branch}: {_detail(switched)}')
-    bumped = run((*CZ, 'bump', '--files-only', '--yes', *flags))
-    if bumped.returncode != 0:
-        raise ReleaseRefusedError(
-            f'cz bump --files-only failed on {branch}: {_detail(bumped)}\nUndo with: {UNDO_HINT}{branch}'
-        )
-    _check_bumped_versions(repo, version)
-    changelog_path = repo / 'CHANGELOG.md'
-    entry = render_entry(version, today, commits)
-    changelog_path.write_text(insert_entry(changelog_path.read_text(encoding='utf-8'), entry), encoding='utf-8')
+    try:
+        _bump_files(run, repo, version, flags)
+    except ReleaseRefusedError as error:
+        raise ReleaseRefusedError(f'{error}\nUndo with: {UNDO_HINT}{branch}') from error
+    changelog_path.write_text(new_changelog, encoding='utf-8', newline='')
     return PreparedRelease(version=version, branch=branch, commits=commits)
 
 
