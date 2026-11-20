@@ -18,7 +18,7 @@ Usage: ``check_version_change.py --branch BRANCH [--base-ref REF] [--repo PATH] 
 defaults to the ``HEAD_REF`` environment variable. With ``--github-output`` the script appends
 ``version_changed=true|false`` and ``version=<head version>`` to that file, for later steps and jobs to read.
 
-Exit codes: 0 when the version is unchanged, or changed and all three rules hold; 1 when a rule is broken (each is
+Exit codes: 0 when the version is unchanged, or changed and all four rules hold; 1 when a rule is broken (each is
 printed on stdout with a ``PROBLEM:`` prefix, naming the offending files); 2 when the check could not run (a git
 failure, a missing or unreadable ``pyproject.toml``, ``__init__.py`` or changelog, a missing or non-literal
 ``__version__``, a version that is not PEP 440 shaped, bad arguments; the reason is printed on stderr).
