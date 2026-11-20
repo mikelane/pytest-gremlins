@@ -44,7 +44,8 @@ We love pull requests! Here's how to contribute code:
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) for package management
-- [Graphite](https://graphite.dev/) for stacked PRs (recommended)
+- [GitHub CLI](https://cli.github.com/) with the [gh stack](https://github.com/github/gh-stack) extension for
+  stacked PRs (optional)
 - Git
 
 ### Initial Setup
