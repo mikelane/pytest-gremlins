@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Pull request guard on version changes: only a release pull request may change ``[project].version``.
+
+It runs on every pull request. The version is compared with the one at the merge base of the base ref and ``HEAD``,
+never with the base tip, so a branch cut before main released still reads as unchanged. When the version differs,
+the pull request must do all three of these, and every broken rule is reported:
+
+* come from the branch ``release/v<version>``, with ``<version>`` the exact version string, prerelease included;
+* change only ``pyproject.toml``, ``uv.lock``, ``src/pytest_gremlins/__init__.py`` and ``CHANGELOG.md``
+  (the changed files are taken from the same merge base);
+* have a topmost ``CHANGELOG.md`` entry for that version.
+
+Nothing skips this check: it has no flag, environment variable or input that turns it off.
+
+Usage: ``check_version_change.py --branch BRANCH [--base-ref REF] [--repo PATH] [--github-output FILE]``. The branch
+defaults to the ``HEAD_REF`` environment variable. With ``--github-output`` the script appends
+``version_changed=true|false`` and ``version=<head version>`` to that file, for later steps and jobs to read.
+
+Exit codes: 0 when the version is unchanged, or changed and all three rules hold; 1 when a rule is broken (each is
+printed on stdout with a ``PROBLEM:`` prefix, naming the offending files); 2 when the check could not run (a git
+failure, a missing or unreadable ``pyproject.toml`` or changelog, bad arguments; the reason is printed on stderr).
+Exit 2 is never a pass.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tomllib
+
+from check_release_docs import (
+    CannotCheckError,
+    newest_version,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RELEASE_FILES = frozenset({'pyproject.toml', 'uv.lock', 'src/pytest_gremlins/__init__.py', 'CHANGELOG.md'})
+PROBLEM_PREFIX = 'PROBLEM: '
+
+
+def release_branch(version: str) -> str:
+    """Return the branch a release of ``version`` must come from.
+
+    Examples:
+        >>> release_branch('1.15.0b0')
+        'release/v1.15.0b0'
+    """
+    return f'release/v{version}'
+
+
+def project_version(pyproject: str) -> str:
+    r"""Return ``[project].version`` from the text of a ``pyproject.toml``.
+
+    Args:
+        pyproject: The text of the file.
+
+    Returns:
+        The version string.
+
+    Raises:
+        CannotCheckError: When the text is not valid TOML or has no string ``[project].version``.
+
+    Examples:
+        >>> project_version('[project]\\nversion = "1.2.3"\\n')
+        '1.2.3'
+    """
+    try:
+        version = tomllib.loads(pyproject).get('project', {}).get('version')
+    except tomllib.TOMLDecodeError as error:
+        raise CannotCheckError(f'pyproject.toml is not valid TOML: {error}') from error
+    if not isinstance(version, str) or not version:
+        raise CannotCheckError('pyproject.toml has no [project].version string')
+    return version
+
+
+def _changelog_problem(changelog: str, version: str) -> str | None:
+    try:
+        newest = newest_version(changelog)
+    except CannotCheckError as error:
+        return f'CHANGELOG.md has no topmost entry for {version}: {error}'
+    if newest != version:
+        return f'the topmost CHANGELOG.md entry is for {newest}, not {version}'
+    return None
+
+
+def check_version_change(
+    *,
+    branch: str,
+    base_version: str,
+    head_version: str,
+    changed_files: Sequence[str],
+    changelog: str,
+) -> list[str]:
+    """Return the broken rules for a pull request; empty when the version is unchanged or every rule holds.
+
+    Args:
+        branch: The pull request's head branch.
+        base_version: ``[project].version`` at the merge base.
+        head_version: ``[project].version`` at ``HEAD``.
+        changed_files: The paths changed since the merge base.
+        changelog: The text of ``CHANGELOG.md`` at ``HEAD``.
+
+    Returns:
+        One message per broken rule.
+    """
+    if head_version == base_version:
+        return []
+    problems: list[str] = []
+    expected = release_branch(head_version)
+    if branch != expected:
+        problems.append(
+            f'the version changed from {base_version} to {head_version}, '
+            f'so the branch must be {expected}, not {branch!r}'
+        )
+    outside = sorted(set(changed_files) - RELEASE_FILES)
+    if outside:
+        allowed = ', '.join(sorted(RELEASE_FILES))
+        problems.append(f'a version change may touch only {allowed}, but it also changes: {", ".join(outside)}')
+    changelog_problem = _changelog_problem(changelog, head_version)
+    if changelog_problem:
+        problems.append(changelog_problem)
+    return problems
+
+
+def _git(repo: Path, *args: str) -> str:
+    """Run git in ``repo`` and return its stdout; raise ``CannotCheckError`` when it fails."""
+    try:
+        completed = subprocess.run(
+            ['git', *args],  # noqa: S607
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        raise CannotCheckError(f'cannot run git {args[0]}: {error}') from error
+    if completed.returncode != 0:
+        raise CannotCheckError(f'git {" ".join(args)} failed: {completed.stderr.strip()}')
+    return completed.stdout
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_bytes().decode('utf-8')
+    except (OSError, UnicodeDecodeError) as error:
+        raise CannotCheckError(f'cannot read {path}: {error}') from error
+
+
+def _write_outputs(path: Path | None, *, changed: bool, version: str) -> None:
+    if path is None:
+        return
+    with path.open('a', encoding='utf-8') as handle:
+        handle.write(f'version_changed={str(changed).lower()}\nversion={version}\n')
+
+
+def _run(args: argparse.Namespace) -> tuple[list[str], str]:
+    """Run the guard; return the broken rules and the message to print on a pass."""
+    repo: Path = args.repo
+    head_version = project_version(_read(repo / 'pyproject.toml'))
+    merge_base = _git(repo, 'merge-base', args.base_ref, 'HEAD').strip()
+    base_version = project_version(_git(repo, 'show', f'{merge_base}:pyproject.toml'))
+    changed = head_version != base_version
+    if not changed:
+        _write_outputs(args.github_output, changed=False, version=head_version)
+        return [], f'The version is {head_version}, unchanged since the merge base.'
+    changed_files = _git(repo, 'diff', '--name-only', f'{merge_base}...HEAD').splitlines()
+    changelog = _read(repo / 'CHANGELOG.md')
+    _write_outputs(args.github_output, changed=True, version=head_version)
+    problems = check_version_change(
+        branch=args.branch,
+        base_version=base_version,
+        head_version=head_version,
+        changed_files=changed_files,
+        changelog=changelog,
+    )
+    return problems, f'The version changed from {base_version} to {head_version} on {args.branch}, as a release must.'
+
+
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--branch', default=os.environ.get('HEAD_REF', ''), help='head branch (default: $HEAD_REF)')
+    parser.add_argument('--base-ref', default='origin/main', help='ref to take the merge base with HEAD from')
+    parser.add_argument('--repo', type=Path, default=REPO_ROOT, help='repository root')
+    parser.add_argument('--github-output', type=Path, default=None, help='file to append version_changed= and version=')
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entry point; returns 0 on a pass, 1 when a rule is broken, 2 when the check could not run."""
+    args = _parse_args(argv)
+    try:
+        problems, passed = _run(args)
+    except CannotCheckError as error:
+        print(f'could not check the version change: {error}', file=sys.stderr)
+        return 2
+    except Exception as error:  # exit 2 must never be confused with a failed check (exit 1) or a pass
+        print(f'could not check the version change: unexpected {type(error).__name__}: {error}', file=sys.stderr)
+        return 2
+    if problems:
+        print('This pull request changes the version but is not a valid release pull request:')
+        for problem in problems:
+            print(f'{PROBLEM_PREFIX}{problem}')
+        return 1
+    print(passed)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
