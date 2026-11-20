@@ -292,11 +292,14 @@ predates these gate scripts fails closed, because the gate scripts do not exist 
 
 **Release PR gates.** The `Release PR Gates` job (`release-pr` in `ci.yml`) runs on every pull request and is part
 of `All Checks Passed`. Its first step, `scripts/check_version_change.py`, compares `[project].version` with the
-merge base (a branch cut before main released reads as unchanged). A pull request that changes the version must come
+merge base (a branch cut before main released reads as unchanged). The version counts as changed when either
+`[project].version` or `__version__` in `src/pytest_gremlins/__init__.py` differs, and then the two must be equal at
+`HEAD`. A pull request that changes the version must come
 from `release/v<version>` (the exact string, prerelease included, e.g. `release/v1.15.0b0`), change only
 `pyproject.toml`, `uv.lock`, `src/pytest_gremlins/__init__.py` and `CHANGELOG.md`, and have a topmost changelog entry
 for that version. Only then does the job run the docs gate, the cache gate and the wip gate, so this is the place
-where the release PR gets checked, and a `wip` test never blocks an ordinary pull request. Exit 2 is never a pass, and
+where the release PR gets checked, and a `wip` test never blocks an ordinary pull request. A version that is not
+PEP 440 shaped, or a missing or non-literal `__version__`, exits 2. Exit 2 is never a pass, and
 there is no bypass. The `cut-release.yml` path above is unchanged for now.
 
 **Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`

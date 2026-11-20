@@ -2,9 +2,11 @@
 """Pull request guard on version changes: only a release pull request may change ``[project].version``.
 
 It runs on every pull request. The version is compared with the one at the merge base of the base ref and ``HEAD``,
-never with the base tip, so a branch cut before main released still reads as unchanged. When the version differs,
-the pull request must do all three of these, and every broken rule is reported:
+never with the base tip, so a branch cut before main released still reads as unchanged. When either
+``[project].version`` or ``__version__`` differs, the pull request must do all four of these, and every broken
+rule is reported:
 
+* have ``__version__`` in ``src/pytest_gremlins/__init__.py`` equal to ``[project].version``;
 * come from the branch ``release/v<version>``, with ``<version>`` the exact version string, prerelease included;
 * change only ``pyproject.toml``, ``uv.lock``, ``src/pytest_gremlins/__init__.py`` and ``CHANGELOG.md``
   (the changed files are taken from the same merge base);
@@ -18,16 +20,19 @@ defaults to the ``HEAD_REF`` environment variable. With ``--github-output`` the 
 
 Exit codes: 0 when the version is unchanged, or changed and all three rules hold; 1 when a rule is broken (each is
 printed on stdout with a ``PROBLEM:`` prefix, naming the offending files); 2 when the check could not run (a git
-failure, a missing or unreadable ``pyproject.toml`` or changelog, bad arguments; the reason is printed on stderr).
+failure, a missing or unreadable ``pyproject.toml``, ``__init__.py`` or changelog, a missing or non-literal
+``__version__``, a version that is not PEP 440 shaped, bad arguments; the reason is printed on stderr).
 Exit 2 is never a pass.
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 from collections.abc import Sequence
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tomllib
@@ -39,7 +44,9 @@ from check_release_docs import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_FILES = frozenset({'pyproject.toml', 'uv.lock', 'src/pytest_gremlins/__init__.py', 'CHANGELOG.md'})
+INIT_PATH = 'src/pytest_gremlins/__init__.py'
 PROBLEM_PREFIX = 'PROBLEM: '
+VERSION_SHAPE = re.compile(r'[0-9A-Za-z.+!_-]+')
 
 
 def release_branch(version: str) -> str:
@@ -50,6 +57,13 @@ def release_branch(version: str) -> str:
         'release/v1.15.0b0'
     """
     return f'release/v{version}'
+
+
+def _checked_shape(version: str, source: str) -> str:
+    """Return ``version`` when it is PEP 440 shaped; raise ``CannotCheckError`` before it can reach any output."""
+    if not VERSION_SHAPE.fullmatch(version):
+        raise CannotCheckError(f'the version in {source} is not a PEP 440 shaped string: {version!r}')
+    return version
 
 
 def project_version(pyproject: str) -> str:
@@ -74,7 +88,38 @@ def project_version(pyproject: str) -> str:
         raise CannotCheckError(f'pyproject.toml is not valid TOML: {error}') from error
     if not isinstance(version, str) or not version:
         raise CannotCheckError('pyproject.toml has no [project].version string')
-    return version
+    return _checked_shape(version, 'pyproject.toml')
+
+
+def module_version(source: str) -> str:
+    """Return the module-level ``__version__ = '<str>'`` from the text of a Python module.
+
+    Args:
+        source: The text of the module.
+
+    Returns:
+        The version string.
+
+    Raises:
+        CannotCheckError: When the module does not parse or has no module-level string-literal ``__version__``.
+
+    Examples:
+        >>> module_version("__version__ = '1.2.3'")
+        '1.2.3'
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError) as error:
+        raise CannotCheckError(f'{INIT_PATH} does not parse: {error}') from error
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == '__version__' for t in node.targets
+        ):
+            value = node.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                return _checked_shape(value.value, INIT_PATH)
+            raise CannotCheckError(f'__version__ in {INIT_PATH} is not a string literal')
+    raise CannotCheckError(f'{INIT_PATH} has no module-level __version__ assignment')
 
 
 def _changelog_problem(changelog: str, version: str) -> str | None:
@@ -92,6 +137,8 @@ def check_version_change(
     branch: str,
     base_version: str,
     head_version: str,
+    base_module_version: str,
+    head_module_version: str,
     changed_files: Sequence[str],
     changelog: str,
 ) -> list[str]:
@@ -101,15 +148,22 @@ def check_version_change(
         branch: The pull request's head branch.
         base_version: ``[project].version`` at the merge base.
         head_version: ``[project].version`` at ``HEAD``.
+        base_module_version: ``__version__`` at the merge base.
+        head_module_version: ``__version__`` at ``HEAD``.
         changed_files: The paths changed since the merge base.
         changelog: The text of ``CHANGELOG.md`` at ``HEAD``.
 
     Returns:
         One message per broken rule.
     """
-    if head_version == base_version:
+    if head_version == base_version and head_module_version == base_module_version:
         return []
     problems: list[str] = []
+    if head_module_version != head_version:
+        problems.append(
+            f'__version__ in {INIT_PATH} is {head_module_version}, but [project].version in pyproject.toml is '
+            f'{head_version}; they must be equal'
+        )
     expected = release_branch(head_version)
     if branch != expected:
         problems.append(
@@ -161,9 +215,11 @@ def _run(args: argparse.Namespace) -> tuple[list[str], str]:
     """Run the guard; return the broken rules and the message to print on a pass."""
     repo: Path = args.repo
     head_version = project_version(_read(repo / 'pyproject.toml'))
+    head_module_version = module_version(_read(repo / INIT_PATH))
     merge_base = _git(repo, 'merge-base', args.base_ref, 'HEAD').strip()
     base_version = project_version(_git(repo, 'show', f'{merge_base}:pyproject.toml'))
-    changed = head_version != base_version
+    base_module_version = module_version(_git(repo, 'show', f'{merge_base}:{INIT_PATH}'))
+    changed = head_version != base_version or head_module_version != base_module_version
     if not changed:
         _write_outputs(args.github_output, changed=False, version=head_version)
         return [], f'The version is {head_version}, unchanged since the merge base.'
@@ -174,6 +230,8 @@ def _run(args: argparse.Namespace) -> tuple[list[str], str]:
         branch=args.branch,
         base_version=base_version,
         head_version=head_version,
+        base_module_version=base_module_version,
+        head_module_version=head_module_version,
         changed_files=changed_files,
         changelog=changelog,
     )

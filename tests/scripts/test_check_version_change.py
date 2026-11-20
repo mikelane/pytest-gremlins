@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -43,11 +44,17 @@ def _pyproject(version: str | None) -> str:
     return '[project]\nname = "x"\n' + (f'version = "{version}"\n' if version else '')
 
 
+def _init(version: str) -> str:
+    return f'"""Package."""\n\n__version__ = \'{version}\'\n__all__ = [\'__version__\']\n'
+
+
 def _check(
     *,
     branch: str = 'release/v1.15.0',
     base: str = '1.14.3',
     head: str = '1.15.0',
+    base_module: str | None = None,
+    head_module: str | None = None,
     files: list[str] | None = None,
     changelog: str | None = None,
 ) -> list[str]:
@@ -55,6 +62,8 @@ def _check(
         branch=branch,
         base_version=base,
         head_version=head,
+        base_module_version=base if base_module is None else base_module,
+        head_module_version=head if head_module is None else head_module,
         changed_files=RELEASE_FILES if files is None else files,
         changelog=_changelog(head) if changelog is None else changelog,
     )
@@ -123,6 +132,22 @@ class DescribeCheckVersionChange:
 
         assert len(problems) == 3
 
+    def it_reports_a_change_to_only_the_module_version_on_an_ordinary_branch(self) -> None:
+        problems = _check(branch='feature/x', base='1.14.3', head='1.14.3', head_module='1.15.0', files=['a.py'])
+
+        assert any('release/v1.14.3' in problem for problem in problems)
+
+    def it_reports_head_versions_that_disagree_naming_both(self) -> None:
+        problems = _check(head_module='1.14.3')
+
+        assert len(problems) == 1
+        assert '1.15.0' in problems[0]
+        assert '1.14.3' in problems[0]
+        assert '__version__' in problems[0]
+
+    def it_accepts_a_release_whose_versions_match(self) -> None:
+        assert _check(base_module='1.14.3', head_module='1.15.0') == []
+
 
 @pytest.mark.small
 class DescribeFindVersion:
@@ -135,15 +160,58 @@ class DescribeFindVersion:
             guard.project_version(text)
 
 
+@pytest.mark.small
+class DescribeModuleVersion:
+    def it_reads_the_module_level_version(self) -> None:
+        assert guard.module_version(_init('1.2.3b0')) == '1.2.3b0'
+
+    @pytest.mark.parametrize(
+        'text',
+        ['', 'x = 1\n', '__version__ = 3\n', "__version__ = f'{x}'\n", 'def f():\n    __version__ = "1"\n', 'def (:\n'],
+    )
+    def it_raises_when_the_module_version_is_not_a_string_literal(self, text: str) -> None:
+        with pytest.raises(guard.CannotCheckError):
+            guard.module_version(text)
+
+
+@pytest.mark.small
+class DescribeVersionShape:
+    @pytest.mark.parametrize('version', ['1.2.3\nversion_changed=false', '1.2 3', '', '1.2.3\r', '1.2.3\x00'])
+    def it_rejects_a_version_with_whitespace_or_control_characters(self, version: str) -> None:
+        with pytest.raises(guard.CannotCheckError):
+            guard.project_version(_pyproject(version).replace(version, json.dumps(version)[1:-1]))
+        with pytest.raises(guard.CannotCheckError):
+            guard.module_version(f'__version__ = {version!r}\n')
+
+    @pytest.mark.parametrize('version', ['1.2.3', '1!2.0.0rc1.post2.dev3+local.1-x_y'])
+    def it_accepts_pep_440_shaped_versions(self, version: str) -> None:
+        assert guard.module_version(f'__version__ = {version!r}\n') == version
+
+
 class _FakeGit:
     """Stand-in for the git helper: answers merge-base, show and diff from fixed values, and records every call."""
 
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, base_pyproject: str, changed: list[str]) -> None:
+    def __init__(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        base_pyproject: str,
+        changed: list[str],
+        base_init: str | None = None,
+    ) -> None:
         self.calls: list[tuple[str, ...]] = []
         self.base_pyproject = base_pyproject
+        self.base_init = base_init
         self.changed = changed
         self.failure: Exception | None = None
         monkeypatch.setattr(guard, '_git', self._run)
+
+    def _base_pyproject_version(self) -> str:
+        try:
+            version: str = guard.project_version(self.base_pyproject)
+        except guard.CannotCheckError:
+            return '1.14.3'
+        return version
 
     def _run(self, _repo: Path, *args: str) -> str:
         self.calls.append(args)
@@ -151,8 +219,12 @@ class _FakeGit:
             raise self.failure
         if args[0] == 'merge-base':
             return 'MERGEBASE\n'
+        if args[0] == 'show' and args[1] == 'MERGEBASE:pyproject.toml':
+            return self.base_pyproject
+        if args[0] == 'show' and args[1] == 'MERGEBASE:src/pytest_gremlins/__init__.py':
+            return self.base_init if self.base_init is not None else _init(self._base_pyproject_version())
         if args[0] == 'show':
-            return self.base_pyproject if args[1] == 'MERGEBASE:pyproject.toml' else '<<unexpected ref>>'
+            return '<<unexpected ref>>'
         if args[0] == 'diff':
             return ''.join(f'{path}\n' for path in self.changed)
         raise AssertionError(args)
@@ -162,6 +234,8 @@ class _FakeGit:
 def head_files(tmp_path: Path) -> Path:
     (tmp_path / 'pyproject.toml').write_text(_pyproject('1.15.0'), encoding='utf-8')
     (tmp_path / 'CHANGELOG.md').write_text(_changelog('1.15.0'), encoding='utf-8')
+    (tmp_path / 'src' / 'pytest_gremlins').mkdir(parents=True)
+    (tmp_path / 'src' / 'pytest_gremlins' / '__init__.py').write_text(_init('1.15.0'), encoding='utf-8')
     return tmp_path
 
 
@@ -194,6 +268,7 @@ class DescribeMain:
         self, monkeypatch: pytest.MonkeyPatch, head_files: Path
     ) -> None:
         (head_files / 'pyproject.toml').write_text(_pyproject('1.14.3'), encoding='utf-8')
+        (head_files / 'src' / 'pytest_gremlins' / '__init__.py').write_text(_init('1.14.3'), encoding='utf-8')
         fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=['src/pytest_gremlins/plugin.py'])
 
         assert _run(head_files, branch='fix/stale') == 0
@@ -249,6 +324,44 @@ class DescribeMain:
         _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
 
         assert _run(head_files) == 2
+
+    def it_exits_1_when_only_the_module_version_changed_on_an_ordinary_branch(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path
+    ) -> None:
+        (head_files / 'pyproject.toml').write_text(_pyproject('1.14.3'), encoding='utf-8')
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=['src/pytest_gremlins/__init__.py'])
+
+        assert _run(head_files, branch='fix/x') == 1
+
+    def it_exits_1_naming_both_versions_when_a_release_pull_request_disagrees(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (head_files / 'src' / 'pytest_gremlins' / '__init__.py').write_text(_init('1.14.3'), encoding='utf-8')
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+
+        assert _run(head_files) == 1
+        out = capsys.readouterr().out
+        assert '1.15.0' in out
+        assert '1.14.3' in out
+
+    @pytest.mark.parametrize('broken', ['', 'x = 1\n', '__version__ = 3\n'])
+    def it_exits_2_when_the_module_version_cannot_be_read(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, broken: str
+    ) -> None:
+        (head_files / 'src' / 'pytest_gremlins' / '__init__.py').write_text(broken, encoding='utf-8')
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+
+        assert _run(head_files) == 2
+
+    def it_exits_2_and_writes_nothing_when_a_version_contains_a_newline(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        output = tmp_path_factory.mktemp('out') / 'github_output'
+        (head_files / 'pyproject.toml').write_text('[project]\nversion = "1.15.0\\nevil=1"\n', encoding='utf-8')
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+
+        assert _run(head_files, '--github-output', str(output)) == 2
+        assert not output.exists() or output.read_text(encoding='utf-8') == ''
 
     def it_exits_2_for_bad_arguments(self) -> None:
         with pytest.raises(SystemExit) as raised:
