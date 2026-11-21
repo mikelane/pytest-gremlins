@@ -35,9 +35,14 @@ These line rules cover the whole selected entry, in the preamble, the exempt sec
   under a list item and one inside a block quote or after a list marker are reported as unsupported instead of being
   read as code. A fence closes only on a closer of exactly the opener's length, as the docs renderer reads it, and a
   longer closer is rejected because CommonMark would close there.
-* An HTML comment that opens mid-line ends at the next blank line, as Markdown reads it, so one still open there is
-  rejected and the lines after it are checked. An unclosed ``<!--`` in a code span is rejected too, because a reader
-  may take it for a comment. Code spans pair as the docs renderer pairs them (``code_spans``), and every visible line
+* An HTML comment hides the lines after its own only where the docs renderer stores it as an HTML block: its ``<!--``
+  starts the raw line after at most 3 spaces, and the first ``-->`` or ``--!>`` after it is ``-->``. Any other
+  ``<!--`` (after a ``>`` or a list marker, after a backslash or other text, indented 4 or more columns or by a tab, or
+  after a comment that starts the line) must close on its own line; one that does not is rejected and hides nothing,
+  so the lines after it are checked. A comment that meets ``--!>`` before its ``-->`` is rejected and hides nothing,
+  and so is a line that leaves an HTML tag open (``x <a title="``), because the renderer may then read the next
+  ``<!--`` as part of the tag. An unclosed ``<!--`` in a code span is rejected too, because a reader may take it for a
+  comment. Code spans pair as the docs renderer pairs them (``code_spans``), and every visible line
   must pair its own backticks exactly, because the renderer pairs across the lines of a paragraph. A run of more than
   ``MAX_BACKTICK_RUN`` backticks is rejected anywhere in the entry, fence and comment lines included, and so is a
   backtick on a line that shows text beside an HTML comment, because the renderer pairs backticks before it reads the
@@ -114,6 +119,9 @@ OUTER_FENCE = re.compile(r' {0,3}(`{3,}|~{3,})(.*)')
 ANY_INDENT_FENCE = re.compile(r'\s*(`{3,}|~{3,})(.*)')
 COMMENT_OPEN = '<!--'
 COMMENT_CLOSE = '-->'
+COMMENT_BANG_CLOSE = '--!>'
+BLOCK_COMMENT_MAX_INDENT = 3
+UNTERMINATED_TAG = re.compile(r'</?[A-Za-z][^>]*$')
 BACKTICK_RUN = re.compile(r'`+')
 MAX_BACKTICK_RUN = 8
 # The docs renderer's "backtick" inline pattern, copied verbatim from BACKTICK_CODE_RE in pymdownx/inlinehilite.py
@@ -509,26 +517,85 @@ def _has_unclosed_comment_opener_in_code_span(text: str) -> bool:
     return any(COMMENT_CLOSE not in span[span.rfind(COMMENT_OPEN) :] for span in spans if COMMENT_OPEN in span)
 
 
-def _strip_comments(text: str, in_comment: bool, allow_open: bool) -> tuple[str, bool, bool]:
-    """Remove HTML comments from ``text``; return its visible text, if one opened here, and if one is still open."""
+@dataclass(frozen=True)
+class _CommentScan:
+    """One line with its HTML comments removed.
+
+    ``still_open`` says a comment is open at the end of the line, and ``open_at`` is the index of its ``<!--`` when it
+    opened on this line. ``misclosed`` says a comment that spans lines meets ``--!>`` before ``-->`` on this line.
+    """
+
+    visible: str
+    opened: bool
+    still_open: bool = False
+    open_at: int | None = None
+    misclosed: bool = False
+
+
+def _strip_comments(text: str, in_comment: bool, allow_open: bool) -> _CommentScan:
+    """Remove HTML comments from ``text``, which starts inside one when ``in_comment`` is set.
+
+    A comment opened on this line closes at the first ``-->`` on it. A comment that spans lines ends, for the docs
+    renderer, at the first ``-->`` or ``--!>`` after its opener, and it is a comment only when that is ``-->``.
+    """
     visible: list[str] = []
     opened = False
-    rest = text
+    open_at: int | None = None
+    offset = 0
     while True:
+        rest = text[offset:]
         if in_comment:
             end = rest.find(COMMENT_CLOSE)
+            spans_lines = open_at is None or end < 0
+            if spans_lines and -1 < rest.find(COMMENT_BANG_CLOSE) < (end if end >= 0 else len(rest)):
+                return _CommentScan(''.join(visible), opened, open_at=open_at, misclosed=True)
             if end < 0:
-                return ''.join(visible), opened, True
-            rest = rest[end + len(COMMENT_CLOSE) :]
+                return _CommentScan(''.join(visible), opened, still_open=True, open_at=open_at)
+            offset += end + len(COMMENT_CLOSE)
             in_comment = False
+            open_at = None
             continue
         start = _comment_open_index(rest) if allow_open else -1
         if start < 0:
             visible.append(rest)
-            return ''.join(visible), opened, False
+            return _CommentScan(''.join(visible), opened)
         visible.append(rest[:start])
-        rest = rest[start + len(COMMENT_OPEN) :]
+        open_at = offset + start
+        offset = open_at + len(COMMENT_OPEN)
         opened = in_comment = True
+
+
+def _inline_comment_opener_problem(number: int, text: str) -> str:
+    return (
+        f'HTML comment at line {number} ({_shorten(text.strip())}) does not close on its line and does not start it, '
+        'so the docs renderer does not hide the lines after it; close it on the same line, or start the line with '
+        'it, indented by at most 3 spaces'
+    )
+
+
+def _unterminated_tag_problem(number: int, text: str) -> str:
+    return (
+        f'an HTML tag at line {number} ({_shorten(text.strip())}) does not end on its line; the docs renderer reads '
+        'the lines after it as part of the tag, so end it with ">" on the same line'
+    )
+
+
+def _misclosed_comment_problem(region: _Region, number: int) -> str:
+    return (
+        f'HTML comment opened at line {region.number} meets "{COMMENT_BANG_CLOSE}" at line {number} before its '
+        f'"{COMMENT_CLOSE}"; the docs renderer then opens no comment and shows the lines after it. Remove the '
+        f'"{COMMENT_BANG_CLOSE}"'
+    )
+
+
+def _starts_block_comment(text: str, index: int) -> bool:
+    """Return whether the ``<!--`` at ``index`` can hide the lines after it, as the docs renderer reads it.
+
+    Python-Markdown stores a comment as an HTML block only when its ``<!--`` starts the raw line, after at most 3
+    spaces (``HTMLExtractor.at_line_start``). A tab expands to 4 columns first, so it never qualifies. Any other
+    ``<!--`` is inline HTML inside a paragraph, a block quote or a list item, which ends where that block ends.
+    """
+    return index <= BLOCK_COMMENT_MAX_INDENT and text[:index] == ' ' * index
 
 
 class _Scanner:
@@ -552,8 +619,8 @@ class _Scanner:
         self._neutralized_fence = ''
         self._neutralized_fence_opener = 0
         self._in_comment = False
-        self._comment_midline = False
         self._comment_is_block = False
+        self.misclosed: tuple[_Region, int] | None = None
         self._in_list_item = False
 
     def feed(self, number: int, text: str) -> None:
@@ -618,8 +685,6 @@ class _Scanner:
         if self._fence:
             self._feed_fenced(number, text)
         elif self._in_comment:
-            if self._comment_midline and not text.strip():
-                self._end_midline_comment(number)
             self._feed_text(number, text)
         else:
             if _closes_fence(_container_content(text), self._neutralized_fence):
@@ -636,21 +701,6 @@ class _Scanner:
             self._in_list_item = True
         elif not text.startswith((' ', '\t')):
             self._in_list_item = False
-
-    def _end_midline_comment(self, blank_line: int) -> None:
-        """End a mid-line comment at ``blank_line``: Markdown reads it as inline HTML, which a blank line ends."""
-        if self.open_region is not None:
-            opener = self.open_region.number
-            self.diagnostics.append(
-                (
-                    opener,
-                    f'HTML comment opened mid-line at line {opener} is still open at the blank line {blank_line}; '
-                    'Markdown ends it there, so the lines after it are visible. Close it on the same line or remove it',
-                )
-            )
-        self.open_region = None
-        self._in_comment = False
-        self._comment_midline = False
 
     def _feed_fenced(self, number: int, text: str) -> None:
         if _closes_fence(text, self._fence, exact=True):
@@ -671,22 +721,37 @@ class _Scanner:
         heading = '' if self._in_comment else text
         if not self._in_comment:
             self._track_list_item(text)
-        visible, opened, still_open = _strip_comments(
-            text, self._in_comment, allow_open=not neutralized and number not in self._neutralized
-        )
+        comments = self._strip_comments(number, text, allow_open=not neutralized and number not in self._neutralized)
+        visible, opened = comments.visible, comments.opened
         if opened:
             self._comment_is_block = text.startswith(COMMENT_OPEN)
         in_block_comment = (opened or self._in_comment) and self._comment_is_block
         backtick_problem = None if neutralized else _backtick_problem(number, text, visible, in_block_comment)
         if backtick_problem:
             self.diagnostics.append((number, backtick_problem))
+        if not neutralized and UNTERMINATED_TAG.search(visible):
+            self.diagnostics.append((number, _unterminated_tag_problem(number, text)))
         self.lines.append(_Line(number, visible, heading, opens_comment=opened or _comment_open_index(visible) >= 0))
-        if not still_open:
+        self._update_open_comment(number, comments)
+
+    def _strip_comments(self, number: int, text: str, *, allow_open: bool) -> _CommentScan:
+        """Strip the comments of ``text``; a ``<!--`` that cannot hide the next lines is reported and opens nothing."""
+        comments = _strip_comments(text, self._in_comment, allow_open)
+        if comments.open_at is None or _starts_block_comment(text, comments.open_at):
+            return comments
+        self.diagnostics.append((number, _inline_comment_opener_problem(number, text)))
+        return _strip_comments(text, self._in_comment, allow_open=False)
+
+    def _update_open_comment(self, number: int, comments: _CommentScan) -> None:
+        """Track the comment left open by this line; a misclosed one is recorded so the next pass opens nothing."""
+        if comments.misclosed and self.misclosed is None:
+            opener = self.open_region if comments.open_at is None else None
+            self.misclosed = (opener or _Region(number, 'HTML comment'), number)
+        if not comments.still_open:
             self.open_region = None
-        elif opened:
+        elif comments.open_at is not None:
             self.open_region = _Region(number, 'HTML comment')
-            self._comment_midline = bool(visible.strip())
-        self._in_comment = still_open
+        self._in_comment = comments.still_open
 
 
 @dataclass(frozen=True)
@@ -701,7 +766,7 @@ class _Scan:
 
 
 def _scan(changelog: str) -> _Scan:
-    """Scan ``changelog``; a fence or comment that is never closed is reported, then read as plain text.
+    """Scan ``changelog``; a fence or comment that is never closed or meets ``--!>`` is reported, then read as text.
 
     Reading it as plain text keeps it from hiding the rest of the file, so later sections are still checked. A fence
     marker inside a list item or block quote is never read as code either: such a line is reported as unsupported, so
@@ -711,22 +776,28 @@ def _scan(changelog: str) -> _Scan:
     raw = LINE_BREAK.split(changelog)
     neutralized: set[int] = set()
     unclosed: list[_Region] = []
+    misclosed: list[tuple[int, str]] = []
     while True:
         scanner = _Scanner(frozenset(neutralized))
         for number, text in enumerate(raw, start=1):
             scanner.feed(number, text)
-        if scanner.open_region is None:
+        if scanner.misclosed is not None:
+            region, number = scanner.misclosed
+            misclosed.append((region.number, _misclosed_comment_problem(region, number)))
+            neutralized.add(region.number)
+        elif scanner.open_region is None:
             return _Scan(
                 scanner.lines,
                 unclosed,
                 scanner.hidden_headings,
                 scanner.hidden_version_headings,
                 LINE_WITH_BREAK.findall(changelog),
-                tuple(scanner.diagnostics),
+                tuple(scanner.diagnostics) + tuple(misclosed),
                 tuple(scanner.unsupported_fence_lines),
             )
-        unclosed.append(scanner.open_region)
-        neutralized.add(scanner.open_region.number)
+        else:
+            unclosed.append(scanner.open_region)
+            neutralized.add(scanner.open_region.number)
 
 
 @dataclass(frozen=True)

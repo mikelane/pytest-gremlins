@@ -1615,12 +1615,12 @@ class DescribeCommentOpenerInsideACodeSpan:
 
 @pytest.mark.small
 class DescribeCommentOpenedMidLine:
-    """A comment that starts mid-line ends at the next blank line, so it cannot hide what follows the blank line."""
+    """Only a ``<!--`` that starts its line, after at most 3 spaces, hides the lines after it; any other must close."""
 
-    def it_reports_a_mid_line_comment_still_open_at_a_blank_line(self) -> None:
+    def it_reports_a_mid_line_comment_that_does_not_close_on_its_line(self) -> None:
         problems = _problems_of('### Internal\n\n- Bump <!-- x\n\n# Feature\n\n- Undocumented. (#1)\n\n-->\n')
 
-        assert 'HTML comment opened mid-line at line 7 is still open at the blank line 8;' in problems
+        assert _inline_opener_problem(7, '- Bump <!-- x') in problems
 
     def it_reads_the_lines_after_a_blank_line_that_ends_a_mid_line_comment_as_visible(self) -> None:
         problems = _problems_of('### Internal\n\n- Bump <!-- x\n\n# Feature\n\n- Undocumented. (#1)\n\n-->\n')
@@ -1630,8 +1630,95 @@ class DescribeCommentOpenedMidLine:
     def it_accepts_a_comment_that_starts_a_line_and_spans_a_blank_line(self) -> None:
         assert _problems_of('### Internal\n\n<!--\nnote\n\nmore\n-->\n\n- x\n') == ''
 
-    def it_accepts_a_mid_line_comment_that_closes_before_any_blank_line(self) -> None:
-        assert _problems_of('### Internal\n\n- Bump <!-- x\n  y --> done.\n') == ''
+    def it_rejects_a_mid_line_comment_that_closes_on_a_later_line(self) -> None:
+        assert _problems_of('### Internal\n\n- Bump <!-- x\n  y --> done.\n') == _inline_opener_problem(
+            7, '- Bump <!-- x'
+        )
+
+    def it_accepts_a_mid_line_comment_that_closes_on_its_line(self) -> None:
+        assert _problems_of('### Internal\n\n- Bump <!-- x --> done.\n') == ''
+
+    @pytest.mark.parametrize('opener', ['<!-- x', '   <!-- x', '- a\n  <!-- x', '> a\n<!-- x'])
+    def it_hides_the_lines_after_a_comment_that_starts_its_line(self, opener: str) -> None:
+        assert _problems_of(f'### Internal\n\n{opener}\n# Hidden\n-->\n') == ''
+
+    def it_rejects_a_comment_opened_after_a_comment_that_starts_the_line(self) -> None:
+        problems = _problems_of(f'### Internal\n\n{TAIL_COMMENT_OPENER}\n-->\n')
+
+        assert _inline_opener_problem(7, TAIL_COMMENT_OPENER) in problems
+
+
+def _inline_opener_problem(line: int, text: str) -> str:
+    return (
+        f'HTML comment at line {line} ({text}) does not close on its line and does not start it, so the docs renderer '
+        'does not hide the lines after it; close it on the same line, or start the line with it, indented by at most '
+        '3 spaces'
+    )
+
+
+@pytest.mark.small
+class DescribeCommentTheRendererDoesNotOpen:
+    def it_reports_a_quoted_comment_opener_and_the_section_heading_it_no_longer_hides(self) -> None:
+        changelog = (
+            '## v1.0.0\n\n> <!-- note\n> ### Feature\n> - New --foo option.\n-->\n\n### Fix\n\n- a (no docs: r)\n'
+        )
+
+        assert _load_checker().find_problems(changelog, '1.0.0', SITE) == [
+            'a raw HTML block tag at line 3 (> <!-- note); move the tag into the middle of a sentence or write it as a '
+            'code span',
+            'a heading that is not a known "###" section heading or version heading at line 4 (> ### Feature); use one '
+            'of the five "###" section names, or keep an issue-number line directly under its bullet with no blank '
+            'line, or escape it as "\\#720)"',
+            _inline_opener_problem(3, '> <!-- note'),
+        ]
+
+    @pytest.mark.parametrize('opener', ['\\<!-- x', '\\\\<!-- x', '    <!-- x', '\t<!-- x', '> > <!-- x', '1. <!-- x'])
+    def it_reports_an_opener_the_renderer_reads_as_text_or_inline_html(self, opener: str) -> None:
+        problems = _problems_of(f'### Internal\n\n{opener}\n-->\n')
+
+        assert _inline_opener_problem(7, opener.strip()) in problems
+
+    def it_ends_the_entry_at_a_version_heading_an_escaped_opener_no_longer_hides(self) -> None:
+        problems = _problems_of('### Internal\n\n\\<!-- x\n## v0.9.9 (2020-01-01)\n-->\n\n### Fix\n\n- a (#1)\n')
+
+        assert problems == _inline_opener_problem(7, '\\<!-- x')
+
+    def it_reports_a_comment_closed_by_a_bang_closer_on_its_opening_line(self) -> None:
+        problems = _problems_of('### Internal\n\n<!-- a --!>\n# Big\n-->\n')
+
+        assert problems.splitlines() == [
+            'a raw HTML block tag at line 7 (<!-- a --!>); move the tag into the middle of a sentence or write it as a '
+            'code span',
+            'a heading that is not a known "###" section heading or version heading at line 8 (# Big); use one of the '
+            'five "###" section names, or keep an issue-number line directly under its bullet with no blank line, or '
+            'escape it as "\\#720)"',
+            'HTML comment opened at line 7 meets "--!>" at line 7 before its "-->"; the docs renderer then opens no '
+            'comment and shows the lines after it. Remove the "--!>"',
+        ]
+
+    def it_reports_a_bang_closer_on_a_later_line_of_the_comment(self) -> None:
+        problems = _problems_of('### Internal\n\n<!-- a\nb --!>\nc -->\n')
+
+        assert (
+            'HTML comment opened at line 7 meets "--!>" at line 8 before its "-->"; the docs renderer then opens no '
+            'comment and shows the lines after it. Remove the "--!>"'
+        ) in problems
+
+    def it_accepts_a_bang_closer_after_the_closer_of_a_comment(self) -> None:
+        assert _problems_of('### Internal\n\n<!-- a\nb --> c --!>\n') == ''
+
+    @pytest.mark.parametrize('line', ['x <a', 'x <a title="', 'x </a', '- `<a`'])
+    def it_reports_a_tag_that_does_not_end_on_its_line(self, line: str) -> None:
+        problems = _problems_of(f'### Internal\n\n{line}\n')
+
+        assert problems == (
+            f'an HTML tag at line 7 ({line}) does not end on its line; the docs renderer reads the lines after it as '
+            'part of the tag, so end it with ">" on the same line'
+        )
+
+    @pytest.mark.parametrize('line', ['x <a> y', 'a < b', 'x <https://example.com>', 'x `<a>` y'])
+    def it_accepts_a_tag_that_ends_on_its_line_and_a_bare_angle_bracket(self, line: str) -> None:
+        assert _problems_of(f'### Internal\n\n{line}\n') == ''
 
 
 FOUR_COLUMN_FENCE_PROBLEM = (
@@ -1936,11 +2023,54 @@ REJECTED_SHAPES_THE_RENDERER_SHOWS = [
     ('- Bump \\`<h2>Feature</h2>`', '<h2'),
     ('- Use `<!--` here.\n\n# Feature\n\n-->', '<h1'),
     ('- Bump <!-- x\n\n# Feature\n\n-->', '<h1'),
+    ('> <!-- note\n> ### Feature\n> - New --foo option.\n-->', '<h3'),
+    ('> > <!-- x\n> > # Big\n-->', '<h1'),
+    ('- a\n  > <!-- x\n  > # Big\n-->', '<h1'),
+    ('\\<!-- x\n## v0.9.9 (2020-01-01)\n-->', '<h2'),
+    ('\\<!-- x\n# Big\n-->', '<h1'),
+    ('\\<!-- x\n***\n-->', '<hr'),
+    ('\\\\<!-- x\n# Big\n-->', '<h1'),
+    ('    <!-- x\n## v0.9.9 (2020-01-01)\n-->', '<h2'),
+    ('    <!-- x\n***\n-->', '<hr'),
+    ('\t<!-- x\n# Big\n-->', '<h1'),
+    ('> <!-- x\n> ## v2.0.0\n-->', '<h2'),
+    ('- <!-- x\n# Big\n-->', '<h1'),
+    ('1. <!-- x\n# Big\n-->', '<h1'),
+    ('p <!-- x\n# Big\n-->', '<h1'),
+    ('<!-- a --!>\n# Big\n-->', '<h1'),
+    ('x <a title="\n<!-- y\n# Big\n-->\n">', '<h1'),
+    ('x <a\n<!-- y\n# Big\n-->', '<h1'),
     ('    ```\n\n# Feature\n\n    ```', '<h1'),
     ('- Bump.\n\n    ```\n\n# Feature\n\n    ```', '<h1'),
     ('- item\n\n    #720)', '<h1'),
     ('````\nx\n`````\n````\n#### Hidden\n````', '<h4'),
 ]
+
+
+COMMENT_OPENER_SHAPES = [
+    '<!-- x',
+    ' <!-- x',
+    '   <!-- x',
+    '- a\n  <!-- x',
+    '1. a\n   <!-- x',
+    '> a\n<!-- x',
+    '    <!-- x',
+    '\t<!-- x',
+    '  \t<!-- x',
+    '\\<!-- x',
+    '\\\\<!-- x',
+    '> <!-- x',
+    '> > <!-- x',
+    '>> <!-- x',
+    '- <!-- x',
+    '1. <!-- x',
+    '- a\n  > <!-- x',
+    'p <!-- x',
+    '`a` <!-- x',
+    '<!-- a --!>',
+    '<!-- a\n--!> b',
+]
+TAIL_COMMENT_OPENER = '<!-- a --> t <!-- b'
 
 
 def _mkdocs_markdown_extension_names() -> set[str]:
@@ -2048,6 +2178,16 @@ class DescribeRendererOracle:
     @pytest.mark.parametrize('text', ['- A. <span>\n### Internal\n</span>\n', 'Text <div>\n### Internal\n</div>\n'])
     def it_shows_a_section_heading_after_a_tag_that_is_not_at_the_start_of_a_line(self, text: str) -> None:
         assert '<h3' in self._render(text)
+
+    @pytest.mark.parametrize('opener', COMMENT_OPENER_SHAPES)
+    def it_hides_the_line_after_a_comment_opener_exactly_when_the_gate_hides_it(self, opener: str) -> None:
+        sample = f'{opener}\n# Probe\n-->\n'
+        rendered = '<h1' in self._render(sample)
+
+        assert rendered == ('(# Probe)' in _problems_of(f'### Internal\n\n{sample}'))
+
+    def it_hides_a_comment_after_a_comment_that_starts_the_line_which_the_gate_rejects(self) -> None:
+        assert '<h1' not in self._render(f'{TAIL_COMMENT_OPENER}\n# Probe\n-->\n')
 
 
 def _gated_changelog(bullet: str) -> str:

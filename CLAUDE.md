@@ -231,10 +231,9 @@ The PR fails CI until the entry passes the release docs gate.
   columns, or under the list item above it (put the fence at column 0 after a non-list line).
 - Each problem with a line names it and quotes it in parentheses, shortened to 70 characters. A rejected heading,
   raw HTML tag or delimiter line also says how to fix it, for example `use one of the five "###" section names, or keep
-  an issue-number line directly under its bullet with no blank line, or escape it as "\#720)"`. A mid-line comment
-  problem names the blank line that ended it. A rejected line gets only its own problems: it is not reported again as
-  a paragraph or as a bullet with no docs reference. Inside an unsupported fence, a bullet or a `###` heading is still
-  read, so a bullet there is still gated.
+  an issue-number line directly under its bullet with no blank line, or escape it as "\#720)"`. A rejected line gets
+  only its own problems: it is not reported again as a paragraph or as a bullet with no docs reference. Inside an
+  unsupported fence, a bullet or a `###` heading is still read, so a bullet there is still gated.
 - A code fence closes only on a closer of exactly the opener's length, as the docs renderer (pymdownx.superfences)
   reads it. A longer closer fails (a four-backtick fence, a five-backtick line, then a four-backtick line): CommonMark
   closes there and the docs renderer does not, so they disagree on what follows. A shorter closer does not close.
@@ -250,9 +249,17 @@ The PR fails CI until the entry passes the release docs gate.
   HTML comment fails, because the renderer pairs backticks before it reads the comment; only a comment that starts a
   line may hold unpaired backticks on lines that show nothing else. A `<!--` in a
   code span is literal text and hides nothing, but an unclosed one is reported on its own line because a reader may
-  take it for a comment. A comment that starts mid-line ends at the next blank line, as Markdown reads it, so one
-  still open there is reported and the lines after it are checked. Only a comment that starts a line may span blank
-  lines.
+  take it for a comment.
+- An HTML comment hides the lines after its own only where the docs renderer stores it as an HTML block: its `<!--`
+  starts the line, indented by at most 3 spaces (under a list item too), and the first `-->` or `--!>` after it is
+  `-->`. Only such a comment may span lines, blank lines included. Every other `<!--` must close with `-->` on its own
+  line: one after `>` or `> >`, after a list marker (`- <!--`, `1. <!--`), after a backslash (`\<!--`, `\\<!--`) or
+  other text, indented 4 or more columns or by a tab, or after a comment that starts the line. One that does not close
+  there fails with `HTML comment at line N (...) does not close on its line and does not start it`, and it hides
+  nothing: the lines after it are checked as visible lines, so a `> ### Feature` or `# Big` under it fails too. A
+  comment that meets `--!>` before its `-->` fails and hides nothing, because the renderer then opens no comment. A
+  line that leaves an HTML tag open (`x <a`, `x <a title="`, even in a code span) fails with `an HTML tag at line N
+  (...) does not end on its line`, because the renderer can read a `<!--` on the next line as part of that tag.
 - A second visible `##` heading for the version being released fails wherever it appears, including `##v2.0.0`,
   an indented, quoted or listed copy, and one with a date or closing hashes.
 - A line longer than 1000 characters fails anywhere in the entry, inside a fence or comment too, with
