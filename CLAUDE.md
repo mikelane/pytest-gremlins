@@ -238,6 +238,9 @@ The PR fails CI until the entry passes the release docs gate.
   lines.
 - A second visible `##` heading for the version being released fails wherever it appears, including `##v2.0.0`,
   an indented, quoted or listed copy, and one with a date or closing hashes.
+- A line longer than 1000 characters fails anywhere in the entry, inside a fence or comment too, with
+  `line N is longer than 1000 characters`. The check reports it before reading it and then treats it as a blank line,
+  which keeps every pattern the check runs fast. Wrap a long line instead.
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
   heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
 - An entry runs to the next `## vX.Y.Z` heading. Any other `##` line inside it

@@ -1142,6 +1142,24 @@ class DescribeStrictEntryFormat:
         assert matched is None
         assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
 
+    def it_rejects_a_line_longer_than_1000_characters_without_reading_it(self) -> None:
+        long_line = '- ' + 'a`' * 499 + 'a'
+
+        assert _problems_of(f'### Internal\n\n{long_line}\n') == 'line 7 is longer than 1000 characters'
+
+    def it_reports_only_the_length_of_a_long_gated_bullet(self) -> None:
+        assert _problems_of('### Fix\n\n- ' + 'x' * 999 + '\n') == 'line 7 is longer than 1000 characters'
+
+    def it_accepts_a_line_of_exactly_1000_characters(self) -> None:
+        line = '- ' + 'a`' * 499
+
+        assert _problems_of(f'### Internal\n\n{line}\n') == ''
+
+    def it_rejects_a_long_line_inside_a_fence(self) -> None:
+        problems = _problems_of('### Internal\n\n```\n' + 'x' * 1001 + '\n```\n')
+
+        assert problems == 'line 8 is longer than 1000 characters'
+
     @pytest.mark.parametrize('content', ['A | B\n---|---\n1 | 2', 'prose -- with --- dashes', '= x', '-- x', '*-*x'])
     def it_accepts_delimiter_characters_that_do_not_make_a_whole_delimiter_line(self, content: str) -> None:
         assert _problems_of(f'### Internal\n\n{content}\n') == ''

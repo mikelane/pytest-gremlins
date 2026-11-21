@@ -48,6 +48,9 @@ A second visible copy of the selected version heading is a problem wherever it s
 (``##v2.0.0``), indented and quoted or listed variants, because ``--notes-out`` publishes only the first copy while
 readers see both.
 
+A line longer than 1000 characters is a problem wherever it sits in the entry, inside a fence or comment too. It is
+reported before any pattern reads it and is then read as a blank line, so no input line can make the check slow.
+
 Nothing skips this check: it has no flag, environment variable or input that turns it off.
 
 ``--newest`` checks the topmost ``## [v]X.Y.Z`` entry instead of a named version; it selects, never skips. When
@@ -88,6 +91,7 @@ URL_SCHEME = re.compile(r'[a-zA-Z][a-zA-Z0-9+.-]*:')
 BULLET = re.compile(r'\s*(?:[-*+]|[0-9]{1,9}[.)])(?:\s+(.*)|$)')
 BULLET_LABEL_LENGTH = 70
 PROBLEM_PREFIX = 'PROBLEM: '
+MAX_LINE_LENGTH = 1000
 DEFAULT_CHANGELOG = Path(__file__).resolve().parents[1] / 'CHANGELOG.md'
 FENCE = re.compile(r' {0,3}(`{3,}|~{3,})(.*)')
 ANY_INDENT_FENCE = re.compile(r'\s*(`{3,}|~{3,})(.*)')
@@ -327,6 +331,7 @@ class _Scanner:
 
     def __init__(self, neutralized: frozenset[int]) -> None:
         self.lines: list[_Line] = []
+        self.diagnostics: list[tuple[int, str]] = []
         self.hidden_headings: list[tuple[_Region, int]] = []
         self.hidden_version_headings: list[tuple[_Region, int, str]] = []
         self.container_fence_openers: list[int] = []
@@ -342,6 +347,9 @@ class _Scanner:
         self._in_list_item = False
 
     def feed(self, number: int, text: str) -> None:
+        if len(text) > MAX_LINE_LENGTH:
+            self.diagnostics.append((number, f'line {number} is longer than {MAX_LINE_LENGTH} characters'))
+            text = ''
         if self.open_region is not None and _structural_title(text, SECTION_LEVEL) is not None:
             self.hidden_headings.append((self.open_region, number))
         if self.open_region is not None and VERSION_HEADING_START.match(text):
@@ -431,6 +439,7 @@ class _Scan:
     hidden_headings: list[tuple[_Region, int]]
     hidden_version_headings: list[tuple[_Region, int, str]]
     raw_lines: list[str]
+    diagnostics: tuple[tuple[int, str], ...]
     container_fence_openers: frozenset[int] = frozenset()
     midline_comments: frozenset[int] = frozenset()
     indented_fence_openers: frozenset[int] = frozenset()
@@ -459,6 +468,7 @@ def _scan(changelog: str) -> _Scan:
                 scanner.hidden_headings,
                 scanner.hidden_version_headings,
                 LINE_WITH_BREAK.findall(changelog),
+                tuple(scanner.diagnostics),
                 frozenset(scanner.container_fence_openers),
                 frozenset(scanner.midline_comments),
                 frozenset(scanner.indented_fence_openers),
@@ -508,6 +518,7 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
     shapes = _entry_shape_problems(lines) + _container_fence_problems(scan, first, last)
     shapes += _midline_comment_problems(scan, first, last) + _indented_fence_problems(scan, first, last)
     shapes += _longer_fence_closer_problems(scan, first, last)
+    shapes += [message for number, message in sorted(scan.diagnostics) if first <= number < last]
     text = ''.join(scan.raw_lines[first - 1 : last - 1])
     return _Entry(
         lines,
