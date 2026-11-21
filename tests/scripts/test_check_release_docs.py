@@ -1475,6 +1475,25 @@ class DescribeVisibleDuplicateOfTheVersionEntry:
         assert checker.find_problems(changelog, '2.0.0', SITE) == []
 
 
+@pytest.mark.small
+class DescribeEscapedBacktickBeforeCode:
+    """A backslash-escaped backtick is literal text, so it opens no code span and hides nothing."""
+
+    def it_reports_a_raw_heading_after_an_escaped_backtick(self) -> None:
+        problems = _problems_of('### Internal\n\n- Bump \\`<h2>Feature</h2>`\n')
+
+        assert 'a raw HTML heading' in problems
+        assert 'at line 7' in problems
+
+    def it_still_ignores_a_raw_heading_inside_a_real_code_span(self) -> None:
+        assert _problems_of('### Internal\n\n- Bump `<h2>Feature</h2>`\n') == ''
+
+    def it_does_not_let_an_escaped_backtick_hide_a_link_from_a_gated_bullet(self) -> None:
+        problems = _problems_of(f'### Fix\n\n- Fixed \\`a [docs]({DOCS_URL}/guide/configuration/) b`.\n')
+
+        assert problems == ''
+
+
 @pytest.mark.medium
 class DescribeRendererOracle:
     """The real docs renderer is a one-way oracle: it proves each reported bypass really renders a heading."""
@@ -1548,6 +1567,7 @@ class DescribeRendererOracle:
             ('<h3 id="anchor">Feature</h3>\n', '<h3'),
             ('> <h1>Feature</h1>\n', '<h1'),
             ('- <h4>Detail</h4>\n', '<h4'),
+            ('- Bump \\`<h2>Feature</h2>`\n', '<h2'),
             ('- item\n\n    #720)\n', '<h1'),
         ],
     )
