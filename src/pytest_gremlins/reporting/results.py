@@ -28,12 +28,16 @@ CAPPED_LIMIT_ADVICE = f'the limit is capped at {MAX_TIMEOUT_SECONDS}s; lower --r
 """What to do instead of raising a limit that rerun scaling already pushed to ``MAX_TIMEOUT_SECONDS``."""
 
 
-MAXIMUM_LIMIT_ADVICE = f'the limit is already at the {MAX_TIMEOUT_SECONDS}s maximum'
-"""Why a limit configured at ``MAX_TIMEOUT_SECONDS`` cannot be raised; lowering the reruns would leave it there."""
+MAXIMUM_LIMIT_ADVICE = f'the limit is already at the {MAX_TIMEOUT_SECONDS}s maximum; lower any reruns or rerun delays'
+"""What to do about a limit configured at ``MAX_TIMEOUT_SECONDS``: it cannot rise, but reruns still spend it."""
 
 
 MUTANT_TIMEOUT_RAISE_ADVICE = 'raise {limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout'
 """How to raise the per-gremlin timeout; ``{limit}`` is where the name of the limit goes."""
+
+
+COVERAGE_TIMEOUT_RAISE_ADVICE = 'set coverage_timeout / --gremlin-coverage-timeout to raise {limit}'
+"""How to raise the coverage pre-scan timeout; ``{limit}`` is where the name of the limit goes."""
 
 
 def limit_is_capped(timeout: int) -> bool:
@@ -41,9 +45,14 @@ def limit_is_capped(timeout: int) -> bool:
     return timeout >= MAX_TIMEOUT_SECONDS
 
 
+def limit_was_scaled(attempt_timeout: int | None, limit: int | None) -> bool:
+    """Return whether rerun scaling widened ``attempt_timeout`` into ``limit``; ``False`` when either is unknown."""
+    return attempt_timeout is not None and limit is not None and attempt_timeout != limit
+
+
 def scaled_limit_note(attempt_timeout: int | None, scaled_timeout: int) -> str:
     """Return the ``(Ns per attempt, ...)`` aside for a limit that rerun scaling widened, else an empty string."""
-    if attempt_timeout is None or attempt_timeout == scaled_timeout:
+    if not limit_was_scaled(attempt_timeout, scaled_timeout):
         return ''
     return f' ({attempt_timeout}s per attempt, scaled for the pytest-rerunfailures budget)'
 
@@ -59,8 +68,14 @@ def limit_advice(limit: int | None, attempt_timeout: int | None, *, unscaled_nam
 
     Returns:
         A lowercase clause with no closing punctuation.
+
+    Examples:
+        >>> limit_advice(130, 30, unscaled_name='it', raise_advice='raise {limit}')
+        'raise the per-attempt limit'
+        >>> limit_advice(86400, 86400, unscaled_name='it', raise_advice='raise {limit}')
+        'the limit is already at the 86400s maximum; lower any reruns or rerun delays'
     """
-    is_scaled = limit is not None and bool(scaled_limit_note(attempt_timeout, limit))
+    is_scaled = limit_was_scaled(attempt_timeout, limit)
     if limit is not None and limit_is_capped(limit):
         return CAPPED_LIMIT_ADVICE if is_scaled else MAXIMUM_LIMIT_ADVICE
     return raise_advice.format(limit='the per-attempt limit' if is_scaled else unscaled_name)
@@ -77,10 +92,13 @@ def mutant_timeout_advice(limit: int | None, attempt_timeout: int | None, *, uns
 
     Returns:
         A complete sentence.
+
+    Examples:
+        >>> mutant_timeout_advice(86400, 30000, unscaled_name='the limit', tests='these tests')
+        'The limit is capped at 86400s; lower --reruns or --reruns-delay, or speed up these tests.'
     """
     advice = limit_advice(limit, attempt_timeout, unscaled_name=unscaled_name, raise_advice=MUTANT_TIMEOUT_RAISE_ADVICE)
-    conjunction = 'so' if advice == MAXIMUM_LIMIT_ADVICE else 'or'
-    return f'{advice[0].upper()}{advice[1:]}, {conjunction} speed up {tests}.'
+    return f'{advice[0].upper()}{advice[1:]}, or speed up {tests}.'
 
 
 class GremlinResultStatus(Enum):
