@@ -453,6 +453,8 @@ class DescribeFailureAfterTheBranchExists:
         with pytest.raises(prepare.ReleaseRefusedError, match='Unreleased'):
             _prepare(repo, shell)
 
+        assert not shell.ran('git', 'switch')
+
     def it_refuses_a_missing_changelog_with_its_path_before_creating_the_branch(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path)
         (repo / 'CHANGELOG.md').unlink()
@@ -460,8 +462,6 @@ class DescribeFailureAfterTheBranchExists:
 
         with pytest.raises(prepare.ReleaseRefusedError, match=r'cannot read .*CHANGELOG\.md'):
             _prepare(repo, shell)
-
-        assert not shell.ran('git', 'switch')
 
         assert not shell.ran('git', 'switch')
 
