@@ -149,7 +149,7 @@ class DescribeConfirmTimeoutKill:
         assert message is not None
         assert message.endswith(
             'unmutated run did not finish in 86400s). '
-            'The limit is already at the 86400s maximum, so speed up these tests.'
+            'The limit is already at the 86400s maximum; lower any reruns or rerun delays, or speed up these tests.'
         )
 
     def it_runs_the_exact_node_ids_under_the_session_timeout(

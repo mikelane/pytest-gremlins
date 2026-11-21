@@ -77,6 +77,20 @@ def _discover_gremlin_id(pytester: pytest.Pytester) -> str:
 class DescribeGremlinExplainPytester:
     """End-to-end checks for the --gremlin-explain diagnostic."""
 
+    def it_shows_the_documented_full_gremlin_id_format_in_help(
+        self,
+        pytester: pytest.Pytester,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # pytester runs in-process and argparse wraps help to COLUMNS; pin it so a narrow terminal
+        # cannot split the gremlin id mid-word.
+        monkeypatch.setenv('COLUMNS', '200')
+        result = pytester.runpytest('-p', 'pytest_gremlins', '--help')
+
+        help_text = ' '.join(result.stdout.str().split())
+        assert 'given gremlin id (e.g. calculator_e336_g001)' in help_text, help_text
+        assert not re.search(r'e\.g\. g\d{3}\b', help_text), help_text
+
     def it_emits_diagnostic_and_short_circuits_mutation_loop(self, pytester: pytest.Pytester) -> None:
         _write_project(pytester)
         gremlin_id = _discover_gremlin_id(pytester)
