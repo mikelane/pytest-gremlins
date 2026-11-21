@@ -268,11 +268,13 @@ class _Scanner:
         self.hidden_headings: list[tuple[_Region, int]] = []
         self.hidden_version_headings: list[tuple[_Region, int, str]] = []
         self.container_fence_openers: list[int] = []
+        self.midline_comments: list[int] = []
         self.open_region: _Region | None = None
         self._neutralized = neutralized
         self._fence = ''
         self._container_fence = ''
         self._in_comment = False
+        self._comment_midline = False
 
     def feed(self, number: int, text: str) -> None:
         if self.open_region is not None and _structural_title(text, SECTION_LEVEL) is not None:
@@ -283,6 +285,8 @@ class _Scanner:
             self._feed_fenced(text)
             return
         if self._in_comment:
+            if self._comment_midline and not text.strip():
+                self._end_midline_comment()
             self._feed_text(number, text)
             return
         if self._container_fence:
@@ -302,6 +306,14 @@ class _Scanner:
             self.container_fence_openers.append(number)
         self._feed_text(number, text, neutralized=number in self._neutralized or container_marker is not None)
 
+    def _end_midline_comment(self) -> None:
+        """End a comment that opened mid-line: Markdown reads it as inline HTML, which a blank line ends."""
+        if self.open_region is not None:
+            self.midline_comments.append(self.open_region.number)
+        self.open_region = None
+        self._in_comment = False
+        self._comment_midline = False
+
     def _feed_fenced(self, text: str) -> None:
         if _closes_fence(text, self._fence):
             self._fence = ''
@@ -318,6 +330,7 @@ class _Scanner:
             self.open_region = None
         elif opened:
             self.open_region = _Region(number, 'HTML comment')
+            self._comment_midline = bool(visible.strip())
         self._in_comment = still_open
 
 
@@ -329,6 +342,7 @@ class _Scan:
     hidden_version_headings: list[tuple[_Region, int, str]]
     raw_lines: list[str]
     container_fence_openers: frozenset[int] = frozenset()
+    midline_comments: frozenset[int] = frozenset()
 
 
 def _scan(changelog: str) -> _Scan:
@@ -354,6 +368,7 @@ def _scan(changelog: str) -> _Scan:
                 scanner.hidden_version_headings,
                 LINE_WITH_BREAK.findall(changelog),
                 frozenset(scanner.container_fence_openers),
+                frozenset(scanner.midline_comments),
             )
         unclosed.append(scanner.open_region)
         neutralized.add(scanner.open_region.number)
@@ -397,6 +412,7 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
     ]
     lines = scan.lines[start + 1 : end]
     shapes = _entry_shape_problems(lines) + _container_fence_problems(scan, first, last)
+    shapes += _midline_comment_problems(scan, first, last)
     text = ''.join(scan.raw_lines[first - 1 : last - 1])
     return _Entry(
         lines,
@@ -475,6 +491,16 @@ def _container_fence_problems(scan: _Scan, first: int, last: int) -> list[str]:
         f'a code fence opened inside a list item or block quote at line {number} is unsupported; start the fence at '
         'the outer level'
         for number in sorted(scan.container_fence_openers)
+        if first <= number < last
+    ]
+
+
+def _midline_comment_problems(scan: _Scan, first: int, last: int) -> list[str]:
+    """Report a comment opened mid-line that is still open at a blank line, where Markdown ends it."""
+    return [
+        f'HTML comment opened mid-line at line {number} is still open at a blank line; Markdown ends it there, so '
+        'the lines after it are visible. Close it on the same line or remove it'
+        for number in sorted(scan.midline_comments)
         if first <= number < last
     ]
 

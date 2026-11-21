@@ -1518,6 +1518,27 @@ class DescribeCommentOpenerInsideACodeSpan:
         assert 'HTML comment at line 7' in problems
 
 
+@pytest.mark.small
+class DescribeCommentOpenedMidLine:
+    """A comment that starts mid-line ends at the next blank line, so it cannot hide what follows the blank line."""
+
+    def it_reports_a_mid_line_comment_still_open_at_a_blank_line(self) -> None:
+        problems = _problems_of('### Internal\n\n- Bump <!-- x\n\n# Feature\n\n- Undocumented. (#1)\n\n-->\n')
+
+        assert 'HTML comment opened mid-line at line 7 is still open at a blank line' in problems
+
+    def it_reads_the_lines_after_that_blank_line_as_visible(self) -> None:
+        problems = _problems_of('### Internal\n\n- Bump <!-- x\n\n# Feature\n\n- Undocumented. (#1)\n\n-->\n')
+
+        assert 'a heading that is not a known "###" section heading or version heading at line 9' in problems
+
+    def it_accepts_a_comment_that_starts_a_line_and_spans_a_blank_line(self) -> None:
+        assert _problems_of('### Internal\n\n<!--\nnote\n\nmore\n-->\n\n- x\n') == ''
+
+    def it_accepts_a_mid_line_comment_that_closes_before_any_blank_line(self) -> None:
+        assert _problems_of('### Internal\n\n- Bump <!-- x\n  y --> done.\n') == ''
+
+
 @pytest.mark.medium
 class DescribeRendererOracle:
     """The real docs renderer is a one-way oracle: it proves each reported bypass really renders a heading."""
@@ -1593,6 +1614,7 @@ class DescribeRendererOracle:
             ('- <h4>Detail</h4>\n', '<h4'),
             ('- Bump \\`<h2>Feature</h2>`\n', '<h2'),
             ('- Use `<!--` here.\n\n# Feature\n\n-->\n', '<h1'),
+            ('- Bump <!-- x\n\n# Feature\n\n-->\n', '<h1'),
             ('- item\n\n    #720)\n', '<h1'),
         ],
     )
