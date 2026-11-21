@@ -126,12 +126,13 @@ process is a worker, and pytester or subprocess children would otherwise take th
 
 ## CI Python Versions
 
-`uv sync` and `uv run` follow `.python-version` (3.14) unless `UV_PYTHON` is set, so `uv python install 3.11` alone
-still tests 3.14 (#1000, #715). Every workflow job that runs `uv python install <version>` sets `UV_PYTHON` to that
-version at job level, and the `ci.yml` `test` matrix sets it to `${{ matrix.python-version }}`. Its
+`uv sync` and `uv run` follow `.python-version` unless `UV_PYTHON` is set, so `uv python install 3.11` alone still
+tests the `.python-version` interpreter (#1000, #715). Every workflow job that runs `uv python install <version>` sets
+`UV_PYTHON` to that version at job level, and the `ci.yml` `test` matrix sets it to `${{ matrix.python-version }}`. Its
 `Verify the matrix Python` step fails the leg before the tests run when the venv interpreter differs from the matrix
-version. `tests/config/test_workflow_python_pinning.py` checks every job in every workflow, so a new job without the
-pin fails the suite.
+version. `tests/config/test_workflow_python_pinning.py` checks every job that runs `uv python install <version>`, so a
+new installing job without the pin fails the suite. Jobs with no install step follow `.python-version` and are not
+checked.
 
 ## CI Caching
 

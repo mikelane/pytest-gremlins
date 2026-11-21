@@ -70,6 +70,8 @@ class DescribeRerunOptionsInArgumentFiles:
     def it_reads_an_argument_file_with_a_byte_that_is_not_utf8_the_way_argparse_does(self, tmp_path: Path) -> None:
         # An encoded surrogate is invalid in strict UTF-8 but decodes under both error handlers argparse may
         # use (surrogateescape on POSIX, surrogatepass on Windows); a lone latin-1 byte would not on Windows.
+        # On 3.11 argparse raises UnicodeDecodeError while decoding the argument file, so pytest rejects it and
+        # the helper returns []; 3.12 and later decode it with the filesystem error handler.
         argument_file = tmp_path / 'not_utf8.txt'
         argument_file.write_bytes(b'--reruns\n2\n# \xed\xa0\x80\n')
 
