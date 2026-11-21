@@ -334,10 +334,6 @@ class _Scanner:
         self.diagnostics: list[tuple[int, str]] = []
         self.hidden_headings: list[tuple[_Region, int]] = []
         self.hidden_version_headings: list[tuple[_Region, int, str]] = []
-        self.container_fence_openers: list[int] = []
-        self.midline_comments: list[int] = []
-        self.indented_fence_openers: list[int] = []
-        self.longer_fence_closers: list[int] = []
         self.open_region: _Region | None = None
         self._neutralized = neutralized
         self._fence = ''
@@ -362,7 +358,14 @@ class _Scanner:
         )
         if indented:
             self._container_fence = indented
-            self.indented_fence_openers.append(number)
+            self.diagnostics.append(
+                (
+                    number,
+                    f'an indented code fence at line {number} is unsupported: a renderer reads it as an indented code '
+                    'block or as code inside the list item above it. Start the fence at the outer level, indented by '
+                    'at most 3 spaces',
+                )
+            )
             self._feed_text(number, text, neutralized=True)
             return
         marker = None if number in self._neutralized else _fence_marker(text)
@@ -375,7 +378,13 @@ class _Scanner:
         container_marker = None if number in self._neutralized else _container_fence_marker(text)
         if container_marker:
             self._container_fence = container_marker
-            self.container_fence_openers.append(number)
+            self.diagnostics.append(
+                (
+                    number,
+                    f'a code fence opened inside a list item or block quote at line {number} is unsupported; start the '
+                    'fence at the outer level',
+                )
+            )
         self._feed_text(number, text, neutralized=number in self._neutralized or container_marker is not None)
 
     def _feed_inside_region(self, number: int, text: str) -> None:
@@ -403,7 +412,14 @@ class _Scanner:
     def _end_midline_comment(self) -> None:
         """End a comment that opened mid-line: Markdown reads it as inline HTML, which a blank line ends."""
         if self.open_region is not None:
-            self.midline_comments.append(self.open_region.number)
+            opener = self.open_region.number
+            self.diagnostics.append(
+                (
+                    opener,
+                    f'HTML comment opened mid-line at line {opener} is still open at a blank line; Markdown ends it '
+                    'there, so the lines after it are visible. Close it on the same line or remove it',
+                )
+            )
         self.open_region = None
         self._in_comment = False
         self._comment_midline = False
@@ -413,7 +429,14 @@ class _Scanner:
             self._fence = ''
             self.open_region = None
         elif _is_longer_fence_closer(text, self._fence):
-            self.longer_fence_closers.append(number)
+            self.diagnostics.append(
+                (
+                    number,
+                    f'a fence closer longer than its opener at line {number}: the docs renderer keeps the fence open '
+                    'and CommonMark closes it, so they disagree on what follows. Close the fence with a line of the '
+                    'same length',
+                )
+            )
 
     def _feed_text(self, number: int, text: str, *, neutralized: bool = False) -> None:
         """Record ``text`` as a visible line; ``neutralized`` keeps it from opening a code fence or comment region."""
@@ -440,10 +463,6 @@ class _Scan:
     hidden_version_headings: list[tuple[_Region, int, str]]
     raw_lines: list[str]
     diagnostics: tuple[tuple[int, str], ...]
-    container_fence_openers: frozenset[int] = frozenset()
-    midline_comments: frozenset[int] = frozenset()
-    indented_fence_openers: frozenset[int] = frozenset()
-    longer_fence_closers: frozenset[int] = frozenset()
 
 
 def _scan(changelog: str) -> _Scan:
@@ -469,10 +488,6 @@ def _scan(changelog: str) -> _Scan:
                 scanner.hidden_version_headings,
                 LINE_WITH_BREAK.findall(changelog),
                 tuple(scanner.diagnostics),
-                frozenset(scanner.container_fence_openers),
-                frozenset(scanner.midline_comments),
-                frozenset(scanner.indented_fence_openers),
-                frozenset(scanner.longer_fence_closers),
             )
         unclosed.append(scanner.open_region)
         neutralized.add(scanner.open_region.number)
@@ -515,9 +530,7 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
         if heading.match(text)
     ]
     lines = scan.lines[start + 1 : end]
-    shapes = _entry_shape_problems(lines) + _container_fence_problems(scan, first, last)
-    shapes += _midline_comment_problems(scan, first, last) + _indented_fence_problems(scan, first, last)
-    shapes += _longer_fence_closer_problems(scan, first, last)
+    shapes = _entry_shape_problems(lines)
     shapes += [message for number, message in sorted(scan.diagnostics) if first <= number < last]
     text = ''.join(scan.raw_lines[first - 1 : last - 1])
     return _Entry(
@@ -589,46 +602,6 @@ def _opens_list_item(text: str, *, continued: bool) -> bool:
     if LIST_ITEM.match(text) and not CONTAINER_QUOTE.match(text):
         return True
     return continued and text[0] in ' \t' and not LIST_ITEM.match(text)
-
-
-def _container_fence_problems(scan: _Scan, first: int, last: int) -> list[str]:
-    """Report a code fence opened inside a list item or block quote: only outer-level fences are supported."""
-    return [
-        f'a code fence opened inside a list item or block quote at line {number} is unsupported; start the fence at '
-        'the outer level'
-        for number in sorted(scan.container_fence_openers)
-        if first <= number < last
-    ]
-
-
-def _indented_fence_problems(scan: _Scan, first: int, last: int) -> list[str]:
-    """Report a fence indented 4 or more columns or under a list item, which a renderer reads as code or list code."""
-    return [
-        f'an indented code fence at line {number} is unsupported: a renderer reads it as an indented code block or '
-        'as code inside the list item above it. Start the fence at the outer level, indented by at most 3 spaces'
-        for number in sorted(scan.indented_fence_openers)
-        if first <= number < last
-    ]
-
-
-def _longer_fence_closer_problems(scan: _Scan, first: int, last: int) -> list[str]:
-    """Report a fence closer longer than its opener: the docs renderer keeps the fence open, CommonMark closes it."""
-    return [
-        f'a fence closer longer than its opener at line {number}: the docs renderer keeps the fence open and '
-        'CommonMark closes it, so they disagree on what follows. Close the fence with a line of the same length'
-        for number in sorted(scan.longer_fence_closers)
-        if first <= number < last
-    ]
-
-
-def _midline_comment_problems(scan: _Scan, first: int, last: int) -> list[str]:
-    """Report a comment opened mid-line that is still open at a blank line, where Markdown ends it."""
-    return [
-        f'HTML comment opened mid-line at line {number} is still open at a blank line; Markdown ends it there, so '
-        'the lines after it are visible. Close it on the same line or remove it'
-        for number in sorted(scan.midline_comments)
-        if first <= number < last
-    ]
 
 
 def _unsupported_shape(text: str) -> str | None:
