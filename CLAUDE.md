@@ -267,8 +267,12 @@ The PR fails CI until the entry passes the release docs gate.
   there fails with `HTML comment at line N (...) does not close on its line and does not start it`, and it hides
   nothing: the lines after it are checked as visible lines, so a `> ### Feature` or `# Big` under it fails too. A
   comment that meets `--!>` before its `-->` fails and hides nothing, because the renderer then opens no comment. A
-  line that leaves an HTML tag open (`x <a`, `x <a title="`, even in a code span) fails with `an HTML tag at line N
-  (...) does not end on its line`, because the renderer can read a `<!--` on the next line as part of that tag.
+  line with a tag that the renderer's raw HTML pass ends with `>` on a later line (`x <a title="` followed by `y">`,
+  or `x <a` followed by `<!-- y -->`) fails with `an HTML tag at line N (...) does not end on its line`, because that
+  tag swallows a `<!--` between. The pass runs before code spans exist, so a tag in a code span counts. A `<` whose
+  tag stops before any `>` is escaped as text and passes: `a<b comparisons` with no later `>`, and `` `a<b` `` or
+  `` `List<int` ``, where the backtick after the tag name stops it. Fenced code is stored first, so a tag can run past
+  a fence.
 - A second visible `##` heading for the version being released fails wherever it appears, including `##v2.0.0`,
   an indented, quoted or listed copy, and one with a date or closing hashes.
 - A line longer than 1000 characters fails anywhere in the entry, inside a fence or comment too, with

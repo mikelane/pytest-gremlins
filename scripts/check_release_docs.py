@@ -48,13 +48,15 @@ These line rules cover the whole selected entry, in the preamble, the exempt sec
   ``<!--`` (after a ``>`` or a list marker, after a backslash or other text, indented 4 or more columns or by a tab, or
   after a comment that starts the line) must close on its own line; one that does not is rejected and hides nothing,
   so the lines after it are checked. A comment that meets ``--!>`` before its ``-->`` is rejected and hides nothing,
-  and so is a line that leaves an HTML tag open (``x <a title="``), because the renderer may then read the next
-  ``<!--`` as part of the tag. An unclosed ``<!--`` in a code span is rejected too, because a reader may take it for a
-  comment. Code spans pair as the docs renderer pairs them (``code_spans``), and every visible line
-  must pair its own backticks exactly, because the renderer pairs across the lines of a paragraph. A run of more than
-  ``MAX_BACKTICK_RUN`` backticks is rejected anywhere in the entry, fence and comment lines included, and so is a
-  backtick on a line that shows text beside an HTML comment, because the renderer pairs backticks before it reads the
-  comment.
+  and so is a line with a tag that the renderer's raw HTML pass ends with ``>`` on a later line (``x <a title="``
+  followed by ``y">``), because the tag swallows a ``<!--`` between. That pass reads the page before code spans
+  exist, so a tag in a code span counts, while a ``<`` whose tag stops before any ``>`` (``a<b`` before a backtick or
+  the end of the page) is escaped as text and passes. An unclosed ``<!--`` in a code span is rejected too, because a
+  reader may take it for a comment. Code spans pair as the docs renderer pairs them (``code_spans``), and every
+  visible line must pair its own backticks exactly, because the renderer pairs across the lines of a paragraph. A run
+  of more than ``MAX_BACKTICK_RUN`` backticks is rejected anywhere in the entry, fence and comment lines included,
+  and so is a backtick on a line that shows text beside an HTML comment, because the renderer pairs backticks before
+  it reads the comment.
 * Every thematic break or setext-underline shape is rejected, in every section and with no attempt to guess the
   previous line: a run of ``=``, a run of one or two ``-``, and ``***``, ``---``, ``___``, ``* * *`` and ``- - -``.
   This also rejects a delimiter under a pipe or inline-HTML line, so ``A | B`` + ``---`` and
@@ -103,6 +105,7 @@ import bisect
 from dataclasses import dataclass
 from html.parser import HTMLParser
 import io
+import itertools
 from pathlib import Path
 import posixpath
 import re
@@ -129,7 +132,7 @@ COMMENT_OPEN = '<!--'
 COMMENT_CLOSE = '-->'
 COMMENT_BANG_CLOSE = '--!>'
 BLOCK_COMMENT_MAX_INDENT = 3
-UNTERMINATED_TAG = re.compile(r'</?[A-Za-z][^>]*$')
+TAG_OPENER = re.compile(r'</?[A-Za-z]')
 BACKTICK_RUN = re.compile(r'`+')
 MAX_BACKTICK_RUN = 8
 # The docs renderer's "backtick" inline pattern, copied verbatim from BACKTICK_CODE_RE in pymdownx/inlinehilite.py
@@ -145,6 +148,27 @@ RENDERER_INLINE_HTML = re.compile(
     r'!\[CDATA\[(?:(?!<!\[CDATA\[|\]\]>).)*\]\]'
     ')>)',
     re.DOTALL | re.UNICODE,
+)
+# The tag-end pattern of the docs renderer's raw HTML pass, copied verbatim from ``htmlparser.locatetagend`` as
+# markdown/htmlparser.py (Markdown 3.10 in uv.lock) patches it, compiled the same way. That pass reads the raw
+# text before any inline pattern, so a code span does not hide a tag from it. A test pins it to the installed
+# renderer.
+RENDERER_TAG_END = re.compile(
+    r"""
+  [a-zA-Z][^`\t\n\r\f />]*           # tag name
+  [\t\n\r\f /]*                     # optional whitespace before attribute name
+  (?:(?<=['"\t\n\r\f /])[^`\t\n\r\f />][^\t\n\r\f /=>]*  # attribute name
+    (?:=                            # value indicator
+      (?:'[^']*'                    # LITA-enclosed value
+        |"[^"]*"                    # LIT-enclosed value
+        |(?!['"])[^>\t\n\r\f ]*     # bare value
+       )
+     )?
+    [\t\n\r\f /]*                   # possibly followed by a space
+   )*
+   >?
+""",
+    re.VERBOSE,
 )
 TAG_START = re.compile(r'<[A-Za-z/!?]')
 QUOTES_CLOSED = re.compile(r'(?:[^"\']|"[^"]*"|\'[^\']*\')*')
@@ -651,6 +675,7 @@ class _CommentScan:
 
     ``still_open`` says a comment is open at the end of the line, and ``open_at`` is the index of its ``<!--`` when it
     opened on this line. ``misclosed`` says a comment that spans lines meets ``--!>`` before ``-->`` on this line.
+    ``visible_spans`` holds the bounds in the line of the pieces that make up ``visible``.
     """
 
     visible: str
@@ -658,6 +683,7 @@ class _CommentScan:
     still_open: bool = False
     open_at: int | None = None
     misclosed: bool = False
+    visible_spans: tuple[tuple[int, int], ...] = ()
 
 
 def _strip_comments(text: str, in_comment: bool, allow_open: bool) -> _CommentScan:
@@ -666,28 +692,33 @@ def _strip_comments(text: str, in_comment: bool, allow_open: bool) -> _CommentSc
     A comment opened on this line closes at the first ``-->`` on it. A comment that spans lines ends, for the docs
     renderer, at the first ``-->`` or ``--!>`` after its opener, and it is a comment only when that is ``-->``.
     """
-    visible: list[str] = []
+    spans: list[tuple[int, int]] = []
     opened = False
     open_at: int | None = None
     offset = 0
+
+    def scanned(*, still_open: bool = False, misclosed: bool = False) -> _CommentScan:
+        visible = ''.join(text[start:end] for start, end in spans)
+        return _CommentScan(visible, opened, still_open, open_at, misclosed, tuple(spans))
+
     while True:
         rest = text[offset:]
         if in_comment:
             end = rest.find(COMMENT_CLOSE)
             spans_lines = open_at is None or end < 0
             if spans_lines and -1 < rest.find(COMMENT_BANG_CLOSE) < (end if end >= 0 else len(rest)):
-                return _CommentScan(''.join(visible), opened, open_at=open_at, misclosed=True)
+                return scanned(misclosed=True)
             if end < 0:
-                return _CommentScan(''.join(visible), opened, still_open=True, open_at=open_at)
+                return scanned(still_open=True)
             offset += end + len(COMMENT_CLOSE)
             in_comment = False
             open_at = None
             continue
         start = _comment_open_index(rest) if allow_open else -1
         if start < 0:
-            visible.append(rest)
-            return _CommentScan(''.join(visible), opened)
-        visible.append(rest[:start])
+            spans.append((offset, len(text)))
+            return scanned()
+        spans.append((offset, offset + start))
         open_at = offset + start
         offset = open_at + len(COMMENT_OPEN)
         opened = in_comment = True
@@ -706,6 +737,42 @@ def _unterminated_tag_problem(number: int, text: str) -> str:
         f'an HTML tag at line {number} ({_shorten(text.strip())}) does not end on its line; the docs renderer reads '
         'the lines after it as part of the tag, so end it with ">" on the same line'
     )
+
+
+def _tag_openers(number: int, text: str, visible_spans: tuple[tuple[int, int], ...]) -> list[tuple[int, int]]:
+    """Return ``(number, index)`` for each ``<`` in the visible parts of the line ``text`` that may open a tag."""
+    openers = (opener for start, end in visible_spans for opener in TAG_OPENER.finditer(text, start, end))
+    return [(number, opener.start()) for opener in openers]
+
+
+def _tags_left_open(raw: list[str], scanner: _Scanner) -> tuple[tuple[int, str], ...]:
+    """Report each line with a tag the docs renderer's raw HTML pass ends with ``>`` on a later line.
+
+    That pass reads the whole page before code spans exist and after fenced code is stored, so the text a tag runs
+    through is the raw text with fenced lines blanked out. A ``<`` whose tag stops before a ``>`` (at a backtick after
+    the tag name or at the start of a word, at an unclosed quote, at the end of the page) is escaped as text and hides
+    nothing. A tag that does end on a later line swallows a ``<!--`` between, so the gate and the page disagree on what
+    that comment hides. Each search runs to where its tag stops, so many openers before a distant ``>`` make this
+    quadratic in the length of the page; an opener after the last ``>`` is skipped without a search.
+    """
+    page = '\n'.join('' if number in scanner.fenced_lines else text for number, text in enumerate(raw, start=1))
+    line_starts = list(itertools.accumulate((len(text) + 1 for text in raw[:-1]), initial=0))
+    last_close = page.rfind('>')
+    reported: dict[int, str] = {}
+    for number, index in scanner.tag_openers:
+        line_start, line_end = line_starts[number - 1], line_starts[number - 1] + len(raw[number - 1])
+        if number in reported or last_close <= line_end:
+            continue
+        if _tag_end(page, line_start + index) > line_end:
+            reported[number] = _unterminated_tag_problem(number, raw[number - 1])
+    return tuple(reported.items())
+
+
+def _tag_end(page: str, opener: int) -> int:
+    """Return where the raw HTML pass ends the tag opened at ``opener`` in ``page``, or ``-1`` when it reads text."""
+    name = opener + (2 if page.startswith('</', opener) else 1)
+    tag = RENDERER_TAG_END.match(page, name)
+    return tag.end() if tag is not None and page[tag.end() - 1] == '>' else -1
 
 
 def _misclosed_comment_problem(region: _Region, number: int) -> str:
@@ -750,6 +817,8 @@ class _Scanner:
         self._comment_is_block = False
         self.misclosed: tuple[_Region, int] | None = None
         self._in_list_item = False
+        self.tag_openers: list[tuple[int, int]] = []
+        self.fenced_lines: set[int] = set()
 
     def feed(self, number: int, text: str) -> None:
         if len(text) > MAX_LINE_LENGTH:
@@ -786,6 +855,7 @@ class _Scanner:
         if marker:
             self._in_list_item = False
             self._fence = marker
+            self.fenced_lines.add(number)
             self.open_region = _Region(number, 'code fence')
             self.lines.append(_Line(number, text, opens_fence=True))
             return True
@@ -811,6 +881,7 @@ class _Scanner:
     def _feed_inside_region(self, number: int, text: str) -> None:
         """Feed a line that starts inside an outer fence, an HTML comment or an unsupported container fence."""
         if self._fence:
+            self.fenced_lines.add(number)
             self._feed_fenced(number, text)
         elif self._in_comment:
             self._feed_text(number, text)
@@ -857,8 +928,8 @@ class _Scanner:
         backtick_problem = None if neutralized else _backtick_problem(number, text, visible, in_block_comment)
         if backtick_problem:
             self.diagnostics.append((number, backtick_problem))
-        if not neutralized and UNTERMINATED_TAG.search(visible):
-            self.diagnostics.append((number, _unterminated_tag_problem(number, text)))
+        if not neutralized:
+            self.tag_openers.extend(_tag_openers(number, text, comments.visible_spans))
         self.lines.append(_Line(number, visible, heading, opens_comment=opened or _comment_open_index(visible) >= 0))
         self._update_open_comment(number, comments)
 
@@ -920,7 +991,7 @@ def _scan(changelog: str) -> _Scan:
                 scanner.hidden_headings,
                 scanner.hidden_version_headings,
                 LINE_WITH_BREAK.findall(changelog),
-                tuple(scanner.diagnostics) + tuple(misclosed),
+                tuple(scanner.diagnostics) + tuple(misclosed) + _tags_left_open(raw, scanner),
                 tuple(scanner.unsupported_fence_lines),
             )
         else:

@@ -1700,6 +1700,13 @@ def _inline_opener_problem(line: int, text: str) -> str:
     )
 
 
+LESS_THAN_SIGNS_THE_RENDERER_ESCAPES = [
+    '- Mutate `a<b` to `a<=b`. (no docs: r)',
+    '- Accept `List<int` in hints. (no docs: r)',
+    '- Handle a<b comparisons. (no docs: r)',
+]
+
+
 @pytest.mark.small
 class DescribeCommentTheRendererDoesNotOpen:
     def it_reports_a_quoted_comment_opener_and_the_section_heading_it_no_longer_hides(self) -> None:
@@ -1751,18 +1758,39 @@ class DescribeCommentTheRendererDoesNotOpen:
     def it_accepts_a_bang_closer_after_the_closer_of_a_comment(self) -> None:
         assert _problems_of('### Internal\n\n<!-- a\nb --> c --!>\n') == ''
 
-    @pytest.mark.parametrize('line', ['x <a', 'x <a title="', 'x </a', '- `<a`'])
-    def it_reports_a_tag_that_does_not_end_on_its_line(self, line: str) -> None:
-        problems = _problems_of(f'### Internal\n\n{line}\n')
+    @pytest.mark.parametrize(
+        ('line', 'continuation'),
+        [
+            ('x <a', '<!-- y -->'),
+            ('x <a title="', 'y">'),
+            ('x </a', 'y>'),
+            ('- Handle a<b comparisons. (no docs: r)', '  y>'),
+            ('- `<a title="x` y', '  z">'),
+        ],
+    )
+    def it_reports_a_tag_that_does_not_end_on_its_line(self, line: str, continuation: str) -> None:
+        problems = _problems_of(f'### Internal\n\n{line}\n{continuation}\n')
 
         assert problems == (
             f'an HTML tag at line 7 ({line}) does not end on its line; the docs renderer reads the lines after it as '
             'part of the tag, so end it with ">" on the same line'
         )
 
-    @pytest.mark.parametrize('line', ['x <a> y', 'a < b', 'x <https://example.com>', 'x `<a>` y'])
+    def it_reports_a_tag_that_runs_through_a_code_fence_the_renderer_stores_first(self) -> None:
+        problems = _problems_of('### Internal\n\nx a<b\n```\nq `z`\n```\ny>\n')
+
+        assert 'an HTML tag at line 7 (x a<b) does not end on its line' in problems
+
+    @pytest.mark.parametrize(
+        'line',
+        ['x <a> y', 'a < b', 'x <https://example.com>', 'x `<a>` y', 'x <a', 'x </a', '- `<a`', 'x `x <a b` y'],
+    )
     def it_accepts_a_tag_that_ends_on_its_line_and_a_bare_angle_bracket(self, line: str) -> None:
         assert _problems_of(f'### Internal\n\n{line}\n') == ''
+
+    @pytest.mark.parametrize('bullet', LESS_THAN_SIGNS_THE_RENDERER_ESCAPES)
+    def it_accepts_a_less_than_sign_the_renderer_escapes_as_text(self, bullet: str) -> None:
+        assert _problems_of(f'### Fix\n\n{bullet}\n\n### Internal\n\n- Next `x`.\n\n<!-- y -->\n') == ''
 
 
 FOUR_COLUMN_FENCE_PROBLEM = (
@@ -2084,6 +2112,9 @@ REJECTED_SHAPES_THE_RENDERER_SHOWS = [
     ('<!-- a --!>\n# Big\n-->', '<h1'),
     ('x <a title="\n<!-- y\n# Big\n-->\n">', '<h1'),
     ('x <a\n<!-- y\n# Big\n-->', '<h1'),
+    ('- Handle a<b comparisons. (no docs: r)\n<!-- y\n# Big\n-->', '<h1'),
+    ('- `<a title="x` y\n<!-- y\n# Big\n-->\n">', '<h1'),
+    ('x a<b\n```\nq `z`\n```\n<!-- y\n# Big\n-->', '<h1'),
     ('    ```\n\n# Feature\n\n    ```', '<h1'),
     ('- Bump.\n\n    ```\n\n# Feature\n\n    ```', '<h1'),
     ('- item\n\n    #720)', '<h1'),
@@ -2376,6 +2407,18 @@ class DescribeHtmlTagsMatchTheRenderer:
         inlinepatterns = pytest.importorskip('markdown.inlinepatterns', reason='the docs group renders the oracle')
 
         assert _load_checker().RENDERER_INLINE_HTML.pattern == inlinepatterns.HTML_RE
+
+    def it_copies_the_tag_end_pattern_of_the_docs_renderer(self) -> None:
+        htmlparser = pytest.importorskip('markdown.htmlparser', reason='the docs group renders the oracle')
+
+        assert _load_checker().RENDERER_TAG_END.pattern == htmlparser.htmlparser.locatetagend.pattern
+
+    @pytest.mark.parametrize('bullet', LESS_THAN_SIGNS_THE_RENDERER_ESCAPES)
+    def it_renders_a_less_than_sign_as_escaped_text_that_opens_no_element(self, bullet: str) -> None:
+        html = DescribeRendererOracle._render(f'{bullet}\n')
+
+        assert '&lt;' in html
+        assert set(re.findall(r'<([A-Za-z][A-Za-z0-9]*)', html)) <= {'ul', 'li', 'code'}
 
     @pytest.mark.parametrize('bullet', HIDDEN_IN_A_TAG.values(), ids=HIDDEN_IN_A_TAG.keys())
     def it_renders_a_reference_inside_a_tag_where_no_reader_sees_it(self, bullet: str) -> None:
