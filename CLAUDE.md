@@ -166,7 +166,6 @@ the next run only re-tests what changed.
 - `.github/workflows/ci.yml` - CI pipeline
 - `.github/workflows/release.yml` - Release pipeline with Test PyPI
 - `.github/workflows/cut-release.yml` - One-click version bump + tag (triggers release.yml)
-- `scripts/release.sh` - Local release script (same thing, from your terminal)
 
 ## Docs Freshness
 
@@ -288,8 +287,20 @@ carrying a `wip` marker fails the release, and so does a `@wip` tag found by rea
 direct scan is what catches `@wip` scenarios (no pytest-bdd needed, and it does not depend on pytest collecting them).
 Findings are listed. There is no bypass: an urgent fix that cannot wait for an unfinished feature is released from a
 branch off the previous release tag, not from main. That path depends on #1015 (`ci.yml` must run for that branch);
-until then the CI gate fails such a tag after the 10-minute grace. Re-dispatching `release.yml` for a tag cut before
-this change fails closed, because the gate scripts do not exist at that tag.
+until then the CI gate fails such a tag after the 10-minute grace. Re-dispatching `release.yml` for a tag whose commit
+predates these gate scripts fails closed, because the gate scripts do not exist at that tag.
+
+**Release PR gates.** The `Release PR Gates` job (`release-pr` in `ci.yml`) runs on every pull request and is part
+of `All Checks Passed`. Its first step, `scripts/check_version_change.py`, compares `[project].version` with the
+merge base (a branch cut before main released reads as unchanged). The version counts as changed when either
+`[project].version` or `__version__` in `src/pytest_gremlins/__init__.py` differs, and then the two must be equal at
+`HEAD`. A pull request that changes the version must come
+from `release/v<version>` (the exact string, prerelease included, e.g. `release/v1.15.0b0`), change only
+`pyproject.toml`, `uv.lock`, `src/pytest_gremlins/__init__.py` and `CHANGELOG.md`, and have a topmost changelog entry
+for that version. Only then does the job run the docs gate, the cache gate and the wip gate, so this is the place
+where the release PR gets checked, and a `wip` test never blocks an ordinary pull request. A version that is not
+PEP 440 shaped, or a missing or non-literal `__version__`, exits 2. Exit 2 is never a pass, and
+there is no bypass. The `cut-release.yml` path above is unchanged for now.
 
 **Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`
 pre-commit hook blocks commits to `main` and leaves a dirty version bump to revert.
