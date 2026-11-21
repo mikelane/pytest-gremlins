@@ -189,7 +189,7 @@ Other Python mutation testing tools exist. Here is why we built another one:
 pytest-gremlins brings the architectural lessons from PIT (Java) and Stryker (JavaScript) to Python:
 
 - **From PIT:** Incremental analysis that reduced 31-hour runs to under 3 minutes
-- **From Stryker:** Mutation switching that delivers 20-70% speedup
+- **From Stryker:** Mutation switching (Stryker reported up to 20-70% for JavaScript)
 
 ## Success Metrics
 
