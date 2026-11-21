@@ -283,7 +283,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --python 3.12
+        run: uv sync
 
       - name: Run the large tier
         run: uv run pytest tests -m large -v
