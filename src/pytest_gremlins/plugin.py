@@ -334,6 +334,9 @@ class GremlinSession:
             turns into a crash).  Add one with :func:`_queue_terminal_notice`.
         skipped_files: Target files dropped because instrumentation raised, mapped to the
             ``ExceptionType: message`` that dropped them (issue #638).
+        shadowed_modules: Target modules shadowed by a same-named package (issue #600): ``(path
+            relative to the rootdir, package name)`` pairs, one per module file whose ``import`` binds
+            the package instead, so its gremlins always survive.
         preserved_addopts: The project's pytest ``addopts`` with pytest-cov flags
             stripped (see :func:`_addopts_without_cov`), threaded into the subprocess
             runs as ``-o addopts=<...>`` so collection-affecting options such as
@@ -389,6 +392,7 @@ class GremlinSession:
     unmapped_selections: dict[str, list[str]] = field(default_factory=dict)
     terminal_notices: list[str] = field(default_factory=list)
     skipped_files: dict[str, str] = field(default_factory=dict)
+    shadowed_modules: list[tuple[str, str]] = field(default_factory=list)
     unrunnable_gremlin_ids: set[str] = field(default_factory=set)
     explain_gremlin_id: str | None = None
     preserved_addopts: str = ''
@@ -1795,6 +1799,36 @@ def _is_file(candidate: Path) -> bool:
         return False
 
 
+def _find_shadowed_modules(targets: list[str], rootdir: Path) -> list[tuple[str, str]]:
+    """Find target modules a same-named package shadows (issue #600).
+
+    When ``pkg/__init__.py`` and a sibling ``pkg.py`` are both targets, ``import pkg`` binds the package, so
+    the module file can never be imported and its gremlins always survive. Detection runs in the parent,
+    where the target list is known; the origin finder in the test subprocess never pairs module names
+    with files.
+
+    Args:
+        targets: The target paths to instrument, as in :func:`_generate_gremlins`.
+        rootdir: Root directory of the project; paths are reported relative to it.
+
+    Returns:
+        ``(relative path, package name)`` pairs, one per shadowed module, in path order.
+    """
+    absolute = [Path(target) if Path(target).is_absolute() else rootdir / target for target in targets]
+    packages = {path.parent for path in absolute if path.name == '__init__.py'}
+    shadowed: list[tuple[str, str]] = []
+    for path in sorted(absolute):
+        if path.name == '__init__.py':
+            continue
+        if path.parent / path.stem in packages:
+            try:
+                display = str(path.relative_to(rootdir))
+            except ValueError:
+                display = str(path)
+            shadowed.append((display, path.stem))
+    return shadowed
+
+
 def _generate_gremlins(
     gremlin_session: GremlinSession,
     source_files: dict[str, str],
@@ -1815,6 +1849,7 @@ def _generate_gremlins(
     instrumented_asts: dict[str, ast.Module] = {}
 
     targets, duplicates = _without_duplicate_origins(source_files, rootdir)
+    gremlin_session.shadowed_modules = _find_shadowed_modules(targets, rootdir)
     for file_path in targets:
         source = source_files[file_path]
         try:
@@ -2676,6 +2711,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         has_run_gremlins = _collect_coverage_then_run_gremlins(session, gremlin_session, rootdir)
     if has_run_gremlins:
         _report_unmapped_selections(gremlin_session)
+        _report_shadowed_modules(gremlin_session)
 
 
 def _collect_coverage_then_run_gremlins(
@@ -4934,6 +4970,21 @@ def _select_tests_for_gremlin_prioritized(
         if not runnable:
             gremlin_session.unrunnable_gremlin_ids.add(gremlin.gremlin_id)
     return runnable
+
+
+def _report_shadowed_modules(gremlin_session: GremlinSession) -> None:
+    """Report once per run that a target module is shadowed by a same-named package (issue #600).
+
+    Written to stderr rather than raised through ``warnings.warn``: this runs in ``pytest_sessionfinish``,
+    where a project's ``filterwarnings = error`` would turn the report into a crash after a green run (#543).
+    One line per shadowed module, naming the file and the package that shadows it.
+    """
+    for relative_path, package in gremlin_session.shadowed_modules:
+        print(
+            f'pytest-gremlins: {relative_path} is shadowed by the package {package} and can never be imported; '
+            'its gremlins will always survive.',
+            file=sys.stderr,
+        )
 
 
 def _report_unmapped_selections(gremlin_session: GremlinSession) -> None:
