@@ -2050,6 +2050,75 @@ class DescribeRendererOracle:
         assert '<h3' in self._render(text)
 
 
+def _gated_changelog(bullet: str) -> str:
+    return f'## v9.9.9\n\n### Fix\n\n{bullet}\n'
+
+
+@pytest.mark.small
+class DescribeCodeSpanTiming:
+    def it_checks_a_backtick_line_at_the_length_cap_in_linear_time(self) -> None:
+        checker = _load_checker()
+        bullet = '- x' + '`' * (checker.MAX_LINE_LENGTH - 3)
+        started = time.perf_counter()
+
+        checker.find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+
+        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+
+    def it_checks_a_bullet_joined_from_fifty_backtick_lines_in_linear_time(self) -> None:
+        checker = _load_checker()
+        continuation = '\n'.join(['  ' + '`' * 988] * 49)
+        bullet = '- x' + '`' * 987 + '\n' + continuation
+        started = time.perf_counter()
+
+        checker.find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+
+        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+
+
+REGEX_CODE_SPAN = re.compile(r'(?<!\\)(`+).+?(?<!`)\1(?!`)', re.DOTALL)
+WELL_FORMED_CODE_SPAN_TEXTS = [
+    'no spans at all',
+    '`a`',
+    'x `a` y `b` z',
+    '``a ` b``',
+    '```a `` b```',
+    '\\`a` b`',
+    '`a\\`',
+    '`<!--` x',
+    '`<!-- x -->` y <!-- z -->',
+    '``<h1>`` and <h2>',
+    '`a\nb` y',
+    'first `line\n  second` line',
+    '` `',
+    '`unclosed',
+    'a `` b',
+    'a ` b `` c',
+    '[docs](u) `[x](v)` (no docs: r)',
+]
+
+
+@pytest.mark.small
+class DescribeCodeSpans:
+    @pytest.mark.parametrize('text', WELL_FORMED_CODE_SPAN_TEXTS)
+    def it_finds_the_spans_the_regex_found_on_well_formed_text(self, text: str) -> None:
+        expected = [match.span() for match in REGEX_CODE_SPAN.finditer(text)]
+
+        assert _load_checker().code_spans(text) == expected
+
+    def it_opens_a_span_after_an_escaped_backslash(self) -> None:
+        assert _load_checker().code_spans('\\\\`x`') == [(2, 5)]
+
+    def it_leaves_an_opener_literal_when_only_a_shorter_run_follows(self) -> None:
+        assert _load_checker().code_spans('``a`') == []
+
+    def it_pairs_a_later_run_after_an_unclosed_longer_opener(self) -> None:
+        assert _load_checker().code_spans('``a`b`') == [(3, 6)]
+
+    def it_opens_no_span_inside_a_longer_run(self) -> None:
+        assert _load_checker().code_spans('a``b`c') == []
+
+
 @pytest.mark.medium
 class DescribeReleaseNotesStep:
     @staticmethod

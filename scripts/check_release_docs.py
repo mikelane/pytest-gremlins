@@ -37,7 +37,8 @@ These line rules cover the whole selected entry, in the preamble, the exempt sec
   longer closer is rejected because CommonMark would close there.
 * An HTML comment that opens mid-line ends at the next blank line, as Markdown reads it, so one still open there is
   rejected and the lines after it are checked. An unclosed ``<!--`` in a code span is rejected too, because a reader
-  may take it for a comment; a backslash-escaped backtick opens no code span.
+  may take it for a comment. Code spans pair as CommonMark pairs them: a backtick run opens one unless an odd number
+  of backslashes escapes it, it closes at the next run of the same length, and an opener with no closer is literal.
 * Every thematic break or setext-underline shape is rejected, in every section and with no attempt to guess the
   previous line: a run of ``=``, a run of one or two ``-``, and ``***``, ``---``, ``___``, ``* * *`` and ``- - -``.
   This also rejects a delimiter under a pipe or inline-HTML line, so ``A | B`` + ``---`` and
@@ -56,8 +57,11 @@ A second visible copy of the selected version heading is a problem wherever it s
 readers see both.
 
 A line longer than 1000 characters is a problem wherever it sits in the entry, inside a fence or comment too. It is
-reported before any pattern reads it and is then read as a blank line, so no single line can make the line patterns
-slow. With ``--newest``, a long line above the topmost version heading exits 2, because it could be that heading.
+reported before any pattern reads it and is then read as a blank line. With ``--newest``, a long line above the
+topmost version heading exits 2, because it could be that heading. Code spans are found by a scan that is linear in
+the length of the text, so no run of backticks makes the check slow. The cap does not bound a gated bullet, which
+joins its continuation lines: the docs-link and ``(no docs:`` patterns still take time quadratic in the length of one
+bullet (a bullet of 100 lines of ``[`` takes seconds).
 
 Nothing skips this check: it has no flag, environment variable or input that turns it off.
 
@@ -105,6 +109,7 @@ OUTER_FENCE = re.compile(r' {0,3}(`{3,}|~{3,})(.*)')
 ANY_INDENT_FENCE = re.compile(r'\s*(`{3,}|~{3,})(.*)')
 COMMENT_OPEN = '<!--'
 COMMENT_CLOSE = '-->'
+BACKTICK_RUN = re.compile(r'`+')
 CODE_SPAN = re.compile(r'(?<!\\)(`+).+?(?<!`)\1(?!`)', re.DOTALL)
 NEWEST_HEADING = re.compile(r'## v?([0-9]\S*)')
 LINE_BREAK = re.compile(r'\r\n|\r|\n')
@@ -253,7 +258,70 @@ def _is_html_heading(text: str) -> bool:
     A renderer turns these tags into real headings even inside a block quote or a list item, so the strict format
     rejects them wherever the line is visible. A tag written as a code span (```<h1>```) stays literal text.
     """
-    return bool(HTML_HEADING.search(CODE_SPAN.sub(' ', text)))
+    return bool(HTML_HEADING.search(_without_code_spans(text)))
+
+
+def _is_escaped(text: str, index: int) -> bool:
+    """Return whether the character at ``index`` follows an odd number of backslashes, so a backslash escapes it."""
+    backslashes = 0
+    while index - backslashes > 0 and text[index - backslashes - 1] == '\\':
+        backslashes += 1
+    return backslashes % 2 == 1
+
+
+def _closing_runs(runs: list[tuple[int, int]], opener_starts: list[int]) -> list[int | None]:
+    """Return, for each backtick run, the index of the next run as long as its opener, or ``None``.
+
+    One backward walk keeps the nearest later run of every length, so the lookup is linear in the number of runs.
+    """
+    closers: list[int | None] = [None] * len(runs)
+    nearest_by_length: dict[int, int] = {}
+    for index in reversed(range(len(runs))):
+        start, end = runs[index]
+        opener_length = end - opener_starts[index]
+        if opener_length:
+            closers[index] = nearest_by_length.get(opener_length)
+        nearest_by_length[end - start] = index
+    return closers
+
+
+def code_spans(text: str) -> list[tuple[int, int]]:
+    r"""Return the ``(start, end)`` bounds of every code span in ``text``, backticks included, as CommonMark pairs them.
+
+    A span opens at a maximal backtick run that no backslash escapes and closes at the next run of exactly the same
+    length; runs of other lengths in between are literal. An opener with no such closer is literal text. A backslash
+    escapes only the first backtick of a run, and inside a span a backslash is literal, so ```a\``` is a span. The
+    scan is linear in the length of ``text``.
+
+    >>> code_spans('a `b` and ``c`d`` and `e')
+    [(2, 5), (10, 17)]
+    >>> code_spans('\\`b` c`')
+    [(3, 7)]
+    """
+    runs = [match.span() for match in BACKTICK_RUN.finditer(text)]
+    opener_starts = [start + 1 if _is_escaped(text, start) else start for start, _ in runs]
+    closers = _closing_runs(runs, opener_starts)
+    spans: list[tuple[int, int]] = []
+    index = 0
+    while index < len(runs):
+        closer = closers[index]
+        if closer is None:
+            index += 1
+            continue
+        spans.append((opener_starts[index], runs[closer][1]))
+        index = closer + 1
+    return spans
+
+
+def _without_code_spans(text: str) -> str:
+    """Return ``text`` with every code span replaced by one space, so no pattern reads what a span holds."""
+    visible: list[str] = []
+    position = 0
+    for start, end in code_spans(text):
+        visible.extend((text[position:start], ' '))
+        position = end
+    visible.append(text[position:])
+    return ''.join(visible)
 
 
 def _starts_html_tag(text: str) -> bool:
@@ -329,12 +397,16 @@ def _comment_open_index(text: str) -> int:
 
     A ``<!--`` written as a code span is literal text, so it opens no comment.
     """
-    code_spans = [match.span() for match in CODE_SPAN.finditer(text)]
+    spans = iter(code_spans(text))
+    span_end = 0
+    span_start = -1
     index = text.find(COMMENT_OPEN)
     while index >= 0:
-        if not any(start <= index < end for start, end in code_spans):
+        while index >= span_end:
+            span_start, span_end = next(spans, (len(text), len(text) + 1))
+        if index < span_start:
             return index
-        index = text.find(COMMENT_OPEN, index + 1)
+        index = text.find(COMMENT_OPEN, span_end)
     return -1
 
 
@@ -343,7 +415,7 @@ def _has_unclosed_comment_opener_in_code_span(text: str) -> bool:
 
     A span that holds the whole comment (``<!-- x -->``) is literal text and is fine.
     """
-    spans = (match.group() for match in CODE_SPAN.finditer(text))
+    spans = (text[start:end] for start, end in code_spans(text))
     return any(COMMENT_CLOSE not in span[span.rfind(COMMENT_OPEN) :] for span in spans if COMMENT_OPEN in span)
 
 
@@ -905,7 +977,7 @@ def _reference_problem(reference: Reference, site: Site) -> str | None:
 def _bullet_problems(item: _Item, site: Site) -> list[str]:
     section, number, text = item.section, item.number, ' '.join(item.parts)
     label = _label(section, number, text)
-    visible = CODE_SPAN.sub(' ', text)
+    visible = _without_code_spans(text)
     exemptions = EXEMPTION.findall(visible)
     if any(not reason.strip() for reason in exemptions):
         return [f'{label} has an empty "(no docs: )" exemption; give a reason']

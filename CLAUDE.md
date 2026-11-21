@@ -238,7 +238,9 @@ The PR fails CI until the entry passes the release docs gate.
 - A code fence closes only on a closer of exactly the opener's length, as the docs renderer (pymdownx.superfences)
   reads it. A longer closer fails (a four-backtick fence, a five-backtick line, then a four-backtick line): CommonMark
   closes there and the docs renderer does not, so they disagree on what follows. A shorter closer does not close.
-- A backslash-escaped backtick opens no code span, so ``\`<h2>Feature</h2>`` still fails as a raw heading. A `<!--` in a
+- Code spans pair as CommonMark pairs them: a backtick run closes at the next run of the same length, an opener with
+  no closer is literal, and a backtick after an odd number of backslashes opens no span, so
+  ``\`<h2>Feature</h2>`` still fails as a raw heading. A `<!--` in a
   code span is literal text and hides nothing, but an unclosed one is reported on its own line because a reader may
   take it for a comment. A comment that starts mid-line ends at the next blank line, as Markdown reads it, so one
   still open there is reported and the lines after it are checked. Only a comment that starts a line may span blank
@@ -246,9 +248,11 @@ The PR fails CI until the entry passes the release docs gate.
 - A second visible `##` heading for the version being released fails wherever it appears, including `##v2.0.0`,
   an indented, quoted or listed copy, and one with a date or closing hashes.
 - A line longer than 1000 characters fails anywhere in the entry, inside a fence or comment too, with
-  `line N is longer than 1000 characters`. The check reports it before reading it and then treats it as a blank line,
-  so no single line can make the line patterns slow. Wrap a long line instead. With `--newest`, a long line above
-  the topmost version heading exits 2, because it could be that heading.
+  `line N is longer than 1000 characters`. The check reports it before reading it and then treats it as a blank line.
+  Wrap a long line instead. With `--newest`, a long line above the topmost version heading exits 2, because it could
+  be that heading. Code spans are found by a linear scan, so backtick runs cannot make the check slow, but the cap
+  does not bound a gated bullet, which joins its continuation lines: the docs-link and `(no docs:` patterns are still
+  quadratic in the length of one bullet (100 lines of `[` take seconds).
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
   heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
 - An entry runs to the next `## vX.Y.Z` heading. Any other `##` line inside it
