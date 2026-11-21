@@ -214,3 +214,34 @@ class DescribePackageInitGremlins:
         output = result.stdout.str()
 
         assert _helpers.verdicts(output) == {'Zapped': 2, 'Survived': 1, 'Timeout': 0, 'Error': 0}
+
+    @pytest.mark.parametrize('targets', ['pkg,pkg.py', 'pkg.py,pkg'])
+    @pytest.mark.parametrize('mode', list(_helpers.EXECUTION_MODES))
+    def it_names_the_module_shadowed_by_the_package_on_stderr(
+        self, pytester_with_markers: pytest.Pytester, targets: str, mode: str
+    ) -> None:
+        pytester_with_markers.makeini('[pytest]\npythonpath = .\n')
+        pytester_with_markers.mkpydir('pkg').joinpath('__init__.py').write_text(_PACKAGE_INIT)
+        pytester_with_markers.path.joinpath('pkg.py').write_text(_SHADOWED_MODULE)
+        pytester_with_markers.mkdir('tests').joinpath('test_pkg.py').write_text(_PACKAGE_INIT_TESTS)
+
+        result = pytester_with_markers.runpytest_subprocess(
+            *_COMMON_ARGS, f'--gremlin-targets={targets}', *_helpers.EXECUTION_MODES[mode]
+        )
+
+        assert _helpers.verdicts(result.stdout.str()) == {'Zapped': 2, 'Survived': 1, 'Timeout': 0, 'Error': 0}
+        assert 'pkg.py is shadowed by the package pkg' in result.stderr.str()
+        assert result.stderr.str().count('is shadowed by the package') == 1
+
+    def it_prints_no_shadow_note_when_only_the_package_is_targeted(
+        self, pytester_with_markers: pytest.Pytester
+    ) -> None:
+        pytester_with_markers.makeini('[pytest]\npythonpath = .\n')
+        pytester_with_markers.mkpydir('pkg').joinpath('__init__.py').write_text(_PACKAGE_INIT)
+        pytester_with_markers.path.joinpath('pkg.py').write_text(_SHADOWED_MODULE)
+        pytester_with_markers.mkdir('tests').joinpath('test_pkg.py').write_text(_PACKAGE_INIT_TESTS)
+
+        result = pytester_with_markers.runpytest_subprocess(*_COMMON_ARGS, '--gremlin-targets=pkg')
+
+        assert _helpers.verdicts(result.stdout.str()) == {'Zapped': 2, 'Survived': 0, 'Timeout': 0, 'Error': 0}
+        assert 'is shadowed by the package' not in result.stdout.str() + result.stderr.str()
