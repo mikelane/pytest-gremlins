@@ -191,6 +191,24 @@ class DescribeAnUnreadableVersion:
         assert result.returncode != 0
         assert 'would tag' not in result.stdout + result.stderr
 
+    @pytest.mark.parametrize(
+        'pyproject',
+        [
+            pytest.param('project = "x"\n', id='project-is-a-string'),
+            pytest.param('project = [1]\n', id='project-is-an-array'),
+        ],
+    )
+    def it_reports_a_project_that_is_not_a_table(self, tmp_path: Path, pyproject: str) -> None:
+        _, clone = _make_clone(tmp_path, pyproject)
+
+        result = _run(clone)
+
+        assert result.returncode == 1
+        assert 'error:' in result.stderr
+        assert '[project]' in result.stderr
+        assert 'Traceback' not in result.stderr
+        assert 'would tag' not in result.stdout
+
     def it_fails_when_pyproject_is_missing(self, tmp_path: Path) -> None:
         _, clone = _make_clone(tmp_path, _pyproject('1.2.3'))
         (clone / 'pyproject.toml').unlink()

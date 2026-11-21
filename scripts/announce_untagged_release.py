@@ -37,11 +37,14 @@ def read_version(repo: Path) -> str:
     """Return ``[project].version`` from ``pyproject.toml``, rejecting a value that is not a plain version."""
     try:
         text = (repo / 'pyproject.toml').read_text(encoding='utf-8')
-        version = tomllib.loads(text).get('project', {}).get('version')
+        project = tomllib.loads(text).get('project', {})
     except (OSError, UnicodeDecodeError) as error:
         raise CannotCheckError(f'cannot read pyproject.toml: {error}') from error
     except tomllib.TOMLDecodeError as error:
         raise CannotCheckError(f'pyproject.toml is not valid TOML: {error}') from error
+    if not isinstance(project, dict):
+        raise CannotCheckError(f'pyproject.toml has no usable [project] table (got {project!r})')
+    version = project.get('version')
     if not isinstance(version, str) or TAG_PATTERN.fullmatch(f'v{version}') is None:
         raise CannotCheckError(f'pyproject.toml has no usable [project].version (got {version!r})')
     return version
