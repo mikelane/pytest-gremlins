@@ -809,6 +809,23 @@ class DescribeCommandLine:
         assert 'line 3' in result.stderr
         assert result.stdout == ''
 
+    def it_exits_two_in_newest_mode_when_a_line_above_the_topmost_entry_is_too_long(self, tmp_path: Path) -> None:
+        changelog = (
+            '# Changelog\n\n## v2.0.0 ' + 'x' * 1000 + '\n\n### Fix\n\n- unlinked (#9)\n\n'
+            '## v1.0.0\n\n### Fix\n\n- ok (no docs: r)\n'
+        )
+
+        result = self._run(tmp_path, changelog, '--newest')
+
+        assert result.returncode == 2
+        assert 'line 3 is longer than 1000 characters' in result.stderr
+
+    def it_refuses_newest_mode_when_the_only_heading_is_too_long_to_read(self) -> None:
+        checker = _load_checker()
+
+        with pytest.raises(checker.CannotCheckError, match='line 3 is longer than 1000 characters'):
+            checker.newest_version('# Changelog\n\n## v2.0.0 ' + 'x' * 1000 + '\n')
+
     @pytest.mark.parametrize('args', [['--newest', '2.0.0'], []])
     def it_exits_two_unless_exactly_one_of_the_version_and_newest_mode_is_given(
         self, tmp_path: Path, args: list[str]
@@ -1821,6 +1838,20 @@ class DescribeOneReportPerRejectedLine:
             f'{HEADING_FIX}',
             'HTML comment at line 8 under "### Fix"; remove it',
         ]
+
+    @pytest.mark.parametrize(
+        ('opener', 'line', 'expected'),
+        [
+            ('> ```', '> - **Undocumented.** (#5)', 'a blockquote at line 9 under "### Fix"'),
+            ('    ```', 'Undocumented prose.', 'a paragraph that is not part of a list item at line 9 under "### Fix"'),
+        ],
+    )
+    def it_reads_the_lines_of_a_fence_left_open_above_the_entry(self, opener: str, line: str, expected: str) -> None:
+        changelog = f'# Changelog\n\n{opener}\n\n## v2.0.0\n\n### Fix\n\n{line}\n'
+
+        problems = _load_checker().find_problems(changelog, '2.0.0', SITE)
+
+        assert any(expected in problem for problem in problems), problems
 
     def it_still_gates_a_bullet_inside_an_unsupported_fence_body(self) -> None:
         body = f'### Fix\n\n{LINKED_BULLET}\n  ```\n  code\n{UNLINKED_BULLET}\n  ```\n'

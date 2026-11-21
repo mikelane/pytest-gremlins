@@ -56,7 +56,8 @@ A second visible copy of the selected version heading is a problem wherever it s
 readers see both.
 
 A line longer than 1000 characters is a problem wherever it sits in the entry, inside a fence or comment too. It is
-reported before any pattern reads it and is then read as a blank line, so no input line can make the check slow.
+reported before any pattern reads it and is then read as a blank line, so no single line can make the line patterns
+slow. With ``--newest``, a long line above the topmost version heading exits 2, because it could be that heading.
 
 Nothing skips this check: it has no flag, environment variable or input that turns it off.
 
@@ -382,11 +383,12 @@ class _Scanner:
         self.diagnostics: list[tuple[int, str]] = []
         self.hidden_headings: list[tuple[_Region, int]] = []
         self.hidden_version_headings: list[tuple[_Region, int, str]] = []
-        self.unsupported_fence_lines: list[int] = []
+        self.unsupported_fence_lines: list[tuple[int, int]] = []
         self.open_region: _Region | None = None
         self._neutralized = neutralized
         self._fence = ''
         self._neutralized_fence = ''
+        self._neutralized_fence_opener = 0
         self._in_comment = False
         self._comment_midline = False
         self._in_list_item = False
@@ -442,7 +444,8 @@ class _Scanner:
     def _open_unsupported_fence(self, number: int, marker: str, diagnostic: str) -> None:
         """Report a fence the format does not support and read its lines as plain text until it closes."""
         self._neutralized_fence = marker
-        self.unsupported_fence_lines.append(number)
+        self._neutralized_fence_opener = number
+        self.unsupported_fence_lines.append((number, number))
         self.diagnostics.append((number, diagnostic))
 
     def _feed_inside_region(self, number: int, text: str) -> None:
@@ -457,7 +460,7 @@ class _Scanner:
             if _closes_fence(_container_content(text), self._neutralized_fence):
                 self._neutralized_fence = ''
             if not BULLET.match(text) and _structural_title(text, SECTION_LEVEL) is None:
-                self.unsupported_fence_lines.append(number)
+                self.unsupported_fence_lines.append((self._neutralized_fence_opener, number))
             self._feed_text(number, text, neutralized=True)
 
     def _track_list_item(self, text: str) -> None:
@@ -523,7 +526,7 @@ class _Scan:
     hidden_version_headings: list[tuple[_Region, int, str]]
     raw_lines: list[str]
     diagnostics: tuple[tuple[int, str], ...]
-    unsupported_fence_lines: frozenset[int]
+    unsupported_fence_lines: tuple[tuple[int, int], ...]
 
 
 def _scan(changelog: str) -> _Scan:
@@ -549,7 +552,7 @@ def _scan(changelog: str) -> _Scan:
                 scanner.hidden_version_headings,
                 LINE_WITH_BREAK.findall(changelog),
                 tuple(scanner.diagnostics),
-                frozenset(scanner.unsupported_fence_lines),
+                tuple(scanner.unsupported_fence_lines),
             )
         unclosed.append(scanner.open_region)
         neutralized.add(scanner.open_region.number)
@@ -587,7 +590,8 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
     headings = _stray_heading_problems(lines) + _duplicate_version_heading_problems(
         scan.lines[start + 1 :], bare_version
     )
-    rejected = frozenset(number for number, _ in shapes + headings) | scan.unsupported_fence_lines
+    fence_lines = (number for opener, number in scan.unsupported_fence_lines if first <= opener < last)
+    rejected = frozenset(number for number, _ in shapes + headings) | frozenset(fence_lines)
     text = ''.join(scan.raw_lines[first - 1 : last - 1])
     return _Entry(
         lines,
@@ -811,8 +815,8 @@ def newest_version(changelog: str) -> str:
         The version without its leading ``v``.
 
     Raises:
-        CannotCheckError: When the changelog has no ``##`` heading, or the topmost one is not a version entry. An
-            older entry is never selected instead.
+        CannotCheckError: When the changelog has no ``##`` heading, the topmost one is not a version entry, or a line
+            above it is too long to read (it could be the topmost heading). An older entry is never selected instead.
     """
     for line in _scan(changelog).lines:
         if _structural_title(line.text, ENTRY_LEVEL) is None:
@@ -822,8 +826,20 @@ def newest_version(changelog: str) -> str:
             raise CannotCheckError(
                 f'the topmost "##" heading, "{line.text.strip()}" at line {line.number}, is not a "## vX.Y.Z" entry'
             )
+        _refuse_an_overlong_line_above(changelog, line.number)
         return heading.group(1)
+    _refuse_an_overlong_line_above(changelog, sys.maxsize)
     raise CannotCheckError('CHANGELOG.md has no "## vX.Y.Z" entry')
+
+
+def _refuse_an_overlong_line_above(changelog: str, line_number: int) -> None:
+    """Raise when a line above ``line_number`` is too long to read, since it may hide the topmost heading."""
+    lines = LINE_BREAK.split(changelog)[: line_number - 1]
+    overlong = next((number for number, text in enumerate(lines, start=1) if len(text) > MAX_LINE_LENGTH), None)
+    if overlong is not None:
+        raise CannotCheckError(
+            f'line {overlong} is longer than {MAX_LINE_LENGTH} characters, so the topmost entry cannot be found'
+        )
 
 
 class CannotCheckError(Exception):

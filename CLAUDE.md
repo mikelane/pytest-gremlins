@@ -247,7 +247,8 @@ The PR fails CI until the entry passes the release docs gate.
   an indented, quoted or listed copy, and one with a date or closing hashes.
 - A line longer than 1000 characters fails anywhere in the entry, inside a fence or comment too, with
   `line N is longer than 1000 characters`. The check reports it before reading it and then treats it as a blank line,
-  which keeps every pattern the check runs fast. Wrap a long line instead.
+  so no single line can make the line patterns slow. Wrap a long line instead. With `--newest`, a long line above
+  the topmost version heading exits 2, because it could be that heading.
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
   heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
 - An entry runs to the next `## vX.Y.Z` heading. Any other `##` line inside it
