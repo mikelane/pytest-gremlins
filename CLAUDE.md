@@ -322,6 +322,16 @@ generic placeholder under `### Fix`, so an untouched entry never passes the gate
 never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the cache gate needs one,
 commit signed, push and open the PR. It does not replace `cut-release.yml` yet (#1046).
 
+**Tag release (dry run).** `.github/workflows/tag-release.yml` runs on every push to `main`. It runs
+`scripts/announce_untagged_release.py`, which reads `[project].version` from `pyproject.toml` and asks origin (`git
+ls-remote --exit-code --tags origin refs/tags/v<version>`, because the CI checkout is shallow and has no tags) whether
+`v<version>` exists (`ls-remote` tail-matches, so only a ref exactly `refs/tags/v<version>` counts, and the version
+must be canonical PEP 440 such as `1.15.0b0`). When it does not, the log says `would tag v<version> at <sha>`; when it
+does, `v<version> already tagged`. A failed lookup or an unreadable version fails the job and never prints `would
+tag`. The workflow has `contents: read` only and a workflow-level `DRY_RUN: 'true'` constant (not an input): it
+creates no tag and dispatches nothing. Phase #1046 adds the real tag and the `release.yml` dispatch. It does not
+replace `cut-release.yml`.
+
 **Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`
 pre-commit hook blocks commits to `main` and leaves a dirty version bump to revert.
 
