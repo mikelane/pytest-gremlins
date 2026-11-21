@@ -109,10 +109,10 @@ class DescribeTheRemoteLookup:
         assert 'fetch-depth' not in checkout.get('with', {})
 
     def it_runs_the_announce_script_with_the_pushed_commit(self) -> None:
-        announce = next(step for step in _steps() if 'announce_untagged_release.py' in str(step.get('run', '')))
+        announce_step = next(step for step in _steps() if 'announce_untagged_release.py' in str(step.get('run', '')))
 
-        assert announce['env']['SHA'] == '${{ github.sha }}'
-        assert '--sha "$SHA"' in announce['run']
+        assert announce_step['env']['SHA'] == '${{ github.sha }}'
+        assert '--sha "$SHA"' in announce_step['run']
 
     def it_does_not_read_the_version_with_grep(self) -> None:
         assert not any(re.search(r'\b(?:grep|sed|awk)\b', script) for script in _run_scripts())
@@ -124,7 +124,7 @@ class DescribeTheConcurrencyGroup:
         concurrency = _workflow()['concurrency']
 
         assert concurrency['cancel-in-progress'] is False
-        assert concurrency['group']
+        assert concurrency['group'] == 'tag-release'
 
 
 @pytest.mark.medium
@@ -136,10 +136,10 @@ class DescribeActionPins:
         assert CHECKOUT_PIN in CUT_RELEASE_WORKFLOW.read_text()
 
     def it_pins_every_action_to_a_full_commit_sha(self) -> None:
-        uses = [str(step['uses']) for step in _steps() if 'uses' in step]
+        action_references = [str(step['uses']) for step in _steps() if 'uses' in step]
 
-        assert uses
-        assert all(re.search(r'@[0-9a-f]{40}$', value) for value in uses)
+        assert action_references
+        assert all(re.search(r'@[0-9a-f]{40}$', reference) for reference in action_references)
 
 
 @pytest.mark.small

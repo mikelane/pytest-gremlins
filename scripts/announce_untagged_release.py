@@ -41,10 +41,21 @@ class CannotCheckError(Exception):
 
 
 def read_version(repo: Path) -> str:
-    """Return ``[project].version`` from ``pyproject.toml``, rejecting a value that is not a plain version."""
+    """Return ``[project].version`` from ``pyproject.toml``, rejecting a value that is not a plain version.
+
+    Args:
+        repo: The checkout whose ``pyproject.toml`` is read.
+
+    Returns:
+        The canonical PEP 440 version string, for example ``1.15.0b0``.
+
+    Raises:
+        CannotCheckError: If the file is unreadable or invalid TOML, ``[project]`` is not a table, or the version is
+            missing, not a string or not canonical.
+    """
     try:
-        text = (repo / 'pyproject.toml').read_text(encoding='utf-8')
-        project = tomllib.loads(text).get('project', {})
+        pyproject_text = (repo / 'pyproject.toml').read_text(encoding='utf-8')
+        project = tomllib.loads(pyproject_text).get('project', {})
     except (OSError, UnicodeDecodeError) as error:
         raise CannotCheckError(f'cannot read pyproject.toml: {error}') from error
     except tomllib.TOMLDecodeError as error:
@@ -64,30 +75,56 @@ def _lists_exact_tag(ls_remote_output: str, tag: str) -> bool:
 
 
 def tag_exists_on_origin(repo: Path, tag: str) -> bool:
-    """Ask origin whether ``refs/tags/<tag>`` exists. Only exit code 2 means "not found"; anything else is an error."""
-    result = subprocess.run(
+    """Ask origin whether ``refs/tags/<tag>`` exists. Only exit code 2 means "not found"; anything else is an error.
+
+    Args:
+        repo: The checkout whose ``origin`` remote is asked.
+        tag: The tag name, for example ``v1.2.3``.
+
+    Returns:
+        True when origin lists exactly ``refs/tags/<tag>``, False when it lists no such ref.
+
+    Raises:
+        CannotCheckError: If ``git ls-remote`` fails for any reason other than finding no match.
+    """
+    ls_remote = subprocess.run(
         ['git', 'ls-remote', '--exit-code', '--tags', REMOTE, f'refs/tags/{tag}'],  # noqa: S607
         cwd=repo,
         capture_output=True,
         text=True,
         check=False,
     )
-    if result.returncode == 0:
-        return _lists_exact_tag(result.stdout, tag)
-    if result.returncode == LS_REMOTE_NO_MATCH:
+    if ls_remote.returncode == 0:
+        return _lists_exact_tag(ls_remote.stdout, tag)
+    if ls_remote.returncode == LS_REMOTE_NO_MATCH:
         return False
-    detail = result.stderr.strip() or f'git ls-remote exited {result.returncode}'
+    detail = ls_remote.stderr.strip() or f'git ls-remote exited {ls_remote.returncode}'
     raise CannotCheckError(f'could not look up tag {tag} on {REMOTE}: {detail}')
 
 
 def require_dry_run() -> None:
-    """Refuse to run unless ``DRY_RUN`` is exactly ``true``."""
+    """Refuse to run unless ``DRY_RUN`` is exactly ``true``.
+
+    Raises:
+        CannotCheckError: If ``DRY_RUN`` is unset or holds any other value.
+    """
     if os.environ.get('DRY_RUN') != 'true':
         raise CannotCheckError('DRY_RUN is not "true"; only the dry run is implemented')
 
 
 def announce(repo: Path, sha: str) -> str:
-    """Return the line to print for the version in ``repo``."""
+    """Return the line to print for the version in ``repo``.
+
+    Args:
+        repo: The checkout whose version is checked.
+        sha: The pushed commit, named in the ``would tag`` line.
+
+    Returns:
+        ``would tag v<version> at <sha>`` when origin has no such tag, else ``v<version> already tagged``.
+
+    Raises:
+        CannotCheckError: If the dry-run switch is off, the version is unreadable or the lookup fails.
+    """
     require_dry_run()
     tag = f'v{read_version(repo)}'
     if tag_exists_on_origin(repo, tag):

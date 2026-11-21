@@ -22,7 +22,12 @@ GIT_CONFIG_ARGS = (
     '-c',
     'tag.gpgSign=false',
 )
-ISOLATED_GIT_ENV = {**os.environ, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
+# COVERAGE_PROCESS_START is dropped so no child process starts a coverage run of its own.
+ISOLATED_GIT_ENV = {
+    **{key: value for key, value in os.environ.items() if key != 'COVERAGE_PROCESS_START'},
+    'GIT_CONFIG_GLOBAL': os.devnull,
+    'GIT_CONFIG_NOSYSTEM': '1',
+}
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -140,7 +145,7 @@ class DescribeATaggedVersion:
         result = _run(shallow)
 
         assert result.returncode == 0, result.stderr
-        assert 'would tag' not in result.stdout + result.stderr
+        assert result.stdout.splitlines() == ['v1.2.3 already tagged']
 
     def it_finds_a_lightweight_tag(self, tmp_path: Path) -> None:
         _, clone = _make_clone(tmp_path, _pyproject('1.2.3'))
@@ -148,7 +153,7 @@ class DescribeATaggedVersion:
 
         result = _run(clone)
 
-        assert 'would tag' not in result.stdout + result.stderr
+        assert result.stdout.splitlines() == ['v1.2.3 already tagged']
 
 
 @pytest.mark.medium
@@ -159,7 +164,7 @@ class DescribeAFailedLookup:
 
         result = _run(clone)
 
-        assert result.returncode != 0
+        assert result.returncode == 1, result.stderr
         assert 'would tag' not in result.stdout + result.stderr
 
     def it_names_the_failed_lookup_on_stderr(self, tmp_path: Path) -> None:
@@ -181,6 +186,10 @@ class DescribeAnUnreadableVersion:
             pytest.param('[project\nversion = "1.2.3"\n', id='invalid-toml'),
             pytest.param('[project]\nversion = "1.2.3\\nrefs/heads/*"\n', id='unsafe-characters'),
             pytest.param('[project]\nversion = "latest"\n', id='not-a-version'),
+            pytest.param('[project]\nversion = "v1.2.3"\n', id='leading-v'),
+            pytest.param('[project]\nversion = " 1.2.3"\n', id='leading-space'),
+            pytest.param('[project]\nversion = "01.2.3"\n', id='leading-zero'),
+            pytest.param('[project]\nversion = ""\n', id='empty-string'),
         ],
     )
     def it_fails_without_announcing(self, tmp_path: Path, pyproject: str) -> None:
@@ -188,7 +197,7 @@ class DescribeAnUnreadableVersion:
 
         result = _run(clone)
 
-        assert result.returncode != 0
+        assert result.returncode == 1, result.stderr
         assert 'would tag' not in result.stdout + result.stderr
 
     @pytest.mark.parametrize(
@@ -215,7 +224,7 @@ class DescribeAnUnreadableVersion:
 
         result = _run(clone)
 
-        assert result.returncode != 0
+        assert result.returncode == 1, result.stderr
         assert 'would tag' not in result.stdout + result.stderr
 
 
@@ -227,7 +236,7 @@ class DescribeTheDryRunSwitch:
 
         result = _run(clone, dry_run=dry_run)
 
-        assert result.returncode != 0
+        assert result.returncode == 1, result.stderr
         assert 'would tag' not in result.stdout + result.stderr
 
 
@@ -251,5 +260,5 @@ class DescribeAVersionThatCannotBeTagged:
 
         result = _run(clone)
 
-        assert result.returncode != 0
+        assert result.returncode == 1, result.stderr
         assert 'would tag' not in result.stdout
