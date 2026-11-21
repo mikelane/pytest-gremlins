@@ -197,12 +197,91 @@ The PR fails CI until the entry passes the release docs gate.
   that sits under no `###` heading.
 - Every list item is a bullet: `-`, `*`, `+`, `1.` and `1)` markers all count, and a nested sub-bullet needs its
   own reference or exemption. A reference or exemption inside an HTML comment, a code span, an image
-  (`![x](...)`) or an escaped link (`\[x](...)`) does not count.
+  (`![x](...)`) or an escaped link (`\[x](...)`) does not count, and neither does one inside a raw HTML tag,
+  attributes included (`<a title="(no docs: r)">`, or a docs link in an attribute), because the page does not show
+  it. A tag is what the renderer keeps as raw inline HTML. One that leaves a quoted attribute value open hides the rest
+  of the bullet, because a browser keeps reading the value. Text between tags (`<b>(no docs: r)</b>`), text after a
+  `<` the renderer escapes (`<a@b (no docs: r)>`) and a link written as `[docs](<page.md>)` still count.
 - Under `### Upgrade notes`, `### Feature` and `### Fix` the only accepted lines are blank lines, list items and
   their indented continuation lines. Prose paragraphs, `•` pseudo-bullets, block quotes (`>`), code fences,
-  HTML comments (`<!--` anywhere, even in a code span), other headings (`####`, indented or tab-indented `#`),
-  thematic breaks and underlined headings fail the check, and the failure names the line. Put prose before the
-  first `###` heading.
+  HTML comments (a `<!--` anywhere, and an unclosed one even in a code span), other headings (`####`, indented or
+  tab-indented `#`), thematic breaks and underlined headings fail the check, and the failure names the line. Put prose
+  before the first `###` heading.
+- The entry is a **strict format**, checked across the whole selected entry (the preamble, `### Internal`,
+  `### Documentation` and the gated sections alike). It is not a Markdown renderer, so a line outside a closed
+  outer code fence or HTML comment must be prose, a list line, a version heading or one of the five `###` headings.
+  Every other line that starts with `#` fails, including `#Feature`, `####Detail`, `###Feature`, `#Feature ###`,
+  `#\tFeature` and `##v2.0.0`; a wrapped bullet continuation is the one exception. Any indented line directly
+  under an open list item (no blank line between) is paragraph text to the renderer, so it may start with a `#` that
+  is not an ATX heading: `#989-#994)`, `#964) Thanks. (no docs: r)` and `#964 for details` all pass. It still fails
+  when it is heading-shaped (`#` to `######` followed by a space or the end of the line), and a `#720)` after a blank
+  line renders as a heading and fails.
+- A heading must start at column 0. The docs renderer makes a heading only from a `#` at column 0, so a
+  heading-shaped line indented by any spaces or a tab (`### Internal` after two spaces, `\t### Fix`) renders as text
+  (or, 4 columns in under a loose list item, as a heading inside that item). Such a line fails wherever it is visible
+  with `an indented heading at line N (...); start the heading at column 0`, even when it names a known section, and it
+  never switches the section: the bullets after it stay gated by the heading above it.
+- A line that starts with an HTML tag fails, after any indentation, list marker or `>` prefix: `<div>`, `</div>`,
+  `<details>`, `<pre>`, `<custom-tag>`, `<br/>`, `<?php` and `<![CDATA[`. The renderer reads it as a raw HTML block and
+  leaves a `###` line inside as literal text, which would hide a section switch from readers while the gate acted on it.
+  A tag in the middle of a line, a tag in a code span, an autolink (`<https://example.com>`) and a bare `<` stay
+  accepted.
+- A raw `<h1>`-`<h6>` tag fails wherever it is visible, in any case and with attributes (`<H2 class="x">`), including
+  inside a block quote or a list item, because the renderer makes a real heading of it. A tag written as a code span
+  (`<h1>` in backticks) stays literal text.
+- Every thematic-break and underline-style heading line fails anywhere in the entry: `=`, `===`, `-`, `--`, `---`,
+  `***`, `___`, `* * *` and `- - -`. The check does not guess from the previous line; a delimiter under `A | B` or
+  `<em>Feature</em>` fails for being a delimiter. The same heading and delimiter rules apply after list and `>`
+  prefixes are stripped, so `> #Feature`, `- #### Detail`, `> <em>Feature</em>` + `> ---` and `- ---` fail too.
+- A code fence must open at the outer level, indented by at most 3 spaces. A fence inside a list item or block
+  quote, a fence indented 4 or more columns (a tab counts as 4), and an indented fence after a list item (even after a
+  blank line) are rejected with an explicit unsupported-construct message; none is read as code, so the lines after
+  them are checked like any other line. The message for an indented fence says which case applies: indented 4 or more
+  columns, or under the list item above it (put the fence at column 0 after a non-list line).
+- Each problem with a line names it and quotes it in parentheses, shortened to 70 characters. A rejected heading,
+  raw HTML tag or delimiter line also says how to fix it, for example `use one of the five "###" section names, or keep
+  an issue-number line directly under its bullet with no blank line, or escape it as "\#720)"`. A rejected line gets
+  only its own problems: it is not reported again as a paragraph or as a bullet with no docs reference. Inside an
+  unsupported fence, a bullet or a `###` heading is still read, so a bullet there is still gated.
+- A code fence closes only on a closer of exactly the opener's length, as the docs renderer (pymdownx.superfences)
+  reads it. A longer closer fails (a four-backtick fence, a five-backtick line, then a four-backtick line): CommonMark
+  closes there and the docs renderer does not, so they disagree on what follows. A shorter closer does not close.
+- Code spans pair as the docs renderer (Python-Markdown with the pymdownx extensions in `mkdocs.yml`) pairs
+  them, using its own backtick pattern: an opener closes at the next run of its own length, and without one at
+  the first of the longest later runs, so ``` ``x` ``` is one span. A backtick after an odd number of backslashes
+  opens no span, so
+  ``\`<h2>Feature</h2>`` still fails as a raw heading. Because the renderer pairs across the lines of a paragraph,
+  every visible line must pair its own backticks exactly: a run that closes at a run of another length, or not at
+  all, fails with `an unpaired backtick run at line N`; escape a literal backtick as `` \` ``. A run of more than 8
+  backticks fails anywhere in the entry, before anything pairs it, on the opener, body and closer lines of a code
+  fence and inside a comment too. A backtick on a line that also shows text beside an
+  HTML comment fails, because the renderer pairs backticks before it reads the comment; only a comment that starts a
+  line may hold unpaired backticks on lines that show nothing else. A `<!--` in a
+  code span is literal text and hides nothing, but an unclosed one is reported on its own line because a reader may
+  take it for a comment.
+- An HTML comment hides the lines after its own only where the docs renderer stores it as an HTML block: its `<!--`
+  starts the line, indented by at most 3 spaces (under a list item too), and the first `-->` or `--!>` after it is
+  `-->`. Only such a comment may span lines, blank lines included. Every other `<!--` must close with `-->` on its own
+  line: one after `>` or `> >`, after a list marker (`- <!--`, `1. <!--`), after a backslash (`\<!--`, `\\<!--`) or
+  other text, indented 4 or more columns or by a tab, or after a comment that starts the line. One that does not close
+  there fails with `HTML comment at line N (...) does not close on its line and does not start it`, and it hides
+  nothing: the lines after it are checked as visible lines, so a `> ### Feature` or `# Big` under it fails too. A
+  comment that meets `--!>` before its `-->` fails and hides nothing, because the renderer then opens no comment. A
+  line with a tag that the renderer's raw HTML pass ends with `>` on a later line (`x <a title="` followed by `y">`,
+  or `x <a` followed by `<!-- y -->`) fails with `an HTML tag at line N (...) does not end on its line`, because that
+  tag swallows a `<!--` between. The pass runs before code spans exist, so a tag in a code span counts. A `<` whose
+  tag stops before any `>` is escaped as text and passes: `a<b comparisons` with no later `>`, and `` `a<b` `` or
+  `` `List<int` ``, where the backtick after the tag name stops it. Fenced code is stored first, so a tag can run past
+  a fence.
+- A second visible `##` heading for the version being released fails wherever it appears, including `##v2.0.0`,
+  an indented, quoted or listed copy, and one with a date or closing hashes.
+- A line longer than 1000 characters fails anywhere in the entry, inside a fence or comment too, with
+  `line N is longer than 1000 characters`. The check reports it before reading it and then treats it as a blank line.
+  Wrap a long line instead. With `--newest`, a long line above the topmost version heading exits 2, because it could
+  be that heading. With runs capped at 8 backticks, code spans are found in time linear in the text times 8, so
+  backtick runs cannot make the check slow, but the line cap does not bound a gated bullet, which joins its
+  continuation lines: the docs-link and `(no docs:` patterns are still quadratic in the length of one bullet (100
+  lines of `[` take seconds).
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
   heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
 - An entry runs to the next `## vX.Y.Z` heading. Any other `##` line inside it
@@ -212,8 +291,8 @@ The PR fails CI until the entry passes the release docs gate.
 - A carriage return that is not part of a CRLF line ending fails the check, and so does a copy of the version
   heading being released inside an HTML comment or code fence (it confuses readers and other tools). Only ASCII
   digits make a `##` line a version heading.
-- A `###` heading may have up to 3 leading spaces, a tab after the `###` and a closing `###`
-  (`### Internal ###`). It is read like any other heading, so it must be one of the five names above.
+- A `###` heading starts at column 0 and may have a tab after the `###` and a closing `###` (`### Internal ###`).
+  It is read like any other heading, so it must be one of the five names above.
 
 Put a long link on its own indented line so the bullet still passes markdownlint:
 
@@ -310,15 +389,16 @@ a work branch with its own commits is not, because the release PR guard rejects 
 `cz bump --get-next`, switches to `release/v<version>`, runs `cz bump --files-only --yes` (`pyproject.toml`, `uv.lock`,
 `__init__.py`; no commit or tag), checks that the computed version, `[project].version` and `__version__` agree, and
 inserts a `## v<version> (date)` entry above the newest one. The entry has one placeholder bullet per commit since the
-last tag that commitizen counts toward the bump, judged by commitizen's own configured `bump_pattern` and `bump_map`
-over the whole message (so a `BREAKING CHANGE:` footer or a `fix:` body line counts; a commit takes its highest
-increment: MAJOR under `### Upgrade notes`, MINOR under `### Feature`, PATCH under `### Fix`). A conventional commit
-commitizen does not bump on (`chore:`, `docs:`) also gets a bullet, under `### Fix`; `bump:` subjects and
-non-conventional subjects get none unless their body bumps. Every bullet sits under a gated heading, so the docs gate
-fails until each is rewritten and given a docs link or `(no docs: <reason>)` (or moved to Internal or Documentation).
-A major release (a forced `--increment MAJOR` or a breaking change) always has at least one placeholder under
-`### Upgrade notes`; when no commit is conventional (a forced `--increment` over `Revert ...` commits, say) it adds one
-generic placeholder under `### Fix`, so an untouched entry never passes the gate. It
+last tag that commitizen counts toward the bump (the commit subject sits on its own unwrapped line, cut at 90 characters
+so the line fits in 120 columns, so its code span closes on its line), judged by commitizen's own configured
+`bump_pattern` and `bump_map` over the whole message (so a `BREAKING CHANGE:` footer or a `fix:` body line counts; a
+commit takes its highest increment: MAJOR under `### Upgrade notes`, MINOR under `### Feature`, PATCH under `### Fix`).
+A conventional commit commitizen does not bump on (`chore:`, `docs:`) also gets a bullet, under `### Fix`; `bump:`
+subjects and non-conventional subjects get none unless their body bumps. Every bullet sits under a gated heading, so the
+docs gate fails until each is rewritten and given a docs link or `(no docs: <reason>)` (or moved to Internal or
+Documentation). A major release (a forced `--increment MAJOR` or a breaking change) always has at least one placeholder
+under `### Upgrade notes`; when no commit is conventional (a forced `--increment` over `Revert ...` commits, say) it
+adds one generic placeholder under `### Fix`, so an untouched entry never passes the gate. It
 never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the cache gate needs one,
 commit signed, push and open the PR. It does not replace `cut-release.yml` yet (#1046).
 
