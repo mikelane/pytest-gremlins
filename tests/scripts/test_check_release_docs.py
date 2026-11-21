@@ -448,8 +448,7 @@ class DescribeExemptSectionContent:
     def it_rejects_a_heading_other_than_a_known_section_heading(self, section: str) -> None:
         problems = _problems_of(f'### {section}\n\n#### Detail\n\n- Bumped. (#1)\n')
 
-        assert 'heading' in problems
-        assert 'line 7' in problems
+        assert f'{UNSUPPORTED_HEADING_AT} 7 (#### Detail);' in problems
 
     @pytest.mark.parametrize(
         ('opener', 'kind'),
@@ -555,7 +554,7 @@ class DescribeSectionHeadingSyntax:
         problems = _problems_of('### Fix\n\n- **Fixed #12.** (no docs: x)\n#hashtag\n')
 
         assert 'unknown section heading' not in problems
-        assert 'heading' in problems
+        assert f'{UNSUPPORTED_HEADING_AT} 8 (#hashtag);' in problems
 
 
 @pytest.mark.small
@@ -1058,7 +1057,7 @@ LINK = '[docs](guide/configuration.md#batch-size)'
 ENTRY_V2 = f'## v2.0.0 (2026-11-01)\n\n### Fix\n\n- A {LINK}\n'
 
 
-STRICT_HEADINGS = [
+REJECTED_HASH_LINES = [
     '# Feature',
     '#### Fix',
     '###Feature',
@@ -1075,7 +1074,7 @@ STRICT_HEADINGS = [
     '1. #### Detail',
     '  - ###Feature',
 ]
-STRICT_DELIMITERS = [
+REJECTED_DELIMITER_LINES = [
     '=',
     '===',
     '= =',
@@ -1093,7 +1092,7 @@ STRICT_DELIMITERS = [
     '1. ---',
     '  ---',
 ]
-STRICT_CONTINUATION_DELIMITERS = [
+REJECTED_DELIMITERS_UNDER_CONTENT = [
     'A | B\n---',
     'A | B\n===',
     '<em>Feature</em>\n---',
@@ -1103,6 +1102,10 @@ STRICT_CONTINUATION_DELIMITERS = [
     'Feature\n\n=======',
     'Highlights\n\n---',
 ]
+
+
+UNSUPPORTED_HEADING_AT = 'a heading that is not a known "###" section heading or version heading at line'
+SECTIONS_WITH_A_LINE_BEFORE = [('', 5), ('Internal', 9), ('Documentation', 9), ('Fix', 9)]
 
 
 def _section_body(section: str, content: str, *, before: str | None = None) -> str:
@@ -1115,23 +1118,25 @@ def _section_body(section: str, content: str, *, before: str | None = None) -> s
 
 @pytest.mark.small
 class DescribeStrictEntryFormat:
-    @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
-    @pytest.mark.parametrize('line', STRICT_HEADINGS)
-    def it_rejects_an_unsupported_hash_start_in_every_section(self, section: str, line: str) -> None:
+    @pytest.mark.parametrize(('section', 'number'), SECTIONS_WITH_A_LINE_BEFORE)
+    @pytest.mark.parametrize('line', REJECTED_HASH_LINES)
+    def it_rejects_an_unsupported_hash_start_in_every_section(self, section: str, number: int, line: str) -> None:
         body = _section_body(section, line, before='- **Bumped.** (no docs: x)')
 
         problems = _problems_of(body)
 
-        assert any('heading' in problem and 'line' in problem for problem in problems.splitlines()), problems
+        assert f'{UNSUPPORTED_HEADING_AT} {number} ({line.strip()});' in problems
 
-    @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
-    @pytest.mark.parametrize('line', STRICT_DELIMITERS)
-    def it_rejects_a_thematic_break_or_setext_underline_in_every_section(self, section: str, line: str) -> None:
+    @pytest.mark.parametrize(('section', 'number'), SECTIONS_WITH_A_LINE_BEFORE)
+    @pytest.mark.parametrize('line', REJECTED_DELIMITER_LINES)
+    def it_rejects_a_thematic_break_or_setext_underline_in_every_section(
+        self, section: str, number: int, line: str
+    ) -> None:
         body = _section_body(section, line, before=LINKED_BULLET)
 
         problems = _problems_of(body)
 
-        assert any('thematic break or setext underline' in problem for problem in problems.splitlines()), problems
+        assert f'a thematic break or setext underline at line {number} ({line.strip()});' in problems
 
     def it_reads_a_long_run_of_spaces_after_an_equals_sign_in_linear_time(self) -> None:
         delimiter = _load_checker().THEMATIC_OR_SETEXT
@@ -1185,14 +1190,16 @@ class DescribeStrictEntryFormat:
     def it_accepts_delimiter_characters_that_do_not_make_a_whole_delimiter_line(self, content: str) -> None:
         assert _problems_of(f'### Internal\n\n{content}\n') == ''
 
-    @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
-    @pytest.mark.parametrize('content', STRICT_CONTINUATION_DELIMITERS)
-    def it_rejects_a_delimiter_after_pipe_or_inline_html_content(self, section: str, content: str) -> None:
-        body = _section_body(section, content)
+    @pytest.mark.parametrize(('section', 'first_line'), [('', 5), ('Internal', 7), ('Documentation', 7), ('Fix', 7)])
+    @pytest.mark.parametrize('content', REJECTED_DELIMITERS_UNDER_CONTENT)
+    def it_rejects_a_delimiter_after_pipe_or_inline_html_content(
+        self, section: str, first_line: int, content: str
+    ) -> None:
+        delimiter_line = first_line + content.count('\n')
 
-        problems = _problems_of(body)
+        problems = _problems_of(_section_body(section, content))
 
-        assert any('thematic break or setext underline' in problem for problem in problems.splitlines()), problems
+        assert f'a thematic break or setext underline at line {delimiter_line} (' in problems
 
     @pytest.mark.parametrize(
         ('fence', 'opener'),
@@ -1211,7 +1218,10 @@ class DescribeStrictEntryFormat:
 
         problems = _problems_of(body)
 
-        assert 'Changed a thing' in problems
+        assert (
+            'bullet under "### Fix" at line 12 (**Changed a thing.** (#3)) has no docs reference and no '
+            '"(no docs: <reason>)" exemption'
+        ) in problems
         assert 'is unsupported' in problems
 
     @pytest.mark.parametrize(
@@ -1269,12 +1279,12 @@ class DescribeStrictEntryFormat:
     def it_rejects_a_standalone_issue_number_line(self, line: str) -> None:
         problems = _problems_of(f'### Internal\n\nParagraph before it.\n\n{line}\n')
 
-        assert 'heading' in problems
+        assert f'{UNSUPPORTED_HEADING_AT} 9 ({line.strip()});' in problems
 
     def it_does_not_read_an_issue_number_as_a_continuation_after_a_blank_line(self) -> None:
         problems = _problems_of('### Internal\n\n- **Bumped.** (no docs: x)\n\n  #716)\n')
 
-        assert 'heading' in problems
+        assert f'{UNSUPPORTED_HEADING_AT} 9 (#716));' in problems
 
     @pytest.mark.parametrize(
         'continuation',
@@ -1296,7 +1306,7 @@ class DescribeStrictEntryFormat:
             '- **Bumped.** (no docs: x)\n  - **Nested.** (no docs: x)',
         ],
     )
-    def it_keeps_accepting_prose_and_closed_outer_fences(self, content: str) -> None:
+    def it_accepts_prose_closed_fences_and_comments_and_wrapped_bullets(self, content: str) -> None:
         assert _problems_of(f'### Internal\n\n{content}\n') == ''
 
     @pytest.mark.parametrize('heading', ['### Fix', ' ### Internal', '###\tDocumentation', '### Feature ###'])
@@ -1339,14 +1349,14 @@ class DescribeNotesOut:
     @pytest.mark.parametrize(
         ('content', 'expected'),
         [
-            ('#Feature', 'heading'),
-            ('#### Fix', 'heading'),
-            ('###Feature', 'heading'),
-            ('A | B\n---', 'thematic break or setext underline'),
-            ('<em>Feature</em>\n---', 'thematic break or setext underline'),
-            ('> #Feature', 'heading'),
-            ('> <em>Feature</em>\n> ---', 'thematic break or setext underline'),
-            ('---', 'thematic break or setext underline'),
+            ('#Feature', f'{UNSUPPORTED_HEADING_AT} 9 (#Feature);'),
+            ('#### Fix', f'{UNSUPPORTED_HEADING_AT} 9 (#### Fix);'),
+            ('###Feature', f'{UNSUPPORTED_HEADING_AT} 9 (###Feature);'),
+            ('A | B\n---', 'a thematic break or setext underline at line 10 (---);'),
+            ('<em>Feature</em>\n---', 'a thematic break or setext underline at line 10 (---);'),
+            ('> #Feature', f'{UNSUPPORTED_HEADING_AT} 9 (> #Feature);'),
+            ('> <em>Feature</em>\n> ---', 'a thematic break or setext underline at line 10 (> ---);'),
+            ('---', 'a thematic break or setext underline at line 9 (---);'),
         ],
     )
     def it_fails_the_cli_and_writes_no_notes_for_an_unsupported_shape(
@@ -1536,6 +1546,14 @@ class DescribeVisibleDuplicateOfTheVersionEntry:
 
         assert checker.find_problems(changelog, '2.0.0', SITE) == []
 
+    @pytest.mark.parametrize('near_miss', ['## v2.0.0rc1', '## v2.0.01', '## v2.0.0.1', '### v2.0.0'])
+    def it_does_not_read_a_near_miss_as_a_copy_of_the_version_heading(self, near_miss: str) -> None:
+        changelog = f'# Changelog\n\n{ENTRY_V2}\n{near_miss}\n\n{OLDER}'
+
+        problems = '\n'.join(_load_checker().find_problems(changelog, '2.0.0', SITE))
+
+        assert 'second visible copy' not in problems
+
 
 @pytest.mark.small
 class DescribeEscapedBacktickBeforeCode:
@@ -1587,7 +1605,7 @@ class DescribeCommentOpenedMidLine:
 
         assert 'HTML comment opened mid-line at line 7 is still open at the blank line 8;' in problems
 
-    def it_reads_the_lines_after_that_blank_line_as_visible(self) -> None:
+    def it_reads_the_lines_after_a_blank_line_that_ends_a_mid_line_comment_as_visible(self) -> None:
         problems = _problems_of('### Internal\n\n- Bump <!-- x\n\n# Feature\n\n- Undocumented. (#1)\n\n-->\n')
 
         assert 'a heading that is not a known "###" section heading or version heading at line 9' in problems
@@ -1673,9 +1691,11 @@ class DescribeRawHtmlBlocks:
             '<br/>',
         ],
     )
-    def it_rejects_a_line_that_starts_with_an_html_tag_in_every_section(self, line: str) -> None:
-        for section in ('Fix', 'Internal'):
-            assert 'a raw HTML block tag at line 9' in _problems_of(f'### {section}\n\n- A. (no docs: r)\n\n{line}\n')
+    @pytest.mark.parametrize('section', ['Fix', 'Internal'])
+    def it_rejects_a_line_that_starts_with_an_html_tag_in_every_section(self, section: str, line: str) -> None:
+        problems = _problems_of(f'### {section}\n\n- A. (no docs: r)\n\n{line}\n')
+
+        assert f'a raw HTML block tag at line 9 ({line.strip()});' in problems
 
     @pytest.mark.parametrize('prefix', ['- ', '> ', '- > '])
     def it_rejects_an_html_tag_after_a_list_or_quote_marker(self, prefix: str) -> None:
@@ -1850,10 +1870,75 @@ class DescribeWrappedIssueReferences:
     def it_rejects_an_html_heading_on_a_continuation_line(self) -> None:
         assert 'a raw HTML heading' in _problems_of('### Fix\n\n- **A.** (no docs: r)\n  #1 <h1>x</h1>\n')
 
+    def it_rejects_a_hash_line_under_a_quoted_bullet(self) -> None:
+        assert f'{UNSUPPORTED_HEADING_AT} 8 (#716));' in _problems_of('### Internal\n\n> - x\n  #716)\n')
+
+
+MKDOCS_CONFIG = Path(__file__).resolve().parents[2] / 'mkdocs.yml'
+ORACLE_EXTENSIONS_NOT_IN_MKDOCS = frozenset({'toc', 'tables', 'fenced_code'})
+REJECTED_SHAPES_THE_RENDERER_SHOWS = [
+    ('#Feature', '<h1'),
+    ('####Detail', '<h4'),
+    ('###Feature', '<h3'),
+    ('#Feature ###', '<h1'),
+    ('#\tFeature', '<h1'),
+    ('##v2.0.0', '<h2'),
+    ('###Feature ###', '<h3'),
+    ('Feature\n=======', '<h1'),
+    ('Highlights\n---', '<h2'),
+    ('x\n--', '<h2'),
+    ('A | B\n---', '<h2'),
+    ('<em>Feature</em>\n---', '<h2'),
+    ('> #Feature', '<h1'),
+    ('> > #Feature', '<h1'),
+    ('- #### Detail', '<h4'),
+    ('1. #### Detail', '<h4'),
+    ('  - ###Feature', '<h3'),
+    ('- ---', '<hr'),
+    ('> <em>Feature</em>\n> ---', '<h2'),
+    ('<h1>Feature</h1>', '<h1'),
+    ('<h6>Detail</h6>', '<h6'),
+    ('<H2 class="x">Feature</H2>', '<h2'),
+    ('<h3 id="anchor">Feature</h3>', '<h3'),
+    ('> <h1>Feature</h1>', '<h1'),
+    ('- <h4>Detail</h4>', '<h4'),
+    ('- Bump \\`<h2>Feature</h2>`', '<h2'),
+    ('- Use `<!--` here.\n\n# Feature\n\n-->', '<h1'),
+    ('- Bump <!-- x\n\n# Feature\n\n-->', '<h1'),
+    ('    ```\n\n# Feature\n\n    ```', '<h1'),
+    ('- Bump.\n\n    ```\n\n# Feature\n\n    ```', '<h1'),
+    ('- item\n\n    #720)', '<h1'),
+    ('````\nx\n`````\n````\n#### Hidden\n````', '<h4'),
+]
+
+
+def _mkdocs_markdown_extension_names() -> set[str]:
+    """Return the extension names in ``mkdocs.yml``; composing the YAML never runs its ``!!python`` tags."""
+    root = cast('yaml.MappingNode', yaml.compose(MKDOCS_CONFIG.read_text(encoding='utf-8'), Loader=yaml.SafeLoader))
+    extensions = next(value for key, value in root.value if key.value == 'markdown_extensions')
+    return {_extension_name(item) for item in extensions.value}
+
+
+def _extension_name(item: yaml.Node) -> str:
+    return cast('str', item.value if isinstance(item, yaml.ScalarNode) else item.value[0][0].value)
+
+
+@pytest.mark.small
+class DescribeShapesTheRendererShows:
+    @pytest.mark.parametrize(('text', 'tag'), REJECTED_SHAPES_THE_RENDERER_SHOWS)
+    def it_rejects_each_shape_the_renderer_turns_into_a_heading_or_break(self, text: str, tag: str) -> None:
+        assert _problems_of(f'### Internal\n\n{text}\n') != '', tag
+
 
 @pytest.mark.medium
 class DescribeRendererOracle:
-    """The real docs renderer is a one-way oracle: it proves each reported bypass really renders a heading."""
+    """The real docs renderer is a one-way oracle for the strict format.
+
+    It samples rejected shapes that do render a heading (or a break), to prove those rejections guard real bypasses.
+    Shapes the strict format rejects without a renderer agreeing need no oracle. The oracle needs the ``markdown`` and
+    ``pymdownx`` packages, which the uv and CI environments install from the docs group; the tox environments do not,
+    so there these tests are skipped.
+    """
 
     MARKDOWN_EXTENSIONS = (
         'abbr',
@@ -1888,6 +1973,7 @@ class DescribeRendererOracle:
     @classmethod
     def _render(cls, text: str) -> str:
         markdown = pytest.importorskip('markdown', reason='the docs group renders the oracle samples')
+        pytest.importorskip('pymdownx', reason='the docs group provides the pymdownx extensions')
         return cast(
             'str',
             markdown.markdown(
@@ -1895,46 +1981,14 @@ class DescribeRendererOracle:
             ),
         )
 
-    @pytest.mark.parametrize(
-        ('text', 'tag'),
-        [
-            ('#Feature\n', '<h1'),
-            ('####Detail\n', '<h4'),
-            ('###Feature\n', '<h3'),
-            ('#Feature ###\n', '<h1'),
-            ('#\tFeature\n', '<h1'),
-            ('Feature\n=======\n', '<h1'),
-            ('Highlights\n---\n', '<h2'),
-            ('A | B\n---\n', '<h2'),
-            ('<em>Feature</em>\n---\n', '<h2'),
-            ('> #Feature\n', '<h1'),
-            ('- #### Detail\n', '<h4'),
-            ('> <em>Feature</em>\n> ---\n', '<h2'),
-        ],
-    )
-    def it_renders_a_heading_for_each_rejected_shape(self, text: str, tag: str) -> None:
-        assert tag in self._render(text).lower()
+    def it_renders_with_the_extensions_mkdocs_uses(self) -> None:
+        expected = _mkdocs_markdown_extension_names() | ORACLE_EXTENSIONS_NOT_IN_MKDOCS
 
-    @pytest.mark.parametrize(
-        ('text', 'tag'),
-        [
-            ('<h1>Feature</h1>\n', '<h1'),
-            ('<h6>Detail</h6>\n', '<h6'),
-            ('<H2 class="x">Feature</H2>\n', '<h2'),
-            ('<h3 id="anchor">Feature</h3>\n', '<h3'),
-            ('> <h1>Feature</h1>\n', '<h1'),
-            ('- <h4>Detail</h4>\n', '<h4'),
-            ('- Bump \\`<h2>Feature</h2>`\n', '<h2'),
-            ('- Use `<!--` here.\n\n# Feature\n\n-->\n', '<h1'),
-            ('- Bump <!-- x\n\n# Feature\n\n-->\n', '<h1'),
-            ('    ```\n\n# Feature\n\n    ```\n', '<h1'),
-            ('- Bump.\n\n    ```\n\n# Feature\n\n    ```\n', '<h1'),
-            ('- item\n\n    #720)\n', '<h1'),
-            ('````\nx\n`````\n````\n#### Hidden\n````\n', '<h4'),
-        ],
-    )
-    def it_renders_a_heading_for_html_and_standalone_issue_numbers(self, text: str, tag: str) -> None:
-        assert tag in self._render(text).lower()
+        assert set(self.MARKDOWN_EXTENSIONS) == expected
+
+    @pytest.mark.parametrize(('text', 'tag'), REJECTED_SHAPES_THE_RENDERER_SHOWS)
+    def it_renders_a_heading_or_break_for_each_rejected_shape(self, text: str, tag: str) -> None:
+        assert tag in self._render(f'{text}\n').lower()
 
     @pytest.mark.parametrize(
         'text',
@@ -1943,6 +1997,11 @@ class DescribeRendererOracle:
             '- **A.** (#963,\n  #989-#994)\n',
             '- **A.** (#963,\n  #964) Thanks. (no docs: r)\n',
             '- **A.** (#963,\n  #964 for details)\n',
+            '- **A.** (#963,\n  #964,#965\n',
+            '- **A.** (#963,\n    #964)\n',
+            '- **A.** (#963,\n  #Feature\n',
+            '- **A.** (#963,\n  ####Detail\n',
+            '- **A.** (#963,\n  ####### seven\n',
             'Plain prose.\n',
             'Use `<h1>` in prose.\n',
             '````markdown\n> ```\n````\n',
