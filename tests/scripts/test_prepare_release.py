@@ -717,3 +717,20 @@ class DescribeAdversarialForcedMajorFromAPrerelease:
         entry = (repo / 'CHANGELOG.md').read_text(encoding='utf-8').split('## v1.14.3')[0]
         upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
         assert 'TODO' in upgrade_notes
+
+
+@pytest.mark.medium
+class DescribeAdversarialForcedMajorInLowerCase:
+    """``prepare_release`` upper-cases ``increment`` for cz (``_flags``) but not for the Upgrade notes guarantee."""
+
+    @pytest.mark.parametrize('increment', ['major', 'Major'])
+    def it_adds_upgrade_notes_for_a_forced_major_given_in_any_case(self, tmp_path: Path, increment: str) -> None:
+        flags = ('--increment', 'MAJOR')
+        repo = _repo(tmp_path, project='2.0.0b0', module='2.0.0b0')
+        shell = _shell(flags=flags, next_version=_ok('2.0.0\n'), release_branch='release/v2.0.0')
+
+        _prepare(repo, _bumping_shell(repo, shell, flags, '2.0.0'), increment=increment)
+
+        entry = (repo / 'CHANGELOG.md').read_text(encoding='utf-8').split('## v1.14.3')[0]
+        upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
+        assert 'TODO' in upgrade_notes
