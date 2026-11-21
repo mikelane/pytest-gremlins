@@ -245,7 +245,8 @@ The PR fails CI until the entry passes the release docs gate.
   ``\`<h2>Feature</h2>`` still fails as a raw heading. Because the renderer pairs across the lines of a paragraph,
   every visible line must pair its own backticks exactly: a run that closes at a run of another length, or not at
   all, fails with `an unpaired backtick run at line N`; escape a literal backtick as `` \` ``. A run of more than 8
-  backticks fails anywhere in the entry, before anything pairs it. A backtick on a line that also shows text beside an
+  backticks fails anywhere in the entry, before anything pairs it, on the opener, body and closer lines of a code
+  fence and inside a comment too. A backtick on a line that also shows text beside an
   HTML comment fails, because the renderer pairs backticks before it reads the comment; only a comment that starts a
   line may hold unpaired backticks on lines that show nothing else. A `<!--` in a
   code span is literal text and hides nothing, but an unclosed one is reported on its own line because a reader may

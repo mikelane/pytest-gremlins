@@ -39,8 +39,9 @@ These line rules cover the whole selected entry, in the preamble, the exempt sec
   rejected and the lines after it are checked. An unclosed ``<!--`` in a code span is rejected too, because a reader
   may take it for a comment. Code spans pair as the docs renderer pairs them (``code_spans``), and every visible line
   must pair its own backticks exactly, because the renderer pairs across the lines of a paragraph. A run of more than
-  ``MAX_BACKTICK_RUN`` backticks is rejected anywhere in the entry, and so is a backtick on a line that shows text
-  beside an HTML comment, because the renderer pairs backticks before it reads the comment.
+  ``MAX_BACKTICK_RUN`` backticks is rejected anywhere in the entry, fence and comment lines included, and so is a
+  backtick on a line that shows text beside an HTML comment, because the renderer pairs backticks before it reads the
+  comment.
 * Every thematic break or setext-underline shape is rejected, in every section and with no attempt to guess the
   previous line: a run of ``=``, a run of one or two ``-``, and ``***``, ``---``, ``___``, ``* * *`` and ``- - -``.
   This also rejects a delimiter under a pipe or inline-HTML line, so ``A | B`` + ``---`` and
@@ -322,7 +323,7 @@ def _pair_backticks(text: str) -> _Pairing:
     times ``MAX_BACKTICK_RUN``.
     """
     runs = _BacktickRuns(text)
-    if runs.lengths_longest_first and runs.lengths_longest_first[0] > MAX_BACKTICK_RUN:
+    if _exceeds_backtick_cap(runs):
         return _Pairing([], exact=False)
     spans: list[tuple[int, int]] = []
     exact = True
@@ -356,12 +357,29 @@ def code_spans(text: str) -> list[tuple[int, int]]:
     return _pair_backticks(text).spans
 
 
+def _backtick_run_cap_problem(number: int, text: str) -> str | None:
+    """Describe a run of more than ``MAX_BACKTICK_RUN`` backticks on the raw line ``text``, or return ``None``.
+
+    The cap holds on every line, fence and comment lines included, so it is checked before the line is read.
+    """
+    if not _exceeds_backtick_cap(_BacktickRuns(text)):
+        return None
+    return (
+        f'a run of more than {MAX_BACKTICK_RUN} backticks at line {number} ({_shorten(text.strip())}); '
+        f'write code spans with at most {MAX_BACKTICK_RUN} backticks'
+    )
+
+
+def _exceeds_backtick_cap(runs: _BacktickRuns) -> bool:
+    return bool(runs.lengths_longest_first) and runs.lengths_longest_first[0] > MAX_BACKTICK_RUN
+
+
 def _backtick_problem(number: int, text: str, visible: str, in_block_comment: bool) -> str | None:
     """Describe how the backticks of the raw line ``text`` could make the gate and the renderer disagree, or ``None``.
 
-    A run over ``MAX_BACKTICK_RUN`` is rejected before anything pairs it. An opener that closes at a run of another
-    length, or not at all, is rejected, because the renderer pairs backticks across the lines of a paragraph: when
-    every run closes at a run of its own length on its own line, a line, a joined bullet and the rendered paragraph
+    A run over ``MAX_BACKTICK_RUN`` is left to ``_backtick_run_cap_problem``. An opener that closes at a run of
+    another length, or not at all, is rejected, because the renderer pairs backticks across the lines of a paragraph:
+    when every run closes at a run of its own length on its own line, a line, a joined bullet and the rendered paragraph
     pair the same way. A backtick on a line that shows text beside an HTML comment (``visible`` is what is left) is
     rejected, because the renderer pairs backticks before it reads an inline comment: it can pair a backtick inside
     the comment with one outside it, and the gate, which pairs the text left after removing the comment, would not.
@@ -370,11 +388,8 @@ def _backtick_problem(number: int, text: str, visible: str, in_block_comment: bo
     """
     snippet = _shorten(text.strip())
     runs = _BacktickRuns(text)
-    if runs.lengths_longest_first and runs.lengths_longest_first[0] > MAX_BACKTICK_RUN:
-        return (
-            f'a run of more than {MAX_BACKTICK_RUN} backticks at line {number} ({snippet}); '
-            f'write code spans with at most {MAX_BACKTICK_RUN} backticks'
-        )
+    if _exceeds_backtick_cap(runs):
+        return None
     if runs.runs and visible != text and visible.strip():
         return (
             f'a backtick on a line that also has an HTML comment at line {number} ({snippet}); the docs renderer '
@@ -545,6 +560,8 @@ class _Scanner:
         if len(text) > MAX_LINE_LENGTH:
             self.diagnostics.append((number, f'line {number} is longer than {MAX_LINE_LENGTH} characters'))
             text = ''
+        if run_cap_problem := _backtick_run_cap_problem(number, text):
+            self.diagnostics.append((number, run_cap_problem))
         if self.open_region is not None and _structural_title(text, SECTION_LEVEL) is not None:
             self.hidden_headings.append((self.open_region, number))
         if self.open_region is not None and VERSION_HEADING_START.match(text):

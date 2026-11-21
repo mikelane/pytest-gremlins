@@ -2315,6 +2315,23 @@ class DescribeBacktickRunCap:
             f'### Internal\n\n<!-- {run} -->'
         )
 
+    def it_reports_every_fence_line_of_a_nine_backtick_fence(self) -> None:
+        run = '`' * 9
+
+        problems = _problems_of(f'### Internal\n\n{run}\nx {run}\n{run}')
+
+        assert problems.splitlines() == [
+            f'a run of more than 8 backticks at line {number} ({text}); write code spans with at most 8 backticks'
+            for number, text in ((7, run), (8, f'x {run}'), (9, run))
+        ]
+
+    def it_reports_a_long_run_inside_a_fence_the_format_does_not_support(self) -> None:
+        run = '`' * 9
+
+        assert f'a run of more than 8 backticks at line 8 (x {run})' in _problems_of(
+            f'### Internal\n\n> ```\nx {run}\n> ```'
+        )
+
     def it_accepts_a_five_backtick_fence_that_shows_a_four_backtick_fence(self) -> None:
         assert _problems_of('### Internal\n\n`````markdown\n````text\nx\n````\n`````') == ''
 
