@@ -1194,7 +1194,7 @@ class DescribeStrictEntryFormat:
         assert _problems_of('### Fix\n\n- ' + 'x' * 999 + '\n') == 'line 7 is longer than 1000 characters'
 
     def it_accepts_a_line_of_exactly_1000_characters(self) -> None:
-        line = '- ' + 'a`' * 499
+        line = '- ' + 'a`' * 498 + 'aa'
 
         assert _problems_of(f'### Internal\n\n{line}\n') == ''
 
@@ -1586,7 +1586,7 @@ class DescribeEscapedBacktickBeforeCode:
         assert _problems_of('### Internal\n\n- Bump `<h2>Feature</h2>`\n') == ''
 
     def it_does_not_let_an_escaped_backtick_hide_a_link_from_a_gated_bullet(self) -> None:
-        problems = _problems_of(f'### Fix\n\n- Fixed \\`a [docs]({DOCS_URL}/guide/configuration/) b`.\n')
+        problems = _problems_of(f'### Fix\n\n- Fixed \\`a [docs]({DOCS_URL}/guide/configuration/) b\\`.\n')
 
         assert problems == ''
 
@@ -2075,6 +2075,52 @@ class DescribeCodeSpanTiming:
 
         assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
 
+    @pytest.mark.parametrize(
+        'pattern',
+        [
+            '````````a',
+            '\\``a',
+            '````````a```````a``````a`````a````a```a``a`a',
+            '`a``a```a````a`````a``````a```````a````````a',
+        ],
+    )
+    def it_checks_a_line_of_runs_at_the_cap_in_linear_time(self, pattern: str) -> None:
+        checker = _load_checker()
+        line = '- x ' + pattern * ((checker.MAX_LINE_LENGTH - 4) // len(pattern))
+        started = time.perf_counter()
+
+        checker.find_problems(_gated_changelog(line), '9.9.9', SITE)
+
+        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+
+    @pytest.mark.parametrize(
+        'pattern',
+        [
+            '````````a',
+            '\\``a',
+            '````````a```````a``````a`````a````a```a``a`a',
+            '`a``a```a````a`````a``````a```````a````````a',
+        ],
+    )
+    def it_checks_a_bullet_joined_from_fifty_lines_of_runs_at_the_cap_in_linear_time(self, pattern: str) -> None:
+        checker = _load_checker()
+        line = pattern * ((checker.MAX_LINE_LENGTH - 4) // len(pattern))
+        bullet = '- x ' + line + ''.join(['\n  ' + line] * 49)
+        started = time.perf_counter()
+
+        checker.find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+
+        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+
+    def it_finds_the_spans_of_a_long_text_of_fallback_openers_in_linear_time(self) -> None:
+        checker = _load_checker()
+        text = '\\``a' * 50000
+        started = time.perf_counter()
+
+        checker.code_spans(text)
+
+        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+
 
 REGEX_CODE_SPAN = re.compile(r'(?<!\\)(`+).+?(?<!`)\1(?!`)', re.DOTALL)
 WELL_FORMED_CODE_SPAN_TEXTS = [
@@ -2093,7 +2139,6 @@ WELL_FORMED_CODE_SPAN_TEXTS = [
     '` `',
     '`unclosed',
     'a `` b',
-    'a ` b `` c',
     '[docs](u) `[x](v)` (no docs: r)',
 ]
 
@@ -2109,14 +2154,194 @@ class DescribeCodeSpans:
     def it_opens_a_span_after_an_escaped_backslash(self) -> None:
         assert _load_checker().code_spans('\\\\`x`') == [(2, 5)]
 
-    def it_leaves_an_opener_literal_when_only_a_shorter_run_follows(self) -> None:
-        assert _load_checker().code_spans('``a`') == []
+    @pytest.mark.parametrize(
+        ('text', 'expected'),
+        [
+            ('``a`', [(0, 4)]),
+            ('``a`b`', [(0, 4)]),
+            ('a``b`c', [(1, 5)]),
+            ('a ` b `` c', [(2, 8)]),
+            ('`a```b', [(0, 5)]),
+            ('```a`b``c`', [(0, 8)]),
+            ('\\``a` b', [(2, 5)]),
+        ],
+    )
+    def it_closes_an_opener_at_another_length_as_the_docs_renderer_does(
+        self, text: str, expected: list[tuple[int, int]]
+    ) -> None:
+        assert _load_checker().code_spans(text) == expected
 
-    def it_pairs_a_later_run_after_an_unclosed_longer_opener(self) -> None:
-        assert _load_checker().code_spans('``a`b`') == [(3, 6)]
+    def it_finds_no_span_in_text_with_a_run_longer_than_the_cap(self) -> None:
+        checker = _load_checker()
+        run = '`' * (checker.MAX_BACKTICK_RUN + 1)
 
-    def it_opens_no_span_inside_a_longer_run(self) -> None:
-        assert _load_checker().code_spans('a``b`c') == []
+        assert checker.code_spans(f'`a` {run}') == []
+
+
+def _sentinels(text: str) -> set[str]:
+    return set(re.findall(r'k\d+k', text))
+
+
+def _joined_like_a_bullet(text: str) -> str:
+    return ' '.join(part.strip() for part in text.split('\n'))
+
+
+RENDERER_PAIRING_TEXTS = [
+    'k0k ``k1k[docs](p.md#a)`k2k',
+    'k0k ``k1k(no docs: r)`k2k',
+    'k0k ``k1k`<h2>k2k</h2>` k3k',
+    'k0k ```k1k ``<h2>k2k</h2>`` k3k',
+    'k0k `k1k``k2k',
+    'k0k ``k1k`k2k`k3k',
+    'k0k `k1k `` k2k ` k3k',
+    'k0k ``k1k` k2k ``k3k',
+    'k0k ```k1k`k2k``k3k`k4k',
+    'k0k `k1k',
+    'k0k k1k ```',
+    'k0k \\`k1k`k2k`k3k',
+    'k0k \\\\`k1k`k2k',
+    'k0k \\\\\\`k1k`k2k`k3k',
+    'k0k \\``k1k`k2k',
+    'k0k `k1k\\`k2k`k3k',
+    'k0k `k1k\n  k2k` k3k `k4k` k5k',
+    'k0k ``k1k`\n  `` k2k `` k3k',
+    'k0k `k1k\n  k2k `` k3k\n  k4k ` k5k',
+    'k0k \\\n  `k1k` k2k',
+]
+
+
+@pytest.mark.medium
+class DescribeCodeSpansMatchTheRenderer:
+    """``code_spans`` pairs backticks as the docs renderer does, so the gate hides exactly what renders as code.
+
+    Each sentinel (``k<n>k``) is visible to the gate when ``_without_code_spans`` keeps it, and visible to a reader
+    when the rendered page shows it outside every ``<code>`` element. A sentinel the renderer drops is in neither.
+    """
+
+    @staticmethod
+    def _rendered_outside_code(text: str) -> set[str]:
+        html = DescribeRendererOracle._render(f'- {text}\n')
+        return _sentinels(re.sub(r'<code\b[^>]*>.*?</code>', '', html, flags=re.DOTALL))
+
+    @pytest.mark.parametrize('text', RENDERER_PAIRING_TEXTS)
+    def it_hides_the_text_the_renderer_shows_as_code(self, text: str) -> None:
+        gate_visible = _sentinels(_load_checker()._without_code_spans(_joined_like_a_bullet(text)))
+
+        assert gate_visible == self._rendered_outside_code(text)
+
+    def it_renders_a_docs_link_after_a_longer_opener_as_code(self) -> None:
+        assert 'href="p.md#a"' not in DescribeRendererOracle._render('- x ``[docs](p.md#a)`\n')
+
+    def it_renders_a_raw_heading_after_a_span_closed_by_a_shorter_run(self) -> None:
+        assert '<h2>x</h2>' in DescribeRendererOracle._render('- x ``a`<h2>x</h2>` (no docs: r)\n')
+
+    def it_renders_a_raw_heading_between_spans_that_cross_a_line(self) -> None:
+        assert '<h2>c</h2>' in DescribeRendererOracle._render('- x `a\n  b` <h2>c</h2> `d` (no docs: r)\n')
+
+    def it_renders_a_raw_heading_after_a_comment_that_a_code_span_ends(self) -> None:
+        assert '<h2>y</h2>' in DescribeRendererOracle._render('x <!-- ` --> `<h2>y</h2>` `\n')
+
+
+UNPAIRED_BACKTICKS_AT_LINE_5 = 'an unpaired backtick run at line 5'
+
+
+@pytest.mark.small
+class DescribeUnpairedBackticks:
+    """A line whose backticks do not all pair exactly on that line is rejected.
+
+    The docs renderer closes an opener at a run of another length, and pairs backticks across the lines of a
+    paragraph. Requiring every run to close at a run of its own length on its own line makes the pairing of a line, of
+    a joined bullet and of the rendered paragraph the same.
+    """
+
+    @pytest.mark.parametrize(
+        'bullet',
+        [
+            '- x ``[docs](p.md#a)`',
+            '- x ``(no docs: r)`',
+            '- x ``a`<h2>x</h2>` (no docs: r)',
+            '- x ```a ``<h2>x</h2>`` (no docs: r)',
+            '- x `a\n  b` <h2>c</h2> `d` (no docs: r)',
+            '- x ``a`\n  `` <h2>c</h2> `` (no docs: r)',
+            '- x `unclosed (no docs: r)',
+        ],
+    )
+    def it_rejects_a_bullet_whose_first_line_does_not_pair_its_backticks(self, bullet: str) -> None:
+        problems = _load_checker().find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+
+        assert any(problem.startswith(UNPAIRED_BACKTICKS_AT_LINE_5) for problem in problems), problems
+
+    def it_says_how_to_fix_an_unpaired_run(self) -> None:
+        problems = _load_checker().find_problems(_gated_changelog('- x ``a` (no docs: r)'), '9.9.9', SITE)
+
+        assert problems == [
+            'an unpaired backtick run at line 5 (- x ``a` (no docs: r)); close every code span on the line it opens '
+            'on with a run of the same length, or escape a literal backtick as "\\`"'
+        ]
+
+    def it_rejects_an_unpaired_run_in_an_exempt_section(self) -> None:
+        assert 'an unpaired backtick run at line 7 (- x `a)' in _problems_of('### Internal\n\n- x `a\n  b`')
+
+    @pytest.mark.parametrize(
+        'bullet',
+        [
+            '- x `a` and ``b`c`` (no docs: r)',
+            '- x \\`literal and `code` (no docs: r)',
+            '- x \\\\`code` (no docs: r)',
+            '- x ```````` eight ```````` (no docs: r)',
+        ],
+    )
+    def it_accepts_a_bullet_whose_backticks_pair_exactly(self, bullet: str) -> None:
+        assert _load_checker().find_problems(_gated_changelog(bullet), '9.9.9', SITE) == []
+
+
+@pytest.mark.small
+class DescribeBacktickRunCap:
+    def it_rejects_a_run_longer_than_the_cap(self) -> None:
+        checker = _load_checker()
+        run = '`' * (checker.MAX_BACKTICK_RUN + 1)
+
+        problems = checker.find_problems(_gated_changelog(f'- x {run} (no docs: r)'), '9.9.9', SITE)
+
+        assert problems == [
+            f'a run of more than {checker.MAX_BACKTICK_RUN} backticks at line 5 (- x {run} (no docs: r)); '
+            f'write code spans with at most {checker.MAX_BACKTICK_RUN} backticks'
+        ]
+
+    def it_rejects_a_long_run_inside_an_html_comment(self) -> None:
+        run = '`' * 9
+
+        assert f'a run of more than 8 backticks at line 7 (<!-- {run} -->)' in _problems_of(
+            f'### Internal\n\n<!-- {run} -->'
+        )
+
+    def it_accepts_a_five_backtick_fence_that_shows_a_four_backtick_fence(self) -> None:
+        assert _problems_of('### Internal\n\n`````markdown\n````text\nx\n````\n`````') == ''
+
+
+@pytest.mark.small
+class DescribeBacktickInComment:
+    def it_rejects_a_backtick_inside_an_html_comment(self) -> None:
+        problems = _problems_of('### Internal\n\nx <!-- ` --> `<h2>y</h2>` `')
+
+        assert (
+            'a backtick on a line that also has an HTML comment at line 7 (x <!-- ` --> `<h2>y</h2>` `); the docs '
+            'renderer pairs backticks before it reads comments, so move the comment to its own line'
+        ) in problems
+
+    def it_rejects_code_spans_that_meet_once_a_comment_between_them_is_removed(self) -> None:
+        problems = _problems_of('### Internal\n\nx `a`<!---->``b`` <h2>y</h2> ```c```')
+
+        assert 'a backtick on a line that also has an HTML comment at line 7' in problems
+
+    def it_accepts_backticks_on_the_lines_of_a_comment_that_shows_no_text(self) -> None:
+        assert _problems_of('### Internal\n\n<!--\n`a` and ```\n```\n-->') == ''
+
+    @pytest.mark.parametrize('opener', ['x <!-- a', '  <!-- a'])
+    def it_pairs_the_backticks_of_a_comment_that_does_not_start_a_line(self, opener: str) -> None:
+        problems = _problems_of(f'### Internal\n\n{opener}\n` b\n-->')
+
+        assert 'an unpaired backtick run at line 8 (` b)' in problems
 
 
 @pytest.mark.medium

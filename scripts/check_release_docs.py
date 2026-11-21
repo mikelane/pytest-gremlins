@@ -37,8 +37,10 @@ These line rules cover the whole selected entry, in the preamble, the exempt sec
   longer closer is rejected because CommonMark would close there.
 * An HTML comment that opens mid-line ends at the next blank line, as Markdown reads it, so one still open there is
   rejected and the lines after it are checked. An unclosed ``<!--`` in a code span is rejected too, because a reader
-  may take it for a comment. Code spans pair as CommonMark pairs them: a backtick run opens one unless an odd number
-  of backslashes escapes it, it closes at the next run of the same length, and an opener with no closer is literal.
+  may take it for a comment. Code spans pair as the docs renderer pairs them (``code_spans``), and every visible line
+  must pair its own backticks exactly, because the renderer pairs across the lines of a paragraph. A run of more than
+  ``MAX_BACKTICK_RUN`` backticks is rejected anywhere in the entry, and so is a backtick on a line that shows text
+  beside an HTML comment, because the renderer pairs backticks before it reads the comment.
 * Every thematic break or setext-underline shape is rejected, in every section and with no attempt to guess the
   previous line: a run of ``=``, a run of one or two ``-``, and ``***``, ``---``, ``___``, ``* * *`` and ``- - -``.
   This also rejects a delimiter under a pipe or inline-HTML line, so ``A | B`` + ``---`` and
@@ -58,8 +60,9 @@ readers see both.
 
 A line longer than 1000 characters is a problem wherever it sits in the entry, inside a fence or comment too. It is
 reported before any pattern reads it and is then read as a blank line. With ``--newest``, a long line above the
-topmost version heading exits 2, because it could be that heading. Code spans are found by a scan that is linear in
-the length of the text, so no run of backticks makes the check slow. The cap does not bound a gated bullet, which
+topmost version heading exits 2, because it could be that heading. Code spans are found in time linear in the length
+of the text times ``MAX_BACKTICK_RUN``, so no run of backticks makes the check slow. The cap does not bound a gated
+bullet, which
 joins its continuation lines: the docs-link and ``(no docs:`` patterns still take time quadratic in the length of one
 bullet (a bullet of 100 lines of ``[`` takes seconds).
 
@@ -82,6 +85,7 @@ or missing site; the reason is printed on stderr). Exit 2 is never a pass.
 from __future__ import annotations
 
 import argparse
+import bisect
 from dataclasses import dataclass
 from html.parser import HTMLParser
 import io
@@ -110,6 +114,11 @@ ANY_INDENT_FENCE = re.compile(r'\s*(`{3,}|~{3,})(.*)')
 COMMENT_OPEN = '<!--'
 COMMENT_CLOSE = '-->'
 BACKTICK_RUN = re.compile(r'`+')
+MAX_BACKTICK_RUN = 8
+# The docs renderer's "backtick" inline pattern, copied verbatim from BACKTICK_CODE_RE in pymdownx/inlinehilite.py
+# (pymdown-extensions 12.1 in uv.lock). It replaces Python-Markdown's own pattern at priority 190 and runs before
+# every other inline pattern, escapes included, so nothing else changes how backticks pair.
+RENDERER_BACKTICK = re.compile(r'(?:(?<!\\)((?:\\{2})+)(?=`+)|(?<!\\)`)')
 CODE_SPAN = re.compile(r'(?<!\\)(`+).+?(?<!`)\1(?!`)', re.DOTALL)
 NEWEST_HEADING = re.compile(r'## v?([0-9]\S*)')
 LINE_BREAK = re.compile(r'\r\n|\r|\n')
@@ -261,56 +270,122 @@ def _is_html_heading(text: str) -> bool:
     return bool(HTML_HEADING.search(_without_code_spans(text)))
 
 
-def _is_escaped(text: str, index: int) -> bool:
-    """Return whether the character at ``index`` follows an odd number of backslashes, so a backslash escapes it."""
-    backslashes = 0
-    while index - backslashes > 0 and text[index - backslashes - 1] == '\\':
-        backslashes += 1
-    return backslashes % 2 == 1
+@dataclass(frozen=True)
+class _Pairing:
+    """The code spans of a text as the docs renderer pairs them, and whether every opener closed at its own length."""
+
+    spans: list[tuple[int, int]]
+    exact: bool
 
 
-def _closing_runs(runs: list[tuple[int, int]], opener_starts: list[int]) -> list[int | None]:
-    """Return, for each backtick run, the index of the next run as long as its opener, or ``None``.
+class _BacktickRuns:
+    """The maximal backtick runs of a text, indexed by length, so finding a closer takes a few bisections."""
 
-    One backward walk keeps the nearest later run of every length, so the lookup is linear in the number of runs.
+    def __init__(self, text: str) -> None:
+        self.runs = [match.span() for match in BACKTICK_RUN.finditer(text)]
+        self._starts = [start for start, _ in self.runs]
+        self._indexes_by_length: dict[int, list[int]] = {}
+        for index, (start, end) in enumerate(self.runs):
+            self._indexes_by_length.setdefault(end - start, []).append(index)
+        self.lengths_longest_first = sorted(self._indexes_by_length, reverse=True)
+
+    def close(self, begin: int) -> tuple[int, bool] | None:
+        """Return where the span opened at ``begin`` ends and whether a run of the opener's length closed it.
+
+        This is ``InlineHilitePattern.find_code_spans`` with its consumed range from ``handleMatch``: the opener is
+        the rest of the run at ``begin``, the first later run of the same length closes it, and without one the first
+        of the longest later runs does. Characters between the opener and the content are dropped then, so the whole
+        range is hidden. ``None`` means no backtick follows the run at all.
+        """
+        run = bisect.bisect_right(self._starts, begin) - 1
+        ticks = self.runs[run][1] - begin
+        closer = self._first_after(run, ticks)
+        if closer is not None:
+            return self.runs[closer][1], True
+        later = (self._first_after(run, length) for length in self.lengths_longest_first)
+        fallback = next((index for index in later if index is not None), None)
+        return None if fallback is None else (self.runs[fallback][1], False)
+
+    def _first_after(self, run: int, length: int) -> int | None:
+        indexes = self._indexes_by_length.get(length, [])
+        position = bisect.bisect_right(indexes, run)
+        return indexes[position] if position < len(indexes) else None
+
+
+def _pair_backticks(text: str) -> _Pairing:
+    """Pair the backticks of ``text`` as the docs renderer does; a run over the cap leaves the text with no spans.
+
+    The renderer searches with ``RENDERER_BACKTICK`` from the left. An even run of backslashes before a backtick is
+    stashed as escaped backslashes, so the backtick after it opens a span. A backtick after an odd run is escaped, so
+    the next backtick of its run opens instead. When an opener has no backtick after its run, no later match can pair
+    either, so the search stops. Each opener costs a few bisections, so the time is linear in the length of ``text``
+    times ``MAX_BACKTICK_RUN``.
     """
-    closers: list[int | None] = [None] * len(runs)
-    nearest_by_length: dict[int, int] = {}
-    for index in reversed(range(len(runs))):
-        start, end = runs[index]
-        opener_length = end - opener_starts[index]
-        if opener_length:
-            closers[index] = nearest_by_length.get(opener_length)
-        nearest_by_length[end - start] = index
-    return closers
+    runs = _BacktickRuns(text)
+    if runs.lengths_longest_first and runs.lengths_longest_first[0] > MAX_BACKTICK_RUN:
+        return _Pairing([], exact=False)
+    spans: list[tuple[int, int]] = []
+    exact = True
+    position = 0
+    while (match := RENDERER_BACKTICK.search(text, position)) is not None:
+        begin = match.end() if match.group(1) else match.start()
+        closed = runs.close(begin)
+        if closed is None:
+            return _Pairing(spans, exact=False)
+        position, closed_exactly = closed
+        exact = exact and closed_exactly
+        spans.append((begin, position))
+    return _Pairing(spans, exact)
 
 
 def code_spans(text: str) -> list[tuple[int, int]]:
-    r"""Return the ``(start, end)`` bounds of every code span in ``text``, backticks included, as CommonMark pairs them.
+    r"""Return the ``(start, end)`` bounds of every code span in ``text``, backticks included, as the docs pair them.
 
-    A span opens at a maximal backtick run that no backslash escapes and closes at the next run of exactly the same
-    length; runs of other lengths in between are literal. An opener with no such closer is literal text. A backslash
-    escapes only the first backtick of a run, and inside a span a backslash is literal, so ```a\``` is a span. The
-    scan is linear in the length of ``text``.
+    The docs renderer is Python-Markdown with ``pymdownx.inlinehilite``. An opener closes at the next run of its own
+    length, or, without one, at the first of the longest later runs, so ```` ``a` ```` is one span. A backslash escapes
+    the first backtick of a run, an escaped backslash pair escapes nothing, and a backslash inside a span is literal.
+    Text with a run of more than ``MAX_BACKTICK_RUN`` backticks has no spans; the line is reported instead.
 
     >>> code_spans('a `b` and ``c`d`` and `e')
     [(2, 5), (10, 17)]
     >>> code_spans('\\`b` c`')
     [(3, 7)]
+    >>> code_spans('``a`')
+    [(0, 4)]
     """
-    runs = [match.span() for match in BACKTICK_RUN.finditer(text)]
-    opener_starts = [start + 1 if _is_escaped(text, start) else start for start, _ in runs]
-    closers = _closing_runs(runs, opener_starts)
-    spans: list[tuple[int, int]] = []
-    index = 0
-    while index < len(runs):
-        closer = closers[index]
-        if closer is None:
-            index += 1
-            continue
-        spans.append((opener_starts[index], runs[closer][1]))
-        index = closer + 1
-    return spans
+    return _pair_backticks(text).spans
+
+
+def _backtick_problem(number: int, text: str, visible: str, in_block_comment: bool) -> str | None:
+    """Describe how the backticks of the raw line ``text`` could make the gate and the renderer disagree, or ``None``.
+
+    A run over ``MAX_BACKTICK_RUN`` is rejected before anything pairs it. An opener that closes at a run of another
+    length, or not at all, is rejected, because the renderer pairs backticks across the lines of a paragraph: when
+    every run closes at a run of its own length on its own line, a line, a joined bullet and the rendered paragraph
+    pair the same way. A backtick on a line that shows text beside an HTML comment (``visible`` is what is left) is
+    rejected, because the renderer pairs backticks before it reads an inline comment: it can pair a backtick inside
+    the comment with one outside it, and the gate, which pairs the text left after removing the comment, would not.
+    The one exemption is a line that shows nothing inside a comment opened at the start of a line
+    (``in_block_comment``): the renderer stores that comment as an HTML block before it pairs any backtick.
+    """
+    snippet = _shorten(text.strip())
+    runs = _BacktickRuns(text)
+    if runs.lengths_longest_first and runs.lengths_longest_first[0] > MAX_BACKTICK_RUN:
+        return (
+            f'a run of more than {MAX_BACKTICK_RUN} backticks at line {number} ({snippet}); '
+            f'write code spans with at most {MAX_BACKTICK_RUN} backticks'
+        )
+    if runs.runs and visible != text and visible.strip():
+        return (
+            f'a backtick on a line that also has an HTML comment at line {number} ({snippet}); the docs renderer '
+            'pairs backticks before it reads comments, so move the comment to its own line'
+        )
+    if not (in_block_comment and not visible.strip()) and not _pair_backticks(text).exact:
+        return (
+            f'an unpaired backtick run at line {number} ({snippet}); close every code span on the line it opens on '
+            'with a run of the same length, or escape a literal backtick as "\\`"'
+        )
+    return None
 
 
 def _without_code_spans(text: str) -> str:
@@ -463,6 +538,7 @@ class _Scanner:
         self._neutralized_fence_opener = 0
         self._in_comment = False
         self._comment_midline = False
+        self._comment_is_block = False
         self._in_list_item = False
 
     def feed(self, number: int, text: str) -> None:
@@ -581,6 +657,12 @@ class _Scanner:
         visible, opened, still_open = _strip_comments(
             text, self._in_comment, allow_open=not neutralized and number not in self._neutralized
         )
+        if opened:
+            self._comment_is_block = text.startswith(COMMENT_OPEN)
+        in_block_comment = (opened or self._in_comment) and self._comment_is_block
+        backtick_problem = None if neutralized else _backtick_problem(number, text, visible, in_block_comment)
+        if backtick_problem:
+            self.diagnostics.append((number, backtick_problem))
         self.lines.append(_Line(number, visible, heading, opens_comment=opened or _comment_open_index(visible) >= 0))
         if not still_open:
             self.open_region = None

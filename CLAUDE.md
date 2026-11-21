@@ -238,9 +238,16 @@ The PR fails CI until the entry passes the release docs gate.
 - A code fence closes only on a closer of exactly the opener's length, as the docs renderer (pymdownx.superfences)
   reads it. A longer closer fails (a four-backtick fence, a five-backtick line, then a four-backtick line): CommonMark
   closes there and the docs renderer does not, so they disagree on what follows. A shorter closer does not close.
-- Code spans pair as CommonMark pairs them: a backtick run closes at the next run of the same length, an opener with
-  no closer is literal, and a backtick after an odd number of backslashes opens no span, so
-  ``\`<h2>Feature</h2>`` still fails as a raw heading. A `<!--` in a
+- Code spans pair as the docs renderer (Python-Markdown with the pymdownx extensions in `mkdocs.yml`) pairs
+  them, using its own backtick pattern: an opener closes at the next run of its own length, and without one at
+  the first of the longest later runs, so ``` ``x` ``` is one span. A backtick after an odd number of backslashes
+  opens no span, so
+  ``\`<h2>Feature</h2>`` still fails as a raw heading. Because the renderer pairs across the lines of a paragraph,
+  every visible line must pair its own backticks exactly: a run that closes at a run of another length, or not at
+  all, fails with `an unpaired backtick run at line N`; escape a literal backtick as `` \` ``. A run of more than 8
+  backticks fails anywhere in the entry, before anything pairs it. A backtick on a line that also shows text beside an
+  HTML comment fails, because the renderer pairs backticks before it reads the comment; only a comment that starts a
+  line may hold unpaired backticks on lines that show nothing else. A `<!--` in a
   code span is literal text and hides nothing, but an unclosed one is reported on its own line because a reader may
   take it for a comment. A comment that starts mid-line ends at the next blank line, as Markdown reads it, so one
   still open there is reported and the lines after it are checked. Only a comment that starts a line may span blank
@@ -250,9 +257,10 @@ The PR fails CI until the entry passes the release docs gate.
 - A line longer than 1000 characters fails anywhere in the entry, inside a fence or comment too, with
   `line N is longer than 1000 characters`. The check reports it before reading it and then treats it as a blank line.
   Wrap a long line instead. With `--newest`, a long line above the topmost version heading exits 2, because it could
-  be that heading. Code spans are found by a linear scan, so backtick runs cannot make the check slow, but the cap
-  does not bound a gated bullet, which joins its continuation lines: the docs-link and `(no docs:` patterns are still
-  quadratic in the length of one bullet (100 lines of `[` take seconds).
+  be that heading. With runs capped at 8 backticks, code spans are found in time linear in the text times 8, so
+  backtick runs cannot make the check slow, but the line cap does not bound a gated bullet, which joins its
+  continuation lines: the docs-link and `(no docs:` patterns are still quadratic in the length of one bullet (100
+  lines of `[` take seconds).
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
   heading, but it must be closed and must not hide a `###` heading. An unclosed one fails the check.
 - An entry runs to the next `## vX.Y.Z` heading. Any other `##` line inside it
