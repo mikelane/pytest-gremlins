@@ -613,3 +613,21 @@ class DescribeAdversarialWorkBranchStart:
         assert code == 1
         assert 'git switch --detach origin/main' in capsys.readouterr().err
         assert _git(repo, 'branch', '--show-current').strip() == 'work'
+
+
+@pytest.mark.medium
+class DescribeAdversarialCommitizenBumpParity:
+    @pytest.mark.parametrize(
+        ('subject', 'body', 'section'),
+        [
+            ('BREAKING CHANGE: drop Python 3.10', '', 'Upgrade notes'),
+            ('Update the parser', 'BREAKING CHANGE: the default moved', 'Upgrade notes'),
+            ('Update the parser', 'fix: repair the parser', 'Fix'),
+            ('fix(a(b)): repair', '', 'Fix'),
+            ('fix:', '', 'Fix'),
+        ],
+    )
+    def it_gives_a_placeholder_to_every_commit_that_commitizen_counts_toward_the_bump(
+        self, subject: str, body: str, section: str
+    ) -> None:
+        assert prepare.section_for(_commit(subject, body)) == section
