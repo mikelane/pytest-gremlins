@@ -30,8 +30,8 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-import contextlib
 from dataclasses import dataclass
+import contextlib
 import datetime
 import functools
 import logging
@@ -74,9 +74,11 @@ def _leave_process_state_alone() -> Iterator[None]:
 
 
 with _leave_process_state_alone():
-    from commitizen import config as cz_config
-    from commitizen import exceptions as cz_exceptions
-    from commitizen import factory as cz_factory
+    from commitizen import (
+        config as cz_config,
+        exceptions as cz_exceptions,
+        factory as cz_factory,
+    )
     from commitizen.version_increment import VersionIncrement
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
