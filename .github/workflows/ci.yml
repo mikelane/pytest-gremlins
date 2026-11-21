@@ -148,7 +148,13 @@ jobs:
           actual = f'{sys.version_info.major}.{sys.version_info.minor}'
           expected = sys.argv[1]
           print(f'uv run selected Python {actual}')
+          print(f'executable: {sys.executable}')
+          print(f'version: {sys.version}')
           if actual != expected:
+              print(
+                  f"::error title=Wrong Python::Expected Python {expected}, uv run selected Python {actual}; "
+                  "check the job's UV_PYTHON"
+              )
               raise SystemExit(f'Expected Python {expected}, selected Python {actual}')
           PY
 

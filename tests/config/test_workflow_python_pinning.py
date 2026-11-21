@@ -185,6 +185,8 @@ class DescribeMatrixInterpreterGuard:
 
         assert result.returncode == 0, _describe(result)
         assert f'uv run selected Python {RUNNING_VERSION}' in result.stdout, _describe(result)
+        assert f'executable: {sys.executable}' in result.stdout, _describe(result)
+        assert f'version: {sys.version}' in result.stdout, _describe(result)
 
     @POSIX_ONLY
     @pytest.mark.parametrize('expected_python', [MISMATCHED_VERSION, RUNNING_VERSION[:-1]])
@@ -192,6 +194,11 @@ class DescribeMatrixInterpreterGuard:
         result = _run_guard(tmp_path, expected_python)
 
         assert result.returncode == 1, _describe(result)
+        annotation = (
+            f'::error title=Wrong Python::Expected Python {expected_python}, '
+            f"uv run selected Python {RUNNING_VERSION}; check the job's UV_PYTHON"
+        )
+        assert annotation in result.stdout, _describe(result)
         assert f'Expected Python {expected_python}, selected Python {RUNNING_VERSION}' in result.stderr, _describe(
             result
         )
