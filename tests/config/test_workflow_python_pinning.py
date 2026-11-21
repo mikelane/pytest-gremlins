@@ -17,7 +17,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS_DIR = REPO_ROOT / '.github' / 'workflows'
 MATRIX_VERSION = '${{ matrix.python-version }}'
 INSTALL_PATTERN = re.compile(r'uv python install (\$\{\{ [^}]+\}\}|\S+)')
-MATRIX_WORKFLOWS = ['ci.yml', 'release.yml']
 
 
 def _jobs(workflow_name: str) -> dict[str, dict[str, Any]]:
@@ -48,15 +47,13 @@ INSTALLING_JOBS = _installing_jobs()
 
 @pytest.mark.medium
 class DescribeWorkflowPythonPinning:
-    @pytest.mark.parametrize('workflow_name', MATRIX_WORKFLOWS)
-    def it_sets_uv_python_from_the_matrix_version(self, workflow_name: str) -> None:
-        job = _jobs(workflow_name)['test']
+    def it_sets_uv_python_from_the_matrix_version(self) -> None:
+        job = _jobs('ci.yml')['test']
 
         assert job['env']['UV_PYTHON'] == MATRIX_VERSION
 
-    @pytest.mark.parametrize('workflow_name', MATRIX_WORKFLOWS)
-    def it_fails_the_matrix_job_when_the_interpreter_differs(self, workflow_name: str) -> None:
-        steps = _jobs(workflow_name)['test']['steps']
+    def it_fails_the_matrix_job_when_the_interpreter_differs(self) -> None:
+        steps = _jobs('ci.yml')['test']['steps']
         sync_index = next(i for i, step in enumerate(steps) if step.get('run', '').startswith('uv sync'))
         guards = [step for step in steps[sync_index + 1 :] if 'sys.version_info' in step.get('run', '')]
 

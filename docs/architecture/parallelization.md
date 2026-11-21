@@ -276,7 +276,7 @@ loads `sitecustomize`, so a child started with any of them still runs the origin
 
 ### Cached results
 
-The incremental cache key includes a runner fidelity version (`rf20`), so verdicts cached by
+The incremental cache key includes a runner fidelity version (`rf21`), so verdicts cached by
 v1.9.0 or by interim builds, which used the lightweight runner, are recomputed once after upgrading.
 So are timeouts cached before they were confirmed against the unmutated tests (#565).
 So are verdicts cached while instrumented modules had no `__file__` (#525), when target code that read it
@@ -310,6 +310,11 @@ So are verdicts cached when a gremlin subprocess that crashed outside a test, su
 not register during pytest startup, was scored ZAPPED (#656); it is now an ERROR.
 So are verdicts cached before the key carried the rerun budget (#671); a kill reached without reruns was
 served to a run that reruns flaky tests whenever both settings scaled to the same timeout.
+So are all verdicts cached before gremlin runs were given the config file your session read (#1023). A gremlin
+run used to look for a config file starting from the tests it ran, so it could read a nested `pytest.ini` your
+session never read, with its own rerun count, `xfail_strict` or `filterwarnings`, and could skip a `conftest.py`
+above that file. Which projects were affected depends on where their tests sit, so every project misses the cache
+once after upgrading.
 Gremlins whose mutant stopped the suite from loading (a conftest import error, a test module that
 failed to collect, or a changed parametrize id) are recorded as ZAPPED with the killing test
 `<collection>`; ones cached as ERROR before that change are recomputed too.
@@ -362,10 +367,27 @@ ends them in these cases:
   to have no effect, and a run is not turned into an error result that could be cached.
 - An interrupt while control runs execute in a thread pool, and interpreter exit: every command still running is ended.
 
-A SIGTERM that arrives in the instant between a command being started and being recorded in the registry
-is not handled, and that command is not ended. The window is a few microseconds and a pool worker's command is
-affected the same way. It is not closed because blocking SIGTERM around the start would be inherited by the command
-(a signal mask survives `exec`), so its own SIGTERM would stop working.
+A SIGINT or SIGTERM that arrives between a command being started and being recorded in the registry is held back.
+While `run_bounded` starts a command, it swaps the process's Python-level SIGINT and SIGTERM handlers for ones that
+only record the signal. Right after the command is registered, and inside the guard that kills and reaps it, the
+original handlers are put back and each recorded signal is delivered to them. If a handler raises, the command is
+killed and reaped as for any other interrupt. A pool worker calls `run_bounded` on its own main thread, so its
+commands get this protection too.
+
+The swap is not a signal mask. Blocking SIGTERM around the start would be inherited by the command (a signal mask
+survives `exec`), so its own SIGTERM would stop working. Handlers are reset by `exec`, so the swapped signals
+start at their default dispositions in the command.
+
+The window is still open in three cases, and a signal arriving in it leaves the command running and not recorded:
+
+- `run_bounded` is called off the main thread. Python runs signal handlers only on the main thread, so there is
+  nothing to swap.
+- The signal's current handler is the default action (`SIG_DFL`). Only handlers written in Python are swapped,
+  and the default action terminates the process without running Python code.
+- Windows. The swap is skipped there.
+
+A signal set to `SIG_IGN` needs no deferral: it is discarded, so nothing is raised and the command is registered
+normally.
 
 SIGKILL cannot be handled, so it is covered by a deadman pipe instead. The first time a process runs a test command it
 starts a watchdog helper (`python -I -S`, in its own session) and keeps the write end of the pipe on the helper's stdin.

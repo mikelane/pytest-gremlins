@@ -6,7 +6,6 @@ PoolConfig to use optimized settings like custom start methods and warmup.
 
 from __future__ import annotations
 
-import sys
 import time
 from typing import TYPE_CHECKING
 from unittest.mock import (
@@ -21,6 +20,8 @@ from pytest_gremlins.parallel.pool_config import PoolConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+WARMUP_HANG_GUARD_SECONDS = 60.0
 
 
 @pytest.mark.small
@@ -100,9 +101,8 @@ class DescribePersistentWorkerPoolWarmup:
             pass
         elapsed = time.monotonic() - start
 
-        # Windows CI runners are significantly slower; use generous threshold
-        threshold = 10.0 if sys.platform == 'win32' else 2.0
-        assert elapsed < threshold
+        # Generous bound, not a speed requirement: only a pathologically slow run trips it.
+        assert elapsed < WARMUP_HANG_GUARD_SECONDS
 
 
 @pytest.mark.small

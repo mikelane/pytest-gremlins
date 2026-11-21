@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from pytest_gremlins.cache.incremental import IncrementalCache
+from pytest_gremlins.cache.incremental import (
+    RUNNER_FIDELITY_VERSION,
+    IncrementalCache,
+)
 from pytest_gremlins.cache.types import CachedGremlinResult
 
 if TYPE_CHECKING:
@@ -15,17 +18,16 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 TEST_HASHES = {'tests/test_x.py::test_a': 'hash_a'}
-V1_13_1_FIDELITY_VERSION = 'rf20'
 SURVIVED = CachedGremlinResult(status='survived', killing_test=None, execution_time_ms=None)
 
 
 @pytest.mark.medium
 class DescribePytesterTokenInCacheKey:
-    def it_keeps_the_v1_13_1_key_shape_for_a_project_without_pytester(self, tmp_path: Path) -> None:
+    def it_adds_no_pytester_part_to_the_key_of_a_project_without_pytester(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as cache:
             key = cache._build_cache_key('g001', 'src_hash', TEST_HASHES)
 
-            assert key.endswith(f':v={cache._versions_hash}:{V1_13_1_FIDELITY_VERSION}')
+            assert key.endswith(f':v={cache._versions_hash}:{RUNNER_FIDELITY_VERSION}')
 
     def it_changes_the_key_for_a_project_that_loads_pytester(self, tmp_path: Path) -> None:
         with IncrementalCache(tmp_path / '.gremlins_cache') as plain:
@@ -35,7 +37,7 @@ class DescribePytesterTokenInCacheKey:
 
         assert loaded_key != plain_key
         assert ':pytester-615:' in loaded_key
-        assert loaded_key.endswith(f':{V1_13_1_FIDELITY_VERSION}')
+        assert loaded_key.endswith(f':{RUNNER_FIDELITY_VERSION}')
 
     def it_misses_a_verdict_stored_before_pytester_was_loaded(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / '.gremlins_cache'

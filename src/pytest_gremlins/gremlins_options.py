@@ -11,6 +11,8 @@ from functools import lru_cache
 import shlex
 from typing import Any
 
+from pytest_gremlins.addopts import split_addopts
+
 # argparse actions that never consume a value token (``help`` and ``version`` included).
 _VALUE_LESS_ACTIONS = frozenset(
     {'store_true', 'store_false', 'store_const', 'append_const', 'count', 'help', 'version'}
@@ -117,7 +119,7 @@ def addopts_without_gremlins(addopts: str) -> str:
         '-v'
     """
     value_opts, flag_only_opts = _own_option_tables()
-    args = shlex.split(addopts)
+    args = split_addopts(addopts)
     kept: list[str] = []
     index = 0
     while index < len(args):

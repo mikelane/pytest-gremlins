@@ -341,35 +341,59 @@ class DescribeSigtermCleanupLimits:
 
         assert (is_worker_gone, returncode) == (True, -signal.SIGTERM)
 
-    def it_stops_waiting_for_workers_that_ignore_sigterm_after_the_worker_stop_deadline(self, tmp_path: Path) -> None:
-        # Two workers ignore SIGTERM, so each join runs out. WORKER_STOP_SECONDS bounds the wait in total: an
-        # unbounded join hangs the main process forever, and a per-worker bound doubles it.
-        pid_files = (tmp_path / 'first.pid', tmp_path / 'second.pid')
-        runner = (
-            'import multiprocessing, os, signal, sys, time\n'
-            'from pytest_gremlins import process_tree\n'
-            'def child(pid_file):\n'
-            '    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
-            '    open(pid_file, "w").write(str(os.getpid()))\n'
-            f'    time.sleep({LONG_SLEEP_SECONDS})\n'
-            'if __name__ == "__main__":\n'
-            "    context = multiprocessing.get_context('fork')\n"
-            f'    context.Process(target=child, args=({str(pid_files[0])!r},)).start()\n'
-            f'    context.Process(target=child, args=({str(pid_files[1])!r},)).start()\n'
-            '    with process_tree.sigterm_cleanup():\n'
-            f'        time.sleep({LONG_SLEEP_SECONDS})\n'
-        )
-        caller = _spawn_caller(runner)
-        worker_pids = [0, 0]
-        try:
-            worker_pids = [int(wait_for_file(pid_files[0])), int(wait_for_file(pid_files[1]))]
-            started = time.monotonic()
-            caller.send_signal(signal.SIGTERM)
-            returncode = caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
-            elapsed = time.monotonic() - started
-        finally:
-            caller.kill()
-            kill_quietly(worker_pids[0])
-            kill_quietly(worker_pids[1])
 
-        assert (returncode, elapsed < 2 * process_tree.WORKER_STOP_SECONDS) == (-signal.SIGTERM, True)
+_IGNORING_WORKERS_RUNNER = (
+    'import multiprocessing, os, signal, sys, time\n'
+    'from pytest_gremlins import process_tree\n'
+    'def child(pid_file):\n'
+    '    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+    '    open(pid_file, "w").write(str(os.getpid()))\n'
+    f'    time.sleep({LONG_SLEEP_SECONDS})\n'
+    'if __name__ == "__main__":\n'
+    "    context = multiprocessing.get_context('fork')\n"
+    '    context.Process(target=child, args=({first!r},)).start()\n'
+    '    context.Process(target=child, args=({second!r},)).start()\n'
+    '    with process_tree.sigterm_cleanup():\n'
+    f'        time.sleep({LONG_SLEEP_SECONDS})\n'
+)
+
+
+def _terminate_caller_with_two_sigterm_ignoring_workers(tmp_path: Path) -> tuple[int, float]:
+    """Return the caller's exit code and how long it took to exit after SIGTERM."""
+    pid_files = (tmp_path / 'first.pid', tmp_path / 'second.pid')
+    caller = _spawn_caller(_IGNORING_WORKERS_RUNNER.format(first=str(pid_files[0]), second=str(pid_files[1])))
+    worker_pids = [0, 0]
+    try:
+        worker_pids = [int(wait_for_file(pid_files[0])), int(wait_for_file(pid_files[1]))]
+        started = time.monotonic()
+        caller.send_signal(signal.SIGTERM)
+        # Hang guard: an unbounded join in the cleanup never lets the caller exit, whatever the load.
+        returncode = caller.wait(timeout=STARTUP_DEADLINE_SECONDS)
+        elapsed = time.monotonic() - started
+    finally:
+        caller.kill()
+        kill_quietly(worker_pids[0])
+        kill_quietly(worker_pids[1])
+    return returncode, elapsed
+
+
+@pytest.mark.medium
+@posix_only
+class DescribeSigtermCleanupWorkerStopIsBounded:
+    def it_exits_on_sigterm_even_when_workers_ignore_sigterm(self, tmp_path: Path) -> None:
+        returncode, _ = _terminate_caller_with_two_sigterm_ignoring_workers(tmp_path)
+
+        assert returncode == -signal.SIGTERM
+
+
+# The elapsed bound is the assertion (a per-worker bound would double it), so it runs in the large tier,
+# where no other test loads the CPU (#1022).
+@pytest.mark.large
+@posix_only
+class DescribeSigtermCleanupWorkerStopDeadline:
+    def it_stops_waiting_for_workers_that_ignore_sigterm_after_the_worker_stop_deadline(self, tmp_path: Path) -> None:
+        # Two workers ignore SIGTERM, so each join runs out. WORKER_STOP_SECONDS bounds the wait in total, and a
+        # per-worker bound doubles it.
+        _, elapsed = _terminate_caller_with_two_sigterm_ignoring_workers(tmp_path)
+
+        assert elapsed < 2 * process_tree.WORKER_STOP_SECONDS

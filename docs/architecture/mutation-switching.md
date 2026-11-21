@@ -1,7 +1,8 @@
 # Mutation Switching
 
-Mutation switching is the foundation of pytest-gremlins' speed architecture. It eliminates
-the two slowest operations in traditional mutation testing: file I/O and module reloading.
+Mutation switching is the foundation of pytest-gremlins' speed architecture. It embeds every
+mutation for a source file in one instrumented version of that file, then selects a mutant at
+runtime instead of writing a separate source file for each one.
 
 ## The Problem with Traditional Mutation Testing
 
@@ -56,23 +57,26 @@ def is_adult(age):
 pytest-gremlins instruments it to:
 
 ```python
-# Instrumented code
-import os as __gremlin_os__
+# Instrumented code (shape produced by the transformer, comments added)
+import os as _gremlin_os
+__gremlin_active__ = _gremlin_os.environ.get('ACTIVE_GREMLIN')
+del _gremlin_os
 
 def is_adult(age):
-    __gremlin_id__ = __gremlin_os__.environ.get('ACTIVE_GREMLIN', '')
-
-    if __gremlin_id__ == 'g001':
-        return age > 18    # Mutation: >= to >
-    if __gremlin_id__ == 'g002':
-        return age <= 18   # Mutation: >= to <=
-    if __gremlin_id__ == 'g003':
-        return age < 18    # Mutation: >= to <
-    if __gremlin_id__ == 'g004':
-        return age == 18   # Mutation: >= to ==
-
-    return age >= 18  # Original behavior
+    if __gremlin_active__ == 'calculator_48f7_g005':
+        return                                     # Mutation: return value to None
+    else:
+        return (age > 18 if __gremlin_active__ == 'calculator_48f7_g001'    # >= to >
+            else age < 18 if __gremlin_active__ == 'calculator_48f7_g002'   # >= to <
+            else age >= 17 if __gremlin_active__ == 'calculator_48f7_g003'  # boundary shift -1
+            else age >= 19 if __gremlin_active__ == 'calculator_48f7_g004'  # boundary shift +1
+            else age >= 18)                                                 # Original behavior
 ```
+
+The module reads `ACTIVE_GREMLIN` once, when it is imported, and stores it in `__gremlin_active__`.
+Each mutated expression becomes a chain of conditional expressions (ternaries) on that variable, and a
+`return` statement gets an `if`/`else` around it. The original expression is always the last
+`else`. The exact set of gremlins for a line depends on the enabled operators.
 
 ### Activating Mutations
 
@@ -92,7 +96,7 @@ sequenceDiagram
     participant Subprocess as Bootstrap subprocess
     participant Tests
 
-    Note over Tool: Instrument code once (at startup)
+    Note over Tool: Instrument each target file once for the analysis
 
     loop For each mutation
         Tool->>Subprocess: Spawn with ACTIVE_GREMLIN=gXXX
@@ -102,56 +106,70 @@ sequenceDiagram
     end
 ```
 
-The source is instrumented once. Each mutation is then tested by starting a subprocess with a
-different `ACTIVE_GREMLIN` value, so no source file is rewritten and no mutated copy of the
-module has to be built. The full per-gremlin sequence, including test selection and the cache,
-is in [The Gremlin Execution Loop](gremlin-execution-loop.md).
+Each target file is instrumented once for the analysis. Each mutation is then tested by starting
+a subprocess with a different `ACTIVE_GREMLIN` value, so the source file on disk is never
+rewritten and the mutation set does not have to be rebuilt. The full per-gremlin sequence,
+including test selection and the cache, is in
+[The Gremlin Execution Loop](gremlin-execution-loop.md).
 
 ## Why This Is Faster
 
-### No File I/O
+The saving comes from doing the mutation analysis once per file and choosing a smaller set of
+tests for each gremlin. It does not come from eliminating file I/O or process startup.
 
-Traditional approach:
+### Instrument Each Target File Once per Run
 
-```text
-Write file: ~1-10ms per mutation
-Read file (Python import): ~1-5ms per file
-Total for 1000 mutations: 2-15 seconds just in file I/O
-```
+Pytest-gremlins parses each target file and embeds every mutation for that file in one
+instrumented AST. It writes the instrumented tree or source to `sources.json` in a temporary
+directory, next to the `gremlin_bootstrap.py` script. This normally happens after test
+collection; under pytest-xdist it happens at the end of the run, once the controller has the
+worker item ids. Either way, each target file is processed once for the analysis, and a later
+gremlin for the same file reuses that instrumented representation instead of rewriting the file
+or rebuilding the file's mutation set.
 
-Mutation switching:
+The switch is part of the generated code. The module reads `ACTIVE_GREMLIN` into
+`__gremlin_active__` when it is imported, and each mutation site compares that value with gremlin
+ids before falling through to the original expression or statement.
 
-```text
-No file operations during testing: 0ms
-```
+### Start a Fresh pytest Process for Each Gremlin
 
-### No Module Reloading
+The default loop runs each gremlin that needs a verdict in a separate `gremlin_bootstrap.py`
+subprocess, with `ACTIVE_GREMLIN` and the selected test node ids. Each subprocess reads
+`sources.json` and installs the import hook before pytest or the project's test modules are
+imported. When the project imports an instrumented file, the hook compiles and executes its
+instrumented tree in that process.
 
-Traditional approach:
+Process startup, interpreter and pytest initialization, project and dependency imports, and
+code compilation therefore happen again for every gremlin that runs. Module state and
+connections belong to that process and do not carry over to the next gremlin.
 
-```text
-Import module with dependencies: 50-5000ms per import
-1000 mutations: 50 seconds to 83 minutes just importing
-```
+### Limit Each Run to Covering Tests
 
-Mutation switching:
+The coverage pre-scan runs the test suite with a context per test and builds a map from source
+lines to tests. For each gremlin, the plugin selects the tests that executed its line. If no test
+covers the line, or a pre-scan problem disables coverage selection, it runs the whole suite.
+Selected tests are ordered by specificity, so pytest's exit-first option can stop at the first
+failure. Batch mode uses one union of selected tests across all gremlins awaiting a run, and
+passes that same test command to every batch.
 
-```text
-Import once at startup: 50-5000ms total
-Environment variable check: <1 microsecond per mutation
-```
+This can reduce the test work inside each subprocess, but the reduction depends on the project's
+test coverage and structure. When enabled, the incremental cache can replace a subprocess with a
+stored verdict if the gremlin, source, selected tests, and settings still match. Pardoned
+gremlins and selections with no runnable test also skip the subprocess.
 
-### Process Stays Hot
+### What Still Happens for Every Gremlin That Runs
 
-Beyond raw import time, there are hidden costs to reloading modules:
+- A fresh Python process and pytest session are created.
+- The bootstrap reads `sources.json`, and the import system loads the modules and dependencies
+  the selected tests need.
+- Instrumented modules are compiled and executed in that process.
+- The selected tests are collected and run, including their own file and resource I/O.
+- Some verdicts need an additional unmutated run to confirm that a collection failure or timeout
+  came from the mutation rather than the harness.
 
-- **JIT warmup:** Python's JIT (in 3.13+) loses optimizations
-- **Cache invalidation:** Bytecode caches become useless
-- **Connection pools:** Database connections get dropped
-- **Singleton state:** Application state resets
-
-With mutation switching, the Python process stays warm. Caches remain valid. Connections
-stay open. Everything runs at full speed.
+The gain is structural: one analysis per file and a focused test selection per gremlin, instead
+of rewriting a source file for each mutant and running the whole suite. The size of that gain
+depends on the project, so this page makes no claim about a specific speedup.
 
 ## Implementation Details
 
@@ -187,62 +205,58 @@ flowchart TB
 The transformer walks the AST looking for patterns that operators can mutate:
 
 ```python
-class GremlinTransformer(ast.NodeTransformer):
+class MutationSwitchingTransformer(ast.NodeTransformer):
     def visit_Compare(self, node):
-        # Find all applicable mutations
-        mutations = self.get_mutations(node)
-
-        if not mutations:
-            return node
-
-        # Build switch statement
-        return self.build_switch(node, mutations)
-
-    def build_switch(self, original, mutations):
-        # Returns an if-elif chain that checks __gremlin_id__
-        # and returns the appropriate mutated expression
+        # Find all applicable mutations for this comparison
         ...
+        # Replace it with a switching expression
+        return build_switching_expression(original, gremlins)
 ```
+
+`build_switching_expression` (in `instrumentation/transformer.py`) builds the nested ternary shown
+above, and `build_switching_statement` builds the `if`/`else` used for `return` statements.
 
 ### Generated Code Structure
 
-The generated switch follows a consistent pattern:
+The generated switch follows a consistent pattern. At the top of the module, once:
 
 ```python
-# Check which gremlin is active
-__gremlin_id__ = __gremlin_os__.environ.get('ACTIVE_GREMLIN', '')
+import os as _gremlin_os
+__gremlin_active__ = _gremlin_os.environ.get('ACTIVE_GREMLIN')
+del _gremlin_os
+```
 
-# First mutation
-if __gremlin_id__ == 'g001':
-    <mutated code>
+At each mutation site, a chain of ternaries that ends in the original expression:
 
-# Second mutation
-if __gremlin_id__ == 'g002':
-    <mutated code>
-
-# ... more mutations ...
-
-# Original code (default path)
-<original code>
+```python
+<mutation 1> if __gremlin_active__ == '<id 1>' else (
+    <mutation 2> if __gremlin_active__ == '<id 2>' else (
+        <original expression>
+    )
+)
 ```
 
 The original code is always the default path. When no gremlin is active, the code behaves exactly as written.
 
 ### Mutation Identifiers
 
-Each mutation gets a unique identifier:
+Each gremlin gets a unique identifier:
 
 ```text
-g_<file_hash>_<line>_<col>_<operator>_<variant>
+<file stem>_<4 hex digits of the path hash>_g<NNN>
 
-Example: g_a7b3c_42_8_comparison_gt
+Example: calculator_48f7_g001
 ```
 
 This identifier:
 
-- Is deterministic (same code = same ID)
-- Includes location information for debugging
-- Encodes the operator and variant
+- Is deterministic (same file path, same code = same ID)
+- Starts with the file stem plus the first four hex digits of an MD5 hash of the file path, so files
+  with the same name in different directories do not collide
+- Ends with a counter, `g001`, `g002`, and so on, in the order the transformer found the mutations in that file
+
+The identifier does not encode the line, column or operator. Those are stored on the gremlin
+itself and appear in the reports.
 
 ## Handling Edge Cases
 
@@ -280,10 +294,10 @@ Decorated functions work correctly because the switch is inside the function bod
 ```python
 @cache
 def expensive_calculation(x):
-    __gremlin_id__ = ...
-    if __gremlin_id__ == 'g001':
-        return x * 2  # Mutated
-    return x + 1  # Original
+    if __gremlin_active__ == 'calculator_48f7_g002':
+        return  # Mutated: return value to None
+    else:
+        return x - 1 if __gremlin_active__ == 'calculator_48f7_g001' else x + 1
 ```
 
 The decorator wraps the instrumented function, not the original.
@@ -303,11 +317,12 @@ pytest --gremlins --gremlin-explain=calculator_e336_g001
 ## Comparison with File-Based Mutation
 
 | Aspect | File-Based | Mutation Switching |
-|--------|------------|-------------------|
-| File I/O per mutation | 2 operations | 0 operations |
-| Module imports | N (one per mutation) | 1 (at startup) |
-| Process state | Reset each mutation | Preserved |
-| Parallelization | Requires file locking | Trivial (env vars) |
+|--------|------------|--------------------|
+| Source file per mutation | Rewritten, then restored | Left unchanged |
+| Mutation setup | Repeated for each source file change | All mutations for a file embedded in one instrumented AST |
+| Module loading per gremlin | A fresh process imports the rewritten file | A fresh process imports the instrumented file through the hook |
+| Process state | Reset for each mutant | Reset for each gremlin |
+| Parallelization | Requires coordination around shared source files | Workers assign gremlin ids and spawn independent processes |
 | Debugging | Easy (one mutation at a time) | Slightly harder (all embedded) |
 | Code readability | Original preserved | Instrumented harder to read |
 
@@ -325,8 +340,8 @@ may affect bytecode cache sizes.
 
 ### Compilation Time
 
-Initial instrumentation takes longer than loading uninstrumented code. This is a one-time
-cost that pays for itself after a few mutations.
+Parsing and transforming each target file adds work before the first gremlin. The instrumented
+tree is then compiled and executed in each gremlin subprocess that imports the file.
 
 ### Interaction with pytest's Assertion Rewriting
 
@@ -345,20 +360,20 @@ Mutation switching was pioneered by [Stryker](https://stryker-mutator.io/) for J
 
 > "Mutation switching can give a performance boost of up to 20-70%"
 
-For Python, the gains are even larger because:
-
-- Python imports are slower than JavaScript module loading
-- Python lacks JavaScript's V8-level JIT optimization
-- Many Python projects have heavyweight dependencies (numpy, pandas, Django)
+Mutation switching is a general technique; its effect in a Python project depends on how its
+mutation tool implements the switch, how its test suite is structured, and how often a source file
+would otherwise be rewritten and reimported.
 
 ## Summary
 
 Mutation switching is the foundation that makes everything else possible:
 
-- **Speed:** No file I/O, no reimporting
-- **Parallelization:** Workers just set different environment variables
-- **Simplicity:** No file locking, no temporary directories, no cleanup
-- **Stability:** Original files are never modified
+- **Speed:** Each file is instrumented once for the analysis, and coverage guidance narrows each
+  gremlin's test run. A gremlin that runs still pays for a fresh process, imports, and I/O.
+- **Parallelization:** Workers assign gremlin ids and spawn independent bootstrap processes.
+- **Simplicity:** Original source files are never rewritten. The bootstrap and `sources.json`
+  live in a temporary directory cleaned up during normal pytest teardown.
+- **Stability:** Original files are never modified.
 
 Combined with coverage guidance, incremental analysis, and parallel execution, mutation
 switching transforms mutation testing from an overnight CI job into a tool you can use

@@ -640,10 +640,12 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
 
 - Options in `addopts` and `PYTEST_ADDOPTS` reach per-gremlin runs as they always did.
 - The rerun ini settings (`reruns`, `reruns_delay`, `reruns_delay_backoff_factor`, `only_rerun`, `rerun_except`)
-  reach them too, because a gremlin run reads the same config file you did. Without `-c`/`--config-file`, it finds
-  the same project config file by itself. With `-c` or `--config-file` (also through `PYTEST_ADDOPTS` or an
-  `@file`), gremlins passes the same `-c` file on to the gremlin runs and the coverage pre-scan, so they read the
-  settings from it and a rerun option typed on the command line still wins over the file, as in pytest. Gremlins
+  reach them too, because a gremlin run reads the same config file you did. Gremlins passes the config file your
+  session read, whether pytest found it or you named it with `-c` or `--config-file` (also through
+  `PYTEST_ADDOPTS` or an `@file`), on to the gremlin runs and the coverage pre-scan with `-c`, together with your
+  session's rootdir and `confcutdir`. A `pytest.ini` nested next to some of your tests is not read unless your
+  session read it, and a session that read no config file gives them a file with no settings. They read the
+  settings from that file, and a rerun option typed on the command line still wins over the file, as in pytest. Gremlins
   no longer copies the settings as `--override-ini`, resets any of them, or warns about a list item it cannot
   carry: the file itself reaches the run, so a pattern such as `rerun_except = ["xyz "]` arrives unchanged.
 - A rerun option that sets a key, wherever it comes from (the command line, the `addopts` of the `-c` file or
@@ -754,6 +756,9 @@ the main run reruns. Gremlin runs rerun too, and no block is passed on.
   only turns coverage-guided test selection off, so every gremlin runs the full suite; it never changes a verdict.
 - When rerun scaling has already pushed a limit to the 86400-second cap, the timeout messages say to lower
   `--reruns` or `--reruns-delay` instead of advising a higher per-attempt limit, which could not help.
+- When you set a limit to 86400 yourself, it cannot go higher, so the timeout messages say it is already at the
+  maximum instead of advising a higher limit. Reruns and their delays still spend that limit, so the messages say to
+  lower any you have.
 - The incremental cache keys each verdict on the rerun budget itself (the rerun count, including `--force-reruns`,
   and the delay), so cached verdicts are judged again when it changes. A changed effective timeout judges again only
   the verdicts it could change (see the timeout option above). Two settings
@@ -801,7 +806,14 @@ coverage-guided test selection disabled (set coverage_timeout / --gremlin-covera
 and falls back to running every test for every gremlin. The notice is plain terminal output, not a Python
 warning, so `filterwarnings = error` in your pytest config cannot turn it into a crash. The same holds for the
 "coverage pre-scan could not start" and "Coverage collection returned no data" notices.
-Raise the limit with the CLI or TOML:
+A limit you set to the 86400-second maximum cannot be raised, so the notice says so instead:
+
+```text
+pytest-gremlins: coverage pre-scan exceeded 86400s; coverage-guided test selection disabled
+(the limit is already at the 86400s maximum; lower any reruns or rerun delays, or speed up the test suite)
+```
+
+Otherwise, raise the limit with the CLI or TOML:
 
 ```bash
 pytest --gremlins --gremlin-coverage-timeout=600
@@ -927,7 +939,8 @@ score. Downgraded results are not written to the incremental cache.
 
 If you see downgrades, raise the limit (or speed up the slow tests): a real hang outlasts any limit,
 so a longer one costs you no kills. The trade-off is time, since in parallel and batch mode each
-genuine hang costs one extra solo run, up to the limit.
+genuine hang costs one extra solo run, up to the limit. A limit already at the 86400-second maximum
+cannot be raised, so the message says to lower any reruns or rerun delays, or to speed up the tests.
 
 #### A hung worker cannot stall a parallel run
 

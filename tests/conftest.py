@@ -6,6 +6,7 @@ This file is for test-specific fixtures only.
 
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 import sys
@@ -17,6 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from secret_env_scrub import scrub_secret_env  # type: ignore[import-not-found]
+from xdist_env import hide_outer_xdist_worker_env  # type: ignore[import-not-found]  # noqa: F401
 
 from pytest_gremlins import plugin
 from pytest_gremlins.instrumentation.transformer import get_default_registry
@@ -177,6 +179,9 @@ def make_pytest_config() -> Callable[..., Any]:
         cfg = _Config()
         cfg.option = option  # type: ignore[attr-defined]
         cfg.rootdir = rootdir  # type: ignore[attr-defined]
+        cfg.rootpath = Path(rootdir)  # type: ignore[attr-defined]
+        cfg.inipath = None  # type: ignore[attr-defined]
+        cfg.known_args_namespace = argparse.Namespace(confcutdir=str(rootdir))  # type: ignore[attr-defined]
         cfg.pluginmanager = pm  # type: ignore[attr-defined]
         cfg.stash = pytest.Stash()  # type: ignore[attr-defined]
         return cfg

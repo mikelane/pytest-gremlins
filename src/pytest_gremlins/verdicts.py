@@ -41,11 +41,10 @@ from pytest_gremlins.parallel.lightweight import (
     describe_runner_error,
 )
 from pytest_gremlins.reporting.results import (
-    CAPPED_LIMIT_ADVICE,
     TIMEOUT_NOT_CONFIRMED_PREFIX,
     GremlinResult,
     GremlinResultStatus,
-    limit_is_capped,
+    mutant_timeout_advice,
     scaled_limit_note,
 )
 from pytest_gremlins.xdist_options import (
@@ -174,7 +173,8 @@ def _prefill_collection_kill_confirmations(
     Collection confirmations measure no time, so they can overlap; timeout confirmations compare
     durations and must stay solo, so they are not touched here. Worker threads only run the
     subprocess; the memo is written from the calling thread, so it needs no lock. Concurrency is
-    bounded by the configured worker count. :func:`_confirm_collection_kill` then reads the warm memo
+    bounded by the configured worker count. Once one confirmation fails or is interrupted, no further one
+    starts; those already running finish. :func:`_confirm_collection_kill` then reads the warm memo
     and decides each verdict exactly as before.
 
     Args:
@@ -188,9 +188,18 @@ def _prefill_collection_kill_confirmations(
         return
     worker_count = min(len(unchecked), gremlin_session.parallel_workers or os.cpu_count() or 4)
     with process_tree.kill_live_commands_on_error(), ThreadPoolExecutor(max_workers=worker_count) as executor:
-        outcomes = executor.map(
-            lambda selection: _collect_unmutated(gremlin_session, rootdir, selections[selection]), unchecked
-        )
+        first_failure: list[BaseException] = []
+
+        def collect_unless_failed(selection: tuple[str, ...]) -> ControlRunOutcome:
+            if first_failure:
+                raise first_failure[0]
+            try:
+                return _collect_unmutated(gremlin_session, rootdir, selections[selection])
+            except BaseException as error:
+                first_failure.append(error)
+                raise
+
+        outcomes = executor.map(collect_unless_failed, unchecked)
         gremlin_session.unmutated_load_checks.update(zip(unchecked, outcomes, strict=True))
 
 
@@ -276,7 +285,7 @@ def _timeout_not_confirmed_message(
     unmutated_outcome: UnmutatedRunOutcome,
     attempt_timeout: int | None = None,
 ) -> str:
-    """Explain a downgraded timeout: the selection, how the unmutated run went, the limit, and how to raise it."""
+    """Explain a downgraded timeout: the selection, how the unmutated run went, the limit, and what to do."""
     shown_ids = ', '.join(selection[:MAX_SELECTION_IDS_IN_MESSAGE]) or 'the whole suite'
     hidden_count = len(selection) - MAX_SELECTION_IDS_IN_MESSAGE
     if hidden_count > 0:
@@ -291,17 +300,8 @@ def _timeout_not_confirmed_message(
             f'{scaled_note}'
         )
     )
-    raised_limit = 'the per-attempt limit' if scaled_note else 'the limit'
-    is_capped = bool(scaled_note) and limit_is_capped(mutant_timeout)
-    advice = (
-        f'{CAPPED_LIMIT_ADVICE[0].upper()}{CAPPED_LIMIT_ADVICE[1:]}'
-        if is_capped
-        else f'Raise {raised_limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout'
-    )
-    return (
-        f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (selection: {shown_ids}; unmutated run {unmutated_run_summary}). '
-        f'{advice}, or speed up these tests.'
-    )
+    advice = mutant_timeout_advice(mutant_timeout, attempt_timeout, unscaled_name='the limit', tests='these tests')
+    return f'{TIMEOUT_NOT_CONFIRMED_PREFIX} (selection: {shown_ids}; unmutated run {unmutated_run_summary}). {advice}'
 
 
 def _rerun_timeout_alone(
@@ -391,8 +391,8 @@ def _build_test_command(
         doctest_ini_overrides: The session's resolved doctest ini values as ``-o key=value`` argument pairs
             (see :func:`_doctest_ini_overrides`), kept outside ``addopts`` because pytest before 9.1 ignores a
             ``-o`` nested in an ``addopts`` value (issue #719).
-        config_file_options: ``-c <config file>`` of the session, so gremlin runs read the config file
-            the session was given (issue #951).
+        config_file_options: ``-c`` with the session's config file, and its rootdir and ``confcutdir``, so
+            gremlin runs read the config the session read (#951, #1023).
         rerun_options: pytest-rerunfailures options typed on the command line (see
             :func:`~pytest_gremlins.rerun_options.rerun_options_in`), appended last so they win over
             ``addopts`` as they do in the baseline run.  A flaky test then has to fail on every

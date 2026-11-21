@@ -1,0 +1,36 @@
+name: Tag Release
+
+# Dry run (#1045): on every push to main, report whether [project].version still needs its tag.
+# It tags, pushes and dispatches nothing. #1046 turns the dry run into the real thing.
+on:
+  push:
+    branches: [main]
+
+env:
+  DRY_RUN: 'true'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag-release:
+    name: Report the tag a release would create
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The checkout is shallow and has no tags, so the script asks origin (git ls-remote) instead.
+      - name: Report the tag this push would create
+        env:
+          SHA: ${{ github.sha }}
+        run: python3 scripts/announce_untagged_release.py --sha "$SHA"

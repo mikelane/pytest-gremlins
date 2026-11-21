@@ -1,9 +1,8 @@
 """Performance tests for content hashing (pure computation).
 
-These tests verify that hashing operations are fast. They use only
-in-memory computation with no I/O, suitable for SMALL tests.
-
-Tests that use SQLite I/O have been moved to tests/cache/test_store_performance.py.
+These tests verify that hashing operations are fast. Speed limits only mean something when no other
+test loads the CPU, so they run in the large tier (serial, not in the PR matrix where xdist workers
+contend for it; #1022).
 """
 
 import time
@@ -13,7 +12,7 @@ import pytest
 from pytest_gremlins.cache.hasher import ContentHasher
 
 
-@pytest.mark.small
+@pytest.mark.large
 class DescribeHasherPerformance:
     """Performance tests for content hashing."""
 

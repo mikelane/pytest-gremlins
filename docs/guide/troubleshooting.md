@@ -221,16 +221,17 @@ ERROR: pytest-gremlins: gremlin runs start in the rootdir /path/to/project, but 
 that the session resolved against its own directory can fail to resolve from the rootdir, and every gremlin would
 score ERROR. pytest-gremlins stops the run instead, in these cases only:
 
-- `addopts` in your ini file, or `PYTEST_ADDOPTS`, names a relative `@file` that exists from the directory you
-  started in but not from the rootdir (for example `cd sub && pytest --gremlins ..` with `sub/args.txt`).
-  The message names the file. A file that exists from both directories does not stop the run.
+- Gremlins would run, but `addopts` in your ini file, or `PYTEST_ADDOPTS`, names a relative `@file` that exists
+  from the directory you started in but not from the rootdir (for example `cd sub && pytest --gremlins ..` with
+  `sub/args.txt`). The message names the file. A file that exists from both directories does not stop the run.
 - Gremlins would run, but none of the collected tests has a node id that names its test file from the rootdir.
   This happens when `--rootdir` points below the tests, when `-c cfg/pytest.ini` puts the rootdir in a
   subdirectory that does not hold the tests, or when the tests lie outside the rootdir.
-  With `-n` (pytest-xdist) the check runs on the node ids the workers report, before any gremlin is built, and
-  ends with the same message and exit code.
-  If only some tests are affected, or no sources were found, the run continues as before (a run that finds no
-  sources still ends with "No gremlins found").
+  If only some tests are affected, the run continues as before.
+
+A run that finds no sources to mutate does not stop in either case: it still ends with "No gremlins found".
+With `-n` (pytest-xdist) both checks run after the workers finish the test session, before any gremlin is built,
+and end with the same message and exit code.
 
 Starting pytest from a subdirectory of the rootdir (`cd tests && pytest --gremlins`) is not affected. Neither is a
 `--rootdir` above the project: the coverage pre-scan uses the same rootdir as your session, so gremlins score
@@ -239,8 +240,9 @@ can give the tests node ids that do not name their file; the run then stops with
 path instead.
 
 **Solution:** Run pytest from the rootdir, name the argument file with an absolute path, or drop `--rootdir` and
-point `-c` at a config file in the project root. Gremlin runs and the coverage pre-scan read the same `-c` /
-`--config-file` as your session, whatever the file is called (for example `gremlin.ini` holding `pythonpath`).
+point `-c` at a config file in the project root. Gremlin runs and the coverage pre-scan read the same config
+file as your session, whatever the file is called (for example `gremlin.ini` holding `pythonpath`), and never a
+`pytest.ini` nested below it that your session did not read.
 
 ---
 
@@ -537,6 +539,8 @@ and the JSON report gains a `timeout_warning` object with the count, the timeout
    ```bash
    pytest --durations=10
    ```
+
+   A timeout already at the 86400-second maximum cannot be raised, so lower any reruns or rerun delays instead.
 
 2. Exclude specific slow tests from mutation testing using pytest marks.
 

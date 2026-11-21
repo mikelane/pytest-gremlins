@@ -280,6 +280,7 @@ def _make_configure_config(*, gremlins: bool, has_pytest_cov: bool, no_cov: bool
     )
     config.stash = pytest.Stash()
     config.invocation_params = SimpleNamespace(args=(), dir=Path())
+    config.known_args_namespace = SimpleNamespace(confcutdir='.')
     config.pluginmanager = MagicMock()  # PytestPluginManager: sets attrs dynamically; bare-mock: ok
     config.pluginmanager.hasplugin.return_value = has_pytest_cov
     return config

@@ -237,7 +237,17 @@ class DescribeCollectCoverageTimeoutWarning:
         assert capsys.readouterr().err.splitlines() == [
             'pytest-gremlins: coverage pre-scan exceeded 86400s (30000s per attempt, scaled for the '
             'pytest-rerunfailures budget); coverage-guided test selection disabled '
-            '(the limit is capped at 86400s; lower --reruns or --reruns-delay)'
+            '(the limit is capped at 86400s; lower --reruns or --reruns-delay, or speed up the test suite)'
+        ]
+
+    def it_does_not_advise_raising_a_limit_configured_at_the_maximum(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        messages = self._collect_with_timeout(tmp_path, 86400, capsys)
+
+        assert messages == [
+            'pytest-gremlins: coverage pre-scan exceeded 86400s; coverage-guided test selection disabled '
+            '(the limit is already at the 86400s maximum; lower any reruns or rerun delays, or speed up the test suite)'
         ]
 
     def it_forwards_the_session_timeout_to_the_pre_scan(self, tmp_path: Path) -> None:

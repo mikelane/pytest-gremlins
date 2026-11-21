@@ -21,10 +21,9 @@ if TYPE_CHECKING:
     from pytest_gremlins.reporting.results import GremlinResult
 
 from pytest_gremlins.reporting.results import (
-    CAPPED_LIMIT_ADVICE,
     TIMEOUT_NOT_CONFIRMED_PREFIX,
     GremlinResultStatus,
-    limit_is_capped,
+    mutant_timeout_advice,
     scaled_limit_note,
 )
 
@@ -107,7 +106,7 @@ class MutationScore:
         """Explain downgraded timeouts, or ``None`` when there were none.
 
         Returns:
-            One line giving the count, the timeout, and the options that raise it.
+            One line giving the count, the timeout, and what to do about it.
         """
         downgraded_count = self.downgraded_timeouts
         if not downgraded_count:
@@ -118,20 +117,14 @@ class MutationScore:
             if self.mutant_timeout is not None
             else ''
         )
-        raised_limit = 'the per-attempt limit' if scaled_note else 'the timeout'
-        is_capped = bool(scaled_note) and self.mutant_timeout is not None and limit_is_capped(self.mutant_timeout)
-        advice = (
-            f'{CAPPED_LIMIT_ADVICE[0].upper()}{CAPPED_LIMIT_ADVICE[1:]}'
-            if is_capped
-            else f'Raise {raised_limit} with --gremlin-mutant-timeout or [tool.pytest-gremlins].mutant_timeout'
+        advice = mutant_timeout_advice(
+            self.mutant_timeout, self.mutant_attempt_timeout, unscaled_name='the timeout', tests='those tests'
         )
         if downgraded_count == 1:
             subject = '1 timeout counted as an error, not a kill: without the mutant, its tests'
         else:
             subject = f'{downgraded_count} timeouts counted as errors, not kills: without the mutant, their tests'
-        return (
-            f'{subject} do not finish within half the {timeout_label}{scaled_note}. {advice}, or speed up those tests.'
-        )
+        return f'{subject} do not finish within half the {timeout_label}{scaled_note}. {advice}'
 
     @property
     def percentage(self) -> float:
