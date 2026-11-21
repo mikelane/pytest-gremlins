@@ -511,7 +511,7 @@ class DescribeConstructsThatHideHeadings:
         assert 'hides' not in problems
 
     def it_reports_a_fence_that_hides_a_gated_section(self) -> None:
-        body = '### Internal\n\n- A step.\n  ```\n### Fix\n\n- **Fixed a crash on Windows.** (#5)\n\n  ```\n'
+        body = '### Internal\n\n- A step.\n```\n### Fix\n\n- **Fixed a crash on Windows.** (#5)\n\n```\n'
 
         problems = _problems_of(body)
 
@@ -1539,6 +1539,46 @@ class DescribeCommentOpenedMidLine:
         assert _problems_of('### Internal\n\n- Bump <!-- x\n  y --> done.\n') == ''
 
 
+@pytest.mark.small
+class DescribeIndentedCodeFence:
+    """Markdown reads a fence indented 4 or more spaces as code, and one under a list item as that item's code."""
+
+    HEADING_PROBLEM = 'a heading that is not a known "###" section heading or version heading at line 9'
+
+    @pytest.mark.parametrize('indent', ['    ', '\t', '          '])
+    def it_reports_a_fence_indented_four_or_more_columns_and_reads_the_lines_after_it(self, indent: str) -> None:
+        body = f'### Internal\n\n{indent}```\n\n# Feature\n\n- Undocumented. (#1)\n\n{indent}```\n'
+
+        problems = _problems_of(body)
+
+        assert 'indented code fence at line 7 is unsupported' in problems
+        assert self.HEADING_PROBLEM in problems
+
+    @pytest.mark.parametrize('indent', ['    ', '  '])
+    def it_reports_an_indented_fence_that_follows_a_list_item(self, indent: str) -> None:
+        body = f'### Internal\n\n- Bump.\n\n{indent}```\n\n# Feature\n\n- Undocumented. (#1)\n\n{indent}```\n'
+
+        problems = _problems_of(body)
+
+        assert 'indented code fence at line 9 is unsupported' in problems
+        assert 'a heading that is not a known "###" section heading or version heading at line 11' in problems
+
+    def it_reports_an_indented_fence_directly_under_a_list_item_without_hiding_a_gated_section(self) -> None:
+        body = '### Internal\n\n- A step.\n  ```\n### Fix\n\n- **Fixed a crash on Windows.** (#5)\n\n  ```\n'
+
+        problems = _problems_of(body)
+
+        assert 'indented code fence at line 8 is unsupported' in problems
+        assert 'Fixed a crash on Windows' in problems
+
+    @pytest.mark.parametrize('indent', ['', ' ', '  ', '   '])
+    def it_keeps_a_fence_with_up_to_three_spaces_outside_a_list_as_code(self, indent: str) -> None:
+        assert _problems_of(f'### Internal\n\n{indent}```\n# install\n{indent}```\n') == ''
+
+    def it_keeps_an_outer_fence_after_a_list_item_as_code(self) -> None:
+        assert _problems_of('### Internal\n\n- Bump.\n\n```\n# install\n```\n') == ''
+
+
 @pytest.mark.medium
 class DescribeRendererOracle:
     """The real docs renderer is a one-way oracle: it proves each reported bypass really renders a heading."""
@@ -1615,6 +1655,8 @@ class DescribeRendererOracle:
             ('- Bump \\`<h2>Feature</h2>`\n', '<h2'),
             ('- Use `<!--` here.\n\n# Feature\n\n-->\n', '<h1'),
             ('- Bump <!-- x\n\n# Feature\n\n-->\n', '<h1'),
+            ('    ```\n\n# Feature\n\n    ```\n', '<h1'),
+            ('- Bump.\n\n    ```\n\n# Feature\n\n    ```\n', '<h1'),
             ('- item\n\n    #720)\n', '<h1'),
         ],
     )

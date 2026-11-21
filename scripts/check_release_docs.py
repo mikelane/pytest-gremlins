@@ -84,7 +84,8 @@ BULLET = re.compile(r'\s*(?:[-*+]|[0-9]{1,9}[.)])(?:\s+(.*)|$)')
 BULLET_LABEL_LENGTH = 70
 PROBLEM_PREFIX = 'PROBLEM: '
 DEFAULT_CHANGELOG = Path(__file__).resolve().parents[1] / 'CHANGELOG.md'
-FENCE = re.compile(r'\s*(`{3,}|~{3,})(.*)')
+FENCE = re.compile(r' {0,3}(`{3,}|~{3,})(.*)')
+ANY_INDENT_FENCE = re.compile(r'\s*(`{3,}|~{3,})(.*)')
 COMMENT_OPEN = '<!--'
 COMMENT_CLOSE = '-->'
 CODE_SPAN = re.compile(r'(?<!\\)(`+).+?(?<!`)\1(?!`)', re.DOTALL)
@@ -188,12 +189,29 @@ def _is_html_heading(text: str) -> bool:
     return bool(HTML_HEADING.search(CODE_SPAN.sub(' ', text)))
 
 
-def _fence_marker(text: str) -> str | None:
-    match = FENCE.match(text)
+def _marker_of(match: re.Match[str] | None) -> str | None:
     if match is None:
         return None
     marker, info = match.groups()
     return None if marker[0] == '`' and '`' in info else marker
+
+
+def _fence_marker(text: str) -> str | None:
+    """Return the marker when ``text`` opens a fence at the outer level: indented by at most 3 spaces."""
+    return _marker_of(FENCE.match(text))
+
+
+def _indented_fence_marker(text: str, *, in_list_item: bool) -> str | None:
+    """Return the marker when ``text`` looks like a fence a renderer reads as indented code or list-item code.
+
+    Four or more columns of indentation make an indented code block, and any indentation under an open list item
+    belongs to that item. Neither is the outer-level fence the accepted format supports.
+    """
+    if not text.startswith((' ', '\t')):
+        return None
+    if FENCE.match(text) is not None and not in_list_item:
+        return None
+    return _marker_of(ANY_INDENT_FENCE.match(text))
 
 
 def _container_fence_marker(text: str) -> str | None:
@@ -202,7 +220,7 @@ def _container_fence_marker(text: str) -> str | None:
 
 
 def _closes_fence(text: str, marker: str) -> bool:
-    match = FENCE.match(text)
+    match = ANY_INDENT_FENCE.match(text)
     if match is None:
         return False
     closer, trailing = match.groups()
@@ -269,33 +287,34 @@ class _Scanner:
         self.hidden_version_headings: list[tuple[_Region, int, str]] = []
         self.container_fence_openers: list[int] = []
         self.midline_comments: list[int] = []
+        self.indented_fence_openers: list[int] = []
         self.open_region: _Region | None = None
         self._neutralized = neutralized
         self._fence = ''
         self._container_fence = ''
         self._in_comment = False
         self._comment_midline = False
+        self._in_list_item = False
 
     def feed(self, number: int, text: str) -> None:
         if self.open_region is not None and _structural_title(text, SECTION_LEVEL) is not None:
             self.hidden_headings.append((self.open_region, number))
         if self.open_region is not None and VERSION_HEADING_START.match(text):
             self.hidden_version_headings.append((self.open_region, number, text))
-        if self._fence:
-            self._feed_fenced(text)
+        if self._fence or self._in_comment or self._container_fence:
+            self._feed_inside_region(number, text)
             return
-        if self._in_comment:
-            if self._comment_midline and not text.strip():
-                self._end_midline_comment()
-            self._feed_text(number, text)
-            return
-        if self._container_fence:
-            if _closes_fence(_container_content(text), self._container_fence):
-                self._container_fence = ''
+        indented = (
+            None if number in self._neutralized else _indented_fence_marker(text, in_list_item=self._in_list_item)
+        )
+        if indented:
+            self._container_fence = indented
+            self.indented_fence_openers.append(number)
             self._feed_text(number, text, neutralized=True)
             return
         marker = None if number in self._neutralized else _fence_marker(text)
         if marker:
+            self._in_list_item = False
             self._fence = marker
             self.open_region = _Region(number, 'code fence')
             self.lines.append(_Line(number, text, opens_fence=True))
@@ -305,6 +324,28 @@ class _Scanner:
             self._container_fence = container_marker
             self.container_fence_openers.append(number)
         self._feed_text(number, text, neutralized=number in self._neutralized or container_marker is not None)
+
+    def _feed_inside_region(self, number: int, text: str) -> None:
+        """Feed a line that starts inside an outer fence, an HTML comment or an unsupported container fence."""
+        if self._fence:
+            self._feed_fenced(text)
+        elif self._in_comment:
+            if self._comment_midline and not text.strip():
+                self._end_midline_comment()
+            self._feed_text(number, text)
+        else:
+            if _closes_fence(_container_content(text), self._container_fence):
+                self._container_fence = ''
+            self._feed_text(number, text, neutralized=True)
+
+    def _track_list_item(self, text: str) -> None:
+        """Remember whether a list item is open: it stays open across blank lines and indented continuation lines."""
+        if not text.strip():
+            return
+        if LIST_ITEM.match(text) and not CONTAINER_QUOTE.match(text):
+            self._in_list_item = True
+        elif not text.startswith((' ', '\t')):
+            self._in_list_item = False
 
     def _end_midline_comment(self) -> None:
         """End a comment that opened mid-line: Markdown reads it as inline HTML, which a blank line ends."""
@@ -322,6 +363,8 @@ class _Scanner:
     def _feed_text(self, number: int, text: str, *, neutralized: bool = False) -> None:
         """Record ``text`` as a visible line; ``neutralized`` keeps it from opening a code fence or comment region."""
         heading = '' if self._in_comment else text
+        if not self._in_comment:
+            self._track_list_item(text)
         visible, opened, still_open = _strip_comments(
             text, self._in_comment, allow_open=not neutralized and number not in self._neutralized
         )
@@ -343,6 +386,7 @@ class _Scan:
     raw_lines: list[str]
     container_fence_openers: frozenset[int] = frozenset()
     midline_comments: frozenset[int] = frozenset()
+    indented_fence_openers: frozenset[int] = frozenset()
 
 
 def _scan(changelog: str) -> _Scan:
@@ -369,6 +413,7 @@ def _scan(changelog: str) -> _Scan:
                 LINE_WITH_BREAK.findall(changelog),
                 frozenset(scanner.container_fence_openers),
                 frozenset(scanner.midline_comments),
+                frozenset(scanner.indented_fence_openers),
             )
         unclosed.append(scanner.open_region)
         neutralized.add(scanner.open_region.number)
@@ -412,7 +457,7 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
     ]
     lines = scan.lines[start + 1 : end]
     shapes = _entry_shape_problems(lines) + _container_fence_problems(scan, first, last)
-    shapes += _midline_comment_problems(scan, first, last)
+    shapes += _midline_comment_problems(scan, first, last) + _indented_fence_problems(scan, first, last)
     text = ''.join(scan.raw_lines[first - 1 : last - 1])
     return _Entry(
         lines,
@@ -491,6 +536,16 @@ def _container_fence_problems(scan: _Scan, first: int, last: int) -> list[str]:
         f'a code fence opened inside a list item or block quote at line {number} is unsupported; start the fence at '
         'the outer level'
         for number in sorted(scan.container_fence_openers)
+        if first <= number < last
+    ]
+
+
+def _indented_fence_problems(scan: _Scan, first: int, last: int) -> list[str]:
+    """Report a fence indented 4 or more columns or under a list item, which a renderer reads as code or list code."""
+    return [
+        f'an indented code fence at line {number} is unsupported: a renderer reads it as an indented code block or '
+        'as code inside the list item above it. Start the fence at the outer level, indented by at most 3 spaces'
+        for number in sorted(scan.indented_fence_openers)
         if first <= number < last
     ]
 

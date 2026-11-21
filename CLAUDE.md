@@ -200,9 +200,9 @@ The PR fails CI until the entry passes the release docs gate.
   (`![x](...)`) or an escaped link (`\[x](...)`) does not count.
 - Under `### Upgrade notes`, `### Feature` and `### Fix` the only accepted lines are blank lines, list items and
   their indented continuation lines. Prose paragraphs, `•` pseudo-bullets, block quotes (`>`), code fences,
-  HTML comments (`<!--` anywhere, even in a code span), other headings (`####`, indented or tab-indented `#`),
-  thematic breaks and underlined headings fail the check, and the failure names the line. Put prose before the
-  first `###` heading.
+  HTML comments (a `<!--` anywhere, and an unclosed one even in a code span), other headings (`####`, indented or
+  tab-indented `#`), thematic breaks and underlined headings fail the check, and the failure names the line. Put prose
+  before the first `###` heading.
 - The entry is a **strict format**, checked across the whole selected entry (the preamble, `### Internal`,
   `### Documentation` and the gated sections alike). It is not a Markdown renderer, so a line outside a closed
   outer code fence or HTML comment must be prose, a list line, a version heading or one of the five `###` headings.
@@ -217,8 +217,15 @@ The PR fails CI until the entry passes the release docs gate.
   `***`, `___`, `* * *` and `- - -`. The check does not guess from the previous line; a delimiter under `A | B` or
   `<em>Feature</em>` fails for being a delimiter. The same heading and delimiter rules apply after list and `>`
   prefixes are stripped, so `> #Feature`, `- #### Detail`, `> <em>Feature</em>` + `> ---` and `- ---` fail too.
-- A code fence must open at the outer level (up to the indentation the scanner already allows). A fence inside a
-  list item or block quote is rejected with an explicit unsupported-construct message; it is never read as code.
+- A code fence must open at the outer level, indented by at most 3 spaces. A fence inside a list item or block
+  quote, a fence indented 4 or more columns (a tab counts as 4), and an indented fence after a list item (even after a
+  blank line) are rejected with an explicit unsupported-construct message; none is read as code, so the lines after
+  them are checked like any other line.
+- A backslash-escaped backtick opens no code span, so ``\`<h2>Feature</h2>`` still fails as a raw heading. A `<!--` in a
+  code span is literal text and hides nothing, but an unclosed one is reported on its own line because a reader may
+  take it for a comment. A comment that starts mid-line ends at the next blank line, as Markdown reads it, so one
+  still open there is reported and the lines after it are checked. Only a comment that starts a line may span blank
+  lines.
 - A second visible `##` heading for the version being released fails wherever it appears, including `##v2.0.0`,
   an indented, quoted or listed copy, and one with a date or closing hashes.
 - A code fence or HTML comment is allowed in `### Internal`, `### Documentation` and before the first `###`
