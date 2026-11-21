@@ -349,6 +349,12 @@ def _problems_of(body: str) -> str:
 
 
 LINKED = f'[docs]({DOCS_URL}/guide/configuration/)'
+INDENTED_HEADING_AT = 'an indented heading at line'
+INDENTED_HEADING_FIX = (
+    'start the heading at column 0; the docs renderer makes a heading only from a "#" at column 0 and shows an '
+    'indented one as text, so the section does not change there'
+)
+INDENTED_INTERNAL_UNDER_FEATURE = '## v1.0.0\n\n### Feature\n\n  ### Internal\n\n- New --foo option.\n'
 
 
 @pytest.mark.small
@@ -532,23 +538,60 @@ class DescribeConstructsThatHideHeadings:
 
 @pytest.mark.small
 class DescribeSectionHeadingSyntax:
-    @pytest.mark.parametrize(
-        'heading', [' ### Fix', '  ### Feature', '   ### Upgrade notes', '###\tFix', '### Fix ###']
-    )
-    def it_gates_the_bullets_under_an_indented_or_closed_gated_heading_after_internal(self, heading: str) -> None:
+    @pytest.mark.parametrize('heading', ['###\tFix', '### Fix ###'])
+    def it_gates_the_bullets_under_a_tabbed_or_closed_gated_heading_after_internal(self, heading: str) -> None:
         body = f'### Internal\n\n- Bumped a dev dependency. (#1)\n\n{heading}\n\n- **Fixed a crash.** (#2)\n'
 
         problems = _problems_of(body)
 
         assert 'Fixed a crash' in problems
 
-    @pytest.mark.parametrize('heading', ['### Internal ###', '### Internal #', ' ### Internal', '###\tInternal'])
+    @pytest.mark.parametrize('heading', ['### Internal ###', '### Internal #', '###\tInternal'])
     def it_accepts_an_internal_heading_written_with_extra_syntax(self, heading: str) -> None:
         assert _problems_of(f'{heading}\n\n- Bumped a dev dependency. (#1)\n') == ''
 
-    @pytest.mark.parametrize('heading', [' ### Fixes', '### Fixes ###', '###', '### ###'])
+    @pytest.mark.parametrize('heading', ['### Fixes ###', '###', '### ###'])
     def it_names_an_unknown_heading_written_with_extra_syntax(self, heading: str) -> None:
         assert 'unknown section heading' in _problems_of(f'{heading}\n\n- x\n')
+
+    @pytest.mark.parametrize(
+        'heading', [' ### Fix', '  ### Feature', '   ### Upgrade notes', '\t### Fix', ' ### Fixes', '  ## Notes']
+    )
+    def it_rejects_an_indented_heading_and_says_to_start_it_at_column_0(self, heading: str) -> None:
+        problems = _problems_of(f'### Internal\n\n- Bumped a dev dependency. (#1)\n\n{heading}\n\n- **Fixed.** (#2)\n')
+
+        assert problems == f'{INDENTED_HEADING_AT} 9 ({heading.strip()}); {INDENTED_HEADING_FIX}'
+
+    def it_keeps_the_section_of_the_heading_above_an_indented_known_heading(self) -> None:
+        problems = _load_checker().find_problems(INDENTED_INTERNAL_UNDER_FEATURE, '1.0.0', SITE)
+
+        assert problems == [
+            f'{INDENTED_HEADING_AT} 5 (### Internal); {INDENTED_HEADING_FIX}',
+            'bullet under "### Feature" at line 7 (New --foo option.) has no docs reference and no '
+            '"(no docs: <reason>)" exemption',
+        ]
+
+    def it_still_reports_an_indented_heading_hidden_in_a_comment(self) -> None:
+        problems = _problems_of('### Internal\n\n<!--\n  ### Fix\n-->\n')
+
+        assert problems == 'HTML comment opened at line 7 hides the "###" heading at line 8'
+
+    def it_does_not_report_a_heading_indented_four_columns_inside_a_fence(self) -> None:
+        assert _problems_of('### Internal\n\n```text\n    ### Fix\n```\n') == ''
+
+    def it_calls_a_heading_left_after_a_removed_comment_unsupported_not_indented(self) -> None:
+        problems = _problems_of('### Internal\n\n<!-- x --> ### Fix\n')
+
+        assert problems.startswith(f'{UNSUPPORTED_HEADING_AT} 7 (### Fix);')
+
+    def it_rejects_an_indented_heading_on_a_bullet_continuation_line(self) -> None:
+        problems = _problems_of('### Fix\n\n- **A.** (no docs: r)\n  ### Internal\n- **B.** (#2)\n')
+
+        assert problems.splitlines() == [
+            f'{INDENTED_HEADING_AT} 8 (### Internal); {INDENTED_HEADING_FIX}',
+            'bullet under "### Fix" at line 9 (**B.** (#2)) has no docs reference and no "(no docs: <reason>)" '
+            'exemption',
+        ]
 
     def it_rejects_a_hash_start_that_is_not_a_known_section_heading(self) -> None:
         problems = _problems_of('### Fix\n\n- **Fixed #12.** (no docs: x)\n#hashtag\n')
@@ -1326,7 +1369,7 @@ class DescribeStrictEntryFormat:
     def it_accepts_prose_closed_fences_and_comments_and_wrapped_bullets(self, content: str) -> None:
         assert _problems_of(f'### Internal\n\n{content}\n') == ''
 
-    @pytest.mark.parametrize('heading', ['### Fix', ' ### Internal', '###\tDocumentation', '### Feature ###'])
+    @pytest.mark.parametrize('heading', ['### Fix', '###\tDocumentation', '### Feature ###'])
     def it_keeps_accepting_the_known_section_headings(self, heading: str) -> None:
         assert _problems_of(f'{heading}\n\n- **Bumped.** (no docs: x)\n') == ''
 
@@ -1975,7 +2018,7 @@ class DescribeWrappedIssueReferences:
     def it_rejects_a_continuation_line_that_could_render_a_heading(self, continuation: str) -> None:
         body = f'### Fix\n\n- **A.** (no docs: r) (#963,\n{continuation}\n'
 
-        assert 'a heading that is not a known' in _problems_of(body)
+        assert f'{INDENTED_HEADING_AT} 8 ({continuation.strip()})' in _problems_of(body)
 
     def it_rejects_a_hash_line_after_a_blank_line_below_a_bullet(self) -> None:
         body = '### Fix\n\n- **A.** (no docs: r)\n\n  #964)\n'
@@ -2071,6 +2114,33 @@ COMMENT_OPENER_SHAPES = [
     '<!-- a\n--!> b',
 ]
 TAIL_COMMENT_OPENER = '<!-- a --> t <!-- b'
+SENTINEL = 'k1k'
+SECTION_SWITCH_SHAPES = {
+    'column 0': '### Fix',
+    'one space': ' ### Fix',
+    'two spaces': '  ### Fix',
+    'three spaces': '   ### Fix',
+    'tab': '\t### Fix',
+    'tab after the hashes': '###\tFix',
+    'closing hashes': '### Fix ###',
+    'under a list item': '- k0k (no docs: r)\n### Fix',
+    'indented under a list item': '- k0k (no docs: r)\n  ### Fix',
+    'after a blank line under a list item': '- k0k (no docs: r)\n\n  ### Fix',
+    'after text': 'Some prose.\n### Fix',
+    'indented after text': 'Some prose.\n  ### Fix',
+}
+
+
+def _sentinel_changelog(shape: str) -> str:
+    """Return an entry with ``shape`` under ``### Feature`` and an ungated-looking sentinel bullet after it."""
+    return f'## v1.0.0\n\n### Feature\n\n{shape}\n\n- {SENTINEL} (#1)\n'
+
+
+def _gate_section_of_sentinel(changelog: str) -> str:
+    problems = '\n'.join(_load_checker().find_problems(changelog, '1.0.0', SITE))
+    match = re.search(rf'bullet under "### ([^"]+)" at line \d+ \({SENTINEL}', problems)
+    assert match is not None, problems
+    return match.group(1)
 
 
 def _mkdocs_markdown_extension_names() -> set[str]:
@@ -2188,6 +2258,24 @@ class DescribeRendererOracle:
 
     def it_hides_a_comment_after_a_comment_that_starts_the_line_which_the_gate_rejects(self) -> None:
         assert '<h1' not in self._render(f'{TAIL_COMMENT_OPENER}\n# Probe\n-->\n')
+
+    @pytest.mark.parametrize('shape', SECTION_SWITCH_SHAPES.values(), ids=SECTION_SWITCH_SHAPES.keys())
+    def it_gates_a_bullet_under_the_section_the_rendered_page_shows_it_under(self, shape: str) -> None:
+        changelog = _sentinel_changelog(shape)
+        rendered_before_sentinel = self._render(changelog).split(SENTINEL)[0]
+        rendered_section = re.findall(r'<h3\b[^>]*>(.*?)</h3>', rendered_before_sentinel)[-1]
+
+        assert _gate_section_of_sentinel(changelog) == rendered_section
+
+    def it_renders_a_heading_inside_a_loose_list_item_from_a_line_indented_four_columns(self) -> None:
+        assert '<h3 id="fix">Fix</h3>\n</li>' in self._render('- a\n\n    ### Fix\n')
+
+    def it_rejects_a_heading_indented_four_columns_under_a_loose_list_item(self) -> None:
+        changelog = _sentinel_changelog('- k0k (no docs: r)\n\n    ### Fix')
+
+        problems = _load_checker().find_problems(changelog, '1.0.0', SITE)
+
+        assert f'{INDENTED_HEADING_AT} 7 (### Fix); {INDENTED_HEADING_FIX}' in problems
 
 
 def _gated_changelog(bullet: str) -> str:

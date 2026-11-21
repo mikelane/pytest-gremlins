@@ -210,8 +210,13 @@ The PR fails CI until the entry passes the release docs gate.
   `#\tFeature` and `##v2.0.0`; a wrapped bullet continuation is the one exception. Any indented line directly
   under an open list item (no blank line between) is paragraph text to the renderer, so it may start with a `#` that
   is not an ATX heading: `#989-#994)`, `#964) Thanks. (no docs: r)` and `#964 for details` all pass. It still fails
-  when it is heading-shaped (`#` to `######` followed by a space or the end of the line, so an indented `### Internal` fails
-  even though it names a known section), and a `#720)` after a blank line renders as a heading and fails.
+  when it is heading-shaped (`#` to `######` followed by a space or the end of the line), and a `#720)` after a blank
+  line renders as a heading and fails.
+- A heading must start at column 0. The docs renderer makes a heading only from a `#` at column 0, so a
+  heading-shaped line indented by any spaces or a tab (`### Internal` after two spaces, `\t### Fix`) renders as text
+  (or, 4 columns in under a loose list item, as a heading inside that item). Such a line fails wherever it is visible
+  with `an indented heading at line N (...); start the heading at column 0`, even when it names a known section, and it
+  never switches the section: the bullets after it stay gated by the heading above it.
 - A line that starts with an HTML tag fails, after any indentation, list marker or `>` prefix: `<div>`, `</div>`,
   `<details>`, `<pre>`, `<custom-tag>`, `<br/>`, `<?php` and `<![CDATA[`. The renderer reads it as a raw HTML block and
   leaves a `###` line inside as literal text, which would hide a section switch from readers while the gate acted on it.
@@ -278,8 +283,8 @@ The PR fails CI until the entry passes the release docs gate.
 - A carriage return that is not part of a CRLF line ending fails the check, and so does a copy of the version
   heading being released inside an HTML comment or code fence (it confuses readers and other tools). Only ASCII
   digits make a `##` line a version heading.
-- A `###` heading may have up to 3 leading spaces, a tab after the `###` and a closing `###`
-  (`### Internal ###`). It is read like any other heading, so it must be one of the five names above.
+- A `###` heading starts at column 0 and may have a tab after the `###` and a closing `###` (`### Internal ###`).
+  It is read like any other heading, so it must be one of the five names above.
 
 Put a long link on its own indented line so the bullet still passes markdownlint:
 

@@ -21,13 +21,16 @@ sections (``Internal``, ``Documentation``) and before the first heading, but it 
 
 These line rules cover the whole selected entry, in the preamble, the exempt sections and the gated sections alike:
 
-* Only the exact ``### <section>`` headings (up to 3 leading spaces, optional tab after the hashes, optional
-  closing hashes) and the ``## [v]X.Y.Z`` version headings are accepted. Any other line that starts with ``#`` is an
+* Only the exact ``### <section>`` headings (starting at column 0, optional tab after the hashes, optional closing
+  hashes) and the ``## [v]X.Y.Z`` version headings are accepted. Any other line that starts with ``#`` is an
   unsupported heading, whether or not a renderer would make one of it: ``#Feature``, ``####Detail``, ``###Feature``,
-  ``#Feature ###``, ``##v2.0.0`` and ``#<TAB>Feature`` all fail. The one exception is an indented continuation
-  line directly under an open list item, such as ``  #989-#994)`` or ``  #964 for details``: the renderer reads it
-  as paragraph text. It still fails when it is heading-shaped (``  ### Internal``), and a standalone ``    #720)``
-  after a blank line renders as a heading and fails.
+  ``#Feature ###``, ``##v2.0.0`` and ``#<TAB>Feature`` all fail. The docs renderer (Python-Markdown's
+  ``HashHeaderProcessor``) makes a heading only from a ``#`` at column 0, so a heading shape indented by any spaces or
+  a tab (``  ### Internal``) is rendered as text, or inside a loose list item, and never switches the section; it fails
+  as an indented heading, with a hint to start it at column 0. The one exception is an indented continuation line
+  directly under an open list item that is not heading-shaped, such as ``  #989-#994)`` or ``  #964 for details``:
+  the renderer reads it as paragraph text. A standalone ``    #720)`` after a blank line renders as a heading and
+  fails.
 * A line that starts with an HTML tag (``<div>``, ``</div>``, ``<?php``, ``<![CDATA[``), after any indentation or
   list and block-quote prefix, is rejected: the renderer reads it as a raw HTML block and leaves a ``###`` line
   inside it as literal text.
@@ -137,7 +140,8 @@ LONE_CARRIAGE_RETURN = re.compile(r'\r(?!\n)')
 NON_MARKDOWN_BREAK = re.compile('[\u2028\u2029\x85\x0c\x0b\x1c\x1d\x1e]')
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
 LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
-SECTION_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
+SECTION_HEADING = re.compile(r'(#{1,6})(?:[ \t]+(.*))?$')
+SHALLOW_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
 HEADING_CLOSER = re.compile(r'(?:^|[ \t]+)#+[ \t]*$')
 CONTAINER_PREFIX = re.compile(r'(?: {0,3}>[ \t]?|[ \t]*(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+|(?=[ \t]*$)))')
 ATX_HEADING_SHAPE = re.compile(r'#{1,6}(?:[ \t]|$)')
@@ -177,6 +181,11 @@ NESTED_FENCE_UNDER_LIST_ITEM = (
     'it sits under the list item above it, so a renderer reads it as code inside that item; put the fence at column '
     '0 after a non-list line'
 )
+INDENTED_HEADING = _ShapeProblem(
+    'an indented heading',
+    'start the heading at column 0; the docs renderer makes a heading only from a "#" at column 0 and shows an '
+    'indented one as text, so the section does not change there',
+)
 DELIMITER_LINE = _ShapeProblem('a thematic break or setext underline', 'remove the line or write it as a code span')
 
 
@@ -204,8 +213,20 @@ class _Region:
 
 
 def _structural_title(text: str, level: int) -> str | None:
-    """Return the title when ``text`` is an ATX heading of ``level`` indented by at most 3 spaces."""
-    match = SECTION_HEADING.match(text)
+    """Return the title when ``text`` is an ATX heading of ``level`` that starts at column 0, as the renderer needs."""
+    return _heading_title(SECTION_HEADING.match(text), level)
+
+
+def _shallow_title(text: str, level: int) -> str | None:
+    """Return the title when ``text`` is an ATX heading of ``level`` indented by at most 3 spaces.
+
+    Only the checks that fail closed read this wider shape: a heading hidden in a fence or comment, and the topmost
+    version heading. An indented heading never switches the section; it is rejected as a line shape instead.
+    """
+    return _heading_title(SHALLOW_HEADING.match(text), level)
+
+
+def _heading_title(match: re.Match[str] | None, level: int) -> str | None:
     if match is None or len(match.group(1)) != level:
         return None
     return HEADING_CLOSER.sub('', match.group(2) or '').strip()
@@ -219,11 +240,13 @@ def _container_content(text: str) -> str:
     return content
 
 
-def _line_shape_problem(text: str, *, list_continuation: bool) -> _ShapeProblem | None:
+def _line_shape_problem(text: str, *, list_continuation: bool, written: str) -> _ShapeProblem | None:
     """Describe a heading or delimiter shape the accepted changelog format rejects, or return ``None``.
 
-    The format is strict on purpose: a visible line is allowed only if it is an ATX ``###`` or ``##`` heading
-    (unknown titles and stray ``##`` lines are reported elsewhere), ordinary prose or a list line. A ``##``/``###``
+    The format is strict on purpose: a visible line is allowed only if it is an ATX ``###`` or ``##`` heading at
+    column 0 (unknown titles and stray ``##`` lines are reported elsewhere), ordinary prose or a list line. A
+    heading shape indented by any spaces or a tab is an indented heading, which the renderer shows as text, so it is
+    rejected and never switches the section. A ``##``/``###``
     line with a valid title passes here; ``_stray_heading_problems`` and ``_EntryReader._start_section`` decide
     whether the title is allowed. Anything that starts with ``#`` in another shape is
     reported, whether or not a renderer would make a heading of it, and every thematic-break or setext-underline
@@ -232,17 +255,19 @@ def _line_shape_problem(text: str, *, list_continuation: bool) -> _ShapeProblem 
 
     ``list_continuation`` says the caller read the previous visible line as an open list item. An indented line
     directly under it is a continuation of that item's paragraph, so it can start with a ``#`` that is not an ATX
-    heading (``  #716)``, ``  #989-#994)``, ``  #964 for details``). It can never be a heading: an indented ``#``
-    heading shape there (``  ### Internal``) is rejected even when it names a known section, because a renderer
-    does not agree with the scanner on whether it is a section switch. A standalone ``    #720)`` after a blank
+    heading (``  #716)``, ``  #989-#994)``, ``  #964 for details``). A heading shape there (``  ### Internal``) is
+    an indented heading like any other. A standalone ``    #720)`` after a blank
     line is not a continuation: a renderer makes an ``h1`` of it, so it stays an unsupported heading shape.
+
+    ``written`` is the raw line (empty when it starts inside a comment). A heading shape is called indented only when
+    the author wrote the indentation, not when a removed comment left it (``<!-- x --> ## v1.9.9``).
     """
     if not text.strip():
         return None
     content = _container_content(text)
     starts_with_hash = content.lstrip(' \t').startswith('#')
     if starts_with_hash and not _is_continuation_text(text, content, list_continuation=list_continuation):
-        return _hash_line_problem(text, content, list_continuation=list_continuation)
+        return _hash_line_problem(text, content, indented=text == written and text.startswith((' ', '\t')))
     if _is_html_heading(text):
         return RAW_HTML_HEADING
     if _starts_html_tag(text) or _starts_html_tag(content):
@@ -259,12 +284,12 @@ def _is_continuation_text(text: str, content: str, *, list_continuation: bool) -
     return ATX_HEADING_SHAPE.match(text.lstrip(' \t')) is None
 
 
-def _hash_line_problem(text: str, content: str, *, list_continuation: bool) -> _ShapeProblem | None:
-    """Judge a line whose content starts with ``#``: only an outer ``###`` or ``##`` heading passes."""
+def _hash_line_problem(text: str, content: str, *, indented: bool) -> _ShapeProblem | None:
+    """Judge a line whose content starts with ``#``: only an outer ``###`` or ``##`` heading at column 0 passes."""
     if content != text:
         return UNSUPPORTED_HEADING
-    if list_continuation and text.startswith((' ', '\t')):
-        return UNSUPPORTED_HEADING
+    if indented and ATX_HEADING_SHAPE.match(text.lstrip(' \t')):
+        return INDENTED_HEADING
     if _structural_title(text, SECTION_LEVEL) is None and _structural_title(text, ENTRY_LEVEL) is None:
         return UNSUPPORTED_HEADING
     return None
@@ -629,7 +654,7 @@ class _Scanner:
             text = ''
         if run_cap_problem := _backtick_run_cap_problem(number, text):
             self.diagnostics.append((number, run_cap_problem))
-        if self.open_region is not None and _structural_title(text, SECTION_LEVEL) is not None:
+        if self.open_region is not None and _shallow_title(text, SECTION_LEVEL) is not None:
             self.hidden_headings.append((self.open_region, number))
         if self.open_region is not None and VERSION_HEADING_START.match(text):
             self.hidden_version_headings.append((self.open_region, number, text))
@@ -689,7 +714,7 @@ class _Scanner:
         else:
             if _closes_fence(_container_content(text), self._neutralized_fence):
                 self._neutralized_fence = ''
-            if not BULLET.match(text) and _structural_title(text, SECTION_LEVEL) is None:
+            if not BULLET.match(text) and _shallow_title(text, SECTION_LEVEL) is None:
                 self.unsupported_fence_lines.append((self._neutralized_fence_opener, number))
             self._feed_text(number, text, neutralized=True)
 
@@ -922,7 +947,7 @@ def _entry_shape_problems(lines: list[_Line]) -> list[tuple[int, str]]:
     in_list_item = False
     for line in lines:
         text = line.text
-        shape = _line_shape_problem(text, list_continuation=in_list_item)
+        shape = _line_shape_problem(text, list_continuation=in_list_item, written=line.heading)
         if shape is not None:
             snippet = _shorten(text.strip())
             problems.append((line.number, f'{shape.description} at line {line.number} ({snippet}); {shape.fix}'))
@@ -1061,7 +1086,7 @@ def newest_version(changelog: str) -> str:
             above it is too long to read (it could be the topmost heading). An older entry is never selected instead.
     """
     for line in _scan(changelog).lines:
-        if _structural_title(line.text, ENTRY_LEVEL) is None:
+        if _shallow_title(line.text, ENTRY_LEVEL) is None:
             continue
         heading = NEWEST_HEADING.match(line.text)
         if heading is None:
