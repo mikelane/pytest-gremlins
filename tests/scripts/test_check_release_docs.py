@@ -486,7 +486,7 @@ class DescribeExemptSectionContent:
 
 @pytest.mark.small
 class DescribeConstructsThatHideHeadings:
-    def it_reports_a_comment_opened_in_a_code_span_that_a_later_code_span_closes(self) -> None:
+    def it_reports_a_comment_opener_written_in_a_code_span_without_hiding_what_follows(self) -> None:
         body = (
             '**The HTML report no longer drops text after a `<!--` in a docstring.**\n\n'
             '### Fix\n\n- **Fixed a crash on Windows.** (#5)\n\n'
@@ -495,9 +495,10 @@ class DescribeConstructsThatHideHeadings:
 
         problems = _problems_of(body)
 
-        assert 'HTML comment opened at line 5 hides the "###" heading at line 7' in problems
+        assert 'HTML comment opener inside a code span at line 5' in problems
+        assert 'hides' not in problems
 
-    def it_reports_a_comment_opened_in_an_exempt_section_that_hides_a_gated_section(self) -> None:
+    def it_reports_a_code_span_comment_opener_in_an_exempt_section_without_hiding_a_gated_section(self) -> None:
         body = (
             '### Internal\n\n- Wrote `<!--` in a docstring.\n\n'
             '### Fix\n\n- **Fixed a crash on Windows.** (#5)\n\n'
@@ -506,7 +507,8 @@ class DescribeConstructsThatHideHeadings:
 
         problems = _problems_of(body)
 
-        assert 'HTML comment opened at line 7 hides the "###" heading at line 9' in problems
+        assert 'HTML comment opener inside a code span at line 7' in problems
+        assert 'hides' not in problems
 
     def it_reports_a_fence_that_hides_a_gated_section(self) -> None:
         body = '### Internal\n\n- A step.\n  ```\n### Fix\n\n- **Fixed a crash on Windows.** (#5)\n\n  ```\n'
@@ -1494,6 +1496,28 @@ class DescribeEscapedBacktickBeforeCode:
         assert problems == ''
 
 
+@pytest.mark.small
+class DescribeCommentOpenerInsideACodeSpan:
+    """A ``<!--`` written as a code span is literal text, so it opens no comment and hides nothing."""
+
+    @pytest.mark.parametrize('span', ['`<!--`', '``a <!-- b``'])
+    def it_reports_a_heading_after_a_code_span_comment_opener(self, span: str) -> None:
+        problems = _problems_of(f'### Internal\n\n- Use {span} here.\n\n# Feature\n\n- Undocumented. (#1)\n\n-->\n')
+
+        assert 'a heading that is not a known "###" section heading or version heading at line 9' in problems
+
+    def it_reports_a_code_span_comment_opener_in_a_gated_bullet_as_unsupported_not_as_a_comment(self) -> None:
+        problems = _problems_of('### Fix\n\n- Fixed `<!--` parsing. (no docs: fixes a crash)\n')
+
+        assert 'HTML comment opener inside a code span at line 7' in problems
+        assert 'remove it' not in problems
+
+    def it_still_hides_a_real_comment_that_follows_a_code_span(self) -> None:
+        problems = _problems_of('### Fix\n\n- Fixed `x`. <!-- note --> (no docs: fixes a crash)\n')
+
+        assert 'HTML comment at line 7' in problems
+
+
 @pytest.mark.medium
 class DescribeRendererOracle:
     """The real docs renderer is a one-way oracle: it proves each reported bypass really renders a heading."""
@@ -1568,6 +1592,7 @@ class DescribeRendererOracle:
             ('> <h1>Feature</h1>\n', '<h1'),
             ('- <h4>Detail</h4>\n', '<h4'),
             ('- Bump \\`<h2>Feature</h2>`\n', '<h2'),
+            ('- Use `<!--` here.\n\n# Feature\n\n-->\n', '<h1'),
             ('- item\n\n    #720)\n', '<h1'),
         ],
     )

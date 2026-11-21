@@ -209,6 +209,29 @@ def _closes_fence(text: str, marker: str) -> bool:
     return closer[0] == marker[0] and len(closer) >= len(marker) and not trailing.strip()
 
 
+def _comment_open_index(text: str) -> int:
+    """Return the index of the first ``<!--`` that is not inside a code span, or ``-1``.
+
+    A ``<!--`` written as a code span is literal text, so it opens no comment.
+    """
+    code_spans = [match.span() for match in CODE_SPAN.finditer(text)]
+    index = text.find(COMMENT_OPEN)
+    while index >= 0:
+        if not any(start <= index < end for start, end in code_spans):
+            return index
+        index = text.find(COMMENT_OPEN, index + 1)
+    return -1
+
+
+def _has_comment_opener_in_code_span(text: str) -> bool:
+    """Return whether ``text`` writes an unclosed ``<!--`` inside a code span, which a reader may take for a comment.
+
+    A span that holds the whole comment (``<!-- x -->``) is literal text and is fine.
+    """
+    spans = (match.group() for match in CODE_SPAN.finditer(text))
+    return any(COMMENT_CLOSE not in span[span.rfind(COMMENT_OPEN) :] for span in spans if COMMENT_OPEN in span)
+
+
 def _strip_comments(text: str, in_comment: bool, allow_open: bool) -> tuple[str, bool, bool]:
     """Remove HTML comments from ``text``; return its visible text, if one opened here, and if one is still open."""
     visible: list[str] = []
@@ -222,7 +245,7 @@ def _strip_comments(text: str, in_comment: bool, allow_open: bool) -> tuple[str,
             rest = rest[end + len(COMMENT_CLOSE) :]
             in_comment = False
             continue
-        start = rest.find(COMMENT_OPEN) if allow_open else -1
+        start = _comment_open_index(rest) if allow_open else -1
         if start < 0:
             visible.append(rest)
             return ''.join(visible), opened, False
@@ -290,7 +313,7 @@ class _Scanner:
         visible, opened, still_open = _strip_comments(
             text, self._in_comment, allow_open=not neutralized and number not in self._neutralized
         )
-        self.lines.append(_Line(number, visible, heading, opens_comment=opened or COMMENT_OPEN in visible))
+        self.lines.append(_Line(number, visible, heading, opens_comment=opened or _comment_open_index(visible) >= 0))
         if not still_open:
             self.open_region = None
         elif opened:
@@ -423,6 +446,11 @@ def _entry_shape_problems(lines: list[_Line]) -> list[str]:
         reason = _line_shape_problem(text, list_continuation=in_list_item)
         if reason is not None:
             problems.append(f'{reason} at line {line.number} ({_shorten(text.strip())})')
+        if _has_comment_opener_in_code_span(text):
+            problems.append(
+                f'an HTML comment opener inside a code span at line {line.number} ({_shorten(text.strip())}) is '
+                'unsupported; reword it without "<!--"'
+            )
         if not text.strip():
             in_list_item = False
             continue
