@@ -2571,6 +2571,17 @@ def _joined_like_a_bullet(text: str) -> str:
     return ' '.join(part.strip() for part in text.split('\n'))
 
 
+def _with_code_spans_blanked(text: str) -> str:
+    """Return ``text`` with each span from the public ``code_spans`` replaced by one space, as the gate reads it."""
+    visible: list[str] = []
+    position = 0
+    for start, end in _load_checker().code_spans(text):
+        visible.extend((text[position:start], ' '))
+        position = end
+    visible.append(text[position:])
+    return ''.join(visible)
+
+
 RENDERER_PAIRING_TEXTS = [
     'k0k ``k1k[docs](p.md#a)`k2k',
     'k0k ``k1k(no docs: r)`k2k',
@@ -2599,8 +2610,9 @@ RENDERER_PAIRING_TEXTS = [
 class DescribeCodeSpansMatchTheRenderer:
     """``code_spans`` pairs backticks as the docs renderer does, so the gate hides exactly what renders as code.
 
-    Each sentinel (``k<n>k``) is visible to the gate when ``_without_code_spans`` keeps it, and visible to a reader
-    when the rendered page shows it outside every ``<code>`` element. A sentinel the renderer drops is in neither.
+    Each sentinel (``k<n>k``) is visible to the gate when it is outside every ``code_spans`` span, and visible to a
+    reader when the rendered page shows it outside every ``<code>`` element. A sentinel the renderer drops is in
+    neither.
     """
 
     @staticmethod
@@ -2610,7 +2622,7 @@ class DescribeCodeSpansMatchTheRenderer:
 
     @pytest.mark.parametrize('text', RENDERER_PAIRING_TEXTS)
     def it_hides_the_text_the_renderer_shows_as_code(self, text: str) -> None:
-        gate_visible = _sentinels(_load_checker()._without_code_spans(_joined_like_a_bullet(text)))
+        gate_visible = _sentinels(_with_code_spans_blanked(_joined_like_a_bullet(text)))
 
         assert gate_visible == self._rendered_outside_code(text)
 

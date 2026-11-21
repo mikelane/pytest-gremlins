@@ -172,6 +172,7 @@ RENDERER_TAG_END = re.compile(
 )
 TAG_START = re.compile(r'<[A-Za-z/!?]')
 QUOTES_CLOSED = re.compile(r'(?:[^"\']|"[^"]*"|\'[^\']*\')*')
+# Kept only for check_cache_kept.py; removal is tracked in #1057.
 CODE_SPAN = re.compile(r'(?<!\\)(`+).+?(?<!`)\1(?!`)', re.DOTALL)
 NEWEST_HEADING = re.compile(r'## v?([0-9]\S*)')
 LINE_BREAK = re.compile(r'\r\n|\r|\n')
