@@ -687,3 +687,33 @@ class DescribeAdversarialForcedMajorWithCommits:
 
         upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
         assert 'TODO' in upgrade_notes
+
+
+def _bumping_shell(repo: Path, shell: FakeShell, flags: tuple[str, ...], version: str) -> Any:
+    """Wrap ``shell`` so the fake ``cz bump --files-only`` writes ``version`` the way the real one does."""
+
+    def run(args: Sequence[str]) -> Any:
+        if tuple(args) == _cz('--files-only', '--yes', *flags):
+            (repo / 'pyproject.toml').write_text(f'[project]\nname = "x"\nversion = "{version}"\n', encoding='utf-8')
+            init = repo / 'src' / 'pytest_gremlins' / '__init__.py'
+            init.write_text(f"__version__ = '{version}'\n", encoding='utf-8')
+        return shell(args)
+
+    return run
+
+
+@pytest.mark.medium
+class DescribeAdversarialForcedMajorFromAPrerelease:
+    """``cz bump --get-next --increment MAJOR`` from 2.0.0b0 gives 2.0.0 (commitizen 4.19.3, real temp repo)."""
+
+    @pytest.mark.parametrize('current', ['2.0.0b0', '1.15.0'])
+    def it_adds_upgrade_notes_for_a_forced_major_increment(self, tmp_path: Path, current: str) -> None:
+        flags = ('--increment', 'MAJOR')
+        repo = _repo(tmp_path, project=current, module=current)
+        shell = _shell(flags=flags, next_version=_ok('2.0.0\n'), release_branch='release/v2.0.0')
+
+        _prepare(repo, _bumping_shell(repo, shell, flags, '2.0.0'), increment='MAJOR')
+
+        entry = (repo / 'CHANGELOG.md').read_text(encoding='utf-8').split('## v1.14.3')[0]
+        upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
+        assert 'TODO' in upgrade_notes
