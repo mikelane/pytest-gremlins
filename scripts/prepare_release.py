@@ -9,11 +9,14 @@ creates and switches to ``release/v<version>``, runs ``cz bump --files-only --ye
 and ``__init__.py``; no commit, no tag) and checks that the computed version, ``[project].version`` and
 ``__version__`` agree. Then it inserts a ``## v<version> (date)`` entry above the newest changelog entry.
 
-The entry has one placeholder bullet per commit since the last ``v*`` tag that commitizen counts toward the bump (read
-from the whole message, so a ``BREAKING CHANGE:`` footer counts). Every placeholder sits under
-a gated heading (``Upgrade notes``, ``Feature`` or ``Fix``) and carries neither a docs link nor an exemption, so the
-release docs gate (``check_release_docs.py``) fails until a person has rewritten it and given it a docs link, a
-``(no docs: <reason>)`` exemption, or moved it to ``Internal`` or ``Documentation``.
+The entry has one placeholder bullet per commit since the last ``v*`` tag that commitizen counts toward the bump, judged
+by commitizen's own configured ``bump_pattern`` and ``bump_map`` over the whole message (so a ``BREAKING CHANGE:``
+footer counts), plus one per conventional commit it does not bump on (``chore:``, ``docs:``), which goes under Fix. A
+major release always has at least one placeholder under Upgrade notes, whether the major was forced or a commit broke
+compatibility. Every placeholder sits under a gated heading (``Upgrade notes``, ``Feature`` or ``Fix``) and carries
+neither a docs link nor an exemption, so the release docs gate (``check_release_docs.py``) fails until a person has
+rewritten it and given it a docs link, a ``(no docs: <reason>)`` exemption, or moved it to ``Internal`` or
+``Documentation``.
 
 The script never commits, tags or pushes.
 """
@@ -23,6 +26,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import (
     Callable,
+    Mapping,
     Sequence,
 )
 from dataclasses import dataclass
@@ -34,6 +38,13 @@ import subprocess
 import sys
 import textwrap
 import unicodedata
+
+from commitizen import (
+    config as cz_config,
+    exceptions as cz_exceptions,
+    factory as cz_factory,
+)
+from commitizen.version_increment import VersionIncrement
 
 from check_release_docs import (
     VERSION_HEADING_START,
@@ -54,16 +65,22 @@ WRAP_WIDTH = 120
 SHORT_SHA_LENGTH = 7
 FIELD_SEPARATOR = '\x1f'
 RECORD_SEPARATOR = '\x1e'
-# Mirrors commitizen's BUMP_PATTERN (commitizen.defaults), which it matches against every line of a commit message.
-BUMP_LINE = re.compile(r'(?P<type>BREAKING[\-\ ]CHANGE|\w+)(?:\(.+\))?(?P<breaking>!)?:')
-# The types commitizen's BUMP_MAP turns into a version bump.
-BUMPING_TYPES = frozenset({'feat', 'fix', 'refactor', 'perf'})
 SKIPPED_TYPES = frozenset({'bump'})
+SECTION_BY_INCREMENT = {
+    VersionIncrement.MAJOR: 'Upgrade notes',
+    VersionIncrement.MINOR: 'Feature',
+    VersionIncrement.PATCH: 'Fix',
+}
 ORIGIN_MAIN = 'origin/main'
 UNCLASSIFIED_PLACEHOLDER = (
     '- **TODO: describe this change for users.** No commit since the last tag is a conventional commit, so\n'
     '  none could be listed here. Rewrite this bullet, then end it with a docs link or a no-docs exemption in\n'
     '  parentheses, or move it to Internal or Documentation.'
+)
+MAJOR_PLACEHOLDER = (
+    '- **TODO: describe this change for users.** This is a major release, so it needs upgrade notes. Say what\n'
+    '  users must change when they upgrade, then end this bullet with a docs link or a no-docs exemption in\n'
+    '  parentheses.'
 )
 SUMMARY_PLACEHOLDER = '**TODO: one sentence on what changes for users.**'
 CZ = (sys.executable, '-m', 'commitizen')
@@ -97,33 +114,55 @@ def parse_commit_log(raw: str) -> list[Commit]:
     return commits
 
 
-def _bump_lines(commit: Commit) -> list[re.Match[str]]:
-    lines = f'{commit.subject}\n{commit.body}'.splitlines()
-    return [match for line in lines if (match := BUMP_LINE.match(line))]
+@dataclass(frozen=True)
+class BumpRules:
+    """The rules ``cz bump`` applies to commit messages, as commitizen itself is configured."""
+
+    pattern: str
+    increments: Mapping[str, str | None]
 
 
-def _is_breaking(match: re.Match[str]) -> bool:
-    return bool(match.group('breaking')) or match.group('type').startswith('BREAKING')
+def _rules_from(settings: cz_config.BaseConfig) -> BumpRules:
+    cz = cz_factory.committer_factory(settings)
+    increments = cz.bump_map_major_version_zero if settings.settings['major_version_zero'] else cz.bump_map
+    if not cz.bump_pattern or not increments:
+        raise ReleaseRefusedError(f'commitizen rule {settings.settings["name"]!r} does not support bump')
+    return BumpRules(pattern=cz.bump_pattern, increments=increments)
 
 
-def section_for(commit: Commit) -> str | None:
+@functools.cache
+def default_bump_rules() -> BumpRules:
+    """Return the rules of an unconfigured commitizen, which touch no file."""
+    return _rules_from(cz_config.BaseConfig())
+
+
+def load_bump_rules(repo: Path) -> BumpRules:
+    """Return the rules commitizen applies in ``repo``: its ``pyproject.toml`` section, else commitizen's defaults."""
+    try:
+        settings = cz_config.read_cfg(str(repo / 'pyproject.toml'))
+    except (cz_exceptions.ConfigFileNotFound, cz_exceptions.ConfigFileIsEmpty):
+        return default_bump_rules()
+    return _rules_from(settings)
+
+
+def section_for(commit: Commit, rules: BumpRules | None = None) -> str | None:
     """Return the gated heading a commit's placeholder goes under, or ``None`` when it needs no bullet.
 
-    Reads the whole message the way commitizen does: any line that opens with a type, an optional scope and a colon
-    counts, so a ``BREAKING CHANGE:`` footer or a ``fix:`` line in the body is seen as well as the subject.
+    Asks commitizen's configured rules what the whole message (subject and body) bumps: ``bump_pattern`` picks the
+    lines, ``bump_map`` turns them into an increment, and the commit takes the highest. ``MAJOR`` goes under
+    ``Upgrade notes``, ``MINOR`` under ``Feature`` and ``PATCH`` under ``Fix``. A conventional subject that commitizen
+    does not bump on (``chore:``, ``docs:``) still goes under ``Fix``, so a person decides where it belongs. Version
+    bumps and subjects that are not conventional get no bullet.
     """
-    subject_match = BUMP_LINE.match(commit.subject)
-    if subject_match is not None and subject_match.group('type').lower() in SKIPPED_TYPES:
+    rules = rules or default_bump_rules()
+    message = f'{commit.subject.strip()}\n\n{commit.body.strip()}'.strip()
+    increment = VersionIncrement.from_message(message, rules.pattern, rules.increments)
+    if increment != VersionIncrement.NONE:
+        return SECTION_BY_INCREMENT[increment]
+    subject_match = re.search(rules.pattern, commit.subject.strip())
+    if subject_match is None or subject_match.group(1).lower() in SKIPPED_TYPES:
         return None
-    matches = _bump_lines(commit)
-    if any(_is_breaking(match) for match in matches):
-        return 'Upgrade notes'
-    if subject_match is not None:
-        return 'Feature' if subject_match.group('type').lower() == 'feat' else 'Fix'
-    types = {match.group('type').lower() for match in matches} & BUMPING_TYPES
-    if not types:
-        return None
-    return 'Feature' if 'feat' in types else 'Fix'
+    return 'Fix'
 
 
 def _plain(text: str) -> str:
@@ -156,19 +195,29 @@ def _placeholder(commit: Commit) -> str:
     )
 
 
-def render_entry(version: str, date: datetime.date, commits: Sequence[Commit], *, increment: str | None = None) -> str:
+def render_entry(
+    version: str,
+    date: datetime.date,
+    commits: Sequence[Commit],
+    *,
+    increment: str | None = None,
+    rules: BumpRules | None = None,
+) -> str:
     """Render the unfinished changelog entry for ``version``.
 
-    A forced ``MAJOR`` increment puts the generic placeholder under ``Upgrade notes``, so a major release cannot pass
-    the docs gate without upgrade notes.
+    A ``MAJOR`` release always has at least one placeholder under ``Upgrade notes``, so it cannot pass the docs gate
+    without upgrade notes. ``increment`` is ``MAJOR`` when the release raises the major version, whether forced or
+    because a commit breaks compatibility.
     """
     bullets: dict[str, list[str]] = {section: [] for section in SECTION_ORDER}
     for commit in commits:
-        section = section_for(commit)
+        section = section_for(commit, rules)
         if section is not None:
             bullets[section].append(_placeholder(commit))
+    if increment == 'MAJOR' and not bullets['Upgrade notes']:
+        bullets['Upgrade notes'].append(MAJOR_PLACEHOLDER)
     if not any(bullets.values()):
-        bullets['Upgrade notes' if increment == 'MAJOR' else 'Fix'].append(UNCLASSIFIED_PLACEHOLDER)
+        bullets['Fix'].append(UNCLASSIFIED_PLACEHOLDER)
     parts = [f'## v{version} ({date.isoformat()})', SUMMARY_PLACEHOLDER]
     for section in SECTION_ORDER:
         parts.append(f'### {section}')
@@ -302,6 +351,17 @@ def _check_bumped_versions(repo: Path, version: str) -> None:
         )
 
 
+def _current_version(repo: Path) -> str:
+    try:
+        return project_version((repo / 'pyproject.toml').read_text(encoding='utf-8'))
+    except (CannotCheckError, OSError) as error:
+        raise ReleaseRefusedError(f'cannot read the current version: {error}') from error
+
+
+def _major(version: str) -> int:
+    return int(re.match(r'\d+', version)[0])  # type: ignore[index]
+
+
 def _bump_files(run: CommandRunner, repo: Path, version: str, flags: list[str]) -> None:
     bumped = run((*CZ, 'bump', '--files-only', '--yes', *flags))
     if bumped.returncode != 0:
@@ -325,13 +385,20 @@ def prepare_release(
     """
     flags = _flags(increment, prerelease)
     _refuse_unsafe_start(run)
+    current_version = _current_version(repo)
     version = _next_version(run, flags)
     branch = release_branch(version)
     _refuse_existing_branch(run, branch)
     commits = _commits_since_last_tag(run)
     changelog_path = repo / 'CHANGELOG.md'
     with changelog_path.open(encoding='utf-8', newline='') as changelog_file:
-        entry = render_entry(version, today, commits, increment=increment and increment.upper())
+        entry = render_entry(
+            version,
+            today,
+            commits,
+            increment='MAJOR' if _major(version) > _major(current_version) else None,
+            rules=load_bump_rules(repo),
+        )
         new_changelog = insert_entry(changelog_file.read(), entry)
     switched = run(('git', 'switch', '-c', branch))
     if switched.returncode != 0:

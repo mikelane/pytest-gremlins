@@ -310,12 +310,15 @@ a work branch with its own commits is not, because the release PR guard rejects 
 `cz bump --get-next`, switches to `release/v<version>`, runs `cz bump --files-only --yes` (`pyproject.toml`, `uv.lock`,
 `__init__.py`; no commit or tag), checks that the computed version, `[project].version` and `__version__` agree, and
 inserts a `## v<version> (date)` entry above the newest one. The entry has one placeholder bullet per commit since the
-last tag that commitizen would count toward the bump (its pattern is applied to the whole message, so a `BREAKING CHANGE:`
-footer or a `fix:` body line counts; any breaking marker goes under `### Upgrade notes`), every one under
-`### Upgrade notes`, `### Feature` or `### Fix` so that the docs gate fails until each is rewritten and given a docs
-link or `(no docs: <reason>)` (or moved to Internal or Documentation). When no
-commit is conventional (a forced `--increment` over `Revert ...` commits, say) it adds one generic placeholder under
-`### Fix` (`### Upgrade notes` for a forced `--increment MAJOR`), so an untouched entry never passes the gate. It
+last tag that commitizen counts toward the bump, judged by commitizen's own configured `bump_pattern` and `bump_map`
+over the whole message (so a `BREAKING CHANGE:` footer or a `fix:` body line counts; a commit takes its highest
+increment: MAJOR under `### Upgrade notes`, MINOR under `### Feature`, PATCH under `### Fix`). A conventional commit
+commitizen does not bump on (`chore:`, `docs:`) also gets a bullet, under `### Fix`; `bump:` subjects and
+non-conventional subjects get none unless their body bumps. Every bullet sits under a gated heading, so the docs gate
+fails until each is rewritten and given a docs link or `(no docs: <reason>)` (or moved to Internal or Documentation).
+A major release (a forced `--increment MAJOR` or a breaking change) always has at least one placeholder under
+`### Upgrade notes`; when no commit is conventional (a forced `--increment` over `Revert ...` commits, say) it adds one
+generic placeholder under `### Fix`, so an untouched entry never passes the gate. It
 never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the cache gate needs one,
 commit signed, push and open the PR. It does not replace `cut-release.yml` yet (#1046).
 
