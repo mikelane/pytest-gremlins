@@ -640,3 +640,50 @@ class DescribeForcedMajorFallback:
 
         upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
         assert 'TODO: describe this change for users' in upgrade_notes
+
+
+@pytest.mark.medium
+class DescribeAdversarialBumpMapPrefixParity:
+    """Expected sections come from real ``cz bump --get-next`` runs (commitizen 4.19.3) in temp repos."""
+
+    @pytest.mark.parametrize(
+        ('subject', 'body', 'section'),
+        [
+            ('wip', 'fixes: #12', 'Fix'),
+            ('wip', 'feature: x', 'Feature'),
+            ('wip', 'performance: y', 'Fix'),
+            ('feature: x', '', 'Feature'),
+            ('docs: x', 'feat: y', 'Feature'),
+        ],
+    )
+    def it_matches_commitizen_bump_map_prefixes_not_exact_types(self, subject: str, body: str, section: str) -> None:
+        assert prepare.section_for(_commit(subject, body)) == section
+
+    @pytest.mark.parametrize(
+        ('body', 'section'),
+        [
+            ('BREAKING CHANGE: the default moved', 'Upgrade notes'),
+            ('feat: a new option', 'Feature'),
+        ],
+    )
+    def it_counts_a_bump_subject_commit_whose_body_commitizen_bumps_on(self, body: str, section: str) -> None:
+        assert prepare.section_for(_commit('bump: release prep', body)) == section
+
+    @pytest.mark.parametrize(
+        ('subject', 'body', 'section'),
+        [
+            ('fix: y', 'BREAKING_CHANGE: x', 'Fix'),
+            ('wip', 'Fix: capital body', None),
+        ],
+    )
+    def it_does_not_count_lines_commitizen_ignores(self, subject: str, body: str, section: str | None) -> None:
+        assert prepare.section_for(_commit(subject, body)) == section
+
+
+@pytest.mark.medium
+class DescribeAdversarialForcedMajorWithCommits:
+    def it_adds_an_upgrade_notes_placeholder_for_a_forced_major_over_ordinary_commits(self) -> None:
+        entry = prepare.render_entry('2.0.0', RELEASE_DATE, [_commit('fix: a')], increment='MAJOR')
+
+        upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
+        assert 'TODO' in upgrade_notes
