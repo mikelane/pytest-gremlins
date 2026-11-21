@@ -567,6 +567,7 @@ class DescribeRealRepository:
     ) -> None:
         monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
         monkeypatch.setenv('GIT_CONFIG_SYSTEM', '/dev/null')
+        monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
         repo = _real_repo(tmp_path)
 
         code = prepare.main(['--prerelease', 'beta'], repo=repo)
