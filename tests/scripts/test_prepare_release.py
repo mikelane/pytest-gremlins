@@ -290,6 +290,7 @@ def _shell(
     *,
     branch: Any = None,
     status: Any = None,
+    heads: Any = None,
     next_version: Any = None,
     local_branch: Any = NO_REFERENCE,
     remote_branch: Any = None,
@@ -300,6 +301,7 @@ def _shell(
         {
             ('git', 'symbolic-ref', '--short', '-q', 'HEAD'): branch or _ok('issue-1-x\n'),
             ('git', 'status', '--porcelain'): status or _ok(),
+            ('git', 'rev-parse', 'HEAD', 'origin/main'): heads or _ok('abc\nabc\n'),
             _cz('--get-next', *flags): next_version or _ok('1.15.0\n'),
             ('git', 'rev-parse', '--verify', '--quiet', f'refs/heads/{release_branch}'): local_branch,
             ('git', 'ls-remote', '--exit-code', '--heads', 'origin', release_branch): remote_branch or _fail(2, ''),
@@ -379,6 +381,8 @@ class DescribePrepareRelease:
         [
             ({'branch': _ok('main\n')}, 'main'),
             ({'status': _ok(' M pyproject.toml\n')}, 'uncommitted'),
+            ({'heads': _ok('abc\ndef\n')}, 'not origin/main'),
+            ({'heads': _fail(128, 'no origin/main')}, 'cannot resolve'),
             ({'local_branch': _ok('abc\n')}, 'already exists locally'),
             ({'remote_branch': _ok('abc\trefs/heads/release/v1.15.0\n')}, 'already exists on origin'),
             ({'remote_branch': _fail(128, 'no remote')}, 'origin'),
@@ -594,7 +598,7 @@ class DescribeAdversarialUndoHint:
 
 @pytest.mark.medium
 class DescribeAdversarialWorkBranchStart:
-    def it_builds_a_branch_that_passes_the_guard_when_started_from_a_work_branch_with_its_own_commit(
+    def it_refuses_a_work_branch_that_has_commits_origin_main_lacks(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         monkeypatch.setenv('GIT_CONFIG_GLOBAL', '/dev/null')
@@ -605,10 +609,7 @@ class DescribeAdversarialWorkBranchStart:
         _git(repo, 'commit', '-q', '-m', 'fix: unmerged work')
 
         code = prepare.main([], repo=repo)
-        _git(repo, 'add', '-u')
-        _git(repo, 'commit', '-q', '-m', 'bump: release')
-        guard_exit = version_guard.main(
-            ['--branch', 'release/v1.1.0', '--base-ref', 'origin/main', '--repo', str(repo)]
-        )
 
-        assert (code, guard_exit) == (0, 0), capsys.readouterr()
+        assert code == 1
+        assert 'git switch --detach origin/main' in capsys.readouterr().err
+        assert _git(repo, 'branch', '--show-current').strip() == 'work'

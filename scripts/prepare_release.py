@@ -3,11 +3,11 @@
 
 Usage: ``prepare_release.py [--increment PATCH|MINOR|MAJOR] [--prerelease alpha|beta|rc]``
 
-The script refuses to run on ``main``, with a dirty tree, or when ``release/v<version>`` already exists locally or on
-``origin``. It computes the version with ``cz bump --get-next``, creates and switches to ``release/v<version>``, runs
-``cz bump --files-only --yes`` (``pyproject.toml``, ``uv.lock`` and ``__init__.py``; no commit, no tag) and checks
-that the computed version, ``[project].version`` and ``__version__`` agree. Then it inserts a
-``## v<version> (date)`` entry above the newest changelog entry.
+The script refuses to run on ``main``, when HEAD is not ``origin/main``, with a dirty tree, or when
+``release/v<version>`` already exists locally or on ``origin``. It computes the version with ``cz bump --get-next``,
+creates and switches to ``release/v<version>``, runs ``cz bump --files-only --yes`` (``pyproject.toml``, ``uv.lock``
+and ``__init__.py``; no commit, no tag) and checks that the computed version, ``[project].version`` and
+``__version__`` agree. Then it inserts a ``## v<version> (date)`` entry above the newest changelog entry.
 
 The entry has one placeholder bullet per conventional commit since the last ``v*`` tag. Every placeholder sits under
 a gated heading (``Upgrade notes``, ``Feature`` or ``Fix``) and carries neither a docs link nor an exemption, so the
@@ -53,15 +53,21 @@ WRAP_WIDTH = 120
 SHORT_SHA_LENGTH = 7
 FIELD_SEPARATOR = '\x1f'
 RECORD_SEPARATOR = '\x1e'
-CONVENTIONAL_SUBJECT = re.compile(r'(?P<type>[A-Za-z]+)(?:\([^)\n]*\))?(?P<breaking>!)?: \S')
+CONVENTIONAL_SUBJECT = re.compile(r'(?P<type>[A-Za-z]+)(?:\([^)\n]*\))?(?P<breaking>!)?:\s*\S')
 BREAKING_FOOTER = re.compile(r'^BREAKING[ -]CHANGE:', re.MULTILINE)
 SKIPPED_TYPES = frozenset({'bump'})
+ORIGIN_MAIN = 'origin/main'
+UNCLASSIFIED_PLACEHOLDER = (
+    '- **TODO: describe this change for users.** No commit since the last tag is a conventional commit, so\n'
+    '  none could be listed here. Rewrite this bullet, then end it with a docs link or a no-docs exemption in\n'
+    '  parentheses, or move it to Internal or Documentation.'
+)
 SUMMARY_PLACEHOLDER = '**TODO: one sentence on what changes for users.**'
 CZ = (sys.executable, '-m', 'commitizen')
 LOG_FORMAT = '--format=%H%x1f%s%x1f%b%x1e'
 NO_BUMP_EXIT_CODES = frozenset({3, 21})  # commitizen: NO_COMMITS_FOUND, NO_COMMITS_TO_BUMP
 REF_NOT_FOUND_EXIT_CODE = 2  # git ls-remote --exit-code: no matching ref
-UNDO_HINT = 'git restore . && git switch - && git branch ' + '-D '
+UNDO_HINT = 'git restore . && git checkout - && git branch ' + '-D '
 
 
 class ReleaseRefusedError(Exception):
@@ -137,6 +143,8 @@ def render_entry(version: str, date: datetime.date, commits: Sequence[Commit]) -
         section = section_for(commit)
         if section is not None:
             bullets[section].append(_placeholder(commit))
+    if not any(bullets.values()):
+        bullets['Fix'].append(UNCLASSIFIED_PLACEHOLDER)
     parts = [f'## v{version} ({date.isoformat()})', SUMMARY_PLACEHOLDER]
     for section in SECTION_ORDER:
         parts.append(f'### {section}')
@@ -206,12 +214,23 @@ def _refuse_unsafe_start(run: CommandRunner) -> None:
     # A detached HEAD (a worktree at origin/main, say) has no branch name and is a fine start point.
     current = run(('git', 'symbolic-ref', '--short', '-q', 'HEAD'))
     if current.returncode == 0 and current.stdout.strip() == 'main':
-        raise ReleaseRefusedError('refusing to run on main: switch to a work branch or a detached HEAD first')
+        raise ReleaseRefusedError(
+            'refusing to run on main: switch to a detached HEAD at origin/main first (git switch --detach origin/main)'
+        )
     status = run(('git', 'status', '--porcelain'))
     if status.returncode != 0:
         raise ReleaseRefusedError(f'cannot read the git status: {_detail(status)}')
     if status.stdout.strip():
         raise ReleaseRefusedError(f'the tree has uncommitted changes; commit or stash them first:\n{status.stdout}')
+    heads = run(('git', 'rev-parse', 'HEAD', ORIGIN_MAIN))
+    if heads.returncode != 0:
+        raise ReleaseRefusedError(f'cannot resolve {ORIGIN_MAIN}: {_detail(heads)}')
+    head, origin_main = heads.stdout.split()
+    if head != origin_main:
+        raise ReleaseRefusedError(
+            f'HEAD is not {ORIGIN_MAIN}: a release branch must contain only the release commit. '
+            f'Run git fetch origin main && git switch --detach {ORIGIN_MAIN}, then try again'
+        )
 
 
 def _next_version(run: CommandRunner, flags: list[str]) -> str:
@@ -296,7 +315,10 @@ def prepare_release(
         _bump_files(run, repo, version, flags)
     except ReleaseRefusedError as error:
         raise ReleaseRefusedError(f'{error}\nUndo with: {UNDO_HINT}{branch}') from error
-    changelog_path.write_text(new_changelog, encoding='utf-8', newline='')
+    try:
+        changelog_path.write_text(new_changelog, encoding='utf-8', newline='')
+    except OSError as error:
+        raise ReleaseRefusedError(f'cannot write {changelog_path}: {error}\nUndo with: {UNDO_HINT}{branch}') from error
     return PreparedRelease(version=version, branch=branch, commits=commits)
 
 

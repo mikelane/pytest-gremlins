@@ -303,13 +303,17 @@ PEP 440 shaped, or a missing or non-literal `__version__`, exits 2. Exit 2 is ne
 there is no bypass. The `cut-release.yml` path above is unchanged for now.
 
 **Preparing the release branch.** `uv run python scripts/prepare_release.py [--increment PATCH|MINOR|MAJOR]
-[--prerelease alpha|beta|rc]` builds the release branch locally. It refuses on `main`, with a dirty tree, or when
-`release/v<version>` already exists locally or on `origin`; a detached HEAD is fine. It computes the version with
+[--prerelease alpha|beta|rc]` builds the release branch locally. It refuses on `main`, with a dirty tree, when HEAD is
+not `origin/main` (run `git fetch origin main && git switch --detach origin/main` first; a detached HEAD there is fine,
+a work branch with its own commits is not, because the release PR guard rejects extra files), or when
+`release/v<version>` already exists locally or on `origin`. It computes the version with
 `cz bump --get-next`, switches to `release/v<version>`, runs `cz bump --files-only --yes` (`pyproject.toml`, `uv.lock`,
 `__init__.py`; no commit or tag), checks that the computed version, `[project].version` and `__version__` agree, and
 inserts a `## v<version> (date)` entry above the newest one. The entry has one placeholder bullet per conventional
 commit since the last tag, every one under `### Upgrade notes`, `### Feature` or `### Fix` so that the docs gate fails
-until each is rewritten and given a docs link or `(no docs: <reason>)` (or moved to Internal or Documentation). It
+until each is rewritten and given a docs link or `(no docs: <reason>)` (or moved to Internal or Documentation). When no
+commit is conventional (a forced `--increment` over `Revert ...` commits, say) it adds one generic placeholder under
+`### Fix`, so an untouched entry never passes the gate. It
 never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the cache gate needs one,
 commit signed, push and open the PR. It does not replace `cut-release.yml` yet (#1046).
 
