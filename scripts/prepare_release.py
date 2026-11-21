@@ -83,6 +83,7 @@ with _leave_process_state_alone():
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SECTION_ORDER = ('Upgrade notes', 'Feature', 'Fix', 'Internal', 'Documentation')
 WRAP_WIDTH = 120
+MAX_SUBJECT_LENGTH = 90
 SHORT_SHA_LENGTH = 7
 FIELD_SEPARATOR = '\x1f'
 RECORD_SEPARATOR = '\x1e'
@@ -201,20 +202,27 @@ def _code_span(text: str) -> str:
     return f'{fence}{padding}{text}{padding}{fence}'
 
 
+def _truncated(text: str) -> str:
+    return text if len(text) <= MAX_SUBJECT_LENGTH else text[: MAX_SUBJECT_LENGTH - 1] + '\u2026'
+
+
 def _placeholder(commit: Commit) -> str:
-    text = (
-        '**TODO: describe this change for users.** '
-        f'Commit {_code_span(_plain(commit.subject))} ({commit.sha[:SHORT_SHA_LENGTH]}). '
-        'Rewrite this bullet, then end it with a docs link or a no-docs exemption in parentheses, '
-        'or move it to Internal or Documentation.'
-    )
-    return textwrap.fill(
-        text,
-        width=WRAP_WIDTH,
-        initial_indent='- ',
-        subsequent_indent='  ',
-        break_long_words=False,
-        break_on_hyphens=False,
+    """Render a placeholder bullet whose commit line is never wrapped, so its code span closes on its own line."""
+    subject = _code_span(_truncated(_plain(commit.subject)))
+    return '\n'.join(
+        [
+            '- **TODO: describe this change for users.**',
+            f'  Commit {subject} ({commit.sha[:SHORT_SHA_LENGTH]}).',
+            textwrap.fill(
+                'Rewrite this bullet, then end it with a docs link or a no-docs exemption in parentheses, '
+                'or move it to Internal or Documentation.',
+                width=WRAP_WIDTH,
+                initial_indent='  ',
+                subsequent_indent='  ',
+                break_long_words=False,
+                break_on_hyphens=False,
+            ),
+        ]
     )
 
 

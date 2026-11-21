@@ -253,6 +253,34 @@ class DescribePlaceholdersFailTheDocsGate:
 
         assert len(problems) == 1
 
+    def it_reports_only_missing_docs_for_a_long_squash_merge_subject(self, tmp_path: Path) -> None:
+        subject = 'feat(release): add prepare_release script to cut a release branch (#1054)'
+
+        problems = _gate_problems(tmp_path, _entry(_commit(subject)))
+
+        assert [problem for problem in problems if 'backtick' in problem] == []
+
+    def it_accepts_a_placeholder_moved_unchanged_to_internal(self, tmp_path: Path) -> None:
+        subject = 'feat(release): add prepare_release script to cut a release branch (#1054)'
+        entry = _entry(_commit(subject))
+        start = entry.index('- **TODO: describe')
+        end = entry.index('\n\n', start)
+        bullet = entry[start:end]
+        moved = (entry[:start] + entry[end + 2 :]).replace('### Internal\n\n', f'### Internal\n\n{bullet}\n\n', 1)
+        changelog = prepare.insert_entry(CHANGELOG, moved)
+        site = tmp_path / 'site'
+        site.mkdir()
+        (site / 'index.html').write_text('<html></html>', encoding='utf-8')
+
+        problems = docs_gate.find_problems(changelog, '1.15.0', docs_gate.BuiltSite(site))
+
+        assert problems == []
+
+    def it_keeps_every_line_under_the_gate_line_cap_for_a_very_long_subject(self) -> None:
+        entry = _entry(_commit('fix: ' + 'x' * 5000))
+
+        assert max(len(line) for line in entry.splitlines()) <= docs_gate.MAX_LINE_LENGTH
+
 
 LOG_FORMAT = '--format=%H%x1f%s%x1f%b%x1e'
 LOG_RECORD = 'aaa1111bbb\x1ffeat: add a thing\x1f\x1e'
