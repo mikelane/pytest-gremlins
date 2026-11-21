@@ -18,8 +18,8 @@ WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'tag-
 CHECKOUT_PIN = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
 CUT_RELEASE_WORKFLOW = WORKFLOW.with_name('cut-release.yml')
 FORBIDDEN_COMMANDS = (
-    re.compile(r'\bgit\b[^\n|;&]*\stag\b'),
-    re.compile(r'\bgit\b[^\n|;&]*\spush\b'),
+    re.compile(r'\bgit\b[^\n|;&]*\stag(?=\s|$)'),
+    re.compile(r'\bgit\b[^\n|;&]*\spush(?=\s|$)'),
     re.compile(r'\bgh\s+workflow\b'),
     re.compile(r'\bgh\s+api\b'),
     re.compile(r'\bgh\s+release\b'),
@@ -44,8 +44,17 @@ def _steps() -> list[dict[str, Any]]:
     return [step for job in _jobs().values() for step in job['steps']]
 
 
+def _join_continuations(script: str) -> str:
+    return re.sub(r'\\\r?\n\s*', ' ', script)
+
+
 def _run_scripts() -> list[str]:
-    return [str(step['run']) for step in _steps() if 'run' in step]
+    return [_join_continuations(str(step['run'])) for step in _steps() if 'run' in step]
+
+
+def _is_forbidden(script: str) -> bool:
+    joined = _join_continuations(script)
+    return any(re.search(pattern, joined) for pattern in FORBIDDEN_COMMANDS)
 
 
 @pytest.mark.medium
@@ -153,4 +162,17 @@ class DescribeTheForbiddenCommandPatterns:
         ],
     )
     def it_catches_a_git_command_with_a_valued_global_option(self, script: str) -> None:
-        assert any(re.search(pattern, script) for pattern in FORBIDDEN_COMMANDS)
+        assert _is_forbidden(script)
+
+    @pytest.mark.parametrize(
+        'script',
+        [
+            'git -C . \\\n  push origin v1.2.3',
+            'git \\\n  tag -a v1.2.3 -m release',
+        ],
+    )
+    def it_catches_a_git_command_split_by_a_line_continuation(self, script: str) -> None:
+        assert _is_forbidden(script)
+
+    def it_does_not_flag_a_tag_config_key_as_a_tag_command(self) -> None:
+        assert not _is_forbidden('git -c tag.gpgSign=false commit -m release')
