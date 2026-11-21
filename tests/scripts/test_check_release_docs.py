@@ -1715,6 +1715,104 @@ class DescribeFenceCloserLength:
         assert 'code fence opened at line 7 is never closed' in problems
 
 
+HEADING_FIX = (
+    'use one of the five "###" section names, or keep an issue-number line directly under its bullet with no blank '
+    'line, or escape it as "\\#720)"'
+)
+ONE_PROBLEM_PER_REJECTED_LINE = {
+    'thematic break': (
+        '---',
+        ['a thematic break or setext underline at line 9 (---); remove the line or write it as a code span'],
+    ),
+    'unspaced heading': (
+        '#Feature',
+        [
+            'a heading that is not a known "###" section heading or version heading at line 9 (#Feature); '
+            f'{HEADING_FIX}',
+        ],
+    ),
+    'html block': (
+        '<div>',
+        [
+            'a raw HTML block tag at line 9 (<div>); move the tag into the middle of a sentence or write it as a code '
+            'span'
+        ],
+    ),
+    'stray h2': (
+        '## Highlights',
+        [
+            '"##" heading at line 9 (## Highlights) is inside the entry but is not a version heading; the release '
+            'notes would publish what follows it as part of this entry'
+        ],
+    ),
+    'unspaced version copy': (
+        '##v2.0.0',
+        [
+            'a heading that is not a known "###" section heading or version heading at line 9 (##v2.0.0); '
+            f'{HEADING_FIX}',
+            'a second visible copy of the entry version heading is at line 9 (##v2.0.0); remove it so the entry is '
+            'published once',
+        ],
+    ),
+    'listed delimiter': (
+        '- ---',
+        ['a thematic break or setext underline at line 9 (- ---); remove the line or write it as a code span'],
+    ),
+    'indented fence': (
+        '    ```\n    code\n    ```',
+        [
+            'an indented code fence at line 9 (```) is unsupported: it sits under the list item above it, so a '
+            'renderer reads it as code inside that item; put the fence at column 0 after a non-list line'
+        ],
+    ),
+}
+
+
+@pytest.mark.small
+class DescribeOneReportPerRejectedLine:
+    """A rejected line gets only its specific problems, not a second "paragraph" or "no docs reference" report."""
+
+    @pytest.mark.parametrize(
+        ('line', 'expected'), ONE_PROBLEM_PER_REJECTED_LINE.values(), ids=ONE_PROBLEM_PER_REJECTED_LINE.keys()
+    )
+    def it_reports_a_rejected_line_in_a_gated_section_once(self, line: str, expected: list[str]) -> None:
+        assert _problems_of(f'### Fix\n\n{LINKED_BULLET}\n\n{line}\n').splitlines() == expected
+
+    def it_reports_a_quoted_fence_in_a_gated_section_once(self) -> None:
+        problems = _problems_of(f'### Fix\n\n{LINKED_BULLET}\n\n> ```\n> code\n> ```\n')
+
+        assert problems.splitlines() == [
+            'a code fence opened inside a list item or block quote at line 9 (> ```) is unsupported; start the fence '
+            'at the outer level'
+        ]
+
+    def it_reports_a_rejected_bullet_before_the_first_section_once(self) -> None:
+        problems = _problems_of(f'- ---\n\n### Fix\n\n{LINKED_BULLET}\n')
+
+        assert problems.splitlines() == [
+            'a thematic break or setext underline at line 5 (- ---); remove the line or write it as a code span'
+        ]
+
+    def it_still_reports_a_comment_on_a_rejected_line(self) -> None:
+        problems = _problems_of(f'### Fix\n\n{LINKED_BULLET}\n<!-- old --> ## v1.9.9\n')
+
+        assert problems.splitlines() == [
+            'a heading that is not a known "###" section heading or version heading at line 8 (## v1.9.9); '
+            f'{HEADING_FIX}',
+            'HTML comment at line 8 under "### Fix"; remove it',
+        ]
+
+    def it_still_gates_a_bullet_inside_an_unsupported_fence_body(self) -> None:
+        body = f'### Fix\n\n{LINKED_BULLET}\n  ```\n  code\n{UNLINKED_BULLET}\n  ```\n'
+
+        assert _problems_of(body).splitlines() == [
+            'an indented code fence at line 8 (```) is unsupported: it sits under the list item above it, so a '
+            'renderer reads it as code inside that item; put the fence at column 0 after a non-list line',
+            'bullet under "### Fix" at line 10 (**Fixed a crash on Windows.** (#5)) has no docs reference and no '
+            '"(no docs: <reason>)" exemption',
+        ]
+
+
 @pytest.mark.small
 class DescribeWrappedIssueReferences:
     @pytest.mark.parametrize(

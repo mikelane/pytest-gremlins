@@ -232,7 +232,9 @@ The PR fails CI until the entry passes the release docs gate.
 - Each problem with a line names it and quotes it in parentheses, shortened to 70 characters. A rejected heading,
   raw HTML tag or delimiter line also says how to fix it, for example `use one of the five "###" section names, or keep
   an issue-number line directly under its bullet with no blank line, or escape it as "\#720)"`. A mid-line comment
-  problem names the blank line that ended it.
+  problem names the blank line that ended it. A rejected line gets only its own problems: it is not reported again as
+  a paragraph or as a bullet with no docs reference. Inside an unsupported fence, a bullet or a `###` heading is still
+  read, so a bullet there is still gated.
 - A code fence closes only on a closer of exactly the opener's length, as the docs renderer (pymdownx.superfences)
   reads it. A longer closer fails (a four-backtick fence, a five-backtick line, then a four-backtick line): CommonMark
   closes there and the docs renderer does not, so they disagree on what follows. A shorter closer does not close.

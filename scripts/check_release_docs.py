@@ -362,6 +362,7 @@ class _Scanner:
         self.diagnostics: list[tuple[int, str]] = []
         self.hidden_headings: list[tuple[_Region, int]] = []
         self.hidden_version_headings: list[tuple[_Region, int, str]] = []
+        self.unsupported_fence_lines: list[int] = []
         self.open_region: _Region | None = None
         self._neutralized = neutralized
         self._fence = ''
@@ -386,6 +387,7 @@ class _Scanner:
         )
         if indented:
             self._container_fence = indented
+            self.unsupported_fence_lines.append(number)
             reason = NESTED_FENCE_UNDER_LIST_ITEM if self._in_list_item else NESTED_FENCE_FOUR_COLUMNS
             self.diagnostics.append(
                 (number, f'an indented code fence at line {number} ({_shorten(text.strip())}) is unsupported: {reason}')
@@ -402,6 +404,7 @@ class _Scanner:
         container_marker = None if number in self._neutralized else _container_fence_marker(text)
         if container_marker:
             self._container_fence = container_marker
+            self.unsupported_fence_lines.append(number)
             self.diagnostics.append(
                 (
                     number,
@@ -422,6 +425,8 @@ class _Scanner:
         else:
             if _closes_fence(_container_content(text), self._container_fence):
                 self._container_fence = ''
+            if not BULLET.match(text) and _structural_title(text, SECTION_LEVEL) is None:
+                self.unsupported_fence_lines.append(number)
             self._feed_text(number, text, neutralized=True)
 
     def _track_list_item(self, text: str) -> None:
@@ -487,6 +492,7 @@ class _Scan:
     hidden_version_headings: list[tuple[_Region, int, str]]
     raw_lines: list[str]
     diagnostics: tuple[tuple[int, str], ...]
+    unsupported_fence_lines: frozenset[int]
 
 
 def _scan(changelog: str) -> _Scan:
@@ -512,6 +518,7 @@ def _scan(changelog: str) -> _Scan:
                 scanner.hidden_version_headings,
                 LINE_WITH_BREAK.findall(changelog),
                 tuple(scanner.diagnostics),
+                frozenset(scanner.unsupported_fence_lines),
             )
         unclosed.append(scanner.open_region)
         neutralized.add(scanner.open_region.number)
@@ -519,9 +526,17 @@ def _scan(changelog: str) -> _Scan:
 
 @dataclass(frozen=True)
 class _Entry:
+    """The selected entry: its visible lines, its problems, its exact text and the lines its problems reject.
+
+    ``rejected`` holds the lines that already have a problem of their own (an unsupported shape, a stray ``##``
+    heading, a second copy of the version heading, an unsupported fence). The section reader skips them, so each such
+    line is reported once, not again as a paragraph or as a bullet with no docs reference.
+    """
+
     lines: list[_Line]
     problems: list[str]
     text: str
+    rejected: frozenset[int]
 
 
 def _find_entry(changelog: str, version: str) -> _Entry | None:
@@ -554,32 +569,42 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
         if heading.match(text)
     ]
     lines = scan.lines[start + 1 : end]
+    diagnostics = [(number, message) for number, message in sorted(scan.diagnostics) if first <= number < last]
     shapes = _entry_shape_problems(lines)
-    shapes += [message for number, message in sorted(scan.diagnostics) if first <= number < last]
+    stray = _stray_heading_problems(lines) + _copy_problems(scan.lines[start + 1 :], bare_version)
+    line_problems = shapes + diagnostics + stray
+    rejected = frozenset(number for number, _ in shapes + stray) | scan.unsupported_fence_lines
     text = ''.join(scan.raw_lines[first - 1 : last - 1])
     return _Entry(
         lines,
-        problems + shapes + _stray_heading_problems(lines) + _copy_problems(scan.lines[start + 1 :], bare_version),
+        problems + [message for _, message in line_problems],
         text if text.endswith(('\n', '\r')) else f'{text}\n',
+        rejected,
     )
 
 
-def _stray_heading_problems(lines: list[_Line]) -> list[str]:
+def _stray_heading_problems(lines: list[_Line]) -> list[tuple[int, str]]:
     """Report ``##`` headings inside an entry, which the release notes extraction would not stop at."""
     return [
-        f'"##" heading at line {line.number} ({_shorten(line.heading.strip())}) is inside the entry but is not a '
-        f'version heading; the release notes would publish what follows it as part of this entry'
+        (
+            line.number,
+            f'"##" heading at line {line.number} ({_shorten(line.heading.strip())}) is inside the entry but is not a '
+            f'version heading; the release notes would publish what follows it as part of this entry',
+        )
         for line in lines
         if _structural_title(line.heading, ENTRY_LEVEL) is not None
     ]
 
 
-def _copy_problems(later_lines: list[_Line], bare_version: str) -> list[str]:
+def _copy_problems(later_lines: list[_Line], bare_version: str) -> list[tuple[int, str]]:
     """Report a second visible copy of the selected version heading anywhere after the first one."""
     copy = re.compile(rf'v?{re.escape(bare_version)}(?=$|[ \t(?#\[])')
     return [
-        f'a second visible copy of the entry version heading is at line {line.number} '
-        f'({_shorten(line.heading.strip())}); remove it so the entry is published once'
+        (
+            line.number,
+            f'a second visible copy of the entry version heading is at line {line.number} '
+            f'({_shorten(line.heading.strip())}); remove it so the entry is published once',
+        )
         for line in later_lines
         if _is_version_copy(line.heading, copy)
     ]
@@ -592,23 +617,27 @@ def _is_version_copy(text: str, copy: re.Pattern[str]) -> bool:
     return is_level_two and copy.match(content[2:].lstrip(' \t')) is not None
 
 
-def _entry_shape_problems(lines: list[_Line]) -> list[str]:
+def _entry_shape_problems(lines: list[_Line]) -> list[tuple[int, str]]:
     """Report unsupported heading and delimiter shapes on the visible lines of the entry.
 
     An issue-number line is read as a wrapped bullet reference only while a list item is open above it, so the
     exception cannot accept a standalone ``#720)`` that a renderer turns into a heading.
     """
-    problems: list[str] = []
+    problems: list[tuple[int, str]] = []
     in_list_item = False
     for line in lines:
         text = line.text
         shape = _line_shape_problem(text, list_continuation=in_list_item)
         if shape is not None:
-            problems.append(f'{shape.description} at line {line.number} ({_shorten(text.strip())}); {shape.fix}')
+            snippet = _shorten(text.strip())
+            problems.append((line.number, f'{shape.description} at line {line.number} ({snippet}); {shape.fix}'))
         if _has_comment_opener_in_code_span(text):
             problems.append(
-                f'an HTML comment opener inside a code span at line {line.number} ({_shorten(text.strip())}) is '
-                'unsupported; reword it without "<!--"'
+                (
+                    line.number,
+                    f'an HTML comment opener inside a code span at line {line.number} ({_shorten(text.strip())}) is '
+                    'unsupported; reword it without "<!--"',
+                )
             )
         if not text.strip():
             in_list_item = False
@@ -642,20 +671,23 @@ class _Item:
 class _EntryReader:
     """Reads an entry line by line, collecting the gated list items and everything the gate cannot accept."""
 
-    def __init__(self) -> None:
+    def __init__(self, rejected: frozenset[int]) -> None:
         self.section = NO_SECTION
         self.items: list[_Item] = []
         self.problems: list[str] = []
         self._open: _Item | None = None
+        self._rejected = rejected
 
     def read(self, lines: list[_Line]) -> None:
         for line in lines:
             self._read_line(line)
 
     def _read_line(self, line: _Line) -> None:
-        title = _structural_title(line.heading, SECTION_LEVEL)
+        title = None if line.number in self._rejected else _structural_title(line.heading, SECTION_LEVEL)
         if title is not None:
             self._start_section(line.number, title)
+        elif line.number in self._rejected:
+            self._skip_rejected_line(line)
         elif self.section in GATED_SECTIONS:
             self._read_gated_line(line)
         elif self.section == NO_SECTION:
@@ -675,15 +707,14 @@ class _EntryReader:
             text = _shorten((bullet.group(1) or '').strip())
             self.problems.append(f'bullet at line {line.number} ({text}) is under no "###" section heading')
 
+    def _skip_rejected_line(self, line: _Line) -> None:
+        """Close the open item at a line that already has its own problem; report only what hides in it."""
+        self._open = None
+        if self.section in GATED_SECTIONS:
+            self._report_hidden_text(line)
+
     def _read_gated_line(self, line: _Line) -> None:
-        separator = NON_MARKDOWN_BREAK.search(line.text)
-        if separator:
-            self.problems.append(
-                f'U+{ord(separator.group()):04X} at line {line.number} under "### {self.section}" is not a Markdown '
-                'line break; remove it'
-            )
-        if line.opens_comment:
-            self.problems.append(f'HTML comment at line {line.number} under "### {self.section}"; remove it')
+        self._report_hidden_text(line)
         reason = 'a code fence' if line.opens_fence else _unsupported_shape(line.text)
         if reason:
             self._open = None
@@ -692,6 +723,17 @@ class _EntryReader:
             self._open = None
         else:
             self._read_list_line(line)
+
+    def _report_hidden_text(self, line: _Line) -> None:
+        """Report a comment or a non-Markdown line break, which hide part of a gated line from some readers."""
+        separator = NON_MARKDOWN_BREAK.search(line.text)
+        if separator:
+            self.problems.append(
+                f'U+{ord(separator.group()):04X} at line {line.number} under "### {self.section}" is not a Markdown '
+                'line break; remove it'
+            )
+        if line.opens_comment:
+            self.problems.append(f'HTML comment at line {line.number} under "### {self.section}"; remove it')
 
     def _read_list_line(self, line: _Line) -> None:
         bullet = BULLET.match(line.text)
@@ -826,7 +868,7 @@ def find_problems(changelog: str, version: str, site: Site) -> list[str]:
     entry = _find_entry(changelog, version)
     if entry is None:
         return [*carriage_returns, f'CHANGELOG.md has no "## v{version.removeprefix("v")}" entry']
-    reader = _EntryReader()
+    reader = _EntryReader(entry.rejected)
     reader.read(entry.lines)
     bullet_problems = [problem for item in reader.items for problem in _bullet_problems(item, site)]
     return carriage_returns + entry.problems + reader.problems + bullet_problems
