@@ -22,7 +22,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS_DIR = REPO_ROOT / '.github' / 'workflows'
 MATRIX_VERSION = '${{ matrix.python-version }}'
-INSTALL_PATTERN = re.compile(r'^\s*uv python install\s+(?:-\S+\s+)*(\$\{\{ [^}]+\}\}|[^-\s]\S*)', re.MULTILINE)
+INSTALL_PATTERN = re.compile(r'^[ \t]*uv python install[ \t]+(?:-\S+[ \t]+)*(\$\{\{ [^}]+\}\}|[^-\s]\S*)', re.MULTILINE)
 GUARD_STEP_NAME = 'Verify the matrix Python'
 TEST_COMMAND = 'coverage run -m pytest'
 RUNNING_VERSION = f'{sys.version_info.major}.{sys.version_info.minor}'
@@ -71,6 +71,11 @@ def _guard_step() -> dict[str, Any]:
 
 def _test_step() -> dict[str, Any]:
     return _find_step(f'running {TEST_COMMAND!r}', lambda step: TEST_COMMAND in step.get('run', ''))
+
+
+def _python_overrides(run: str) -> list[str]:
+    uv_options = [word for command in run.splitlines() for word in shlex.split(command.split(' coverage ')[0])]
+    return [word for word in uv_options if word == '--python' or word.startswith(('--python=', '-p'))]
 
 
 def _describe(result: subprocess.CompletedProcess[str]) -> str:
@@ -139,7 +144,12 @@ class DescribeWorkflowPythonPinning:
 
     @pytest.mark.parametrize(
         'run',
-        ['# uv python install 3.12', 'echo "uv python install 3.12"', 'uv sync --python 3.12'],
+        [
+            '# uv python install 3.12',
+            'echo "uv python install 3.12"',
+            'uv sync --python 3.12',
+            'uv python install\nuv sync',
+        ],
     )
     def it_ignores_a_mention_that_does_not_install_a_python(self, run: str) -> None:
         assert _installed_versions({'steps': [{'run': run}]}) == []
@@ -165,10 +175,16 @@ class DescribeMatrixInterpreterGuard:
         assert [command for command in commands if not command.startswith('uv run ')] == []
 
     def it_never_overrides_the_interpreter_in_the_test_step(self) -> None:
-        commands = _test_step()['run'].splitlines()
-        uv_options = [token for command in commands for token in shlex.split(command.split(' coverage ')[0])]
+        assert _python_overrides(_test_step()['run']) == []
 
-        assert [token for token in uv_options if token in {'--python', '-p'} or token.startswith('--python=')] == []
+    @pytest.mark.parametrize('option', ['--python 3.11', '--python=3.11', '-p 3.11', '-p3.11', '-p=3.11'])
+    def it_detects_every_spelling_of_a_python_override(self, option: str) -> None:
+        run = f'uv run {option} coverage run -m pytest tests\n'
+
+        assert _python_overrides(run) != []
+
+    def it_does_not_flag_a_command_without_a_python_override(self) -> None:
+        assert _python_overrides('uv run --frozen coverage run -m pytest tests -p no:cacheprovider\n') == []
 
     def it_sets_no_step_level_uv_python_in_the_test_step(self) -> None:
         assert 'UV_PYTHON' not in (_test_step().get('env') or {})
