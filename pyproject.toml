@@ -53,7 +53,7 @@ docs = [
 ]
 dev = [
     {include-group = "docs"},
-    "commitizen>=4.18.1",
+    "commitizen>=4.19.1",
     "gherkin-official>=43.0.0",
     "isort>=9.0.1",
     "jsonschema>=4.26.0",
