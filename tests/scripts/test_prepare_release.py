@@ -131,7 +131,7 @@ class DescribeRenderEntry:
         entry = _entry(_commit('fix: a'))
 
         summary = entry.split('\n\n')[1]
-        assert summary.startswith('**') + summary.endswith('**') == 2
+        assert summary == prepare.SUMMARY_PLACEHOLDER
         assert entry.index(summary) < entry.index('### ')
 
     def it_lists_all_five_headings_in_order(self) -> None:
@@ -381,6 +381,7 @@ class DescribePrepareRelease:
         [
             ({'branch': _ok('main\n')}, 'main'),
             ({'status': _ok(' M pyproject.toml\n')}, 'uncommitted'),
+            ({'status': _fail(128, 'not a git repository')}, 'cannot read the git status'),
             ({'heads': _ok('abc\ndef\n')}, 'not origin/main'),
             ({'heads': _fail(128, 'no origin/main')}, 'cannot resolve'),
             ({'local_branch': _ok('abc\n')}, 'already exists locally'),
@@ -389,6 +390,7 @@ class DescribePrepareRelease:
             ({'next_version': _fail(21, '[NO_COMMITS_TO_BUMP]')}, 'no commit'),
             ({'next_version': _fail(3, '[NO_COMMITS_FOUND]')}, 'no commit'),
             ({'next_version': _fail(1, 'weird')}, 'weird'),
+            ({'next_version': _ok('')}, 'get-next failed'),
         ],
     )
     def it_refuses_before_changing_anything(self, tmp_path: Path, answers: dict[str, Any], message: str) -> None:
@@ -412,6 +414,25 @@ class DescribePrepareRelease:
 
         assert (tmp_path / 'CHANGELOG.md').read_text(encoding='utf-8') == CHANGELOG
 
+    def it_refuses_before_switching_when_the_commit_log_cannot_be_read(self, tmp_path: Path) -> None:
+        shell = _shell()
+        shell.answers[('git', 'log', 'v1.14.3..HEAD', LOG_FORMAT)] = _fail(128, 'bad revision')
+
+        with pytest.raises(prepare.ReleaseRefusedError, match='cannot read the commits'):
+            _prepare(_repo(tmp_path), shell)
+
+        assert not shell.ran('git', 'switch')
+
+    def it_refuses_without_bumping_when_the_branch_cannot_be_created(self, tmp_path: Path) -> None:
+        shell = _shell()
+        shell.answers[('git', 'switch', '-c', 'release/v1.15.0')] = _fail(128, 'invalid ref')
+
+        with pytest.raises(prepare.ReleaseRefusedError, match=r'cannot create release/v1\.15\.0'):
+            _prepare(_repo(tmp_path), shell)
+
+        assert not any('--files-only' in call for call in shell.calls)
+        assert (tmp_path / 'CHANGELOG.md').read_text(encoding='utf-8') == CHANGELOG
+
     def it_uses_every_commit_when_there_is_no_tag(self, tmp_path: Path) -> None:
         shell = _shell()
         shell.answers[('git', 'describe', '--tags', '--abbrev=0', '--match', 'v*')] = _fail(128)
@@ -431,6 +452,16 @@ class DescribeFailureAfterTheBranchExists:
 
         with pytest.raises(prepare.ReleaseRefusedError, match='Unreleased'):
             _prepare(repo, shell)
+
+    def it_refuses_a_missing_changelog_with_its_path_before_creating_the_branch(self, tmp_path: Path) -> None:
+        repo = _repo(tmp_path)
+        (repo / 'CHANGELOG.md').unlink()
+        shell = _shell()
+
+        with pytest.raises(prepare.ReleaseRefusedError, match=r'cannot read .*CHANGELOG\.md'):
+            _prepare(repo, shell)
+
+        assert not shell.ran('git', 'switch')
 
         assert not shell.ran('git', 'switch')
 
@@ -479,6 +510,7 @@ class DescribeMain:
         shell = _shell(flags=('--increment', 'MAJOR'))
 
         assert _main_with(shell, _repo(tmp_path), '--increment', 'major') == 0
+        assert _cz('--get-next', '--increment', 'MAJOR') in shell.calls
 
     @pytest.mark.parametrize('argv', [['--prerelease', 'gamma'], ['--increment', 'HUGE']])
     def it_rejects_values_outside_the_allowed_choices(self, tmp_path: Path, argv: list[str]) -> None:
@@ -562,7 +594,7 @@ class DescribeAdversarialEntryGate:
     ) -> None:
         problems = _gate_problems(tmp_path, _entry(_commit(subject)))
 
-        assert problems != []
+        assert len(problems) == 1
 
 
 @pytest.mark.medium
@@ -585,15 +617,20 @@ class DescribeAdversarialUndoHint:
     def it_gives_the_undo_hint_when_the_changelog_cannot_be_written(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path)
         shell = _shell()
-        changelog = repo / 'CHANGELOG.md'
-
-        def run(args: Sequence[str]) -> Any:
-            if tuple(args) == _cz('--files-only', '--yes'):
-                changelog.chmod(0o444)
-            return shell(args)
 
         with pytest.raises(prepare.ReleaseRefusedError, match='Undo with'):
-            _prepare(repo, run)  # type: ignore[arg-type]
+            _prepare(repo, _read_only_changelog_shell(repo, shell))
+
+
+def _read_only_changelog_shell(repo: Path, shell: FakeShell) -> Any:
+    """Wrap ``shell`` so the fake ``cz bump --files-only`` leaves ``CHANGELOG.md`` unwritable."""
+
+    def run(args: Sequence[str]) -> Any:
+        if tuple(args) == _cz('--files-only', '--yes'):
+            (repo / 'CHANGELOG.md').chmod(0o444)
+        return shell(args)
+
+    return run
 
 
 @pytest.mark.medium
@@ -615,7 +652,7 @@ class DescribeAdversarialWorkBranchStart:
         assert _git(repo, 'branch', '--show-current').strip() == 'work'
 
 
-@pytest.mark.medium
+@pytest.mark.small
 class DescribeAdversarialCommitizenBumpParity:
     @pytest.mark.parametrize(
         ('subject', 'body', 'section'),
@@ -639,10 +676,10 @@ class DescribeForcedMajorFallback:
         entry = prepare.render_entry('2.0.0', RELEASE_DATE, [_commit('Revert "x"')], increment='MAJOR')
 
         upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
-        assert 'TODO: describe this change for users' in upgrade_notes
+        assert prepare.MAJOR_PLACEHOLDER in upgrade_notes
 
 
-@pytest.mark.medium
+@pytest.mark.small
 class DescribeAdversarialBumpMapPrefixParity:
     """Expected sections come from real ``cz bump --get-next`` runs (commitizen 4.19.3) in temp repos."""
 
@@ -680,13 +717,13 @@ class DescribeAdversarialBumpMapPrefixParity:
         assert prepare.section_for(_commit(subject, body)) == section
 
 
-@pytest.mark.medium
+@pytest.mark.small
 class DescribeAdversarialForcedMajorWithCommits:
     def it_adds_an_upgrade_notes_placeholder_for_a_forced_major_over_ordinary_commits(self) -> None:
         entry = prepare.render_entry('2.0.0', RELEASE_DATE, [_commit('fix: a')], increment='MAJOR')
 
         upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
-        assert 'TODO' in upgrade_notes
+        assert prepare.MAJOR_PLACEHOLDER in upgrade_notes
 
 
 def _bumping_shell(repo: Path, shell: FakeShell, flags: tuple[str, ...], version: str) -> Any:
@@ -716,12 +753,12 @@ class DescribeAdversarialForcedMajorFromAPrerelease:
 
         entry = (repo / 'CHANGELOG.md').read_text(encoding='utf-8').split('## v1.14.3')[0]
         upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
-        assert 'TODO' in upgrade_notes
+        assert prepare.MAJOR_PLACEHOLDER in upgrade_notes
 
 
 @pytest.mark.medium
 class DescribeAdversarialForcedMajorInLowerCase:
-    """``prepare_release`` upper-cases ``increment`` for cz (``_flags``) but not for the Upgrade notes guarantee."""
+    """A forced major given in any case still gets Upgrade notes."""
 
     @pytest.mark.parametrize('increment', ['major', 'Major'])
     def it_adds_upgrade_notes_for_a_forced_major_given_in_any_case(self, tmp_path: Path, increment: str) -> None:
@@ -733,4 +770,29 @@ class DescribeAdversarialForcedMajorInLowerCase:
 
         entry = (repo / 'CHANGELOG.md').read_text(encoding='utf-8').split('## v1.14.3')[0]
         upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
-        assert 'TODO' in upgrade_notes
+        assert prepare.MAJOR_PLACEHOLDER in upgrade_notes
+
+
+@pytest.mark.medium
+class DescribeMajorVersionFromTheComputedVersion:
+    def it_adds_upgrade_notes_when_the_computed_version_raises_the_major_without_a_forced_increment(
+        self, tmp_path: Path
+    ) -> None:
+        repo = _repo(tmp_path, project='1.15.0', module='1.15.0')
+        shell = _shell(next_version=_ok('2.0.0\n'), release_branch='release/v2.0.0')
+
+        _prepare(repo, _bumping_shell(repo, shell, (), '2.0.0'))
+
+        entry = (repo / 'CHANGELOG.md').read_text(encoding='utf-8').split('## v1.14.3')[0]
+        upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
+        assert prepare.MAJOR_PLACEHOLDER in upgrade_notes
+
+    def it_leaves_upgrade_notes_empty_for_a_minor_release_of_ordinary_commits(self, tmp_path: Path) -> None:
+        repo = _repo(tmp_path, project='1.14.3', module='1.14.3')
+        shell = _shell()
+
+        _prepare(repo, _bumping_shell(repo, shell, (), '1.15.0'))
+
+        entry = (repo / 'CHANGELOG.md').read_text(encoding='utf-8').split('## v1.14.3')[0]
+        upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
+        assert upgrade_notes.strip() == ''

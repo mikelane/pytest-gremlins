@@ -26,12 +26,12 @@ from __future__ import annotations
 import argparse
 from collections.abc import (
     Callable,
-    Iterator,
+    Generator,
     Mapping,
     Sequence,
 )
-from dataclasses import dataclass
 import contextlib
+from dataclasses import dataclass
 import datetime
 import functools
 import logging
@@ -57,7 +57,7 @@ from check_version_change import (
 
 
 @contextlib.contextmanager
-def _leave_process_state_alone() -> Iterator[None]:
+def _leave_process_state_alone() -> Generator[None]:
     """Undo what importing commitizen does to the process: it disables every existing logger and wraps stdout."""
     streams = (sys.stdout, sys.stderr)
     disabled = {
@@ -74,11 +74,10 @@ def _leave_process_state_alone() -> Iterator[None]:
 
 
 with _leave_process_state_alone():
-    from commitizen import (
-        config as cz_config,
-        exceptions as cz_exceptions,
-        factory as cz_factory,
-    )
+    from commitizen import config as cz_config
+    from commitizen import exceptions as cz_exceptions
+    from commitizen import factory as cz_factory
+    from commitizen.config.base_config import BaseConfig
     from commitizen.version_increment import VersionIncrement
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -127,7 +126,7 @@ class Commit:
 
 def parse_commit_log(raw: str) -> list[Commit]:
     """Parse ``git log --format=%H%x1f%s%x1f%b%x1e`` output."""
-    commits = []
+    commits: list[Commit] = []
     for record in raw.split(RECORD_SEPARATOR):
         if not record.strip():
             continue
@@ -144,18 +143,20 @@ class BumpRules:
     increments: Mapping[str, str | None]
 
 
-def _rules_from(settings: cz_config.BaseConfig) -> BumpRules:
-    cz = cz_factory.committer_factory(settings)
-    increments = cz.bump_map_major_version_zero if settings.settings['major_version_zero'] else cz.bump_map
-    if not cz.bump_pattern or not increments:
+def _rules_from(settings: BaseConfig) -> BumpRules:
+    committer = cz_factory.committer_factory(settings)
+    increments = (
+        committer.bump_map_major_version_zero if settings.settings['major_version_zero'] else committer.bump_map
+    )
+    if not committer.bump_pattern or not increments:
         raise ReleaseRefusedError(f'commitizen rule {settings.settings["name"]!r} does not support bump')
-    return BumpRules(pattern=cz.bump_pattern, increments=increments)
+    return BumpRules(pattern=committer.bump_pattern, increments=increments)
 
 
 @functools.cache
 def default_bump_rules() -> BumpRules:
     """Return the rules of an unconfigured commitizen, which touch no file."""
-    return _rules_from(cz_config.BaseConfig())
+    return _rules_from(BaseConfig())
 
 
 def load_bump_rules(repo: Path) -> BumpRules:
@@ -297,7 +298,7 @@ def _detail(result: CommandResult) -> str:
 
 
 def _flags(increment: str | None, prerelease: str | None) -> list[str]:
-    flags = []
+    flags: list[str] = []
     if increment:
         flags += ['--increment', increment.upper()]
     if prerelease:
@@ -352,8 +353,8 @@ def _refuse_existing_branch(run: CommandRunner, branch: str) -> None:
 
 
 def _commits_since_last_tag(run: CommandRunner) -> list[Commit]:
-    tag = run(('git', 'describe', '--tags', '--abbrev=0', '--match', 'v*'))
-    span = (f'{tag.stdout.strip()}..HEAD',) if tag.returncode == 0 else ()
+    last_tag_lookup = run(('git', 'describe', '--tags', '--abbrev=0', '--match', 'v*'))
+    span = (f'{last_tag_lookup.stdout.strip()}..HEAD',) if last_tag_lookup.returncode == 0 else ()
     log = run(('git', 'log', *span, LOG_FORMAT))
     if log.returncode != 0:
         raise ReleaseRefusedError(f'cannot read the commits since the last tag: {_detail(log)}')
@@ -414,15 +415,19 @@ def prepare_release(
     _refuse_existing_branch(run, branch)
     commits = _commits_since_last_tag(run)
     changelog_path = repo / 'CHANGELOG.md'
-    with changelog_path.open(encoding='utf-8', newline='') as changelog_file:
-        entry = render_entry(
-            version,
-            today,
-            commits,
-            increment='MAJOR' if increment == 'MAJOR' or _major(version) > _major(current_version) else None,
-            rules=load_bump_rules(repo),
-        )
-        new_changelog = insert_entry(changelog_file.read(), entry)
+    try:
+        with changelog_path.open(encoding='utf-8', newline='') as changelog_file:
+            changelog = changelog_file.read()
+    except (OSError, UnicodeDecodeError) as error:
+        raise ReleaseRefusedError(f'cannot read {changelog_path}: {error}') from error
+    entry = render_entry(
+        version,
+        today,
+        commits,
+        increment='MAJOR' if increment == 'MAJOR' or _major(version) > _major(current_version) else None,
+        rules=load_bump_rules(repo),
+    )
+    new_changelog = insert_entry(changelog, entry)
     switched = run(('git', 'switch', '-c', branch))
     if switched.returncode != 0:
         raise ReleaseRefusedError(f'cannot create {branch}: {_detail(switched)}')
