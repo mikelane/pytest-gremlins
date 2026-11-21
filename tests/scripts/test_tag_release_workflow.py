@@ -18,8 +18,8 @@ WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'tag-
 CHECKOUT_PIN = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
 CUT_RELEASE_WORKFLOW = WORKFLOW.with_name('cut-release.yml')
 FORBIDDEN_COMMANDS = (
-    re.compile(r'\bgit\b[^\n|;&]*\stag(?=\s|$)'),
-    re.compile(r'\bgit\b[^\n|;&]*\spush(?=\s|$)'),
+    re.compile(r'\bgit\b[^\n|;&]*\stag(?![\w.=-])'),
+    re.compile(r'\bgit\b[^\n|;&]*\spush(?![\w.=-])'),
     re.compile(r'\bgh\s+workflow\b'),
     re.compile(r'\bgh\s+api\b'),
     re.compile(r'\bgh\s+release\b'),
@@ -176,3 +176,15 @@ class DescribeTheForbiddenCommandPatterns:
 
     def it_does_not_flag_a_tag_config_key_as_a_tag_command(self) -> None:
         assert not _is_forbidden('git -c tag.gpgSign=false commit -m release')
+
+    @pytest.mark.parametrize(
+        'script',
+        [
+            '(cd dist && git push)',
+            'git push; echo pushed',
+            "bash -c 'git push'",
+            'git tag|| exit 1',
+        ],
+    )
+    def it_catches_a_bare_subcommand_followed_by_shell_punctuation(self, script: str) -> None:
+        assert _is_forbidden(script)
