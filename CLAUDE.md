@@ -197,7 +197,11 @@ The PR fails CI until the entry passes the release docs gate.
   that sits under no `###` heading.
 - Every list item is a bullet: `-`, `*`, `+`, `1.` and `1)` markers all count, and a nested sub-bullet needs its
   own reference or exemption. A reference or exemption inside an HTML comment, a code span, an image
-  (`![x](...)`) or an escaped link (`\[x](...)`) does not count.
+  (`![x](...)`) or an escaped link (`\[x](...)`) does not count, and neither does one inside a raw HTML tag,
+  attributes included (`<a title="(no docs: r)">`, or a docs link in an attribute), because the page does not show
+  it. A tag is what the renderer keeps as raw inline HTML. One that leaves a quoted attribute value open hides the rest
+  of the bullet, because a browser keeps reading the value. Text between tags (`<b>(no docs: r)</b>`), text after a
+  `<` the renderer escapes (`<a@b (no docs: r)>`) and a link written as `[docs](<page.md>)` still count.
 - Under `### Upgrade notes`, `### Feature` and `### Fix` the only accepted lines are blank lines, list items and
   their indented continuation lines. Prose paragraphs, `•` pseudo-bullets, block quotes (`>`), code fences,
   HTML comments (a `<!--` anywhere, and an unclosed one even in a code span), other headings (`####`, indented or

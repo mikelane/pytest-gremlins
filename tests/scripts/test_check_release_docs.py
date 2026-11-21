@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
 import importlib.util
 import os
 from pathlib import Path
@@ -2282,6 +2283,109 @@ def _gated_changelog(bullet: str) -> str:
     return f'## v9.9.9\n\n### Fix\n\n{bullet}\n'
 
 
+NO_DOCS_PROBLEM = 'has no docs reference and no "(no docs: <reason>)" exemption'
+CONFIGURATION_DOCS = 'guide/configuration.md#caching'
+HIDDEN_IN_A_TAG = {
+    'exemption in an attribute': '- x <a title="(no docs: r)">y</a>',
+    'link in an attribute': f'- x <a title="[docs]({CONFIGURATION_DOCS})">y</a>',
+    'link in a span attribute': f'- x <span data-x="[docs]({CONFIGURATION_DOCS})"></span>',
+    'exemption after a backslash': '- x \\<a title="(no docs: r)">y</a>',
+    'exemption in an uppercase tag': '- x <A TITLE="(no docs: r)">',
+    'exemption in a closing tag': '- x </a (no docs: r)>',
+    'exemption after a tab in a tag': '- x <a\ttitle="(no docs: r)">',
+    'exemption in a processing instruction': '- x <?pi (no docs: r) ?>',
+    'exemption after a ">" in a quoted attribute': '- x <a title="x>y (no docs: r)">',
+    'exemption in an attribute inside a link label': '- x [<b title="(no docs: r)">d</b>](index.md)',
+    'link in a tag inside a link destination': f'- x [y](<a title="[docs]({CONFIGURATION_DOCS})">)',
+    'exemption after a quote that a text "<" opens': '- x <?pi "a`b`<a title="x>y (no docs: r)',
+    'exemption after an escaped ">" in an attribute': '- x <a title="a\\>b" (no docs: r)>',
+    'exemption after a ">" closed by a later quote': '- x <a title="x>y" > (no docs: r)',
+    'exemption after an inner tag of a processing instruction': '- x <?a > <b title="x ?> (no docs: r)',
+    'exemption after a quote in a single-quoted value': '- x <a x="\'" y=\'z> (no docs: r)',
+    'exemption in a tag around an inner tag': '- x <span x="<b>> (no docs: r)',
+    'link in a tag around an inner tag': f'- x <span x="<b>[docs]({CONFIGURATION_DOCS})">',
+}
+HIDDEN_BY_THE_RENDERER_ONLY = {
+    'exemption in CDATA after a ">"': '- x <![CDATA[ a > (no docs: r) ]]>',
+}
+SHOWN_BESIDE_A_TAG = {
+    'exemption between tags': '- x <b>(no docs: r)</b>',
+    'exemption after a tag': '- x <a href="u">y</a> (no docs: r)',
+    'link in angle brackets': f'- x [docs](<{CONFIGURATION_DOCS}>)',
+    'link with a tag in its label': f'- x [<b>docs</b>]({CONFIGURATION_DOCS})',
+    'exemption after a "<" the renderer escapes': '- x <a@b (no docs: r)>',
+    'exemption after a lone "<" with a quote': '- x <?pi "a (no docs: r)',
+}
+
+
+@pytest.mark.small
+class DescribeHtmlTagsHideReferences:
+    @pytest.mark.parametrize(
+        'bullet',
+        [*HIDDEN_IN_A_TAG.values(), *HIDDEN_BY_THE_RENDERER_ONLY.values()],
+        ids=[*HIDDEN_IN_A_TAG, *HIDDEN_BY_THE_RENDERER_ONLY],
+    )
+    def it_does_not_credit_a_reference_or_exemption_inside_an_html_tag(self, bullet: str) -> None:
+        problems = _load_checker().find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+
+        assert any(problem.endswith(NO_DOCS_PROBLEM) for problem in problems), problems
+
+    @pytest.mark.parametrize('bullet', SHOWN_BESIDE_A_TAG.values(), ids=SHOWN_BESIDE_A_TAG.keys())
+    def it_credits_a_reference_or_exemption_a_reader_sees_beside_a_tag(self, bullet: str) -> None:
+        assert _load_checker().find_problems(_gated_changelog(bullet), '9.9.9', SITE) == []
+
+    def it_reports_only_the_missing_reference_for_an_exemption_in_an_attribute(self) -> None:
+        bullet = HIDDEN_IN_A_TAG['exemption in an attribute']
+
+        problems = _load_checker().find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+
+        assert problems == [f'bullet under "### Fix" at line 5 (x <a title="(no docs: r)">y</a>) {NO_DOCS_PROBLEM}']
+
+    def it_reports_only_the_missing_reference_for_a_link_in_an_attribute(self) -> None:
+        bullet = HIDDEN_IN_A_TAG['link in an attribute']
+
+        problems = _load_checker().find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+
+        assert problems == [f'bullet under "### Fix" at line 5 ({bullet[2:]}) {NO_DOCS_PROBLEM}']
+
+
+class _ReaderView(HTMLParser):
+    """What a browser shows of a rendered page: its text, and the targets of the links a reader can follow."""
+
+    def __init__(self, html: str) -> None:
+        super().__init__()
+        self.text: list[str] = []
+        self.hrefs: list[str] = []
+        self.feed(html)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.hrefs.extend(value or '' for name, value in attrs if tag == 'a' and name == 'href')
+
+    def handle_data(self, data: str) -> None:
+        self.text.append(data)
+
+
+def _reader_sees_a_reference(bullet: str) -> bool:
+    view = _ReaderView(DescribeRendererOracle._render(f'{bullet}\n'))
+    return '(no docs: r)' in ''.join(view.text) or CONFIGURATION_DOCS in view.hrefs
+
+
+@pytest.mark.medium
+class DescribeHtmlTagsMatchTheRenderer:
+    def it_copies_the_inline_html_pattern_of_the_docs_renderer(self) -> None:
+        inlinepatterns = pytest.importorskip('markdown.inlinepatterns', reason='the docs group renders the oracle')
+
+        assert _load_checker().RENDERER_INLINE_HTML.pattern == inlinepatterns.HTML_RE
+
+    @pytest.mark.parametrize('bullet', HIDDEN_IN_A_TAG.values(), ids=HIDDEN_IN_A_TAG.keys())
+    def it_renders_a_reference_inside_a_tag_where_no_reader_sees_it(self, bullet: str) -> None:
+        assert not _reader_sees_a_reference(bullet)
+
+    @pytest.mark.parametrize('bullet', SHOWN_BESIDE_A_TAG.values(), ids=SHOWN_BESIDE_A_TAG.keys())
+    def it_renders_a_reference_beside_a_tag_where_a_reader_sees_it(self, bullet: str) -> None:
+        assert _reader_sees_a_reference(bullet)
+
+
 @pytest.mark.small
 class DescribeCodeSpanTiming:
     def it_checks_a_backtick_line_at_the_length_cap_in_linear_time(self) -> None:
@@ -2346,6 +2450,16 @@ class DescribeCodeSpanTiming:
         started = time.perf_counter()
 
         checker.code_spans(text)
+
+        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+
+    @pytest.mark.parametrize('pattern', ['<!--a', '<?a', '<![CDATA[a', '<a "b>', '<a', '</'])
+    def it_finds_the_html_tags_of_a_long_text_of_tag_openers_in_linear_time(self, pattern: str) -> None:
+        checker = _load_checker()
+        text = pattern * (50000 // len(pattern))
+        started = time.perf_counter()
+
+        checker.html_tag_spans(text)
 
         assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
 

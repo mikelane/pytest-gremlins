@@ -11,6 +11,11 @@ Takes the version being released. In that version's ``## vX.Y.Z`` entry of ``CHA
   one, in the built site (``mkdocs build --strict --site-dir <dir>``).
 * An exemption is ``(no docs: <reason>)`` with a non-empty reason. The reason is public and is reviewed in the
   changelog PR.
+* Neither counts inside a code span or inside a raw HTML tag (``<a title="(no docs: r)">``, attributes included),
+  because no reader sees that text. A tag is what the renderer stores as raw inline HTML; a tag that leaves a quoted
+  attribute value open (``<a title="x>y (no docs: r)``) hides the rest of the bullet, because a browser keeps reading
+  the value. A ``<`` the renderer escapes hides nothing, and a link the renderer reads before raw HTML
+  (``[docs](<page.md>)``) still counts.
 
 The accepted format is strict, because the changelog is authored here and this check is a release gate. Under a
 gated heading the only accepted lines are blank lines and list items with their indented continuation lines;
@@ -131,6 +136,18 @@ MAX_BACKTICK_RUN = 8
 # (pymdown-extensions 12.1 in uv.lock). It replaces Python-Markdown's own pattern at priority 190 and runs before
 # every other inline pattern, escapes included, so nothing else changes how backticks pair.
 RENDERER_BACKTICK = re.compile(r'(?:(?<!\\)((?:\\{2})+)(?=`+)|(?<!\\)`)')
+# Python-Markdown's raw inline HTML pattern, copied verbatim from HTML_RE in markdown/inlinepatterns.py (Markdown 3.10
+# in uv.lock) and compiled with the flags its InlineProcessor uses. A test pins it to the installed renderer.
+RENDERER_INLINE_HTML = re.compile(
+    r'(<(\/?[a-zA-Z][^<>@ ]*( [^<>]*)?|'
+    r'!--(?:(?!<!--|-->).)*--|'
+    r'[?](?:(?!<[?]|[?]>).)*[?]|'
+    r'!\[CDATA\[(?:(?!<!\[CDATA\[|\]\]>).)*\]\]'
+    ')>)',
+    re.DOTALL | re.UNICODE,
+)
+TAG_START = re.compile(r'<[A-Za-z/!?]')
+QUOTES_CLOSED = re.compile(r'(?:[^"\']|"[^"]*"|\'[^\']*\')*')
 CODE_SPAN = re.compile(r'(?<!\\)(`+).+?(?<!`)\1(?!`)', re.DOTALL)
 NEWEST_HEADING = re.compile(r'## v?([0-9]\S*)')
 LINE_BREAK = re.compile(r'\r\n|\r|\n')
@@ -438,13 +455,99 @@ def _backtick_problem(number: int, text: str, visible: str, in_block_comment: bo
 
 def _without_code_spans(text: str) -> str:
     """Return ``text`` with every code span replaced by one space, so no pattern reads what a span holds."""
+    return _without_spans(text, code_spans(text))
+
+
+def _without_spans(text: str, spans: list[tuple[int, int]], *, keep_length: bool = False) -> str:
+    """Return ``text`` with each of the sorted, disjoint ``spans`` replaced by one space.
+
+    ``keep_length`` replaces each span with as many ``x`` instead, like the placeholder the renderer stores, so the
+    positions of the rest of the text do not move.
+    """
     visible: list[str] = []
     position = 0
-    for start, end in code_spans(text):
-        visible.extend((text[position:start], ' '))
+    for start, end in spans:
+        visible.extend((text[position:start], 'x' * (end - start) if keep_length else ' '))
         position = end
     visible.append(text[position:])
     return ''.join(visible)
+
+
+def html_tag_spans(text: str) -> list[tuple[int, int]]:
+    """Return the ``(start, end)`` bounds of every raw inline HTML tag in ``text``, where no reader sees the text.
+
+    A tag is what the docs renderer stores as raw inline HTML (``RENDERER_INLINE_HTML``): a start or end tag, a
+    processing instruction or CDATA. Any other ``<`` is escaped as text, so it hides nothing, and a backslash does not
+    escape ``<`` for the renderer. The renderer ends a tag at its first ``>``, but a browser does not end it inside a
+    quoted attribute value, and the text after it has its ``>`` escaped. So a tag that leaves a quote open, and a
+    processing instruction or CDATA that holds any quote (the tags inside it are read by the browser), hide everything
+    to the end of the text. After it stores a tag, the renderer searches the text again from its start, so a tag that
+    holds another (``<span x="<b>">``) is found once the inner one is stored; each round here does the same. Deep
+    nesting makes that quadratic in the length of the bullet, like the docs-link patterns.
+
+    >>> html_tag_spans('a <b title="x"> c </b> <x@y> d')
+    [(2, 15), (18, 22)]
+    >>> html_tag_spans('a <b title="x>y"> c')
+    [(2, 19)]
+    """
+    spans: list[tuple[int, int]] = []
+    unstored = text
+    while found := _raw_html_tags(unstored):
+        spans.extend(found)
+        unstored = _without_spans(unstored, found, keep_length=True)
+    return _merged(spans)
+
+
+def _raw_html_tags(text: str) -> list[tuple[int, int]]:
+    """Return, left to right, the spans of the raw HTML tags one search of ``text`` stores."""
+    spans: list[tuple[int, int]] = []
+    position = 0
+    while (start := TAG_START.search(text, position)) is not None:
+        tag = RENDERER_INLINE_HTML.match(text, start.start())
+        if tag is None:
+            position = start.start() + 1
+            continue
+        position = tag.end() if _ends_where_the_renderer_ends_it(tag.group()) else len(text)
+        spans.append((tag.start(), position))
+    return spans
+
+
+def _merged(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Return the union of ``spans`` as sorted, disjoint spans."""
+    union: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if union and start < union[-1][1]:
+            union[-1] = (union[-1][0], max(end, union[-1][1]))
+        else:
+            union.append((start, end))
+    return union
+
+
+def _ends_where_the_renderer_ends_it(tag: str) -> bool:
+    """Return whether a browser ends the raw HTML ``tag`` at its last character, as the renderer does."""
+    if tag.startswith(('<?', '<!')):
+        return '"' not in tag and "'" not in tag
+    return QUOTES_CLOSED.fullmatch(tag) is not None
+
+
+def _links_outside_html_tags(text: str) -> list[str]:
+    """Return the link targets in ``text`` that do not sit inside a raw HTML tag.
+
+    The renderer reads links before raw HTML, so ``[docs](<page.md>)`` is a link, not a tag, and a link inside an
+    attribute (``<a title="[docs](page.md)">``) is stored with that attribute where no reader can follow it. Each link
+    is blanked out before the tags are found, as the renderer stores it before it reads them.
+    """
+    links = list(LINK_TARGET.finditer(text))
+    masked = _without_spans(text, [link.span() for link in links], keep_length=True)
+    tags = html_tag_spans(masked)
+    tag_starts = [start for start, _ in tags]
+    return [link.group(1) for link in links if not _is_inside(link.start(), tags, tag_starts)]
+
+
+def _is_inside(index: int, spans: list[tuple[int, int]], starts: list[int]) -> bool:
+    """Return whether ``index`` falls in one of the sorted, disjoint ``spans`` (``starts`` holds their starts)."""
+    span = bisect.bisect_right(starts, index) - 1
+    return span >= 0 and index < spans[span][1]
 
 
 def _starts_html_tag(text: str) -> bool:
@@ -1173,10 +1276,11 @@ def _bullet_problems(item: _Item, site: Site) -> list[str]:
     section, number, text = item.section, item.number, ' '.join(item.parts)
     label = _label(section, number, text)
     visible = _without_code_spans(text)
-    exemptions = EXEMPTION.findall(visible)
+    exemptions = EXEMPTION.findall(_without_spans(visible, html_tag_spans(visible)))
     if any(not reason.strip() for reason in exemptions):
         return [f'{label} has an empty "(no docs: )" exemption; give a reason']
-    parsed = (_parse_reference(target) for target in LINK_TARGET.findall(visible) if _is_docs_reference(target))
+    targets = _links_outside_html_tags(visible)
+    parsed = (_parse_reference(target) for target in targets if _is_docs_reference(target))
     references = [reference for reference in parsed if reference.page != HOME_PAGE]
     if not references and not exemptions:
         return [f'{label} has no docs reference and no "(no docs: <reason>)" exemption']
