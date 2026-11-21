@@ -30,8 +30,8 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from dataclasses import dataclass
 import contextlib
+from dataclasses import dataclass
 import datetime
 import functools
 import logging
@@ -74,11 +74,9 @@ def _leave_process_state_alone() -> Iterator[None]:
 
 
 with _leave_process_state_alone():
-    from commitizen import (
-        config as cz_config,
-        exceptions as cz_exceptions,
-        factory as cz_factory,
-    )
+    from commitizen import config as cz_config
+    from commitizen import exceptions as cz_exceptions
+    from commitizen import factory as cz_factory
     from commitizen.version_increment import VersionIncrement
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -405,6 +403,7 @@ def prepare_release(
         ReleaseRefusedError: When the start state is unsafe, the version cannot be computed, or the bump is
             inconsistent. Nothing is changed before the branch is created.
     """
+    increment = increment.upper() if increment else None
     flags = _flags(increment, prerelease)
     _refuse_unsafe_start(run)
     current_version = _current_version(repo)
