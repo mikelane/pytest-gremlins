@@ -24,9 +24,14 @@ Three line rules cover the whole selected entry, in the preamble, the exempt sec
 * Only the exact ``### <section>`` headings (up to 3 leading spaces, optional tab after the hashes, optional
   closing hashes) and the ``## [v]X.Y.Z`` version headings are accepted. Any other line that starts with ``#`` is an
   unsupported heading, whether or not a renderer would make one of it: ``#Feature``, ``####Detail``, ``###Feature``,
-  ``#Feature ###``, ``##v2.0.0`` and ``#<TAB>Feature`` all fail. The one exception is an issue-number continuation
-  such as ``  #720)``, which is a wrapped reference inside a bullet. It is accepted only while a list item is open
-  directly above it: a standalone ``    #720)`` renders as a heading and fails.
+  ``#Feature ###``, ``##v2.0.0`` and ``#<TAB>Feature`` all fail. The one exception is an indented continuation
+  line directly under an open list item, such as ``  #989-#994)`` or ``  #964 for details``: the renderer reads it
+  as paragraph text. It still fails when it is heading-shaped (``  ### Internal``), and a standalone ``    #720)``
+  after a blank line renders as a heading and fails.
+* A line that starts with an HTML tag (``<div>``, ``</div>``, ``<?php``, ``<![CDATA[``), after any indentation or
+  list and block-quote prefix, is rejected: the renderer reads it as a raw HTML block and leaves a ``###`` line
+  inside it as literal text. A fence closes only on a closer of exactly the opener's length, as the docs renderer
+  reads it, and a longer closer is rejected because CommonMark would close there.
 * Every thematic break or setext-underline shape is rejected, in every section and with no attempt to guess the
   previous line: a run of ``=``, a run of one or two ``-``, and ``***``, ``---``, ``___``, ``* * *`` and ``- - -``.
   This also rejects a delimiter under a pipe or inline-HTML line, so ``A | B`` + ``---`` and
@@ -100,7 +105,8 @@ LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")
 SECTION_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
 HEADING_CLOSER = re.compile(r'(?:^|[ \t]+)#+[ \t]*$')
 CONTAINER_PREFIX = re.compile(r'(?: {0,3}>[ \t]?|[ \t]*(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+|(?=[ \t]*$)))')
-ISSUE_CONTINUATION = re.compile(r'[ \t]+#[0-9]+(?:[ \t]*,[ \t]*#[0-9]+)*[ \t]*\)[ \t]*$')
+ATX_HEADING_SHAPE = re.compile(r'#{1,6}(?:[ \t]|$)')
+BLOCK_HTML_START = re.compile(r'<(?:/?[A-Za-z][A-Za-z0-9-]*(?=[\s/>]|$)|[!?])')
 LIST_ITEM = re.compile(r'[ \t]*(?:[-*+]|[0-9]{1,9}[.)])[ \t]+\S')
 CONTAINER_QUOTE = re.compile(r'[ \t]*(?:>[ \t]*)+')
 HTML_HEADING = re.compile(r'<(/?)h[1-6]\b', re.IGNORECASE)
@@ -159,22 +165,32 @@ def _line_shape_problem(text: str, *, list_continuation: bool = False) -> str | 
     shape is reported without looking at the line above it. Both readings repeat inside list and block-quote
     markers, which is how ``> #Feature`` and ``- ---`` are caught.
 
-    ``list_continuation`` says the caller read the previous visible line as an open list item, so an issue-number
-    line such as ``  #716)`` is the wrapped tail of a bullet reference. A standalone ``    #720)`` is not a
-    continuation: a renderer makes an ``h1`` of it, so it stays an unsupported heading shape.
+    ``list_continuation`` says the caller read the previous visible line as an open list item. An indented line
+    directly under it is a continuation of that item's paragraph, so it can start with a ``#`` that is not an ATX
+    heading (``  #716)``, ``  #989-#994)``, ``  #964 for details``). It can never be a heading: an indented ``#``
+    heading shape there (``  ### Internal``) is rejected even when it names a known section, because a renderer
+    does not agree with the scanner on whether it is a section switch. A standalone ``    #720)`` after a blank
+    line is not a continuation: a renderer makes an ``h1`` of it, so it stays an unsupported heading shape.
     """
     if not text.strip():
         return None
-    if list_continuation and ISSUE_CONTINUATION.match(text):
-        return None
     content = _container_content(text)
     if content.lstrip(' \t').startswith('#'):
-        accepted = content == text and (
-            _structural_title(content, SECTION_LEVEL) is not None or _structural_title(content, ENTRY_LEVEL) is not None
-        )
-        return None if accepted else 'a heading that is not a known "###" section heading or version heading'
+        under_item = list_continuation and content == text and text.startswith((' ', '\t'))
+        if not (under_item and ATX_HEADING_SHAPE.match(text.lstrip(' \t')) is None):
+            accepted = (
+                content == text
+                and not under_item
+                and (
+                    _structural_title(content, SECTION_LEVEL) is not None
+                    or _structural_title(content, ENTRY_LEVEL) is not None
+                )
+            )
+            return None if accepted else 'a heading that is not a known "###" section heading or version heading'
     if _is_html_heading(text):
         return 'a raw HTML heading; use a known "###" section heading'
+    if _starts_html_tag(text) or _starts_html_tag(content):
+        return 'a raw HTML block tag'
     if THEMATIC_OR_SETEXT.match(text) or THEMATIC_OR_SETEXT.match(content):
         return 'a thematic break or setext underline'
     return None
@@ -187,6 +203,17 @@ def _is_html_heading(text: str) -> bool:
     rejects them wherever the line is visible. A tag written as a code span (```<h1>```) stays literal text.
     """
     return bool(HTML_HEADING.search(CODE_SPAN.sub(' ', text)))
+
+
+def _starts_html_tag(text: str) -> bool:
+    """Return whether ``text`` starts with an HTML tag, declaration or processing instruction.
+
+    A renderer reads a tag at the start of a line as a raw HTML block and leaves everything inside it as literal
+    text, including a ``###`` line the scanner would take for a section heading. The strict format has no use for
+    raw HTML blocks, so every such line is rejected, not only the block-level tag names. An autolink
+    (``<https://example.com>``) and a tag in the middle of a line are not blocks.
+    """
+    return BLOCK_HTML_START.match(text.lstrip(' \t')) is not None
 
 
 def _marker_of(match: re.Match[str] | None) -> str | None:
@@ -219,12 +246,29 @@ def _container_fence_marker(text: str) -> str | None:
     return _fence_marker(_container_content(text)) if _container_content(text) != text else None
 
 
-def _closes_fence(text: str, marker: str) -> bool:
+def _fence_closer_length(text: str, marker: str) -> int | None:
+    """Return the length of ``text`` when it is a bare run of the opener's fence character, else ``None``."""
     match = ANY_INDENT_FENCE.match(text)
     if match is None:
-        return False
+        return None
     closer, trailing = match.groups()
-    return closer[0] == marker[0] and len(closer) >= len(marker) and not trailing.strip()
+    return len(closer) if closer[0] == marker[0] and not trailing.strip() else None
+
+
+def _closes_fence(text: str, marker: str, *, exact: bool = False) -> bool:
+    """Return whether ``text`` closes a fence opened with ``marker``.
+
+    ``exact`` closes only on a closer of the opener's own length, which is how pymdownx.superfences (the docs
+    renderer) reads it. CommonMark also closes on a longer one, so the two disagree on a longer closer; see
+    ``_is_longer_fence_closer``.
+    """
+    length = _fence_closer_length(text, marker)
+    return length is not None and (length == len(marker) if exact else length >= len(marker))
+
+
+def _is_longer_fence_closer(text: str, marker: str) -> bool:
+    length = _fence_closer_length(text, marker)
+    return length is not None and length > len(marker)
 
 
 def _comment_open_index(text: str) -> int:
@@ -288,6 +332,7 @@ class _Scanner:
         self.container_fence_openers: list[int] = []
         self.midline_comments: list[int] = []
         self.indented_fence_openers: list[int] = []
+        self.longer_fence_closers: list[int] = []
         self.open_region: _Region | None = None
         self._neutralized = neutralized
         self._fence = ''
@@ -328,7 +373,7 @@ class _Scanner:
     def _feed_inside_region(self, number: int, text: str) -> None:
         """Feed a line that starts inside an outer fence, an HTML comment or an unsupported container fence."""
         if self._fence:
-            self._feed_fenced(text)
+            self._feed_fenced(number, text)
         elif self._in_comment:
             if self._comment_midline and not text.strip():
                 self._end_midline_comment()
@@ -355,10 +400,12 @@ class _Scanner:
         self._in_comment = False
         self._comment_midline = False
 
-    def _feed_fenced(self, text: str) -> None:
-        if _closes_fence(text, self._fence):
+    def _feed_fenced(self, number: int, text: str) -> None:
+        if _closes_fence(text, self._fence, exact=True):
             self._fence = ''
             self.open_region = None
+        elif _is_longer_fence_closer(text, self._fence):
+            self.longer_fence_closers.append(number)
 
     def _feed_text(self, number: int, text: str, *, neutralized: bool = False) -> None:
         """Record ``text`` as a visible line; ``neutralized`` keeps it from opening a code fence or comment region."""
@@ -387,6 +434,7 @@ class _Scan:
     container_fence_openers: frozenset[int] = frozenset()
     midline_comments: frozenset[int] = frozenset()
     indented_fence_openers: frozenset[int] = frozenset()
+    longer_fence_closers: frozenset[int] = frozenset()
 
 
 def _scan(changelog: str) -> _Scan:
@@ -414,6 +462,7 @@ def _scan(changelog: str) -> _Scan:
                 frozenset(scanner.container_fence_openers),
                 frozenset(scanner.midline_comments),
                 frozenset(scanner.indented_fence_openers),
+                frozenset(scanner.longer_fence_closers),
             )
         unclosed.append(scanner.open_region)
         neutralized.add(scanner.open_region.number)
@@ -458,6 +507,7 @@ def _find_entry(changelog: str, version: str) -> _Entry | None:
     lines = scan.lines[start + 1 : end]
     shapes = _entry_shape_problems(lines) + _container_fence_problems(scan, first, last)
     shapes += _midline_comment_problems(scan, first, last) + _indented_fence_problems(scan, first, last)
+    shapes += _longer_fence_closer_problems(scan, first, last)
     text = ''.join(scan.raw_lines[first - 1 : last - 1])
     return _Entry(
         lines,
@@ -546,6 +596,16 @@ def _indented_fence_problems(scan: _Scan, first: int, last: int) -> list[str]:
         f'an indented code fence at line {number} is unsupported: a renderer reads it as an indented code block or '
         'as code inside the list item above it. Start the fence at the outer level, indented by at most 3 spaces'
         for number in sorted(scan.indented_fence_openers)
+        if first <= number < last
+    ]
+
+
+def _longer_fence_closer_problems(scan: _Scan, first: int, last: int) -> list[str]:
+    """Report a fence closer longer than its opener: the docs renderer keeps the fence open, CommonMark closes it."""
+    return [
+        f'a fence closer longer than its opener at line {number}: the docs renderer keeps the fence open and '
+        'CommonMark closes it, so they disagree on what follows. Close the fence with a line of the same length'
+        for number in sorted(scan.longer_fence_closers)
         if first <= number < last
     ]
 

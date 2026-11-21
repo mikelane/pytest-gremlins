@@ -207,9 +207,16 @@ The PR fails CI until the entry passes the release docs gate.
   `### Documentation` and the gated sections alike). It is not a Markdown renderer, so a line outside a closed
   outer code fence or HTML comment must be prose, a list line, a version heading or one of the five `###` headings.
   Every other line that starts with `#` fails, including `#Feature`, `####Detail`, `###Feature`, `#Feature ###`,
-  `#\tFeature` and `##v2.0.0`; an issue-number continuation is the one exception, because it wraps a reference
-  inside a bullet. It is a `#720)` line indented by two spaces, and it counts only while a list item is open
-  directly above it: a standalone `#720)` indented by four spaces renders as a heading and fails.
+  `#\tFeature` and `##v2.0.0`; a wrapped bullet continuation is the one exception. Any indented line directly
+  under an open list item (no blank line between) is paragraph text to the renderer, so it may start with a `#` that
+  is not an ATX heading: `#989-#994)`, `#964) Thanks. (no docs: r)` and `#964 for details` all pass. It still fails
+  when it is heading-shaped (`#` to `######` followed by a space or the end of the line, so an indented `### Internal` fails
+  even though it names a known section), and a `#720)` after a blank line renders as a heading and fails.
+- A line that starts with an HTML tag fails, after any indentation, list marker or `>` prefix: `<div>`, `</div>`,
+  `<details>`, `<pre>`, `<custom-tag>`, `<br/>`, `<?php` and `<![CDATA[`. The renderer reads it as a raw HTML block and
+  leaves a `###` line inside as literal text, which would hide a section switch from readers while the gate acted on it.
+  A tag in the middle of a line, a tag in a code span, an autolink (`<https://example.com>`) and a bare `<` stay
+  accepted.
 - A raw `<h1>`-`<h6>` tag fails wherever it is visible, in any case and with attributes (`<H2 class="x">`), including
   inside a block quote or a list item, because the renderer makes a real heading of it. A tag written as a code span
   (`<h1>` in backticks) stays literal text.
@@ -221,6 +228,9 @@ The PR fails CI until the entry passes the release docs gate.
   quote, a fence indented 4 or more columns (a tab counts as 4), and an indented fence after a list item (even after a
   blank line) are rejected with an explicit unsupported-construct message; none is read as code, so the lines after
   them are checked like any other line.
+- A code fence closes only on a closer of exactly the opener's length, as the docs renderer (pymdownx.superfences)
+  reads it. A longer closer fails (a four-backtick fence, a five-backtick line, then a four-backtick line): CommonMark
+  closes there and the docs renderer does not, so they disagree on what follows. A shorter closer does not close.
 - A backslash-escaped backtick opens no code span, so ``\`<h2>Feature</h2>`` still fails as a raw heading. A `<!--` in a
   code span is literal text and hides nothing, but an unclosed one is reported on its own line because a reader may
   take it for a comment. A comment that starts mid-line ends at the next blank line, as Markdown reads it, so one

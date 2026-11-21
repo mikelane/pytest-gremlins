@@ -1579,6 +1579,110 @@ class DescribeIndentedCodeFence:
         assert _problems_of('### Internal\n\n- Bump.\n\n```\n# install\n```\n') == ''
 
 
+@pytest.mark.small
+class DescribeRawHtmlBlocks:
+    def it_rejects_a_raw_html_block_that_hides_a_section_heading(self) -> None:
+        body = '### Fix\n\n- **A.** (no docs: r)\n  <div>\n### Internal\n</div>\n\n- **Undocumented.**\n'
+
+        problems = _problems_of(body)
+
+        assert 'a raw HTML block tag at line 8' in problems
+
+    @pytest.mark.parametrize(
+        'line',
+        [
+            '<div>',
+            '  <div>',
+            '</div>',
+            '<details markdown="1">',
+            '<PRE>',
+            '<table>',
+            '<custom-tag>',
+            '<?php',
+            '<![CDATA[',
+            '<br/>',
+        ],
+    )
+    def it_rejects_a_line_that_starts_with_an_html_tag_in_every_section(self, line: str) -> None:
+        for section in ('Fix', 'Internal'):
+            assert 'a raw HTML block tag at line 9' in _problems_of(f'### {section}\n\n- A. (no docs: r)\n\n{line}\n')
+
+    @pytest.mark.parametrize('prefix', ['- ', '> ', '- > '])
+    def it_rejects_an_html_tag_after_a_list_or_quote_marker(self, prefix: str) -> None:
+        assert 'a raw HTML block tag' in _problems_of(f'### Internal\n\n{prefix}<div>\n')
+
+    @pytest.mark.parametrize(
+        'line',
+        [
+            '- Use `<div>` in prose. (no docs: r)',
+            '- Mid-line <div> stays text. (no docs: r)',
+            '- <https://example.com> links. (no docs: r)',
+            '- <user@example.com> mails. (no docs: r)',
+            '- A < B and C > D. (no docs: r)',
+        ],
+    )
+    def it_accepts_html_that_does_not_start_a_block(self, line: str) -> None:
+        assert _problems_of(f'### Fix\n\n{line}\n') == ''
+
+
+@pytest.mark.small
+class DescribeFenceCloserLength:
+    def it_rejects_a_fence_closer_longer_than_its_opener(self) -> None:
+        body = '### Internal\n\n````\nx\n`````\n````\n#### Hidden\n````\n'
+
+        problems = _problems_of(body)
+
+        assert 'a fence closer longer than its opener at line 9' in problems
+        assert 'a heading that is not a known "###" section heading or version heading at line 11' in problems
+
+    @pytest.mark.parametrize('marker', ['```', '````', '~~~', '~~~~~'])
+    def it_closes_a_fence_on_a_closer_of_the_same_length(self, marker: str) -> None:
+        assert _problems_of(f'### Internal\n\n{marker}\n# install\n{marker}\n') == ''
+
+    def it_does_not_close_a_fence_on_a_shorter_closer(self) -> None:
+        problems = _problems_of('### Internal\n\n````\n# x\n```\n')
+
+        assert 'code fence opened at line 7 is never closed' in problems
+
+
+@pytest.mark.small
+class DescribeWrappedIssueReferences:
+    @pytest.mark.parametrize(
+        'continuation',
+        [
+            '  #989-#994)',
+            '  #964) Thanks to a contributor. (no docs: r)',
+            '  #964 for details (no docs: r)',
+            '  #964,#965',
+            '    #964)',
+            '  #Feature',
+            '  ####Detail',
+            '  ####### seven',
+        ],
+    )
+    def it_accepts_an_indented_continuation_line_that_starts_with_a_hash(self, continuation: str) -> None:
+        body = f'### Fix\n\n- **A.** (no docs: r) (#963,\n{continuation}\n'
+
+        assert _problems_of(body) == ''
+
+    @pytest.mark.parametrize('continuation', ['  # Feature', '  ## Feature', '  ### Internal', '  #', '  ###### x'])
+    def it_rejects_a_continuation_line_that_could_render_a_heading(self, continuation: str) -> None:
+        body = f'### Fix\n\n- **A.** (no docs: r) (#963,\n{continuation}\n'
+
+        assert 'a heading that is not a known' in _problems_of(body)
+
+    def it_rejects_a_hash_line_after_a_blank_line_below_a_bullet(self) -> None:
+        body = '### Fix\n\n- **A.** (no docs: r)\n\n  #964)\n'
+
+        assert 'a heading that is not a known' in _problems_of(body)
+
+    def it_rejects_an_unindented_hash_line_below_a_bullet(self) -> None:
+        assert 'a heading that is not a known' in _problems_of('### Fix\n\n- **A.** (no docs: r)\n#964)\n')
+
+    def it_rejects_an_html_heading_on_a_continuation_line(self) -> None:
+        assert 'a raw HTML heading' in _problems_of('### Fix\n\n- **A.** (no docs: r)\n  #1 <h1>x</h1>\n')
+
+
 @pytest.mark.medium
 class DescribeRendererOracle:
     """The real docs renderer is a one-way oracle: it proves each reported bypass really renders a heading."""
@@ -1658,6 +1762,7 @@ class DescribeRendererOracle:
             ('    ```\n\n# Feature\n\n    ```\n', '<h1'),
             ('- Bump.\n\n    ```\n\n# Feature\n\n    ```\n', '<h1'),
             ('- item\n\n    #720)\n', '<h1'),
+            ('````\nx\n`````\n````\n#### Hidden\n````\n', '<h4'),
         ],
     )
     def it_renders_a_heading_for_html_and_standalone_issue_numbers(self, text: str, tag: str) -> None:
@@ -1665,10 +1770,26 @@ class DescribeRendererOracle:
 
     @pytest.mark.parametrize(
         'text',
-        ['- **A.** (#598,\n  #716)\n', 'Plain prose.\n', 'Use `<h1>` in prose.\n', '````markdown\n> ```\n````\n'],
+        [
+            '- **A.** (#598,\n  #716)\n',
+            '- **A.** (#963,\n  #989-#994)\n',
+            '- **A.** (#963,\n  #964) Thanks. (no docs: r)\n',
+            '- **A.** (#963,\n  #964 for details)\n',
+            'Plain prose.\n',
+            'Use `<h1>` in prose.\n',
+            '````markdown\n> ```\n````\n',
+        ],
     )
     def it_renders_no_heading_for_accepted_plain_content(self, text: str) -> None:
         assert '<h' not in self._render(text)
+
+    @pytest.mark.parametrize('text', ['- A.\n  <div>\n### Internal\n</div>\n', '<?php\n### Internal\n?>\n'])
+    def it_hides_a_section_heading_inside_a_raw_html_block(self, text: str) -> None:
+        assert '<h3' not in self._render(text)
+
+    @pytest.mark.parametrize('text', ['- A. <span>\n### Internal\n</span>\n', 'Text <div>\n### Internal\n</div>\n'])
+    def it_shows_a_section_heading_after_a_tag_that_is_not_at_the_start_of_a_line(self, text: str) -> None:
+        assert '<h3' in self._render(text)
 
 
 @pytest.mark.medium
