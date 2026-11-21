@@ -418,7 +418,7 @@ def prepare_release(
             version,
             today,
             commits,
-            increment='MAJOR' if _major(version) > _major(current_version) else None,
+            increment='MAJOR' if increment == 'MAJOR' or _major(version) > _major(current_version) else None,
             rules=load_bump_rules(repo),
         )
         new_changelog = insert_entry(changelog_file.read(), entry)
