@@ -12,6 +12,21 @@ from pytest_gremlins import argument_files
 from pytest_gremlins.rerun_options import rerun_options_in
 
 
+def _reruns_argparse_reads_from(argument_file: Path) -> list[str]:
+    """Return the ``--reruns`` option the running Python's argparse reads from ``argument_file``.
+
+    Python 3.11 reads an ``@file`` strictly with the locale encoding and raises on a byte it cannot decode, so pytest
+    would reject the file; 3.12 and later decode it with the filesystem error handler.
+    """
+    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+    parser.add_argument('--reruns')
+    try:
+        parsed, _ = parser.parse_known_args([f'@{argument_file}'])
+    except UnicodeDecodeError:
+        return []
+    return [] if parsed.reruns is None else [f'--reruns={parsed.reruns}']
+
+
 @pytest.mark.medium
 class DescribeRerunOptionsInArgumentFiles:
     """pytest expands ``@file`` arguments, one argument per line, before it parses the command line."""
@@ -57,17 +72,8 @@ class DescribeRerunOptionsInArgumentFiles:
         # use (surrogateescape on POSIX, surrogatepass on Windows); a lone latin-1 byte would not on Windows.
         argument_file = tmp_path / 'not_utf8.txt'
         argument_file.write_bytes(b'--reruns\n2\n# \xed\xa0\x80\n')
-        parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
-        parser.add_argument('--reruns')
 
-        try:
-            parsed, _ = parser.parse_known_args([f'@{argument_file}'])
-        except UnicodeDecodeError:
-            expected = []
-        else:
-            expected = [f'--reruns={parsed.reruns}'] if parsed.reruns is not None else []
-
-        assert rerun_options_in(['@not_utf8.txt'], base_dir=tmp_path) == expected
+        assert rerun_options_in(['@not_utf8.txt'], base_dir=tmp_path) == _reruns_argparse_reads_from(argument_file)
 
     def it_resolves_a_relative_argument_file_against_the_current_directory_by_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
