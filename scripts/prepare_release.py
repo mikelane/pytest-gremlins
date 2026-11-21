@@ -26,25 +26,21 @@ from __future__ import annotations
 import argparse
 from collections.abc import (
     Callable,
+    Iterator,
     Mapping,
     Sequence,
 )
 from dataclasses import dataclass
+import contextlib
 import datetime
 import functools
+import logging
 from pathlib import Path
 import re
 import subprocess
 import sys
 import textwrap
 import unicodedata
-
-from commitizen import (
-    config as cz_config,
-    exceptions as cz_exceptions,
-    factory as cz_factory,
-)
-from commitizen.version_increment import VersionIncrement
 
 from check_release_docs import (
     VERSION_HEADING_START,
@@ -58,6 +54,32 @@ from check_version_change import (
     project_version,
     release_branch,
 )
+
+
+@contextlib.contextmanager
+def _leave_process_state_alone() -> Iterator[None]:
+    """Undo what importing commitizen does to the process: it disables every existing logger and wraps stdout."""
+    streams = (sys.stdout, sys.stderr)
+    disabled = {
+        name: logger.disabled
+        for name, logger in logging.root.manager.loggerDict.items()
+        if isinstance(logger, logging.Logger)
+    }
+    try:
+        yield
+    finally:
+        sys.stdout, sys.stderr = streams
+        for name, was_disabled in disabled.items():
+            logging.getLogger(name).disabled = was_disabled
+
+
+with _leave_process_state_alone():
+    from commitizen import (
+        config as cz_config,
+        exceptions as cz_exceptions,
+        factory as cz_factory,
+    )
+    from commitizen.version_increment import VersionIncrement
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SECTION_ORDER = ('Upgrade notes', 'Feature', 'Fix', 'Internal', 'Documentation')
