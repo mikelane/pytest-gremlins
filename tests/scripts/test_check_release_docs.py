@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -25,6 +26,7 @@ WORKFLOWS = Path(__file__).resolve().parents[2] / '.github' / 'workflows'
 GATE_COMMAND = 'check_release_docs.py'
 DOCS_URL = 'https://pytest-gremlins.readthedocs.io/en/latest'
 SITE_PAGES = {'guide/configuration': frozenset({'batch-size', 'caching'}), '': frozenset()}
+LINEAR_TIME_BUDGET_SECONDS = 0.5
 
 
 def _load_checker() -> ModuleType:
@@ -1130,6 +1132,19 @@ class DescribeStrictEntryFormat:
         problems = _problems_of(body)
 
         assert any('thematic break or setext underline' in problem for problem in problems.splitlines()), problems
+
+    def it_reads_a_long_run_of_spaces_after_an_equals_sign_in_linear_time(self) -> None:
+        delimiter = _load_checker().THEMATIC_OR_SETEXT
+        started = time.perf_counter()
+
+        matched = delimiter.match('=' + ' ' * 40000 + 'x')
+
+        assert matched is None
+        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+
+    @pytest.mark.parametrize('content', ['A | B\n---|---\n1 | 2', 'prose -- with --- dashes', '= x', '-- x', '*-*x'])
+    def it_accepts_delimiter_characters_that_do_not_make_a_whole_delimiter_line(self, content: str) -> None:
+        assert _problems_of(f'### Internal\n\n{content}\n') == ''
 
     @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
     @pytest.mark.parametrize('content', STRICT_CONTINUATION_DELIMITERS)

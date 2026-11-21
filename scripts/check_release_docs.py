@@ -110,7 +110,7 @@ BLOCK_HTML_START = re.compile(r'<(?:/?[A-Za-z][A-Za-z0-9-]*(?=[\s/>]|$)|[!?])')
 LIST_ITEM = re.compile(r'[ \t]*(?:[-*+]|[0-9]{1,9}[.)])[ \t]+\S')
 CONTAINER_QUOTE = re.compile(r'[ \t]*(?:>[ \t]*)+')
 HTML_HEADING = re.compile(r'<(/?)h[1-6]\b', re.IGNORECASE)
-THEMATIC_OR_SETEXT = re.compile(r'[ \t]*(?:(?:=[ \t]*)+|-{1,2}|(?:[-*_][ \t]*){3,})[ \t]*$')
+THEMATIC_OR_SETEXT = re.compile(r'[ \t]*(?:=(?:[ \t]*=)*|-{1,2}|[-*_](?:[ \t]*[-*_]){2,})[ \t]*$')
 UNSUPPORTED_SHAPES = (
     (re.compile(r'\s*>'), 'a blockquote'),
     (re.compile(r'\s*[\u2022\u2023\u25e6\u25aa\u25cf]'), 'a pseudo-bullet; write "-"'),
