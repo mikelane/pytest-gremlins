@@ -227,7 +227,12 @@ The PR fails CI until the entry passes the release docs gate.
 - A code fence must open at the outer level, indented by at most 3 spaces. A fence inside a list item or block
   quote, a fence indented 4 or more columns (a tab counts as 4), and an indented fence after a list item (even after a
   blank line) are rejected with an explicit unsupported-construct message; none is read as code, so the lines after
-  them are checked like any other line.
+  them are checked like any other line. The message for an indented fence says which case applies: indented 4 or more
+  columns, or under the list item above it (put the fence at column 0 after a non-list line).
+- Each problem with a line names it and quotes it in parentheses, shortened to 70 characters. A rejected heading,
+  raw HTML tag or delimiter line also says how to fix it, for example `use one of the five "###" section names, or keep
+  an issue-number line directly under its bullet with no blank line, or escape it as "\#720)"`. A mid-line comment
+  problem names the blank line that ended it.
 - A code fence closes only on a closer of exactly the opener's length, as the docs renderer (pymdownx.superfences)
   reads it. A longer closer fails (a four-backtick fence, a five-backtick line, then a four-backtick line): CommonMark
   closes there and the docs renderer does not, so they disagree on what follows. A shorter closer does not close.

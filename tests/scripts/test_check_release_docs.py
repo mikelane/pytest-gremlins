@@ -1142,6 +1142,27 @@ class DescribeStrictEntryFormat:
         assert matched is None
         assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
 
+    @pytest.mark.parametrize(
+        ('line', 'expected'),
+        [
+            (
+                '#Feature',
+                'a heading that is not a known "###" section heading or version heading at line 7 (#Feature); use one '
+                'of the five "###" section names, or keep an issue-number line directly under its bullet with no blank '
+                'line, or escape it as "\\#720)"',
+            ),
+            ('<h1>Feature</h1>', 'a raw HTML heading at line 7 (<h1>Feature</h1>); use a known "###" section heading'),
+            (
+                '<div>',
+                'a raw HTML block tag at line 7 (<div>); move the tag into the middle of a sentence or write it as a '
+                'code span',
+            ),
+            ('---', 'a thematic break or setext underline at line 7 (---); remove the line or write it as a code span'),
+        ],
+    )
+    def it_tells_the_author_how_to_fix_a_rejected_shape(self, line: str, expected: str) -> None:
+        assert _problems_of(f'### Internal\n\n{line}\n') == expected
+
     def it_rejects_a_line_longer_than_1000_characters_without_reading_it(self) -> None:
         long_line = '- ' + 'a`' * 499 + 'a'
 
@@ -1173,11 +1194,17 @@ class DescribeStrictEntryFormat:
 
         assert any('thematic break or setext underline' in problem for problem in problems.splitlines()), problems
 
-    @pytest.mark.parametrize('fence', ['> ```\n> code\n> ```', '- ```\n  code\n  ```', '1. ~~~\n   code\n   ~~~'])
-    def it_reports_a_fence_inside_a_container_as_unsupported(self, fence: str) -> None:
+    @pytest.mark.parametrize(
+        ('fence', 'opener'),
+        [('> ```\n> code\n> ```', '> ```'), ('- ```\n  code\n  ```', '- ```'), ('1. ~~~\n   code\n   ~~~', '1. ~~~')],
+    )
+    def it_reports_a_fence_inside_a_container_as_unsupported(self, fence: str, opener: str) -> None:
         problems = _problems_of(f'### Internal\n\n{fence}\n\n### Fix\n\n{LINKED_BULLET}\n')
 
-        assert 'code fence opened inside a list item or block quote at line 7 is unsupported' in problems
+        assert (
+            f'a code fence opened inside a list item or block quote at line 7 ({opener}) is unsupported; start the '
+            'fence at the outer level'
+        ) in problems
 
     def it_does_not_let_a_container_fence_swallow_the_gated_section(self) -> None:
         body = '### Internal\n\n> ```\n> #Feature\n\n### Fix\n\n- **Changed a thing.** (#3)\n'
@@ -1205,16 +1232,16 @@ class DescribeStrictEntryFormat:
         body = f'### Internal\n\n````\n> ```\n````\n\n> ```\n> code\n> ```\n\n### Fix\n\n{LINKED_BULLET}\n'
 
         assert _problems_of(body) == (
-            'a code fence opened inside a list item or block quote at line 11 is unsupported; start the fence at the '
-            'outer level'
+            'a code fence opened inside a list item or block quote at line 11 (> ```) is unsupported; start the fence '
+            'at the outer level'
         )
 
     def it_still_reports_a_container_fence_after_an_outer_comment_closes(self) -> None:
         body = f'### Internal\n\n<!--\n> ```\n-->\n\n- ```\n  code\n  ```\n\n### Fix\n\n{LINKED_BULLET}\n'
 
         assert _problems_of(body) == (
-            'a code fence opened inside a list item or block quote at line 11 is unsupported; start the fence at the '
-            'outer level'
+            'a code fence opened inside a list item or block quote at line 11 (- ```) is unsupported; start the fence '
+            'at the outer level'
         )
 
     @pytest.mark.parametrize('section', ['', 'Internal', 'Documentation', 'Fix'])
@@ -1558,7 +1585,7 @@ class DescribeCommentOpenedMidLine:
     def it_reports_a_mid_line_comment_still_open_at_a_blank_line(self) -> None:
         problems = _problems_of('### Internal\n\n- Bump <!-- x\n\n# Feature\n\n- Undocumented. (#1)\n\n-->\n')
 
-        assert 'HTML comment opened mid-line at line 7 is still open at a blank line' in problems
+        assert 'HTML comment opened mid-line at line 7 is still open at the blank line 8;' in problems
 
     def it_reads_the_lines_after_that_blank_line_as_visible(self) -> None:
         problems = _problems_of('### Internal\n\n- Bump <!-- x\n\n# Feature\n\n- Undocumented. (#1)\n\n-->\n')
@@ -1570,6 +1597,16 @@ class DescribeCommentOpenedMidLine:
 
     def it_accepts_a_mid_line_comment_that_closes_before_any_blank_line(self) -> None:
         assert _problems_of('### Internal\n\n- Bump <!-- x\n  y --> done.\n') == ''
+
+
+FOUR_COLUMN_FENCE_PROBLEM = (
+    'an indented code fence at line {line} (```) is unsupported: a renderer reads a fence indented 4 or more columns '
+    'as an indented code block. Start the fence at the outer level, indented by at most 3 spaces'
+)
+UNDER_LIST_ITEM_FENCE_PROBLEM = (
+    'an indented code fence at line {line} (```) is unsupported: it sits under the list item above it, so a renderer '
+    'reads it as code inside that item; put the fence at column 0 after a non-list line'
+)
 
 
 @pytest.mark.small
@@ -1584,7 +1621,7 @@ class DescribeIndentedCodeFence:
 
         problems = _problems_of(body)
 
-        assert 'indented code fence at line 7 is unsupported' in problems
+        assert FOUR_COLUMN_FENCE_PROBLEM.format(line=7) in problems
         assert self.HEADING_PROBLEM in problems
 
     @pytest.mark.parametrize('indent', ['    ', '  '])
@@ -1593,7 +1630,7 @@ class DescribeIndentedCodeFence:
 
         problems = _problems_of(body)
 
-        assert 'indented code fence at line 9 is unsupported' in problems
+        assert UNDER_LIST_ITEM_FENCE_PROBLEM.format(line=9) in problems
         assert 'a heading that is not a known "###" section heading or version heading at line 11' in problems
 
     def it_reports_an_indented_fence_directly_under_a_list_item_without_hiding_a_gated_section(self) -> None:
@@ -1601,7 +1638,7 @@ class DescribeIndentedCodeFence:
 
         problems = _problems_of(body)
 
-        assert 'indented code fence at line 8 is unsupported' in problems
+        assert UNDER_LIST_ITEM_FENCE_PROBLEM.format(line=8) in problems
         assert 'Fixed a crash on Windows' in problems
 
     @pytest.mark.parametrize('indent', ['', ' ', '  ', '   '])
@@ -1665,7 +1702,7 @@ class DescribeFenceCloserLength:
 
         problems = _problems_of(body)
 
-        assert 'a fence closer longer than its opener at line 9' in problems
+        assert 'a fence closer longer than its opener at line 9 (`````): the docs renderer' in problems
         assert 'a heading that is not a known "###" section heading or version heading at line 11' in problems
 
     @pytest.mark.parametrize('marker', ['```', '````', '~~~', '~~~~~'])

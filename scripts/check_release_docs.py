@@ -122,6 +122,34 @@ UNSUPPORTED_SHAPES = (
 
 
 @dataclass(frozen=True)
+class _ShapeProblem:
+    """A line shape the strict format rejects: what the line is, and how the author can fix it."""
+
+    description: str
+    fix: str
+
+
+UNSUPPORTED_HEADING = _ShapeProblem(
+    'a heading that is not a known "###" section heading or version heading',
+    'use one of the five "###" section names, or keep an issue-number line directly under its bullet with no blank '
+    'line, or escape it as "\\#720)"',
+)
+RAW_HTML_HEADING = _ShapeProblem('a raw HTML heading', 'use a known "###" section heading')
+RAW_HTML_BLOCK = _ShapeProblem(
+    'a raw HTML block tag', 'move the tag into the middle of a sentence or write it as a code span'
+)
+NESTED_FENCE_FOUR_COLUMNS = (
+    'a renderer reads a fence indented 4 or more columns as an indented code block. Start the fence at the outer '
+    'level, indented by at most 3 spaces'
+)
+NESTED_FENCE_UNDER_LIST_ITEM = (
+    'it sits under the list item above it, so a renderer reads it as code inside that item; put the fence at column '
+    '0 after a non-list line'
+)
+DELIMITER_LINE = _ShapeProblem('a thematic break or setext underline', 'remove the line or write it as a code span')
+
+
+@dataclass(frozen=True)
 class _Line:
     """A changelog line as a reader sees it: ``text`` has HTML comments removed; fenced code is not a line.
 
@@ -160,7 +188,7 @@ def _container_content(text: str) -> str:
     return content
 
 
-def _line_shape_problem(text: str, *, list_continuation: bool = False) -> str | None:
+def _line_shape_problem(text: str, *, list_continuation: bool = False) -> _ShapeProblem | None:
     """Describe a heading or delimiter shape the accepted changelog format rejects, or return ``None``.
 
     The format is strict on purpose: a visible line is allowed only if it is one of the known ``###`` section
@@ -190,13 +218,13 @@ def _line_shape_problem(text: str, *, list_continuation: bool = False) -> str | 
                     or _structural_title(content, ENTRY_LEVEL) is not None
                 )
             )
-            return None if accepted else 'a heading that is not a known "###" section heading or version heading'
+            return None if accepted else UNSUPPORTED_HEADING
     if _is_html_heading(text):
-        return 'a raw HTML heading; use a known "###" section heading'
+        return RAW_HTML_HEADING
     if _starts_html_tag(text) or _starts_html_tag(content):
-        return 'a raw HTML block tag'
+        return RAW_HTML_BLOCK
     if THEMATIC_OR_SETEXT.match(text) or THEMATIC_OR_SETEXT.match(content):
-        return 'a thematic break or setext underline'
+        return DELIMITER_LINE
     return None
 
 
@@ -358,13 +386,9 @@ class _Scanner:
         )
         if indented:
             self._container_fence = indented
+            reason = NESTED_FENCE_UNDER_LIST_ITEM if self._in_list_item else NESTED_FENCE_FOUR_COLUMNS
             self.diagnostics.append(
-                (
-                    number,
-                    f'an indented code fence at line {number} is unsupported: a renderer reads it as an indented code '
-                    'block or as code inside the list item above it. Start the fence at the outer level, indented by '
-                    'at most 3 spaces',
-                )
+                (number, f'an indented code fence at line {number} ({_shorten(text.strip())}) is unsupported: {reason}')
             )
             self._feed_text(number, text, neutralized=True)
             return
@@ -381,8 +405,8 @@ class _Scanner:
             self.diagnostics.append(
                 (
                     number,
-                    f'a code fence opened inside a list item or block quote at line {number} is unsupported; start the '
-                    'fence at the outer level',
+                    f'a code fence opened inside a list item or block quote at line {number} '
+                    f'({_shorten(text.strip())}) is unsupported; start the fence at the outer level',
                 )
             )
         self._feed_text(number, text, neutralized=number in self._neutralized or container_marker is not None)
@@ -393,7 +417,7 @@ class _Scanner:
             self._feed_fenced(number, text)
         elif self._in_comment:
             if self._comment_midline and not text.strip():
-                self._end_midline_comment()
+                self._end_midline_comment(number)
             self._feed_text(number, text)
         else:
             if _closes_fence(_container_content(text), self._container_fence):
@@ -409,15 +433,15 @@ class _Scanner:
         elif not text.startswith((' ', '\t')):
             self._in_list_item = False
 
-    def _end_midline_comment(self) -> None:
-        """End a comment that opened mid-line: Markdown reads it as inline HTML, which a blank line ends."""
+    def _end_midline_comment(self, blank_line: int) -> None:
+        """End a mid-line comment at ``blank_line``: Markdown reads it as inline HTML, which a blank line ends."""
         if self.open_region is not None:
             opener = self.open_region.number
             self.diagnostics.append(
                 (
                     opener,
-                    f'HTML comment opened mid-line at line {opener} is still open at a blank line; Markdown ends it '
-                    'there, so the lines after it are visible. Close it on the same line or remove it',
+                    f'HTML comment opened mid-line at line {opener} is still open at the blank line {blank_line}; '
+                    'Markdown ends it there, so the lines after it are visible. Close it on the same line or remove it',
                 )
             )
         self.open_region = None
@@ -432,9 +456,9 @@ class _Scanner:
             self.diagnostics.append(
                 (
                     number,
-                    f'a fence closer longer than its opener at line {number}: the docs renderer keeps the fence open '
-                    'and CommonMark closes it, so they disagree on what follows. Close the fence with a line of the '
-                    'same length',
+                    f'a fence closer longer than its opener at line {number} ({_shorten(text.strip())}): the docs '
+                    'renderer keeps the fence open and CommonMark closes it, so they disagree on what follows. Close '
+                    'the fence with a line of the same length',
                 )
             )
 
@@ -578,9 +602,9 @@ def _entry_shape_problems(lines: list[_Line]) -> list[str]:
     in_list_item = False
     for line in lines:
         text = line.text
-        reason = _line_shape_problem(text, list_continuation=in_list_item)
-        if reason is not None:
-            problems.append(f'{reason} at line {line.number} ({_shorten(text.strip())})')
+        shape = _line_shape_problem(text, list_continuation=in_list_item)
+        if shape is not None:
+            problems.append(f'{shape.description} at line {line.number} ({_shorten(text.strip())}); {shape.fix}')
         if _has_comment_opener_in_code_span(text):
             problems.append(
                 f'an HTML comment opener inside a code span at line {line.number} ({_shorten(text.strip())}) is '
