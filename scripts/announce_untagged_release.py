@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Dry-run release tagging: say which tag ``tag-release.yml`` would create for a push to main.
 
-Reads ``[project].version`` from ``pyproject.toml`` and asks origin, with an exact-ref ``git ls-remote``, whether
-``v<version>`` exists there. A checkout in CI is shallow and carries no tags, so only the remote can answer. When
+Reads ``[project].version`` from ``pyproject.toml`` (it must be a canonical PEP 440 release: ``X.Y.Z`` with an optional
+``aN``/``bN``/``rcN``, ``.postN`` and ``.devN``) and asks origin, with ``git ls-remote``, whether ``v<version>``
+exists there. ``ls-remote`` tail-matches patterns, so only a ref exactly equal to ``refs/tags/v<version>`` counts.
+A checkout in CI is shallow and carries no tags, so only the remote can answer. When
 the tag is absent it prints ``would tag v<version> at <sha>``; when it exists it prints ``v<version> already tagged``.
 It never creates, pushes or dispatches anything.
 
@@ -24,7 +26,12 @@ import subprocess
 import sys
 import tomllib
 
-TAG_PATTERN = re.compile(r'v[0-9]+\.[0-9]+\.[0-9]+[a-z0-9.]*')
+CANONICAL_VERSION = re.compile(
+    r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+    r'((a|b|rc)(0|[1-9][0-9]*))?'
+    r'(\.post(0|[1-9][0-9]*))?'
+    r'(\.dev(0|[1-9][0-9]*))?'
+)
 REMOTE = 'origin'
 LS_REMOTE_NO_MATCH = 2
 
@@ -45,9 +52,15 @@ def read_version(repo: Path) -> str:
     if not isinstance(project, dict):
         raise CannotCheckError(f'pyproject.toml has no usable [project] table (got {project!r})')
     version = project.get('version')
-    if not isinstance(version, str) or TAG_PATTERN.fullmatch(f'v{version}') is None:
+    if not isinstance(version, str) or CANONICAL_VERSION.fullmatch(version) is None:
         raise CannotCheckError(f'pyproject.toml has no usable [project].version (got {version!r})')
     return version
+
+
+def _lists_exact_tag(ls_remote_output: str, tag: str) -> bool:
+    """``git ls-remote`` tail-matches patterns, so accept only the exact ref (or its peeled ``^{}`` form)."""
+    exact_refs = {f'refs/tags/{tag}', f'refs/tags/{tag}^{{}}'}
+    return any(line.partition('\t')[2] in exact_refs for line in ls_remote_output.splitlines())
 
 
 def tag_exists_on_origin(repo: Path, tag: str) -> bool:
@@ -60,7 +73,7 @@ def tag_exists_on_origin(repo: Path, tag: str) -> bool:
         check=False,
     )
     if result.returncode == 0:
-        return True
+        return _lists_exact_tag(result.stdout, tag)
     if result.returncode == LS_REMOTE_NO_MATCH:
         return False
     detail = result.stderr.strip() or f'git ls-remote exited {result.returncode}'

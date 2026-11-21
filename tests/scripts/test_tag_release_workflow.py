@@ -18,8 +18,8 @@ WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'tag-
 CHECKOUT_PIN = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
 CUT_RELEASE_WORKFLOW = WORKFLOW.with_name('cut-release.yml')
 FORBIDDEN_COMMANDS = (
-    re.compile(r'\bgit\s+(?:-\S+\s+)*tag\b'),
-    re.compile(r'\bgit\s+(?:-\S+\s+)*push\b'),
+    re.compile(r'\bgit\b[^\n|;&]*\stag\b'),
+    re.compile(r'\bgit\b[^\n|;&]*\spush\b'),
     re.compile(r'\bgh\s+workflow\b'),
     re.compile(r'\bgh\s+api\b'),
     re.compile(r'\bgh\s+release\b'),
@@ -140,3 +140,17 @@ class DescribeActionPins:
 
         assert uses
         assert all(re.search(r'@[0-9a-f]{40}$', value) for value in uses)
+
+
+@pytest.mark.small
+class DescribeTheForbiddenCommandPatterns:
+    @pytest.mark.parametrize(
+        'script',
+        [
+            'git -C . push origin v1.2.3',
+            'git -c user.name=bot tag -a v1.2.3 -m release',
+            'git --git-dir=.git -C . tag v1.2.3',
+        ],
+    )
+    def it_catches_a_git_command_with_a_valued_global_option(self, script: str) -> None:
+        assert any(re.search(pattern, script) for pattern in FORBIDDEN_COMMANDS)

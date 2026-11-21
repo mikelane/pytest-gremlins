@@ -229,3 +229,27 @@ class DescribeTheDryRunSwitch:
 
         assert result.returncode != 0
         assert 'would tag' not in result.stdout + result.stderr
+
+
+@pytest.mark.medium
+class DescribeALookalikeTagOnOrigin:
+    def it_announces_when_only_a_nested_tag_ends_with_the_tag_name(self, tmp_path: Path) -> None:
+        # git ls-remote patterns tail-match, so refs/tags/v1.2.3 also matches refs/tags/old/refs/tags/v1.2.3.
+        _, clone = _make_clone(tmp_path, _pyproject('1.2.3'))
+        _git(clone, 'push', '--quiet', 'origin', 'HEAD:refs/tags/old/refs/tags/v1.2.3')
+
+        result = _run(clone)
+
+        assert result.stdout.splitlines() == [f'would tag v1.2.3 at {SHA}']
+
+
+@pytest.mark.medium
+class DescribeAVersionThatCannotBeTagged:
+    @pytest.mark.parametrize('version', ['1.2.3.', '1.2.3..4', '1.2.3.lock', '1.2.3abc'])
+    def it_fails_without_announcing(self, tmp_path: Path, version: str) -> None:
+        _, clone = _make_clone(tmp_path, _pyproject(version))
+
+        result = _run(clone)
+
+        assert result.returncode != 0
+        assert 'would tag' not in result.stdout
