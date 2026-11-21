@@ -74,8 +74,9 @@ def _test_step() -> dict[str, Any]:
 
 
 def _python_overrides(run: str) -> list[str]:
-    uv_options = [word for command in run.splitlines() for word in shlex.split(command.split(' coverage ')[0])]
-    return [word for word in uv_options if word == '--python' or word.startswith(('--python=', '-p'))]
+    commands = run.replace('\\\n', ' ').splitlines()
+    uv_options = [word for command in commands for word in shlex.split(command.split(' coverage ')[0])]
+    return [word for word in uv_options if word == '--python' or word.startswith(('--python=', '-p', 'UV_PYTHON='))]
 
 
 def _describe(result: subprocess.CompletedProcess[str]) -> str:
@@ -185,6 +186,19 @@ class DescribeMatrixInterpreterGuard:
 
     def it_does_not_flag_a_command_without_a_python_override(self) -> None:
         assert _python_overrides('uv run --frozen coverage run -m pytest tests -p no:cacheprovider\n') == []
+
+    @pytest.mark.parametrize(
+        'run',
+        [
+            'UV_PYTHON=3.11 uv run coverage run -m pytest tests\n',
+            'export UV_PYTHON=3.11\nuv run coverage run -m pytest tests\n',
+        ],
+    )
+    def it_detects_a_shell_level_uv_python_assignment(self, run: str) -> None:
+        assert _python_overrides(run) != []
+
+    def it_reads_a_backslash_continued_command(self) -> None:
+        assert _python_overrides('uv run \\\n  --frozen \\\n  coverage run -m pytest tests\n') == []
 
     def it_sets_no_step_level_uv_python_in_the_test_step(self) -> None:
         assert 'UV_PYTHON' not in (_test_step().get('env') or {})
