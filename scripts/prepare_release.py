@@ -9,7 +9,8 @@ creates and switches to ``release/v<version>``, runs ``cz bump --files-only --ye
 and ``__init__.py``; no commit, no tag) and checks that the computed version, ``[project].version`` and
 ``__version__`` agree. Then it inserts a ``## v<version> (date)`` entry above the newest changelog entry.
 
-The entry has one placeholder bullet per conventional commit since the last ``v*`` tag. Every placeholder sits under
+The entry has one placeholder bullet per commit since the last ``v*`` tag that commitizen counts toward the bump (read
+from the whole message, so a ``BREAKING CHANGE:`` footer counts). Every placeholder sits under
 a gated heading (``Upgrade notes``, ``Feature`` or ``Fix``) and carries neither a docs link nor an exemption, so the
 release docs gate (``check_release_docs.py``) fails until a person has rewritten it and given it a docs link, a
 ``(no docs: <reason>)`` exemption, or moved it to ``Internal`` or ``Documentation``.
@@ -53,8 +54,10 @@ WRAP_WIDTH = 120
 SHORT_SHA_LENGTH = 7
 FIELD_SEPARATOR = '\x1f'
 RECORD_SEPARATOR = '\x1e'
-CONVENTIONAL_SUBJECT = re.compile(r'(?P<type>[A-Za-z]+)(?:\([^)\n]*\))?(?P<breaking>!)?:\s*\S')
-BREAKING_FOOTER = re.compile(r'^BREAKING[ -]CHANGE:', re.MULTILINE)
+# Mirrors commitizen's BUMP_PATTERN (commitizen.defaults), which it matches against every line of a commit message.
+BUMP_LINE = re.compile(r'(?P<type>BREAKING[\-\ ]CHANGE|\w+)(?:\(.+\))?(?P<breaking>!)?:')
+# The types commitizen's BUMP_MAP turns into a version bump.
+BUMPING_TYPES = frozenset({'feat', 'fix', 'refactor', 'perf'})
 SKIPPED_TYPES = frozenset({'bump'})
 ORIGIN_MAIN = 'origin/main'
 UNCLASSIFIED_PLACEHOLDER = (
@@ -94,16 +97,33 @@ def parse_commit_log(raw: str) -> list[Commit]:
     return commits
 
 
+def _bump_lines(commit: Commit) -> list[re.Match[str]]:
+    lines = f'{commit.subject}\n{commit.body}'.splitlines()
+    return [match for line in lines if (match := BUMP_LINE.match(line))]
+
+
+def _is_breaking(match: re.Match[str]) -> bool:
+    return bool(match.group('breaking')) or match.group('type').startswith('BREAKING')
+
+
 def section_for(commit: Commit) -> str | None:
-    """Return the gated heading a commit's placeholder goes under, or ``None`` when it needs no bullet."""
-    match = CONVENTIONAL_SUBJECT.match(commit.subject)
-    if match is None or match.group('type').lower() in SKIPPED_TYPES:
+    """Return the gated heading a commit's placeholder goes under, or ``None`` when it needs no bullet.
+
+    Reads the whole message the way commitizen does: any line that opens with a type, an optional scope and a colon
+    counts, so a ``BREAKING CHANGE:`` footer or a ``fix:`` line in the body is seen as well as the subject.
+    """
+    subject_match = BUMP_LINE.match(commit.subject)
+    if subject_match is not None and subject_match.group('type').lower() in SKIPPED_TYPES:
         return None
-    if match.group('breaking') or BREAKING_FOOTER.search(commit.body):
+    matches = _bump_lines(commit)
+    if any(_is_breaking(match) for match in matches):
         return 'Upgrade notes'
-    if match.group('type').lower() == 'feat':
-        return 'Feature'
-    return 'Fix'
+    if subject_match is not None:
+        return 'Feature' if subject_match.group('type').lower() == 'feat' else 'Fix'
+    types = {match.group('type').lower() for match in matches} & BUMPING_TYPES
+    if not types:
+        return None
+    return 'Feature' if 'feat' in types else 'Fix'
 
 
 def _plain(text: str) -> str:
@@ -136,15 +156,19 @@ def _placeholder(commit: Commit) -> str:
     )
 
 
-def render_entry(version: str, date: datetime.date, commits: Sequence[Commit]) -> str:
-    """Render the unfinished changelog entry for ``version``."""
+def render_entry(version: str, date: datetime.date, commits: Sequence[Commit], *, increment: str | None = None) -> str:
+    """Render the unfinished changelog entry for ``version``.
+
+    A forced ``MAJOR`` increment puts the generic placeholder under ``Upgrade notes``, so a major release cannot pass
+    the docs gate without upgrade notes.
+    """
     bullets: dict[str, list[str]] = {section: [] for section in SECTION_ORDER}
     for commit in commits:
         section = section_for(commit)
         if section is not None:
             bullets[section].append(_placeholder(commit))
     if not any(bullets.values()):
-        bullets['Fix'].append(UNCLASSIFIED_PLACEHOLDER)
+        bullets['Upgrade notes' if increment == 'MAJOR' else 'Fix'].append(UNCLASSIFIED_PLACEHOLDER)
     parts = [f'## v{version} ({date.isoformat()})', SUMMARY_PLACEHOLDER]
     for section in SECTION_ORDER:
         parts.append(f'### {section}')
@@ -307,7 +331,8 @@ def prepare_release(
     commits = _commits_since_last_tag(run)
     changelog_path = repo / 'CHANGELOG.md'
     with changelog_path.open(encoding='utf-8', newline='') as changelog_file:
-        new_changelog = insert_entry(changelog_file.read(), render_entry(version, today, commits))
+        entry = render_entry(version, today, commits, increment=increment and increment.upper())
+        new_changelog = insert_entry(changelog_file.read(), entry)
     switched = run(('git', 'switch', '-c', branch))
     if switched.returncode != 0:
         raise ReleaseRefusedError(f'cannot create {branch}: {_detail(switched)}')

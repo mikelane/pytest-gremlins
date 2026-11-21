@@ -631,3 +631,12 @@ class DescribeAdversarialCommitizenBumpParity:
         self, subject: str, body: str, section: str
     ) -> None:
         assert prepare.section_for(_commit(subject, body)) == section
+
+
+@pytest.mark.small
+class DescribeForcedMajorFallback:
+    def it_puts_the_generic_placeholder_under_upgrade_notes_for_a_forced_major_increment(self) -> None:
+        entry = prepare.render_entry('2.0.0', RELEASE_DATE, [_commit('Revert "x"')], increment='MAJOR')
+
+        upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
+        assert 'TODO: describe this change for users' in upgrade_notes
