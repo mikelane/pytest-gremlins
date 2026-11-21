@@ -57,23 +57,26 @@ def is_adult(age):
 pytest-gremlins instruments it to:
 
 ```python
-# Instrumented code
-import os as __gremlin_os__
+# Instrumented code (shape produced by the transformer, comments added)
+import os as _gremlin_os
+__gremlin_active__ = _gremlin_os.environ.get('ACTIVE_GREMLIN')
+del _gremlin_os
 
 def is_adult(age):
-    __gremlin_id__ = __gremlin_os__.environ.get('ACTIVE_GREMLIN', '')
-
-    if __gremlin_id__ == 'g001':
-        return age > 18    # Mutation: >= to >
-    if __gremlin_id__ == 'g002':
-        return age <= 18   # Mutation: >= to <=
-    if __gremlin_id__ == 'g003':
-        return age < 18    # Mutation: >= to <
-    if __gremlin_id__ == 'g004':
-        return age == 18   # Mutation: >= to ==
-
-    return age >= 18  # Original behavior
+    if __gremlin_active__ == 'calculator_48f7_g005':
+        return                                     # Mutation: return value to None
+    else:
+        return (age > 18 if __gremlin_active__ == 'calculator_48f7_g001'    # >= to >
+            else age < 18 if __gremlin_active__ == 'calculator_48f7_g002'   # >= to <
+            else age >= 17 if __gremlin_active__ == 'calculator_48f7_g003'  # boundary shift -1
+            else age >= 19 if __gremlin_active__ == 'calculator_48f7_g004'  # boundary shift +1
+            else age >= 18)                                                 # Original behavior
 ```
+
+The module reads `ACTIVE_GREMLIN` once, when it is imported, and stores it in `__gremlin_active__`.
+Each mutated expression becomes a chain of conditional expressions (ternaries) on that variable, and a
+`return` statement gets an `if`/`else` around it. The original expression is always the last
+`else`. The exact set of gremlins for a line depends on the enabled operators.
 
 ### Activating Mutations
 
@@ -202,62 +205,58 @@ flowchart TB
 The transformer walks the AST looking for patterns that operators can mutate:
 
 ```python
-class GremlinTransformer(ast.NodeTransformer):
+class MutationSwitchingTransformer(ast.NodeTransformer):
     def visit_Compare(self, node):
-        # Find all applicable mutations
-        mutations = self.get_mutations(node)
-
-        if not mutations:
-            return node
-
-        # Build switch statement
-        return self.build_switch(node, mutations)
-
-    def build_switch(self, original, mutations):
-        # Returns an if-elif chain that checks __gremlin_id__
-        # and returns the appropriate mutated expression
+        # Find all applicable mutations for this comparison
         ...
+        # Replace it with a switching expression
+        return build_switching_expression(original, gremlins)
 ```
+
+`build_switching_expression` (in `instrumentation/transformer.py`) builds the nested ternary shown
+above, and `build_switching_statement` builds the `if`/`else` used for `return` statements.
 
 ### Generated Code Structure
 
-The generated switch follows a consistent pattern:
+The generated switch follows a consistent pattern. At the top of the module, once:
 
 ```python
-# Check which gremlin is active
-__gremlin_id__ = __gremlin_os__.environ.get('ACTIVE_GREMLIN', '')
+import os as _gremlin_os
+__gremlin_active__ = _gremlin_os.environ.get('ACTIVE_GREMLIN')
+del _gremlin_os
+```
 
-# First mutation
-if __gremlin_id__ == 'g001':
-    <mutated code>
+At each mutation site, a chain of ternaries that ends in the original expression:
 
-# Second mutation
-if __gremlin_id__ == 'g002':
-    <mutated code>
-
-# ... more mutations ...
-
-# Original code (default path)
-<original code>
+```python
+<mutation 1> if __gremlin_active__ == '<id 1>' else (
+    <mutation 2> if __gremlin_active__ == '<id 2>' else (
+        <original expression>
+    )
+)
 ```
 
 The original code is always the default path. When no gremlin is active, the code behaves exactly as written.
 
 ### Mutation Identifiers
 
-Each mutation gets a unique identifier:
+Each gremlin gets a unique identifier:
 
 ```text
-g_<file_hash>_<line>_<col>_<operator>_<variant>
+<file stem>_<4 hex digits of the path hash>_g<NNN>
 
-Example: g_a7b3c_42_8_comparison_gt
+Example: calculator_48f7_g001
 ```
 
 This identifier:
 
-- Is deterministic (same code = same ID)
-- Includes location information for debugging
-- Encodes the operator and variant
+- Is deterministic (same file path, same code = same ID)
+- Starts with the file stem plus the first four hex digits of an MD5 hash of the file path, so files
+  with the same name in different directories do not collide
+- Ends with a counter, `g001`, `g002`, and so on, in the order the transformer found the mutations in that file
+
+The identifier does not encode the line, column or operator. Those are stored on the gremlin
+itself and appear in the reports.
 
 ## Handling Edge Cases
 
@@ -295,10 +294,10 @@ Decorated functions work correctly because the switch is inside the function bod
 ```python
 @cache
 def expensive_calculation(x):
-    __gremlin_id__ = ...
-    if __gremlin_id__ == 'g001':
-        return x * 2  # Mutated
-    return x + 1  # Original
+    if __gremlin_active__ == 'calculator_48f7_g002':
+        return  # Mutated: return value to None
+    else:
+        return x - 1 if __gremlin_active__ == 'calculator_48f7_g001' else x + 1
 ```
 
 The decorator wraps the instrumented function, not the original.
