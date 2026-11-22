@@ -148,7 +148,8 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
             ['git', *args],  # noqa: S607
             cwd=repo,
             capture_output=True,
-            text=True,
+            encoding='utf-8',
+            errors='strict',
             check=False,
         )
     except UnicodeDecodeError as error:
@@ -232,7 +233,9 @@ def head_ref_from_pulls(pulls_json: str, repository: str) -> str | None:
         raise CannotCheckError(f'the pull request lookup did not return JSON: {error}') from error
     if not isinstance(pulls, list):
         raise CannotCheckError(f'the pull request lookup did not return a list (got {type(pulls).__name__})')
-    merged = [pull for pull in pulls if isinstance(pull, dict) and pull.get('merged_at')]
+    if not all(isinstance(pull, dict) for pull in pulls):
+        raise CannotCheckError('the pull request lookup returned an entry that is not an object')
+    merged = [pull for pull in pulls if pull.get('merged_at')]
     for pull in merged:
         head = pull.get('head')
         if not isinstance(head, dict) or not isinstance(head.get('ref'), str):
@@ -358,7 +361,8 @@ def _gh(*args: str, stdin: str | None = None) -> str:
         ['gh', *args],  # noqa: S607
         input=stdin,
         capture_output=True,
-        text=True,
+        encoding='utf-8',
+        errors='strict',
         check=False,
     )
     if completed.returncode != 0:

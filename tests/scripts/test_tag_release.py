@@ -569,6 +569,11 @@ class DescribeAnAnswerThatIsNotWhatWasExpected:
         with pytest.raises(tag_release.CannotCheckError):
             tag_release.head_ref_from_pulls(json.dumps([pull]), 'owner/repo')
 
+    @pytest.mark.parametrize('entry', [42, 'text', None, [1]])
+    def it_fails_closed_on_a_pulls_entry_that_is_not_an_object(self, entry: object) -> None:
+        with pytest.raises(tag_release.CannotCheckError):
+            tag_release.head_ref_from_pulls(json.dumps([entry]), 'owner/repo')
+
     @pytest.mark.parametrize('answer', ['not json', '[]', '{"message": "odd"}', '{"sha": 7}'])
     def it_fails_closed_on_a_tag_object_answer_without_a_sha(
         self, monkeypatch: pytest.MonkeyPatch, answer: str
@@ -600,7 +605,7 @@ class DescribeAPyprojectThatIsNotUtf8:
         _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
         clone = tmp_path / 'clone'
         _git(tmp_path, 'clone', '--quiet', str(origin), str(clone))
-        before = _commit(clone, '1.0.0')
+        _commit(clone, '1.0.0')
         (clone / 'pyproject.toml').write_bytes(b'[project]\nversion = "1.0.0"\n# \xff\xfe\n')
         _git(clone, 'add', 'pyproject.toml')
         _git(clone, 'commit', '--quiet', '-m', 'binary')
@@ -610,7 +615,36 @@ class DescribeAPyprojectThatIsNotUtf8:
 
         assert result.returncode == 2, result.stderr
         assert 'Traceback' not in result.stderr
-        assert before != sha
+        assert 'not UTF-8' in result.stderr
+
+
+# Python on Windows decodes subprocess text with the ANSI code page (cp1252), which, like ISO-8859-1, decodes the bytes
+# 0xff 0xfe without error. This locale reproduces that leg on POSIX.
+SINGLE_BYTE_LOCALE = {'LC_ALL': 'en_US.ISO8859-1', 'PYTHONUTF8': '0', 'PYTHONCOERCECLOCALE': '0'}
+
+
+@pytest.mark.medium
+@pytest.mark.skipif(os.name == 'nt', reason='forces a POSIX locale')
+class DescribeAPyprojectThatIsNotUtf8UnderASingleByteLocale:
+    def it_still_fails_closed_because_git_output_is_decoded_as_utf8(self, tmp_path: Path) -> None:
+        origin = tmp_path / 'origin.git'
+        _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
+        clone = tmp_path / 'clone'
+        _git(tmp_path, 'clone', '--quiet', str(origin), str(clone))
+        before = _commit(clone, '1.0.0')
+        (clone / 'pyproject.toml').write_bytes(b'[project]\nversion = "1.0.0"\n# \xff\xfe\n')
+        _git(clone, 'add', 'pyproject.toml')
+        _git(clone, 'commit', '--quiet', '-m', 'binary')
+        sha = _git(clone, 'rev-parse', 'HEAD')
+        command = [sys.executable, str(SCRIPT), '--repo', str(clone), '--sha', sha, '--before', before]
+        command += ['--github-repository', 'owner/repo']
+
+        result = subprocess.run(
+            command, env={**ISOLATED_GIT_ENV, **SINGLE_BYTE_LOCALE}, capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode == 2, result.stderr
+        assert 'not UTF-8' in result.stderr
 
 
 class FakeGh:

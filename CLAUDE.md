@@ -537,9 +537,10 @@ git fetch --tags
 git ls-remote --tags origin | tail -5
 ```
 
-If the tag is missing, `--follow-tags` silently skipped a lightweight tag. Root cause:
-`[tool.commitizen]` must have `annotated_tag = true`. Without it, commitizen creates
-lightweight tags that `--follow-tags` ignores.
+On the `cut-release.yml` fallback path, if the tag is missing, `--follow-tags` silently skipped a lightweight tag.
+Root cause: `[tool.commitizen]` must have `annotated_tag = true`. Without it, commitizen creates
+lightweight tags that `--follow-tags` ignores. `tag-release.yml` does not use `cz` or `--follow-tags`: it creates
+annotated tags through the API.
 
 **Escape hatch -- Test PyPI is down.** `release.yml` normally runs from the dispatch `tag-release.yml` makes (or from
 the tag push on the `cut-release.yml` fallback path) and gates
@@ -547,7 +548,7 @@ PyPI on a Test PyPI publish and install check. If test.pypi.org is unavailable (
 503 to GitHub runners for v1.11.1), re-run the release against the existing tag with the Test
 PyPI steps skipped:
 
-1. If the tag-push run is still in progress (stuck retrying Test PyPI), cancel it first --
+1. If the `release.yml` run is still in progress (stuck retrying Test PyPI), cancel it first --
    otherwise the dispatch waits behind it in the concurrency group. Skip this if it already failed.
 
    ```bash
