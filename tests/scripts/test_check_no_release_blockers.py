@@ -236,7 +236,7 @@ class DescribeMain:
         assert code == 2
         assert 'GITHUB_TOKEN' in capsys.readouterr().err
 
-    @pytest.mark.parametrize('repo', ['', 'no-slash', 'a/b/c', '/name', 'owner/'], ids=repr)
+    @pytest.mark.parametrize('repo', ['', 'no-slash', 'a/b/c', '/name', 'owner/', 'o/n#', 'o/n?'], ids=repr)
     def it_exits_two_when_the_repository_is_missing_or_malformed(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], repo: str
     ) -> None:

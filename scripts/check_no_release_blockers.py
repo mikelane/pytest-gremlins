@@ -34,7 +34,6 @@ import re
 import sys
 from typing import Any
 import urllib.error
-import urllib.request
 
 from check_ci_passed import (
     CannotCheckError,
@@ -45,7 +44,7 @@ from check_ci_passed import (
 RELEASE_BLOCKER_LABEL = 'release-blocker'
 PER_PAGE = 100
 HTTP_NOT_FOUND = 404
-REPO_PATTERN = re.compile(r'[^/\s]+/[^/\s]+')
+REPO_PATTERN = re.compile(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+')
 
 
 @dataclass(frozen=True)
@@ -82,11 +81,12 @@ def _require_label_exists(fetch: Fetch, repo: str) -> None:
 
 def _blocker_from(entry: object) -> Blocker:
     """Return the blocker an issue-listing entry describes, or raise if the entry is malformed."""
-    number = entry.get('number') if isinstance(entry, dict) else None
-    title = entry.get('title') if isinstance(entry, dict) else None
+    if not isinstance(entry, dict):
+        raise _unexpected_shape_error('an issue entry', entry)
+    number = entry.get('number')
+    title = entry.get('title')
     if not isinstance(number, int) or isinstance(number, bool) or not isinstance(title, str):
         raise _unexpected_shape_error('an issue entry', entry)
-    assert isinstance(entry, dict)  # noqa: S101 - narrowed by the checks above
     return Blocker(number=number, title=title, is_pull_request='pull_request' in entry)
 
 
@@ -182,7 +182,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         OSError,
         http.client.HTTPException,
         json.JSONDecodeError,
-        UnicodeDecodeError,
+        UnicodeError,
     ) as error:
         print(f'error: GitHub API request failed: {error!r}', file=sys.stderr)
         return 2
