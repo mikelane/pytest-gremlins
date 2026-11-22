@@ -311,6 +311,18 @@ class DescribeMain:
         assert code == 2
         assert 'GITHUB_API_URL must be an https URL' in capsys.readouterr().err
 
+    def it_exits_two_not_a_traceback_when_the_repository_is_not_ascii(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # The real fetcher: http.client encodes the request line as ASCII before it connects, so nothing is sent.
+        monkeypatch.setenv('GITHUB_TOKEN', 'token')
+        monkeypatch.delenv('GITHUB_API_URL', raising=False)
+
+        code = gate.main(['--repo', 'ownér/repo'])
+
+        assert code == 2
+        assert capsys.readouterr().err.startswith('error: ')
+
     @pytest.mark.parametrize('flag', ['--skip', '--force', '--no-check'])
     def it_has_no_flag_that_skips_the_check(self, flag: str) -> None:
         with pytest.raises(SystemExit):
