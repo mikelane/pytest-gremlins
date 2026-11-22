@@ -7,7 +7,6 @@ recorders here.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import (
     dataclass,
     field,
@@ -555,14 +554,63 @@ class DescribeTheRecoveryHint:
             _release(clone, sha, Recorder())
 
 
-class FixedAnswerGh:
-    """Replaces ``tag_release._gh`` with one fixed answer."""
+TAG_OBJECT_SHA = '1' * 40
 
-    def __init__(self, answer: str) -> None:
-        self.answer = answer
 
-    def __call__(self, *_args: str, stdin: str | None = None) -> str:  # noqa: ARG002
-        return self.answer
+@dataclass
+class SubprocessCall:
+    command: list[str]
+    kwargs: dict[str, Any]
+
+    @property
+    def gh_args(self) -> tuple[str, ...]:
+        return tuple(self.command[1:])
+
+    @property
+    def stdin(self) -> str | None:
+        return self.kwargs.get('input')
+
+
+class FakeSubprocess:
+    """Stands in for the ``subprocess`` module inside ``tag_release`` only, so no private name is reached.
+
+    ``gh`` answers like the GitHub API (or fails on ``fail_gh_on``), ``git`` reports success with no output, and any
+    other command is a gate script that exits with ``gate_status``.
+    """
+
+    def __init__(
+        self, *, gh_answer: str | None = None, gate_status: int = 0, fail_gh_on: str | None = None, git_stdout: str = ''
+    ) -> None:
+        self.calls: list[SubprocessCall] = []
+        self.gh_answer = gh_answer
+        self.gate_status = gate_status
+        self.fail_gh_on = fail_gh_on
+        self.git_stdout = git_stdout
+
+    def run(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        self.calls.append(SubprocessCall(command, kwargs))
+        joined = ' '.join(command)
+        if command[0] == 'git':
+            return subprocess.CompletedProcess(command, 0, stdout=self.git_stdout, stderr='')
+        if command[0] == 'gh':
+            if self.fail_gh_on is not None and self.fail_gh_on in joined:
+                return subprocess.CompletedProcess(command, 1, stdout='', stderr='HTTP 422: Reference already exists')
+            return subprocess.CompletedProcess(command, 0, stdout=self._gh_stdout(joined), stderr='')
+        return subprocess.CompletedProcess(command, self.gate_status)
+
+    def _gh_stdout(self, joined: str) -> str:
+        if self.gh_answer is not None:
+            return self.gh_answer
+        if 'git/tags' in joined:
+            return json.dumps({'sha': TAG_OBJECT_SHA})
+        return '[]' if '/pulls' in joined else '{}'
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> FakeSubprocess:
+        monkeypatch.setattr(tag_release, 'subprocess', SimpleNamespace(run=self.run))
+        return self
+
+    def gh_calls(self) -> list[SubprocessCall]:
+        return [call for call in self.calls if call.command[0] == 'gh']
 
 
 @pytest.mark.small
@@ -590,7 +638,7 @@ class DescribeAnAnswerThatIsNotWhatWasExpected:
     def it_fails_closed_on_a_tag_object_answer_without_a_sha(
         self, monkeypatch: pytest.MonkeyPatch, answer: str
     ) -> None:
-        monkeypatch.setattr(tag_release, '_gh', FixedAnswerGh(answer))
+        FakeSubprocess(gh_answer=answer).install(monkeypatch)
         effects = tag_release.github_effects(Path(), 'owner/repo')
 
         with pytest.raises(tag_release.CannotCheckError):
@@ -681,68 +729,73 @@ class DescribeAPyprojectThatIsNotUtf8UnderASingleByteLocale:
         assert 'not UTF-8' in result.stderr
 
 
-class FakeGh:
-    """Replaces ``tag_release._gh`` and records every call."""
-
-    TAG_OBJECT_SHA = '1' * 40
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[tuple[str, ...], str | None]] = []
-
-    def __call__(self, *args: str, stdin: str | None = None) -> str:
-        self.calls.append((args, stdin))
-        if 'git/tags' in ' '.join(args):
-            return json.dumps({'sha': self.TAG_OBJECT_SHA})
-        return '[]' if '/pulls' in ' '.join(args) else '{}'
-
-
 @pytest.mark.small
 class DescribeTheGithubCalls:
     def it_points_the_tag_ref_at_the_tag_object_not_the_commit(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh()
-        monkeypatch.setattr(tag_release, '_gh', fake)
+        fake = FakeSubprocess().install(monkeypatch)
 
         tag_release.github_effects(Path(), 'owner/repo').create_tag('v1.2.3', 'c' * 40)
 
-        (tag_args, tag_stdin), (ref_args, ref_stdin) = fake.calls
-        assert tag_args[:4] == ('api', '--method', 'POST', 'repos/owner/repo/git/tags')
-        assert json.loads(str(tag_stdin))['object'] == 'c' * 40
-        assert ref_args[:4] == ('api', '--method', 'POST', 'repos/owner/repo/git/refs')
-        assert json.loads(str(ref_stdin)) == {'ref': 'refs/tags/v1.2.3', 'sha': FakeGh.TAG_OBJECT_SHA}
+        tag_call, ref_call = fake.gh_calls()
+        assert tag_call.gh_args[:4] == ('api', '--method', 'POST', 'repos/owner/repo/git/tags')
+        assert json.loads(str(tag_call.stdin))['object'] == 'c' * 40
+        assert ref_call.gh_args[:4] == ('api', '--method', 'POST', 'repos/owner/repo/git/refs')
+        assert json.loads(str(ref_call.stdin)) == {'ref': 'refs/tags/v1.2.3', 'sha': TAG_OBJECT_SHA}
 
     def it_dispatches_release_yml_from_main_with_the_tag(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh()
-        monkeypatch.setattr(tag_release, '_gh', fake)
+        fake = FakeSubprocess().install(monkeypatch)
 
         tag_release.github_effects(Path(), 'owner/repo').dispatch('v1.2.3')
 
-        assert fake.calls == [
-            (('workflow', 'run', 'release.yml', '--repo', 'owner/repo', '--ref', 'main', '-f', 'tag=v1.2.3'), None)
+        assert [call.gh_args for call in fake.gh_calls()] == [
+            ('workflow', 'run', 'release.yml', '--repo', 'owner/repo', '--ref', 'main', '-f', 'tag=v1.2.3')
         ]
 
     def it_reads_the_pull_requests_of_the_commit(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = FakeGh()
-        monkeypatch.setattr(tag_release, '_gh', fake)
+        fake = FakeSubprocess().install(monkeypatch)
 
         branch = tag_release.github_effects(Path(), 'owner/repo').find_pull_request_branch('c' * 40)
 
         assert branch is None
-        assert fake.calls[0][0] == ('api', f'repos/owner/repo/commits/{"c" * 40}/pulls')
+        assert fake.gh_calls()[0].gh_args == ('api', f'repos/owner/repo/commits/{"c" * 40}/pulls')
+
+    def it_names_the_whole_command_so_two_posts_are_told_apart(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        FakeSubprocess(fail_gh_on='git/refs').install(monkeypatch)
+
+        with pytest.raises(tag_release.CannotCheckError, match=r'repos/o/r/git/refs .*HTTP 422'):
+            tag_release.github_effects(Path(), 'o/r').create_tag('v1.2.3', 'c' * 40)
+
+
+def _run_gate(name: str, repo: Path = Path('/work')) -> None:
+    effects = tag_release.github_effects(repo, 'owner/repo')
+    if name == 'guard':
+        effects.run_guard('abc', 'release/v1.2.3')
+    else:
+        effects.run_blocker_gate()
 
 
 @pytest.mark.small
+@pytest.mark.parametrize('gate', ['guard', 'blocker'])
 class DescribeAGateExitStatus:
-    def it_reads_exit_one_as_a_refusal(self) -> None:
+    def it_reads_exit_one_as_a_refusal(self, monkeypatch: pytest.MonkeyPatch, gate: str) -> None:
+        FakeSubprocess(gate_status=1).install(monkeypatch)
+
         with pytest.raises(tag_release.ReleaseRefusedError):
-            tag_release._raise_for_status('the gate', 1)
+            _run_gate(gate)
 
     @pytest.mark.parametrize('status', [2, 3, 127])
-    def it_reads_any_other_failure_as_could_not_run(self, status: int) -> None:
-        with pytest.raises(tag_release.CannotCheckError):
-            tag_release._raise_for_status('the gate', status)
+    def it_reads_any_other_failure_as_could_not_run(
+        self, monkeypatch: pytest.MonkeyPatch, gate: str, status: int
+    ) -> None:
+        FakeSubprocess(gate_status=status).install(monkeypatch)
 
-    def it_accepts_zero(self) -> None:
-        tag_release._raise_for_status('the gate', 0)
+        with pytest.raises(tag_release.CannotCheckError):
+            _run_gate(gate)
+
+    def it_accepts_zero(self, monkeypatch: pytest.MonkeyPatch, gate: str) -> None:
+        FakeSubprocess(gate_status=0).install(monkeypatch)
+
+        _run_gate(gate)
 
 
 EXPORTED_SCRIPTS = (
@@ -814,7 +867,7 @@ def _run_exported(
     bin_dir = tmp_path / 'bin'
     bin_dir.mkdir()
     gh = bin_dir / 'gh'
-    gh.write_text(FAKE_GH.format(python=sys.executable, log=str(log), tag_object=FakeGh.TAG_OBJECT_SHA))
+    gh.write_text(FAKE_GH.format(python=sys.executable, log=str(log), tag_object=TAG_OBJECT_SHA))
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
     env = {**ISOLATED_GIT_ENV, 'PATH': f'{bin_dir}{os.pathsep}{ISOLATED_GIT_ENV["PATH"]}', 'GH_TOKEN': 'x'}
     elsewhere = tmp_path / 'runner_temp'
@@ -835,7 +888,7 @@ class DescribeTheScriptRunAsTheWorkflowRunsIt:
         assert completed.returncode == 0, completed.stderr + completed.stdout
         assert [call['argv'][0] for call in calls] == ['api', 'BLOCKER_GATE', 'api', 'api', 'workflow']
         assert '/pulls' in calls[0]['argv'][1]
-        assert json.loads(calls[3]['stdin']) == {'ref': 'refs/tags/v1.15.0', 'sha': FakeGh.TAG_OBJECT_SHA}
+        assert json.loads(calls[3]['stdin']) == {'ref': 'refs/tags/v1.15.0', 'sha': TAG_OBJECT_SHA}
         assert calls[4]['argv'][-4:] == ['--ref', 'main', '-f', 'tag=v1.15.0']
 
     def it_refuses_with_exit_one_and_posts_nothing_when_the_guard_fails(self, tmp_path: Path) -> None:
@@ -964,41 +1017,6 @@ class DescribeADispatchThatFailsAfterTheTagExists:
         assert 'gh run rerun' in message
 
 
-FAILING_GH = """#!{python}
-import sys
-
-sys.stdin.read()
-sys.stderr.write('HTTP 422: Reference already exists\\n')
-sys.exit(1)
-"""
-
-
-@pytest.mark.medium
-@pytest.mark.skipif(os.name == 'nt', reason='the stand-in gh is a shebang script')
-class DescribeAFailedGhCall:
-    def it_names_the_whole_command_so_two_posts_are_told_apart(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        gh = tmp_path / 'gh'
-        gh.write_text(FAILING_GH.format(python=sys.executable))
-        gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
-        monkeypatch.setenv('PATH', f'{tmp_path}{os.pathsep}{os.environ["PATH"]}')
-
-        with pytest.raises(tag_release.CannotCheckError, match=r'repos/o/r/git/refs .*HTTP 422'):
-            tag_release._gh('api', '--method', 'POST', 'repos/o/r/git/refs', '--input', '-', stdin='{}')
-
-
-class RecordedRun:
-    """Stands in for ``subprocess.run`` inside ``tag_release`` only: records the keyword arguments, reports success."""
-
-    def __init__(self) -> None:
-        self.kwargs: dict[str, Any] = {}
-
-    def __call__(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        self.kwargs = kwargs
-        return subprocess.CompletedProcess(command, 0, stdout='', stderr='')
-
-
 @pytest.mark.small
 class DescribeTheTokensInTheGateEnvironments:
     TOKENS = ('GH_TOKEN', 'GITHUB_TOKEN')
@@ -1016,41 +1034,45 @@ class DescribeTheTokensInTheGateEnvironments:
     def it_runs_the_guard_without_the_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for name in self.TOKENS:
             monkeypatch.setenv(name, 'secret')
-        recorded = RecordedRun()
-        monkeypatch.setattr(tag_release, 'subprocess', SimpleNamespace(run=recorded))
+        fake = FakeSubprocess().install(monkeypatch)
 
-        tag_release.github_effects(Path('/work'), 'owner/repo').run_guard('abc', 'release/v1.2.3')
+        _run_gate('guard')
 
-        assert not set(self.TOKENS) & set(recorded.kwargs['env'])
+        assert not set(self.TOKENS) & set(fake.calls[0].kwargs['env'])
 
     def it_runs_the_blocker_gate_with_the_inherited_environment_that_holds_the_tokens(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        recorded = RecordedRun()
-        monkeypatch.setattr(tag_release, 'subprocess', SimpleNamespace(run=recorded))
+        fake = FakeSubprocess().install(monkeypatch)
 
-        tag_release.github_effects(Path('/work'), 'owner/repo').run_blocker_gate()
+        _run_gate('blocker')
 
-        assert recorded.kwargs.get('env') is None
+        assert fake.calls[0].kwargs.get('env') is None
 
 
 @pytest.mark.small
 class DescribeUtf8DecodingOfCommandOutput:
     """Reverting to ``text=True`` would decode with the locale code page; this fails on every OS if that happens."""
 
-    @pytest.mark.parametrize('call', [lambda: tag_release._git(Path(), 'status'), lambda: tag_release._gh('api', 'x')])
-    def it_asks_subprocess_for_strict_utf8_whatever_the_locale(
-        self, monkeypatch: pytest.MonkeyPatch, call: Callable[[], object]
-    ) -> None:
-        recorded = RecordedRun()
-        monkeypatch.setattr(tag_release, 'subprocess', SimpleNamespace(run=recorded))
+    @staticmethod
+    def _run_git(_effects: object) -> None:
+        tag_release.tag_commit_on_origin(Path(), 'v1.2.3')
+
+    @staticmethod
+    def _run_gh(effects: Any) -> None:
+        effects.dispatch('v1.2.3')
+
+    @pytest.mark.parametrize('use', ['_run_git', '_run_gh'])
+    def it_asks_subprocess_for_strict_utf8_whatever_the_locale(self, monkeypatch: pytest.MonkeyPatch, use: str) -> None:
+        fake = FakeSubprocess().install(monkeypatch)
         monkeypatch.setattr(locale, 'getpreferredencoding', lambda *_args: 'cp1252')
 
-        call()
+        getattr(self, use)(tag_release.github_effects(Path(), 'owner/repo'))
 
-        assert recorded.kwargs['encoding'] == 'utf-8'
-        assert recorded.kwargs['errors'] == 'strict'
-        assert 'text' not in recorded.kwargs
+        kwargs = fake.calls[-1].kwargs
+        assert kwargs['encoding'] == 'utf-8'
+        assert kwargs['errors'] == 'strict'
+        assert 'text' not in kwargs
 
 
 @pytest.mark.small
