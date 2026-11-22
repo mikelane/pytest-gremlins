@@ -248,7 +248,10 @@ class DescribeVersionShape:
 
 
 class _FakeGit:
-    """Stand-in for the git helper: answers merge-base, show and diff from fixed values, and records every call."""
+    """Stand-in for git: answers merge-base, ls-tree, show and diff, and records every call.
+
+    ``show HEAD:<path>`` serves the file from the repository directory, so a test shapes HEAD by writing files.
+    """
 
     def __init__(
         self,
@@ -263,7 +266,8 @@ class _FakeGit:
         self.base_init = base_init
         self.changed = changed
         self.failure: Exception | None = None
-        monkeypatch.setattr(guard, '_git', self._answer_git)
+        self.modes: dict[tuple[str, str], str] = {}
+        monkeypatch.setattr(guard, '_git_bytes', self._answer_git)
 
     def _base_pyproject_version(self) -> str:
         try:
@@ -272,21 +276,35 @@ class _FakeGit:
             return '1.14.3'
         return version
 
-    def _answer_git(self, _repo: Path, *args: str) -> str:
+    def _answer_git(self, repo: Path, *args: str) -> bytes:
         self.calls.append(args)
         if self.failure is not None:
             raise self.failure
         if args[0] == 'merge-base':
-            return 'MERGEBASE\n'
-        if args[0] == 'show' and args[1] == 'MERGEBASE:pyproject.toml':
-            return self.base_pyproject
-        if args[0] == 'show' and args[1] == 'MERGEBASE:src/pytest_gremlins/__init__.py':
-            return self.base_init if self.base_init is not None else _init(self._base_pyproject_version())
+            return b'MERGEBASE\n'
+        if args[0] == 'ls-tree':
+            return self._listing(repo, ref=args[1], path=args[3])
         if args[0] == 'show':
-            return '<<unexpected ref>>'
+            return self._show(repo, args[1])
         if args[0] == 'diff':
-            return ''.join(f'{path}\n' for path in self.changed)
+            return ''.join(f'{path}\n' for path in self.changed).encode()
         raise AssertionError(args)
+
+    def _listing(self, repo: Path, *, ref: str, path: str) -> bytes:
+        if ref == 'HEAD' and not (repo / path).exists():
+            return b''
+        mode = self.modes.get((ref, path), '100644')
+        return f'{mode} blob 0123abc\t{path}\n'.encode()
+
+    def _show(self, repo: Path, spec: str) -> bytes:
+        ref, _, path = spec.partition(':')
+        if ref == 'HEAD':
+            return (repo / path).read_bytes()
+        if spec == 'MERGEBASE:pyproject.toml':
+            return self.base_pyproject.encode()
+        if spec == 'MERGEBASE:src/pytest_gremlins/__init__.py':
+            return (self.base_init if self.base_init is not None else _init(self._base_pyproject_version())).encode()
+        return b'<<unexpected ref>>'
 
 
 @pytest.fixture
@@ -497,6 +515,63 @@ class DescribeMain:
 
         assert _run(head_files, '--github-output', str(output)) == 1
         assert 'version_changed=true' in output.read_text(encoding='utf-8')
+
+
+NON_REGULAR_CASES = [
+    (ref, path, mode)
+    for ref in ('HEAD', 'MERGEBASE')
+    for path in ('pyproject.toml', 'src/pytest_gremlins/__init__.py')
+    for mode in ('120000', '160000', '040000')
+]
+
+
+@pytest.mark.medium
+class DescribeRegularFileRequirement:
+    @pytest.mark.parametrize('case', NON_REGULAR_CASES)
+    def it_exits_2_naming_the_path_and_mode_when_a_version_file_is_not_a_regular_file(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        head_files: Path,
+        capsys: pytest.CaptureFixture[str],
+        case: tuple[str, str, str],
+    ) -> None:
+        ref, path, mode = case
+        fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+        fake.modes[(ref, path)] = mode
+
+        assert _run(head_files) == 2
+        err = capsys.readouterr().err
+        assert path in err
+        assert mode in err
+
+    def it_exits_2_when_the_changelog_at_head_is_a_symlink(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+        fake.modes[('HEAD', 'CHANGELOG.md')] = '120000'
+
+        assert _run(head_files) == 2
+        assert 'CHANGELOG.md' in capsys.readouterr().err
+
+    @pytest.mark.parametrize('ref', ['HEAD', 'MERGEBASE'])
+    @pytest.mark.parametrize('path', ['pyproject.toml', 'src/pytest_gremlins/__init__.py', 'CHANGELOG.md'])
+    def it_accepts_an_executable_regular_file(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, ref: str, path: str
+    ) -> None:
+        fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+        fake.modes[(ref, path)] = '100755'
+
+        assert _run(head_files) == 0
+
+    def it_reads_head_through_git_and_not_from_the_working_tree(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path
+    ) -> None:
+        fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+
+        _run(head_files)
+
+        assert ('show', 'HEAD:pyproject.toml') in fake.calls
+        assert ('show', 'HEAD:CHANGELOG.md') in fake.calls
 
 
 def _real_git(repo: Path, *args: str) -> None:

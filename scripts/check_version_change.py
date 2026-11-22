@@ -18,11 +18,15 @@ Usage: ``check_version_change.py --branch BRANCH [--base-ref REF] [--repo PATH] 
 defaults to the ``HEAD_REF`` environment variable. With ``--github-output`` the script appends
 ``version_changed=true|false`` and ``version=<head version>`` to that file, for later steps and jobs to read.
 
+Every file the guard reads (``pyproject.toml``, ``__init__.py`` and ``CHANGELOG.md``) is read as a git blob, at
+``HEAD`` and at the merge base alike, never from the working tree, and must be a regular file there (git mode 100644 or
+100755). A symlink or submodule is refused with exit 2, so the two sides cannot disagree about what a path holds.
+
 Exit codes: 0 when the version is unchanged, or changed and all four rules hold; 1 when a rule is broken (each is
 printed on stdout with a ``PROBLEM:`` prefix, naming the offending files); 2 when the check could not run (a git
-failure, a missing or unreadable ``pyproject.toml``, ``__init__.py`` or changelog, a missing or non-literal
-``__version__``, a star import or an import that names ``__version__`` (a submodule or a name), a version that is not
-PEP 440 shaped, bad arguments; the reason is printed on stderr).
+failure, a version file that is not a regular file, a missing or unreadable ``pyproject.toml``, ``__init__.py`` or
+changelog, a missing or non-literal ``__version__``, a star import or an import that names ``__version__`` (a
+submodule or a name), a version that is not PEP 440 shaped, bad arguments; the reason is printed on stderr).
 Exit 2 is never a pass.
 """
 
@@ -50,6 +54,7 @@ from check_release_docs import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INIT_PATH = 'src/pytest_gremlins/__init__.py'
+REGULAR_FILE_MODES = frozenset({'100644', '100755'})
 RELEASE_FILES = frozenset({'pyproject.toml', 'uv.lock', INIT_PATH, 'CHANGELOG.md'})
 PROBLEM_PREFIX = 'PROBLEM: '
 VERSION_NAME = '__version__'
@@ -274,37 +279,58 @@ def check_version_change(
     return problems
 
 
-def _git(repo: Path, *args: str) -> str:
-    """Run git in ``repo`` and return its stdout; raise ``CannotCheckError`` when it fails."""
+def _git_bytes(repo: Path, *args: str) -> bytes:
+    """Run git in ``repo`` and return its stdout bytes; raise ``CannotCheckError`` when it fails."""
     try:
         completed = subprocess.run(
             ['git', *args],  # noqa: S607
             cwd=repo,
             capture_output=True,
-            text=True,
             check=False,
         )
     except OSError as error:
         raise CannotCheckError(f'cannot run git {args[0]}: {error}') from error
     if completed.returncode != 0:
         # git merge-base exits 1 with no stderr when the refs share no ancestor (a shallow or unrelated history)
-        detail = completed.stderr.strip() or 'no error output (for merge-base: no common ancestor; fetch full history)'
+        detail = (
+            completed.stderr.decode('utf-8', 'replace').strip()
+            or 'no error output (for merge-base: no common ancestor; fetch full history)'
+        )
         raise CannotCheckError(f'git {" ".join(args)} failed with exit {completed.returncode}: {detail}')
     return completed.stdout
 
 
-def _read_bytes(path: Path) -> bytes:
+def _git(repo: Path, *args: str) -> str:
+    """Run git in ``repo`` and return its stdout as text; raise ``CannotCheckError`` when it fails."""
     try:
-        return path.read_bytes()
-    except OSError as error:
-        raise CannotCheckError(f'cannot read {path}: {error}') from error
+        return _git_bytes(repo, *args).decode('utf-8')
+    except UnicodeDecodeError as error:
+        raise CannotCheckError(f'git {" ".join(args)} printed output that is not UTF-8: {error}') from error
 
 
-def _read_text(path: Path) -> str:
+def _read_blob(repo: Path, ref: str, path: str) -> bytes:
+    """Return the bytes of the regular file ``path`` at ``ref``, read from git and never from the working tree.
+
+    Both sides of the comparison are blobs from the commit graph, so a symlink swapped in at either side cannot make
+    one side read a link's target and the other the link's text. A path that is not a regular file blob is refused.
+    """
+    listing = _git(repo, 'ls-tree', ref, '--', path).strip()
+    if not listing:
+        raise CannotCheckError(f'{path} does not exist at {ref}')
+    mode = listing.split(maxsplit=1)[0]
+    if mode not in REGULAR_FILE_MODES:
+        raise CannotCheckError(
+            f'{path} at {ref} is not a regular file (git mode {mode}); a symlink or submodule is refused'
+        )
+    return _git_bytes(repo, 'show', f'{ref}:{path}')
+
+
+def _read_text_blob(repo: Path, ref: str, path: str) -> str:
+    blob = _read_blob(repo, ref, path)
     try:
-        return path.read_bytes().decode('utf-8')
-    except (OSError, UnicodeDecodeError) as error:
-        raise CannotCheckError(f'cannot read {path}: {error}') from error
+        return blob.decode('utf-8')
+    except UnicodeDecodeError as error:
+        raise CannotCheckError(f'cannot read {path} at {ref}: {error}') from error
 
 
 def _write_outputs(path: Path | None, *, changed: bool, version: str) -> None:
@@ -317,17 +343,17 @@ def _write_outputs(path: Path | None, *, changed: bool, version: str) -> None:
 def _run(args: argparse.Namespace) -> tuple[list[str], str]:
     """Run the guard; return the broken rules and the message to print on a pass."""
     repo: Path = args.repo
-    head_version = project_version(_read_text(repo / 'pyproject.toml'))
-    head_module_version = module_version(_read_bytes(repo / INIT_PATH))
+    head_version = project_version(_read_text_blob(repo, 'HEAD', 'pyproject.toml'))
+    head_module_version = module_version(_read_blob(repo, 'HEAD', INIT_PATH))
     merge_base = _git(repo, 'merge-base', args.base_ref, 'HEAD').strip()
-    base_version = project_version(_git(repo, 'show', f'{merge_base}:pyproject.toml'))
-    base_module_version = module_version(_git(repo, 'show', f'{merge_base}:{INIT_PATH}'))
+    base_version = project_version(_read_text_blob(repo, merge_base, 'pyproject.toml'))
+    base_module_version = module_version(_read_blob(repo, merge_base, INIT_PATH))
     is_version_changed = head_version != base_version or head_module_version != base_module_version
     if not is_version_changed:
         _write_outputs(args.github_output, changed=False, version=head_version)
         return [], f'The version is {head_version}, unchanged since the merge base.'
     changed_files = _git(repo, 'diff', '--name-only', '--no-renames', f'{merge_base}...HEAD').splitlines()
-    changelog = _read_text(repo / 'CHANGELOG.md')
+    changelog = _read_text_blob(repo, 'HEAD', 'CHANGELOG.md')
     _write_outputs(args.github_output, changed=True, version=head_version)
     problems = check_version_change(
         branch=args.branch,
