@@ -23,16 +23,24 @@ GUARD_FILES = ('check_version_change.py', 'check_release_docs.py')
 ALWAYS_PASSES = 'raise SystemExit(0)\n'
 POSIX_ONLY = pytest.mark.skipif(sys.platform == 'win32', reason='the step runs in bash on ubuntu-latest')
 NEEDS_TOOLS = pytest.mark.skipif(
-    shutil.which('uv') is None or shutil.which('git') is None or shutil.which('bash') is None,
-    reason='the step needs uv, git and bash',
+    shutil.which('git') is None or shutil.which('bash') is None,
+    reason='the step needs git and bash',
 )
 GUARD_FAILED = 1
 GUARD_COULD_NOT_RUN = 2
 
 
+def _steps() -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))['jobs']['release-pr']['steps']
+    return steps
+
+
+def _guard_index() -> int:
+    return next(index for index, step in enumerate(_steps()) if step.get('id') == 'guard')
+
+
 def _guard_step() -> dict[str, Any]:
-    steps = yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))['jobs']['release-pr']['steps']
-    return next(step for step in steps if step.get('id') == 'guard')
+    return _steps()[_guard_index()]
 
 
 def _run_text() -> str:
@@ -56,13 +64,22 @@ class DescribeGuardStepRunsTheBaseCopy:
         assert 'mktemp -d "$RUNNER_TEMP/' in _run_text()
 
     def it_isolates_the_interpreter_from_environment_and_user_site(self) -> None:
-        assert '"$python" -E -s "$guard_dir/check_version_change.py"' in _run_text()
+        assert '"$GUARD_PYTHON" -E -s "$guard_dir/check_version_change.py"' in _run_text()
 
-    def it_finds_a_system_python_that_ignores_the_checkout_virtual_environment(self) -> None:
-        assert 'uv python find --no-project --system "$UV_PYTHON"' in _run_text()
+    def it_uses_the_fixed_system_python_of_the_runner(self) -> None:
+        assert _guard_step()['env']['GUARD_PYTHON'] == '/usr/bin/python3'
+
+    def it_runs_directly_after_the_checkout(self) -> None:
+        assert _guard_index() == 1
+        assert _steps()[0]['uses'].startswith('actions/checkout@')
+
+    def it_runs_no_step_that_uses_uv_before_it(self) -> None:
+        earlier = _steps()[: _guard_index()]
+
+        assert [step for step in earlier if 'uv ' in step.get('run', '') or 'setup-uv' in step.get('uses', '')] == []
 
     @pytest.mark.parametrize(
-        'forbidden', ['uv run', 'python scripts/check_version_change.py', ' scripts/check_version_change.py']
+        'forbidden', ['uv ', 'python scripts/check_version_change.py', ' scripts/check_version_change.py']
     )
     def it_never_runs_the_guard_from_the_pull_request_checkout(self, forbidden: str) -> None:
         run_lines = [line for line in _run_text().splitlines() if not line.lstrip().startswith('#')]
@@ -128,7 +145,7 @@ def _run_step(repo: Path, tmp_path: Path) -> tuple[subprocess.CompletedProcess[s
     env = {
         'PATH': os.environ['PATH'],
         'HOME': os.environ.get('HOME', str(tmp_path)),
-        'UV_PYTHON': sys.executable,
+        'GUARD_PYTHON': sys.executable,
         'BASE_REF': 'main',
         'HEAD_REF': 'feature/sneaky',
         'GITHUB_WORKSPACE': str(repo),
