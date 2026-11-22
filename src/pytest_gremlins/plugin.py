@@ -3490,7 +3490,7 @@ def _config_file_options(config: pytest.Config) -> list[str]:
     ]
 
 
-_PATH_INI_TYPES = frozenset({'path', 'paths', 'pathlist'})
+_PATH_INI_TYPES = frozenset({'paths', 'pathlist'})
 
 
 def _path_ini_overrides(config: pytest.Config) -> list[str]:
@@ -3506,20 +3506,14 @@ def _path_ini_overrides(config: pytest.Config) -> list[str]:
     pytest's private ``_parser._inidict`` (``getini`` has no public way to ask a key's type); where a pytest does
     not have it, nothing is forwarded, as before.
     """
-    parser = getattr(config, '_parser', None)
-    if config.inipath is not None or parser is None:
+    inidict = getattr(getattr(config, '_parser', None), '_inidict', None)
+    if config.inipath is not None or not isinstance(inidict, dict):
         return []
     overrides: list[str] = []
-    for key, (_help, ini_type, _default) in sorted(parser._inidict.items()):
+    for key, (_help, ini_type, _default) in sorted(inidict.items()):
         if ini_type not in _PATH_INI_TYPES:
             continue
-        value = config.getini(key)
-        if isinstance(value, list):
-            paths = [str(path) for path in value]
-        elif value:
-            paths = [str(value)]
-        else:
-            paths = []
+        paths = [str(path) for path in config.getini(key)]
         if paths:
             overrides.extend(['-o', f'{key}={shlex.join(paths)}'])
     return overrides

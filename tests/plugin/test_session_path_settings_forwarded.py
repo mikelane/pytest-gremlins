@@ -8,6 +8,7 @@ Pytest resolves a relative ``paths`` ini value against the directory of that fil
 from __future__ import annotations
 
 import shlex
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -64,11 +65,11 @@ class DescribeASessionWithNoConfigFileAndARelativePathSettingInAddopts:
     ) -> None:
         monkeypatch.setenv('PYTEST_ADDOPTS', '-o pythonpath=src')
 
-        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '.')
+        run_result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '.')
 
-        counts = verdicts(result.stdout.str())
-        assert counts['Zapped'] + counts['Survived'] > 0, result.stdout.str()
-        assert counts['Error'] == 0, result.stdout.str()
+        counts = verdicts(run_result.stdout.str())
+        assert counts['Zapped'] + counts['Survived'] > 0, run_result.stdout.str()
+        assert counts['Error'] == 0, run_result.stdout.str()
 
 
 @pytest.mark.medium
@@ -79,11 +80,11 @@ class DescribeASessionWithAConfigFileAndARelativePathSetting:
     ) -> None:
         (pytester_with_markers.path / 'pytest.ini').write_text('[pytest]\npythonpath = src\n', encoding='utf-8')
 
-        result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '.')
+        run_result = pytester_with_markers.runpytest_subprocess(*GREMLIN_ARGS, '.')
 
-        counts = verdicts(result.stdout.str())
-        assert counts['Zapped'] + counts['Survived'] > 0, result.stdout.str()
-        assert counts['Error'] == 0, result.stdout.str()
+        counts = verdicts(run_result.stdout.str())
+        assert counts['Zapped'] + counts['Survived'] > 0, run_result.stdout.str()
+        assert counts['Error'] == 0, run_result.stdout.str()
 
 
 @pytest.mark.medium
@@ -103,3 +104,18 @@ class DescribePathIniOverrides:
 
     def it_forwards_nothing_when_no_path_setting_is_set(self, pytester: pytest.Pytester) -> None:
         assert _path_ini_overrides(pytester.parseconfig()) == []
+
+    def it_forwards_a_path_setting_registered_by_a_plugin(self, pytester: pytest.Pytester) -> None:
+        pytester.makeconftest(
+            "def pytest_addoption(parser):\n    parser.addini('extra_dirs', 'extra dirs', type='paths', default=[])\n"
+        )
+        config = pytester.parseconfig('-o', 'extra_dirs=data')
+
+        overrides = _path_ini_overrides(config)
+
+        assert overrides == ['-o', f'extra_dirs={shlex.join([str(pytester.path / "data")])}']
+
+    def it_forwards_nothing_when_pytest_has_no_ini_type_registry(self) -> None:
+        config = SimpleNamespace(inipath=None)
+
+        assert _path_ini_overrides(config) == []  # type: ignore[arg-type]
