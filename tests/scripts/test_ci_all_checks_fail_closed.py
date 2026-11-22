@@ -198,7 +198,7 @@ class DescribeReleasePrJob:
         'script',
         [
             'mkdocs build',
-            'check_release_docs.py',
+            'scripts/check_release_docs.py',
             'check_cache_kept.py',
             'check_cache_bump.py',
             'check_no_wip_tests.py',
@@ -207,7 +207,7 @@ class DescribeReleasePrJob:
     def it_runs_the_release_gates_only_when_the_version_changed(self, script: str) -> None:
         assert _release_pr_step(script)['if'] == "steps.guard.outputs.version_changed == 'true'"
 
-    @pytest.mark.parametrize('script', ['check_release_docs.py', 'check_cache_kept.py', 'check_cache_bump.py'])
+    @pytest.mark.parametrize('script', ['scripts/check_release_docs.py', 'check_cache_kept.py', 'check_cache_bump.py'])
     def it_passes_the_version_to_the_gates_through_the_environment(self, script: str) -> None:
         step = _release_pr_step(script)
 
