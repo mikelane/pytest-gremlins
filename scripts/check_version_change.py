@@ -19,8 +19,11 @@ defaults to the ``HEAD_REF`` environment variable. With ``--github-output`` the 
 ``version_changed=true|false`` and ``version=<head version>`` to that file, for later steps and jobs to read.
 
 Every file the guard reads (``pyproject.toml``, ``__init__.py`` and ``CHANGELOG.md``) is read as a git blob, at
-``HEAD`` and at the merge base alike, never from the working tree, and must be a regular file there (git mode 100644 or
-100755). A symlink or submodule is refused with exit 2, so the two sides cannot disagree about what a path holds.
+``HEAD`` and at the merge base alike, and must be a regular file there (git mode 100644 or 100755). A symlink or
+submodule is refused with exit 2, so the two sides cannot disagree about what a path holds. The files at ``HEAD`` are
+also compared with the checked-out files, which the build reads: a file that is not a regular file, one under a
+symlinked directory, or one whose bytes differ from the blob (a ``.gitattributes`` ``ident``, ``filter``,
+``working-tree-encoding`` or ``eol`` transform) is refused with exit 2.
 
 Exit codes: 0 when the version is unchanged, or changed and all four rules hold; 1 when a rule is broken (each is
 printed on stdout with a ``PROBLEM:`` prefix, naming the offending files); 2 when the check could not run (a git
@@ -42,6 +45,7 @@ import io
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 import tokenize
@@ -325,6 +329,54 @@ def _read_blob(repo: Path, ref: str, path: str) -> bytes:
     return _git_bytes(repo, 'show', f'{ref}:{path}')
 
 
+def _require_plain_checkout_path(repo: Path, path: str) -> Path:
+    """Return the working-tree path of ``path``; refuse when it or a parent directory below ``repo`` is a link."""
+    current = repo
+    for part in Path(path).parts[:-1]:
+        current = current / part
+        if not stat.S_ISDIR(_lstat(current, path).st_mode):
+            raise CannotCheckError(f'{path}: {current.relative_to(repo)} is not a real directory (a symlink?)')
+    target = repo / path
+    if not stat.S_ISREG(_lstat(target, path).st_mode):
+        raise CannotCheckError(f'{path} in the working tree is not a regular file (a symlink?)')
+    return target
+
+
+def _lstat(location: Path, path: str) -> os.stat_result:
+    try:
+        return location.lstat()
+    except OSError as error:
+        raise CannotCheckError(f'cannot inspect {path} in the working tree: {error}') from error
+
+
+def _read_head_blob(repo: Path, path: str) -> bytes:
+    """Return the ``HEAD`` blob of ``path``; refuse when the checked-out file is not byte-identical to it.
+
+    The build and the release workflows read the working tree, so a checkout transform (the ``ident`` attribute, a
+    filter, ``working-tree-encoding``, ``eol``) could make the shipped file differ from the blob the guard reads.
+    """
+    blob = _read_blob(repo, 'HEAD', path)
+    target = _require_plain_checkout_path(repo, path)
+    try:
+        checked_out = target.read_bytes()
+    except OSError as error:
+        raise CannotCheckError(f'cannot read {path} in the working tree: {error}') from error
+    if checked_out != blob:
+        raise CannotCheckError(
+            f'{path}: the checked-out file differs from the committed blob; '
+            'check .gitattributes (ident, filter, working-tree-encoding, eol)'
+        )
+    return blob
+
+
+def _read_text_head_blob(repo: Path, path: str) -> str:
+    blob = _read_head_blob(repo, path)
+    try:
+        return blob.decode('utf-8')
+    except UnicodeDecodeError as error:
+        raise CannotCheckError(f'cannot read {path} at HEAD: {error}') from error
+
+
 def _read_text_blob(repo: Path, ref: str, path: str) -> str:
     blob = _read_blob(repo, ref, path)
     try:
@@ -343,8 +395,8 @@ def _write_outputs(path: Path | None, *, changed: bool, version: str) -> None:
 def _run(args: argparse.Namespace) -> tuple[list[str], str]:
     """Run the guard; return the broken rules and the message to print on a pass."""
     repo: Path = args.repo
-    head_version = project_version(_read_text_blob(repo, 'HEAD', 'pyproject.toml'))
-    head_module_version = module_version(_read_blob(repo, 'HEAD', INIT_PATH))
+    head_version = project_version(_read_text_head_blob(repo, 'pyproject.toml'))
+    head_module_version = module_version(_read_head_blob(repo, INIT_PATH))
     merge_base = _git(repo, 'merge-base', args.base_ref, 'HEAD').strip()
     base_version = project_version(_read_text_blob(repo, merge_base, 'pyproject.toml'))
     base_module_version = module_version(_read_blob(repo, merge_base, INIT_PATH))
@@ -353,7 +405,7 @@ def _run(args: argparse.Namespace) -> tuple[list[str], str]:
         _write_outputs(args.github_output, changed=False, version=head_version)
         return [], f'The version is {head_version}, unchanged since the merge base.'
     changed_files = _git(repo, 'diff', '--name-only', '--no-renames', f'{merge_base}...HEAD').splitlines()
-    changelog = _read_text_blob(repo, 'HEAD', 'CHANGELOG.md')
+    changelog = _read_text_head_blob(repo, 'CHANGELOG.md')
     _write_outputs(args.github_output, changed=True, version=head_version)
     problems = check_version_change(
         branch=args.branch,

@@ -425,7 +425,8 @@ code has run before it (setup-uv, `uv python install` and `uv sync` run later). 
 guard it is checked by. A missing default-branch copy exits 2, and so does a runner Python older than 3.11 (the guard
 needs `tomllib`). The guard reads `pyproject.toml`, `__init__.py` and `CHANGELOG.md` as git blobs, at `HEAD` and at the
 merge base alike, and exits 2 when one is not a regular file there (a symlink or submodule), so a symlink cannot make
-the two sides read different content. The guard compares
+the two sides read different content. It also exits 2 when a checked-out version file or the changelog differs from
+its committed blob (a `.gitattributes` transform) or sits behind a symlink. The guard compares
 `[project].version` with the merge base (a branch cut before main released reads as unchanged). The version counts as
 changed when either `[project].version` or `__version__` in `src/pytest_gremlins/__init__.py` differs, and then the two
 must be equal at `HEAD`. A pull request that changes the version must come from `release/v<version>` (the exact string,

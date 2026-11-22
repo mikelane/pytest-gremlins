@@ -267,6 +267,7 @@ class _FakeGit:
         self.changed = changed
         self.failure: Exception | None = None
         self.modes: dict[tuple[str, str], str] = {}
+        self.head_blobs: dict[str, bytes] = {}
         monkeypatch.setattr(guard, '_git_bytes', self._answer_git)
 
     def _base_pyproject_version(self) -> str:
@@ -299,7 +300,7 @@ class _FakeGit:
     def _show(self, repo: Path, spec: str) -> bytes:
         ref, _, path = spec.partition(':')
         if ref == 'HEAD':
-            return (repo / path).read_bytes()
+            return self.head_blobs.get(path, (repo / path).read_bytes())
         if spec == 'MERGEBASE:pyproject.toml':
             return self.base_pyproject.encode()
         if spec == 'MERGEBASE:src/pytest_gremlins/__init__.py':
@@ -572,6 +573,50 @@ class DescribeRegularFileRequirement:
 
         assert ('show', 'HEAD:pyproject.toml') in fake.calls
         assert ('show', 'HEAD:CHANGELOG.md') in fake.calls
+
+
+@pytest.mark.medium
+class DescribeCheckedOutFilesMatchTheCommittedBlobs:
+    @pytest.mark.parametrize('path', ['pyproject.toml', 'src/pytest_gremlins/__init__.py', 'CHANGELOG.md'])
+    def it_exits_2_naming_the_path_when_the_checked_out_file_differs_from_its_blob(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str], path: str
+    ) -> None:
+        fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+        fake.head_blobs[path] = (head_files / path).read_bytes() + b'# only in the blob\n'
+
+        assert _run(head_files) == 2
+        err = capsys.readouterr().err
+        assert path in err
+        assert '.gitattributes' in err
+
+    def it_exits_2_when_a_parent_directory_of_a_version_file_is_a_symlink(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+        real_src = head_files / 'elsewhere'
+        (head_files / 'src').rename(real_src)
+        (head_files / 'src').symlink_to(real_src, target_is_directory=True)
+
+        assert _run(head_files) == 2
+        assert 'src' in capsys.readouterr().err
+
+    def it_exits_2_when_the_checked_out_file_is_a_symlink(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+        target = head_files / 'real-changelog.md'
+        (head_files / 'CHANGELOG.md').rename(target)
+        (head_files / 'CHANGELOG.md').symlink_to(target)
+
+        assert _run(head_files) == 2
+        assert 'CHANGELOG.md' in capsys.readouterr().err
+
+    def it_exits_0_when_every_checked_out_file_matches_its_blob(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path
+    ) -> None:
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+
+        assert _run(head_files) == 0
 
 
 def _real_git(repo: Path, *args: str) -> None:
