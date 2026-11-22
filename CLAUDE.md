@@ -124,6 +124,16 @@ never skipped. `tests/conftest.py` scrubs `PYTEST_XDIST_WORKER`, `PYTEST_XDIST_W
 `PYTEST_XDIST_TESTRUNUID` per test, because pytest-test-categories treats `PYTEST_XDIST_WORKER` as proof that a
 process is a worker, and pytester or subprocess children would otherwise take the worker path.
 
+## CI Python Versions
+
+`uv sync` and `uv run` follow `.python-version` unless `UV_PYTHON` is set, so `uv python install 3.11` alone still
+tests the `.python-version` interpreter (#1000, #715). Every workflow job that runs `uv python install <version>` sets
+`UV_PYTHON` to that version at job level, and the `ci.yml` `test` matrix sets it to `${{ matrix.python-version }}`. Its
+`Verify the matrix Python` step fails the leg before the tests run when the venv interpreter differs from the matrix
+version. `tests/config/test_workflow_python_pinning.py` checks every job that runs `uv python install <version>`, so a
+new installing job without the pin fails the suite. Jobs with no install step follow `.python-version` and are not
+checked.
+
 ## CI Caching
 
 pytest-gremlins uses a two-layer cache in CI:

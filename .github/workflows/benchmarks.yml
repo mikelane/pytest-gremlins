@@ -24,6 +24,8 @@ jobs:
     name: Run Benchmarks
     runs-on: ubuntu-latest
 
+    env:
+      UV_PYTHON: '3.13'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -41,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync
-          uv pip install mutmut psutil
+          uv pip install --python .venv/bin/python mutmut psutil
 
       - name: Run benchmarks
         run: |

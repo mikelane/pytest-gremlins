@@ -52,6 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -82,6 +84,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -109,6 +113,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     strategy:
       fail-fast: false
       matrix:
@@ -130,6 +136,27 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
+
+      - name: Verify the matrix Python
+        shell: bash
+        env:
+          EXPECTED_PYTHON: ${{ matrix.python-version }}
+        run: |
+          uv run python - "$EXPECTED_PYTHON" <<'PY'
+          import sys
+
+          actual = f'{sys.version_info.major}.{sys.version_info.minor}'
+          expected = sys.argv[1]
+          print(f'uv run selected Python {actual}')
+          print(f'executable: {sys.executable}')
+          print(f'version: {sys.version}')
+          if actual != expected:
+              print(
+                  f"::error title=Wrong Python::Expected Python {expected}, uv run selected Python {actual}; "
+                  "check the job's UV_PYTHON"
+              )
+              raise SystemExit(f'Expected Python {expected}, selected Python {actual}')
+          PY
 
       - name: Run tests with coverage
         shell: bash
@@ -209,6 +236,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       # Full history and tags: the cache gate below compares the code with the previous release tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -252,6 +281,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -276,6 +307,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [changes]
     if: needs.changes.outputs.src == 'true'
+    env:
+      UV_PYTHON: '3.13'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -325,6 +358,8 @@ jobs:
     outputs:
       guarded: ${{ steps.guarded.outputs.guarded }}
       base-sha: ${{ steps.base.outputs.sha }}
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -372,6 +407,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: verdict-changes
     if: needs.verdict-changes.outputs.guarded == 'true'
+    env:
+      UV_PYTHON: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -427,6 +464,8 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
+    env:
+      UV_PYTHON: '3.12'
     steps:
       # Full history and tags: the guard takes the merge base, and the cache gate compares with the previous release tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

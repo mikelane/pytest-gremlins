@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import locale
 from pathlib import Path
 
@@ -9,6 +10,21 @@ import pytest
 
 from pytest_gremlins import argument_files
 from pytest_gremlins.rerun_options import rerun_options_in
+
+
+def _reruns_argparse_reads_from(argument_file: Path) -> list[str]:
+    """Return the ``--reruns`` option the running Python's argparse reads from ``argument_file``.
+
+    Python 3.11 reads an ``@file`` strictly with the locale encoding and raises on a byte it cannot decode, so pytest
+    would reject the file; 3.12 and later decode it with the filesystem error handler.
+    """
+    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+    parser.add_argument('--reruns')
+    try:
+        parsed, _ = parser.parse_known_args([f'@{argument_file}'])
+    except UnicodeDecodeError:
+        return []
+    return [] if parsed.reruns is None else [f'--reruns={parsed.reruns}']
 
 
 @pytest.mark.medium
@@ -54,9 +70,12 @@ class DescribeRerunOptionsInArgumentFiles:
     def it_reads_an_argument_file_with_a_byte_that_is_not_utf8_the_way_argparse_does(self, tmp_path: Path) -> None:
         # An encoded surrogate is invalid in strict UTF-8 but decodes under both error handlers argparse may
         # use (surrogateescape on POSIX, surrogatepass on Windows); a lone latin-1 byte would not on Windows.
-        (tmp_path / 'not_utf8.txt').write_bytes(b'--reruns\n2\n# \xed\xa0\x80\n')
+        # On 3.11 argparse raises UnicodeDecodeError while decoding the argument file, so pytest rejects it and
+        # the helper returns []; 3.12 and later decode it with the filesystem error handler.
+        argument_file = tmp_path / 'not_utf8.txt'
+        argument_file.write_bytes(b'--reruns\n2\n# \xed\xa0\x80\n')
 
-        assert rerun_options_in(['@not_utf8.txt'], base_dir=tmp_path) == ['--reruns=2']
+        assert rerun_options_in(['@not_utf8.txt'], base_dir=tmp_path) == _reruns_argparse_reads_from(argument_file)
 
     def it_resolves_a_relative_argument_file_against_the_current_directory_by_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

@@ -20,6 +20,7 @@ import pytest
 import yaml
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from types import ModuleType
 
 SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'check_release_docs.py'
@@ -27,7 +28,38 @@ WORKFLOWS = Path(__file__).resolve().parents[2] / '.github' / 'workflows'
 GATE_COMMAND = 'check_release_docs.py'
 DOCS_URL = 'https://pytest-gremlins.readthedocs.io/en/latest'
 SITE_PAGES = {'guide/configuration': frozenset({'batch-size', 'caching'}), '': frozenset()}
-LINEAR_TIME_BUDGET_SECONDS = 0.5
+TIMING_REPEATS = 3
+TIMING_SIZE_FACTOR = 4
+# Linear work grows by about TIMING_SIZE_FACTOR when its input does, quadratic work by the square of it (16). The bound
+# sits between them. Both timings come from one machine, so a slow or fast runner changes neither side of the ratio.
+MAX_LINEAR_GROWTH = 10
+RUN_PATTERNS = [
+    '````````a',
+    '\\``a',
+    '````````a```````a``````a`````a````a```a``a`a',
+    '`a``a```a````a`````a``````a```````a````````a',
+]
+
+
+def _best_seconds(prepare: Callable[[int], Callable[[], object]], size: int) -> float:
+    run = prepare(size)
+    best = float('inf')
+    for _ in range(TIMING_REPEATS):
+        started = time.perf_counter()
+        run()
+        best = min(best, time.perf_counter() - started)
+    return best
+
+
+def _growth_when_input_scales(prepare: Callable[[int], Callable[[], object]], base_size: int) -> float:
+    """Return how many times slower the work gets when its input grows by ``TIMING_SIZE_FACTOR``.
+
+    ``prepare(size)`` builds the input outside the timed call and returns the call. Each time is the best of
+    ``TIMING_REPEATS`` runs.
+    """
+    base = _best_seconds(prepare, base_size)
+    scaled = _best_seconds(prepare, base_size * TIMING_SIZE_FACTOR)
+    return scaled / base
 
 
 def _load_checker() -> ModuleType:
@@ -1177,6 +1209,18 @@ def _section_body(section: str, content: str, *, before: str | None = None) -> s
     return f'### {section}\n\n{prefix}{content}\n'
 
 
+@pytest.mark.medium
+class DescribeThematicBreakTiming:
+    def it_reads_a_long_run_of_spaces_after_an_equals_sign_in_linear_time(self) -> None:
+        delimiter = _load_checker().THEMATIC_OR_SETEXT
+
+        def prepare(size: int) -> Callable[[], object]:
+            text = '=' + ' ' * size + 'x'
+            return lambda: delimiter.match(text)
+
+        assert _growth_when_input_scales(prepare, 400000) < MAX_LINEAR_GROWTH
+
+
 @pytest.mark.small
 class DescribeStrictEntryFormat:
     @pytest.mark.parametrize(('section', 'number'), SECTIONS_WITH_A_LINE_BEFORE)
@@ -1198,15 +1242,6 @@ class DescribeStrictEntryFormat:
         problems = _problems_of(body)
 
         assert f'a thematic break or setext underline at line {number} ({line.strip()});' in problems
-
-    def it_reads_a_long_run_of_spaces_after_an_equals_sign_in_linear_time(self) -> None:
-        delimiter = _load_checker().THEMATIC_OR_SETEXT
-        started = time.perf_counter()
-
-        matched = delimiter.match('=' + ' ' * 40000 + 'x')
-
-        assert matched is None
-        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
 
     @pytest.mark.parametrize(
         ('line', 'expected'),
@@ -2429,82 +2464,70 @@ class DescribeHtmlTagsMatchTheRenderer:
         assert _reader_sees_a_reference(bullet)
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeCodeSpanTiming:
-    def it_checks_a_backtick_line_at_the_length_cap_in_linear_time(self) -> None:
+    def it_checks_many_backtick_lines_at_the_length_cap_in_linear_time(self) -> None:
         checker = _load_checker()
-        bullet = '- x' + '`' * (checker.MAX_LINE_LENGTH - 3)
-        started = time.perf_counter()
+        line = '- x' + '`' * (checker.MAX_LINE_LENGTH - 3)
 
-        checker.find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+        def prepare(size: int) -> Callable[[], object]:
+            changelog = _gated_changelog('\n'.join([line] * size))
+            return lambda: checker.find_problems(changelog, '9.9.9', SITE)
 
-        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+        assert _growth_when_input_scales(prepare, 40) < MAX_LINEAR_GROWTH
 
-    def it_checks_a_bullet_joined_from_fifty_backtick_lines_in_linear_time(self) -> None:
+    def it_checks_a_bullet_joined_from_many_backtick_lines_in_linear_time(self) -> None:
         checker = _load_checker()
-        continuation = '\n'.join(['  ' + '`' * 988] * 49)
-        bullet = '- x' + '`' * 987 + '\n' + continuation
-        started = time.perf_counter()
+        continuation = '  ' + '`' * 988
 
-        checker.find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+        def prepare(size: int) -> Callable[[], object]:
+            bullet = '- x' + '`' * 987 + ''.join(['\n' + continuation] * size)
+            changelog = _gated_changelog(bullet)
+            return lambda: checker.find_problems(changelog, '9.9.9', SITE)
 
-        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+        assert _growth_when_input_scales(prepare, 40) < MAX_LINEAR_GROWTH
 
-    @pytest.mark.parametrize(
-        'pattern',
-        [
-            '````````a',
-            '\\``a',
-            '````````a```````a``````a`````a````a```a``a`a',
-            '`a``a```a````a`````a``````a```````a````````a',
-        ],
-    )
-    def it_checks_a_line_of_runs_at_the_cap_in_linear_time(self, pattern: str) -> None:
+    @pytest.mark.parametrize('pattern', RUN_PATTERNS)
+    def it_checks_many_lines_of_runs_at_the_cap_in_linear_time(self, pattern: str) -> None:
         checker = _load_checker()
         line = '- x ' + pattern * ((checker.MAX_LINE_LENGTH - 4) // len(pattern))
-        started = time.perf_counter()
 
-        checker.find_problems(_gated_changelog(line), '9.9.9', SITE)
+        def prepare(size: int) -> Callable[[], object]:
+            changelog = _gated_changelog('\n'.join([line] * size))
+            return lambda: checker.find_problems(changelog, '9.9.9', SITE)
 
-        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+        assert _growth_when_input_scales(prepare, 10) < MAX_LINEAR_GROWTH
 
-    @pytest.mark.parametrize(
-        'pattern',
-        [
-            '````````a',
-            '\\``a',
-            '````````a```````a``````a`````a````a```a``a`a',
-            '`a``a```a````a`````a``````a```````a````````a',
-        ],
-    )
-    def it_checks_a_bullet_joined_from_fifty_lines_of_runs_at_the_cap_in_linear_time(self, pattern: str) -> None:
+    @pytest.mark.parametrize('pattern', RUN_PATTERNS)
+    def it_checks_a_bullet_joined_from_many_lines_of_runs_at_the_cap_in_linear_time(self, pattern: str) -> None:
         checker = _load_checker()
         line = pattern * ((checker.MAX_LINE_LENGTH - 4) // len(pattern))
-        bullet = '- x ' + line + ''.join(['\n  ' + line] * 49)
-        started = time.perf_counter()
 
-        checker.find_problems(_gated_changelog(bullet), '9.9.9', SITE)
+        def prepare(size: int) -> Callable[[], object]:
+            bullet = '- x ' + line + ''.join(['\n  ' + line] * (size - 1))
+            changelog = _gated_changelog(bullet)
+            return lambda: checker.find_problems(changelog, '9.9.9', SITE)
 
-        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+        assert _growth_when_input_scales(prepare, 10) < MAX_LINEAR_GROWTH
 
     def it_finds_the_spans_of_a_long_text_of_fallback_openers_in_linear_time(self) -> None:
         checker = _load_checker()
-        text = '\\``a' * 50000
-        started = time.perf_counter()
 
-        checker.code_spans(text)
+        def prepare(size: int) -> Callable[[], object]:
+            text = '\\``a' * size
+            return lambda: checker.code_spans(text)
 
-        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+        assert _growth_when_input_scales(prepare, 10000) < MAX_LINEAR_GROWTH
 
     @pytest.mark.parametrize('pattern', ['<!--a', '<?a', '<![CDATA[a', '<a "b>', '<a', '</'])
     def it_finds_the_html_tags_of_a_long_text_of_tag_openers_in_linear_time(self, pattern: str) -> None:
         checker = _load_checker()
-        text = pattern * (50000 // len(pattern))
-        started = time.perf_counter()
 
-        checker.html_tag_spans(text)
+        def prepare(size: int) -> Callable[[], object]:
+            text = pattern * size
+            return lambda: checker.html_tag_spans(text)
 
-        assert time.perf_counter() - started < LINEAR_TIME_BUDGET_SECONDS
+        assert _growth_when_input_scales(prepare, 50000) < MAX_LINEAR_GROWTH
 
 
 REGEX_CODE_SPAN = re.compile(r'(?<!\\)(`+).+?(?<!`)\1(?!`)', re.DOTALL)
