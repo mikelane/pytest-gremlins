@@ -175,7 +175,9 @@ the next run only re-tests what changed.
 - `.pre-commit-config.yaml` - Pre-commit hooks
 - `.github/workflows/ci.yml` - CI pipeline
 - `.github/workflows/release.yml` - Release pipeline with Test PyPI
-- `.github/workflows/cut-release.yml` - One-click version bump + tag (triggers release.yml)
+- `.github/workflows/tag-release.yml` - Tags a merged release commit and dispatches release.yml (primary path)
+- `scripts/tag_release.py` - The state table and gates behind `tag-release.yml`
+- `.github/workflows/cut-release.yml` - Fallback one-click version bump + tag (triggers release.yml; #1047 deletes it)
 
 ## Docs Freshness
 
@@ -187,10 +189,10 @@ pr-reviewer agents, check that section against the diff.
 
 ## Release Process
 
-**Step 1 -- Update CHANGELOG.md.** The workflow guard fails if there are no commits since
-the last tag -- the changelog commit is what satisfies it. Add a `## vX.Y.Z (date)` entry
-above the most recent section, in the format below. Merge the CHANGELOG PR to main before proceeding.
-The PR fails CI until the entry passes the release docs gate.
+**Update CHANGELOG.md in the release PR.** `scripts/prepare_release.py` writes the `## vX.Y.Z (date)` entry above
+the most recent section, in the format below; fill it in before the release PR merges. The PR fails CI until the entry
+passes the release docs gate. (On the `cut-release.yml` fallback the entry goes in an earlier PR, merged before the
+dispatch, because that workflow's guard fails when there are no commits since the last tag.)
 
 **Changelog format and the docs gate.** Every release entry in `CHANGELOG.md` is gated. Each bullet under
 `### Upgrade notes`, `### Feature` and `### Fix` must end with either a docs reference or an exemption:
@@ -380,7 +382,7 @@ else about the wording is checked; the docs gate still wants a docs link or a `(
 that bullet. It runs in the `Release PR Gates` job right after the cache gate (only when the version changed) and in
 `verify-tag` after it, takes the version like the cache gate does (and `--newest` is supported, with the same
 already-tagged pass), exits 1 naming each problem, exits 2 when it could not run, and has no bypass. `cut-release.yml`
-does not run it, because #1046 retires that workflow. The hotfix case, a patch release cut from an older tag that
+does not run it, because #1047 retires that workflow. The hotfix case, a patch release cut from an older tag that
 changes a marker, is tracked in #1015.
 <!-- cspell:ignore rebuil -->
 
@@ -462,20 +464,64 @@ rebuild. The placeholder does not contain the words the cache-bump gate looks fo
 writes the sentence. If the markers cannot be compared (no reachable `v*` tag, or an unreadable marker file), it warns
 on stderr and continues without the minor bump or the placeholder, and the cache-bump gate still checks the release PR.
 It never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the cache gate needs one,
-commit signed, push and open the PR. It does not replace `cut-release.yml` yet (#1046).
+commit signed, push and open the PR. Merging it starts the primary release path: `tag-release.yml` tags the merge
+commit and dispatches `release.yml` (next paragraph). `cut-release.yml` remains the fallback (#1047 deletes it).
 
-**Tag release (dry run).** `.github/workflows/tag-release.yml` runs on every push to `main`. It runs
-`scripts/announce_untagged_release.py`, which reads `[project].version` from `pyproject.toml` and asks origin (`git
-ls-remote --exit-code --tags origin refs/tags/v<version>`, because the CI checkout is shallow and has no tags) whether
-`v<version>` exists (`ls-remote` tail-matches, so only a ref exactly `refs/tags/v<version>` counts, and the version
-must be canonical PEP 440 such as `1.15.0b0`). When it does not, the log says `would tag v<version> at <sha>`; when it
-does, `v<version> already tagged`. A failed lookup or an unreadable version fails the job and never prints `would
-tag`. The workflow has `contents: read` only and a workflow-level `DRY_RUN: 'true'` constant (not an input): it
-creates no tag and dispatches nothing. Phase #1046 adds the real tag and the `release.yml` dispatch. It does not
-replace `cut-release.yml`.
+**Tag release.** `.github/workflows/tag-release.yml` runs on every push to `main` and is the primary way a release
+starts: `scripts/prepare_release.py` -> `release/v<version>` PR (the `Release PR Gates` job checks it) -> merge ->
+`tag-release.yml` tags the merge commit and dispatches `release.yml` -> the `pypi` environment approval. The YAML is thin:
+it checks out two commits (`fetch-depth: 2`, `persist-credentials: false`), exports `tag_release.py` and the scripts it
+runs from the commit before the push (`git show "$BEFORE:scripts/<name>"`, `BEFORE` being `github.event.before`, into a
+fresh directory under `$RUNNER_TEMP`) and runs that copy with `/usr/bin/python3 -I` from outside the workspace. An empty,
+all-zero or missing `BEFORE` (with `fetch-depth: 2` it is present only when the push added one commit) or a missing script
+exits 2. A version-changing commit is released only when its parent equals `BEFORE`, so a push of several commits is never
+released. So a release commit cannot edit `tag_release.py`, the blocker gate or the version guard to skip a check.
+`scripts/tag_release.py` decides
+what to do from the version at the pushed commit and at its parent, and from the commit `refs/tags/v<version>`
+peels to on origin (`git ls-remote`, because the checkout has no tags; an annotated tag has an object of its own, so
+the peeled commit is what is compared):
 
-**Step 2 -- Dispatch the workflow.** Never run `cz bump` locally -- the `no-commit-to-branch`
-pre-commit hook blocks commits to `main` and leaves a dirty version bump to revert.
+| Version changed vs parent | Tag on origin | Action |
+| --- | --- | --- |
+| No | exists | Nothing; logs `v<version> already tagged`. |
+| No | missing | Fails (exit 1), tags nothing: a later commit holds changes the gates never saw. |
+| Yes | missing | Version guard, release-blocker gate, annotated tag, dispatch. |
+| Yes | peels to this commit | Dispatch only (a re-run). |
+| Yes | peels elsewhere | Fails (exit 1), dispatches nothing. |
+
+For the version-changing rows the script first looks up the release pull request (`GET /commits/{sha}/pulls`). With
+exactly one merged pull request from this repository, the rows above apply. With none and the tag peeling to this commit,
+the `cut-release.yml` fallback made it (its own tag push runs `release.yml`): a no-op, exit 0. With none and no tag, it
+fails (exit 1). A merged pull request from a fork, or more than one, always fails.
+
+Any failed lookup or API call exits 2 and tags nothing. Only the version-changing commit is tagged. Before tagging, the
+script runs the version guard on the pushed commit against its parent, with `--base-ref "$SHA^"` and the release pull
+request's branch, using the before-push copy of `check_version_change.py` and `check_release_docs.py`, like the
+`release-pr` job does. It then runs `check_no_release_blockers.py`. The docs, cache and wip gates are not repeated:
+`verify-tag` in `release.yml` runs them before anything is published. The tag is created through the REST API
+(`git/tags`, then `git/refs`) as `github-actions[bot]` with the job's `GITHUB_TOKEN` (`contents: write`, `actions: write`,
+`issues: read`, `pull-requests: read`); no personal access token is used. A tag created that way does not fire
+`release.yml`'s tag-push trigger, so the `gh workflow run release.yml --ref main -f tag=v<version>` the script makes
+is the only release run.
+
+Limit, plainly: GitHub runs a push workflow from the file at the pushed commit. The script refuses a version-changing
+commit that edits `tag-release.yml`, but a commit that rewrites the workflow runs its own YAML, so only review of changes
+to `tag-release.yml` stands between that and a tag made without the checks. The guard-before-tag does not make the
+workflow tamper-proof. Bootstrap: the first push after this lands has no before-push copy of `tag_release.py`, so that
+one run fails closed at the export step (exit 2) once; it is not a release commit (the version is unchanged and
+already tagged), and the next push works.
+
+Recovery: the concurrency group holds one pending run, so a quick third push cancels a pending one, and a run can fail
+for a transient reason. If the release commit's own run did not finish, the next push (version unchanged, tag missing)
+fails with "not tagged". If the tag was created and only the dispatch failed, the next push is green ("already
+tagged"), so only the release commit's own red run shows it. Either way, re-run the release commit's own
+`tag-release.yml` run (`gh run rerun <run-id>`): it re-evaluates that same SHA and `BEFORE`, and tags or dispatches as
+the table says. Cut a new release only if that cannot work.
+
+**Fallback -- cut a release with `cut-release.yml`.** Use it only when `tag-release.yml` cannot (until #1047 deletes it).
+`cz bump` runs only through `scripts/prepare_release.py` (`--files-only`, no commit or tag) or on the Actions runner in
+this workflow; never run a full `cz bump` by hand: the `no-commit-to-branch` pre-commit hook blocks commits to `main`
+and leaves a dirty version bump to revert.
 
 ```bash
 gh workflow run cut-release.yml --repo mikelane/pytest-gremlins
@@ -484,23 +530,25 @@ gh workflow run cut-release.yml --repo mikelane/pytest-gremlins
 This runs `cz bump` on the GitHub Actions runner (no local hooks), commits the version,
 creates an annotated tag, and pushes -- which triggers `release.yml`.
 
-**Step 3 -- Verify the tag landed:**
+**Verify the tag landed** (either path):
 
 ```bash
 git fetch --tags
 git ls-remote --tags origin | tail -5
 ```
 
-If the tag is missing, `--follow-tags` silently skipped a lightweight tag. Root cause:
-`[tool.commitizen]` must have `annotated_tag = true`. Without it, commitizen creates
-lightweight tags that `--follow-tags` ignores.
+On the `cut-release.yml` fallback path, if the tag is missing, `--follow-tags` silently skipped a lightweight tag.
+Root cause: `[tool.commitizen]` must have `annotated_tag = true`. Without it, commitizen creates
+lightweight tags that `--follow-tags` ignores. `tag-release.yml` does not use `cz` or `--follow-tags`: it creates
+annotated tags through the API.
 
-**Escape hatch -- Test PyPI is down.** `release.yml` normally runs on the tag push and gates
+**Escape hatch -- Test PyPI is down.** `release.yml` normally runs from the dispatch `tag-release.yml` makes (or from
+the tag push on the `cut-release.yml` fallback path) and gates
 PyPI on a Test PyPI publish and install check. If test.pypi.org is unavailable (it returned
 503 to GitHub runners for v1.11.1), re-run the release against the existing tag with the Test
 PyPI steps skipped:
 
-1. If the tag-push run is still in progress (stuck retrying Test PyPI), cancel it first --
+1. If the `release.yml` run is still in progress (stuck retrying Test PyPI), cancel it first --
    otherwise the dispatch waits behind it in the concurrency group. Skip this if it already failed.
 
    ```bash
@@ -517,7 +565,7 @@ PyPI steps skipped:
 - The `verify-tag` job runs on every release (tag push and dispatch). It refuses dispatches not
   from `main`, checks the tag name before fetching anything, and then refuses the run unless
   the tag exists, is annotated, points at a commit, and equals `v` + the `[project].version` in
-  `pyproject.toml` at that tag. The tag must already exist (step 3 above).
+  `pyproject.toml` at that tag. The tag must already exist (see "Verify the tag landed" above).
 - A `concurrency` group keyed on the release tag never cancels a running release for that tag,
   so two runs cannot race to PyPI. A new run waits as pending; the group holds one pending run,
   so dispatching again cancels the earlier pending run. Cancel a stuck run yourself (step 1).
@@ -533,7 +581,8 @@ PyPI steps skipped:
 - Omit `skip_test_pypi` (or pass `false`) to re-run the full chain, Test PyPI included.
 - The GitHub Release is created for `tag`, not for the branch the workflow was dispatched from.
 
-**RELEASE_PAT secret**: The workflow requires a `RELEASE_PAT` repo secret with
+**RELEASE_PAT secret**: Only the fallback `cut-release.yml` needs it; `tag-release.yml` uses no personal access
+token. It requires a `RELEASE_PAT` repo secret with
 `contents: write` and `workflows: write` scopes. Set it to never expire — an expired
 PAT causes a silent checkout failure with no useful error message.
 
