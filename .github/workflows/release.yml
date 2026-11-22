@@ -39,6 +39,9 @@ jobs:
   verify-tag:
     name: Verify Release Tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
     steps:
       # A dispatched run uses the workflow file of the ref it was dispatched from, so only main is trusted
       - name: Require dispatch from main
@@ -81,6 +84,14 @@ jobs:
       # A dispatched run starts on main; check out the tag so the changelog, docs and script are the ones released.
       - name: Check out the tagged commit
         run: git checkout --detach "refs/tags/$RELEASE_TAG"
+
+      # Release blocker gate. An open issue labeled release-blocker fails the release, including a re-dispatch that
+      # would finish a half-published one; remove the label to clear it. It runs before the slow gates below and has no
+      # input, variable or condition that skips it. A deleted or renamed label fails closed.
+      - name: Refuse a release while a release-blocker issue is open
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: uv run --no-project --python 3.12 python scripts/check_no_release_blockers.py
 
       # wip gate. `wip` marks scenarios for an unfinished feature: PRs may carry them, a release must not. It only
       # collects (seconds), runs before the slow gates below, and has no input, variable or condition that skips it.

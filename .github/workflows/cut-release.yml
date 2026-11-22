@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: read
 
     steps:
       - name: Checkout with full history
@@ -97,6 +98,13 @@ jobs:
           uv run python scripts/check_release_docs.py "$next_version" --site-dir "$RUNNER_TEMP/site"
           # Guarded code changed since the previous release needs a raised cache marker or a "(cache kept: ...)" line.
           uv run python scripts/check_cache_kept.py "$next_version"
+
+      # Release blocker gate. An open issue labeled release-blocker stops the release before a tag exists. The checkout
+      # uses RELEASE_PAT; this step uses the workflow token (issues: read) instead. No input or condition skips it.
+      - name: Refuse a release while a release-blocker issue is open
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: uv run python scripts/check_no_release_blockers.py
 
       - name: Bump version and create tag
         id: bump
