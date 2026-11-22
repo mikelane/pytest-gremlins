@@ -224,6 +224,43 @@ class DescribeVisibleCodeSpansAndAutolinks:
 
 
 @pytest.mark.small
+class DescribeAttributeListsTheRendererHides:
+    @pytest.mark.parametrize(
+        'bullet',
+        [
+            '- **Upgrade** `CACHE_VERSION`{ title="the cache is rebuilt once" } (no docs: r)\n',
+            '- **Faster runs**{ title="the cache is rebuilt once" } (no docs: r)\n',
+            '- **Upgrade** first run is slower. (no docs: r)\n  { data-note="the cache is rebuilt once" }\n',
+        ],
+    )
+    def it_fails_a_release_whose_rebuild_wording_is_only_in_an_attr_list_attribute(self, bullet: str) -> None:
+        bullets = docs_gate.upgrade_note_bullets(_entry(upgrade_notes=bullet), '1.15.0')
+
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.14.3', '1.15.0', bullets=bullets)
+
+        assert len(problems) == 1
+
+
+@pytest.mark.small
+class DescribeLinkReferenceDefinitionsTheRendererHides:
+    def it_fails_a_release_whose_rebuild_wording_is_only_in_a_reference_definition_label(self) -> None:
+        bullet = '- **Upgrade** first run is slower. (no docs: r)\n  [the cache is rebuilt once]: https://example.com\n'
+        bullets = docs_gate.upgrade_note_bullets(_entry(upgrade_notes=bullet), '1.15.0')
+
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.14.3', '1.15.0', bullets=bullets)
+
+        assert len(problems) == 1
+
+    def it_fails_a_release_whose_rebuild_wording_is_only_in_an_abbreviation_definition_label(self) -> None:
+        bullet = '- **Upgrade** first run is slower. (no docs: r)\n  *[the cache is rebuilt once]: x\n'
+        bullets = docs_gate.upgrade_note_bullets(_entry(upgrade_notes=bullet), '1.15.0')
+
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.14.3', '1.15.0', bullets=bullets)
+
+        assert len(problems) == 1
+
+
+@pytest.mark.small
 class DescribeMinorBumpOverCanonicalPrereleases:
     @pytest.mark.parametrize('previous', ['1.15.0rc1.post1', '1.15.0b0+local', '1.15.0a1.post1.dev2'])
     def it_accepts_a_release_on_the_line_of_a_prerelease_that_sorts_before_x_y_0(self, previous: str) -> None:
