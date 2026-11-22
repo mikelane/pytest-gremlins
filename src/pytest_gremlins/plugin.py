@@ -4197,7 +4197,9 @@ def _run_parallel_mutation_testing(  # pragma: no cover
     print(f'\npytest-gremlins: Starting parallel execution with {gremlin_session.parallel_workers or "auto"} workers')
 
     test_commands: dict[str, list[str]] = {}
-    launch_failed_ids: set[str] = set()
+    # Gremlins scored ERROR because their worker could not be launched or crashed (#981): their tests never
+    # ran, so the verdict is neither confirmed nor cached, and the next run tests them again.
+    not_run_ids: set[str] = set()
     with WorkerPool(
         max_workers=gremlin_session.parallel_workers,
         timeout=gremlin_session.mutant_timeout,
@@ -4216,7 +4218,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             except OSError as write_error:
                 logger.warning('Cannot launch gremlin %s: %s', gremlin.gremlin_id, write_error)
                 aggregator.add_error(gremlin.gremlin_id, OSError(_node_ids_write_failure_output(write_error)))
-                launch_failed_ids.add(gremlin.gremlin_id)
+                not_run_ids.add(gremlin.gremlin_id)
                 continue
             test_commands[gremlin.gremlin_id] = test_command
 
@@ -4230,7 +4232,13 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             futures[future] = gremlin.gremlin_id
 
         early_cached_ids = _collect_pooled_results(
-            futures, aggregator, gremlin_by_id, gremlin_tests, gremlin_session, service=pool.service
+            futures,
+            aggregator,
+            gremlin_by_id,
+            gremlin_tests,
+            gremlin_session,
+            service=pool.service,
+            not_run_ids=not_run_ids,
         )
 
     print()  # New line after progress
@@ -4243,7 +4251,7 @@ def _run_parallel_mutation_testing(  # pragma: no cover
             continue
 
         gremlin_result = _result_from_worker(gremlin_by_id[gremlin_id], worker_result, gremlin_tests[gremlin_id])
-        if gremlin_id in launch_failed_ids:
+        if gremlin_id in not_run_ids:
             results.append(gremlin_result)
             continue
         unconfirmed.append(gremlin_result)
@@ -4261,13 +4269,20 @@ def _collect_one_result(
     selected_tests: list[str],
     aggregator: ResultAggregator,
     gremlin_session: GremlinSession,
+    *,
+    not_run_ids: set[str],
 ) -> bool:
-    """Add one finished future to the aggregator; return whether its verdict was final and handed to the cache."""
+    """Add one finished future to the aggregator; return whether its verdict was final and handed to the cache.
+
+    A future that raised (a crashed worker, ``BrokenProcessPool``) is scored ERROR and its gremlin id goes to
+    ``not_run_ids``, so the verdict is never cached (#981).
+    """
     try:
         worker_result = future.result()
         aggregator.add_result(worker_result)
     except Exception as execution_error:
         aggregator.add_error(gremlin.gremlin_id, execution_error)
+        not_run_ids.add(gremlin.gremlin_id)
         return False
     return _cache_final_worker_result(gremlin, worker_result, selected_tests, gremlin_session)
 
@@ -4280,8 +4295,11 @@ def _collect_pooled_results(
     gremlin_session: GremlinSession,
     *,
     service: Callable[[], Sequence[str]] | None = None,
+    not_run_ids: set[str] | None = None,
 ) -> set[str]:
     """Collect worker results as they complete, caching final verdicts at once; return the ids cached that way.
+
+    The id of every gremlin whose future raised is added to ``not_run_ids`` when it is given (#981).
 
     A run that is killed or stalls keeps what it finished (#974): each final verdict goes to the cache the
     moment its worker returns, and the cache is flushed on a timer, so a kill loses at most one flush window.
@@ -4294,6 +4312,7 @@ def _collect_pooled_results(
     flusher = _cache_flusher_for(gremlin_session)
     wake_every = flusher.every_seconds if service is None else min(flusher.every_seconds, WATCHDOG_TICK_SECONDS)
     early_cached_ids: set[str] = set()
+    crashed_ids = not_run_ids if not_run_ids is not None else set()
     pending_futures = set(futures)
     try:
         while pending_futures:
@@ -4303,7 +4322,12 @@ def _collect_pooled_results(
             for future in done:
                 gremlin_id = futures[future]
                 if _collect_one_result(
-                    future, gremlin_by_id[gremlin_id], gremlin_tests[gremlin_id], aggregator, gremlin_session
+                    future,
+                    gremlin_by_id[gremlin_id],
+                    gremlin_tests[gremlin_id],
+                    aggregator,
+                    gremlin_session,
+                    not_run_ids=crashed_ids,
                 ):
                     early_cached_ids.add(gremlin_id)
                     flusher.note_result()

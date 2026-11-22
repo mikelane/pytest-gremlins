@@ -112,6 +112,11 @@ than reading the session's (#1023).  A nested ``pytest.ini`` the session never r
 ``xfail_strict``, ``filterwarnings`` and other settings, and a ``confcutdir`` that kept a ``conftest.py`` above it
 from loading, so a verdict could be ZAPPED by a setting the baseline never ran with.  Which sessions were affected
 depends on where their test files sit, which is not known when the cache key is built, so every key retires.
+
+It also retires verdicts cached as ERROR while a parallel gremlin whose pool worker crashed, for example when it
+was killed for running out of memory, was confirmed and cached like any other verdict (#981).  The executor failed
+the gremlin with ``BrokenProcessPool`` before its tests ran, so the ERROR said nothing about the mutant, and a warm
+cache replayed it on every run.  Such a verdict is now reported but never cached, so the next run tests it again.
 """
 
 PYTESTER_KEY_PART = 'pytester-615'

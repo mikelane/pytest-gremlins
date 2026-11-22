@@ -184,6 +184,39 @@ class DescribeCollectPooledResults:
         ]
 
     @pytest.mark.usefixtures('cache_calls')
+    def it_marks_a_gremlin_whose_future_raised_as_not_run(self, gremlin_session: GremlinSession) -> None:
+        crashed: Future[WorkerResult] = Future()
+        crashed.set_exception(RuntimeError('worker crashed'))
+        finished = _finished(WorkerResult('g2', GremlinResultStatus.SURVIVED))
+        not_run_ids: set[str] = set()
+
+        _collect_pooled_results(
+            {crashed: 'g1', finished: 'g2'},
+            ResultAggregator(total_gremlins=2),
+            {'g1': _gremlin('g1'), 'g2': _gremlin('g2')},
+            {'g1': [], 'g2': []},
+            gremlin_session,
+            not_run_ids=not_run_ids,
+        )
+
+        assert not_run_ids == {'g1'}
+
+    @pytest.mark.usefixtures('cache_calls')
+    def it_does_not_mark_an_error_verdict_from_the_test_run_as_not_run(self, gremlin_session: GremlinSession) -> None:
+        not_run_ids: set[str] = set()
+
+        _collect_pooled_results(
+            {_finished(WorkerResult('g1', GremlinResultStatus.ERROR, error_output='boom')): 'g1'},
+            ResultAggregator(total_gremlins=1),
+            {'g1': _gremlin('g1')},
+            {'g1': []},
+            gremlin_session,
+            not_run_ids=not_run_ids,
+        )
+
+        assert not_run_ids == set()
+
+    @pytest.mark.usefixtures('cache_calls')
     def it_does_not_flush_the_cache_when_caching_is_off(
         self, gremlin_session: GremlinSession, cache: IncrementalCache
     ) -> None:

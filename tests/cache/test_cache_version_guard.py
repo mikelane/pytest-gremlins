@@ -68,7 +68,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'cache/hasher.py': 'c9dc2acff727bf1c552ddbecf312ea6b55091c1c442f8cdf0096a91e227ac2b7',  # pragma: allowlist secret
     # --
-    'cache/incremental.py': '55f59c081d153ee68f40fe66288755983a28f44d58b76e0cf7b96100d7700bec',  # pragma: allowlist secret  # noqa: E501
+    'cache/incremental.py': '6fa432bc3e9ad0a651b79bffa7e06814d550e24d6664622c534411161670317a',  # pragma: allowlist secret  # noqa: E501
     # --
     'cache/periodic_flush.py': '20f5edde8b7f32596c6940faa3ada471eaf5333de2aacb91b14aa9345bd98417',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -168,7 +168,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/worker_kill.py': '04582134f7fa45932ce0c9cb2a6108017f2714571401e01ae5374c2f0b27339d',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': 'ad5b2a8a42f0c082fcb6cfcc0e5c79d69a3445394342b64cae0e2eda9f83f1de',  # pragma: allowlist secret
+    'plugin.py': '57630d9da7f1c61322d83d6e30fbed6e43fa9bebe8d77542d44f07aa700bceca',  # pragma: allowlist secret
     # --
     'process_tree.py': 'f48a64afd8d30e9aac97f5d7d8ed245ee4f3283b73dc293f7c0f3553cf1a433e',  # pragma: allowlist secret
     # --
