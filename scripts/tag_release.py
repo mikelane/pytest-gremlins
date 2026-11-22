@@ -16,6 +16,13 @@ yes                         peels to ``--sha``       dispatch only (a re-run)
 yes                         peels elsewhere          refuse (exit 1), dispatch nothing
 ==========================  ======================  ===================================================
 
+When the version changed, three more rules apply. The push must have added exactly one commit: the parent must equal
+``--before`` (the tip of main before the push), or the script refuses, because the release scripts run from that
+commit. The release pull request is looked up (one merged pull request from this repository) before anything is
+tagged or dispatched. With none, the commit was not a release pull request merge: if the tag already peels to
+``--sha`` the ``cut-release.yml`` fallback made it (its tag push runs ``release.yml``), so this is a no-op; with no tag
+the script refuses. A merged pull request from a fork, or more than one, always refuses.
+
 Before tagging, the version guard and the blocker gate run from the *parent* commit's copy (the pre-merge main), never
 from the checkout: the merged commit could have edited them. The workflow exports this script and every script it runs
 from the parent into one directory and runs it from there, so the gates are the siblings of this file. A release
@@ -27,7 +34,7 @@ workflow is stopped only by review of that change.
 The release-blocker gate (``check_no_release_blockers.py``) runs before the tag exists. The docs, cache and wip gates
 are not repeated here: ``verify-tag`` in ``release.yml`` runs them before anything is published.
 
-Usage: ``tag_release.py --sha SHA [--repo PATH] [--github-repository OWNER/NAME]``. Needs ``GH_TOKEN`` (and
+Usage: ``tag_release.py --sha SHA --before SHA [--repo PATH] [--github-repository OWNER/NAME]``. Needs ``GH_TOKEN`` (and
 ``GITHUB_TOKEN`` for the blocker gate) in the environment.
 
 Exit codes: 0 done; 1 refused (a rule was broken, with the reason on stderr); 2 the check could not run (a failed
@@ -84,7 +91,7 @@ class Action(Enum):
 class Effects:
     """Everything that talks to GitHub or runs a gate script, so tests can replace it."""
 
-    head_ref: Callable[[str], str]
+    head_ref: Callable[[str], str | None]
     run_guard: Callable[[str, str], None]
     run_blocker_gate: Callable[[], None]
     create_tag: Callable[[str, str], None]
@@ -200,16 +207,21 @@ def changed_paths(repo: Path, parent: str, sha: str) -> set[str]:
     return set(_git_output(repo, 'diff', '--name-only', '--no-renames', parent, sha).splitlines())
 
 
-def head_ref_from_pulls(pulls_json: str, repository: str) -> str:
+def head_ref_from_pulls(pulls_json: str, repository: str) -> str | None:
     """Return the head branch of the one merged pull request from this repository in a commit-pulls answer.
 
     Args:
         pulls_json: The body of ``GET /repos/{owner}/{repo}/commits/{sha}/pulls``.
-        repository: ``OWNER/NAME`` of this repository; a pull request from a fork does not count.
+        repository: ``OWNER/NAME`` of this repository.
+
+    Returns:
+        The branch, or None when no pull request was merged into this commit (a commit pushed directly, or by the
+        ``cut-release.yml`` fallback).
 
     Raises:
         CannotCheckError: If the answer is not a JSON list.
-        ReleaseRefusedError: If the number of merged same-repository pull requests is not exactly one.
+        ReleaseRefusedError: If a merged pull request comes from a fork or a deleted repository, or more than one
+            merged pull request comes from this repository.
     """
     try:
         pulls = json.loads(pulls_json)
@@ -217,18 +229,13 @@ def head_ref_from_pulls(pulls_json: str, repository: str) -> str:
         raise CannotCheckError(f'the pull request lookup did not return JSON: {error}') from error
     if not isinstance(pulls, list):
         raise CannotCheckError(f'the pull request lookup did not return a list (got {type(pulls).__name__})')
-    refs = [
-        pull['head']['ref']
-        for pull in pulls
-        if isinstance(pull, dict)
-        and pull.get('merged_at')
-        and ((pull.get('head') or {}).get('repo') or {}).get('full_name') == repository
-    ]
-    if len(refs) != 1:
-        raise ReleaseRefusedError(
-            f'expected exactly one merged pull request from {repository} for this commit, found {len(refs)}'
-        )
-    return str(refs[0])
+    merged = [pull for pull in pulls if isinstance(pull, dict) and pull.get('merged_at')]
+    own = [pull for pull in merged if ((pull.get('head') or {}).get('repo') or {}).get('full_name') == repository]
+    if len(own) != len(merged):
+        raise ReleaseRefusedError(f'a merged pull request for this commit does not come from {repository}')
+    if len(own) > 1:
+        raise ReleaseRefusedError(f'expected at most one merged pull request for this commit, found {len(own)}')
+    return str(own[0]['head']['ref']) if own else None
 
 
 def tag_object_payload(tag: str, sha: str) -> dict[str, object]:
@@ -259,8 +266,15 @@ def _raise_for_status(name: str, status: int) -> None:
     raise CannotCheckError(f'{name} could not run (exit {status}); see its output above')
 
 
-def release(repo: Path, sha: str, effects: Effects) -> str:
+def release(repo: Path, sha: str, effects: Effects, before: str) -> str:
     """Apply the state table to the pushed commit ``sha`` of the checkout ``repo``.
+
+    Args:
+        repo: The checkout (it needs ``sha`` and its parent).
+        sha: The pushed commit.
+        effects: The GitHub calls and gate scripts.
+        before: The tip of main before the push (``github.event.before``). A version change is released only when
+            the push added exactly this one commit, so the parent must equal it.
 
     Returns:
         The line to print on success.
@@ -278,20 +292,38 @@ def release(repo: Path, sha: str, effects: Effects) -> str:
             f'{sha} changes the version and edits {WORKFLOW_PATH}; a push runs the workflow file from the pushed '
             'commit, so the guard could be skipped. Release from a commit that leaves the workflow alone.'
         )
-    action = decide(version_changed=version_changed, tag_commit=tag_commit_on_origin(repo, tag), sha=sha)
+    if version_changed and parent != before:
+        raise ReleaseRefusedError(
+            f'{sha} changes the version but the push added more than {sha}: main was at {before or "(unknown)"} '
+            f'and the parent is {parent}. A release must be a push of exactly one commit, because the release '
+            'scripts run from the commit before the push.'
+        )
+    tag_commit = tag_commit_on_origin(repo, tag)
+    action = decide(version_changed=version_changed, tag_commit=tag_commit, sha=sha)
     if action is Action.ALREADY_TAGGED:
         return f'{tag} already tagged'
     if action is Action.REFUSE_UNTAGGED:
         raise ReleaseRefusedError(
             f'{tag} is not tagged and {sha} did not change the version. The commit that changed it was never tagged, '
-            'and a later commit holds changes the release gates never saw. Tag nothing; cut a new release instead.'
+            "and a later commit holds changes the release gates never saw. Tag nothing. If the release commit's own "
+            'run was cancelled or failed for a transient reason, re-run it (`gh run rerun <run-id>`): that run '
+            're-evaluates the release commit and its before-commit. Otherwise cut a new release.'
         )
     if action is Action.REFUSE_TAGGED_ELSEWHERE:
         raise ReleaseRefusedError(f'{tag} already exists on origin and points at another commit than {sha}')
+    pull_request_branch = effects.head_ref(sha)
+    if pull_request_branch is None:
+        if action is Action.DISPATCH_ONLY:
+            return f'{tag} was tagged by another path (cut-release.yml); its tag push runs release.yml'
+        raise ReleaseRefusedError(
+            f'{tag} is not tagged and no pull request was merged into {sha}. A release is tagged only from a merged '
+            'release pull request; cut-release.yml tags its own commit, so a version bump pushed that way is not '
+            'tagged here.'
+        )
     if action is Action.DISPATCH_ONLY:
         effects.dispatch(tag)
         return f'{tag} already tagged at {sha}; dispatched release.yml'
-    effects.run_guard(sha, effects.head_ref(sha))
+    effects.run_guard(sha, pull_request_branch)
     effects.run_blocker_gate()
     effects.create_tag(tag, sha)
     effects.dispatch(tag)
@@ -354,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     """Run the release step for the commit given on the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sha', required=True, help='the pushed commit')
+    parser.add_argument('--before', required=True, help='main before the push (github.event.before)')
     parser.add_argument('--repo', type=Path, default=Path.cwd(), help='the checkout (needs the commit and its parent)')
     parser.add_argument('--github-repository', default=os.environ.get('GITHUB_REPOSITORY'), help='OWNER/NAME')
     args = parser.parse_args(argv)
@@ -361,7 +394,7 @@ def main(argv: list[str] | None = None) -> int:
         print('error: --github-repository or GITHUB_REPOSITORY is required', file=sys.stderr)
         return EXIT_CANNOT_CHECK
     try:
-        print(release(args.repo, args.sha, github_effects(args.repo, args.github_repository)))
+        print(release(args.repo, args.sha, github_effects(args.repo, args.github_repository), args.before))
     except ReleaseRefusedError as error:
         print(f'error: {error}', file=sys.stderr)
         return EXIT_REFUSED

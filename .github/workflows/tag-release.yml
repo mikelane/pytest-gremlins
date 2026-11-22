@@ -9,14 +9,15 @@ name: Tag Release
 # release run (a dispatch made with GITHUB_TOKEN is allowed).
 #
 # Nothing the pushed commit changed runs before the tag exists. The scripts that decide and gate the release are read
-# from the PARENT commit (the pre-merge main) with git show, and run with the system Python from outside the
+# from the commit BEFORE the push (the pre-merge main tip) with git show, and run with the system Python from outside the
 # workspace, so a release commit cannot edit them to skip a check. The script also refuses a version-changing commit
 # that edits this workflow. The remaining limit: GitHub runs a push workflow from the file at the pushed commit, so a
 # commit that rewrites this file runs its own YAML. Only review of changes to this file stands between that and a tag
 # made without the checks, so the guarantee above is not tamper-proof.
 #
-# Bootstrap: a parent that lacks scripts/tag_release.py cannot supply it, so the export step fails closed (exit 2).
-# That is the first push after this workflow merged; it is not a release commit, and the next push works.
+# Bootstrap: a before-commit that lacks scripts/tag_release.py cannot supply it, so the export step fails closed
+# (exit 2). That will be the first push after this workflow lands; it is not a release commit, and the next push works.
+# A push that adds several commits fails the same way and is never released.
 on:
   push:
     branches: [main]
@@ -39,7 +40,7 @@ jobs:
       pull-requests: read # find the release pull request of this commit
 
     steps:
-      # Two commits: the scripts are exported from the parent, and the script compares the version with it.
+      # Two commits: the scripts are exported from the commit before the push, which equals the parent for a one-commit push.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,13 +51,22 @@ jobs:
       - name: Export the release scripts from the parent commit
         id: export
         env:
-          SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
+          # BEFORE is main before this push. With fetch-depth 2 it is in the checkout only when the push added one commit.
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "::error::the push has no usable before-commit (empty or all zeros); the release scripts run from it"
+            exit 2
+          fi
+          if ! git cat-file -e "$BEFORE^{commit}"; then
+            echo "::error::$BEFORE is not in the checkout: the push added more than one commit, so it cannot be a release"
+            exit 2
+          fi
           dir="$(mktemp -d "$RUNNER_TEMP/release-scripts.XXXXXX")"
           for script in tag_release.py check_no_release_blockers.py check_ci_passed.py check_version_change.py check_release_docs.py; do
-            if ! git show "$SHA^:scripts/$script" > "$dir/$script"; then
-              echo "::error::$script is missing at $SHA^; the release scripts run from the parent commit"
+            if ! git show "$BEFORE:scripts/$script" > "$dir/$script"; then
+              echo "::error::$script is missing at $BEFORE; the release scripts run from the commit before the push"
               exit 2
             fi
           done
@@ -66,9 +76,10 @@ jobs:
       - name: Tag the release commit and dispatch release.yml
         env:
           SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
           SCRIPTS_DIR: ${{ steps.export.outputs.dir }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           cd "$RUNNER_TEMP"
-          /usr/bin/python3 -I "$SCRIPTS_DIR/tag_release.py" --sha "$SHA" --repo "$GITHUB_WORKSPACE"
+          /usr/bin/python3 -I "$SCRIPTS_DIR/tag_release.py" --sha "$SHA" --before "$BEFORE" --repo "$GITHUB_WORKSPACE"

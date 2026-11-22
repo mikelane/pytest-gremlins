@@ -150,18 +150,30 @@ class DescribeTheScriptStep:
         export = next(step for step in steps if 'git show' in str(step.get('run', '')))
 
         assert steps.index(export) < steps.index(_script_step())
-        assert export['env']['SHA'] == '${{ github.sha }}'
+        assert export['env']['BEFORE'] == '${{ github.event.before }}'
         for script in EXPORTED_SCRIPTS:
             assert script in export['run']
-        assert '"$SHA^:scripts/$script"' in export['run']
+        assert '"$BEFORE:scripts/$script"' in export['run']
         assert 'exit 2' in export['run']
         assert export['id'] == 'export'
         assert _script_step()['env']['SCRIPTS_DIR'] == '${{ steps.export.outputs.dir }}'
 
+    def it_fails_closed_unless_before_is_a_commit_in_the_checkout(self) -> None:
+        run = next(step for step in _steps() if step.get('id') == 'export')['run']
+
+        assert '[ -z "$BEFORE" ]' in run
+        assert '0000000000000000000000000000000000000000' in run
+        assert 'cat-file -e "$BEFORE^{commit}"' in run
+        assert run.count('exit 2') >= 3
+
+    def it_passes_before_to_the_script(self) -> None:
+        assert _script_step()['env']['BEFORE'] == '${{ github.event.before }}'
+        assert '--before "$BEFORE"' in _script_step()['run']
+
     def it_runs_no_script_from_the_workspace(self) -> None:
         # The pushed commit may have edited anything under scripts/; only the parent's copies may run.
         remainders = [
-            re.sub(r'"\$SHA\^:scripts/\$script"', '', script).replace('$RUNNER_TEMP', '') for script in _run_scripts()
+            re.sub(r'"\$BEFORE:scripts/\$script"', '', script).replace('$RUNNER_TEMP', '') for script in _run_scripts()
         ]
 
         assert not any('scripts/' in remainder for remainder in remainders)

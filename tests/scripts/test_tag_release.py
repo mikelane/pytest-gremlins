@@ -109,6 +109,7 @@ def _tag_on_origin(clone: Path, tag: str, commit: str) -> None:
 class Recorder:
     calls: list[str] = field(default_factory=list)
     guard_error: Exception | None = None
+    pull_request_branch: str | None = 'release/v9.9.9'
     blocker_error: Exception | None = None
 
     def effects(self) -> object:
@@ -120,9 +121,9 @@ class Recorder:
             dispatch=self._dispatch,
         )
 
-    def _head_ref(self, sha: str) -> str:
+    def _head_ref(self, sha: str) -> str | None:
         self.calls.append(f'head_ref {sha}')
-        return 'release/v9.9.9'
+        return self.pull_request_branch
 
     def _run_guard(self, sha: str, head_ref: str) -> None:
         self.calls.append(f'guard {sha} {head_ref}')
@@ -141,8 +142,9 @@ class Recorder:
         self.calls.append(f'dispatch {tag}')
 
 
-def _release(clone: Path, sha: str, recorder: Recorder) -> str:
-    return str(tag_release.release(clone, sha, recorder.effects()))
+def _release(clone: Path, sha: str, recorder: Recorder, before: str | None = None) -> str:
+    pushed_from = before if before is not None else _git(clone, 'rev-parse', f'{sha}^')
+    return str(tag_release.release(clone, sha, recorder.effects(), pushed_from))
 
 
 @pytest.mark.medium
@@ -240,7 +242,7 @@ class DescribeARerun:
 
         message = _release(clone, sha, recorder)
 
-        assert recorder.calls == ['dispatch v1.2.3']
+        assert recorder.calls == [f'head_ref {sha}', 'dispatch v1.2.3']
         assert message == f'v1.2.3 already tagged at {sha}; dispatched release.yml'
 
     def it_compares_the_peeled_commit_not_the_annotated_tag_object(self, tmp_path: Path) -> None:
@@ -252,7 +254,7 @@ class DescribeARerun:
         _release(clone, sha, recorder)
 
         assert tag_object != sha
-        assert recorder.calls == ['dispatch v1.2.3']
+        assert recorder.calls == [f'head_ref {sha}', 'dispatch v1.2.3']
 
     def it_accepts_a_lightweight_tag_on_this_commit(self, tmp_path: Path) -> None:
         _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
@@ -261,7 +263,7 @@ class DescribeARerun:
 
         _release(clone, sha, recorder)
 
-        assert recorder.calls == ['dispatch v1.2.3']
+        assert recorder.calls == [f'head_ref {sha}', 'dispatch v1.2.3']
 
     def it_fails_loudly_and_dispatches_nothing_when_the_tag_is_on_another_commit(self, tmp_path: Path) -> None:
         _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
@@ -314,7 +316,7 @@ class DescribeALookupThatFails:
         recorder = Recorder()
 
         with pytest.raises(tag_release.CannotCheckError, match='parent'):
-            _release(clone, sha, recorder)
+            _release(clone, sha, recorder, before='f' * 40)
 
         assert recorder.calls == []
 
@@ -358,19 +360,21 @@ class DescribeTheHeadBranchOfAMergedPullRequest:
     @pytest.mark.parametrize(
         'pulls',
         [
-            pytest.param([], id='none'),
-            pytest.param([_pull(merged=False)], id='unmerged'),
             pytest.param([_pull(head_repo='fork/repo')], id='fork'),
             pytest.param([_pull(), _pull(ref='release/v1.2.4')], id='two'),
             pytest.param([{'merged_at': 'x', 'head': {'ref': 'a', 'repo': None}}], id='deleted-fork'),
         ],
     )
-    def it_refuses_anything_but_exactly_one_same_repo_merged_pull_request(self, pulls: list[object]) -> None:
+    def it_refuses_a_fork_or_more_than_one_merged_pull_request(self, pulls: list[object]) -> None:
         with pytest.raises(tag_release.ReleaseRefusedError):
             tag_release.head_ref_from_pulls(json.dumps(pulls), 'owner/repo')
 
-    def it_ignores_an_unmerged_or_fork_pull_request_next_to_the_merged_one(self) -> None:
-        pulls = json.dumps([_pull(merged=False, ref='other'), _pull(head_repo='fork/repo'), _pull()])
+    @pytest.mark.parametrize('pulls', [[], [_pull(merged=False)]], ids=['none', 'unmerged'])
+    def it_returns_nothing_when_no_merged_pull_request_exists(self, pulls: list[object]) -> None:
+        assert tag_release.head_ref_from_pulls(json.dumps(pulls), 'owner/repo') is None
+
+    def it_ignores_an_unmerged_pull_request_next_to_the_merged_one(self) -> None:
+        pulls = json.dumps([_pull(merged=False, ref='other'), _pull()])
 
         assert tag_release.head_ref_from_pulls(pulls, 'owner/repo') == 'release/v1.2.3'
 
@@ -419,9 +423,10 @@ class DescribeTheGateCommands:
 
 
 def _run_cli(clone: Path, sha: str, *extra: str) -> subprocess.CompletedProcess[str]:
+    before = _git(clone, 'rev-parse', f'{sha}^')
     env = {key: value for key, value in ISOLATED_GIT_ENV.items() if key != 'GITHUB_REPOSITORY'}
     return subprocess.run(
-        [sys.executable, str(SCRIPT), '--repo', str(clone), '--sha', sha, *extra],
+        [sys.executable, str(SCRIPT), '--repo', str(clone), '--sha', sha, '--before', before, *extra],
         capture_output=True,
         text=True,
         check=False,
@@ -464,3 +469,72 @@ class DescribeTheCommandLine:
 
         assert result.returncode == 2
         assert 'GITHUB_REPOSITORY' in result.stderr
+
+
+@pytest.mark.medium
+class DescribeAPushThatAddedSeveralCommits:
+    ZEROS = '0' * 40
+
+    def it_refuses_a_version_change_when_the_parent_is_not_the_main_tip_before_the_push(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        recorder = Recorder()
+
+        with pytest.raises(tag_release.ReleaseRefusedError, match='exactly one commit'):
+            _release(clone, sha, recorder, before='f' * 40)
+
+        assert recorder.calls == []
+
+    @pytest.mark.parametrize('before', ['', ZEROS])
+    def it_refuses_a_version_change_without_a_real_before_commit(self, tmp_path: Path, before: str) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        recorder = Recorder()
+
+        with pytest.raises(tag_release.ReleaseRefusedError, match='exactly one commit'):
+            _release(clone, sha, recorder, before=before)
+
+        assert recorder.calls == []
+
+    def it_does_not_look_at_before_when_the_version_is_unchanged(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.3', '1.2.3')
+        _tag_on_origin(clone, 'v1.2.3', sha)
+
+        assert _release(clone, sha, Recorder(), before=self.ZEROS) == 'v1.2.3 already tagged'
+
+
+@pytest.mark.medium
+class DescribeATagMadeByAnotherPath:
+    def it_is_a_no_op_when_no_pull_request_exists_and_the_tag_is_on_this_commit(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        _tag_on_origin(clone, 'v1.2.3', sha)
+        recorder = Recorder(pull_request_branch=None)
+
+        message = _release(clone, sha, recorder)
+
+        assert message == 'v1.2.3 was tagged by another path (cut-release.yml); its tag push runs release.yml'
+        assert recorder.calls == [f'head_ref {sha}']
+
+    def it_refuses_when_no_pull_request_exists_and_there_is_no_tag(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        recorder = Recorder(pull_request_branch=None)
+
+        with pytest.raises(tag_release.ReleaseRefusedError, match='cut-release'):
+            _release(clone, sha, recorder)
+
+        assert recorder.calls == [f'head_ref {sha}']
+
+    def it_looks_up_the_pull_request_before_tagging(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        recorder = Recorder()
+
+        _release(clone, sha, recorder)
+
+        assert recorder.calls[0] == f'head_ref {sha}'
+
+
+@pytest.mark.medium
+class DescribeTheRecoveryHint:
+    def it_points_a_missed_release_at_rerunning_the_release_commits_run(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.3', '1.2.3')
+
+        with pytest.raises(tag_release.ReleaseRefusedError, match='gh run rerun'):
+            _release(clone, sha, Recorder())

@@ -471,9 +471,12 @@ commit and dispatches `release.yml` (next paragraph). `cut-release.yml` remains 
 starts: `scripts/prepare_release.py` -> `release/v<version>` PR (the `Release PR Gates` job checks it) -> merge ->
 `tag-release.yml` tags the merge commit and dispatches `release.yml` -> the `pypi` environment approval. The YAML is thin:
 it checks out two commits (`fetch-depth: 2`, `persist-credentials: false`), exports `tag_release.py` and the scripts it
-runs from the parent commit (`git show "$SHA^:scripts/<name>"` into a fresh directory under `$RUNNER_TEMP`) and runs that
-copy with `/usr/bin/python3 -I` from outside the workspace. A missing script at the parent exits 2. So a release commit
-cannot edit `tag_release.py`, the blocker gate or the version guard to skip a check. `scripts/tag_release.py` decides
+runs from the commit before the push (`git show "$BEFORE:scripts/<name>"`, `BEFORE` being `github.event.before`, into a
+fresh directory under `$RUNNER_TEMP`) and runs that copy with `/usr/bin/python3 -I` from outside the workspace. An empty,
+all-zero or missing `BEFORE` (with `fetch-depth: 2` it is present only when the push added one commit) or a missing script
+exits 2. A version-changing commit is released only when its parent equals `BEFORE`, so a push of several commits is never
+released. So a release commit cannot edit `tag_release.py`, the blocker gate or the version guard to skip a check.
+`scripts/tag_release.py` decides
 what to do from the version at the pushed commit and at its parent, and from the commit `refs/tags/v<version>`
 peels to on origin (`git ls-remote`, because the checkout has no tags; an annotated tag has an object of its own, so
 the peeled commit is what is compared):
@@ -486,10 +489,14 @@ the peeled commit is what is compared):
 | Yes | peels to this commit | Dispatch only (a re-run). |
 | Yes | peels elsewhere | Fails (exit 1), dispatches nothing. |
 
+For the version-changing rows the script first looks up the release pull request (`GET /commits/{sha}/pulls`). With
+exactly one merged pull request from this repository, the rows above apply. With none and the tag peeling to this commit,
+the `cut-release.yml` fallback made it (its own tag push runs `release.yml`): a no-op, exit 0. With none and no tag, it
+fails (exit 1). A merged pull request from a fork, or more than one, always fails.
+
 Any failed lookup or API call exits 2 and tags nothing. Only the version-changing commit is tagged. Before tagging, the
-script finds the release pull request (`GET /commits/{sha}/pulls`, which must yield exactly one merged pull request from
-this repository) and runs the version guard on the pushed commit against its parent, with `--base-ref "$SHA^"` and that
-pull request's branch, using the parent's copy of `check_version_change.py` and `check_release_docs.py`, like the
+script runs the version guard on the pushed commit against its parent, with `--base-ref "$SHA^"` and the release pull
+request's branch, using the before-push copy of `check_version_change.py` and `check_release_docs.py`, like the
 `release-pr` job does. It then runs `check_no_release_blockers.py`. The docs, cache and wip gates are not repeated:
 `verify-tag` in `release.yml` runs them before anything is published. The tag is created through the REST API
 (`git/tags`, then `git/refs`) as `github-actions[bot]` with the job's `GITHUB_TOKEN` (`contents: write`, `actions: write`,
@@ -500,8 +507,15 @@ is the only release run.
 Limit, plainly: GitHub runs a push workflow from the file at the pushed commit. The script refuses a version-changing
 commit that edits `tag-release.yml`, but a commit that rewrites the workflow runs its own YAML, so only review of changes
 to `tag-release.yml` stands between that and a tag made without the checks. The guard-before-tag does not make the
-workflow tamper-proof. Bootstrap: the first push after `tag_release.py` landed had no parent copy, so that one run failed
-closed at the export step (exit 2); it was not a release commit (the version was unchanged and already tagged).
+workflow tamper-proof. Bootstrap: the first push after this lands has no before-push copy of `tag_release.py`, so that
+one run fails closed at the export step (exit 2) once; it is not a release commit (the version is unchanged and
+already tagged), and the next push works.
+
+Recovery: the concurrency group holds one pending run, so a quick third push cancels a pending one, and a run can fail
+for a transient reason. If the release commit's own run did not finish, the next push (version unchanged, tag missing)
+fails with "not tagged". Re-run the release commit's own `tag-release.yml` run (`gh run rerun <run-id>`): it
+re-evaluates that same SHA and `BEFORE`, and tags or dispatches as the table says. Cut a new release only if that
+cannot work.
 
 **Fallback -- cut a release with `cut-release.yml`.** Use it only when `tag-release.yml` cannot (until #1047 deletes it).
 `cz bump` runs only through `scripts/prepare_release.py` (`--files-only`, no commit or tag) or on the Actions runner in
