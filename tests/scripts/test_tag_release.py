@@ -16,9 +16,12 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import stat
 import subprocess
 import sys
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -538,3 +541,237 @@ class DescribeTheRecoveryHint:
 
         with pytest.raises(tag_release.ReleaseRefusedError, match='gh run rerun'):
             _release(clone, sha, Recorder())
+
+
+class FixedAnswerGh:
+    """Replaces ``tag_release._gh`` with one fixed answer."""
+
+    def __init__(self, answer: str) -> None:
+        self.answer = answer
+
+    def __call__(self, *_args: str, stdin: str | None = None) -> str:  # noqa: ARG002
+        return self.answer
+
+
+@pytest.mark.small
+class DescribeAnAnswerThatIsNotWhatWasExpected:
+    @pytest.mark.parametrize(
+        'pull',
+        [
+            pytest.param({'merged_at': 'x', 'head': 'release/v1.2.3'}, id='head-not-an-object'),
+            pytest.param({'merged_at': 'x', 'head': {'repo': {'full_name': 'owner/repo'}}}, id='no-ref'),
+            pytest.param(
+                {'merged_at': 'x', 'head': {'ref': 7, 'repo': {'full_name': 'owner/repo'}}}, id='ref-not-text'
+            ),
+        ],
+    )
+    def it_fails_closed_on_a_merged_pull_request_without_a_usable_head_branch(self, pull: dict[str, object]) -> None:
+        with pytest.raises(tag_release.CannotCheckError):
+            tag_release.head_ref_from_pulls(json.dumps([pull]), 'owner/repo')
+
+    @pytest.mark.parametrize('answer', ['not json', '[]', '{"message": "odd"}', '{"sha": 7}'])
+    def it_fails_closed_on_a_tag_object_answer_without_a_sha(
+        self, monkeypatch: pytest.MonkeyPatch, answer: str
+    ) -> None:
+        monkeypatch.setattr(tag_release, '_gh', FixedAnswerGh(answer))
+        effects = tag_release.github_effects(Path(), 'owner/repo')
+
+        with pytest.raises(tag_release.CannotCheckError):
+            effects.create_tag('v1.2.3', 'a' * 40)
+
+    def it_exits_two_on_an_unexpected_error_instead_of_a_traceback(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        def explode(*_args: object) -> str:
+            raise RuntimeError('boom')
+
+        monkeypatch.setattr(tag_release, 'release', explode)
+
+        status = tag_release.main(['--sha', 'abc', '--before', 'def', '--github-repository', 'owner/repo'])
+
+        assert status == 2
+        assert 'RuntimeError: boom' in capsys.readouterr().err
+
+
+@pytest.mark.medium
+class DescribeAPyprojectThatIsNotUtf8:
+    def it_fails_closed_instead_of_crashing(self, tmp_path: Path) -> None:
+        origin = tmp_path / 'origin.git'
+        _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
+        clone = tmp_path / 'clone'
+        _git(tmp_path, 'clone', '--quiet', str(origin), str(clone))
+        before = _commit(clone, '1.0.0')
+        (clone / 'pyproject.toml').write_bytes(b'[project]\nversion = "1.0.0"\n# \xff\xfe\n')
+        _git(clone, 'add', 'pyproject.toml')
+        _git(clone, 'commit', '--quiet', '-m', 'binary')
+        sha = _git(clone, 'rev-parse', 'HEAD')
+
+        result = _run_cli(clone, sha, '--github-repository', 'owner/repo')
+
+        assert result.returncode == 2, result.stderr
+        assert 'Traceback' not in result.stderr
+        assert before != sha
+
+
+class FakeGh:
+    """Replaces ``tag_release._gh`` and records every call."""
+
+    TAG_OBJECT_SHA = '1' * 40
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[tuple[str, ...], str | None]] = []
+
+    def __call__(self, *args: str, stdin: str | None = None) -> str:
+        self.calls.append((args, stdin))
+        if 'git/tags' in ' '.join(args):
+            return json.dumps({'sha': self.TAG_OBJECT_SHA})
+        return '[]' if '/pulls' in ' '.join(args) else '{}'
+
+
+@pytest.mark.small
+class DescribeTheGithubCalls:
+    def it_points_the_tag_ref_at_the_tag_object_not_the_commit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh()
+        monkeypatch.setattr(tag_release, '_gh', fake)
+
+        tag_release.github_effects(Path(), 'owner/repo').create_tag('v1.2.3', 'c' * 40)
+
+        (tag_args, tag_stdin), (ref_args, ref_stdin) = fake.calls
+        assert tag_args[:4] == ('api', '--method', 'POST', 'repos/owner/repo/git/tags')
+        assert json.loads(str(tag_stdin))['object'] == 'c' * 40
+        assert ref_args[:4] == ('api', '--method', 'POST', 'repos/owner/repo/git/refs')
+        assert json.loads(str(ref_stdin)) == {'ref': 'refs/tags/v1.2.3', 'sha': FakeGh.TAG_OBJECT_SHA}
+
+    def it_dispatches_release_yml_from_main_with_the_tag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh()
+        monkeypatch.setattr(tag_release, '_gh', fake)
+
+        tag_release.github_effects(Path(), 'owner/repo').dispatch('v1.2.3')
+
+        assert fake.calls == [
+            (('workflow', 'run', 'release.yml', '--repo', 'owner/repo', '--ref', 'main', '-f', 'tag=v1.2.3'), None)
+        ]
+
+    def it_reads_the_pull_requests_of_the_commit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = FakeGh()
+        monkeypatch.setattr(tag_release, '_gh', fake)
+
+        branch = tag_release.github_effects(Path(), 'owner/repo').head_ref('c' * 40)
+
+        assert branch is None
+        assert fake.calls[0][0] == ('api', f'repos/owner/repo/commits/{"c" * 40}/pulls')
+
+
+@pytest.mark.small
+class DescribeAGateExitStatus:
+    def it_reads_exit_one_as_a_refusal(self) -> None:
+        with pytest.raises(tag_release.ReleaseRefusedError):
+            tag_release._raise_for_status('the gate', 1)
+
+    @pytest.mark.parametrize('status', [2, 3, 127])
+    def it_reads_any_other_failure_as_could_not_run(self, status: int) -> None:
+        with pytest.raises(tag_release.CannotCheckError):
+            tag_release._raise_for_status('the gate', status)
+
+    def it_accepts_zero(self) -> None:
+        tag_release._raise_for_status('the gate', 0)
+
+
+EXPORTED_SCRIPTS = (
+    'tag_release.py',
+    'check_no_release_blockers.py',
+    'check_ci_passed.py',
+    'check_version_change.py',
+    'check_release_docs.py',
+)
+FAKE_GH = """#!{python}
+import json
+import sys
+
+args = sys.argv[1:]
+body = sys.stdin.read() if '--input' in args else ''
+with open({log!r}, 'a') as log:
+    log.write(json.dumps({{'argv': args, 'stdin': body}}) + '\\n')
+joined = ' '.join(args)
+if '/pulls' in joined:
+    print(json.dumps([{{'merged_at': 'x', 'head': {{'ref': 'release/v1.15.0', 'repo': {{'full_name': 'o/r'}}}}}}]))
+elif 'git/tags' in joined:
+    print(json.dumps({{'sha': '{tag_object}'}}))
+else:
+    print('{{}}')
+"""
+
+
+def _write_release_files(clone: Path, version: str) -> None:
+    (clone / 'pyproject.toml').write_text(_pyproject(version))
+    init = clone / 'src' / 'pytest_gremlins' / '__init__.py'
+    init.parent.mkdir(parents=True, exist_ok=True)
+    init.write_text(f'"""Package."""\n\n__version__ = \'{version}\'\n')
+    (clone / 'CHANGELOG.md').write_text(
+        f'# Changelog\n\n## v{version} (2026-11-19)\n\n### Fix\n\n- **A fix.** (no docs: test)\n\n## v1.0.0\n\nOld.\n'
+    )
+
+
+def _commit_release_files(clone: Path, version: str, extra_file: str | None = None) -> str:
+    _write_release_files(clone, version)
+    paths = ['pyproject.toml', 'src/pytest_gremlins/__init__.py', 'CHANGELOG.md']
+    if extra_file is not None:
+        (clone / extra_file).write_text('unrelated\n')
+        paths.append(extra_file)
+    _git(clone, 'add', *paths)
+    _git(clone, 'commit', '--quiet', '-m', f'release {version}')
+    _git(clone, 'push', '--quiet', 'origin', 'HEAD:refs/heads/main')
+    return _git(clone, 'rev-parse', 'HEAD')
+
+
+def _run_exported(
+    tmp_path: Path, extra_file: str | None
+) -> tuple[subprocess.CompletedProcess[str], list[dict[str, Any]]]:
+    """Run the script as the workflow does: exported scripts, ``-I``, another directory, a fake ``gh`` on PATH."""
+    origin = tmp_path / 'origin.git'
+    _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
+    clone = tmp_path / 'clone'
+    _git(tmp_path, 'clone', '--quiet', str(origin), str(clone))
+    before = _commit_release_files(clone, '1.14.3')
+    _tag_on_origin(clone, 'v1.14.3', before)
+    sha = _commit_release_files(clone, '1.15.0', extra_file)
+    exported = tmp_path / 'exported'
+    exported.mkdir()
+    for name in EXPORTED_SCRIPTS:
+        shutil.copy(SCRIPT.parent / name, exported / name)
+    log = tmp_path / 'gh.log'
+    # The real blocker gate calls api.github.com; the stand-in records that it ran and passes.
+    stand_in = f'import pathlib\npathlib.Path({str(log)!r}).open("a").write(\'{{"argv": ["BLOCKER_GATE"]}}\\n\')\n'
+    (exported / 'check_no_release_blockers.py').write_text(stand_in)
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    gh = bin_dir / 'gh'
+    gh.write_text(FAKE_GH.format(python=sys.executable, log=str(log), tag_object=FakeGh.TAG_OBJECT_SHA))
+    gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
+    env = {**ISOLATED_GIT_ENV, 'PATH': f'{bin_dir}{os.pathsep}{ISOLATED_GIT_ENV["PATH"]}', 'GH_TOKEN': 'x'}
+    elsewhere = tmp_path / 'runner_temp'
+    elsewhere.mkdir()
+    command = [sys.executable, '-I', str(exported / 'tag_release.py'), '--sha', sha, '--before', before]
+    command += ['--repo', str(clone), '--github-repository', 'o/r']
+    completed = subprocess.run(command, cwd=elsewhere, env=env, capture_output=True, text=True, check=False)
+    calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    return completed, calls
+
+
+@pytest.mark.medium
+@pytest.mark.skipif(os.name == 'nt', reason='the stand-in gh is a shebang script')
+class DescribeTheScriptRunAsTheWorkflowRunsIt:
+    def it_looks_up_the_pull_request_gates_tags_and_dispatches_in_order(self, tmp_path: Path) -> None:
+        completed, calls = _run_exported(tmp_path, extra_file=None)
+
+        assert completed.returncode == 0, completed.stderr + completed.stdout
+        assert [call['argv'][0] for call in calls] == ['api', 'BLOCKER_GATE', 'api', 'api', 'workflow']
+        assert '/pulls' in calls[0]['argv'][1]
+        assert json.loads(calls[3]['stdin']) == {'ref': 'refs/tags/v1.15.0', 'sha': FakeGh.TAG_OBJECT_SHA}
+        assert calls[4]['argv'][-4:] == ['--ref', 'main', '-f', 'tag=v1.15.0']
+
+    def it_refuses_with_exit_one_and_posts_nothing_when_the_guard_fails(self, tmp_path: Path) -> None:
+        completed, calls = _run_exported(tmp_path, extra_file='unrelated.py')
+
+        assert completed.returncode == 1, completed.stderr
+        assert not any('POST' in call['argv'] or 'workflow' in call['argv'] for call in calls)

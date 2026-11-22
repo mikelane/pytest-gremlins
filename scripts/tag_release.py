@@ -143,13 +143,16 @@ def parse_version(pyproject_text: str, source: str) -> str:
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ['git', *args],  # noqa: S607
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        return subprocess.run(
+            ['git', *args],  # noqa: S607
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except UnicodeDecodeError as error:
+        raise CannotCheckError(f'git {" ".join(args)} printed output that is not UTF-8: {error}') from error
 
 
 def _git_output(repo: Path, *args: str) -> str:
@@ -230,12 +233,32 @@ def head_ref_from_pulls(pulls_json: str, repository: str) -> str | None:
     if not isinstance(pulls, list):
         raise CannotCheckError(f'the pull request lookup did not return a list (got {type(pulls).__name__})')
     merged = [pull for pull in pulls if isinstance(pull, dict) and pull.get('merged_at')]
+    for pull in merged:
+        head = pull.get('head')
+        if not isinstance(head, dict) or not isinstance(head.get('ref'), str):
+            raise CannotCheckError('a merged pull request in the lookup answer has no usable head branch')
     own = [pull for pull in merged if ((pull.get('head') or {}).get('repo') or {}).get('full_name') == repository]
     if len(own) != len(merged):
         raise ReleaseRefusedError(f'a merged pull request for this commit does not come from {repository}')
     if len(own) > 1:
         raise ReleaseRefusedError(f'expected at most one merged pull request for this commit, found {len(own)}')
     return str(own[0]['head']['ref']) if own else None
+
+
+def tag_object_sha(answer: str) -> str:
+    """Return the ``sha`` of the tag object in the answer to ``POST /git/tags``.
+
+    Raises:
+        CannotCheckError: If the answer is not a JSON object with a text ``sha``.
+    """
+    try:
+        created = json.loads(answer)
+    except json.JSONDecodeError as error:
+        raise CannotCheckError(f'the tag object answer is not JSON: {error}') from error
+    sha = created.get('sha') if isinstance(created, dict) else None
+    if not isinstance(sha, str) or not sha:
+        raise CannotCheckError('the tag object answer has no sha')
+    return sha
 
 
 def tag_object_payload(tag: str, sha: str) -> dict[str, object]:
@@ -347,7 +370,7 @@ def _gh(*args: str, stdin: str | None = None) -> str:
 def github_effects(repo: Path, repository: str) -> Effects:
     """Return the effects that call GitHub and run the gate scripts for real."""
 
-    def head_ref(sha: str) -> str:
+    def head_ref(sha: str) -> str | None:
         return head_ref_from_pulls(_gh('api', f'repos/{repository}/commits/{sha}/pulls'), repository)
 
     def run_guard(sha: str, branch: str) -> None:
@@ -362,18 +385,16 @@ def github_effects(repo: Path, repository: str) -> Effects:
         )
 
     def create_tag(tag: str, sha: str) -> None:
-        created = json.loads(
-            _gh(
-                'api',
-                '--method',
-                'POST',
-                f'repos/{repository}/git/tags',
-                '--input',
-                '-',
-                stdin=json.dumps(tag_object_payload(tag, sha)),
-            )
+        answer = _gh(
+            'api',
+            '--method',
+            'POST',
+            f'repos/{repository}/git/tags',
+            '--input',
+            '-',
+            stdin=json.dumps(tag_object_payload(tag, sha)),
         )
-        ref = {'ref': f'refs/tags/{tag}', 'sha': created['sha']}
+        ref = {'ref': f'refs/tags/{tag}', 'sha': tag_object_sha(answer)}
         _gh('api', '--method', 'POST', f'repos/{repository}/git/refs', '--input', '-', stdin=json.dumps(ref))
 
     def dispatch(tag: str) -> None:
@@ -400,6 +421,9 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_REFUSED
     except CannotCheckError as error:
         print(f'error: {error}', file=sys.stderr)
+        return EXIT_CANNOT_CHECK
+    except Exception as error:  # last resort: an unexpected error is "could not run", never a refusal
+        print(f'error: unexpected {type(error).__name__}: {error}', file=sys.stderr)
         return EXIT_CANNOT_CHECK
     return 0
 

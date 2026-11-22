@@ -189,10 +189,10 @@ pr-reviewer agents, check that section against the diff.
 
 ## Release Process
 
-**Step 1 -- Update CHANGELOG.md.** The workflow guard fails if there are no commits since
-the last tag -- the changelog commit is what satisfies it. Add a `## vX.Y.Z (date)` entry
-above the most recent section, in the format below. Merge the CHANGELOG PR to main before proceeding.
-The PR fails CI until the entry passes the release docs gate.
+**Update CHANGELOG.md in the release PR.** `scripts/prepare_release.py` writes the `## vX.Y.Z (date)` entry above
+the most recent section, in the format below; fill it in before the release PR merges. The PR fails CI until the entry
+passes the release docs gate. (On the `cut-release.yml` fallback the entry goes in an earlier PR, merged before the
+dispatch, because that workflow's guard fails when there are no commits since the last tag.)
 
 **Changelog format and the docs gate.** Every release entry in `CHANGELOG.md` is gated. Each bullet under
 `### Upgrade notes`, `### Feature` and `### Fix` must end with either a docs reference or an exemption:
@@ -513,9 +513,10 @@ already tagged), and the next push works.
 
 Recovery: the concurrency group holds one pending run, so a quick third push cancels a pending one, and a run can fail
 for a transient reason. If the release commit's own run did not finish, the next push (version unchanged, tag missing)
-fails with "not tagged". Re-run the release commit's own `tag-release.yml` run (`gh run rerun <run-id>`): it
-re-evaluates that same SHA and `BEFORE`, and tags or dispatches as the table says. Cut a new release only if that
-cannot work.
+fails with "not tagged". If the tag was created and only the dispatch failed, the next push is green ("already
+tagged"), so only the release commit's own red run shows it. Either way, re-run the release commit's own
+`tag-release.yml` run (`gh run rerun <run-id>`): it re-evaluates that same SHA and `BEFORE`, and tags or dispatches as
+the table says. Cut a new release only if that cannot work.
 
 **Fallback -- cut a release with `cut-release.yml`.** Use it only when `tag-release.yml` cannot (until #1047 deletes it).
 `cz bump` runs only through `scripts/prepare_release.py` (`--files-only`, no commit or tag) or on the Actions runner in
@@ -540,7 +541,8 @@ If the tag is missing, `--follow-tags` silently skipped a lightweight tag. Root 
 `[tool.commitizen]` must have `annotated_tag = true`. Without it, commitizen creates
 lightweight tags that `--follow-tags` ignores.
 
-**Escape hatch -- Test PyPI is down.** `release.yml` normally runs on the tag push and gates
+**Escape hatch -- Test PyPI is down.** `release.yml` normally runs from the dispatch `tag-release.yml` makes (or from
+the tag push on the `cut-release.yml` fallback path) and gates
 PyPI on a Test PyPI publish and install check. If test.pypi.org is unavailable (it returned
 503 to GitHub runners for v1.11.1), re-run the release against the existing tag with the Test
 PyPI steps skipped:
@@ -562,7 +564,7 @@ PyPI steps skipped:
 - The `verify-tag` job runs on every release (tag push and dispatch). It refuses dispatches not
   from `main`, checks the tag name before fetching anything, and then refuses the run unless
   the tag exists, is annotated, points at a commit, and equals `v` + the `[project].version` in
-  `pyproject.toml` at that tag. The tag must already exist (step 3 above).
+  `pyproject.toml` at that tag. The tag must already exist (see "Verify the tag landed" above).
 - A `concurrency` group keyed on the release tag never cancels a running release for that tag,
   so two runs cannot race to PyPI. A new run waits as pending; the group holds one pending run,
   so dispatching again cancels the earlier pending run. Cancel a stuck run yourself (step 1).
