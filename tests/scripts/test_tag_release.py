@@ -1,0 +1,475 @@
+"""Tests for scripts/tag_release.py -- the logic behind tag-release.yml.
+
+The decision table runs against real git repositories (a bare origin and a clone). The GitHub calls (pull request
+lookup, tag creation, workflow dispatch) and the two gate scripts sit behind ``Effects``, so they are replaced by
+recorders here.
+"""
+
+from __future__ import annotations
+
+from dataclasses import (
+    dataclass,
+    field,
+)
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from types import ModuleType
+
+import pytest
+
+SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'tag_release.py'
+
+GIT_CONFIG_ARGS = (
+    '-c',
+    'user.name=Test',
+    '-c',
+    'user.email=test@example.com',
+    '-c',
+    'commit.gpgsign=false',
+    '-c',
+    'tag.gpgSign=false',
+    '-c',
+    'core.autocrlf=false',
+)
+# COVERAGE_PROCESS_START is dropped so no child process starts a coverage run of its own.
+ISOLATED_GIT_ENV = {
+    **{key: value for key, value in os.environ.items() if key != 'COVERAGE_PROCESS_START'},
+    'GIT_CONFIG_GLOBAL': os.devnull,
+    'GIT_CONFIG_NOSYSTEM': '1',
+}
+WORKFLOW_PATH = '.github/workflows/tag-release.yml'
+
+
+def _load_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location('tag_release', SCRIPT)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules['tag_release'] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+tag_release = _load_module()
+
+
+def _git(cwd: Path, *args: str) -> str:
+    result = subprocess.run(
+        ['git', *GIT_CONFIG_ARGS, *args],  # noqa: S607
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=ISOLATED_GIT_ENV,
+    )
+    return result.stdout.strip()
+
+
+def _pyproject(version: str) -> str:
+    return f'[project]\nname = "demo"\nversion = "{version}"\n'
+
+
+def _commit(clone: Path, version: str, extra_files: tuple[str, ...] = ()) -> str:
+    (clone / 'pyproject.toml').write_text(_pyproject(version))
+    paths = ['pyproject.toml']
+    for extra in extra_files:
+        target = clone / extra
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f'changed for {version}\n')
+        paths.append(extra)
+    _git(clone, 'add', *paths)
+    _git(clone, 'commit', '--quiet', '--allow-empty', '-m', f'version {version}')
+    _git(clone, 'push', '--quiet', 'origin', 'HEAD:refs/heads/main')
+    return _git(clone, 'rev-parse', 'HEAD')
+
+
+def _make_repo(tmp_path: Path, before: str, after: str, extra_files: tuple[str, ...] = ()) -> tuple[Path, Path, str]:
+    """Return ``(origin, clone, sha)``: main holds a commit at version ``before``, then ``sha`` at version ``after``."""
+    origin = tmp_path / 'origin.git'
+    _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
+    clone = tmp_path / 'clone'
+    _git(tmp_path, 'clone', '--quiet', str(origin), str(clone))
+    _commit(clone, before)
+    sha = _commit(clone, after, extra_files)
+    return origin, clone, sha
+
+
+def _tag_on_origin(clone: Path, tag: str, commit: str) -> None:
+    _git(clone, 'tag', '-a', tag, commit, '-m', 'release')
+    _git(clone, 'push', '--quiet', 'origin', f'refs/tags/{tag}')
+    _git(clone, 'tag', '-d', tag)
+
+
+@dataclass
+class Recorder:
+    calls: list[str] = field(default_factory=list)
+    guard_error: Exception | None = None
+    blocker_error: Exception | None = None
+
+    def effects(self) -> object:
+        return tag_release.Effects(
+            head_ref=self._head_ref,
+            run_guard=self._run_guard,
+            run_blocker_gate=self._run_blocker_gate,
+            create_tag=self._create_tag,
+            dispatch=self._dispatch,
+        )
+
+    def _head_ref(self, sha: str) -> str:
+        self.calls.append(f'head_ref {sha}')
+        return 'release/v9.9.9'
+
+    def _run_guard(self, sha: str, head_ref: str) -> None:
+        self.calls.append(f'guard {sha} {head_ref}')
+        if self.guard_error is not None:
+            raise self.guard_error
+
+    def _run_blocker_gate(self) -> None:
+        self.calls.append('blockers')
+        if self.blocker_error is not None:
+            raise self.blocker_error
+
+    def _create_tag(self, tag: str, sha: str) -> None:
+        self.calls.append(f'create_tag {tag} {sha}')
+
+    def _dispatch(self, tag: str) -> None:
+        self.calls.append(f'dispatch {tag}')
+
+
+def _release(clone: Path, sha: str, recorder: Recorder) -> str:
+    return str(tag_release.release(clone, sha, recorder.effects()))
+
+
+@pytest.mark.medium
+class DescribeAVersionThatDidNotChange:
+    def it_is_a_no_op_when_the_tag_exists(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.3', '1.2.3')
+        _tag_on_origin(clone, 'v1.2.3', sha)
+        recorder = Recorder()
+
+        message = _release(clone, sha, recorder)
+
+        assert message == 'v1.2.3 already tagged'
+        assert recorder.calls == []
+
+    def it_is_a_no_op_when_the_tag_is_on_an_older_commit(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.3', '1.2.3')
+        _tag_on_origin(clone, 'v1.2.3', _git(clone, 'rev-parse', 'HEAD~1'))
+        recorder = Recorder()
+
+        message = _release(clone, sha, recorder)
+
+        assert message == 'v1.2.3 already tagged'
+        assert recorder.calls == []
+
+    def it_fails_without_tagging_when_the_tag_is_missing(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.3', '1.2.3')
+        recorder = Recorder()
+
+        with pytest.raises(tag_release.ReleaseRefusedError, match=re.escape('v1.2.3')):
+            _release(clone, sha, recorder)
+
+        assert recorder.calls == []
+
+
+@pytest.mark.medium
+class DescribeAVersionThatChanged:
+    def it_runs_the_guard_and_the_blocker_gate_then_tags_then_dispatches(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        recorder = Recorder()
+
+        message = _release(clone, sha, recorder)
+
+        assert recorder.calls == [
+            f'head_ref {sha}',
+            f'guard {sha} release/v9.9.9',
+            'blockers',
+            f'create_tag v1.2.3 {sha}',
+            'dispatch v1.2.3',
+        ]
+        assert message == f'tagged v1.2.3 at {sha} and dispatched release.yml'
+
+    def it_tags_a_prerelease_version(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.14.0', '1.15.0b0')
+        recorder = Recorder()
+
+        _release(clone, sha, recorder)
+
+        assert f'create_tag v1.15.0b0 {sha}' in recorder.calls
+
+    def it_ignores_a_tag_whose_name_only_shares_the_prefix(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        _tag_on_origin(clone, 'v1.2.30', sha)
+        recorder = Recorder()
+
+        _release(clone, sha, recorder)
+
+        assert f'create_tag v1.2.3 {sha}' in recorder.calls
+
+    @pytest.mark.parametrize('failing', ['guard_error', 'blocker_error'])
+    def it_creates_no_tag_and_dispatches_nothing_when_a_gate_fails(self, tmp_path: Path, failing: str) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        recorder = Recorder(**{failing: tag_release.ReleaseRefusedError('gate said no')})
+
+        with pytest.raises(tag_release.ReleaseRefusedError, match='gate said no'):
+            _release(clone, sha, recorder)
+
+        assert not any(call.startswith(('create_tag', 'dispatch')) for call in recorder.calls)
+
+    def it_skips_the_blocker_gate_when_the_guard_fails(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        recorder = Recorder(guard_error=tag_release.ReleaseRefusedError('guard said no'))
+
+        with pytest.raises(tag_release.ReleaseRefusedError):
+            _release(clone, sha, recorder)
+
+        assert 'blockers' not in recorder.calls
+
+
+@pytest.mark.medium
+class DescribeARerun:
+    def it_only_dispatches_when_the_tag_peels_to_this_commit(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        _tag_on_origin(clone, 'v1.2.3', sha)
+        recorder = Recorder()
+
+        message = _release(clone, sha, recorder)
+
+        assert recorder.calls == ['dispatch v1.2.3']
+        assert message == f'v1.2.3 already tagged at {sha}; dispatched release.yml'
+
+    def it_compares_the_peeled_commit_not_the_annotated_tag_object(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        _tag_on_origin(clone, 'v1.2.3', sha)
+        tag_object = _git(clone, 'ls-remote', 'origin', 'refs/tags/v1.2.3').split()[0]
+        recorder = Recorder()
+
+        _release(clone, sha, recorder)
+
+        assert tag_object != sha
+        assert recorder.calls == ['dispatch v1.2.3']
+
+    def it_accepts_a_lightweight_tag_on_this_commit(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        _git(clone, 'push', '--quiet', 'origin', f'{sha}:refs/tags/v1.2.3')
+        recorder = Recorder()
+
+        _release(clone, sha, recorder)
+
+        assert recorder.calls == ['dispatch v1.2.3']
+
+    def it_fails_loudly_and_dispatches_nothing_when_the_tag_is_on_another_commit(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        _tag_on_origin(clone, 'v1.2.3', _git(clone, 'rev-parse', 'HEAD~1'))
+        recorder = Recorder()
+
+        with pytest.raises(tag_release.ReleaseRefusedError, match='another commit'):
+            _release(clone, sha, recorder)
+
+        assert recorder.calls == []
+
+
+@pytest.mark.medium
+class DescribeAReleaseCommitThatEditsThisWorkflow:
+    def it_refuses_when_the_version_changes_too(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3', extra_files=(WORKFLOW_PATH,))
+        recorder = Recorder()
+
+        with pytest.raises(tag_release.ReleaseRefusedError, match=re.escape('tag-release.yml')):
+            _release(clone, sha, recorder)
+
+        assert recorder.calls == []
+
+    def it_does_not_object_when_the_version_is_unchanged(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.3', '1.2.3', extra_files=(WORKFLOW_PATH,))
+        _tag_on_origin(clone, 'v1.2.3', _git(clone, 'rev-parse', 'HEAD~1'))
+        recorder = Recorder()
+
+        assert _release(clone, sha, recorder) == 'v1.2.3 already tagged'
+
+
+@pytest.mark.medium
+class DescribeALookupThatFails:
+    def it_fails_closed_when_origin_is_unreachable(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        _git(clone, 'remote', 'set-url', 'origin', str(tmp_path / 'missing.git'))
+        recorder = Recorder()
+
+        with pytest.raises(tag_release.CannotCheckError, match=re.escape('could not look up tag v1.2.3')):
+            _release(clone, sha, recorder)
+
+        assert recorder.calls == []
+
+    def it_fails_closed_when_the_commit_has_no_parent(self, tmp_path: Path) -> None:
+        origin = tmp_path / 'origin.git'
+        _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
+        clone = tmp_path / 'clone'
+        _git(tmp_path, 'clone', '--quiet', str(origin), str(clone))
+        sha = _commit(clone, '1.2.3')
+        recorder = Recorder()
+
+        with pytest.raises(tag_release.CannotCheckError, match='parent'):
+            _release(clone, sha, recorder)
+
+        assert recorder.calls == []
+
+    @pytest.mark.parametrize(
+        'bad_version',
+        ['latest', '01.2.3', '1.2.3abc', ''],
+    )
+    def it_fails_closed_on_an_unusable_version(self, tmp_path: Path, bad_version: str) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', bad_version)
+        recorder = Recorder()
+
+        with pytest.raises(tag_release.CannotCheckError):
+            _release(clone, sha, recorder)
+
+        assert recorder.calls == []
+
+    def it_fails_closed_when_the_parent_version_is_unusable(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, 'latest', '1.2.3')
+        recorder = Recorder()
+
+        with pytest.raises(tag_release.CannotCheckError):
+            _release(clone, sha, recorder)
+
+        assert recorder.calls == []
+
+
+def _pull(*, merged: bool = True, head_repo: str = 'owner/repo', ref: str = 'release/v1.2.3') -> dict[str, object]:
+    return {
+        'merged_at': '2026-11-22T00:00:00Z' if merged else None,
+        'head': {'ref': ref, 'repo': {'full_name': head_repo}},
+    }
+
+
+@pytest.mark.small
+class DescribeTheHeadBranchOfAMergedPullRequest:
+    def it_returns_the_branch_of_the_one_merged_pull_request(self) -> None:
+        pulls = json.dumps([_pull()])
+
+        assert tag_release.head_ref_from_pulls(pulls, 'owner/repo') == 'release/v1.2.3'
+
+    @pytest.mark.parametrize(
+        'pulls',
+        [
+            pytest.param([], id='none'),
+            pytest.param([_pull(merged=False)], id='unmerged'),
+            pytest.param([_pull(head_repo='fork/repo')], id='fork'),
+            pytest.param([_pull(), _pull(ref='release/v1.2.4')], id='two'),
+            pytest.param([{'merged_at': 'x', 'head': {'ref': 'a', 'repo': None}}], id='deleted-fork'),
+        ],
+    )
+    def it_refuses_anything_but_exactly_one_same_repo_merged_pull_request(self, pulls: list[object]) -> None:
+        with pytest.raises(tag_release.ReleaseRefusedError):
+            tag_release.head_ref_from_pulls(json.dumps(pulls), 'owner/repo')
+
+    def it_ignores_an_unmerged_or_fork_pull_request_next_to_the_merged_one(self) -> None:
+        pulls = json.dumps([_pull(merged=False, ref='other'), _pull(head_repo='fork/repo'), _pull()])
+
+        assert tag_release.head_ref_from_pulls(pulls, 'owner/repo') == 'release/v1.2.3'
+
+    @pytest.mark.parametrize('text', ['not json', '{}', '"x"'])
+    def it_fails_closed_on_an_answer_that_is_not_a_list(self, text: str) -> None:
+        with pytest.raises(tag_release.CannotCheckError):
+            tag_release.head_ref_from_pulls(text, 'owner/repo')
+
+
+@pytest.mark.small
+class DescribeTheTagRequest:
+    def it_builds_an_annotated_tag_object_for_the_commit_by_the_actions_bot(self) -> None:
+        payload = tag_release.tag_object_payload('v1.2.3', 'abc123')
+
+        assert payload['tag'] == 'v1.2.3'
+        assert payload['object'] == 'abc123'
+        assert payload['type'] == 'commit'
+        assert payload['message'] == 'Release v1.2.3'
+        assert payload['tagger'] == {
+            'name': 'github-actions[bot]',
+            'email': '41898282+github-actions[bot]@users.noreply.github.com',
+        }
+
+
+@pytest.mark.medium
+class DescribeTheExportedGuard:
+    def it_exports_the_guard_scripts_from_the_parent_commit_not_the_checkout(self, tmp_path: Path) -> None:
+        origin = tmp_path / 'origin.git'
+        _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
+        clone = tmp_path / 'clone'
+        _git(tmp_path, 'clone', '--quiet', str(origin), str(clone))
+        (clone / 'scripts').mkdir()
+        for name in ('check_version_change.py', 'check_release_docs.py'):
+            (clone / 'scripts' / name).write_text('# trusted\n')
+        _commit(clone, '1.2.2', extra_files=())
+        _git(clone, 'add', 'scripts')
+        _git(clone, 'commit', '--quiet', '-m', 'guard')
+        (clone / 'scripts' / 'check_version_change.py').write_text('# tampered\n')
+        _git(clone, 'commit', '--quiet', '-a', '-m', 'weaken guard')
+        destination = tmp_path / 'guard'
+        destination.mkdir()
+
+        tag_release.export_guard_scripts(clone, 'HEAD~1', destination)
+
+        assert (destination / 'check_version_change.py').read_text() == '# trusted\n'
+        assert (destination / 'check_release_docs.py').read_text() == '# trusted\n'
+
+    def it_fails_closed_when_a_guard_script_is_missing_at_the_parent(self, tmp_path: Path) -> None:
+        _, clone, _ = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        destination = tmp_path / 'guard'
+        destination.mkdir()
+
+        with pytest.raises(tag_release.CannotCheckError, match=re.escape('check_version_change.py')):
+            tag_release.export_guard_scripts(clone, 'HEAD~1', destination)
+
+
+def _run_cli(clone: Path, sha: str, *extra: str) -> subprocess.CompletedProcess[str]:
+    env = {key: value for key, value in ISOLATED_GIT_ENV.items() if key != 'GITHUB_REPOSITORY'}
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), '--repo', str(clone), '--sha', sha, *extra],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+
+@pytest.mark.medium
+class DescribeTheCommandLine:
+    def it_prints_the_no_op_line_and_exits_zero(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.3', '1.2.3')
+        _tag_on_origin(clone, 'v1.2.3', sha)
+
+        result = _run_cli(clone, sha, '--github-repository', 'owner/repo')
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.splitlines() == ['v1.2.3 already tagged']
+
+    def it_exits_one_when_a_rule_is_broken(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.3', '1.2.3')
+
+        result = _run_cli(clone, sha, '--github-repository', 'owner/repo')
+
+        assert result.returncode == 1
+        assert 'did not change the version' in result.stderr
+
+    def it_exits_two_when_the_lookup_fails(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        _git(clone, 'remote', 'set-url', 'origin', str(tmp_path / 'missing.git'))
+
+        result = _run_cli(clone, sha, '--github-repository', 'owner/repo')
+
+        assert result.returncode == 2
+        assert 'could not look up tag' in result.stderr
+
+    def it_exits_two_without_a_repository_name(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.3', '1.2.3')
+
+        result = _run_cli(clone, sha)
+
+        assert result.returncode == 2
+        assert 'GITHUB_REPOSITORY' in result.stderr
