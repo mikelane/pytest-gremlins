@@ -147,6 +147,18 @@ must run for that branch); until then the CI gate fails such a tag after its 10-
 `release.yml` for a tag cut before this change fails closed, because the gate scripts do not exist at that tag. To
 run the check locally, run `uv run python scripts/check_no_wip_tests.py`.
 
+## Release Blockers
+
+A release fails while any open issue or pull request carries the `release-blocker` label. Put the label on an issue
+that must be fixed before the next release. `scripts/check_no_release_blockers.py` checks it in `cut-release.yml`,
+before the tag is created, and in the `verify-tag` job of `release.yml`. The second run also covers a re-dispatch of
+`release.yml` that would finish a half-published release. The check prints each open blocker as `#N title` and fails.
+If the label has been deleted or renamed, or GitHub cannot be reached, the check fails too (it never passes without
+looking). There is no bypass: no flag, environment variable or workflow input skips it. To clear it, fix the issue, or
+remove the `release-blocker` label from it if it should not block the release. The label change stays visible on the
+issue. Ordinary pull requests are not affected. To run the check locally, run
+`GITHUB_TOKEN=$(gh auth token) uv run python scripts/check_no_release_blockers.py --repo mikelane/pytest-gremlins`.
+
 ## Code of Conduct
 
 Please read and follow our [Code of Conduct](https://github.com/mikelane/pytest-gremlins/blob/main/CODE_OF_CONDUCT.md).

@@ -8,6 +8,7 @@ checkout, permissions and the Test PyPI install.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 import re
 import subprocess
@@ -18,6 +19,7 @@ import pytest
 import yaml
 
 RELEASE_WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'release.yml'
+CUT_RELEASE_WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'cut-release.yml'
 POSIX_ONLY = pytest.mark.skipif(
     sys.platform == 'win32', reason='runs the step script in bash with a POSIX .venv layout'
 )
@@ -363,6 +365,72 @@ class DescribeReleaseWorkflowWipGate:
 
         assert 'if' not in step
         assert 'continue-on-error' not in step
+
+
+RELEASE_BLOCKER_SCRIPT = 'scripts/check_no_release_blockers.py'
+StepsLookup = Callable[[], list[dict[str, Any]]]
+
+
+def _cut_release_steps() -> list[dict[str, Any]]:
+    return list(yaml.safe_load(CUT_RELEASE_WORKFLOW.read_text())['jobs']['cut-release']['steps'])
+
+
+def _cut_release_blocker_steps() -> list[dict[str, Any]]:
+    return [step for step in _cut_release_steps() if RELEASE_BLOCKER_SCRIPT in step.get('run', '')]
+
+
+def _verify_tag_blocker_steps() -> list[dict[str, Any]]:
+    return [step for step in _steps('verify-tag') if RELEASE_BLOCKER_SCRIPT in step.get('run', '')]
+
+
+@pytest.mark.medium
+class DescribeReleaseBlockerGate:
+    """A release fails while a release-blocker issue is open, before a tag exists and again on the tag (#1039)."""
+
+    def it_checks_for_blockers_once_in_cut_release(self) -> None:
+        assert len(_cut_release_blocker_steps()) == 1
+
+    def it_checks_for_blockers_once_in_verify_tag(self) -> None:
+        assert len(_verify_tag_blocker_steps()) == 1
+
+    def it_checks_in_cut_release_before_the_tag_is_created(self) -> None:
+        steps = _cut_release_steps()
+        names = [step.get('name') for step in steps]
+
+        assert steps.index(_cut_release_blocker_steps()[0]) < names.index('Bump version and create tag')
+
+    def it_checks_in_verify_tag_on_the_tagged_commit_before_the_docs_build(self) -> None:
+        checkout = _step_index('verify-tag', lambda step: step.get('name') == 'Check out the tagged commit')
+        blockers = _step_index('verify-tag', lambda step: RELEASE_BLOCKER_SCRIPT in step.get('run', ''))
+        docs_build = _step_index('verify-tag', lambda step: step.get('name') == 'Build the docs site')
+
+        assert checkout < blockers < docs_build
+
+    @pytest.mark.parametrize(
+        'steps', [_cut_release_blocker_steps, _verify_tag_blocker_steps], ids=['cut-release', 'verify-tag']
+    )
+    def it_passes_the_workflow_token_through_the_environment(self, steps: StepsLookup) -> None:
+        step = steps()[0]
+
+        assert step['env']['GITHUB_TOKEN'] == '${{ github.token }}'  # noqa: S105 - a workflow expression, not a secret
+        assert '${{' not in step['run']
+
+    @pytest.mark.parametrize(
+        'steps', [_cut_release_blocker_steps, _verify_tag_blocker_steps], ids=['cut-release', 'verify-tag']
+    )
+    def it_has_no_condition_or_failure_override_on_the_blocker_step(self, steps: StepsLookup) -> None:
+        step = steps()[0]
+
+        assert 'if' not in step
+        assert 'continue-on-error' not in step
+
+    def it_grants_cut_release_issues_read_beside_contents_write(self) -> None:
+        job = yaml.safe_load(CUT_RELEASE_WORKFLOW.read_text())['jobs']['cut-release']
+
+        assert job['permissions'] == {'contents': 'write', 'issues': 'read'}
+
+    def it_grants_verify_tag_issues_read_beside_contents_read(self) -> None:
+        assert _jobs()['verify-tag']['permissions'] == {'contents': 'read', 'issues': 'read'}
 
 
 PUBLISH_PATH_JOB_IDS = [

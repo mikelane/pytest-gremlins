@@ -379,6 +379,16 @@ branch off the previous release tag, not from main. That path depends on #1015 (
 until then the CI gate fails such a tag after the 10-minute grace. Re-dispatching `release.yml` for a tag whose commit
 predates these gate scripts fails closed, because the gate scripts do not exist at that tag.
 
+**Release blocker gate.** An open issue (or pull request) labeled `release-blocker` fails the release.
+`scripts/check_no_release_blockers.py` looks the label up, then lists the open items that carry it. It runs in
+`cut-release.yml` before the tag is created and in the `verify-tag` job of `release.yml`, so it also fails a
+re-dispatch of `release.yml` that would finish a half-published release; the fix is the same. It prints each blocker as
+`#N title` and exits 1. Exit 2 means it could not run (no token, API error, malformed answer), never a pass, and a
+deleted or renamed label is exit 2 too, because an empty listing would otherwise pass without checking anything. There
+is no bypass: no flag, environment variable or workflow input skips it. To clear it, remove the `release-blocker`
+label from the issue, which leaves a visible record on the issue. `ci.yml` does not run it, so it never blocks an
+ordinary pull request.
+
 **Release PR gates.** The `Release PR Gates` job (`release-pr` in `ci.yml`) runs on every pull request and is part
 of `All Checks Passed`. Its first step, `scripts/check_version_change.py`, compares `[project].version` with the
 merge base (a branch cut before main released reads as unchanged). The version counts as changed when either
