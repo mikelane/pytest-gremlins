@@ -67,23 +67,26 @@ def http_error() -> Iterator[Callable[[int], urllib.error.HTTPError]]:
         error.close()
 
 
-def _failure(spec: int | str, http_error: Callable[[int], urllib.error.HTTPError]) -> Exception:
-    """Return the transport error ``spec`` names: an HTTP status code, or ``'unreachable'`` for a URLError."""
-    return urllib.error.URLError('boom') if spec == 'unreachable' else http_error(int(spec))
+def _transport_error(failure_kind: int | str, http_error: Callable[[int], urllib.error.HTTPError]) -> Exception:
+    """Return the transport error ``failure_kind`` names: an HTTP status code, or ``'unreachable'`` for a URLError."""
+    return urllib.error.URLError('boom') if failure_kind == 'unreachable' else http_error(int(failure_kind))
 
 
 class FakeGitHub:
     """Serves the label and the paginated issue listing; ``pages`` are the issue pages in order."""
 
-    def __init__(self, pages: list[Any], label: Any = None, label_error: Exception | None = None) -> None:
+    def __init__(
+        self, pages: list[object], label: object = None, label_error: Exception | None = None, repo: str = REPO
+    ) -> None:
         self._pages = pages
         self._label = {'name': 'release-blocker'} if label is None else label
         self._label_error = label_error
+        self._label_path = f'/repos/{repo}/labels/release-blocker'
         self.paths: list[str] = []
 
     def __call__(self, path: str) -> Any:
         self.paths.append(path)
-        if path == LABEL_PATH:
+        if path == self._label_path:
             if self._label_error is not None:
                 raise self._label_error
             return self._label
@@ -92,7 +95,7 @@ class FakeGitHub:
 
 
 @pytest.mark.small
-class DescribeCheckNoReleaseBlockers:
+class DescribeFindBlockers:
     def it_finds_no_blockers_when_the_label_has_no_open_issues(self) -> None:
         assert gate.find_blockers(FakeGitHub([[]]), REPO) == []
 
@@ -115,7 +118,8 @@ class DescribeCheckNoReleaseBlockers:
         blockers = gate.find_blockers(fetch, REPO)
 
         assert len(blockers) == gate.PER_PAGE + 1
-        assert fetch.paths[-1] == f'{ISSUES_PATH}&page=2'
+        assert blockers[-1] == gate.Blocker(number=900, title='A blocker', is_pull_request=False)
+        assert fetch.paths == [LABEL_PATH, ISSUES_PATH, f'{ISSUES_PATH}&page=2']
 
     def it_counts_a_labeled_pull_request_as_a_blocker_and_marks_it_as_one(self) -> None:
         blockers = gate.find_blockers(FakeGitHub([[_pull_request(12)]]), REPO)
@@ -126,19 +130,25 @@ class DescribeCheckNoReleaseBlockers:
         with pytest.raises(gate.CannotCheckError):
             gate.find_blockers(FakeGitHub([[]], label_error=http_error(404)), REPO)
 
-    @pytest.mark.parametrize('spec', [403, 500, 'unreachable'], ids=['forbidden', 'server-error', 'unreachable'])
+    @pytest.mark.parametrize(
+        'failure_kind', [403, 500, 'unreachable'], ids=['forbidden', 'server-error', 'unreachable']
+    )
     def it_lets_other_label_lookup_failures_propagate_instead_of_passing(
-        self, spec: int | str, http_error: Callable[[int], urllib.error.HTTPError]
+        self, failure_kind: int | str, http_error: Callable[[int], urllib.error.HTTPError]
     ) -> None:
-        with pytest.raises(urllib.error.URLError):
-            gate.find_blockers(FakeGitHub([[]], label_error=_failure(spec, http_error)), REPO)
+        error = _transport_error(failure_kind, http_error)
+
+        with pytest.raises(urllib.error.URLError) as raised:
+            gate.find_blockers(FakeGitHub([[]], label_error=error), REPO)
+
+        assert raised.value is error
 
     def it_says_a_missing_label_may_have_been_deleted_or_renamed(self, http_error: Callable[[int], Exception]) -> None:
         with pytest.raises(gate.CannotCheckError, match='deleted or renamed'):
             gate.find_blockers(FakeGitHub([[]], label_error=http_error(404)), REPO)
 
     @pytest.mark.parametrize('label', [[], 'oops', None, 3], ids=['list', 'string', 'null', 'number'])
-    def it_cannot_check_when_the_label_answer_is_not_an_object(self, label: Any) -> None:
+    def it_cannot_check_when_the_label_answer_is_not_an_object(self, label: object) -> None:
         fetch = FakeGitHub([[]])
         fetch._label = label
 
@@ -158,7 +168,7 @@ class DescribeCheckNoReleaseBlockers:
         ],
         ids=['object', 'null', 'string', 'null-entry', 'string-number', 'bool-number', 'null-title'],
     )
-    def it_cannot_check_when_the_issue_listing_is_malformed(self, issues_answer: Any) -> None:
+    def it_cannot_check_when_the_issue_listing_is_malformed(self, issues_answer: object) -> None:
         with pytest.raises(gate.CannotCheckError, match='unexpected shape'):
             gate.find_blockers(FakeGitHub([issues_answer]), REPO)
 
@@ -195,35 +205,49 @@ class DescribeMain:
     ) -> None:
         code = self._main(monkeypatch, FakeGitHub([[_issue(7, 'Cache key collides'), _pull_request(12, 'Fix it')]]))
 
-        out = capsys.readouterr().out
         assert code == 1
-        assert '#7 Cache key collides' in out
-        assert '#12 Fix it (pull request)' in out
-        assert 'remove the release-blocker label' in out
+        assert capsys.readouterr().out == (
+            f'2 open release-blocker item(s) in {REPO}:\n'
+            '  #7 Cache key collides\n'
+            '  #12 Fix it (pull request)\n'
+            'To clear it, fix the problem, or if it should not block the release, remove the release-blocker label '
+            'from the issue. The label change stays visible on the issue.\n'
+        )
 
     def it_adds_an_escaped_actions_annotation_when_running_in_github_actions(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
+        # A '%' in the title proves '%' is escaped before the newlines, or '%0A' would turn into '%250A'.
         monkeypatch.setenv('GITHUB_ACTIONS', 'true')
-        monkeypatch.setattr(gate, 'github_fetcher', lambda _token: FakeGitHub([[_issue(7)]]))
+        monkeypatch.setattr(gate, 'github_fetcher', lambda _token: FakeGitHub([[_issue(7, '100% broken')]]))
         monkeypatch.setenv('GITHUB_TOKEN', 'token')
         monkeypatch.setenv('GITHUB_REPOSITORY', REPO)
 
-        gate.main([])
+        code = gate.main([])
 
         last_line = capsys.readouterr().out.splitlines()[-1]
-        assert last_line.startswith('::error title=Release blocker gate failed::')
-        assert '%0A' in last_line
+        assert code == 1
+        assert last_line == (
+            f'::error title=Release blocker gate failed::1 open release-blocker item(s) in {REPO}:'
+            '%0A  #7 100%25 broken'
+            '%0ATo clear it, fix the problem, or if it should not block the release, remove the release-blocker '
+            'label from the issue. The label change stays visible on the issue.'
+        )
 
     def it_queries_the_repo_given_on_the_command_line_over_the_environment(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fetch = FakeGitHub([[]])
-        fetch_for_other = lambda path: fetch(path.replace('other/name', REPO))  # noqa: E731
+        # GITHUB_REPOSITORY is owner/repo; the fake only answers the label for other/name, so reading it would exit 2.
+        fetch = FakeGitHub([[]], repo='other/name')
 
-        self._main(monkeypatch, fetch_for_other, '--repo', 'other/name')
+        code = self._main(monkeypatch, fetch, '--repo', 'other/name')
 
-        assert fetch.paths[0] == LABEL_PATH
+        assert code == 0
+        assert fetch.paths == [
+            '/repos/other/name/labels/release-blocker',
+            '/repos/other/name/issues?state=open&labels=release-blocker&per_page=100',
+        ]
+        assert capsys.readouterr().out == 'No open release-blocker issues in other/name\n'
 
     def it_exits_two_when_there_is_no_token(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -259,15 +283,17 @@ class DescribeMain:
         assert code == 2
         assert 'deleted or renamed' in capsys.readouterr().err
 
-    @pytest.mark.parametrize('spec', [500, 403, 'unreachable'], ids=['server-error', 'forbidden', 'unreachable'])
+    @pytest.mark.parametrize(
+        'failure_kind', [500, 403, 'unreachable'], ids=['server-error', 'forbidden', 'unreachable']
+    )
     def it_exits_two_when_the_issue_listing_request_fails(
         self,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
         http_error: Callable[[int], urllib.error.HTTPError],
-        spec: int | str,
+        failure_kind: int | str,
     ) -> None:
-        error = _failure(spec, http_error)
+        error = _transport_error(failure_kind, http_error)
 
         def fetch(path: str) -> Any:
             if path == LABEL_PATH:
@@ -277,7 +303,7 @@ class DescribeMain:
         code = self._main(monkeypatch, fetch)
 
         assert code == 2
-        assert capsys.readouterr().err.startswith('error: ')
+        assert capsys.readouterr().err.startswith('error: GitHub API request failed: ')
 
     def it_exits_two_when_the_issue_listing_is_not_a_list(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -297,7 +323,7 @@ class DescribeMain:
         code = gate.main([])
 
         assert code == 2
-        assert capsys.readouterr().err.startswith('error: ')
+        assert capsys.readouterr().err.startswith('error: GitHub API request failed: ')
 
     def it_exits_two_when_the_api_root_is_not_https(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -314,9 +340,7 @@ class DescribeMain:
     def it_exits_two_not_a_traceback_when_the_repository_is_not_ascii(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        # The real fetcher: http.client encodes the request line as ASCII before it connects, so nothing is sent.
         monkeypatch.setenv('GITHUB_TOKEN', 'token')
-        monkeypatch.delenv('GITHUB_API_URL', raising=False)
 
         code = gate.main(['--repo', 'ownér/repo'])
 
@@ -324,6 +348,9 @@ class DescribeMain:
         assert capsys.readouterr().err.startswith('error: ')
 
     @pytest.mark.parametrize('flag', ['--skip', '--force', '--no-check'])
-    def it_has_no_flag_that_skips_the_check(self, flag: str) -> None:
-        with pytest.raises(SystemExit):
+    def it_has_no_flag_that_skips_the_check(self, flag: str, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit) as raised:
             gate.main([flag])
+
+        assert raised.value.code == 2
+        assert f'unrecognized arguments: {flag}' in capsys.readouterr().err

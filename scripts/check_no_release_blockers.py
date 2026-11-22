@@ -32,7 +32,6 @@ import json
 import os
 import re
 import sys
-from typing import Any
 import urllib.error
 
 from check_ci_passed import (
@@ -108,23 +107,23 @@ def find_blockers(fetch: Fetch, repo: str) -> list[Blocker]:
     page = 1
     while True:
         path = f'/repos/{repo}/issues?state=open&labels={RELEASE_BLOCKER_LABEL}&per_page={PER_PAGE}'
-        answer: Any = fetch(path if page == 1 else f'{path}&page={page}')
-        if not isinstance(answer, list):
-            raise _unexpected_shape_error('the issue listing', answer)
-        blockers.extend(_blocker_from(entry) for entry in answer)
-        if len(answer) < PER_PAGE:
+        issues_page: object = fetch(path if page == 1 else f'{path}&page={page}')
+        if not isinstance(issues_page, list):
+            raise _unexpected_shape_error('the issue listing', issues_page)
+        blockers.extend(_blocker_from(entry) for entry in issues_page)
+        if len(issues_page) < PER_PAGE:
             return blockers
         page += 1
 
 
-def _describe(blocker: Blocker) -> str:
+def _describe_blocker(blocker: Blocker) -> str:
     suffix = ' (pull request)' if blocker.is_pull_request else ''
     return f'#{blocker.number} {blocker.title}{suffix}'
 
 
 def _failure_message(repo: str, blockers: list[Blocker]) -> str:
     lines = [f'{len(blockers)} open {RELEASE_BLOCKER_LABEL} item(s) in {repo}:']
-    lines.extend(f'  {_describe(blocker)}' for blocker in blockers)
+    lines.extend(f'  {_describe_blocker(blocker)}' for blocker in blockers)
     lines.append(
         f'To clear it, fix the problem, or if it should not block the release, remove the {RELEASE_BLOCKER_LABEL} '
         'label from the issue. The label change stays visible on the issue.'

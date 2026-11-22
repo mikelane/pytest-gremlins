@@ -8,6 +8,7 @@ checkout, permissions and the Test PyPI install.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 import re
 import subprocess
@@ -367,6 +368,7 @@ class DescribeReleaseWorkflowWipGate:
 
 
 RELEASE_BLOCKER_SCRIPT = 'scripts/check_no_release_blockers.py'
+StepsLookup = Callable[[], list[dict[str, Any]]]
 
 
 def _cut_release_steps() -> list[dict[str, Any]]:
@@ -404,15 +406,19 @@ class DescribeReleaseBlockerGate:
 
         assert checkout < blockers < docs_build
 
-    @pytest.mark.parametrize('steps', [_cut_release_blocker_steps, _verify_tag_blocker_steps])
-    def it_passes_the_workflow_token_through_the_environment(self, steps: Any) -> None:
+    @pytest.mark.parametrize(
+        'steps', [_cut_release_blocker_steps, _verify_tag_blocker_steps], ids=['cut-release', 'verify-tag']
+    )
+    def it_passes_the_workflow_token_through_the_environment(self, steps: StepsLookup) -> None:
         step = steps()[0]
 
         assert step['env']['GITHUB_TOKEN'] == '${{ github.token }}'  # noqa: S105 - a workflow expression, not a secret
         assert '${{' not in step['run']
 
-    @pytest.mark.parametrize('steps', [_cut_release_blocker_steps, _verify_tag_blocker_steps])
-    def it_has_no_condition_or_failure_override_on_the_blocker_step(self, steps: Any) -> None:
+    @pytest.mark.parametrize(
+        'steps', [_cut_release_blocker_steps, _verify_tag_blocker_steps], ids=['cut-release', 'verify-tag']
+    )
+    def it_has_no_condition_or_failure_override_on_the_blocker_step(self, steps: StepsLookup) -> None:
         step = steps()[0]
 
         assert 'if' not in step
