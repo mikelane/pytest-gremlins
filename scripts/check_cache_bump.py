@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Release cache-bump gate: a release that changes a cache marker is at least a minor version and says so.
+
+Raising ``CACHE_VERSION`` or ``RUNNER_FIDELITY_VERSION`` throws away every user's warm incremental cache, so the first
+run after upgrading is cold. A patch release is a promise of "safe to upgrade without noticing", and a cold cache
+breaks that promise. This check runs at release time and fails the release when a marker differs from its value at the
+previous release (the newest ``v*`` tag reachable from ``HEAD``, not counting the tag being released) and either
+
+* the version is not at least a minor bump over the previous release, or
+* the changelog entry has no ``### Upgrade notes`` bullet that says the cache is rebuilt once.
+
+A version counts as at least a minor bump when its ``major.minor`` is higher than the previous release's. One more case
+counts: the previous release is a prerelease of ``X.Y.0`` (``1.15.0b0``) and the new version stays on ``X.Y``
+(``1.15.0b1``, ``1.15.0``), because that prerelease already was the minor bump over the last stable release.
+
+A bullet says the cache is rebuilt when its text, in any letter case, contains both ``cache`` and ``rebuil``
+("rebuilds the cache once", "the cache is rebuilt"). The check does not judge the wording beyond that. The docs gate
+(``check_release_docs.py``) still requires the bullet to carry a docs link or a ``(no docs: <reason>)`` exemption.
+
+``prepare_release.py`` applies the first rule for you: it computes at least the next minor version when a marker
+changed, and refuses ``--increment PATCH`` then. The hotfix case, a patch release cut from an older tag that changes a
+marker, is tracked in #1015.
+
+Nothing skips this check: it has no flag, environment variable or input that turns it off. With ``--newest``, a topmost
+entry whose tag already exists passes, like in ``check_cache_kept.py``.
+
+Usage: ``check_cache_bump.py VERSION`` or ``check_cache_bump.py --newest`` (the topmost changelog entry).
+
+Exit codes: 0 when the release passes, 1 when it fails (each problem is printed on stdout with a ``PROBLEM:`` prefix),
+2 when the check could not run (no previous release tag, unreadable markers, version or entry; the reason is printed on
+stderr). Exit 2 is never a pass.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+from pathlib import Path
+import re
+import sys
+
+from check_cache_kept import (
+    _head_markers,
+    _is_tagged,
+    _read_changelog,
+    previous_release_tag,
+)
+from check_release_docs import (
+    DEFAULT_CHANGELOG,
+    CannotCheckError,
+    newest_version,
+    upgrade_note_bullets,
+)
+from check_verdict_change import (
+    Markers,
+    released_markers,
+)
+
+PROBLEM_PREFIX = 'PROBLEM: '
+VERSION_SHAPE = re.compile(r'(\d+)\.(\d+)\.(\d+)(.*)')
+
+__all__ = [
+    'Markers',
+    'changed_markers',
+    'check_cache_bump',
+    'is_minor_bump',
+    'main',
+    'markers_changed_since_last_release',
+    'says_cache_rebuilt',
+]
+
+
+def _parse_version(text: str) -> tuple[int, int, int, str]:
+    """Return ``(major, minor, patch, suffix)`` of ``text``; raise ``CannotCheckError`` when it is not ``X.Y.Z...``."""
+    match = VERSION_SHAPE.fullmatch(text)
+    if match is None:
+        raise CannotCheckError(f'cannot read "{text}" as a version of the form X.Y.Z')
+    major, minor, patch, suffix = match.groups()
+    return int(major), int(minor), int(patch), suffix
+
+
+def is_minor_bump(previous: str, new: str) -> bool:
+    """Return whether ``new`` is at least a minor version bump over ``previous``.
+
+    Args:
+        previous: The previous release's version, without the leading ``v``.
+        new: The version being released, without the leading ``v``.
+
+    Returns:
+        True when ``new`` has a higher ``major.minor``, or stays on the ``major.minor`` of a ``previous`` that is a
+        prerelease of ``X.Y.0``. A prerelease suffix such as ``b0`` is otherwise ignored.
+
+    Raises:
+        CannotCheckError: When either version is not of the form ``X.Y.Z`` with an optional suffix.
+    """
+    old_major, old_minor, old_patch, old_suffix = _parse_version(previous)
+    new_major, new_minor, _, _ = _parse_version(new)
+    if (new_major, new_minor) != (old_major, old_minor):
+        return (new_major, new_minor) > (old_major, old_minor)
+    return bool(old_suffix) and old_patch == 0
+
+
+def says_cache_rebuilt(bullet: str) -> bool:
+    """Return whether ``bullet`` mentions the cache and a rebuild, in any letter case."""
+    lowered = bullet.lower()
+    return 'cache' in lowered and 'rebuil' in lowered
+
+
+def changed_markers(previous: Markers, head: Markers) -> list[str]:
+    """Return the name of each cache marker whose value in ``head`` differs from its value in ``previous``."""
+    changed = []
+    if head.cache_version != previous.cache_version:
+        changed.append('CACHE_VERSION')
+    if head.runner_fidelity_version != previous.runner_fidelity_version:
+        changed.append('RUNNER_FIDELITY_VERSION')
+    return changed
+
+
+def check_cache_bump(
+    previous: Markers, head: Markers, previous_version: str, version: str, *, bullets: Sequence[str]
+) -> list[str]:
+    """Return why the release fails, one line per problem; empty when it passes.
+
+    Args:
+        previous: The cache markers at the previous release.
+        head: The cache markers of the code being released.
+        previous_version: The previous release's version, without the leading ``v``.
+        version: The version being released, without the leading ``v``.
+        bullets: The text of every bullet under ``### Upgrade notes`` in the release's changelog entry.
+
+    Returns:
+        The problems, one line each, or an empty list when no marker changed or the release handles the change.
+    """
+    changed = changed_markers(previous, head)
+    if not changed:
+        return []
+    names = ' and '.join(changed)
+    problems = []
+    if not is_minor_bump(previous_version, version):
+        problems.append(
+            f"{names} changed since v{previous_version}, which discards users' warm caches, but {version} is not a "
+            f'minor bump over {previous_version}. Release at least the next minor version.'
+        )
+    if not any(says_cache_rebuilt(bullet) for bullet in bullets):
+        problems.append(
+            f'{names} changed since v{previous_version}, but the entry has no "### Upgrade notes" bullet that says the '
+            'cache is rebuilt once. Add one that mentions the cache and says it is rebuilt, for example "The first '
+            'run after upgrading rebuilds the cache once."'
+        )
+    return problems
+
+
+def markers_changed_since_last_release(repo: Path) -> tuple[str, list[str]] | None:
+    """Return the previous release's version and the names of the markers that changed since it, or ``None``.
+
+    Used by ``prepare_release.py``, which runs before any tag exists for the release it prepares, so every ``v*`` tag
+    counts.
+
+    Args:
+        repo: The repository to read the tags and the markers from.
+
+    Returns:
+        ``None`` when no release tag is reachable or the markers cannot be read at it or in the working tree.
+    """
+    tag = previous_release_tag(None, repo)
+    previous = released_markers(tag, repo) if tag else None
+    if tag is None or previous is None:
+        return None
+    try:
+        head = _head_markers(repo)
+    except CannotCheckError:
+        return None
+    return tag.removeprefix('v'), changed_markers(previous, head)
+
+
+def _check(args: argparse.Namespace) -> tuple[str, list[str], str]:
+    """Run the check for the parsed arguments; return the version checked, its problems and the message on a pass."""
+    changelog = _read_changelog(args.changelog)
+    version: str = newest_version(changelog) if args.newest else args.version
+    version = version.removeprefix('v')
+    if not version:
+        raise CannotCheckError('the version is empty')
+    if args.newest and _is_tagged(version):
+        return (
+            version,
+            [],
+            f'v{version} is already released; changes since then are checked when the next entry is added.',
+        )
+    previous_tag = previous_release_tag(None if args.newest else version)
+    if previous_tag is None:
+        raise CannotCheckError('no earlier release tag is reachable from HEAD; fetch tags (fetch-depth: 0)')
+    previous = released_markers(previous_tag)
+    if previous is None:
+        raise CannotCheckError(f'cannot read the cache markers at {previous_tag}')
+    head = _head_markers()
+    bullets = upgrade_note_bullets(changelog, version) if changed_markers(previous, head) else []
+    if bullets is None:
+        raise CannotCheckError(f'the changelog has no "## v{version}" entry')
+    problems = check_cache_bump(previous, head, previous_tag.removeprefix('v'), version, bullets=bullets)
+    return version, problems, f'The {version} release changes no cache marker, or is a minor release that explains it.'
+
+
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('version', nargs='?', help='version being released, with or without the leading v')
+    parser.add_argument('--newest', action='store_true', help='check the topmost entry of the changelog instead')
+    parser.add_argument('--changelog', type=Path, default=DEFAULT_CHANGELOG, help='path to CHANGELOG.md')
+    args = parser.parse_args(argv)
+    if args.newest == (args.version is not None):
+        parser.error('give exactly one of the version and --newest')
+    return args
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entry point; returns 0 when the release passes, 1 when it fails, 2 when the check could not run."""
+    args = _parse_args(argv)
+    try:
+        version, problems, passed = _check(args)
+    except CannotCheckError as error:
+        print(f'could not check the release cache bump: {error}', file=sys.stderr)
+        return 2
+    except Exception as error:  # exit 2 must never be confused with a failed check (exit 1) or a pass
+        print(f'could not check the release cache bump: unexpected {type(error).__name__}: {error}', file=sys.stderr)
+        return 2
+    if problems:
+        print(f'{version} cannot be released with its cache markers as they are:')
+        for problem in problems:
+            print(f'{PROBLEM_PREFIX}{problem}')
+        return 1
+    print(passed)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

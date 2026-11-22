@@ -509,6 +509,12 @@ jobs:
           VERSION: ${{ steps.guard.outputs.version }}
         run: uv run --no-sync python scripts/check_cache_kept.py "$VERSION"
 
+      - name: Check a release that changes a cache marker is a minor release and says the cache is rebuilt
+        if: steps.guard.outputs.version_changed == 'true'
+        env:
+          VERSION: ${{ steps.guard.outputs.version }}
+        run: uv run --no-sync python scripts/check_cache_bump.py "$VERSION"
+
       - name: Check no wip test ships in the release
         if: steps.guard.outputs.version_changed == 'true'
         run: uv run --no-sync python scripts/check_no_wip_tests.py

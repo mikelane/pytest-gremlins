@@ -109,6 +109,11 @@ jobs:
       - name: Check the release raises a cache marker or keeps the cache on purpose
         run: uv run python scripts/check_cache_kept.py "$RELEASE_TAG"
 
+      # Cache bump gate. A release that changes a cache marker must be at least a minor version and have an
+      # "### Upgrade notes" bullet saying the cache is rebuilt once. No input, variable or condition skips it.
+      - name: Check a release that changes a cache marker is a minor release and says the cache is rebuilt
+        run: uv run python scripts/check_cache_bump.py "$RELEASE_TAG"
+
   # CI gate. main CI (ci.yml) already ran the small and medium tiers on every OS and Python version for the tagged
   # commit, so the release asks GitHub whether that run passed instead of rerunning the matrix. It fails unless a
   # ci.yml push run for the commit succeeded with every Test job concluded success (a skipped job fails it), waiting
