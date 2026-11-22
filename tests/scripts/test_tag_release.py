@@ -1059,4 +1059,4 @@ class DescribeTheIsolatedChildEnvironment:
     def it_drops_the_actions_variables_so_a_child_run_neither_annotates_nor_writes_the_job_summary(
         self, name: str
     ) -> None:
-        assert name not in ISOLATED_GIT_ENV
+        assert ISOLATED_GIT_ENV.get(name) is None
