@@ -16,17 +16,19 @@ yes                         peels to ``--sha``       dispatch only (a re-run)
 yes                         peels elsewhere          refuse (exit 1), dispatch nothing
 ==========================  ======================  ===================================================
 
-Before tagging, the version guard runs from the *parent* commit's copy (the pre-merge main), never from the checkout:
-the merged commit could have edited the guard. A release commit that also edits ``tag-release.yml`` is refused,
-because GitHub runs a push workflow from the file at the pushed commit, so such a commit would run its own copy of
-the workflow. When the workflow file is untouched, that copy is main's own; the guard-before-tag therefore closes the
-"release PR dropped the guard from ci.yml" gap only for commits that leave ``tag-release.yml`` alone.
+Before tagging, the version guard and the blocker gate run from the *parent* commit's copy (the pre-merge main), never
+from the checkout: the merged commit could have edited them. The workflow exports this script and every script it runs
+from the parent into one directory and runs it from there, so the gates are the siblings of this file. A release
+commit that also edits ``tag-release.yml`` is refused, because GitHub runs a push workflow from the file at the pushed
+commit, so such a commit would run its own copy of the workflow. The guard-before-tag therefore closes the "release PR
+dropped the guard from ci.yml" gap only for commits that leave ``tag-release.yml`` alone; a commit that rewrites the
+workflow is stopped only by review of that change.
 
 The release-blocker gate (``check_no_release_blockers.py``) runs before the tag exists. The docs, cache and wip gates
 are not repeated here: ``verify-tag`` in ``release.yml`` runs them before anything is published.
 
 Usage: ``tag_release.py --sha SHA [--repo PATH] [--github-repository OWNER/NAME]``. Needs ``GH_TOKEN`` (and
-``GITHUB_TOKEN`` for the blocker gate) in the environment, and ``RUNNER_TEMP`` for the exported guard.
+``GITHUB_TOKEN`` for the blocker gate) in the environment.
 
 Exit codes: 0 done; 1 refused (a rule was broken, with the reason on stderr); 2 the check could not run (a failed
 lookup, an unreadable version, an API error). An error is never read as "no tag", so a failure never tags.
@@ -44,7 +46,6 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import tempfile
 import tomllib
 
 CANONICAL_VERSION = re.compile(
@@ -55,8 +56,6 @@ CANONICAL_VERSION = re.compile(
 )
 REMOTE = 'origin'
 WORKFLOW_PATH = '.github/workflows/tag-release.yml'
-GUARD_SCRIPTS = ('check_version_change.py', 'check_release_docs.py')
-GUARD_PYTHON = '/usr/bin/python3'
 TAGGER = {'name': 'github-actions[bot]', 'email': '41898282+github-actions[bot]@users.noreply.github.com'}
 SCRIPTS_DIR = Path(__file__).resolve().parent
 EXIT_REFUSED = 1
@@ -237,17 +236,19 @@ def tag_object_payload(tag: str, sha: str) -> dict[str, object]:
     return {'tag': tag, 'message': f'Release {tag}', 'object': sha, 'type': 'commit', 'tagger': dict(TAGGER)}
 
 
-def export_guard_scripts(repo: Path, base_ref: str, destination: Path) -> None:
-    """Write the guard scripts as committed at ``base_ref`` into ``destination``.
+def guard_command(repo: Path, sha: str, branch: str) -> list[str]:
+    """Return the command that runs the version guard sitting next to this script, against ``sha`` and its parent.
 
-    Raises:
-        CannotCheckError: If a script is missing at ``base_ref``.
+    The workflow exports this script and the guard from the parent commit into one directory, so the sibling copy is
+    the pre-merge main's. ``-E -s`` ignores the environment and the user site, as the ``release-pr`` job does.
     """
-    for script in GUARD_SCRIPTS:
-        shown = _git(repo, 'show', f'{base_ref}:scripts/{script}')
-        if shown.returncode != 0:
-            raise CannotCheckError(f'scripts/{script} is missing at {base_ref}; the guard runs from the parent commit')
-        (destination / script).write_text(shown.stdout, encoding='utf-8', newline='')
+    guard = SCRIPTS_DIR / 'check_version_change.py'
+    return [sys.executable, '-E', '-s', str(guard), '--repo', str(repo), '--base-ref', f'{sha}^', '--branch', branch]
+
+
+def blocker_command() -> list[str]:
+    """Return the command that runs the release-blocker gate sitting next to this script."""
+    return [sys.executable, '-E', '-s', str(SCRIPTS_DIR / 'check_no_release_blockers.py')]
 
 
 def _raise_for_status(name: str, status: int) -> None:
@@ -318,21 +319,15 @@ def github_effects(repo: Path, repository: str) -> Effects:
         return head_ref_from_pulls(_gh('api', f'repos/{repository}/commits/{sha}/pulls'), repository)
 
     def run_guard(sha: str, branch: str) -> None:
-        runner_temp = os.environ.get('RUNNER_TEMP')
-        if not runner_temp:
-            raise CannotCheckError('RUNNER_TEMP is not set; the guard needs a scratch directory outside the checkout')
-        guard_dir = Path(tempfile.mkdtemp(prefix='parent-guard.', dir=runner_temp))
-        export_guard_scripts(repo, f'{sha}^', guard_dir)
-        needs_tomllib = [GUARD_PYTHON, '-c', 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 2)']
-        if subprocess.run(needs_tomllib, check=False).returncode != 0:
-            raise CannotCheckError(f'{GUARD_PYTHON} is older than Python 3.11 or cannot run; the guard needs tomllib')
-        guard = [GUARD_PYTHON, '-E', '-s', str(guard_dir / 'check_version_change.py')]
-        guard += ['--repo', str(repo), '--base-ref', f'{sha}^', '--branch', branch]
-        _raise_for_status('the version guard', subprocess.run(guard, cwd=runner_temp, check=False).returncode)
+        _raise_for_status(
+            'the version guard',
+            subprocess.run(guard_command(repo, sha, branch), cwd=SCRIPTS_DIR, check=False).returncode,
+        )
 
     def run_blocker_gate() -> None:
-        gate = [sys.executable, str(SCRIPTS_DIR / 'check_no_release_blockers.py')]
-        _raise_for_status('the release-blocker gate', subprocess.run(gate, cwd=repo, check=False).returncode)
+        _raise_for_status(
+            'the release-blocker gate', subprocess.run(blocker_command(), cwd=SCRIPTS_DIR, check=False).returncode
+        )
 
     def create_tag(tag: str, sha: str) -> None:
         created = json.loads(

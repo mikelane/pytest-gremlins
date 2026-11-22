@@ -1,13 +1,25 @@
 name: Tag Release
 
-# Dry run (#1045): on every push to main, report whether [project].version still needs its tag.
-# It tags, pushes and dispatches nothing. #1046 turns the dry run into the real thing.
+# On every push to main (#1046): when the pushed commit is the one that changed [project].version, create the annotated
+# tag v<version> and dispatch release.yml for it. All logic lives in scripts/tag_release.py, which has its own tests;
+# its docstring holds the state table. cut-release.yml stays as the fallback until #1047.
+#
+# No personal access token is involved. The job's own token pushes the tag through the REST API, and a tag created
+# with GITHUB_TOKEN does not fire release.yml's tag-push trigger, so the explicit dispatch of release.yml is the only
+# release run (a dispatch made with GITHUB_TOKEN is allowed).
+#
+# Nothing the pushed commit changed runs before the tag exists. The scripts that decide and gate the release are read
+# from the PARENT commit (the pre-merge main) with git show, and run with the system Python from outside the
+# workspace, so a release commit cannot edit them to skip a check. The script also refuses a version-changing commit
+# that edits this workflow. The remaining limit: GitHub runs a push workflow from the file at the pushed commit, so a
+# commit that rewrites this file runs its own YAML. Only review of changes to this file stands between that and a tag
+# made without the checks, so the guarantee above is not tamper-proof.
+#
+# Bootstrap: a parent that lacks scripts/tag_release.py cannot supply it, so the export step fails closed (exit 2).
+# That is the first push after this workflow merged; it is not a release commit, and the next push works.
 on:
   push:
     branches: [main]
-
-env:
-  DRY_RUN: 'true'
 
 permissions:
   contents: read
@@ -18,19 +30,45 @@ concurrency:
 
 jobs:
   tag-release:
-    name: Report the tag a release would create
+    name: Tag and dispatch a release commit
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # create the tag
+      actions: write # dispatch release.yml
+      issues: read # the release-blocker gate
+      pull-requests: read # find the release pull request of this commit
 
     steps:
+      # Two commits: the scripts are exported from the parent, and the script compares the version with it.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 2
           persist-credentials: false
 
-      # The checkout is shallow and has no tags, so the script asks origin (git ls-remote) instead.
-      - name: Report the tag this push would create
+      # check_ci_passed.py is imported by check_no_release_blockers.py; the guard imports check_release_docs.py.
+      - name: Export the release scripts from the parent commit
+        id: export
         env:
           SHA: ${{ github.sha }}
-        run: python3 scripts/announce_untagged_release.py --sha "$SHA"
+        run: |
+          set -euo pipefail
+          dir="$(mktemp -d "$RUNNER_TEMP/release-scripts.XXXXXX")"
+          for script in tag_release.py check_no_release_blockers.py check_ci_passed.py check_version_change.py check_release_docs.py; do
+            if ! git show "$SHA^:scripts/$script" > "$dir/$script"; then
+              echo "::error::$script is missing at $SHA^; the release scripts run from the parent commit"
+              exit 2
+            fi
+          done
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      # The checkout has no tags, so the script asks origin (git ls-remote) for the tag a version needs.
+      - name: Tag the release commit and dispatch release.yml
+        env:
+          SHA: ${{ github.sha }}
+          SCRIPTS_DIR: ${{ steps.export.outputs.dir }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP"
+          /usr/bin/python3 -I "$SCRIPTS_DIR/tag_release.py" --sha "$SHA" --repo "$GITHUB_WORKSPACE"

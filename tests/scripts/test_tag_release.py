@@ -395,36 +395,27 @@ class DescribeTheTagRequest:
         }
 
 
-@pytest.mark.medium
-class DescribeTheExportedGuard:
-    def it_exports_the_guard_scripts_from_the_parent_commit_not_the_checkout(self, tmp_path: Path) -> None:
-        origin = tmp_path / 'origin.git'
-        _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
-        clone = tmp_path / 'clone'
-        _git(tmp_path, 'clone', '--quiet', str(origin), str(clone))
-        (clone / 'scripts').mkdir()
-        for name in ('check_version_change.py', 'check_release_docs.py'):
-            (clone / 'scripts' / name).write_text('# trusted\n')
-        _commit(clone, '1.2.2', extra_files=())
-        _git(clone, 'add', 'scripts')
-        _git(clone, 'commit', '--quiet', '-m', 'guard')
-        (clone / 'scripts' / 'check_version_change.py').write_text('# tampered\n')
-        _git(clone, 'commit', '--quiet', '-a', '-m', 'weaken guard')
-        destination = tmp_path / 'guard'
-        destination.mkdir()
+@pytest.mark.small
+class DescribeTheGateCommands:
+    def it_runs_the_guard_that_sits_next_to_the_script_against_the_parent(self) -> None:
+        command = tag_release.guard_command(Path('/work'), 'abc', 'release/v1.2.3')
 
-        tag_release.export_guard_scripts(clone, 'HEAD~1', destination)
+        assert command[1:3] == ['-E', '-s']
+        assert command[3] == str(SCRIPT.parent / 'check_version_change.py')
+        assert command[4:] == [
+            '--repo',
+            '/work' if os.name != 'nt' else str(Path('/work')),
+            '--base-ref',
+            'abc^',
+            '--branch',
+            'release/v1.2.3',
+        ]
 
-        assert (destination / 'check_version_change.py').read_text() == '# trusted\n'
-        assert (destination / 'check_release_docs.py').read_text() == '# trusted\n'
+    def it_runs_the_blocker_gate_that_sits_next_to_the_script(self) -> None:
+        command = tag_release.blocker_command()
 
-    def it_fails_closed_when_a_guard_script_is_missing_at_the_parent(self, tmp_path: Path) -> None:
-        _, clone, _ = _make_repo(tmp_path, '1.2.2', '1.2.3')
-        destination = tmp_path / 'guard'
-        destination.mkdir()
-
-        with pytest.raises(tag_release.CannotCheckError, match=re.escape('check_version_change.py')):
-            tag_release.export_guard_scripts(clone, 'HEAD~1', destination)
+        assert command[1:3] == ['-E', '-s']
+        assert command[3] == str(SCRIPT.parent / 'check_no_release_blockers.py')
 
 
 def _run_cli(clone: Path, sha: str, *extra: str) -> subprocess.CompletedProcess[str]:
