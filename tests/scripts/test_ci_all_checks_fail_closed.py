@@ -175,11 +175,11 @@ class DescribeReleasePrJob:
 
         assert [script for script in run_scripts if '${{' in script] == []
 
-    def it_passes_the_branch_and_base_through_the_environment(self) -> None:
+    def it_passes_the_branch_and_default_branch_through_the_environment(self) -> None:
         env = _release_pr_step('check_version_change.py')['env']
 
         assert env['HEAD_REF'] == '${{ github.head_ref }}'
-        assert env['BASE_REF'] == '${{ github.base_ref }}'
+        assert env['DEFAULT_BRANCH'] == '${{ github.event.repository.default_branch }}'
 
     def it_runs_the_guard_unconditionally(self) -> None:
         assert 'if' not in _release_pr_step('check_version_change.py')
@@ -191,14 +191,14 @@ class DescribeReleasePrJob:
         assert guard_step['id'] == 'guard'
         assert '--github-output "$GITHUB_OUTPUT"' in guard_step['run']
 
-    def it_takes_the_merge_base_with_the_remote_base_branch(self) -> None:
-        assert '--base-ref "origin/$BASE_REF"' in _release_pr_step('check_version_change.py')['run']
+    def it_takes_the_merge_base_with_the_remote_default_branch(self) -> None:
+        assert '--base-ref "origin/$DEFAULT_BRANCH"' in _release_pr_step('check_version_change.py')['run']
 
     @pytest.mark.parametrize(
         'script',
         [
             'mkdocs build',
-            'check_release_docs.py',
+            'scripts/check_release_docs.py',
             'check_cache_kept.py',
             'check_cache_bump.py',
             'check_no_wip_tests.py',
@@ -207,7 +207,7 @@ class DescribeReleasePrJob:
     def it_runs_the_release_gates_only_when_the_version_changed(self, script: str) -> None:
         assert _release_pr_step(script)['if'] == "steps.guard.outputs.version_changed == 'true'"
 
-    @pytest.mark.parametrize('script', ['check_release_docs.py', 'check_cache_kept.py', 'check_cache_bump.py'])
+    @pytest.mark.parametrize('script', ['scripts/check_release_docs.py', 'check_cache_kept.py', 'check_cache_bump.py'])
     def it_passes_the_version_to_the_gates_through_the_environment(self, script: str) -> None:
         step = _release_pr_step(script)
 

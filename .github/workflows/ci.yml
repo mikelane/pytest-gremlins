@@ -473,6 +473,42 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Check that only a release pull request changes the version
+        id: guard
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GUARD_PYTHON: /usr/bin/python3
+        # Run the default branch's copy of the guard, so a pull request cannot weaken the guard that checks it. The copy
+        # is exported from origin/$DEFAULT_BRANCH, never from the pull request's base: a stacked pull request's base is
+        # the lower layer's branch, which its author controls. The version change is judged against the default branch
+        # too (release pull requests target it). The checkout fetches every branch (fetch-depth 0), so
+        # origin/$DEFAULT_BRANCH exists whatever the base is. The copy is run by the runner's fixed system Python with no
+        # environment or user site. This step runs before any step that runs PR-head code (setup-uv, uv python install,
+        # uv sync build and read head files), so nothing the pull request controls can reach GITHUB_ENV or GITHUB_PATH
+        # before the guard.
+        run: |
+          set -euo pipefail
+          guard_dir="$(mktemp -d "$RUNNER_TEMP/default-branch-guard.XXXXXX")"
+          for script in check_version_change.py check_release_docs.py; do
+            if ! git -C "$GITHUB_WORKSPACE" show "origin/$DEFAULT_BRANCH:scripts/$script" > "$guard_dir/$script"; then
+              echo "::error::scripts/$script is missing at origin/$DEFAULT_BRANCH; the version guard runs from the default branch"
+              exit 2
+            fi
+          done
+          # The guard imports tomllib, which Python 3.11 added; an older interpreter would exit 1 with a traceback.
+          if ! "$GUARD_PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 2)'; then
+            echo "::error::$GUARD_PYTHON is older than Python 3.11 or cannot run; the version guard needs tomllib"
+            exit 2
+          fi
+          cd "$RUNNER_TEMP"
+          status=0
+          "$GUARD_PYTHON" -E -s "$guard_dir/check_version_change.py" --repo "$GITHUB_WORKSPACE" --base-ref "origin/$DEFAULT_BRANCH" --github-output "$GITHUB_OUTPUT" || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::the version guard (origin/$DEFAULT_BRANCH copy) exited $status; exit 1 lists each broken rule as a PROBLEM: line, exit 2 prints why it could not run, in this step's log"
+            exit "$status"
+          fi
+
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
@@ -485,13 +521,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
-
-      - name: Check that only a release pull request changes the version
-        id: guard
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-          BASE_REF: ${{ github.base_ref }}
-        run: uv run --no-sync python scripts/check_version_change.py --base-ref "origin/$BASE_REF" --github-output "$GITHUB_OUTPUT"
 
       - name: Build the docs site
         if: steps.guard.outputs.version_changed == 'true'

@@ -414,17 +414,28 @@ is no bypass: no flag, environment variable or workflow input skips it. To clear
 label from the issue, which leaves a visible record on the issue. `ci.yml` does not run it, so it never blocks an
 ordinary pull request.
 
-**Release PR gates.** The `Release PR Gates` job (`release-pr` in `ci.yml`) runs on every pull request and is part
-of `All Checks Passed`. Its first step, `scripts/check_version_change.py`, compares `[project].version` with the
-merge base (a branch cut before main released reads as unchanged). The version counts as changed when either
-`[project].version` or `__version__` in `src/pytest_gremlins/__init__.py` differs, and then the two must be equal at
-`HEAD`. A pull request that changes the version must come
-from `release/v<version>` (the exact string, prerelease included, e.g. `release/v1.15.0b0`), change only
-`pyproject.toml`, `uv.lock`, `src/pytest_gremlins/__init__.py` and `CHANGELOG.md`, and have a topmost changelog entry
-for that version. Only then does the job run the docs gate, the cache gate, the cache-bump gate and the wip gate, so
-this is the place where the release PR gets checked, and a `wip` test never blocks an ordinary pull request. A version
-that is not PEP 440 shaped, or a missing or non-literal `__version__`, exits 2. Exit 2 is never a pass, and there is no
-bypass. The `cut-release.yml` path above is unchanged for now.
+**Release PR gates.** The `Release PR Gates` job (`release-pr` in `ci.yml`) runs on every pull request and is part of
+`All Checks Passed`. Its first step, `scripts/check_version_change.py`, runs from the default branch's copy: the step
+exports it, and `scripts/check_release_docs.py` which it imports, from `origin/<default branch>` (the repository's
+`default_branch`, not the pull request's base) into a fresh directory under `$RUNNER_TEMP` and runs that copy with the
+runner's fixed system Python (`/usr/bin/python3 -E -s`, no uv, no checkout venv) against the pull request checkout. The
+merge base is taken with the default branch too, so a stacked pull request, whose base is the lower layer's branch, can
+supply neither the guard nor the base of the comparison. The guard is the job's first step after checkout, so no PR-head
+code has run before it (setup-uv, `uv python install` and `uv sync` run later). So a pull request cannot weaken the
+guard it is checked by. A missing default-branch copy exits 2, and so does a runner Python older than 3.11 (the guard
+needs `tomllib`). The guard reads `pyproject.toml`, `__init__.py` and `CHANGELOG.md` as git blobs, at `HEAD` and at the
+merge base alike, and exits 2 when one is not a regular file there (a symlink or submodule), so a symlink cannot make
+the two sides read different content. It also exits 2 when a checked-out version file or the changelog differs from
+its committed blob (a `.gitattributes` transform) or sits behind a symlink. The guard compares
+`[project].version` with the merge base (a branch cut before main released reads as unchanged). The version counts as
+changed when either `[project].version` or `__version__` in `src/pytest_gremlins/__init__.py` differs, and then the two
+must be equal at `HEAD`. A pull request that changes the version must come from `release/v<version>` (the exact string,
+prerelease included, e.g. `release/v1.15.0b0`), change only `pyproject.toml`, `uv.lock`,
+`src/pytest_gremlins/__init__.py` and `CHANGELOG.md`, and have a topmost changelog entry for that version. Only then
+does the job run the docs gate, the cache gate, the cache-bump gate and the wip gate, so this is the place where the
+release PR gets checked, and a `wip` test never blocks an ordinary pull request. A version that is not PEP 440 shaped,
+or a missing or non-literal `__version__`, exits 2. Exit 2 is never a pass, and there is no bypass. The
+`cut-release.yml` path above is unchanged for now.
 
 **Preparing the release branch.** `uv run python scripts/prepare_release.py [--increment PATCH|MINOR|MAJOR]
 [--prerelease alpha|beta|rc]` builds the release branch locally. It refuses on `main`, with a dirty tree, when HEAD is

@@ -248,7 +248,10 @@ class DescribeVersionShape:
 
 
 class _FakeGit:
-    """Stand-in for the git helper: answers merge-base, show and diff from fixed values, and records every call."""
+    """Stand-in for git: answers merge-base, ls-tree, show and diff, and records every call.
+
+    ``show HEAD:<path>`` serves the file from the repository directory, so a test shapes HEAD by writing files.
+    """
 
     def __init__(
         self,
@@ -263,7 +266,10 @@ class _FakeGit:
         self.base_init = base_init
         self.changed = changed
         self.failure: Exception | None = None
-        monkeypatch.setattr(guard, '_git', self._answer_git)
+        self.modes: dict[tuple[str, str], str] = {}
+        self.head_blobs: dict[str, bytes] = {}
+        self.merge_base_output = b'MERGEBASE\n'
+        monkeypatch.setattr(guard, '_git_bytes', self._answer_git)
 
     def _base_pyproject_version(self) -> str:
         try:
@@ -272,30 +278,48 @@ class _FakeGit:
             return '1.14.3'
         return version
 
-    def _answer_git(self, _repo: Path, *args: str) -> str:
+    def _answer_git(self, repo: Path, *args: str) -> bytes:
         self.calls.append(args)
         if self.failure is not None:
             raise self.failure
         if args[0] == 'merge-base':
-            return 'MERGEBASE\n'
-        if args[0] == 'show' and args[1] == 'MERGEBASE:pyproject.toml':
-            return self.base_pyproject
-        if args[0] == 'show' and args[1] == 'MERGEBASE:src/pytest_gremlins/__init__.py':
-            return self.base_init if self.base_init is not None else _init(self._base_pyproject_version())
+            return self.merge_base_output
+        if args[0] == 'ls-tree':
+            return self._listing(repo, ref=args[1], path=args[3])
         if args[0] == 'show':
-            return '<<unexpected ref>>'
+            return self._show(repo, args[1])
         if args[0] == 'diff':
-            return ''.join(f'{path}\n' for path in self.changed)
+            return ''.join(f'{path}\n' for path in self.changed).encode()
         raise AssertionError(args)
 
+    def _listing(self, repo: Path, *, ref: str, path: str) -> bytes:
+        if ref == 'HEAD' and not (repo / path).exists():
+            return b''
+        mode = self.modes.get((ref, path), '100644')
+        return f'{mode} blob 0123abc\t{path}\n'.encode()
 
-@pytest.fixture
-def head_files(tmp_path: Path) -> Path:
+    def _show(self, repo: Path, spec: str) -> bytes:
+        ref, _, path = spec.partition(':')
+        if ref == 'HEAD':
+            return self.head_blobs[path] if path in self.head_blobs else (repo / path).read_bytes()
+        if spec == 'MERGEBASE:pyproject.toml':
+            return self.base_pyproject.encode()
+        if spec == 'MERGEBASE:src/pytest_gremlins/__init__.py':
+            return (self.base_init if self.base_init is not None else _init(self._base_pyproject_version())).encode()
+        return b'<<unexpected ref>>'
+
+
+def write_head_files(tmp_path: Path) -> Path:
     (tmp_path / 'pyproject.toml').write_text(_pyproject('1.15.0'), encoding='utf-8')
     (tmp_path / 'CHANGELOG.md').write_text(_changelog('1.15.0'), encoding='utf-8')
     (tmp_path / 'src' / 'pytest_gremlins').mkdir(parents=True)
     (tmp_path / 'src' / 'pytest_gremlins' / '__init__.py').write_text(_init('1.15.0'), encoding='utf-8')
     return tmp_path
+
+
+@pytest.fixture
+def head_files(tmp_path: Path) -> Path:
+    return write_head_files(tmp_path)
 
 
 def _run(root: Path, *extra_args: str, branch: str = 'release/v1.15.0') -> int:
@@ -501,7 +525,18 @@ class DescribeMain:
 
 def _real_git(repo: Path, *args: str) -> None:
     subprocess.run(
-        ['git', '-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', *args],  # noqa: S607
+        [  # noqa: S607
+            'git',
+            '-c',
+            'user.name=t',
+            '-c',
+            'user.email=t@example.com',
+            '-c',
+            'commit.gpgsign=false',
+            '-c',
+            'core.autocrlf=false',
+            *args,
+        ],
         cwd=repo,
         check=True,
         capture_output=True,
