@@ -9,14 +9,11 @@ weakened copy. A whole-stack async merge lands both on main with every check gre
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-import subprocess
-import sys
 
 import pytest
 
-from tests.scripts.test_ci_release_pr_guard_from_base import (
+from tests.scripts.test_ci_release_pr_guard_from_default_branch import (
     ALWAYS_PASSES,
     GUARD_FAILED,
     NEEDS_TOOLS,
@@ -24,7 +21,7 @@ from tests.scripts.test_ci_release_pr_guard_from_base import (
     _commit_all,
     _git,
     _make_checkout,
-    _run_text,
+    _run_step,
     _write,
 )
 
@@ -50,28 +47,7 @@ class DescribeGuardStepOnAStackedPullRequest:
         self, tmp_path: Path
     ) -> None:
         repo = _stack_with_a_weakened_lower_layer(tmp_path)
-        runner_temp = tmp_path / 'runner_temp'
-        runner_temp.mkdir()
-        env = {
-            'PATH': os.environ['PATH'],
-            'HOME': os.environ.get('HOME', str(tmp_path)),
-            'GUARD_PYTHON': sys.executable,
-            'BASE_REF': 'lower-layer',
-            'DEFAULT_BRANCH': 'main',
-            'HEAD_REF': 'upper-layer',
-            'GITHUB_WORKSPACE': str(repo),
-            'RUNNER_TEMP': str(runner_temp),
-            'GITHUB_OUTPUT': str(tmp_path / 'github_output'),
-        }
-
-        completed = subprocess.run(
-            ['bash', '-c', _run_text()],  # noqa: S607
-            cwd=repo,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        completed, _ = _run_step(repo, tmp_path, extra_env={'BASE_REF': 'lower-layer', 'HEAD_REF': 'upper-layer'})
 
         assert completed.returncode == GUARD_FAILED, completed.stdout + completed.stderr
         assert 'release/v9.9.9' in completed.stdout

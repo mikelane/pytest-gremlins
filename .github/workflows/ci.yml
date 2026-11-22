@@ -489,7 +489,7 @@ jobs:
         # before the guard.
         run: |
           set -euo pipefail
-          guard_dir="$(mktemp -d "$RUNNER_TEMP/base-guard.XXXXXX")"
+          guard_dir="$(mktemp -d "$RUNNER_TEMP/default-branch-guard.XXXXXX")"
           for script in check_version_change.py check_release_docs.py; do
             if ! git -C "$GITHUB_WORKSPACE" show "origin/$DEFAULT_BRANCH:scripts/$script" > "$guard_dir/$script"; then
               echo "::error::scripts/$script is missing at origin/$DEFAULT_BRANCH; the version guard runs from the default branch"

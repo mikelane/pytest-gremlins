@@ -1,4 +1,4 @@
-"""Tests that the ``release-pr`` guard step runs the base branch's copy of the guard (issue #1049).
+"""Tests that the ``release-pr`` guard step runs the default branch's copy of the guard (issue #1049).
 
 A pull request that edits ``scripts/check_version_change.py`` must not be checked by its own edited copy, or it
 could weaken the guard that is meant to stop it. The step exports the guard from ``origin/$DEFAULT_BRANCH`` and runs
@@ -8,6 +8,7 @@ that copy in isolation against the pull request checkout.
 from __future__ import annotations
 
 import ast
+from collections.abc import Mapping
 import os
 from pathlib import Path
 import shutil
@@ -31,17 +32,17 @@ GUARD_FAILED = 1
 GUARD_COULD_NOT_RUN = 2
 
 
-def _steps() -> list[dict[str, Any]]:
+def _release_pr_steps() -> list[dict[str, Any]]:
     steps: list[dict[str, Any]] = yaml.safe_load(CI_WORKFLOW.read_text(encoding='utf-8'))['jobs']['release-pr']['steps']
     return steps
 
 
 def _guard_index() -> int:
-    return next(index for index, step in enumerate(_steps()) if step.get('id') == 'guard')
+    return next(index for index, step in enumerate(_release_pr_steps()) if step.get('id') == 'guard')
 
 
 def _guard_step() -> dict[str, Any]:
-    return _steps()[_guard_index()]
+    return _release_pr_steps()[_guard_index()]
 
 
 def _run_text() -> str:
@@ -58,8 +59,8 @@ def _local_script_imports(script: str) -> set[str]:
 
 
 @pytest.mark.medium
-class DescribeGuardStepRunsTheBaseCopy:
-    def it_exports_each_guard_file_from_the_base_branch_with_git_show(self) -> None:
+class DescribeGuardStepRunsTheDefaultBranchCopy:
+    def it_exports_each_guard_file_from_the_default_branch_with_git_show(self) -> None:
         assert 'for script in check_version_change.py check_release_docs.py; do' in _run_text()
         assert (
             'git -C "$GITHUB_WORKSPACE" show "origin/$DEFAULT_BRANCH:scripts/$script" > "$guard_dir/$script"'
@@ -86,10 +87,10 @@ class DescribeGuardStepRunsTheBaseCopy:
 
     def it_runs_directly_after_the_checkout(self) -> None:
         assert _guard_index() == 1
-        assert _steps()[0]['uses'].startswith('actions/checkout@')
+        assert _release_pr_steps()[0]['uses'].startswith('actions/checkout@')
 
     def it_runs_no_step_that_uses_uv_before_it(self) -> None:
-        earlier = _steps()[: _guard_index()]
+        earlier = _release_pr_steps()[: _guard_index()]
 
         assert [step for step in earlier if 'uv ' in step.get('run', '') or 'setup-uv' in step.get('uses', '')] == []
 
@@ -126,7 +127,7 @@ class DescribeGuardStepRunsTheBaseCopy:
         assert '::error::$GUARD_PYTHON is older than Python 3.11' in _run_text()
 
     def it_fetches_every_branch_so_the_default_branch_exists_for_a_stacked_pull_request(self) -> None:
-        checkout = _steps()[0]['with']
+        checkout = _release_pr_steps()[0]['with']
 
         assert checkout['fetch-depth'] == 0
 
@@ -151,12 +152,12 @@ def _commit_all(repo: Path, message: str) -> None:
     _git(repo, 'commit', '-q', '-m', message)
 
 
-def _make_checkout(tmp_path: Path, *, base_has: tuple[str, ...] = GUARD_FILES) -> Path:
+def _make_checkout(tmp_path: Path, *, default_branch_has: tuple[str, ...] = GUARD_FILES) -> Path:
     repo = tmp_path / 'workspace'
     repo.mkdir()
     _git(repo, 'init', '-q', '-b', 'main')
     (repo / 'scripts').mkdir()
-    for script in base_has:
+    for script in default_branch_has:
         shutil.copy(REPO_ROOT / 'scripts' / script, repo / 'scripts' / script)
     _write(repo, 'pyproject.toml', '[project]\nname = "x"\nversion = "1.0.0"\n')
     _write(repo, 'src/pytest_gremlins/__init__.py', "__version__ = '1.0.0'\n")
@@ -176,7 +177,11 @@ def _weaken_the_guard_and_bump_the_version(repo: Path) -> None:
 
 
 def _run_step(
-    repo: Path, tmp_path: Path, *, guard_python: str = sys.executable
+    repo: Path,
+    tmp_path: Path,
+    *,
+    guard_python: str = sys.executable,
+    extra_env: Mapping[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     runner_temp = tmp_path / 'runner_temp'
     runner_temp.mkdir()
@@ -190,6 +195,7 @@ def _run_step(
         'GITHUB_WORKSPACE': str(repo),
         'RUNNER_TEMP': str(runner_temp),
         'GITHUB_OUTPUT': str(github_output),
+        **(extra_env or {}),
     }
     completed = subprocess.run(
         ['bash', '-c', _run_text()],  # noqa: S607
@@ -234,10 +240,10 @@ class DescribeGuardStepAgainstAWeakenedPullRequest:
             ('check_release_docs.py', ('check_version_change.py',)),
         ],
     )
-    def it_exits_2_when_a_guard_file_is_missing_at_the_base(
+    def it_exits_2_when_a_guard_file_is_missing_on_the_default_branch(
         self, tmp_path: Path, missing: str, present: tuple[str, ...]
     ) -> None:
-        repo = _make_checkout(tmp_path, base_has=present)
+        repo = _make_checkout(tmp_path, default_branch_has=present)
 
         completed, _ = _run_step(repo, tmp_path)
 

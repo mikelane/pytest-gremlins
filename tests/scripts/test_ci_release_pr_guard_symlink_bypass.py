@@ -15,9 +15,10 @@ import sys
 
 import pytest
 
-from tests.scripts.test_ci_release_pr_guard_from_base import (
+from tests.scripts.test_ci_release_pr_guard_from_default_branch import (
     GUARD_COULD_NOT_RUN,
     NEEDS_TOOLS,
+    POSIX_ONLY,
     _commit_all,
     _git,
     _make_checkout,
@@ -42,6 +43,7 @@ def _plant_symlinks_that_keep_the_version(repo: Path) -> None:
 
 
 @pytest.mark.medium
+@POSIX_ONLY
 @pytest.mark.skipif(sys.platform == 'win32', reason='needs symlinks')
 @NEEDS_TOOLS
 class DescribeGuardStepAgainstThePlantingPullRequest:
@@ -56,6 +58,7 @@ class DescribeGuardStepAgainstThePlantingPullRequest:
 
 
 @pytest.mark.medium
+@POSIX_ONLY
 @pytest.mark.skipif(sys.platform == 'win32', reason='needs symlinks')
 @NEEDS_TOOLS
 class DescribeGuardStepAgainstSymlinkedVersionFiles:

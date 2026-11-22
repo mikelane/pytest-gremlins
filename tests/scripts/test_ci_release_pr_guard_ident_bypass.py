@@ -11,14 +11,14 @@ from the working tree, so the two can hold different versions. The blobs are com
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 import tomllib
 
 import pytest
 
-from tests.scripts.test_ci_release_pr_guard_from_base import (
+from tests.scripts.test_ci_release_pr_guard_from_default_branch import (
     GUARD_COULD_NOT_RUN,
     NEEDS_TOOLS,
+    POSIX_ONLY,
     _commit_all,
     _git,
     _make_checkout,
@@ -46,7 +46,7 @@ def _plant_ident_versions(repo: Path) -> None:
 
 
 @pytest.mark.medium
-@pytest.mark.skipif(sys.platform == 'win32', reason='the step runs in bash on ubuntu-latest')
+@POSIX_ONLY
 @NEEDS_TOOLS
 class DescribeGuardStepAgainstIdentExpandedVersionFiles:
     def it_does_not_pass_a_working_tree_version_that_differs_from_the_merge_base(self, tmp_path: Path) -> None:

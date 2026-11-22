@@ -343,6 +343,7 @@ def _require_plain_checkout_path(repo: Path, path: str) -> Path:
 
 
 def _lstat(location: Path, path: str) -> os.stat_result:
+    """Return ``location.lstat()``, or refuse when the working-tree path cannot be inspected."""
     try:
         return location.lstat()
     except OSError as error:
@@ -369,20 +370,22 @@ def _read_head_blob(repo: Path, path: str) -> bytes:
     return blob
 
 
-def _read_text_head_blob(repo: Path, path: str) -> str:
-    blob = _read_head_blob(repo, path)
+def _decode(blob: bytes, path: str, where: str) -> str:
+    """Return ``blob`` as UTF-8 text, or refuse naming ``path`` at ``where``."""
     try:
         return blob.decode('utf-8')
     except UnicodeDecodeError as error:
-        raise CannotCheckError(f'cannot read {path} at HEAD: {error}') from error
+        raise CannotCheckError(f'cannot read {path} at {where}: {error}') from error
+
+
+def _read_text_head_blob(repo: Path, path: str) -> str:
+    """Return the ``HEAD`` blob of ``path`` as UTF-8 text, after the checkout-matches-blob check."""
+    return _decode(_read_head_blob(repo, path), path, 'HEAD')
 
 
 def _read_text_blob(repo: Path, ref: str, path: str) -> str:
-    blob = _read_blob(repo, ref, path)
-    try:
-        return blob.decode('utf-8')
-    except UnicodeDecodeError as error:
-        raise CannotCheckError(f'cannot read {path} at {ref}: {error}') from error
+    """Return the blob of ``path`` at ``ref`` as UTF-8 text."""
+    return _decode(_read_blob(repo, ref, path), path, ref)
 
 
 def _write_outputs(path: Path | None, *, changed: bool, version: str) -> None:
