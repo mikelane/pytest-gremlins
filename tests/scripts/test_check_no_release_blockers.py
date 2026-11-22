@@ -192,6 +192,17 @@ class DescribeMain:
         monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
         return int(gate.main(list(argv)))
 
+    def it_exits_two_when_the_check_fails_in_an_unexpected_way(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        def explode(_path: str) -> Any:
+            raise RuntimeError('boom')
+
+        code = self._main(monkeypatch, explode)
+
+        assert code == 2
+        assert capsys.readouterr().err.startswith('error: ')
+
     def it_exits_zero_with_a_one_line_message_when_none_are_open(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:

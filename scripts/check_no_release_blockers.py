@@ -185,6 +185,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ) as error:
         print(f'error: GitHub API request failed: {error!r}', file=sys.stderr)
         return 2
+    except Exception as error:  # any failure to check must fail closed, never read as exit 1
+        print(f'error: unexpected failure while checking: {error!r}', file=sys.stderr)
+        return 2
     if blockers:
         _report_failure(_failure_message(args.repo, blockers))
         return 1
