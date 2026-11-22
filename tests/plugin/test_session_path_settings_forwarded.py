@@ -122,6 +122,15 @@ class DescribePathIniOverrides:
 
         assert _path_ini_overrides(pytester.parseconfig()) == []
 
+    def it_forwards_a_path_setting_the_session_emptied_over_its_default(self, pytester: pytest.Pytester) -> None:
+        pytester.makeconftest(
+            "def pytest_addoption(parser):\n    parser.addini('plugin_dirs', 'dirs', type='paths', default=['rel'])\n"
+        )
+        config = pytester.parseconfig('-o', 'plugin_dirs=')
+
+        assert config.getini('plugin_dirs') == []
+        assert _path_ini_overrides(config) == ['-o', 'plugin_dirs=']
+
     def it_forwards_nothing_when_pytest_has_no_ini_type_registry(self) -> None:
         config = SimpleNamespace(inipath=None)
 
