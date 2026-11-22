@@ -1406,6 +1406,27 @@ def entry_preamble(changelog: str, version: str) -> str | None:
     return '\n'.join(preamble)
 
 
+def upgrade_note_bullets(changelog: str, version: str) -> list[str] | None:
+    """Return the text of every bullet under ``### Upgrade notes`` in the ``## vX.Y.Z`` entry, or ``None`` if missing.
+
+    A bullet's continuation lines are joined to it with single spaces. The bullets are read as the docs gate reads them,
+    so a line the gate rejects, a comment and fenced code are not part of any bullet.
+
+    Args:
+        changelog: The text of ``CHANGELOG.md``.
+        version: The release version, with or without the leading ``v``.
+
+    Returns:
+        One string per bullet, in order, or ``None`` when the changelog has no such entry.
+    """
+    entry = _find_entry(changelog, version)
+    if entry is None:
+        return None
+    reader = _EntryReader(entry.rejected)
+    reader.read(entry.lines)
+    return [' '.join(part for part in item.parts if part) for item in reader.items if item.section == 'Upgrade notes']
+
+
 def release_notes(changelog: str, version: str) -> str | None:
     """Return the exact text of the ``## vX.Y.Z`` entry that ``find_problems`` checks, or ``None`` if it is missing.
 
