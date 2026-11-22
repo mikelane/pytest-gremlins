@@ -115,6 +115,13 @@ class DescribePathIniOverrides:
 
         assert overrides == ['-o', f'extra_dirs={shlex.join([str(pytester.path / "data")])}']
 
+    def it_does_not_forward_a_path_setting_that_only_has_its_default(self, pytester: pytest.Pytester) -> None:
+        pytester.makeconftest(
+            "def pytest_addoption(parser):\n    parser.addini('plugin_dirs', 'dirs', type='paths', default=['rel'])\n"
+        )
+
+        assert _path_ini_overrides(pytester.parseconfig()) == []
+
     def it_forwards_nothing_when_pytest_has_no_ini_type_registry(self) -> None:
         config = SimpleNamespace(inipath=None)
 

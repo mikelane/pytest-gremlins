@@ -3502,18 +3502,22 @@ def _path_ini_overrides(config: pytest.Config) -> list[str]:
     installed package and no gremlin run could import the project (#1037).  The session's absolute values do not
     depend on where they are resolved.  With a config file the session and the gremlin run resolve against the same
     directory, so nothing is forwarded.  The settings are found by their registered type rather than by name, so a
-    plugin's path setting is covered too; an unset one has no value and is skipped.  The registry of ini types is
-    pytest's private ``_parser._inidict`` (``getini`` has no public way to ask a key's type); where a pytest does
-    not have it, nothing is forwarded, as before.
+    plugin's path setting is covered too.  An unset one keeps its registered default, which the gremlin run registers
+    too, so it is not forwarded: ``getini`` returns that default unresolved, while a set value comes back resolved.
+    The registry of ini types is pytest's private ``_parser._inidict`` (``getini`` has no public way to ask a key's
+    type); where a pytest does not have it, nothing is forwarded, as before.
     """
     inidict = getattr(getattr(config, '_parser', None), '_inidict', None)
     if config.inipath is not None or not isinstance(inidict, dict):
         return []
     overrides: list[str] = []
-    for key, (_help, ini_type, _default) in sorted(inidict.items()):
+    for key, (_help, ini_type, default) in sorted(inidict.items()):
         if ini_type not in _PATH_INI_TYPES:
             continue
-        paths = [str(path) for path in config.getini(key)]
+        value = config.getini(key)
+        if value == default:
+            continue
+        paths = [str(path) for path in value]
         if paths:
             overrides.extend(['-o', f'{key}={shlex.join(paths)}'])
     return overrides
