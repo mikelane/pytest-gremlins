@@ -502,7 +502,12 @@ jobs:
             exit 2
           fi
           cd "$RUNNER_TEMP"
-          "$GUARD_PYTHON" -E -s "$guard_dir/check_version_change.py" --repo "$GITHUB_WORKSPACE" --base-ref "origin/$DEFAULT_BRANCH" --github-output "$GITHUB_OUTPUT"
+          status=0
+          "$GUARD_PYTHON" -E -s "$guard_dir/check_version_change.py" --repo "$GITHUB_WORKSPACE" --base-ref "origin/$DEFAULT_BRANCH" --github-output "$GITHUB_OUTPUT" || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::the version guard (origin/$DEFAULT_BRANCH copy) exited $status; exit 1 lists each broken rule as a PROBLEM: line, exit 2 prints why it could not run, in this step's log"
+            exit "$status"
+          fi
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3

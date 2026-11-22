@@ -1,6 +1,6 @@
 """Adversarial QA (issue #1049): the version guard reads HEAD through symlinks but the merge base as raw blobs.
 
-``check_version_change.py`` reads ``pyproject.toml`` and ``__init__.py`` at ``HEAD`` from the working tree, which
+``check_version_change.py`` used to read ``pyproject.toml`` and ``__init__.py`` at ``HEAD`` from the working tree, which
 follows a symlink to its target, and at the merge base with ``git show <sha>:<path>``, which prints a symlink's link
 text. An earlier pull request that leaves the version unchanged can turn both files into symlinks whose link text is
 itself valid TOML / Python naming a future version, pointing at files that still hold the current version. A later

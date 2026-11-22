@@ -1,8 +1,8 @@
 """Adversarial QA (issue #1049): a stacked pull request's base is the layer below it, which its author controls.
 
 GitHub native stacks run ``pull_request`` CI for an upper layer whose base is the lower layer's branch (seen on #855,
-whose run on 2026-10-27 merged into d509da5, the tip of #775's head branch, not main). The guard step exports its copy
-from ``origin/$BASE_REF``, so the upper layer is checked by the lower layer's guard. A lower layer that weakens the
+whose run on 2026-10-27 merged into d509da5, the tip of #775's head branch, not main). A guard step that exported its
+copy from ``origin/$BASE_REF`` would check the upper layer with the lower layer's guard. A lower layer that weakens the
 guard passes main's guard (it does not bump the version), and an upper layer that bumps the version then passes the
 weakened copy. A whole-stack async merge lands both on main with every check green.
 """
@@ -74,3 +74,4 @@ class DescribeGuardStepOnAStackedPullRequest:
         )
 
         assert completed.returncode == GUARD_FAILED, completed.stdout + completed.stderr
+        assert 'release/v9.9.9' in completed.stdout

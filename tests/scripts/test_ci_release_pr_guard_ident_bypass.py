@@ -17,6 +17,7 @@ import tomllib
 import pytest
 
 from tests.scripts.test_ci_release_pr_guard_from_base import (
+    GUARD_COULD_NOT_RUN,
     NEEDS_TOOLS,
     _commit_all,
     _git,
@@ -56,4 +57,6 @@ class DescribeGuardStepAgainstIdentExpandedVersionFiles:
 
         completed, github_output = _run_step(repo, tmp_path)
 
-        assert completed.returncode != 0, github_output.read_text(encoding='utf-8')
+        assert completed.returncode == GUARD_COULD_NOT_RUN, completed.stdout + completed.stderr
+        assert 'differs from the committed blob' in completed.stderr
+        assert not github_output.exists()

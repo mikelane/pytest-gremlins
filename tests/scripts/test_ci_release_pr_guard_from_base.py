@@ -7,6 +7,7 @@ that copy in isolation against the pull request checkout.
 
 from __future__ import annotations
 
+import ast
 import os
 from pathlib import Path
 import shutil
@@ -48,6 +49,14 @@ def _run_text() -> str:
     return run
 
 
+def _local_script_imports(script: str) -> set[str]:
+    """Return the sibling ``scripts/*.py`` files that ``script`` imports, named like ``GUARD_FILES``."""
+    tree = ast.parse((REPO_ROOT / 'scripts' / script).read_text(encoding='utf-8'))
+    modules = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
+    modules |= {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
+    return {f'{module}.py' for module in modules if (REPO_ROOT / 'scripts' / f'{module}.py').is_file()}
+
+
 @pytest.mark.medium
 class DescribeGuardStepRunsTheBaseCopy:
     def it_exports_each_guard_file_from_the_base_branch_with_git_show(self) -> None:
@@ -56,6 +65,11 @@ class DescribeGuardStepRunsTheBaseCopy:
             'git -C "$GITHUB_WORKSPACE" show "origin/$DEFAULT_BRANCH:scripts/$script" > "$guard_dir/$script"'
             in _run_text()
         )
+
+    def it_exports_every_sibling_script_the_guard_imports(self) -> None:
+        imported = _local_script_imports('check_version_change.py') | _local_script_imports('check_release_docs.py')
+
+        assert imported | {'check_version_change.py'} == set(GUARD_FILES)
 
     def it_runs_the_exported_copy_against_the_pull_request_checkout(self) -> None:
         assert '--repo "$GITHUB_WORKSPACE"' in _run_text()
@@ -213,9 +227,16 @@ class DescribeGuardStepAgainstAWeakenedPullRequest:
         assert completed.returncode == 0, completed.stdout + completed.stderr
         assert github_output.read_text(encoding='utf-8') == 'version_changed=false\nversion=1.0.0\n'
 
-    @pytest.mark.parametrize('missing', GUARD_FILES)
-    def it_exits_2_when_a_guard_file_is_missing_at_the_base(self, tmp_path: Path, missing: str) -> None:
-        present = tuple(script for script in GUARD_FILES if script != missing)
+    @pytest.mark.parametrize(
+        ('missing', 'present'),
+        [
+            ('check_version_change.py', ('check_release_docs.py',)),
+            ('check_release_docs.py', ('check_version_change.py',)),
+        ],
+    )
+    def it_exits_2_when_a_guard_file_is_missing_at_the_base(
+        self, tmp_path: Path, missing: str, present: tuple[str, ...]
+    ) -> None:
         repo = _make_checkout(tmp_path, base_has=present)
 
         completed, _ = _run_step(repo, tmp_path)

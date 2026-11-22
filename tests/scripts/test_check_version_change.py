@@ -268,6 +268,7 @@ class _FakeGit:
         self.failure: Exception | None = None
         self.modes: dict[tuple[str, str], str] = {}
         self.head_blobs: dict[str, bytes] = {}
+        self.merge_base_output = b'MERGEBASE\n'
         monkeypatch.setattr(guard, '_git_bytes', self._answer_git)
 
     def _base_pyproject_version(self) -> str:
@@ -282,7 +283,7 @@ class _FakeGit:
         if self.failure is not None:
             raise self.failure
         if args[0] == 'merge-base':
-            return b'MERGEBASE\n'
+            return self.merge_base_output
         if args[0] == 'ls-tree':
             return self._listing(repo, ref=args[1], path=args[3])
         if args[0] == 'show':
@@ -300,7 +301,7 @@ class _FakeGit:
     def _show(self, repo: Path, spec: str) -> bytes:
         ref, _, path = spec.partition(':')
         if ref == 'HEAD':
-            return self.head_blobs.get(path, (repo / path).read_bytes())
+            return self.head_blobs[path] if path in self.head_blobs else (repo / path).read_bytes()
         if spec == 'MERGEBASE:pyproject.toml':
             return self.base_pyproject.encode()
         if spec == 'MERGEBASE:src/pytest_gremlins/__init__.py':
@@ -518,25 +519,21 @@ class DescribeMain:
         assert 'version_changed=true' in output.read_text(encoding='utf-8')
 
 
-NON_REGULAR_CASES = [
-    (ref, path, mode)
-    for ref in ('HEAD', 'MERGEBASE')
-    for path in ('pyproject.toml', 'src/pytest_gremlins/__init__.py')
-    for mode in ('120000', '160000', '040000')
-]
-
-
 @pytest.mark.medium
 class DescribeRegularFileRequirement:
-    @pytest.mark.parametrize('case', NON_REGULAR_CASES)
+    @pytest.mark.parametrize('ref', ['HEAD', 'MERGEBASE'])
+    @pytest.mark.parametrize('path', ['pyproject.toml', 'src/pytest_gremlins/__init__.py'])
+    @pytest.mark.parametrize('mode', ['120000', '160000', '040000'])
     def it_exits_2_naming_the_path_and_mode_when_a_version_file_is_not_a_regular_file(
         self,
+        *,
         monkeypatch: pytest.MonkeyPatch,
         head_files: Path,
         capsys: pytest.CaptureFixture[str],
-        case: tuple[str, str, str],
+        ref: str,
+        path: str,
+        mode: str,
     ) -> None:
-        ref, path, mode = case
         fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
         fake.modes[(ref, path)] = mode
 
@@ -569,10 +566,37 @@ class DescribeRegularFileRequirement:
     ) -> None:
         fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
 
-        _run(head_files)
+        exit_code = _run(head_files)
 
+        assert exit_code == 0
         assert ('show', 'HEAD:pyproject.toml') in fake.calls
         assert ('show', 'HEAD:CHANGELOG.md') in fake.calls
+
+    def it_exits_2_naming_the_path_when_a_version_file_is_absent_at_head(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=[])
+
+        assert _run(tmp_path) == 2
+        assert 'pyproject.toml does not exist at HEAD' in capsys.readouterr().err
+
+    def it_exits_2_naming_the_path_when_the_head_pyproject_is_not_utf8(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (head_files / 'pyproject.toml').write_bytes(b'# caf\xe9\n' + _pyproject('1.15.0').encode('utf-8'))
+        _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+
+        assert _run(head_files) == 2
+        assert 'cannot read pyproject.toml at HEAD' in capsys.readouterr().err
+
+    def it_exits_2_when_git_prints_output_that_is_not_utf8(
+        self, monkeypatch: pytest.MonkeyPatch, head_files: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        fake = _FakeGit(monkeypatch, base_pyproject=_pyproject('1.14.3'), changed=RELEASE_FILES)
+        fake.merge_base_output = b'\xff\n'
+
+        assert _run(head_files) == 2
+        assert 'printed output that is not UTF-8' in capsys.readouterr().err
 
 
 @pytest.mark.medium
