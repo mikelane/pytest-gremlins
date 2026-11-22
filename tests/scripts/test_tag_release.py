@@ -1055,8 +1055,7 @@ class DescribeUtf8DecodingOfCommandOutput:
 
 @pytest.mark.small
 class DescribeTheIsolatedChildEnvironment:
-    @pytest.mark.parametrize('name', ACTIONS_ENV)
-    def it_drops_the_actions_variables_so_a_child_run_neither_annotates_nor_writes_the_job_summary(
-        self, name: str
-    ) -> None:
-        assert ISOLATED_GIT_ENV.get(name) is None
+    def it_drops_the_actions_variables_so_a_child_run_neither_annotates_nor_writes_the_job_summary(self) -> None:
+        kept = [name for name in ACTIONS_ENV if name in ISOLATED_GIT_ENV]
+
+        assert kept == []
