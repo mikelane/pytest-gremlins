@@ -10,8 +10,10 @@ previous release (the newest ``v*`` tag reachable from ``HEAD``, not counting th
 * the changelog entry has no ``### Upgrade notes`` bullet that says the cache is rebuilt once.
 
 A version counts as at least a minor bump when its ``major.minor`` is higher than the previous release's. One more case
-counts: the previous release is a prerelease of ``X.Y.0`` (``1.15.0b0``) and the new version stays on ``X.Y``
-(``1.15.0b1``, ``1.15.0``), because that prerelease already was the minor bump over the last stable release.
+counts: the previous release is a prerelease of ``X.Y.0`` (a version that sorts before ``X.Y.0`` under PEP 440, such as
+``1.15.0b0`` or ``1.15.0rc1.post1``) and the new version stays on ``X.Y`` without being lower than it (``1.15.0b1``,
+``1.15.0``), because that prerelease already was the minor bump over the last stable release. ``1.15.0.post1`` and
+``1.15.0+local`` are not prereleases. A version that is not valid PEP 440 exits 2.
 
 A bullet says the cache is rebuilt when its visible text, in any letter case, contains both ``cache`` and ``rebuil``
 ("rebuilds the cache once", "the cache is rebuilt"). Raw HTML tags with their attributes, and images with their alt
@@ -41,6 +43,8 @@ from pathlib import Path
 import re
 import sys
 
+from packaging.version import InvalidVersion, Version
+
 from check_cache_kept import (
     _head_markers,
     _is_tagged,
@@ -59,8 +63,7 @@ from check_verdict_change import (
 )
 
 PROBLEM_PREFIX = 'PROBLEM: '
-VERSION_SHAPE = re.compile(r'(\d+)\.(\d+)\.(\d+)(.*)')
-PRERELEASE_SUFFIX = re.compile(r'(?:a|b|rc)\d+(?:\.dev\d+)?|\.dev\d+')
+VERSION_SHAPE = re.compile(r'\d+\.\d+\.\d+.*')
 
 __all__ = [
     'Markers',
@@ -73,13 +76,14 @@ __all__ = [
 ]
 
 
-def _parse_version(text: str) -> tuple[int, int, int, str]:
-    """Return ``(major, minor, patch, suffix)`` of ``text``; raise ``CannotCheckError`` when it is not ``X.Y.Z...``."""
-    match = VERSION_SHAPE.fullmatch(text)
-    if match is None:
+def _parse_version(text: str) -> Version:
+    """Return ``text`` as a ``Version``; raise ``CannotCheckError`` when it is not ``X.Y.Z`` or not PEP 440."""
+    if VERSION_SHAPE.fullmatch(text) is None:
         raise CannotCheckError(f'cannot read "{text}" as a version of the form X.Y.Z')
-    major, minor, patch, suffix = match.groups()
-    return int(major), int(minor), int(patch), suffix
+    try:
+        return Version(text)
+    except InvalidVersion as error:
+        raise CannotCheckError(f'cannot read "{text}" as a PEP 440 version: {error}') from error
 
 
 def is_at_least_minor_bump(previous: str, new: str) -> bool:
@@ -90,18 +94,24 @@ def is_at_least_minor_bump(previous: str, new: str) -> bool:
         new: The version being released, without the leading ``v``.
 
     Returns:
-        True when ``new`` has a higher ``major.minor``, or stays on the ``major.minor`` of a ``previous`` that is a
-        pre-release or dev release of ``X.Y.0`` (``1.15.0b0``, ``1.15.0rc1``, ``1.15.0.dev3``). A post-release or a
-        local version (``1.15.0.post1``, ``1.15.0+local``) is not a prerelease. Any other suffix is ignored.
+        True when ``new`` has a higher ``major.minor``. When ``major.minor`` is equal, True exactly when ``previous``
+        sorts before ``X.Y.0`` under PEP 440 (so it is a prerelease of ``X.Y.0``: ``1.15.0b0``, ``1.15.0rc1``,
+        ``1.15.0.dev3``, ``1.15.0rc1.post1``) and ``new`` is not lower than ``previous``. ``1.15.0.post1``,
+        ``1.15.0+local`` and ``1.15.0.post1.dev1`` sort after ``1.15.0``, so they are not prereleases.
 
     Raises:
-        CannotCheckError: When either version is not of the form ``X.Y.Z`` with an optional suffix.
+        CannotCheckError: When either version is not ``X.Y.Z`` followed by a valid PEP 440 remainder.
+
+    >>> is_at_least_minor_bump('1.15.0b0', '1.15.0')
+    True
+    >>> is_at_least_minor_bump('1.15.0.post1', '1.15.1')
+    False
     """
-    old_major, old_minor, old_patch, old_suffix = _parse_version(previous)
-    new_major, new_minor, _, _ = _parse_version(new)
-    if (new_major, new_minor) != (old_major, old_minor):
-        return (new_major, new_minor) > (old_major, old_minor)
-    return old_patch == 0 and PRERELEASE_SUFFIX.fullmatch(old_suffix) is not None
+    old, current = _parse_version(previous), _parse_version(new)
+    if current.release[:2] != old.release[:2]:
+        return current.release[:2] > old.release[:2]
+    line_start = Version(f'{old.major}.{old.minor}.0')
+    return old < line_start and current >= old
 
 
 def says_cache_rebuilt(bullet: str) -> bool:

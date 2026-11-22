@@ -181,7 +181,9 @@ LINE_WITH_BREAK = re.compile(r'[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+')
 LONE_CARRIAGE_RETURN = re.compile(r'\r(?!\n)')
 NON_MARKDOWN_BREAK = re.compile('[\u2028\u2029\x85\x0c\x0b\x1c\x1d\x1e]')
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
-IMAGE = re.compile(r'(?<!\\)!\[[^\]]*\]\(\s*<?[^)\s>]*>?(?:\s+"[^"]*")?\s*\)')
+IMAGE_OPENER = '!['
+# Python-Markdown's AUTOLINK_RE (Markdown 3.10): the renderer reads it before raw HTML, so it shows its text.
+AUTOLINK = re.compile(r'<((?:[Ff]|[Hh][Tt])[Tt][Pp][Ss]?://[^<>]*)>')
 LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 SECTION_HEADING = re.compile(r'(#{1,6})(?:[ \t]+(.*))?$')
 SHALLOW_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
@@ -557,18 +559,27 @@ def _ends_where_the_renderer_ends_it(tag: str) -> bool:
 
 
 def visible_text(text: str) -> str:
-    """Return ``text`` without what a reader of the rendered page does not see: raw HTML tags and images.
+    """Return ``text`` without what a reader of the rendered page does not see, or cannot be trusted to see.
 
-    Tags are found as ``html_tag_spans`` finds them. The renderer stores an image before it reads raw HTML, so an
-    image is blanked out first, as ``_links_outside_html_tags`` does for links, and its alt text goes with it. Text
-    between tags (``<b>x</b>``) and the text of a link stay.
+    Code spans and autolinks (``<https://...>``) are visible text and stay whole, and nothing inside a code span is
+    read as a tag or an image. Outside code spans, raw HTML tags are removed as ``html_tag_spans`` finds them. An
+    image fails closed: from the first ``![`` (a backslash before it does not matter) to the end of the text
+    everything is removed, because alt text, a reference-style label and the wording after an image cannot be told
+    apart reliably. Only wording before an image counts.
 
-    >>> visible_text('a<b title="x">y</b>![alt](p.png)z')
-    'a y  z'
+    >>> visible_text('a<b title="x">y</b>z ![alt](p.png) w')
+    'a y z  '
+    >>> visible_text('`<b title="x">` and <https://e.com/a-b>')
+    '`<b title="x">` and <https://e.com/a-b>'
     """
-    images = [image.span() for image in IMAGE.finditer(text)]
-    masked = _without_spans(text, images, keep_length=True)
-    return _without_spans(text, _merged(images + html_tag_spans(masked)))
+    masked = _without_spans(text, code_spans(text), keep_length=True)
+    autolinks = [link.span() for link in AUTOLINK.finditer(masked)]
+    masked_links = _without_spans(masked, autolinks, keep_length=True)
+    hidden = html_tag_spans(masked_links)
+    image_start = masked.find(IMAGE_OPENER)
+    if image_start != -1:
+        hidden = _merged([*hidden, (image_start, len(text))])
+    return _without_spans(text, hidden)
 
 
 def _links_outside_html_tags(text: str) -> list[str]:
@@ -1427,8 +1438,8 @@ def upgrade_note_bullets(changelog: str, version: str) -> list[str] | None:
 
     A bullet's continuation lines are joined to it with single spaces. The bullets are read as the docs gate reads them,
     so a line the gate rejects, a comment and fenced code are not part of any bullet. Raw HTML tags, attributes
-    included, and images, alt text included, are removed (``visible_text``), because the rendered page does not show
-    them; the text between tags and inside code spans stays.
+    included, are removed, and so is everything from the first image to the end of the bullet (``visible_text``); the
+    text between tags, inside code spans and in autolinks stays.
 
     Args:
         changelog: The text of ``CHANGELOG.md``.

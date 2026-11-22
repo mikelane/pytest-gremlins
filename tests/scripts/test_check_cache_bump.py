@@ -185,6 +185,52 @@ class DescribeHiddenRebuildWording:
 
 
 @pytest.mark.small
+class DescribeImageAltTextTheRendererHides:
+    @pytest.mark.parametrize(
+        'bullet',
+        [
+            '- **Faster runs** ![the cache is rebuilt [once]](x.png) (no docs: r)\n',
+            "- **Faster runs** ![the cache is rebuilt once](x.png 'title') (no docs: r)\n",
+            '- **Faster runs** ![the cache is rebuilt once](x.png (title)) (no docs: r)\n',
+            '- **Faster runs** ![the cache is rebuilt once](<a b.png>) (no docs: r)\n',
+            '- **Faster runs** \\\\![the cache is rebuilt once](x.png) (no docs: r)\n',
+            '- **Faster runs** ![the cache is \\] rebuilt once](x.png) (no docs: r)\n',
+        ],
+    )
+    def it_fails_a_release_whose_rebuild_wording_is_only_in_image_alt_text(self, bullet: str) -> None:
+        bullets = docs_gate.upgrade_note_bullets(_entry(upgrade_notes=bullet), '1.15.0')
+
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.14.3', '1.15.0', bullets=bullets)
+
+        assert len(problems) == 1
+
+
+@pytest.mark.small
+class DescribeVisibleCodeSpansAndAutolinks:
+    @pytest.mark.parametrize(
+        'bullet',
+        [
+            '- **Faster runs** `<b title="the cache is rebuilt once">` (no docs: r)\n',
+            '- **Faster runs** `![the cache is rebuilt once](x.png)` (no docs: r)\n',
+            '- **Faster runs** <https://example.com/cache-rebuilt-once> (no docs: r)\n',
+        ],
+    )
+    def it_accepts_rebuild_wording_the_page_shows_as_literal_text(self, bullet: str) -> None:
+        bullets = docs_gate.upgrade_note_bullets(_entry(upgrade_notes=bullet), '1.15.0')
+
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.14.3', '1.15.0', bullets=bullets)
+
+        assert problems == []
+
+
+@pytest.mark.small
+class DescribeMinorBumpOverCanonicalPrereleases:
+    @pytest.mark.parametrize('previous', ['1.15.0rc1.post1', '1.15.0b0+local', '1.15.0a1.post1.dev2'])
+    def it_accepts_a_release_on_the_line_of_a_prerelease_that_sorts_before_x_y_0(self, previous: str) -> None:
+        assert checker.is_at_least_minor_bump(previous, '1.15.0') is True
+
+
+@pytest.mark.small
 class DescribeChangedMarkers:
     @pytest.mark.parametrize(
         ('head', 'expected'),

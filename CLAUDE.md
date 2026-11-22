@@ -365,15 +365,19 @@ user's warm cache, so the first run after upgrading is cold, and a patch release
 gate above. When either differs, the release fails unless (a) the version is at least a minor bump over that tag (a
 higher `major.minor`; or the tag is a prerelease of `X.Y.0`, such as `1.15.0b0`, and the version stays on `X.Y`), and
 (b) the entry has a bullet under `### Upgrade notes` whose visible text, in any letter case, contains both `cache` and
-`rebuil` ("The first run after upgrading rebuilds the cache once."). Raw HTML tags with their attributes and images
-with their alt text are not visible, so wording there does not count; text between tags does. A prerelease of `X.Y.0`
-means an `a`, `b` or `rc` release or a `.devN` release; a post-release or local version of `X.Y.0` is not one. Nothing
-else about the wording is checked; the
-docs gate still wants a docs link or a `(no docs: <reason>)` exemption on that bullet. It runs in the `Release PR
-Gates` job right after the cache gate (only when the version changed) and in `verify-tag` after it, takes the version
-like the cache gate does (and `--newest` is supported, with the same already-tagged pass), exits 1 naming each
-problem, exits 2 when it could not run, and has no bypass. `cut-release.yml` does not run it, because #1046 retires
-that workflow. The hotfix case, a patch release cut from an older tag that changes a marker, is tracked in #1015.
+`rebuil` ("The first run after upgrading rebuilds the cache once."). Raw HTML tags with their attributes are not
+visible, so wording there does not count. An image fails closed: from the first `![` outside a code span (a backslash
+before it does not matter, and a reference-style image counts too) to the end of the bullet nothing counts, so put the
+sentence before the image. Text between tags, text inside a code span (even one that holds a tag or `![`) and an
+autolink (`<https://...>`) are visible and count. A prerelease of `X.Y.0` means a version that sorts before `X.Y.0`
+under PEP 440 (`1.15.0b0`, `rc`, `.devN`, `1.15.0rc1.post1`), and the version must stay on `X.Y` and not be lower than
+the tag; `1.15.0.post1` and `1.15.0+local` are not prereleases, and a version that is not valid PEP 440 exits 2. Nothing
+else about the wording is checked; the docs gate still wants a docs link or a `(no docs: <reason>)` exemption on
+that bullet. It runs in the `Release PR Gates` job right after the cache gate (only when the version changed) and in
+`verify-tag` after it, takes the version like the cache gate does (and `--newest` is supported, with the same
+already-tagged pass), exits 1 naming each problem, exits 2 when it could not run, and has no bypass. `cut-release.yml`
+does not run it, because #1046 retires that workflow. The hotfix case, a patch release cut from an older tag that
+changes a marker, is tracked in #1015.
 <!-- cspell:ignore rebuil -->
 
 **Release CI gate and wip gate.** `release.yml` does not rerun the OS x Python test matrix. Its `ci-gate` job runs
