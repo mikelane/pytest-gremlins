@@ -100,6 +100,29 @@ class DescribeIsMinorBump:
     def it_rejects_a_version_that_does_not_raise_the_minor(self, previous: str, new: str) -> None:
         assert checker.is_at_least_minor_bump(previous, new) is False
 
+    @pytest.mark.parametrize(
+        ('previous', 'new'),
+        [
+            ('1.15.0.post1', '1.15.1'),
+            ('1.15.0+local', '1.15.1'),
+            ('1.15.0.post1.dev2', '1.15.1'),
+        ],
+    )
+    def it_rejects_a_patch_over_a_post_or_local_release_of_x_y_0(self, previous: str, new: str) -> None:
+        assert checker.is_at_least_minor_bump(previous, new) is False
+
+    @pytest.mark.parametrize(
+        ('previous', 'new'),
+        [
+            ('1.15.0a1', '1.15.0b0'),
+            ('1.15.0rc1', '1.15.0'),
+            ('1.15.0.dev3', '1.15.0'),
+            ('1.15.0b1.dev2', '1.15.0'),
+        ],
+    )
+    def it_accepts_a_release_on_the_line_of_a_prerelease_or_dev_release_of_x_y_0(self, previous: str, new: str) -> None:
+        assert checker.is_at_least_minor_bump(previous, new) is True
+
     @pytest.mark.parametrize('text', ['', '1.15', 'v1.15.0', 'one.two.three'])
     def it_refuses_a_version_it_cannot_read(self, text: str) -> None:
         with pytest.raises(docs_gate.CannotCheckError):
@@ -134,6 +157,31 @@ class DescribeSaysCacheRebuilt:
     )
     def it_rejects_a_bullet_that_lacks_either_word(self, bullet: str) -> None:
         assert checker.says_cache_rebuilt(bullet) is False
+
+
+@pytest.mark.small
+class DescribeHiddenRebuildWording:
+    @pytest.mark.parametrize(
+        'bullet',
+        [
+            '- **Faster runs** <a title="the cache is rebuilt once">.</a> (no docs: r)\n',
+            '- **Faster runs** ![the cache is rebuilt once](x.png) (no docs: r)\n',
+        ],
+    )
+    def it_fails_a_release_whose_rebuild_wording_the_page_does_not_show(self, bullet: str) -> None:
+        bullets = docs_gate.upgrade_note_bullets(_entry(upgrade_notes=bullet), '1.15.0')
+
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.14.3', '1.15.0', bullets=bullets)
+
+        assert len(problems) == 1
+
+    def it_accepts_rebuild_wording_that_sits_between_tags(self) -> None:
+        bullet = '- **Faster runs** <b>the cache is rebuilt once</b> (no docs: r)\n'
+        bullets = docs_gate.upgrade_note_bullets(_entry(upgrade_notes=bullet), '1.15.0')
+
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.14.3', '1.15.0', bullets=bullets)
+
+        assert problems == []
 
 
 @pytest.mark.small

@@ -181,6 +181,7 @@ LINE_WITH_BREAK = re.compile(r'[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+')
 LONE_CARRIAGE_RETURN = re.compile(r'\r(?!\n)')
 NON_MARKDOWN_BREAK = re.compile('[\u2028\u2029\x85\x0c\x0b\x1c\x1d\x1e]')
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
+IMAGE = re.compile(r'(?<!\\)!\[[^\]]*\]\(\s*<?[^)\s>]*>?(?:\s+"[^"]*")?\s*\)')
 LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 SECTION_HEADING = re.compile(r'(#{1,6})(?:[ \t]+(.*))?$')
 SHALLOW_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
@@ -553,6 +554,21 @@ def _ends_where_the_renderer_ends_it(tag: str) -> bool:
     if tag.startswith(('<?', '<!')):
         return '"' not in tag and "'" not in tag
     return QUOTES_CLOSED.fullmatch(tag) is not None
+
+
+def visible_text(text: str) -> str:
+    """Return ``text`` without what a reader of the rendered page does not see: raw HTML tags and images.
+
+    Tags are found as ``html_tag_spans`` finds them. The renderer stores an image before it reads raw HTML, so an
+    image is blanked out first, as ``_links_outside_html_tags`` does for links, and its alt text goes with it. Text
+    between tags (``<b>x</b>``) and the text of a link stay.
+
+    >>> visible_text('a<b title="x">y</b>![alt](p.png)z')
+    'a y  z'
+    """
+    images = [image.span() for image in IMAGE.finditer(text)]
+    masked = _without_spans(text, images, keep_length=True)
+    return _without_spans(text, _merged(images + html_tag_spans(masked)))
 
 
 def _links_outside_html_tags(text: str) -> list[str]:
@@ -1407,10 +1423,12 @@ def entry_preamble(changelog: str, version: str) -> str | None:
 
 
 def upgrade_note_bullets(changelog: str, version: str) -> list[str] | None:
-    """Return the text of every bullet under ``### Upgrade notes`` in the ``## vX.Y.Z`` entry, or ``None`` if missing.
+    """Return the visible text of every bullet under ``### Upgrade notes`` in the ``## vX.Y.Z`` entry, or ``None``.
 
     A bullet's continuation lines are joined to it with single spaces. The bullets are read as the docs gate reads them,
-    so a line the gate rejects, a comment and fenced code are not part of any bullet.
+    so a line the gate rejects, a comment and fenced code are not part of any bullet. Raw HTML tags, attributes
+    included, and images, alt text included, are removed (``visible_text``), because the rendered page does not show
+    them; the text between tags and inside code spans stays.
 
     Args:
         changelog: The text of ``CHANGELOG.md``.
@@ -1424,7 +1442,11 @@ def upgrade_note_bullets(changelog: str, version: str) -> list[str] | None:
         return None
     reader = _EntryReader(entry.rejected)
     reader.read(entry.lines)
-    return [' '.join(part for part in item.parts if part) for item in reader.items if item.section == 'Upgrade notes']
+    return [
+        visible_text(' '.join(part for part in item.parts if part))
+        for item in reader.items
+        if item.section == 'Upgrade notes'
+    ]
 
 
 def release_notes(changelog: str, version: str) -> str | None:

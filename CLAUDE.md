@@ -364,8 +364,11 @@ user's warm cache, so the first run after upgrading is cold, and a patch release
 `scripts/check_cache_bump.py` compares both markers with their values at the same previous release tag as the cache
 gate above. When either differs, the release fails unless (a) the version is at least a minor bump over that tag (a
 higher `major.minor`; or the tag is a prerelease of `X.Y.0`, such as `1.15.0b0`, and the version stays on `X.Y`), and
-(b) the entry has a bullet under `### Upgrade notes` whose text, in any letter case, contains both `cache` and
-`rebuil` ("The first run after upgrading rebuilds the cache once."). Nothing else about the wording is checked; the
+(b) the entry has a bullet under `### Upgrade notes` whose visible text, in any letter case, contains both `cache` and
+`rebuil` ("The first run after upgrading rebuilds the cache once."). Raw HTML tags with their attributes and images
+with their alt text are not visible, so wording there does not count; text between tags does. A prerelease of `X.Y.0`
+means an `a`, `b` or `rc` release or a `.devN` release; a post-release or local version of `X.Y.0` is not one. Nothing
+else about the wording is checked; the
 docs gate still wants a docs link or a `(no docs: <reason>)` exemption on that bullet. It runs in the `Release PR
 Gates` job right after the cache gate (only when the version changed) and in `verify-tag` after it, takes the version
 like the cache gate does (and `--newest` is supported, with the same already-tagged pass), exits 1 naming each

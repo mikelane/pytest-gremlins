@@ -546,9 +546,9 @@ Next:
 
 
 CACHE_MARKER_NOTE = """\
-{markers} changed since the last release, so {version} is at least a minor version and its Upgrade notes have a
-placeholder about the one-time cache rebuild. Rewrite it: scripts/check_cache_bump.py fails the release until a bullet
-there mentions the cache and says it is rebuilt.
+{markers} changed since the last release, so {version} is at least a minor version and its Upgrade notes
+have a placeholder about the one-time cache rebuild. Rewrite it: scripts/check_cache_bump.py fails the release until a
+bullet there mentions the cache and says it is rebuilt.
 """
 
 CACHE_MARKERS_UNCOMPARED_WARNING = """\

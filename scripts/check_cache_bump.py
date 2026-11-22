@@ -13,9 +13,11 @@ A version counts as at least a minor bump when its ``major.minor`` is higher tha
 counts: the previous release is a prerelease of ``X.Y.0`` (``1.15.0b0``) and the new version stays on ``X.Y``
 (``1.15.0b1``, ``1.15.0``), because that prerelease already was the minor bump over the last stable release.
 
-A bullet says the cache is rebuilt when its text, in any letter case, contains both ``cache`` and ``rebuil``
-("rebuilds the cache once", "the cache is rebuilt"). The check does not judge the wording beyond that. The docs gate
-(``check_release_docs.py``) still requires the bullet to carry a docs link or a ``(no docs: <reason>)`` exemption.
+A bullet says the cache is rebuilt when its visible text, in any letter case, contains both ``cache`` and ``rebuil``
+("rebuilds the cache once", "the cache is rebuilt"). Raw HTML tags with their attributes, and images with their alt
+text, are not visible on the rendered page and do not count; text between tags does. The check does not judge the
+wording beyond that. The docs gate (``check_release_docs.py``) still requires the bullet to carry a docs link or a
+``(no docs: <reason>)`` exemption.
 
 ``prepare_release.py`` applies the first rule for you: it computes at least the next minor version when a marker
 changed, and refuses ``--increment PATCH`` then. The hotfix case, a patch release cut from an older tag that changes a
@@ -58,6 +60,7 @@ from check_verdict_change import (
 
 PROBLEM_PREFIX = 'PROBLEM: '
 VERSION_SHAPE = re.compile(r'(\d+)\.(\d+)\.(\d+)(.*)')
+PRERELEASE_SUFFIX = re.compile(r'(?:a|b|rc)\d+(?:\.dev\d+)?|\.dev\d+')
 
 __all__ = [
     'Markers',
@@ -88,7 +91,8 @@ def is_at_least_minor_bump(previous: str, new: str) -> bool:
 
     Returns:
         True when ``new`` has a higher ``major.minor``, or stays on the ``major.minor`` of a ``previous`` that is a
-        prerelease of ``X.Y.0``. A prerelease suffix such as ``b0`` is otherwise ignored.
+        pre-release or dev release of ``X.Y.0`` (``1.15.0b0``, ``1.15.0rc1``, ``1.15.0.dev3``). A post-release or a
+        local version (``1.15.0.post1``, ``1.15.0+local``) is not a prerelease. Any other suffix is ignored.
 
     Raises:
         CannotCheckError: When either version is not of the form ``X.Y.Z`` with an optional suffix.
@@ -97,7 +101,7 @@ def is_at_least_minor_bump(previous: str, new: str) -> bool:
     new_major, new_minor, _, _ = _parse_version(new)
     if (new_major, new_minor) != (old_major, old_minor):
         return (new_major, new_minor) > (old_major, old_minor)
-    return bool(old_suffix) and old_patch == 0
+    return old_patch == 0 and PRERELEASE_SUFFIX.fullmatch(old_suffix) is not None
 
 
 def says_cache_rebuilt(bullet: str) -> bool:
