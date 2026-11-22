@@ -1,8 +1,8 @@
 """Tests that the ``release-pr`` guard step runs the base branch's copy of the guard (issue #1049).
 
 A pull request that edits ``scripts/check_version_change.py`` must not be checked by its own edited copy, or it
-could weaken the guard that is meant to stop it. The step exports the guard from ``origin/$BASE_REF`` and runs that
-copy in isolation against the pull request checkout.
+could weaken the guard that is meant to stop it. The step exports the guard from ``origin/$DEFAULT_BRANCH`` and runs
+that copy in isolation against the pull request checkout.
 """
 
 from __future__ import annotations
@@ -53,7 +53,8 @@ class DescribeGuardStepRunsTheBaseCopy:
     def it_exports_each_guard_file_from_the_base_branch_with_git_show(self) -> None:
         assert 'for script in check_version_change.py check_release_docs.py; do' in _run_text()
         assert (
-            'git -C "$GITHUB_WORKSPACE" show "origin/$BASE_REF:scripts/$script" > "$guard_dir/$script"' in _run_text()
+            'git -C "$GITHUB_WORKSPACE" show "origin/$DEFAULT_BRANCH:scripts/$script" > "$guard_dir/$script"'
+            in _run_text()
         )
 
     def it_runs_the_exported_copy_against_the_pull_request_checkout(self) -> None:
@@ -89,9 +90,31 @@ class DescribeGuardStepRunsTheBaseCopy:
     def it_fails_on_any_error_and_unset_variable(self) -> None:
         assert 'set -euo pipefail' in _run_text()
 
-    def it_keeps_the_base_ref_and_the_output_file_arguments(self) -> None:
-        assert '--base-ref "origin/$BASE_REF"' in _run_text()
+    def it_judges_the_version_change_against_the_default_branch(self) -> None:
+        assert '--base-ref "origin/$DEFAULT_BRANCH"' in _run_text()
         assert '--github-output "$GITHUB_OUTPUT"' in _run_text()
+
+    def it_takes_the_default_branch_from_the_repository_event(self) -> None:
+        assert _guard_step()['env']['DEFAULT_BRANCH'] == '${{ github.event.repository.default_branch }}'
+
+    def it_never_takes_the_guard_or_the_merge_base_from_the_pull_request_base_ref(self) -> None:
+        # A stacked pull request's base is the lower layer's branch, which its author controls.
+        assert 'BASE_REF' not in _run_text()
+        assert 'BASE_REF' not in _guard_step()['env']
+
+    def it_checks_the_runner_python_is_3_11_or_newer_before_running_the_guard(self) -> None:
+        run = _run_text()
+
+        assert """"$GUARD_PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 2)'""" in run
+        assert run.index('sys.version_info') < run.index('check_version_change.py" --repo')
+
+    def it_names_the_interpreter_in_the_python_version_error(self) -> None:
+        assert '::error::$GUARD_PYTHON is older than Python 3.11' in _run_text()
+
+    def it_fetches_every_branch_so_the_default_branch_exists_for_a_stacked_pull_request(self) -> None:
+        checkout = _steps()[0]['with']
+
+        assert checkout['fetch-depth'] == 0
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -138,15 +161,17 @@ def _weaken_the_guard_and_bump_the_version(repo: Path) -> None:
     _commit_all(repo, 'weaken the guard and bump')
 
 
-def _run_step(repo: Path, tmp_path: Path) -> tuple[subprocess.CompletedProcess[str], Path]:
+def _run_step(
+    repo: Path, tmp_path: Path, *, guard_python: str = sys.executable
+) -> tuple[subprocess.CompletedProcess[str], Path]:
     runner_temp = tmp_path / 'runner_temp'
     runner_temp.mkdir()
     github_output = tmp_path / 'github_output'
     env = {
         'PATH': os.environ['PATH'],
         'HOME': os.environ.get('HOME', str(tmp_path)),
-        'GUARD_PYTHON': sys.executable,
-        'BASE_REF': 'main',
+        'GUARD_PYTHON': guard_python,
+        'DEFAULT_BRANCH': 'main',
         'HEAD_REF': 'feature/sneaky',
         'GITHUB_WORKSPACE': str(repo),
         'RUNNER_TEMP': str(runner_temp),
@@ -197,3 +222,14 @@ class DescribeGuardStepAgainstAWeakenedPullRequest:
 
         assert completed.returncode == GUARD_COULD_NOT_RUN
         assert f'::error::scripts/{missing} is missing at origin/main' in completed.stdout + completed.stderr
+
+    def it_exits_2_naming_the_interpreter_when_the_runner_python_is_too_old(self, tmp_path: Path) -> None:
+        repo = _make_checkout(tmp_path)
+        old_python = tmp_path / 'old-python'
+        old_python.write_text('#!/bin/sh\nexit 2\n', encoding='utf-8')
+        old_python.chmod(0o755)
+
+        completed, _ = _run_step(repo, tmp_path, guard_python=str(old_python))
+
+        assert completed.returncode == GUARD_COULD_NOT_RUN
+        assert f'::error::{old_python} is older than Python 3.11' in completed.stdout + completed.stderr
