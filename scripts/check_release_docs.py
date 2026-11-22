@@ -1440,14 +1440,26 @@ def entry_preamble(changelog: str, version: str) -> str | None:
     return '\n'.join(preamble)
 
 
+def _parts_before_definition(parts: list[str]) -> list[str]:
+    """Return the non-empty ``parts`` up to the first link or abbreviation definition line, which ends the bullet."""
+    kept: list[str] = []
+    for part in parts:
+        if DEFINITION_LINE.match(part):
+            break
+        if part:
+            kept.append(part)
+    return kept
+
+
 def upgrade_note_bullets(changelog: str, version: str) -> list[str] | None:
     """Return the visible text of every bullet under ``### Upgrade notes`` in the ``## vX.Y.Z`` entry, or ``None``.
 
     A bullet's continuation lines are joined to it with single spaces. The bullets are read as the docs gate reads them,
     so a line the gate rejects, a comment and fenced code are not part of any bullet. Raw HTML tags, attributes
     included, are removed, and so is everything from the first image or attribute list to the end of the bullet
-    (``visible_text``); the text between tags, inside code spans and in autolinks stays. A line that is a link or
-    abbreviation definition is dropped before the join.
+    (``visible_text``); the text between tags, inside code spans and in autolinks stays. A link or abbreviation
+    definition line ends the bullet: it and every later line of the bullet are dropped before the join, because the
+    renderer also consumes the line after a ``[label]:`` definition when that line holds the title or the URL.
 
     Args:
         changelog: The text of ``CHANGELOG.md``.
@@ -1462,7 +1474,7 @@ def upgrade_note_bullets(changelog: str, version: str) -> list[str] | None:
     reader = _EntryReader(entry.rejected)
     reader.read(entry.lines)
     return [
-        visible_text(' '.join(part for part in item.parts if part and not DEFINITION_LINE.match(part)))
+        visible_text(' '.join(_parts_before_definition(item.parts)))
         for item in reader.items
         if item.section == 'Upgrade notes'
     ]

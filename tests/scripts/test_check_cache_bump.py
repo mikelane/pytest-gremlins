@@ -259,6 +259,25 @@ class DescribeLinkReferenceDefinitionsTheRendererHides:
 
         assert len(problems) == 1
 
+    @pytest.mark.parametrize(
+        'definition',
+        [
+            '  [docs]: https://example.com\n  "the cache is rebuilt once"\n',
+            "  [docs]: https://example.com\n  'the cache is rebuilt once'\n",
+            '  [docs]: https://example.com\n  (the cache is rebuilt once)\n',
+            '  [docs]:\n  https://example.com/cache-rebuilt\n',
+        ],
+    )
+    def it_fails_a_release_whose_rebuild_wording_is_only_in_a_definition_continued_on_the_next_line(
+        self, definition: str
+    ) -> None:
+        bullet = f'- **Upgrade** first run is slower. (no docs: r)\n{definition}'
+        bullets = docs_gate.upgrade_note_bullets(_entry(upgrade_notes=bullet), '1.15.0')
+
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.14.3', '1.15.0', bullets=bullets)
+
+        assert len(problems) == 1
+
 
 @pytest.mark.small
 class DescribeMinorBumpOverCanonicalPrereleases:

@@ -369,7 +369,9 @@ higher `major.minor`; or the tag is a prerelease of `X.Y.0`, such as `1.15.0b0`,
 visible, so wording there does not count. An image fails closed: from the first `![` outside a code span (a backslash
 before it does not matter, and a reference-style image counts too) to the end of the bullet nothing counts, so put the
 sentence before the image. Wording after a `{` outside a code span (an attribute list) does not count either, and
-reference or abbreviation definition lines (`[label]: url`, `*[label]: text`) render nothing, so they do not count. Text
+reference or abbreviation definition lines (`[label]: url`, `*[label]: text`) render nothing, so they do not count, and
+a definition line ends the bullet: it and everything after it in the bullet do not count (the renderer also takes the
+line after a `[label]:` definition when that line holds the title or the URL). Text
 between tags, text inside a code span (even one that holds a tag or `![`) and an
 autolink (`<https://...>`) are visible and count. A prerelease of `X.Y.0` means a version that sorts before `X.Y.0`
 under PEP 440 (`1.15.0b0`, `rc`, `.devN`, `1.15.0rc1.post1`), and the version must stay on `X.Y` and not be lower than
