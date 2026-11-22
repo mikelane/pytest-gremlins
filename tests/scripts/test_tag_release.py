@@ -7,6 +7,7 @@ recorders here.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import (
     dataclass,
     field,
@@ -568,7 +569,8 @@ class SubprocessCall:
 
     @property
     def stdin(self) -> str | None:
-        return self.kwargs.get('input')
+        payload = self.kwargs.get('input')
+        return None if payload is None else bytes(payload).decode('utf-8')
 
 
 class FakeSubprocess:
@@ -579,24 +581,33 @@ class FakeSubprocess:
     """
 
     def __init__(
-        self, *, gh_answer: str | None = None, gate_status: int = 0, fail_gh_on: str | None = None, git_stdout: str = ''
+        self,
+        *,
+        gh_answer: str | None = None,
+        gate_status: int = 0,
+        fail_gh_on: str | None = None,
+        git_stdout: str = '',
+        raw_output: bytes | None = None,
     ) -> None:
         self.calls: list[SubprocessCall] = []
         self.gh_answer = gh_answer
         self.gate_status = gate_status
         self.fail_gh_on = fail_gh_on
         self.git_stdout = git_stdout
+        self.raw_output = raw_output
 
-    def run(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def run(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         self.calls.append(SubprocessCall(command, kwargs))
         joined = ' '.join(command)
+        if command[0] not in {'git', 'gh'}:
+            return subprocess.CompletedProcess(command, self.gate_status)
+        if self.raw_output is not None:
+            return subprocess.CompletedProcess(command, 0, stdout=self.raw_output, stderr=b'')
         if command[0] == 'git':
-            return subprocess.CompletedProcess(command, 0, stdout=self.git_stdout, stderr='')
-        if command[0] == 'gh':
-            if self.fail_gh_on is not None and self.fail_gh_on in joined:
-                return subprocess.CompletedProcess(command, 1, stdout='', stderr='HTTP 422: Reference already exists')
-            return subprocess.CompletedProcess(command, 0, stdout=self._gh_stdout(joined), stderr='')
-        return subprocess.CompletedProcess(command, self.gate_status)
+            return subprocess.CompletedProcess(command, 0, stdout=self.git_stdout.encode(), stderr=b'')
+        if self.fail_gh_on is not None and self.fail_gh_on in joined:
+            return subprocess.CompletedProcess(command, 1, stdout=b'', stderr=b'HTTP 422: Reference already exists')
+        return subprocess.CompletedProcess(command, 0, stdout=self._gh_stdout(joined).encode(), stderr=b'')
 
     def _gh_stdout(self, joined: str) -> str:
         if self.gh_answer is not None:
@@ -1050,29 +1061,44 @@ class DescribeTheTokensInTheGateEnvironments:
         assert fake.calls[0].kwargs.get('env') is None
 
 
+def _use_git() -> None:
+    tag_release.tag_commit_on_origin(Path(), 'v1.2.3')
+
+
+def _use_gh() -> None:
+    tag_release.github_effects(Path(), 'owner/repo').dispatch('v1.2.3')
+
+
 @pytest.mark.small
-class DescribeUtf8DecodingOfCommandOutput:
-    """Reverting to ``text=True`` would decode with the locale code page; this fails on every OS if that happens."""
+@pytest.mark.parametrize('use', [_use_git, _use_gh], ids=['git', 'gh'])
+class DescribeDecodingOfCommandOutput:
+    """Output is captured as bytes and decoded as strict UTF-8 in the calling thread.
 
-    @staticmethod
-    def _run_git(_effects: object) -> None:
-        tag_release.tag_commit_on_origin(Path(), 'v1.2.3')
+    ``encoding``, ``errors``, ``text`` or ``universal_newlines`` make ``subprocess.run`` decode in a reader thread on
+    Windows, where a decode error dies in that thread and leaves ``stdout`` as None.
+    """
 
-    @staticmethod
-    def _run_gh(effects: Any) -> None:
-        effects.dispatch('v1.2.3')
-
-    @pytest.mark.parametrize('use', ['_run_git', '_run_gh'])
-    def it_asks_subprocess_for_strict_utf8_whatever_the_locale(self, monkeypatch: pytest.MonkeyPatch, use: str) -> None:
+    def it_passes_no_decoding_arguments_to_subprocess(
+        self, monkeypatch: pytest.MonkeyPatch, use: Callable[[], None]
+    ) -> None:
         fake = FakeSubprocess().install(monkeypatch)
         monkeypatch.setattr(locale, 'getpreferredencoding', lambda *_args: 'cp1252')
 
-        getattr(self, use)(tag_release.github_effects(Path(), 'owner/repo'))
+        use()
 
         kwargs = fake.calls[-1].kwargs
-        assert kwargs['encoding'] == 'utf-8'
-        assert kwargs['errors'] == 'strict'
-        assert 'text' not in kwargs
+        assert kwargs['capture_output'] is True
+        assert {'encoding', 'errors', 'text', 'universal_newlines'} & set(kwargs) == set()
+
+    def it_fails_closed_naming_the_command_when_the_output_is_not_utf8(
+        self, monkeypatch: pytest.MonkeyPatch, use: Callable[[], None]
+    ) -> None:
+        fake = FakeSubprocess(raw_output=b'bad \xff\xfe').install(monkeypatch)
+
+        with pytest.raises(tag_release.CannotCheckError, match='printed output that is not UTF-8') as raised:
+            use()
+
+        assert fake.calls[-1].command[0] in str(raised.value)
 
 
 @pytest.mark.small
@@ -1207,6 +1233,7 @@ class DescribeAStepSummaryThatCannotEncodeTheMessage:
         assert status == 2
         assert 'bad byte' in summary.read_text(encoding='utf-8')
 
+    @pytest.mark.skipif(sys.platform == 'win32', reason='Windows argv cannot carry a lone surrogate')
     def it_exits_two_when_the_sha_argument_cannot_be_encoded(self, tmp_path: Path) -> None:
         summary = tmp_path / 'summary.md'
         env = {**ISOLATED_GIT_ENV, 'GITHUB_STEP_SUMMARY': str(summary)}

@@ -147,18 +147,39 @@ def parse_version(pyproject_text: str, source: str) -> str:
     return version
 
 
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+@dataclass(frozen=True)
+class CommandResult:
+    """The exit status and the decoded output of a command."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_captured(command: list[str], *, cwd: Path | None = None, stdin: str | None = None) -> CommandResult:
+    """Run ``command``, capturing its output as bytes and decoding it as strict UTF-8 in this thread.
+
+    ``subprocess.run`` with an encoding decodes inside a reader thread on Windows, where a decode error dies in that
+    thread and leaves ``stdout`` as None. Decoding here turns it into an error the caller can handle.
+
+    Raises:
+        CannotCheckError: If the output is not UTF-8.
+    """
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        input=None if stdin is None else stdin.encode('utf-8'),
+        capture_output=True,
+        check=False,
+    )
     try:
-        return subprocess.run(
-            ['git', *args],  # noqa: S607
-            cwd=repo,
-            capture_output=True,
-            encoding='utf-8',
-            errors='strict',
-            check=False,
-        )
+        return CommandResult(completed.returncode, completed.stdout.decode('utf-8'), completed.stderr.decode('utf-8'))
     except UnicodeDecodeError as error:
-        raise CannotCheckError(f'git {" ".join(args)} printed output that is not UTF-8: {error}') from error
+        raise CannotCheckError(f'{" ".join(command)} printed output that is not UTF-8: {error}') from error
+
+
+def _git(repo: Path, *args: str) -> CommandResult:
+    return _run_captured(['git', *args], cwd=repo)
 
 
 def _git_output(repo: Path, *args: str) -> str:
@@ -406,14 +427,7 @@ def release(repo: Path, sha: str, effects: Effects, before: str) -> str:
 
 
 def _gh(*args: str, stdin: str | None = None) -> str:
-    completed = subprocess.run(
-        ['gh', *args],  # noqa: S607
-        input=stdin,
-        capture_output=True,
-        encoding='utf-8',
-        errors='strict',
-        check=False,
-    )
+    completed = _run_captured(['gh', *args], stdin=stdin)
     if completed.returncode != 0:
         detail = completed.stderr.strip() or f'exit {completed.returncode}'
         # The whole command, so the two POSTs (git/tags, git/refs) are told apart; the token is in the environment and
