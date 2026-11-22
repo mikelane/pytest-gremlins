@@ -1209,6 +1209,18 @@ def _section_body(section: str, content: str, *, before: str | None = None) -> s
     return f'### {section}\n\n{prefix}{content}\n'
 
 
+@pytest.mark.medium
+class DescribeThematicBreakTiming:
+    def it_reads_a_long_run_of_spaces_after_an_equals_sign_in_linear_time(self) -> None:
+        delimiter = _load_checker().THEMATIC_OR_SETEXT
+
+        def prepare(size: int) -> Callable[[], object]:
+            text = '=' + ' ' * size + 'x'
+            return lambda: delimiter.match(text)
+
+        assert _growth_when_input_scales(prepare, 400000) < MAX_LINEAR_GROWTH
+
+
 @pytest.mark.small
 class DescribeStrictEntryFormat:
     @pytest.mark.parametrize(('section', 'number'), SECTIONS_WITH_A_LINE_BEFORE)
@@ -1230,15 +1242,6 @@ class DescribeStrictEntryFormat:
         problems = _problems_of(body)
 
         assert f'a thematic break or setext underline at line {number} ({line.strip()});' in problems
-
-    def it_reads_a_long_run_of_spaces_after_an_equals_sign_in_linear_time(self) -> None:
-        delimiter = _load_checker().THEMATIC_OR_SETEXT
-
-        def prepare(size: int) -> Callable[[], object]:
-            text = '=' + ' ' * size + 'x'
-            return lambda: delimiter.match(text)
-
-        assert _growth_when_input_scales(prepare, 400000) < MAX_LINEAR_GROWTH
 
     @pytest.mark.parametrize(
         ('line', 'expected'),
@@ -2461,7 +2464,7 @@ class DescribeHtmlTagsMatchTheRenderer:
         assert _reader_sees_a_reference(bullet)
 
 
-@pytest.mark.small
+@pytest.mark.medium
 class DescribeCodeSpanTiming:
     def it_checks_many_backtick_lines_at_the_length_cap_in_linear_time(self) -> None:
         checker = _load_checker()
