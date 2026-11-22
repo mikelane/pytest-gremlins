@@ -3486,7 +3486,40 @@ def _config_file_options(config: pytest.Config) -> list[str]:
         config_file.as_posix(),
         f'--rootdir={config.rootpath.as_posix()}',
         f'--confcutdir={_session_confcutdir(config).as_posix()}',
+        *_path_ini_overrides(config),
     ]
+
+
+_PATH_INI_TYPES = frozenset({'paths', 'pathlist'})
+
+
+def _path_ini_overrides(config: pytest.Config) -> list[str]:
+    """Return ``-o`` pairs carrying the session's resolved path-type ini values, for a session with no config file.
+
+    Pytest resolves a relative path setting (``pythonpath``, or any path setting a plugin registers) against the
+    directory of the config file, or against the working directory when there is none.  Gremlin runs are given
+    ``no_config.ini`` in that case, so ``PYTEST_ADDOPTS='-o pythonpath=src'`` would resolve ``src`` inside the
+    installed package and no gremlin run could import the project (#1037).  The session's absolute values do not
+    depend on where they are resolved.  With a config file the session and the gremlin run resolve against the same
+    directory, so nothing is forwarded.  The settings are found by their registered type rather than by name, so a
+    plugin's path setting is covered too.  A setting is forwarded exactly when its value differs from its
+    registered default, so a session that emptied a setting with a default forwards it empty.  The registry
+    of ini types is pytest's private ``_parser._inidict`` (``getini`` has no public way to ask a key's
+    type); where a pytest does not have it, nothing is forwarded, as before.
+    """
+    inidict = getattr(getattr(config, '_parser', None), '_inidict', None)
+    if config.inipath is not None or not isinstance(inidict, dict):
+        return []
+    overrides: list[str] = []
+    for key, (_help, ini_type, default) in sorted(inidict.items()):
+        if ini_type not in _PATH_INI_TYPES:
+            continue
+        value = config.getini(key)
+        if value == default:
+            continue
+        paths = [str(path) for path in value]
+        overrides.extend(['-o', f'{key}={shlex.join(paths)}'])
+    return overrides
 
 
 def _session_confcutdir(config: pytest.Config) -> Path:
