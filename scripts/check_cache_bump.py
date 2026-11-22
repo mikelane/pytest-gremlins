@@ -63,7 +63,7 @@ __all__ = [
     'Markers',
     'changed_markers',
     'check_cache_bump',
-    'is_minor_bump',
+    'is_at_least_minor_bump',
     'main',
     'markers_changed_since_last_release',
     'says_cache_rebuilt',
@@ -79,7 +79,7 @@ def _parse_version(text: str) -> tuple[int, int, int, str]:
     return int(major), int(minor), int(patch), suffix
 
 
-def is_minor_bump(previous: str, new: str) -> bool:
+def is_at_least_minor_bump(previous: str, new: str) -> bool:
     """Return whether ``new`` is at least a minor version bump over ``previous``.
 
     Args:
@@ -108,7 +108,7 @@ def says_cache_rebuilt(bullet: str) -> bool:
 
 def changed_markers(previous: Markers, head: Markers) -> list[str]:
     """Return the name of each cache marker whose value in ``head`` differs from its value in ``previous``."""
-    changed = []
+    changed: list[str] = []
     if head.cache_version != previous.cache_version:
         changed.append('CACHE_VERSION')
     if head.runner_fidelity_version != previous.runner_fidelity_version:
@@ -117,13 +117,18 @@ def changed_markers(previous: Markers, head: Markers) -> list[str]:
 
 
 def check_cache_bump(
-    previous: Markers, head: Markers, previous_version: str, version: str, *, bullets: Sequence[str]
+    previous_markers: Markers,
+    head_markers: Markers,
+    previous_version: str,
+    version: str,
+    *,
+    bullets: Sequence[str],
 ) -> list[str]:
     """Return why the release fails, one line per problem; empty when it passes.
 
     Args:
-        previous: The cache markers at the previous release.
-        head: The cache markers of the code being released.
+        previous_markers: The cache markers at the previous release.
+        head_markers: The cache markers of the code being released.
         previous_version: The previous release's version, without the leading ``v``.
         version: The version being released, without the leading ``v``.
         bullets: The text of every bullet under ``### Upgrade notes`` in the release's changelog entry.
@@ -131,12 +136,12 @@ def check_cache_bump(
     Returns:
         The problems, one line each, or an empty list when no marker changed or the release handles the change.
     """
-    changed = changed_markers(previous, head)
+    changed = changed_markers(previous_markers, head_markers)
     if not changed:
         return []
     names = ' and '.join(changed)
-    problems = []
-    if not is_minor_bump(previous_version, version):
+    problems: list[str] = []
+    if not is_at_least_minor_bump(previous_version, version):
         problems.append(
             f"{names} changed since v{previous_version}, which discards users' warm caches, but {version} is not a "
             f'minor bump over {previous_version}. Release at least the next minor version.'
@@ -160,17 +165,18 @@ def markers_changed_since_last_release(repo: Path) -> tuple[str, list[str]] | No
         repo: The repository to read the tags and the markers from.
 
     Returns:
-        ``None`` when no release tag is reachable or the markers cannot be read at it or in the working tree.
+        ``None`` when no release tag is reachable or the markers cannot be read at it or in the working tree (a marker
+        file is missing, unreadable, not UTF-8, or has no marker in it).
     """
     tag = previous_release_tag(None, repo)
-    previous = released_markers(tag, repo) if tag else None
-    if tag is None or previous is None:
+    previous_markers = released_markers(tag, repo) if tag else None
+    if tag is None or previous_markers is None:
         return None
     try:
-        head = _head_markers(repo)
-    except CannotCheckError:
+        head_markers = _head_markers(repo)
+    except (CannotCheckError, OSError, UnicodeDecodeError):
         return None
-    return tag.removeprefix('v'), changed_markers(previous, head)
+    return tag.removeprefix('v'), changed_markers(previous_markers, head_markers)
 
 
 def _check(args: argparse.Namespace) -> tuple[str, list[str], str]:
@@ -189,14 +195,16 @@ def _check(args: argparse.Namespace) -> tuple[str, list[str], str]:
     previous_tag = previous_release_tag(None if args.newest else version)
     if previous_tag is None:
         raise CannotCheckError('no earlier release tag is reachable from HEAD; fetch tags (fetch-depth: 0)')
-    previous = released_markers(previous_tag)
-    if previous is None:
+    previous_markers = released_markers(previous_tag)
+    if previous_markers is None:
         raise CannotCheckError(f'cannot read the cache markers at {previous_tag}')
-    head = _head_markers()
-    bullets = upgrade_note_bullets(changelog, version) if changed_markers(previous, head) else []
+    head_markers = _head_markers()
+    bullets = upgrade_note_bullets(changelog, version) if changed_markers(previous_markers, head_markers) else []
     if bullets is None:
         raise CannotCheckError(f'the changelog has no "## v{version}" entry')
-    problems = check_cache_bump(previous, head, previous_tag.removeprefix('v'), version, bullets=bullets)
+    problems = check_cache_bump(
+        previous_markers, head_markers, previous_tag.removeprefix('v'), version, bullets=bullets
+    )
     return version, problems, f'The {version} release changes no cache marker, or is a minor release that explains it.'
 
 
@@ -215,7 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point; returns 0 when the release passes, 1 when it fails, 2 when the check could not run."""
     args = _parse_args(argv)
     try:
-        version, problems, passed = _check(args)
+        version, problems, pass_message = _check(args)
     except CannotCheckError as error:
         print(f'could not check the release cache bump: {error}', file=sys.stderr)
         return 2
@@ -227,7 +235,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for problem in problems:
             print(f'{PROBLEM_PREFIX}{problem}')
         return 1
-    print(passed)
+    print(pass_message)
     return 0
 
 

@@ -437,8 +437,9 @@ from its value at the newest `v*` tag, it computes at least the next minor versi
 when commitizen would only patch, keeps a computed minor or major and `--prerelease`, and refuses `--increment PATCH`
 with a message naming the marker. It also adds a placeholder under `### Upgrade notes` about the one-time cache
 rebuild. The placeholder does not contain the words the cache-bump gate looks for, so the entry fails until a person
-writes the sentence. It never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the
-cache gate needs one,
+writes the sentence. If the markers cannot be compared (no reachable `v*` tag, or an unreadable marker file), it warns
+on stderr and continues without the minor bump or the placeholder, and the cache-bump gate still checks the release PR.
+It never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the cache gate needs one,
 commit signed, push and open the PR. It does not replace `cut-release.yml` yet (#1046).
 
 **Tag release (dry run).** `.github/workflows/tag-release.yml` runs on every push to `main`. It runs

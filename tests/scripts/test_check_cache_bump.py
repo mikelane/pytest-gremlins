@@ -74,10 +74,14 @@ class DescribeIsMinorBump:
             ('1.14.3', '1.15.0b0'),
             ('1.15.0b0', '1.15.0'),
             ('1.15.0b0', '1.15.0b1'),
+            ('1.15.0b0', '1.15.1'),
+            ('1.15.0rc1', '1.16.0'),
+            ('0.9.9', '1.0.0'),
+            ('1.9.0', '1.10.0'),
         ],
     )
     def it_accepts_a_version_with_a_higher_minor_or_major(self, previous: str, new: str) -> None:
-        assert checker.is_minor_bump(previous, new) is True
+        assert checker.is_at_least_minor_bump(previous, new) is True
 
     @pytest.mark.parametrize(
         ('previous', 'new'),
@@ -88,15 +92,23 @@ class DescribeIsMinorBump:
             ('1.15.0', '1.15.1'),
             ('1.15.0', '1.14.9'),
             ('1.15.0', '1.15.0'),
+            ('2.0.0', '1.99.0'),
+            ('1.15.0b0', '1.14.9'),
+            ('1.10.0', '1.9.0'),
         ],
     )
     def it_rejects_a_version_that_does_not_raise_the_minor(self, previous: str, new: str) -> None:
-        assert checker.is_minor_bump(previous, new) is False
+        assert checker.is_at_least_minor_bump(previous, new) is False
 
     @pytest.mark.parametrize('text', ['', '1.15', 'v1.15.0', 'one.two.three'])
     def it_refuses_a_version_it_cannot_read(self, text: str) -> None:
         with pytest.raises(docs_gate.CannotCheckError):
-            checker.is_minor_bump('1.14.3', text)
+            checker.is_at_least_minor_bump('1.14.3', text)
+
+    @pytest.mark.parametrize('text', ['', '1.14', 'v1.14.3'])
+    def it_refuses_a_previous_version_it_cannot_read(self, text: str) -> None:
+        with pytest.raises(docs_gate.CannotCheckError, match=r'X\.Y\.Z'):
+            checker.is_at_least_minor_bump(text, '1.15.0')
 
 
 @pytest.mark.small
@@ -172,6 +184,30 @@ class DescribeCheckCacheBump:
 
         assert len(problems) == 2
 
+    def it_names_both_markers_when_both_changed(self) -> None:
+        both = checker.Markers(cache_version='4', runner_fidelity_version='rf22')
+
+        problems = checker.check_cache_bump(PREVIOUS, both, '1.14.3', '1.14.4', bullets=[REBUILT_BULLET])
+
+        assert problems[0].startswith('CACHE_VERSION and RUNNER_FIDELITY_VERSION changed since v1.14.3,')
+
+    def it_passes_a_stable_release_that_follows_its_own_minor_prerelease(self) -> None:
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.15.0b0', '1.15.0', bullets=[REBUILT_BULLET])
+
+        assert problems == []
+
+    def it_ignores_a_rebuild_bullet_when_no_marker_changed_and_the_release_is_a_patch(self) -> None:
+        problems = checker.check_cache_bump(PREVIOUS, PREVIOUS, '1.14.3', '1.14.4', bullets=['Other.'])
+
+        assert problems == []
+
+    def it_passes_when_any_one_bullet_says_the_cache_is_rebuilt(self) -> None:
+        bullets = ['**Other.** (no docs: x)', REBUILT_BULLET]
+
+        problems = checker.check_cache_bump(PREVIOUS, CACHE_RAISED, '1.14.3', '1.15.0', bullets=bullets)
+
+        assert problems == []
+
 
 def _changelog_text(version: str = '1.15.0', upgrade_notes: str = f'- {REBUILT_BULLET}\n') -> str:
     return (
@@ -180,7 +216,7 @@ def _changelog_text(version: str = '1.15.0', upgrade_notes: str = f'- {REBUILT_B
     )
 
 
-class _Git:
+class _StubbedGitReaders:
     """Stand-ins for the git-reading helpers, so main() runs without a repository."""
 
     def __init__(
@@ -209,21 +245,21 @@ class DescribeMain:
     def it_exits_0_when_no_marker_changed_even_without_a_matching_entry(
         self, monkeypatch: pytest.MonkeyPatch, changelog: Path
     ) -> None:
-        _Git(monkeypatch, head=PREVIOUS)
+        _StubbedGitReaders(monkeypatch, head=PREVIOUS)
 
         assert checker.main(['9.9.9', '--changelog', str(changelog)]) == 0
 
     def it_exits_0_for_a_minor_release_that_explains_the_rebuild(
         self, monkeypatch: pytest.MonkeyPatch, changelog: Path
     ) -> None:
-        _Git(monkeypatch, head=CACHE_RAISED)
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
 
         assert checker.main(['--newest', '--changelog', str(changelog)]) == 0
 
     def it_exits_1_and_names_the_problem_for_a_patch_release(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        _Git(monkeypatch, head=CACHE_RAISED)
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
         path = tmp_path / 'CHANGELOG.md'
         path.write_text(_changelog_text('1.14.4'), encoding='utf-8')
 
@@ -233,7 +269,7 @@ class DescribeMain:
     def it_exits_1_when_the_entry_has_no_rebuild_bullet(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        _Git(monkeypatch, head=FIDELITY_RAISED)
+        _StubbedGitReaders(monkeypatch, head=FIDELITY_RAISED)
         path = tmp_path / 'CHANGELOG.md'
         path.write_text(_changelog_text(upgrade_notes='- **Other.** (no docs: test)\n'), encoding='utf-8')
 
@@ -243,28 +279,135 @@ class DescribeMain:
     def it_exits_2_when_there_is_no_previous_release_tag(
         self, monkeypatch: pytest.MonkeyPatch, changelog: Path
     ) -> None:
-        _Git(monkeypatch, head=CACHE_RAISED, tag=None)
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED, tag=None)
 
         assert checker.main(['--newest', '--changelog', str(changelog)]) == 2
 
     def it_exits_2_when_the_entry_is_missing_and_a_marker_changed(
         self, monkeypatch: pytest.MonkeyPatch, changelog: Path
     ) -> None:
-        _Git(monkeypatch, head=CACHE_RAISED)
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
 
         assert checker.main(['9.9.9', '--changelog', str(changelog)]) == 2
 
     def it_exits_0_when_the_newest_entry_is_already_released(
         self, monkeypatch: pytest.MonkeyPatch, changelog: Path
     ) -> None:
-        _Git(monkeypatch, head=CACHE_RAISED, tagged=True)
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED, tagged=True)
 
         assert checker.main(['--newest', '--changelog', str(changelog)]) == 0
 
     @pytest.mark.parametrize('flag', ['--skip', '--force', '--bypass', '--no-check'])
     def it_has_no_flag_that_skips_the_check(self, flag: str) -> None:
-        with pytest.raises(SystemExit):
+        with pytest.raises(SystemExit) as raised:
             checker.main(['--newest', flag])
+
+        assert raised.value.code == 2
+
+    @pytest.mark.parametrize('argv', [[], ['1.15.0', '--newest']])
+    def it_exits_2_unless_given_exactly_one_of_the_version_and_newest(self, argv: list[str]) -> None:
+        with pytest.raises(SystemExit) as raised:
+            checker.main(argv)
+
+        assert raised.value.code == 2
+
+    def it_exits_0_for_a_version_given_with_its_leading_v(
+        self, monkeypatch: pytest.MonkeyPatch, changelog: Path
+    ) -> None:
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
+
+        assert checker.main(['v1.15.0', '--changelog', str(changelog)]) == 0
+
+    def it_exits_2_for_an_empty_version(
+        self, monkeypatch: pytest.MonkeyPatch, changelog: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
+
+        assert checker.main(['v', '--changelog', str(changelog)]) == 2
+        assert 'the version is empty' in capsys.readouterr().err
+
+    def it_leaves_out_the_tag_of_the_version_being_released(
+        self, monkeypatch: pytest.MonkeyPatch, changelog: Path
+    ) -> None:
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
+        asked: list[str | None] = []
+
+        def previous_release_tag(version: str | None) -> str:
+            asked.append(version)
+            return 'v1.14.3'
+
+        monkeypatch.setattr(checker, 'previous_release_tag', previous_release_tag)
+
+        checker.main(['v1.15.0', '--changelog', str(changelog)])
+
+        assert asked == ['1.15.0']
+
+    def it_counts_every_tag_with_newest(self, monkeypatch: pytest.MonkeyPatch, changelog: Path) -> None:
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
+        asked: list[str | None] = []
+
+        def previous_release_tag(version: str | None) -> str:
+            asked.append(version)
+            return 'v1.14.3'
+
+        monkeypatch.setattr(checker, 'previous_release_tag', previous_release_tag)
+
+        checker.main(['--newest', '--changelog', str(changelog)])
+
+        assert asked == [None]
+
+    def it_prints_each_problem_with_the_problem_prefix(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
+        path = tmp_path / 'CHANGELOG.md'
+        path.write_text(_changelog_text('1.14.4', upgrade_notes='- **Other.** (no docs: test)\n'), encoding='utf-8')
+
+        assert checker.main(['1.14.4', '--changelog', str(path)]) == 1
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[0] == '1.14.4 cannot be released with its cache markers as they are:'
+        assert len(lines) == 3
+        assert lines[1].startswith('PROBLEM: CACHE_VERSION changed since v1.14.3')
+        assert lines[2].startswith('PROBLEM: CACHE_VERSION changed since v1.14.3')
+
+    def it_exits_2_when_the_markers_at_the_previous_tag_cannot_be_read(
+        self, monkeypatch: pytest.MonkeyPatch, changelog: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
+        monkeypatch.setattr(checker, 'released_markers', lambda *_: None)
+
+        assert checker.main(['--newest', '--changelog', str(changelog)]) == 2
+        assert 'cannot read the cache markers at v1.14.3' in capsys.readouterr().err
+
+    def it_exits_2_when_the_markers_being_released_cannot_be_read(
+        self, monkeypatch: pytest.MonkeyPatch, changelog: Path
+    ) -> None:
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
+
+        def unreadable() -> object:
+            raise docs_gate.CannotCheckError('cannot read the cache markers')
+
+        monkeypatch.setattr(checker, '_head_markers', unreadable)
+
+        assert checker.main(['--newest', '--changelog', str(changelog)]) == 2
+
+    def it_exits_2_and_names_an_unexpected_error(
+        self, monkeypatch: pytest.MonkeyPatch, changelog: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
+
+        def broken() -> object:
+            raise FileNotFoundError('src/pytest_gremlins/cache/versions.py')
+
+        monkeypatch.setattr(checker, '_head_markers', broken)
+
+        assert checker.main(['--newest', '--changelog', str(changelog)]) == 2
+        assert 'unexpected FileNotFoundError' in capsys.readouterr().err
+
+    def it_exits_2_when_the_changelog_cannot_be_read(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        _StubbedGitReaders(monkeypatch, head=CACHE_RAISED)
+
+        assert checker.main(['1.15.0', '--changelog', str(tmp_path / 'missing.md')]) == 2
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -321,8 +464,43 @@ class DescribeMarkersChangedSinceLastRelease:
 
         assert checker.markers_changed_since_last_release(tagged_repo) is None
 
+    def it_names_a_changed_runner_fidelity_version(self, tagged_repo: Path) -> None:
+        _write_markers(tagged_repo, 3, 'rf22')
+
+        assert checker.markers_changed_since_last_release(tagged_repo) == ('1.14.3', ['RUNNER_FIDELITY_VERSION'])
+
+    def it_compares_with_the_newest_release_tag(self, tagged_repo: Path) -> None:
+        _write_markers(tagged_repo, 4, 'rf21')
+        _git(tagged_repo, 'commit', '-q', '-am', 'two')
+        _git(tagged_repo, 'tag', 'v1.15.0')
+
+        assert checker.markers_changed_since_last_release(tagged_repo) == ('1.15.0', [])
+
+    def it_returns_nothing_when_the_markers_at_the_tag_cannot_be_read(self, tmp_path: Path) -> None:
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        _git(repo, 'init', '-q')
+        _write_markers(repo, 3, 'rf21')
+        (repo / sys.modules['check_verdict_change'].VERSIONS_PATH).write_text('nothing here\n', encoding='utf-8')
+        _git(repo, 'add', '.')
+        _git(repo, 'commit', '-q', '-m', 'one')
+        _git(repo, 'tag', 'v1.14.3')
+        _write_markers(repo, 3, 'rf21')
+
+        assert checker.markers_changed_since_last_release(repo) is None
+
     def it_returns_nothing_when_the_markers_cannot_be_read(self, tagged_repo: Path) -> None:
         (tagged_repo / sys.modules['check_verdict_change'].VERSIONS_PATH).write_text('nothing here\n', encoding='utf-8')
+
+        assert checker.markers_changed_since_last_release(tagged_repo) is None
+
+    def it_returns_nothing_when_a_marker_file_is_missing(self, tagged_repo: Path) -> None:
+        (tagged_repo / sys.modules['check_verdict_change'].INCREMENTAL_PATH).unlink()
+
+        assert checker.markers_changed_since_last_release(tagged_repo) is None
+
+    def it_returns_nothing_when_a_marker_file_is_not_utf8(self, tagged_repo: Path) -> None:
+        (tagged_repo / sys.modules['check_verdict_change'].VERSIONS_PATH).write_bytes(b'\xff\xfe')
 
         assert checker.markers_changed_since_last_release(tagged_repo) is None
 

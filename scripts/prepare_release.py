@@ -37,7 +37,10 @@ from collections.abc import (
     Sequence,
 )
 import contextlib
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 import datetime
 import functools
 import logging
@@ -48,7 +51,10 @@ import sys
 import textwrap
 import unicodedata
 
-from check_cache_bump import is_minor_bump, markers_changed_since_last_release
+from check_cache_bump import (
+    is_at_least_minor_bump,
+    markers_changed_since_last_release,
+)
 from check_release_docs import (
     VERSION_HEADING_START,
     CannotCheckError,
@@ -319,6 +325,7 @@ class PreparedRelease:
     branch: str
     commits: list[Commit]
     changed_markers: list[str] = field(default_factory=list)
+    markers_compared: bool = True
 
 
 def _detail(result: CommandResult) -> str:
@@ -390,11 +397,11 @@ def _plan_version(
         )
     flags = _flags(increment, prerelease)
     version = _next_version(run, flags)
-    if not changed_markers or previous_release is None or _is_minor_bump(previous_release, version):
+    if not changed_markers or previous_release is None or _is_at_least_minor_bump(previous_release, version):
         return version, flags
     flags = _flags('MINOR', prerelease)
     version = _next_version(run, flags)
-    if not _is_minor_bump(previous_release, version):
+    if not _is_at_least_minor_bump(previous_release, version):
         raise ReleaseRefusedError(
             f'{names} changed since v{previous_release}, but --increment MINOR gives {version}, which is not a minor '
             'bump over it; pick the version yourself'
@@ -402,9 +409,9 @@ def _plan_version(
     return version, flags
 
 
-def _is_minor_bump(previous: str, version: str) -> bool:
+def _is_at_least_minor_bump(previous: str, version: str) -> bool:
     try:
-        return is_minor_bump(previous, version)
+        return is_at_least_minor_bump(previous, version)
     except CannotCheckError as error:
         raise ReleaseRefusedError(str(error)) from error
 
@@ -466,12 +473,12 @@ def prepare_release(
     prerelease: str | None,
     run: CommandRunner,
     today: datetime.date,
-    cache_markers: CacheMarkerLookup = markers_changed_since_last_release,
+    cache_marker_lookup: CacheMarkerLookup = markers_changed_since_last_release,
 ) -> PreparedRelease:
     """Create ``release/v<version>``, bump the version files and write the unfinished changelog entry.
 
     When a cache marker changed since the last release, the version is at least the next minor, and a forced
-    ``PATCH`` is refused. ``cache_markers`` returns the previous release's version and the changed marker names.
+    ``PATCH`` is refused. ``cache_marker_lookup`` returns the previous release's version and the changed marker names.
 
     Raises:
         ReleaseRefusedError: When the start state is unsafe, the version cannot be computed, a cache marker changed and
@@ -481,7 +488,8 @@ def prepare_release(
     increment = increment.upper() if increment else None
     _refuse_unsafe_start(run)
     current_version = _current_version(repo)
-    previous_release, changed_markers = cache_markers(repo) or (None, [])
+    compared = cache_marker_lookup(repo)
+    previous_release, changed_markers = compared or (None, [])
     version, flags = _plan_version(run, increment, prerelease, previous_release, changed_markers)
     branch = release_branch(version)
     _refuse_existing_branch(run, branch)
@@ -512,7 +520,13 @@ def prepare_release(
         changelog_path.write_text(new_changelog, encoding='utf-8', newline='')
     except OSError as error:
         raise ReleaseRefusedError(f'cannot write {changelog_path}: {error}\nUndo with: {UNDO_HINT}{branch}') from error
-    return PreparedRelease(version=version, branch=branch, commits=commits, changed_markers=changed_markers)
+    return PreparedRelease(
+        version=version,
+        branch=branch,
+        commits=commits,
+        changed_markers=changed_markers,
+        markers_compared=compared is not None,
+    )
 
 
 NEXT_STEPS = """\
@@ -535,6 +549,13 @@ CACHE_MARKER_NOTE = """\
 {markers} changed since the last release, so {version} is at least a minor version and its Upgrade notes have a
 placeholder about the one-time cache rebuild. Rewrite it: scripts/check_cache_bump.py fails the release until a bullet
 there mentions the cache and says it is rebuilt.
+"""
+
+CACHE_MARKERS_UNCOMPARED_WARNING = """\
+prepare_release: warning: could not compare CACHE_VERSION and RUNNER_FIDELITY_VERSION with the last release (no v* tag
+is reachable from HEAD, so run git fetch --tags, or a marker file cannot be read). {version} was not raised to a minor
+version and the entry has no cache placeholder. Check both markers yourself: scripts/check_cache_bump.py fails the
+release PR when a marker changed and the release is not a minor that says the cache is rebuilt.
 """
 
 
@@ -562,7 +583,7 @@ def main(
             prerelease=args.prerelease,
             run=runner,
             today=today or datetime.date.today(),
-            cache_markers=markers_changed_since_last_release,
+            cache_marker_lookup=markers_changed_since_last_release,
         )
     except ReleaseRefusedError as error:
         print(f'prepare_release: {error}', file=sys.stderr)
@@ -570,6 +591,8 @@ def main(
     print(NEXT_STEPS.format(branch=release.branch, version=release.version, count=len(release.commits)))
     if release.changed_markers:
         print(CACHE_MARKER_NOTE.format(markers=' and '.join(release.changed_markers), version=release.version))
+    if not release.markers_compared:
+        print(CACHE_MARKERS_UNCOMPARED_WARNING.format(version=release.version), file=sys.stderr)
     return 0
 
 
