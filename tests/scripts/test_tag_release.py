@@ -7,12 +7,14 @@ recorders here.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import (
     dataclass,
     field,
 )
 import importlib.util
 import json
+import locale
 import os
 from pathlib import Path
 import re
@@ -20,7 +22,10 @@ import shutil
 import stat
 import subprocess
 import sys
-from types import ModuleType
+from types import (
+    ModuleType,
+    SimpleNamespace,
+)
 from typing import Any
 
 import pytest
@@ -39,9 +44,11 @@ GIT_CONFIG_ARGS = (
     '-c',
     'core.autocrlf=false',
 )
-# COVERAGE_PROCESS_START is dropped so no child process starts a coverage run of its own.
+# COVERAGE_PROCESS_START is dropped so no child process starts a coverage run of its own. The Actions variables are
+# dropped so a run of these tests in CI neither annotates nor writes to the test job's own step summary.
+ACTIONS_ENV = ('GITHUB_ACTIONS', 'GITHUB_STEP_SUMMARY')
 ISOLATED_GIT_ENV = {
-    **{key: value for key, value in os.environ.items() if key != 'COVERAGE_PROCESS_START'},
+    **{key: value for key, value in os.environ.items() if key != 'COVERAGE_PROCESS_START' and key not in ACTIONS_ENV},
     'GIT_CONFIG_GLOBAL': os.devnull,
     'GIT_CONFIG_NOSYSTEM': '1',
 }
@@ -62,7 +69,7 @@ tag_release = _load_module()
 
 
 def _git(cwd: Path, *args: str) -> str:
-    result = subprocess.run(
+    completed = subprocess.run(
         ['git', *GIT_CONFIG_ARGS, *args],  # noqa: S607
         cwd=cwd,
         check=True,
@@ -70,7 +77,7 @@ def _git(cwd: Path, *args: str) -> str:
         text=True,
         env=ISOLATED_GIT_ENV,
     )
-    return result.stdout.strip()
+    return completed.stdout.strip()
 
 
 def _pyproject(version: str) -> str:
@@ -91,14 +98,16 @@ def _commit(clone: Path, version: str, extra_files: tuple[str, ...] = ()) -> str
     return _git(clone, 'rev-parse', 'HEAD')
 
 
-def _make_repo(tmp_path: Path, before: str, after: str, extra_files: tuple[str, ...] = ()) -> tuple[Path, Path, str]:
-    """Return ``(origin, clone, sha)``: main holds a commit at version ``before``, then ``sha`` at version ``after``."""
+def _make_repo(
+    tmp_path: Path, parent_version: str, pushed_version: str, extra_files: tuple[str, ...] = ()
+) -> tuple[Path, Path, str]:
+    """Return ``(origin, clone, sha)``: main has a commit at ``parent_version``, then ``sha`` at ``pushed_version``."""
     origin = tmp_path / 'origin.git'
     _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
     clone = tmp_path / 'clone'
     _git(tmp_path, 'clone', '--quiet', str(origin), str(clone))
-    _commit(clone, before)
-    sha = _commit(clone, after, extra_files)
+    _commit(clone, parent_version)
+    sha = _commit(clone, pushed_version, extra_files)
     return origin, clone, sha
 
 
@@ -114,22 +123,23 @@ class Recorder:
     guard_error: Exception | None = None
     pull_request_branch: str | None = 'release/v9.9.9'
     blocker_error: Exception | None = None
+    dispatch_error: Exception | None = None
 
     def effects(self) -> object:
         return tag_release.Effects(
-            head_ref=self._head_ref,
+            find_pull_request_branch=self._find_pull_request_branch,
             run_guard=self._run_guard,
             run_blocker_gate=self._run_blocker_gate,
             create_tag=self._create_tag,
             dispatch=self._dispatch,
         )
 
-    def _head_ref(self, sha: str) -> str | None:
-        self.calls.append(f'head_ref {sha}')
+    def _find_pull_request_branch(self, sha: str) -> str | None:
+        self.calls.append(f'find_pull_request_branch {sha}')
         return self.pull_request_branch
 
-    def _run_guard(self, sha: str, head_ref: str) -> None:
-        self.calls.append(f'guard {sha} {head_ref}')
+    def _run_guard(self, sha: str, pull_request_branch: str) -> None:
+        self.calls.append(f'guard {sha} {pull_request_branch}')
         if self.guard_error is not None:
             raise self.guard_error
 
@@ -143,11 +153,13 @@ class Recorder:
 
     def _dispatch(self, tag: str) -> None:
         self.calls.append(f'dispatch {tag}')
+        if self.dispatch_error is not None:
+            raise self.dispatch_error
 
 
 def _release(clone: Path, sha: str, recorder: Recorder, before: str | None = None) -> str:
-    pushed_from = before if before is not None else _git(clone, 'rev-parse', f'{sha}^')
-    return str(tag_release.release(clone, sha, recorder.effects(), pushed_from))
+    main_tip_before_push = before if before is not None else _git(clone, 'rev-parse', f'{sha}^')
+    return str(tag_release.release(clone, sha, recorder.effects(), main_tip_before_push))
 
 
 @pytest.mark.medium
@@ -191,7 +203,7 @@ class DescribeAVersionThatChanged:
         message = _release(clone, sha, recorder)
 
         assert recorder.calls == [
-            f'head_ref {sha}',
+            f'find_pull_request_branch {sha}',
             f'guard {sha} release/v9.9.9',
             'blockers',
             f'create_tag v1.2.3 {sha}',
@@ -245,7 +257,7 @@ class DescribeARerun:
 
         message = _release(clone, sha, recorder)
 
-        assert recorder.calls == [f'head_ref {sha}', 'dispatch v1.2.3']
+        assert recorder.calls == [f'find_pull_request_branch {sha}', 'dispatch v1.2.3']
         assert message == f'v1.2.3 already tagged at {sha}; dispatched release.yml'
 
     def it_compares_the_peeled_commit_not_the_annotated_tag_object(self, tmp_path: Path) -> None:
@@ -257,7 +269,7 @@ class DescribeARerun:
         _release(clone, sha, recorder)
 
         assert tag_object != sha
-        assert recorder.calls == [f'head_ref {sha}', 'dispatch v1.2.3']
+        assert recorder.calls == [f'find_pull_request_branch {sha}', 'dispatch v1.2.3']
 
     def it_accepts_a_lightweight_tag_on_this_commit(self, tmp_path: Path) -> None:
         _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
@@ -266,7 +278,7 @@ class DescribeARerun:
 
         _release(clone, sha, recorder)
 
-        assert recorder.calls == [f'head_ref {sha}', 'dispatch v1.2.3']
+        assert recorder.calls == [f'find_pull_request_branch {sha}', 'dispatch v1.2.3']
 
     def it_fails_loudly_and_dispatches_nothing_when_the_tag_is_on_another_commit(self, tmp_path: Path) -> None:
         _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
@@ -411,7 +423,7 @@ class DescribeTheGateCommands:
         assert command[3] == str(SCRIPT.parent / 'check_version_change.py')
         assert command[4:] == [
             '--repo',
-            '/work' if os.name != 'nt' else str(Path('/work')),
+            str(Path('/work')),
             '--base-ref',
             'abc^',
             '--branch',
@@ -514,7 +526,7 @@ class DescribeATagMadeByAnotherPath:
         message = _release(clone, sha, recorder)
 
         assert message == 'v1.2.3 was tagged by another path (cut-release.yml); its tag push runs release.yml'
-        assert recorder.calls == [f'head_ref {sha}']
+        assert recorder.calls == [f'find_pull_request_branch {sha}']
 
     def it_refuses_when_no_pull_request_exists_and_there_is_no_tag(self, tmp_path: Path) -> None:
         _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
@@ -523,7 +535,7 @@ class DescribeATagMadeByAnotherPath:
         with pytest.raises(tag_release.ReleaseRefusedError, match='cut-release'):
             _release(clone, sha, recorder)
 
-        assert recorder.calls == [f'head_ref {sha}']
+        assert recorder.calls == [f'find_pull_request_branch {sha}']
 
     def it_looks_up_the_pull_request_before_tagging(self, tmp_path: Path) -> None:
         _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
@@ -531,7 +543,7 @@ class DescribeATagMadeByAnotherPath:
 
         _release(clone, sha, recorder)
 
-        assert recorder.calls[0] == f'head_ref {sha}'
+        assert recorder.calls[0] == f'find_pull_request_branch {sha}'
 
 
 @pytest.mark.medium
@@ -584,18 +596,22 @@ class DescribeAnAnswerThatIsNotWhatWasExpected:
         with pytest.raises(tag_release.CannotCheckError):
             effects.create_tag('v1.2.3', 'a' * 40)
 
-    def it_exits_two_on_an_unexpected_error_instead_of_a_traceback(
+    def it_exits_two_on_an_unexpected_error_and_prints_its_traceback(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         def explode(*_args: object) -> str:
             raise RuntimeError('boom')
 
         monkeypatch.setattr(tag_release, 'release', explode)
+        for name in ACTIONS_ENV:
+            monkeypatch.delenv(name, raising=False)
 
         status = tag_release.main(['--sha', 'abc', '--before', 'def', '--github-repository', 'owner/repo'])
 
+        err = capsys.readouterr().err
         assert status == 2
-        assert 'RuntimeError: boom' in capsys.readouterr().err
+        assert 'error: unexpected RuntimeError: boom' in err
+        assert 'Traceback (most recent call last)' in err
 
 
 @pytest.mark.medium
@@ -621,12 +637,32 @@ class DescribeAPyprojectThatIsNotUtf8:
 # Python on Windows decodes subprocess text with the ANSI code page (cp1252), which, like ISO-8859-1, decodes the bytes
 # 0xff 0xfe without error. This locale reproduces that leg on POSIX.
 SINGLE_BYTE_LOCALE = {'LC_ALL': 'en_US.ISO8859-1', 'PYTHONUTF8': '0', 'PYTHONCOERCECLOCALE': '0'}
+PREFERRED_ENCODING_PROBE = 'import codecs, locale; print(codecs.lookup(locale.getpreferredencoding(False)).name)'
+
+
+@pytest.fixture
+def single_byte_locale_env() -> dict[str, str]:
+    """Return the child environment, skipping when the host cannot give a child an ISO-8859-1 preferred encoding.
+
+    A host without the locale (common on ubuntu-latest) falls back to ASCII, which also rejects 0xff, so the test would
+    pass with or without UTF-8 decoding in the script and prove nothing.
+    """
+    env = {**ISOLATED_GIT_ENV, **SINGLE_BYTE_LOCALE}
+    probe = subprocess.run(
+        [sys.executable, '-c', PREFERRED_ENCODING_PROBE], env=env, capture_output=True, text=True, check=True
+    )
+    encoding = probe.stdout.strip()
+    if encoding != 'iso8859-1':
+        pytest.skip(f'{SINGLE_BYTE_LOCALE["LC_ALL"]} is not installed (child preferred encoding: {encoding})')
+    return env
 
 
 @pytest.mark.medium
 @pytest.mark.skipif(os.name == 'nt', reason='forces a POSIX locale')
 class DescribeAPyprojectThatIsNotUtf8UnderASingleByteLocale:
-    def it_still_fails_closed_because_git_output_is_decoded_as_utf8(self, tmp_path: Path) -> None:
+    def it_still_fails_closed_because_git_output_is_decoded_as_utf8(
+        self, tmp_path: Path, single_byte_locale_env: dict[str, str]
+    ) -> None:
         origin = tmp_path / 'origin.git'
         _git(tmp_path, 'init', '--quiet', '--bare', str(origin))
         clone = tmp_path / 'clone'
@@ -639,9 +675,7 @@ class DescribeAPyprojectThatIsNotUtf8UnderASingleByteLocale:
         command = [sys.executable, str(SCRIPT), '--repo', str(clone), '--sha', sha, '--before', before]
         command += ['--github-repository', 'owner/repo']
 
-        result = subprocess.run(
-            command, env={**ISOLATED_GIT_ENV, **SINGLE_BYTE_LOCALE}, capture_output=True, text=True, check=False
-        )
+        result = subprocess.run(command, env=single_byte_locale_env, capture_output=True, text=True, check=False)
 
         assert result.returncode == 2, result.stderr
         assert 'not UTF-8' in result.stderr
@@ -690,7 +724,7 @@ class DescribeTheGithubCalls:
         fake = FakeGh()
         monkeypatch.setattr(tag_release, '_gh', fake)
 
-        branch = tag_release.github_effects(Path(), 'owner/repo').head_ref('c' * 40)
+        branch = tag_release.github_effects(Path(), 'owner/repo').find_pull_request_branch('c' * 40)
 
         assert branch is None
         assert fake.calls[0][0] == ('api', f'repos/owner/repo/commits/{"c" * 40}/pulls')
@@ -809,3 +843,220 @@ class DescribeTheScriptRunAsTheWorkflowRunsIt:
 
         assert completed.returncode == 1, completed.stderr
         assert not any('POST' in call['argv'] or 'workflow' in call['argv'] for call in calls)
+
+    def it_logs_each_action_on_stderr_and_keeps_stdout_to_the_result_line(self, tmp_path: Path) -> None:
+        completed, _ = _run_exported(tmp_path, extra_file=None)
+
+        assert completed.stdout.splitlines()[-1].startswith('tagged v1.15.0 at ')
+        assert 'release pull request branch: release/v1.15.0' in completed.stderr
+        assert 'running the version guard' in completed.stderr
+        assert 'running the release-blocker gate' in completed.stderr
+        assert 'created tag v1.15.0 at ' in completed.stderr
+        assert 'dispatched release.yml for v1.15.0' in completed.stderr
+
+
+def _main_with_release(
+    monkeypatch: pytest.MonkeyPatch, outcome: str | Exception, *, actions: bool, summary: Path | None = None
+) -> int:
+    def fake_release(*_args: object) -> str:
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(tag_release, 'release', fake_release)
+    for name in ACTIONS_ENV:
+        monkeypatch.delenv(name, raising=False)
+    if actions:
+        monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    if summary is not None:
+        monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    return int(tag_release.main(['--sha', 'abc', '--before', 'def', '--github-repository', 'owner/repo']))
+
+
+@pytest.mark.small
+class DescribeTheActionsAnnotations:
+    def it_annotates_a_refusal_as_an_error(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        status = _main_with_release(monkeypatch, tag_release.ReleaseRefusedError('v1 is elsewhere'), actions=True)
+
+        assert status == 1
+        assert '::error title=tag-release refused (exit 1)::v1 is elsewhere' in capsys.readouterr().err
+
+    def it_annotates_a_check_that_could_not_run_as_an_error(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        status = _main_with_release(monkeypatch, tag_release.CannotCheckError('lookup failed'), actions=True)
+
+        assert status == 2
+        assert '::error title=tag-release could not run (exit 2)::lookup failed' in capsys.readouterr().err
+
+    def it_escapes_a_multi_line_message_so_the_annotation_keeps_all_of_it(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _main_with_release(monkeypatch, tag_release.CannotCheckError('gh failed:\r\nHTTP 500 at 100%'), actions=True)
+
+        assert '::gh failed:%0D%0AHTTP 500 at 100%25\n' in capsys.readouterr().err
+
+    def it_keeps_the_plain_error_line_next_to_the_annotation(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _main_with_release(monkeypatch, tag_release.CannotCheckError('lookup failed'), actions=True)
+
+        assert 'error: lookup failed\n' in capsys.readouterr().err
+
+    def it_does_not_annotate_outside_github_actions(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _main_with_release(monkeypatch, tag_release.CannotCheckError('lookup failed'), actions=False)
+
+        assert '::error' not in capsys.readouterr().err
+
+
+@pytest.mark.medium
+class DescribeTheStepSummary:
+    def it_records_a_tag_and_dispatch_with_the_commit(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        summary = tmp_path / 'summary.md'
+
+        status = _main_with_release(
+            monkeypatch, 'tagged v1.2.3 at abc and dispatched release.yml', actions=True, summary=summary
+        )
+
+        text = summary.read_text()
+        assert status == 0
+        assert '- Outcome: done' in text
+        assert '- Commit: `abc`' in text
+        assert '- Main before the push: `def`' in text
+        assert 'tagged v1.2.3 at abc and dispatched release.yml' in text
+
+    def it_records_a_refusal_with_its_reason(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        summary = tmp_path / 'summary.md'
+
+        _main_with_release(
+            monkeypatch, tag_release.ReleaseRefusedError('v1 is elsewhere'), actions=True, summary=summary
+        )
+
+        text = summary.read_text()
+        assert '- Outcome: refused (exit 1)' in text
+        assert 'v1 is elsewhere' in text
+
+    def it_keeps_the_exit_status_when_the_summary_cannot_be_written(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    ) -> None:
+        status = _main_with_release(monkeypatch, 'v1.2.3 already tagged', actions=True, summary=tmp_path)
+
+        assert status == 0
+        assert 'could not write the step summary' in capsys.readouterr().err
+
+
+@pytest.mark.medium
+class DescribeADispatchThatFailsAfterTheTagExists:
+    def it_says_the_tag_exists_and_that_a_rerun_dispatches_only(self, tmp_path: Path) -> None:
+        _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
+        recorder = Recorder(dispatch_error=tag_release.CannotCheckError('gh workflow run failed: HTTP 500'))
+
+        with pytest.raises(tag_release.CannotCheckError) as raised:
+            _release(clone, sha, recorder)
+
+        message = str(raised.value)
+        assert f'v1.2.3 now exists at {sha}' in message
+        assert 'HTTP 500' in message
+        assert 'gh run rerun' in message
+
+
+FAILING_GH = """#!{python}
+import sys
+
+sys.stdin.read()
+sys.stderr.write('HTTP 422: Reference already exists\\n')
+sys.exit(1)
+"""
+
+
+@pytest.mark.medium
+@pytest.mark.skipif(os.name == 'nt', reason='the stand-in gh is a shebang script')
+class DescribeAFailedGhCall:
+    def it_names_the_whole_command_so_two_posts_are_told_apart(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        gh = tmp_path / 'gh'
+        gh.write_text(FAILING_GH.format(python=sys.executable))
+        gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
+        monkeypatch.setenv('PATH', f'{tmp_path}{os.pathsep}{os.environ["PATH"]}')
+
+        with pytest.raises(tag_release.CannotCheckError, match=r'repos/o/r/git/refs .*HTTP 422'):
+            tag_release._gh('api', '--method', 'POST', 'repos/o/r/git/refs', '--input', '-', stdin='{}')
+
+
+class RecordedRun:
+    """Stands in for ``subprocess.run`` inside ``tag_release`` only: records the keyword arguments, reports success."""
+
+    def __init__(self) -> None:
+        self.kwargs: dict[str, Any] = {}
+
+    def __call__(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        self.kwargs = kwargs
+        return subprocess.CompletedProcess(command, 0, stdout='', stderr='')
+
+
+@pytest.mark.small
+class DescribeTheTokensInTheGateEnvironments:
+    TOKENS = ('GH_TOKEN', 'GITHUB_TOKEN')
+
+    def it_removes_the_workflow_tokens_from_the_guard_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in self.TOKENS:
+            monkeypatch.setenv(name, 'secret')
+        monkeypatch.setenv('KEPT', 'yes')
+
+        environment = tag_release.guard_environment()
+
+        assert not set(self.TOKENS) & set(environment)
+        assert environment['KEPT'] == 'yes'
+
+    def it_runs_the_guard_without_the_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in self.TOKENS:
+            monkeypatch.setenv(name, 'secret')
+        recorded = RecordedRun()
+        monkeypatch.setattr(tag_release, 'subprocess', SimpleNamespace(run=recorded))
+
+        tag_release.github_effects(Path('/work'), 'owner/repo').run_guard('abc', 'release/v1.2.3')
+
+        assert not set(self.TOKENS) & set(recorded.kwargs['env'])
+
+    def it_runs_the_blocker_gate_with_the_inherited_environment_that_holds_the_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        recorded = RecordedRun()
+        monkeypatch.setattr(tag_release, 'subprocess', SimpleNamespace(run=recorded))
+
+        tag_release.github_effects(Path('/work'), 'owner/repo').run_blocker_gate()
+
+        assert recorded.kwargs.get('env') is None
+
+
+@pytest.mark.small
+class DescribeUtf8DecodingOfCommandOutput:
+    """Reverting to ``text=True`` would decode with the locale code page; this fails on every OS if that happens."""
+
+    @pytest.mark.parametrize('call', [lambda: tag_release._git(Path(), 'status'), lambda: tag_release._gh('api', 'x')])
+    def it_asks_subprocess_for_strict_utf8_whatever_the_locale(
+        self, monkeypatch: pytest.MonkeyPatch, call: Callable[[], object]
+    ) -> None:
+        recorded = RecordedRun()
+        monkeypatch.setattr(tag_release, 'subprocess', SimpleNamespace(run=recorded))
+        monkeypatch.setattr(locale, 'getpreferredencoding', lambda *_args: 'cp1252')
+
+        call()
+
+        assert recorded.kwargs['encoding'] == 'utf-8'
+        assert recorded.kwargs['errors'] == 'strict'
+        assert 'text' not in recorded.kwargs
+
+
+@pytest.mark.small
+class DescribeTheIsolatedChildEnvironment:
+    @pytest.mark.parametrize('name', ACTIONS_ENV)
+    def it_drops_the_actions_variables_so_a_child_run_neither_annotates_nor_writes_the_job_summary(
+        self, name: str
+    ) -> None:
+        assert name not in ISOLATED_GIT_ENV

@@ -48,7 +48,7 @@ jobs:
           persist-credentials: false
 
       # check_ci_passed.py is imported by check_no_release_blockers.py; the guard imports check_release_docs.py.
-      - name: Export the release scripts from the parent commit
+      - name: Export the release scripts from the commit before the push
         id: export
         env:
           BEFORE: ${{ github.event.before }}

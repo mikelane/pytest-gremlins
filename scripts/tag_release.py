@@ -54,6 +54,7 @@ import re
 import subprocess
 import sys
 import tomllib
+import traceback
 
 CANONICAL_VERSION = re.compile(
     r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
@@ -65,6 +66,7 @@ REMOTE = 'origin'
 WORKFLOW_PATH = '.github/workflows/tag-release.yml'
 TAGGER = {'name': 'github-actions[bot]', 'email': '41898282+github-actions[bot]@users.noreply.github.com'}
 SCRIPTS_DIR = Path(__file__).resolve().parent
+WORKFLOW_TOKENS = ('GH_TOKEN', 'GITHUB_TOKEN')
 EXIT_REFUSED = 1
 EXIT_CANNOT_CHECK = 2
 
@@ -91,7 +93,7 @@ class Action(Enum):
 class Effects:
     """Everything that talks to GitHub or runs a gate script, so tests can replace it."""
 
-    head_ref: Callable[[str], str | None]
+    find_pull_request_branch: Callable[[str], str | None]
     run_guard: Callable[[str, str], None]
     run_blocker_gate: Callable[[], None]
     create_tag: Callable[[str, str], None]
@@ -199,11 +201,11 @@ def tag_commit_on_origin(repo: Path, tag: str) -> str | None:
     if listing.returncode != 0:
         detail = listing.stderr.strip() or f'git ls-remote exited {listing.returncode}'
         raise CannotCheckError(f'could not look up tag {tag} on {REMOTE}: {detail}')
-    refs: dict[str, str] = {}
+    object_name_by_ref: dict[str, str] = {}
     for line in listing.stdout.splitlines():
         object_name, _, ref = line.partition('\t')
-        refs[ref] = object_name
-    return refs.get(f'refs/tags/{tag}^{{}}') or refs.get(f'refs/tags/{tag}')
+        object_name_by_ref[ref] = object_name
+    return object_name_by_ref.get(f'refs/tags/{tag}^{{}}') or object_name_by_ref.get(f'refs/tags/{tag}')
 
 
 def changed_paths(repo: Path, parent: str, sha: str) -> set[str]:
@@ -235,17 +237,17 @@ def head_ref_from_pulls(pulls_json: str, repository: str) -> str | None:
         raise CannotCheckError(f'the pull request lookup did not return a list (got {type(pulls).__name__})')
     if not all(isinstance(pull, dict) for pull in pulls):
         raise CannotCheckError('the pull request lookup returned an entry that is not an object')
-    merged = [pull for pull in pulls if pull.get('merged_at')]
-    for pull in merged:
+    merged_pulls = [pull for pull in pulls if pull.get('merged_at')]
+    for pull in merged_pulls:
         head = pull.get('head')
         if not isinstance(head, dict) or not isinstance(head.get('ref'), str):
             raise CannotCheckError('a merged pull request in the lookup answer has no usable head branch')
-    own = [pull for pull in merged if ((pull.get('head') or {}).get('repo') or {}).get('full_name') == repository]
-    if len(own) != len(merged):
+    own_pulls = [pull for pull in merged_pulls if (pull['head'].get('repo') or {}).get('full_name') == repository]
+    if len(own_pulls) != len(merged_pulls):
         raise ReleaseRefusedError(f'a merged pull request for this commit does not come from {repository}')
-    if len(own) > 1:
-        raise ReleaseRefusedError(f'expected at most one merged pull request for this commit, found {len(own)}')
-    return str(own[0]['head']['ref']) if own else None
+    if len(own_pulls) > 1:
+        raise ReleaseRefusedError(f'expected at most one merged pull request for this commit, found {len(own_pulls)}')
+    return str(own_pulls[0]['head']['ref']) if own_pulls else None
 
 
 def tag_object_sha(answer: str) -> str:
@@ -255,10 +257,10 @@ def tag_object_sha(answer: str) -> str:
         CannotCheckError: If the answer is not a JSON object with a text ``sha``.
     """
     try:
-        created = json.loads(answer)
+        tag_object = json.loads(answer)
     except json.JSONDecodeError as error:
         raise CannotCheckError(f'the tag object answer is not JSON: {error}') from error
-    sha = created.get('sha') if isinstance(created, dict) else None
+    sha = tag_object.get('sha') if isinstance(tag_object, dict) else None
     if not isinstance(sha, str) or not sha:
         raise CannotCheckError('the tag object answer has no sha')
     return sha
@@ -272,11 +274,16 @@ def tag_object_payload(tag: str, sha: str) -> dict[str, object]:
 def guard_command(repo: Path, sha: str, branch: str) -> list[str]:
     """Return the command that runs the version guard sitting next to this script, against ``sha`` and its parent.
 
-    The workflow exports this script and the guard from the parent commit into one directory, so the sibling copy is
-    the pre-merge main's. ``-E -s`` ignores the environment and the user site, as the ``release-pr`` job does.
+    The workflow exports this script and the guard from the commit before the push into one directory, so the sibling
+    copy is the pre-merge main's. ``-E -s`` ignores the environment and the user site, as the ``release-pr`` job does.
     """
     guard = SCRIPTS_DIR / 'check_version_change.py'
     return [sys.executable, '-E', '-s', str(guard), '--repo', str(repo), '--base-ref', f'{sha}^', '--branch', branch]
+
+
+def guard_environment() -> dict[str, str]:
+    """Return the environment for the version guard: this one without the workflow tokens, which it does not need."""
+    return {name: value for name, value in os.environ.items() if name not in WORKFLOW_TOKENS}
 
 
 def blocker_command() -> list[str]:
@@ -290,6 +297,12 @@ def _raise_for_status(name: str, status: int) -> None:
     if status == EXIT_REFUSED:
         raise ReleaseRefusedError(f'{name} refused the release (exit 1); see its output above')
     raise CannotCheckError(f'{name} could not run (exit {status}); see its output above')
+
+
+def _progress(line: str) -> None:
+    # Progress goes to stderr, flushed, so it interleaves in order with the gate scripts' own output; stdout keeps
+    # only the result line.
+    print(line, file=sys.stderr, flush=True)
 
 
 def release(repo: Path, sha: str, effects: Effects, before: str) -> str:
@@ -337,7 +350,7 @@ def release(repo: Path, sha: str, effects: Effects, before: str) -> str:
         )
     if action is Action.REFUSE_TAGGED_ELSEWHERE:
         raise ReleaseRefusedError(f'{tag} already exists on origin and points at another commit than {sha}')
-    pull_request_branch = effects.head_ref(sha)
+    pull_request_branch = effects.find_pull_request_branch(sha)
     if pull_request_branch is None:
         if action is Action.DISPATCH_ONLY:
             return f'{tag} was tagged by another path (cut-release.yml); its tag push runs release.yml'
@@ -346,13 +359,25 @@ def release(repo: Path, sha: str, effects: Effects, before: str) -> str:
             'release pull request; cut-release.yml tags its own commit, so a version bump pushed that way is not '
             'tagged here.'
         )
+    _progress(f'release pull request branch: {pull_request_branch}')
     if action is Action.DISPATCH_ONLY:
         effects.dispatch(tag)
+        _progress(f'dispatched release.yml for {tag}')
         return f'{tag} already tagged at {sha}; dispatched release.yml'
+    _progress(f'running the version guard on {sha} against its parent {parent}')
     effects.run_guard(sha, pull_request_branch)
+    _progress('running the release-blocker gate')
     effects.run_blocker_gate()
     effects.create_tag(tag, sha)
-    effects.dispatch(tag)
+    _progress(f'created tag {tag} at {sha}')
+    try:
+        effects.dispatch(tag)
+    except CannotCheckError as error:
+        raise CannotCheckError(
+            f'{tag} now exists at {sha}, but dispatching release.yml failed: {error}. Re-run this run '
+            '(`gh run rerun <run-id>`): with the tag on this commit it dispatches only.'
+        ) from error
+    _progress(f'dispatched release.yml for {tag}')
     return f'tagged {tag} at {sha} and dispatched release.yml'
 
 
@@ -367,20 +392,24 @@ def _gh(*args: str, stdin: str | None = None) -> str:
     )
     if completed.returncode != 0:
         detail = completed.stderr.strip() or f'exit {completed.returncode}'
-        raise CannotCheckError(f'gh {" ".join(args[:3])} failed: {detail}')
+        # The whole command, so the two POSTs (git/tags, git/refs) are told apart; the token is in the environment and
+        # the payload on stdin, so neither is printed.
+        raise CannotCheckError(f'gh {" ".join(args)} failed: {detail}')
     return completed.stdout
 
 
 def github_effects(repo: Path, repository: str) -> Effects:
     """Return the effects that call GitHub and run the gate scripts for real."""
 
-    def head_ref(sha: str) -> str | None:
+    def find_pull_request_branch(sha: str) -> str | None:
         return head_ref_from_pulls(_gh('api', f'repos/{repository}/commits/{sha}/pulls'), repository)
 
     def run_guard(sha: str, branch: str) -> None:
         _raise_for_status(
             'the version guard',
-            subprocess.run(guard_command(repo, sha, branch), cwd=SCRIPTS_DIR, check=False).returncode,
+            subprocess.run(
+                guard_command(repo, sha, branch), cwd=SCRIPTS_DIR, env=guard_environment(), check=False
+            ).returncode,
         )
 
     def run_blocker_gate() -> None:
@@ -404,11 +433,18 @@ def github_effects(repo: Path, repository: str) -> Effects:
     def dispatch(tag: str) -> None:
         _gh('workflow', 'run', 'release.yml', '--repo', repository, '--ref', 'main', '-f', f'tag={tag}')
 
-    return Effects(head_ref, run_guard, run_blocker_gate, create_tag, dispatch)
+    return Effects(find_pull_request_branch, run_guard, run_blocker_gate, create_tag, dispatch)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the release step for the commit given on the command line."""
+    """Run the release step for the commit given on the command line.
+
+    Args:
+        argv: The arguments after the program name, or None to read ``sys.argv``.
+
+    Returns:
+        The exit status: 0 done, 1 refused, 2 the check could not run.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sha', required=True, help='the pushed commit')
     parser.add_argument('--before', required=True, help='main before the push (github.event.before)')
@@ -416,20 +452,57 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--github-repository', default=os.environ.get('GITHUB_REPOSITORY'), help='OWNER/NAME')
     args = parser.parse_args(argv)
     if not args.github_repository:
-        print('error: --github-repository or GITHUB_REPOSITORY is required', file=sys.stderr)
-        return EXIT_CANNOT_CHECK
+        return _fail(args, EXIT_CANNOT_CHECK, '--github-repository or GITHUB_REPOSITORY is required')
     try:
-        print(release(args.repo, args.sha, github_effects(args.repo, args.github_repository), args.before))
+        result = release(args.repo, args.sha, github_effects(args.repo, args.github_repository), args.before)
     except ReleaseRefusedError as error:
-        print(f'error: {error}', file=sys.stderr)
-        return EXIT_REFUSED
+        return _fail(args, EXIT_REFUSED, str(error))
     except CannotCheckError as error:
-        print(f'error: {error}', file=sys.stderr)
-        return EXIT_CANNOT_CHECK
+        return _fail(args, EXIT_CANNOT_CHECK, str(error))
     except Exception as error:  # last resort: an unexpected error is "could not run", never a refusal
-        print(f'error: unexpected {type(error).__name__}: {error}', file=sys.stderr)
-        return EXIT_CANNOT_CHECK
+        traceback.print_exc()
+        return _fail(args, EXIT_CANNOT_CHECK, f'unexpected {type(error).__name__}: {error}')
+    print(result)
+    _write_step_summary(args, 'done', result)
     return 0
+
+
+OUTCOME_BY_STATUS = {EXIT_REFUSED: 'refused', EXIT_CANNOT_CHECK: 'could not run'}
+
+
+def _in_github_actions() -> bool:
+    return os.environ.get('GITHUB_ACTIONS') == 'true'
+
+
+def _annotation_data(message: str) -> str:
+    """Escape ``message`` for a workflow command, so a multi-line error stays one annotation."""
+    return message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+
+
+def _fail(args: argparse.Namespace, status: int, message: str) -> int:
+    """Report a failed run on stderr, as an Actions error annotation and in the step summary; return ``status``."""
+    outcome = f'{OUTCOME_BY_STATUS[status]} (exit {status})'
+    print(f'error: {message}', file=sys.stderr, flush=True)
+    if _in_github_actions():
+        print(f'::error title=tag-release {outcome}::{_annotation_data(message)}', file=sys.stderr, flush=True)
+    _write_step_summary(args, outcome, message)
+    return status
+
+
+def _write_step_summary(args: argparse.Namespace, outcome: str, message: str) -> None:
+    """Append the outcome to ``$GITHUB_STEP_SUMMARY`` when set; a failed write only warns and keeps the exit status."""
+    path = os.environ.get('GITHUB_STEP_SUMMARY')
+    if not path:
+        return
+    block = (
+        f'## Tag release\n\n- Outcome: {outcome}\n- Commit: `{args.sha}`\n'
+        f'- Main before the push: `{args.before or "(none)"}`\n\n```text\n{message}\n```\n'
+    )
+    try:
+        with Path(path).open('a', encoding='utf-8') as summary:
+            summary.write(block)
+    except OSError as error:
+        print(f'warning: could not write the step summary to {path}: {error}', file=sys.stderr, flush=True)
 
 
 if __name__ == '__main__':
