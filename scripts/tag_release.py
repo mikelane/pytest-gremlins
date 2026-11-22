@@ -71,6 +71,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 WORKFLOW_TOKENS = ('GH_TOKEN', 'GITHUB_TOKEN')
 EXIT_REFUSED = 1
 EXIT_CANNOT_CHECK = 2
+OUTCOME_BY_STATUS = {EXIT_REFUSED: 'refused', EXIT_CANNOT_CHECK: 'could not run'}
 
 
 class CannotCheckError(Exception):
@@ -488,9 +489,6 @@ def main(argv: list[str] | None = None) -> int:
     _emit_text(result, sys.stdout)
     _write_step_summary(args, 'done', result)
     return 0
-
-
-OUTCOME_BY_STATUS = {EXIT_REFUSED: 'refused', EXIT_CANNOT_CHECK: 'could not run'}
 
 
 def _annotation_data(message: str) -> str:
