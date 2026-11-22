@@ -359,6 +359,31 @@ the docs gate (`ci.yml` on a `CHANGELOG.md` change with `--newest`, `cut-release
 the changed files, exits 2 when it could not run, and has no bypass. With `--newest`, a topmost entry that is already
 tagged passes; the changes after it are checked once the next entry is added.
 
+**Cache marker changes need a minor release.** Raising `CACHE_VERSION` or `RUNNER_FIDELITY_VERSION` throws away every
+user's warm cache, so the first run after upgrading is cold, and a patch release must not do that.
+`scripts/check_cache_bump.py` compares both markers with their values at the same previous release tag as the cache
+gate above. When either differs, the release fails unless (a) the version is at least a minor bump over that tag (a
+higher `major.minor`; or the tag is a prerelease of `X.Y.0`, such as `1.15.0b0`, and the version stays on `X.Y`), and
+(b) the entry has a bullet under `### Upgrade notes` whose visible text, in any letter case, contains both `cache` and
+`rebuil` ("The first run after upgrading rebuilds the cache once."). Raw HTML tags with their attributes are not
+visible, so wording there does not count. An image fails closed: from the first `![` outside a code span (a backslash
+before it does not matter, and a reference-style image counts too) to the end of the bullet nothing counts, so put the
+sentence before the image. Wording after a `{` outside a code span (an attribute list) does not count either, and
+reference or abbreviation definition lines (`[label]: url`, `*[label]: text`) render nothing, so they do not count, and
+a definition line ends the bullet: it and everything after it in the bullet do not count (the renderer also takes the
+line after a `[label]:` definition when that line holds the title or the URL). Text
+between tags, text inside a code span (even one that holds a tag or `![`) and an
+autolink (`<https://...>`) are visible and count. A prerelease of `X.Y.0` means a version that sorts before `X.Y.0`
+under PEP 440 (`1.15.0b0`, `rc`, `.devN`, `1.15.0rc1.post1`), and the version must stay on `X.Y` and not be lower than
+the tag; `1.15.0.post1` and `1.15.0+local` are not prereleases, and a version that is not valid PEP 440 exits 2. Nothing
+else about the wording is checked; the docs gate still wants a docs link or a `(no docs: <reason>)` exemption on
+that bullet. It runs in the `Release PR Gates` job right after the cache gate (only when the version changed) and in
+`verify-tag` after it, takes the version like the cache gate does (and `--newest` is supported, with the same
+already-tagged pass), exits 1 naming each problem, exits 2 when it could not run, and has no bypass. `cut-release.yml`
+does not run it, because #1046 retires that workflow. The hotfix case, a patch release cut from an older tag that
+changes a marker, is tracked in #1015.
+<!-- cspell:ignore rebuil -->
+
 **Release CI gate and wip gate.** `release.yml` does not rerun the OS x Python test matrix. Its `ci-gate` job runs
 `scripts/check_ci_passed.py` for the tagged commit: it looks up the `ci.yml` `push` run by SHA (not by branch) and
 passes only when the run concluded `success` and every `Test (Python ..., ...)` and `Test (pytest ...)` job concluded
@@ -396,10 +421,10 @@ merge base (a branch cut before main released reads as unchanged). The version c
 `HEAD`. A pull request that changes the version must come
 from `release/v<version>` (the exact string, prerelease included, e.g. `release/v1.15.0b0`), change only
 `pyproject.toml`, `uv.lock`, `src/pytest_gremlins/__init__.py` and `CHANGELOG.md`, and have a topmost changelog entry
-for that version. Only then does the job run the docs gate, the cache gate and the wip gate, so this is the place
-where the release PR gets checked, and a `wip` test never blocks an ordinary pull request. A version that is not
-PEP 440 shaped, or a missing or non-literal `__version__`, exits 2. Exit 2 is never a pass, and
-there is no bypass. The `cut-release.yml` path above is unchanged for now.
+for that version. Only then does the job run the docs gate, the cache gate, the cache-bump gate and the wip gate, so
+this is the place where the release PR gets checked, and a `wip` test never blocks an ordinary pull request. A version
+that is not PEP 440 shaped, or a missing or non-literal `__version__`, exits 2. Exit 2 is never a pass, and there is no
+bypass. The `cut-release.yml` path above is unchanged for now.
 
 **Preparing the release branch.** `uv run python scripts/prepare_release.py [--increment PATCH|MINOR|MAJOR]
 [--prerelease alpha|beta|rc]` builds the release branch locally. It refuses on `main`, with a dirty tree, when HEAD is
@@ -418,8 +443,14 @@ subjects and non-conventional subjects get none unless their body bumps. Every b
 docs gate fails until each is rewritten and given a docs link or `(no docs: <reason>)` (or moved to Internal or
 Documentation). A major release (a forced `--increment MAJOR` or a breaking change) always has at least one placeholder
 under `### Upgrade notes`; when no commit is conventional (a forced `--increment` over `Revert ...` commits, say) it
-adds one generic placeholder under `### Fix`, so an untouched entry never passes the gate. It
-never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the cache gate needs one,
+adds one generic placeholder under `### Fix`, so an untouched entry never passes the gate. When a cache marker differs
+from its value at the newest `v*` tag, it computes at least the next minor version: it behaves as `--increment MINOR`
+when commitizen would only patch, keeps a computed minor or major and `--prerelease`, and refuses `--increment PATCH`
+with a message naming the marker. It also adds a placeholder under `### Upgrade notes` about the one-time cache
+rebuild. The placeholder does not contain the words the cache-bump gate looks for, so the entry fails until a person
+writes the sentence. If the markers cannot be compared (no reachable `v*` tag, or an unreadable marker file), it warns
+on stderr and continues without the minor bump or the placeholder, and the cache-bump gate still checks the release PR.
+It never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the cache gate needs one,
 commit signed, push and open the PR. It does not replace `cut-release.yml` yet (#1046).
 
 **Tag release (dry run).** `.github/workflows/tag-release.yml` runs on every push to `main`. It runs

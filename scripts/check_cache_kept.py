@@ -157,10 +157,10 @@ def _is_tagged(version: str, repo: Path = REPO_ROOT) -> bool:
     return git_output(repo, 'rev-parse', '-q', '--verify', f'refs/tags/v{version}^{{commit}}') is not None
 
 
-def _head_markers() -> Markers:
+def _head_markers(repo: Path = REPO_ROOT) -> Markers:
     """Return the cache markers of the working tree; raise ``CannotCheckError`` when they cannot be parsed."""
-    versions = (REPO_ROOT / VERSIONS_PATH).read_text(encoding='utf-8')
-    incremental = (REPO_ROOT / INCREMENTAL_PATH).read_text(encoding='utf-8')
+    versions = (repo / VERSIONS_PATH).read_text(encoding='utf-8')
+    incremental = (repo / INCREMENTAL_PATH).read_text(encoding='utf-8')
     markers = parse_markers(versions, incremental)
     if markers is None:
         raise CannotCheckError(f'cannot read the cache markers from {VERSIONS_PATH} and {INCREMENTAL_PATH}')

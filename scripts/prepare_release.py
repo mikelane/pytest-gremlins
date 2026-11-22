@@ -18,6 +18,12 @@ neither a docs link nor an exemption, so the release docs gate (``check_release_
 rewritten it and given it a docs link, a ``(no docs: <reason>)`` exemption, or moved it to ``Internal`` or
 ``Documentation``.
 
+When ``CACHE_VERSION`` or ``RUNNER_FIDELITY_VERSION`` differs from its value at the newest ``v*`` tag, the release
+discards every user's warm cache, so the version is at least the next minor: the script behaves as ``--increment MINOR``
+when commitizen would only patch, keeps a computed minor or major, and refuses ``--increment PATCH``. The entry then
+also gets a placeholder under Upgrade notes about the one-time cache rebuild, and ``check_cache_bump.py`` fails the
+release until a bullet there says the cache is rebuilt.
+
 The script never commits, tags or pushes.
 """
 
@@ -31,7 +37,10 @@ from collections.abc import (
     Sequence,
 )
 import contextlib
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    field,
+)
 import datetime
 import functools
 import logging
@@ -42,6 +51,10 @@ import sys
 import textwrap
 import unicodedata
 
+from check_cache_bump import (
+    is_at_least_minor_bump,
+    markers_changed_since_last_release,
+)
 from check_release_docs import (
     VERSION_HEADING_START,
     CannotCheckError,
@@ -103,6 +116,13 @@ MAJOR_PLACEHOLDER = (
     '- **TODO: describe this change for users.** This is a major release, so it needs upgrade notes. Say what\n'
     '  users must change when they upgrade, then end this bullet with a docs link or a no-docs exemption in\n'
     '  parentheses.'
+)
+CACHE_MARKER_PLACEHOLDER = (
+    '- **TODO: tell users what the cache change means for them.** CACHE_VERSION or RUNNER_FIDELITY_VERSION changed\n'
+    '  since the last release, so every warm cache is thrown away and the first run after upgrading is cold. Say, in\n'
+    '  your own words, what users will notice and that it happens once. The cache-bump gate (check_cache_bump.py)\n'
+    '  fails until a bullet under this heading explains the cache, and its message shows the wording it looks for.\n'
+    '  Then end the bullet with a docs link or a no-docs exemption in parentheses.'
 )
 SUMMARY_PLACEHOLDER = '**TODO: one sentence on what changes for users.**'
 CZ = (sys.executable, '-m', 'commitizen')
@@ -233,12 +253,14 @@ def render_entry(
     *,
     increment: str | None = None,
     rules: BumpRules | None = None,
+    cache_markers_changed: bool = False,
 ) -> str:
     """Render the unfinished changelog entry for ``version``.
 
     A ``MAJOR`` release always has at least one placeholder under ``Upgrade notes``, so it cannot pass the docs gate
     without upgrade notes. ``increment`` is ``MAJOR`` when the release raises the major version, whether forced or
-    because a commit breaks compatibility.
+    because a commit breaks compatibility. ``cache_markers_changed`` adds a placeholder under ``Upgrade notes`` for the
+    one-time cache rebuild.
     """
     bullets: dict[str, list[str]] = {section: [] for section in SECTION_ORDER}
     for commit in commits:
@@ -247,6 +269,8 @@ def render_entry(
             bullets[section].append(_placeholder(commit))
     if increment == 'MAJOR' and not bullets['Upgrade notes']:
         bullets['Upgrade notes'].append(MAJOR_PLACEHOLDER)
+    if cache_markers_changed:
+        bullets['Upgrade notes'].append(CACHE_MARKER_PLACEHOLDER)
     if not any(bullets.values()):
         bullets['Fix'].append(UNCLASSIFIED_PLACEHOLDER)
     parts = [f'## v{version} ({date.isoformat()})', SUMMARY_PLACEHOLDER]
@@ -281,6 +305,7 @@ class CommandResult:
 
 
 CommandRunner = Callable[[Sequence[str]], CommandResult]
+CacheMarkerLookup = Callable[[Path], tuple[str, list[str]] | None]
 
 
 def run_command(args: Sequence[str], *, cwd: Path) -> CommandResult:
@@ -299,6 +324,8 @@ class PreparedRelease:
     version: str
     branch: str
     commits: list[Commit]
+    changed_markers: list[str] = field(default_factory=list)
+    markers_compared: bool = True
 
 
 def _detail(result: CommandResult) -> str:
@@ -348,6 +375,45 @@ def _next_version(run: CommandRunner, flags: list[str]) -> str:
     if result.returncode != 0 or not version:
         raise ReleaseRefusedError(f'cz bump --get-next failed: {_detail(result)}')
     return version
+
+
+def _plan_version(
+    run: CommandRunner,
+    increment: str | None,
+    prerelease: str | None,
+    previous_release: str | None,
+    changed_markers: list[str],
+) -> tuple[str, list[str]]:
+    """Return the version to release and the ``cz bump`` flags that produce it.
+
+    A changed cache marker throws away every user's warm cache, so then the version is at least the next minor:
+    commitizen's own choice stands when it is one, and ``--increment MINOR`` replaces it when it is only a patch.
+    """
+    names = ' and '.join(changed_markers)
+    if changed_markers and increment == 'PATCH':
+        raise ReleaseRefusedError(
+            f"{names} changed since v{previous_release}, so this release discards users' warm caches and cannot be a "
+            'PATCH release; drop --increment PATCH or pass --increment MINOR'
+        )
+    flags = _flags(increment, prerelease)
+    version = _next_version(run, flags)
+    if not changed_markers or previous_release is None or _is_at_least_minor_bump(previous_release, version):
+        return version, flags
+    flags = _flags('MINOR', prerelease)
+    version = _next_version(run, flags)
+    if not _is_at_least_minor_bump(previous_release, version):
+        raise ReleaseRefusedError(
+            f'{names} changed since v{previous_release}, but --increment MINOR gives {version}, which is not a minor '
+            'bump over it; pick the version yourself'
+        )
+    return version, flags
+
+
+def _is_at_least_minor_bump(previous: str, version: str) -> bool:
+    try:
+        return is_at_least_minor_bump(previous, version)
+    except CannotCheckError as error:
+        raise ReleaseRefusedError(str(error)) from error
 
 
 def _refuse_existing_branch(run: CommandRunner, branch: str) -> None:
@@ -407,18 +473,24 @@ def prepare_release(
     prerelease: str | None,
     run: CommandRunner,
     today: datetime.date,
+    cache_marker_lookup: CacheMarkerLookup = markers_changed_since_last_release,
 ) -> PreparedRelease:
     """Create ``release/v<version>``, bump the version files and write the unfinished changelog entry.
 
+    When a cache marker changed since the last release, the version is at least the next minor, and a forced
+    ``PATCH`` is refused. ``cache_marker_lookup`` returns the previous release's version and the changed marker names.
+
     Raises:
-        ReleaseRefusedError: When the start state is unsafe, the version cannot be computed, or the bump is
-            inconsistent. Nothing is changed before the branch is created.
+        ReleaseRefusedError: When the start state is unsafe, the version cannot be computed, a cache marker changed and
+            the version would only be a patch, or the bump is inconsistent. Nothing is changed before the branch is
+            created.
     """
     increment = increment.upper() if increment else None
-    flags = _flags(increment, prerelease)
     _refuse_unsafe_start(run)
     current_version = _current_version(repo)
-    version = _next_version(run, flags)
+    compared = cache_marker_lookup(repo)
+    previous_release, changed_markers = compared or (None, [])
+    version, flags = _plan_version(run, increment, prerelease, previous_release, changed_markers)
     branch = release_branch(version)
     _refuse_existing_branch(run, branch)
     commits = _commits_since_last_tag(run)
@@ -434,6 +506,7 @@ def prepare_release(
         commits,
         increment='MAJOR' if increment == 'MAJOR' or _major(version) > _major(current_version) else None,
         rules=load_bump_rules(repo),
+        cache_markers_changed=bool(changed_markers),
     )
     new_changelog = insert_entry(changelog, entry)
     switched = run(('git', 'switch', '-c', branch))
@@ -447,7 +520,13 @@ def prepare_release(
         changelog_path.write_text(new_changelog, encoding='utf-8', newline='')
     except OSError as error:
         raise ReleaseRefusedError(f'cannot write {changelog_path}: {error}\nUndo with: {UNDO_HINT}{branch}') from error
-    return PreparedRelease(version=version, branch=branch, commits=commits)
+    return PreparedRelease(
+        version=version,
+        branch=branch,
+        commits=commits,
+        changed_markers=changed_markers,
+        markers_compared=compared is not None,
+    )
 
 
 NEXT_STEPS = """\
@@ -463,6 +542,20 @@ Next:
   4. git add CHANGELOG.md pyproject.toml uv.lock src/pytest_gremlins/__init__.py
      git commit -S -m "bump: version {version}"
   5. git push -u origin {branch}, then open a pull request.
+"""
+
+
+CACHE_MARKER_NOTE = """\
+{markers} changed since the last release, so {version} is at least a minor version and its Upgrade notes
+have a placeholder about the one-time cache rebuild. Rewrite it: scripts/check_cache_bump.py fails the release until a
+bullet there mentions the cache and says it is rebuilt.
+"""
+
+CACHE_MARKERS_UNCOMPARED_WARNING = """\
+prepare_release: warning: could not compare CACHE_VERSION and RUNNER_FIDELITY_VERSION with the last release (no v* tag
+is reachable from HEAD, so run git fetch --tags, or a marker file cannot be read). {version} was not raised to a minor
+version and the entry has no cache placeholder. Check both markers yourself: scripts/check_cache_bump.py fails the
+release PR when a marker changed and the release is not a minor that says the cache is rebuilt.
 """
 
 
@@ -490,11 +583,16 @@ def main(
             prerelease=args.prerelease,
             run=runner,
             today=today or datetime.date.today(),
+            cache_marker_lookup=markers_changed_since_last_release,
         )
     except ReleaseRefusedError as error:
         print(f'prepare_release: {error}', file=sys.stderr)
         return 1
     print(NEXT_STEPS.format(branch=release.branch, version=release.version, count=len(release.commits)))
+    if release.changed_markers:
+        print(CACHE_MARKER_NOTE.format(markers=' and '.join(release.changed_markers), version=release.version))
+    if not release.markers_compared:
+        print(CACHE_MARKERS_UNCOMPARED_WARNING.format(version=release.version), file=sys.stderr)
     return 0
 
 

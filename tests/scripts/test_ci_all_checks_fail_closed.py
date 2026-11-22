@@ -195,12 +195,19 @@ class DescribeReleasePrJob:
         assert '--base-ref "origin/$BASE_REF"' in _release_pr_step('check_version_change.py')['run']
 
     @pytest.mark.parametrize(
-        'script', ['mkdocs build', 'check_release_docs.py', 'check_cache_kept.py', 'check_no_wip_tests.py']
+        'script',
+        [
+            'mkdocs build',
+            'check_release_docs.py',
+            'check_cache_kept.py',
+            'check_cache_bump.py',
+            'check_no_wip_tests.py',
+        ],
     )
     def it_runs_the_release_gates_only_when_the_version_changed(self, script: str) -> None:
         assert _release_pr_step(script)['if'] == "steps.guard.outputs.version_changed == 'true'"
 
-    @pytest.mark.parametrize('script', ['check_release_docs.py', 'check_cache_kept.py'])
+    @pytest.mark.parametrize('script', ['check_release_docs.py', 'check_cache_kept.py', 'check_cache_bump.py'])
     def it_passes_the_version_to_the_gates_through_the_environment(self, script: str) -> None:
         step = _release_pr_step(script)
 
@@ -210,11 +217,13 @@ class DescribeReleasePrJob:
     def it_runs_the_gates_cheapest_first(self) -> None:
         commands = [step['run'] for step in _release_pr_job()['steps'] if 'check_' in step.get('run', '')]
         gate_order = [
-            next(name for name in ('version_change', 'release_docs', 'cache_kept', 'no_wip') if name in run)
+            next(
+                name for name in ('version_change', 'release_docs', 'cache_kept', 'cache_bump', 'no_wip') if name in run
+            )
             for run in commands
         ]
 
-        assert gate_order == ['version_change', 'release_docs', 'cache_kept', 'no_wip']
+        assert gate_order == ['version_change', 'release_docs', 'cache_kept', 'cache_bump', 'no_wip']
 
     def it_has_no_bypass_input(self) -> None:
         text = CI_WORKFLOW.read_text(encoding='utf-8')

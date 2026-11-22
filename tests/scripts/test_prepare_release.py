@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import (
+    Callable,
+    Sequence,
+)
 import datetime
 import importlib.util
 from pathlib import Path
@@ -30,6 +33,7 @@ sys.path.insert(0, str(SCRIPTS))
 try:
     docs_gate = _load('check_release_docs')
     version_guard = _load('check_version_change')
+    cache_bump = _load('check_cache_bump')
     prepare = _load('prepare_release')
 finally:
     sys.path.remove(str(SCRIPTS))
@@ -514,6 +518,59 @@ def _main_with(shell: FakeShell, repo: Path, *argv: str) -> int:
 
 @pytest.mark.medium
 class DescribeMain:
+    def it_tells_the_author_when_a_changed_cache_marker_forced_the_minor(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(prepare, 'markers_changed_since_last_release', _markers_changed('CACHE_VERSION'))
+
+        code = _main_with(_minor_shell(), _repo(tmp_path))
+
+        out = capsys.readouterr().out
+        assert code == 0
+        assert 'CACHE_VERSION changed since the last release' in out
+        assert 'at least a minor' in out
+
+    def it_warns_on_stderr_when_the_cache_markers_cannot_be_compared(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(prepare, 'markers_changed_since_last_release', lambda _repo: None)
+
+        code = _main_with(_shell(), _repo(tmp_path))
+
+        err = capsys.readouterr().err
+        assert code == 0
+        assert 'could not compare CACHE_VERSION and RUNNER_FIDELITY_VERSION' in err
+        assert 'check_cache_bump.py' in err
+
+    def it_does_not_warn_when_the_cache_markers_were_compared(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(prepare, 'markers_changed_since_last_release', _markers_changed())
+
+        _main_with(_shell(), _repo(tmp_path))
+
+        assert 'could not compare' not in capsys.readouterr().err
+
+    def it_prints_no_cache_note_when_no_marker_changed(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(prepare, 'markers_changed_since_last_release', _markers_changed())
+
+        code = _main_with(_shell(), _repo(tmp_path))
+
+        assert code == 0
+        assert 'is at least a minor version' not in capsys.readouterr().out
+
+    def it_returns_one_and_names_the_marker_when_a_forced_patch_is_refused(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(prepare, 'markers_changed_since_last_release', _markers_changed('CACHE_VERSION'))
+
+        code = _main_with(_shell(), _repo(tmp_path), '--increment', 'PATCH')
+
+        assert code == 1
+        assert capsys.readouterr().err.startswith('prepare_release: CACHE_VERSION changed since v1.14.3,')
+
     def it_prints_the_next_steps_and_returns_zero(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         code = _main_with(_shell(), _repo(tmp_path))
 
@@ -825,3 +882,201 @@ class DescribeMajorVersionFromTheComputedVersion:
         entry = (repo / 'CHANGELOG.md').read_text(encoding='utf-8').split('## v1.14.3')[0]
         upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
         assert upgrade_notes.strip() == ''
+
+
+def _markers_changed(*names: str, previous: str = '1.14.3') -> Callable[[Path], tuple[str, list[str]]]:
+    return lambda _repo: (previous, list(names))
+
+
+def _prepare_with_markers(
+    repo: Path,
+    shell: FakeShell,
+    markers: Callable[[Path], tuple[str, list[str]] | None],
+    **options: str | None,
+) -> Any:
+    return prepare.prepare_release(
+        repo=repo,
+        increment=options.get('increment'),
+        prerelease=options.get('prerelease'),
+        run=shell,
+        today=RELEASE_DATE,
+        cache_marker_lookup=markers,
+    )
+
+
+def _minor_shell(*, flags: tuple[str, ...] = (), version: str = '1.15.0') -> FakeShell:
+    """A shell where plain ``cz bump --get-next`` would only patch and a forced MINOR gives ``version``."""
+    shell = _shell(next_version=_ok('1.14.4\n'), release_branch=f'release/v{version}', flags=flags)
+    shell.answers[_cz('--get-next', '--increment', 'MINOR', *flags)] = _ok(f'{version}\n')
+    shell.answers[_cz('--files-only', '--yes', '--increment', 'MINOR', *flags)] = _ok()
+    return shell
+
+
+@pytest.mark.medium
+class DescribeChangedCacheMarkers:
+    def it_computes_the_next_minor_when_a_marker_changed_and_cz_would_only_patch(self, tmp_path: Path) -> None:
+        shell = _minor_shell()
+
+        release = _prepare_with_markers(_repo(tmp_path), shell, _markers_changed('CACHE_VERSION'))
+
+        assert release.version == '1.15.0'
+        assert _cz('--files-only', '--yes', '--increment', 'MINOR') in shell.calls
+        assert _cz('--files-only', '--yes') not in shell.calls
+
+    def it_keeps_the_prerelease_flag_when_it_forces_the_minor(self, tmp_path: Path) -> None:
+        flags = ('--prerelease', 'beta')
+        shell = _shell(next_version=_ok('1.14.4b0\n'), flags=flags, release_branch='release/v1.15.0b0')
+        shell.answers[_cz('--get-next', '--increment', 'MINOR', *flags)] = _ok('1.15.0b0\n')
+        shell.answers[_cz('--files-only', '--yes', '--increment', 'MINOR', *flags)] = _ok()
+        repo = _repo(tmp_path, project='1.15.0b0', module='1.15.0b0')
+
+        release = _prepare_with_markers(repo, shell, _markers_changed('CACHE_VERSION'), prerelease='beta')
+
+        assert release.version == '1.15.0b0'
+
+    def it_does_not_ask_again_when_cz_already_computes_a_minor(self, tmp_path: Path) -> None:
+        shell = _shell()
+
+        _prepare_with_markers(_repo(tmp_path), shell, _markers_changed('RUNNER_FIDELITY_VERSION'))
+
+        assert not any('MINOR' in call for call in shell.calls)
+
+    def it_keeps_a_computed_major(self, tmp_path: Path) -> None:
+        shell = _shell(next_version=_ok('2.0.0\n'), release_branch='release/v2.0.0')
+        repo = _repo(tmp_path, project='2.0.0', module='2.0.0')
+
+        release = _prepare_with_markers(repo, shell, _markers_changed('CACHE_VERSION'))
+
+        assert release.version == '2.0.0'
+        assert not any('MINOR' in call for call in shell.calls)
+
+    def it_accepts_a_forced_minor_without_asking_again(self, tmp_path: Path) -> None:
+        flags = ('--increment', 'MINOR')
+        shell = _shell(flags=flags)
+
+        _prepare_with_markers(_repo(tmp_path), shell, _markers_changed('CACHE_VERSION'), increment='minor')
+
+        assert _cz('--get-next', *flags) in shell.calls
+
+    def it_leaves_a_patch_alone_when_no_marker_changed(self, tmp_path: Path) -> None:
+        shell = _shell(next_version=_ok('1.14.4\n'), release_branch='release/v1.14.4')
+        repo = _repo(tmp_path, project='1.14.4', module='1.14.4')
+
+        release = _prepare_with_markers(repo, shell, _markers_changed())
+
+        assert release.version == '1.14.4'
+
+    @pytest.mark.parametrize('increment', ['PATCH', 'patch'])
+    def it_refuses_a_forced_patch_and_names_the_marker_before_changing_anything(
+        self, tmp_path: Path, increment: str
+    ) -> None:
+        shell = _shell(flags=('--increment', 'PATCH'))
+
+        with pytest.raises(prepare.ReleaseRefusedError, match=r'PATCH.*CACHE_VERSION|CACHE_VERSION.*PATCH'):
+            _prepare_with_markers(_repo(tmp_path), shell, _markers_changed('CACHE_VERSION'), increment=increment)
+
+        assert not shell.ran('git', 'switch')
+        assert (tmp_path / 'CHANGELOG.md').read_text(encoding='utf-8') == CHANGELOG
+
+    def it_refuses_when_even_a_forced_minor_is_not_a_minor_bump(self, tmp_path: Path) -> None:
+        shell = _shell(next_version=_ok('1.14.4\n'))
+        shell.answers[_cz('--get-next', '--increment', 'MINOR')] = _ok('1.14.5\n')
+
+        with pytest.raises(prepare.ReleaseRefusedError, match=r'1\.14\.5'):
+            _prepare_with_markers(_repo(tmp_path), shell, _markers_changed('CACHE_VERSION'))
+
+        assert not shell.ran('git', 'switch')
+
+    def it_adds_an_upgrade_notes_placeholder_to_the_entry(self, tmp_path: Path) -> None:
+        shell = _minor_shell()
+
+        _prepare_with_markers(_repo(tmp_path), shell, _markers_changed('CACHE_VERSION'))
+
+        entry = (tmp_path / 'CHANGELOG.md').read_text(encoding='utf-8').split('## v1.14.3')[0]
+        upgrade_notes = entry.split('### Upgrade notes')[1].split('### Feature')[0]
+        assert prepare.CACHE_MARKER_PLACEHOLDER in upgrade_notes
+
+    def it_adds_no_cache_placeholder_when_no_marker_changed(self, tmp_path: Path) -> None:
+        _prepare_with_markers(_repo(tmp_path), _shell(), _markers_changed())
+
+        assert prepare.CACHE_MARKER_PLACEHOLDER not in (tmp_path / 'CHANGELOG.md').read_text(encoding='utf-8')
+
+    def it_continues_when_the_markers_cannot_be_compared(self, tmp_path: Path) -> None:
+        release = _prepare_with_markers(_repo(tmp_path), _shell(), lambda _repo: None)
+
+        assert release.version == '1.15.0'
+
+    def it_fails_the_docs_gate_until_it_is_rewritten(self, tmp_path: Path) -> None:
+        entry = prepare.render_entry('1.15.0', RELEASE_DATE, [_commit('feat: a')], cache_markers_changed=True)
+
+        problems = _gate_problems(tmp_path, entry)
+
+        assert any('Upgrade notes' in problem for problem in problems)
+
+    def it_names_both_markers_and_the_previous_release_when_it_refuses_a_forced_patch(self, tmp_path: Path) -> None:
+        markers = _markers_changed('CACHE_VERSION', 'RUNNER_FIDELITY_VERSION')
+
+        with pytest.raises(prepare.ReleaseRefusedError) as refused:
+            _prepare_with_markers(_repo(tmp_path), _shell(), markers, increment='PATCH')
+
+        assert str(refused.value).startswith('CACHE_VERSION and RUNNER_FIDELITY_VERSION changed since v1.14.3,')
+        assert '--increment MINOR' in str(refused.value)
+
+    def it_refuses_a_forced_patch_before_asking_commitizen(self, tmp_path: Path) -> None:
+        shell = _shell(flags=('--increment', 'PATCH'))
+
+        with pytest.raises(prepare.ReleaseRefusedError):
+            _prepare_with_markers(_repo(tmp_path), shell, _markers_changed('CACHE_VERSION'), increment='PATCH')
+
+        assert not shell.ran(*prepare.CZ)
+
+    def it_keeps_a_forced_major(self, tmp_path: Path) -> None:
+        flags = ('--increment', 'MAJOR')
+        shell = _shell(next_version=_ok('2.0.0\n'), release_branch='release/v2.0.0', flags=flags)
+        repo = _repo(tmp_path, project='2.0.0', module='2.0.0')
+
+        release = _prepare_with_markers(repo, shell, _markers_changed('CACHE_VERSION'), increment='MAJOR')
+
+        assert release.version == '2.0.0'
+        assert _cz('--files-only', '--yes', *flags) in shell.calls
+
+    def it_allows_a_forced_patch_when_no_marker_changed(self, tmp_path: Path) -> None:
+        flags = ('--increment', 'PATCH')
+        shell = _shell(next_version=_ok('1.14.4\n'), release_branch='release/v1.14.4', flags=flags)
+        repo = _repo(tmp_path, project='1.14.4', module='1.14.4')
+
+        release = _prepare_with_markers(repo, shell, _markers_changed(), increment='PATCH')
+
+        assert release.version == '1.14.4'
+
+    def it_refuses_a_version_from_commitizen_it_cannot_compare(self, tmp_path: Path) -> None:
+        shell = _shell(next_version=_ok('garbage\n'))
+
+        with pytest.raises(prepare.ReleaseRefusedError, match='garbage'):
+            _prepare_with_markers(_repo(tmp_path), shell, _markers_changed('CACHE_VERSION'))
+
+        assert not shell.ran('git', 'switch')
+
+    def it_reports_the_changed_markers_in_the_result(self, tmp_path: Path) -> None:
+        release = _prepare_with_markers(_repo(tmp_path), _shell(), _markers_changed('CACHE_VERSION'))
+
+        assert release.changed_markers == ['CACHE_VERSION']
+
+
+@pytest.mark.small
+class DescribeCacheMarkerPlaceholder:
+    def it_sits_under_upgrade_notes_only_when_the_markers_changed(self) -> None:
+        with_markers = prepare.render_entry('1.15.0', RELEASE_DATE, [], cache_markers_changed=True)
+        without_markers = prepare.render_entry('1.15.0', RELEASE_DATE, [])
+
+        assert prepare.CACHE_MARKER_PLACEHOLDER in with_markers.split('### Feature')[0]
+        assert prepare.CACHE_MARKER_PLACEHOLDER not in without_markers
+
+    def it_does_not_pass_the_cache_bump_gate_until_the_author_writes_the_rebuild_sentence(self) -> None:
+        assert cache_bump.says_cache_rebuilt(prepare.CACHE_MARKER_PLACEHOLDER) is False
+
+    def it_adds_one_placeholder_and_keeps_the_commit_placeholders(self) -> None:
+        entry = prepare.render_entry('1.15.0', RELEASE_DATE, [_commit('feat: a')], cache_markers_changed=True)
+
+        assert entry.count(prepare.CACHE_MARKER_PLACEHOLDER) == 1
+        assert '`feat: a`' in entry

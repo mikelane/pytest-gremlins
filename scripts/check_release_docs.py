@@ -181,6 +181,12 @@ LINE_WITH_BREAK = re.compile(r'[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+')
 LONE_CARRIAGE_RETURN = re.compile(r'\r(?!\n)')
 NON_MARKDOWN_BREAK = re.compile('[\u2028\u2029\x85\x0c\x0b\x1c\x1d\x1e]')
 EXEMPTION = re.compile(r'\(no docs:([^)]*)\)')
+IMAGE_OPENER = '!['
+ATTRIBUTE_OPENER = '{'
+# A link reference or abbreviation definition line (``[label]: url``, ``*[label]: text``): the renderer consumes it.
+DEFINITION_LINE = re.compile(r'\s*\*?\[[^\]]+\]:')
+# Python-Markdown's AUTOLINK_RE (Markdown 3.10): the renderer reads it before raw HTML, so it shows its text.
+AUTOLINK = re.compile(r'<((?:[Ff]|[Hh][Tt])[Tt][Pp][Ss]?://[^<>]*)>')
 LINK_TARGET = re.compile(r'(?<![!\\])\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 SECTION_HEADING = re.compile(r'(#{1,6})(?:[ \t]+(.*))?$')
 SHALLOW_HEADING = re.compile(r' {0,3}(#{1,6})(?:[ \t]+(.*))?$')
@@ -553,6 +559,34 @@ def _ends_where_the_renderer_ends_it(tag: str) -> bool:
     if tag.startswith(('<?', '<!')):
         return '"' not in tag and "'" not in tag
     return QUOTES_CLOSED.fullmatch(tag) is not None
+
+
+def visible_text(text: str) -> str:
+    """Return ``text`` without what a reader of the rendered page does not see, or cannot be trusted to see.
+
+    Code spans and autolinks (``<https://...>``) are visible text and stay whole, and nothing inside a code span is
+    read as a tag or an image. Outside code spans, raw HTML tags are removed as ``html_tag_spans`` finds them. An
+    image fails closed: from the first ``![`` (a backslash before it does not matter) to the end of the text
+    everything is removed, because alt text, a reference-style label and the wording after an image cannot be told
+    apart reliably. Only wording before an image counts. The same fail-closed rule applies from the first ``{`` outside
+    a code span (an attribute list), and reference or abbreviation definition lines, which render nothing, are dropped
+    by ``upgrade_note_bullets`` before it joins a bullet.
+
+    >>> visible_text('a<b title="x">y</b>z ![alt](p.png) w')
+    'a y z  '
+    >>> visible_text('`<b title="x">` and <https://e.com/a-b>')
+    '`<b title="x">` and <https://e.com/a-b>'
+    >>> visible_text('a `{x}` b { title="y" } c')
+    'a `{x}` b  '
+    """
+    masked = _without_spans(text, code_spans(text), keep_length=True)
+    autolinks = [link.span() for link in AUTOLINK.finditer(masked)]
+    masked_links = _without_spans(masked, autolinks, keep_length=True)
+    hidden = html_tag_spans(masked_links)
+    fail_closed = [start for start in (masked.find(IMAGE_OPENER), masked.find(ATTRIBUTE_OPENER)) if start != -1]
+    if fail_closed:
+        hidden = _merged([*hidden, (min(fail_closed), len(text))])
+    return _without_spans(text, hidden)
 
 
 def _links_outside_html_tags(text: str) -> list[str]:
@@ -1404,6 +1438,46 @@ def entry_preamble(changelog: str, version: str) -> str | None:
         if not line.opens_fence:
             preamble.append(line.text)
     return '\n'.join(preamble)
+
+
+def _parts_before_definition(parts: list[str]) -> list[str]:
+    """Return the non-empty ``parts`` up to the first link or abbreviation definition line, which ends the bullet."""
+    kept: list[str] = []
+    for part in parts:
+        if DEFINITION_LINE.match(part):
+            break
+        if part:
+            kept.append(part)
+    return kept
+
+
+def upgrade_note_bullets(changelog: str, version: str) -> list[str] | None:
+    """Return the visible text of every bullet under ``### Upgrade notes`` in the ``## vX.Y.Z`` entry, or ``None``.
+
+    A bullet's continuation lines are joined to it with single spaces. The bullets are read as the docs gate reads them,
+    so a line the gate rejects, a comment and fenced code are not part of any bullet. Raw HTML tags, attributes
+    included, are removed, and so is everything from the first image or attribute list to the end of the bullet
+    (``visible_text``); the text between tags, inside code spans and in autolinks stays. A link or abbreviation
+    definition line ends the bullet: it and every later line of the bullet are dropped before the join, because the
+    renderer also consumes the line after a ``[label]:`` definition when that line holds the title or the URL.
+
+    Args:
+        changelog: The text of ``CHANGELOG.md``.
+        version: The release version, with or without the leading ``v``.
+
+    Returns:
+        One string per bullet, in order, or ``None`` when the changelog has no such entry.
+    """
+    entry = _find_entry(changelog, version)
+    if entry is None:
+        return None
+    reader = _EntryReader(entry.rejected)
+    reader.read(entry.lines)
+    return [
+        visible_text(' '.join(_parts_before_definition(item.parts)))
+        for item in reader.items
+        if item.section == 'Upgrade notes'
+    ]
 
 
 def release_notes(changelog: str, version: str) -> str | None:
