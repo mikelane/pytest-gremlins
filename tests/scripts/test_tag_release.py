@@ -1059,3 +1059,139 @@ class DescribeTheIsolatedChildEnvironment:
         kept = [name for name in ACTIONS_ENV if name in ISOLATED_GIT_ENV]
 
         assert kept == []
+
+
+STOP_COMMANDS = '::stop-commands::'
+
+
+def _commands_outside_stop_blocks(stream_text: str) -> list[str]:
+    """Return the workflow commands the runner would act on: lines starting ``::`` outside any stop-commands block."""
+    live: list[str] = []
+    token: str | None = None
+    for line in stream_text.splitlines():
+        if token is None and line.startswith(STOP_COMMANDS):
+            token = line[len(STOP_COMMANDS) :]
+        elif token is not None and line == f'::{token}::':
+            token = None
+        elif token is None and line.lstrip().startswith('::'):
+            live.append(line)
+    return live
+
+
+FORGED = '\n::warning title=forged::injected'
+OWN_ANNOTATION = '::error title=tag-release could not run (exit 2)::'
+
+
+@pytest.mark.small
+class DescribeFreeTextInGithubActions:
+    def it_leaves_only_its_own_annotation_live_for_a_multi_line_error(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _main_with_release(monkeypatch, tag_release.CannotCheckError(f'lookup failed{FORGED}'), actions=True)
+
+        live = _commands_outside_stop_blocks(capsys.readouterr().err)
+
+        assert len(live) == 1
+        assert live[0].startswith(OWN_ANNOTATION)
+
+    def it_leaves_only_its_own_annotation_live_for_an_unexpected_error_and_its_traceback(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _main_with_release(monkeypatch, RuntimeError(f'boom{FORGED}'), actions=True)
+
+        live = _commands_outside_stop_blocks(capsys.readouterr().err)
+
+        assert len(live) == 1
+        assert live[0].startswith(OWN_ANNOTATION)
+
+    def it_uses_a_fresh_token_for_each_block(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _main_with_release(monkeypatch, RuntimeError('boom'), actions=True)
+
+        tokens = [
+            line[len(STOP_COMMANDS) :]
+            for line in capsys.readouterr().err.splitlines()
+            if line.startswith(STOP_COMMANDS)
+        ]
+
+        assert len(tokens) >= 2
+        assert len(set(tokens)) == len(tokens)
+        assert all(len(token) >= 32 for token in tokens)
+
+    def it_wraps_the_result_line_too(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+        _main_with_release(monkeypatch, 'v1.2.3 already tagged', actions=True)
+
+        out = capsys.readouterr().out
+
+        assert 'v1.2.3 already tagged' in out
+        assert _commands_outside_stop_blocks(out) == []
+        assert STOP_COMMANDS in out
+
+    def it_leaves_the_output_unwrapped_outside_actions(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _main_with_release(monkeypatch, tag_release.CannotCheckError('lookup failed'), actions=False)
+
+        captured = capsys.readouterr()
+
+        assert STOP_COMMANDS not in captured.err
+        assert captured.err.splitlines() == ['error: lookup failed']
+
+
+MULTI_LINE_GH = """#!{python}
+import sys
+sys.stderr.write('HTTP 404: Not Found\\n::warning title=forged::injected\\n')
+sys.exit(1)
+"""
+
+
+@pytest.mark.medium
+@pytest.mark.skipif(os.name == 'nt', reason='the stand-in gh is a shebang script')
+class DescribeAMultiLineGhFailureInActions:
+    def it_leaves_only_its_own_annotation_live(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    ) -> None:
+        gh = tmp_path / 'gh'
+        gh.write_text(MULTI_LINE_GH.format(python=sys.executable))
+        gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
+        monkeypatch.setenv('PATH', f'{tmp_path}{os.pathsep}{os.environ["PATH"]}')
+        for name in ACTIONS_ENV:
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+        monkeypatch.setattr(
+            tag_release, 'release', lambda _repo, sha, effects, _before: effects.find_pull_request_branch(sha) or ''
+        )
+
+        status = tag_release.main(['--sha', 'abc', '--before', 'def', '--github-repository', 'owner/repo'])
+
+        live = _commands_outside_stop_blocks(capsys.readouterr().err)
+        assert status == 2
+        assert len(live) == 1
+        assert live[0].startswith(OWN_ANNOTATION)
+
+
+@pytest.mark.medium
+class DescribeAStepSummaryThatCannotEncodeTheMessage:
+    def it_keeps_the_exit_status_for_a_lone_surrogate_in_the_message(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        summary = tmp_path / 'summary.md'
+
+        status = _main_with_release(
+            monkeypatch, tag_release.CannotCheckError('bad byte \udcff'), actions=False, summary=summary
+        )
+
+        assert status == 2
+        assert 'bad byte' in summary.read_text(encoding='utf-8')
+
+    def it_exits_two_when_the_sha_argument_cannot_be_encoded(self, tmp_path: Path) -> None:
+        summary = tmp_path / 'summary.md'
+        env = {**ISOLATED_GIT_ENV, 'GITHUB_STEP_SUMMARY': str(summary)}
+        command = [sys.executable, str(SCRIPT), '--repo', str(tmp_path), '--sha', os.fsdecode(b'\xff'), '--before', 'x']
+
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=False, env={**env, 'GITHUB_REPOSITORY': 'o/r'}
+        )
+
+        assert result.returncode == 2, result.stderr

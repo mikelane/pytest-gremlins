@@ -51,10 +51,12 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import subprocess
 import sys
 import tomllib
 import traceback
+from typing import TextIO
 
 CANONICAL_VERSION = re.compile(
     r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
@@ -299,10 +301,31 @@ def _raise_for_status(name: str, status: int) -> None:
     raise CannotCheckError(f'{name} could not run (exit {status}); see its output above')
 
 
+def _in_github_actions() -> bool:
+    return os.environ.get('GITHUB_ACTIONS') == 'true'
+
+
+def _emit_text(text: str, stream: TextIO) -> None:
+    """Print free text, so that under GitHub Actions no line of it can be read as a workflow command.
+
+    Text can carry a line a command or an API put there (a ``git`` or ``gh`` error that holds ``::warning ...``).
+    The runner stops reading commands between ``::stop-commands::<token>`` and ``::<token>::``; the token is fresh for
+    every block, so text cannot end the block early. Escaping each line instead would change what the log shows, and
+    the runner reads a command at the start of any line. Outside Actions the text is printed as it is.
+    """
+    if not _in_github_actions():
+        print(text, file=stream, flush=True)
+        return
+    token = secrets.token_hex(16)
+    print(f'::stop-commands::{token}', file=stream)
+    print(text, file=stream)
+    print(f'::{token}::', file=stream, flush=True)
+
+
 def _progress(line: str) -> None:
     # Progress goes to stderr, flushed, so it interleaves in order with the gate scripts' own output; stdout keeps
     # only the result line.
-    print(line, file=sys.stderr, flush=True)
+    _emit_text(line, sys.stderr)
 
 
 def release(repo: Path, sha: str, effects: Effects, before: str) -> str:
@@ -460,18 +483,14 @@ def main(argv: list[str] | None = None) -> int:
     except CannotCheckError as error:
         return _fail(args, EXIT_CANNOT_CHECK, str(error))
     except Exception as error:  # last resort: an unexpected error is "could not run", never a refusal
-        traceback.print_exc()
+        _emit_text(traceback.format_exc().rstrip('\n'), sys.stderr)
         return _fail(args, EXIT_CANNOT_CHECK, f'unexpected {type(error).__name__}: {error}')
-    print(result)
+    _emit_text(result, sys.stdout)
     _write_step_summary(args, 'done', result)
     return 0
 
 
 OUTCOME_BY_STATUS = {EXIT_REFUSED: 'refused', EXIT_CANNOT_CHECK: 'could not run'}
-
-
-def _in_github_actions() -> bool:
-    return os.environ.get('GITHUB_ACTIONS') == 'true'
 
 
 def _annotation_data(message: str) -> str:
@@ -482,7 +501,7 @@ def _annotation_data(message: str) -> str:
 def _fail(args: argparse.Namespace, status: int, message: str) -> int:
     """Report a failed run on stderr, as an Actions error annotation and in the step summary; return ``status``."""
     outcome = f'{OUTCOME_BY_STATUS[status]} (exit {status})'
-    print(f'error: {message}', file=sys.stderr, flush=True)
+    _emit_text(f'error: {message}', sys.stderr)
     if _in_github_actions():
         print(f'::error title=tag-release {outcome}::{_annotation_data(message)}', file=sys.stderr, flush=True)
     _write_step_summary(args, outcome, message)
@@ -499,10 +518,11 @@ def _write_step_summary(args: argparse.Namespace, outcome: str, message: str) ->
         f'- Main before the push: `{args.before or "(none)"}`\n\n```text\n{message}\n```\n'
     )
     try:
-        with Path(path).open('a', encoding='utf-8') as summary:
+        # backslashreplace: a lone surrogate in a message or argument must not stop the write, or the run.
+        with Path(path).open('a', encoding='utf-8', errors='backslashreplace') as summary:
             summary.write(block)
-    except OSError as error:
-        print(f'warning: could not write the step summary to {path}: {error}', file=sys.stderr, flush=True)
+    except (OSError, ValueError) as error:
+        _emit_text(f'warning: could not write the step summary to {path}: {error}', sys.stderr)
 
 
 if __name__ == '__main__':
