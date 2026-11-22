@@ -7,6 +7,7 @@ Pytest resolves a relative ``paths`` ini value against the directory of that fil
 
 from __future__ import annotations
 
+import shlex
 from typing import TYPE_CHECKING
 
 import pytest
@@ -92,7 +93,8 @@ class DescribePathIniOverrides:
 
         overrides = _path_ini_overrides(config)
 
-        assert overrides == ['-o', f"pythonpath={pytester.path / 'src'} '{pytester.path / 'my lib'}'"]
+        expected = shlex.join([str(pytester.path / 'src'), str(pytester.path / 'my lib')])
+        assert overrides == ['-o', f'pythonpath={expected}']
 
     def it_forwards_nothing_when_the_session_read_a_config_file(self, pytester: pytest.Pytester) -> None:
         pytester.makeini('[pytest]\npythonpath = src\n')

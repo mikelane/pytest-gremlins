@@ -3496,15 +3496,15 @@ _PATH_INI_TYPES = frozenset({'path', 'paths', 'pathlist'})
 def _path_ini_overrides(config: pytest.Config) -> list[str]:
     """Return ``-o`` pairs carrying the session's resolved path-type ini values, for a session with no config file.
 
-    Pytest resolves a relative path setting (``pythonpath``, ``testpaths``) against the directory of the config
-    file, or against the working directory when there is none.  Gremlin runs are given ``no_config.ini`` in that
-    case, so ``PYTEST_ADDOPTS='-o pythonpath=src'`` would resolve ``src`` inside the installed package and no
-    gremlin run could import the project (#1037).  The session's absolute values do not depend on where they are
-    resolved.  With a config file the session and the gremlin run resolve against the same directory, so nothing
-    is forwarded.  The settings are found by their registered type rather than by name, so a plugin's path
-    setting is covered too; an unset one has no value and is skipped.  The registry of ini types is pytest's
-    private ``_parser._inidict`` (``getini`` has no public way to ask a key's type); where a pytest does not
-    have it, nothing is forwarded, as before.
+    Pytest resolves a relative path setting (``pythonpath``, or any path setting a plugin registers) against the
+    directory of the config file, or against the working directory when there is none.  Gremlin runs are given
+    ``no_config.ini`` in that case, so ``PYTEST_ADDOPTS='-o pythonpath=src'`` would resolve ``src`` inside the
+    installed package and no gremlin run could import the project (#1037).  The session's absolute values do not
+    depend on where they are resolved.  With a config file the session and the gremlin run resolve against the same
+    directory, so nothing is forwarded.  The settings are found by their registered type rather than by name, so a
+    plugin's path setting is covered too; an unset one has no value and is skipped.  The registry of ini types is
+    pytest's private ``_parser._inidict`` (``getini`` has no public way to ask a key's type); where a pytest does
+    not have it, nothing is forwarded, as before.
     """
     parser = getattr(config, '_parser', None)
     if config.inipath is not None or parser is None:
@@ -3514,7 +3514,12 @@ def _path_ini_overrides(config: pytest.Config) -> list[str]:
         if ini_type not in _PATH_INI_TYPES:
             continue
         value = config.getini(key)
-        paths = [str(path) for path in value] if isinstance(value, list) else [str(value)] if value else []
+        if isinstance(value, list):
+            paths = [str(path) for path in value]
+        elif value:
+            paths = [str(value)]
+        else:
+            paths = []
         if paths:
             overrides.extend(['-o', f'{key}={shlex.join(paths)}'])
     return overrides

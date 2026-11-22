@@ -649,7 +649,7 @@ the same rerun settings as your baseline run, so a gremlin is zapped only when t
   no longer copies the settings as `--override-ini`, resets any of them, or warns about a list item it cannot
   carry: the file itself reaches the run, so a pattern such as `rerun_except = ["xyz "]` arrives unchanged.
 - A session that read no config file also passes the absolute value of every path setting it resolved
-  (`pythonpath`, `testpaths`, and the like) to the gremlin runs, so `PYTEST_ADDOPTS='-o pythonpath=src'` still
+  (`pythonpath`, and any path setting a plugin registers) to the gremlin runs, so `PYTEST_ADDOPTS='-o pythonpath=src'` still
   finds your `src` directory there. With a config file, both sessions resolve a relative path against that file's
   directory, so nothing extra is passed.
 - A rerun option that sets a key, wherever it comes from (the command line, the `addopts` of the `-c` file or
