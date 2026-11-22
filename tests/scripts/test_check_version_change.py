@@ -525,7 +525,18 @@ class DescribeMain:
 
 def _real_git(repo: Path, *args: str) -> None:
     subprocess.run(
-        ['git', '-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', *args],  # noqa: S607
+        [  # noqa: S607
+            'git',
+            '-c',
+            'user.name=t',
+            '-c',
+            'user.email=t@example.com',
+            '-c',
+            'commit.gpgsign=false',
+            '-c',
+            'core.autocrlf=false',
+            *args,
+        ],
         cwd=repo,
         check=True,
         capture_output=True,
