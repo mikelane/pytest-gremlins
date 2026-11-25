@@ -420,7 +420,8 @@ class WorkerPool:
         except Exception:
             logger.warning('Cannot end the process trees of the pool workers; killing descendants.', exc_info=True)
             kill_children_of(worker_pids)
-        sigkill_pids(worker_pids)
+        finally:
+            sigkill_pids(worker_pids)
 
     def _start_executor(self) -> None:
         context = multiprocessing.get_context()
