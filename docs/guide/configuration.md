@@ -965,6 +965,8 @@ If the watchdog itself fails (for example, the process table cannot be read), it
 traceback and re-raises the error. Any other error that ends a parallel run early, including an interrupt, is
 handled the same way: the pool does not wait for its workers. It ends their process trees where it can, kills
 the workers, and exits, so a hung worker cannot hold the run open and its test command is not left running.
+Gremlins still waiting in the queue are dropped rather than run, even when a second Ctrl-C arrives while the
+workers are being killed, so an interrupted run exits within seconds.
 
 Gremlins in flight on the other workers are handled by how long they have run:
 

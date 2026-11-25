@@ -197,6 +197,22 @@ def _run_gremlin_test(  # pragma: no cover
         )
 
 
+def _sigkill_each_despite_interrupts(pids: set[int]) -> None:
+    """SIGKILL every pid, even when an interrupt lands mid-way; the first interrupt is re-raised after the last kill.
+
+    Stopping at a second Ctrl-C would leave the remaining workers running their gremlins, and the executor's exit
+    hook would then wait for them (#980).
+    """
+    first_error: BaseException | None = None
+    for pid in pids:
+        try:
+            sigkill_pids([pid])
+        except BaseException as error:
+            first_error = first_error or error
+    if first_error is not None:
+        raise first_error
+
+
 @dataclass
 class _Job:
     """One submitted gremlin: what to run again if its executor is replaced, and where it stands."""
@@ -394,25 +410,34 @@ class WorkerPool:
         """End every worker and drop the executor without waiting on it; harmless to call twice.
 
         The workers' process trees go first, on a best-effort basis, so a hung gremlin's test command does not
-        outlive the run. Whether or not that works, every worker is then killed directly.
+        outlive the run. Whether or not that works, every worker is then killed directly. The queued gremlins are
+        cancelled even if a second Ctrl-C cuts this short at any point after the executor is detached (#980);
+        otherwise the executor's exit hook would run every one of them before the interpreter could exit.
         """
         executor, self._executor = self._executor, None
         if executor is None:
             return
-        worker_pids = self._worker_pids(executor)
-        logger.warning(
-            'The run is ending on an error: killing %d pool worker(s) (pids %s) and their test commands '
-            'instead of waiting for them.',
-            len(worker_pids),
-            sorted(worker_pids),
-        )
+        try:
+            worker_pids = self._worker_pids(executor)
+            logger.warning(
+                'The run is ending on an error: killing %d pool worker(s) (pids %s) and their test commands '
+                'instead of waiting for them.',
+                len(worker_pids),
+                sorted(worker_pids),
+            )
+            self._kill_workers_and_their_trees(worker_pids)
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    @staticmethod
+    def _kill_workers_and_their_trees(worker_pids: set[int]) -> None:
         try:
             kill_process_trees(worker_pids)
         except Exception:
             logger.warning('Cannot end the process trees of the pool workers; killing descendants.', exc_info=True)
             kill_children_of(worker_pids)
-        sigkill_pids(worker_pids)
-        executor.shutdown(wait=False, cancel_futures=True)
+        finally:
+            _sigkill_each_despite_interrupts(worker_pids)
 
     def _start_executor(self) -> None:
         context = multiprocessing.get_context()

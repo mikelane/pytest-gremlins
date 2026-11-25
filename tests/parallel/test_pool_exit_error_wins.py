@@ -116,3 +116,119 @@ class DescribeAbandoningTheWorkersWhenTheTreeKillFails:
         pool._abandon_workers()
 
         assert calls == []
+
+
+@pytest.mark.small
+class DescribeAbandoningTheWorkersWhenASecondInterruptArrives:
+    """A second Ctrl-C during the tree kill must still cancel the queue, or interpreter exit drains it (#980)."""
+
+    @pytest.mark.parametrize('interrupted_helper', ['kill_process_trees', 'sigkill_pids'])
+    def it_cancels_the_queued_gremlins(self, monkeypatch: pytest.MonkeyPatch, interrupted_helper: str) -> None:
+        def interrupted_kill(_pids: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(pool_module, 'kill_process_trees', lambda _pids: None)
+        monkeypatch.setattr(pool_module, 'sigkill_pids', lambda _pids: None)
+        monkeypatch.setattr(pool_module, interrupted_helper, interrupted_kill)
+        pool = WorkerPool(max_workers=1)
+        executor = _RecordingExecutor([100])
+        pool._executor = executor  # type: ignore[assignment]
+
+        with pytest.raises(KeyboardInterrupt):
+            pool._abandon_workers()
+
+        assert executor.shutdowns == [(False, True)]
+
+    def it_still_kills_the_workers_when_the_tree_kill_is_interrupted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def interrupted_kill(_pids: object) -> None:
+            raise KeyboardInterrupt
+
+        killed: list[int] = []
+        monkeypatch.setattr(pool_module, 'kill_process_trees', interrupted_kill)
+        monkeypatch.setattr(pool_module, 'sigkill_pids', killed.extend)
+        pool = WorkerPool(max_workers=1)
+        executor = _RecordingExecutor([100, 200])
+        pool._executor = executor  # type: ignore[assignment]
+
+        with pytest.raises(KeyboardInterrupt):
+            pool._abandon_workers()
+
+        assert (sorted(killed), executor.shutdowns) == ([100, 200], [(False, True)])
+
+
+@pytest.mark.small
+class DescribeAbandoningTheWorkersWhenInterruptedBeforeTheKills:
+    """A Ctrl-C while the workers are listed or the warning is logged must still cancel the queue (#980)."""
+
+    def it_cancels_the_queue_when_listing_the_worker_pids_is_interrupted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def interrupted(_pool: WorkerPool, _executor: object) -> set[int]:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(WorkerPool, '_worker_pids', interrupted)
+        pool = WorkerPool(max_workers=1)
+        executor = _RecordingExecutor([100])
+        pool._executor = executor  # type: ignore[assignment]
+
+        with pytest.raises(KeyboardInterrupt):
+            pool._abandon_workers()
+
+        assert executor.shutdowns == [(False, True)]
+
+    def it_cancels_the_queue_when_the_abandon_warning_is_interrupted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def interrupted(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(pool_module.logger, 'warning', interrupted)
+        monkeypatch.setattr(pool_module, 'kill_process_trees', lambda _pids: None)
+        monkeypatch.setattr(pool_module, 'sigkill_pids', lambda _pids: None)
+        pool = WorkerPool(max_workers=1)
+        executor = _RecordingExecutor([100])
+        pool._executor = executor  # type: ignore[assignment]
+
+        with pytest.raises(KeyboardInterrupt):
+            pool._abandon_workers()
+
+        assert executor.shutdowns == [(False, True)]
+
+
+@pytest.mark.small
+class DescribeAbandoningTheWorkersWhenADirectKillIsInterrupted:
+    """A Ctrl-C while one worker is killed must not spare the workers after it (#980)."""
+
+    def it_still_kills_the_remaining_workers_when_the_first_kill_is_interrupted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        signalled: list[int] = []
+
+        def interrupted_on_first(pid: int, _signal: int) -> None:
+            signalled.append(pid)
+            if len(signalled) == 1:
+                raise KeyboardInterrupt
+
+        monkeypatch.setattr(pool_module, 'kill_process_trees', lambda _pids: None)
+        monkeypatch.setattr(os, 'kill', interrupted_on_first)
+        pool = WorkerPool(max_workers=2)
+        pool._executor = _RecordingExecutor([100, 200])  # type: ignore[assignment]
+
+        with pytest.raises(KeyboardInterrupt):
+            pool._abandon_workers()
+
+        assert sorted(signalled) == [100, 200]
+
+    def it_re_raises_the_first_interrupt_when_every_kill_is_interrupted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        raised: list[BaseException] = []
+
+        def interrupted_every_time(_pid: int, _signal: int) -> None:
+            error = KeyboardInterrupt(len(raised))
+            raised.append(error)
+            raise error
+
+        monkeypatch.setattr(pool_module, 'kill_process_trees', lambda _pids: None)
+        monkeypatch.setattr(os, 'kill', interrupted_every_time)
+        pool = WorkerPool(max_workers=2)
+        pool._executor = _RecordingExecutor([100, 200])  # type: ignore[assignment]
+
+        with pytest.raises(KeyboardInterrupt) as excinfo:
+            pool._abandon_workers()
+
+        assert (len(raised), excinfo.value is raised[0]) == (2, True)
