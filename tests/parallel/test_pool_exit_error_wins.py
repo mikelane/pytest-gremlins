@@ -116,3 +116,25 @@ class DescribeAbandoningTheWorkersWhenTheTreeKillFails:
         pool._abandon_workers()
 
         assert calls == []
+
+
+@pytest.mark.small
+class DescribeAbandoningTheWorkersWhenASecondInterruptArrives:
+    """A second Ctrl-C during the tree kill must still cancel the queue, or interpreter exit drains it (#980)."""
+
+    @pytest.mark.parametrize('interrupted_helper', ['kill_process_trees', 'sigkill_pids'])
+    def it_cancels_the_queued_gremlins(self, monkeypatch: pytest.MonkeyPatch, interrupted_helper: str) -> None:
+        def interrupted_kill(_pids: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(pool_module, 'kill_process_trees', lambda _pids: None)
+        monkeypatch.setattr(pool_module, 'sigkill_pids', lambda _pids: None)
+        monkeypatch.setattr(pool_module, interrupted_helper, interrupted_kill)
+        pool = WorkerPool(max_workers=1)
+        executor = _RecordingExecutor([100])
+        pool._executor = executor  # type: ignore[assignment]
+
+        with pytest.raises(KeyboardInterrupt):
+            pool._abandon_workers()
+
+        assert executor.shutdowns == [(False, True)]

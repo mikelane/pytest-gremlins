@@ -394,7 +394,9 @@ class WorkerPool:
         """End every worker and drop the executor without waiting on it; harmless to call twice.
 
         The workers' process trees go first, on a best-effort basis, so a hung gremlin's test command does not
-        outlive the run. Whether or not that works, every worker is then killed directly.
+        outlive the run. Whether or not that works, every worker is then killed directly. The queued gremlins are
+        cancelled even if the kills are cut short (a second Ctrl-C, #980); otherwise the executor's exit hook would
+        run every one of them before the interpreter could exit.
         """
         executor, self._executor = self._executor, None
         if executor is None:
@@ -407,12 +409,18 @@ class WorkerPool:
             sorted(worker_pids),
         )
         try:
+            self._kill_workers_and_their_trees(worker_pids)
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    @staticmethod
+    def _kill_workers_and_their_trees(worker_pids: set[int]) -> None:
+        try:
             kill_process_trees(worker_pids)
         except Exception:
             logger.warning('Cannot end the process trees of the pool workers; killing descendants.', exc_info=True)
             kill_children_of(worker_pids)
         sigkill_pids(worker_pids)
-        executor.shutdown(wait=False, cancel_futures=True)
 
     def _start_executor(self) -> None:
         context = multiprocessing.get_context()
