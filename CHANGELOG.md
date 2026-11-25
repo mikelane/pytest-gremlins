@@ -22,17 +22,13 @@ pipeline is gated end to end.**
   times you press it, gremlins still waiting in the queue are now dropped and every worker is killed, so the run
   exits within seconds. (#980, #1082)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#a-hung-worker-cannot-stall-a-parallel-run)
-- **Relative path settings in `PYTEST_ADDOPTS` broke every gremlin in a project with no config file.** With
-  `PYTEST_ADDOPTS='-o pythonpath=src'`, every gremlin scored ERROR because the path was resolved inside the installed
-  package. Gremlin runs now get the absolute path the session resolved. (#1037, #1067)
-  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
 - **A gremlin run could read a different config file than your session.** A child run on one test file could pick up
   a nested `pytest.ini` your session never read and skip the root `conftest.py`, so verdicts could differ from the
   baseline. Gremlin runs and the coverage pre-scan now read the config file, rootdir and `confcutdir` your session
-  used. (#1023, #1038)
+  used, including relative path settings from `PYTEST_ADDOPTS`. (#1023, #1038)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
 - **The `--gremlin-explain` help showed a bare `g001` instead of a full gremlin id.** It now shows an id such as
-  `calculator_e336_g001`, the format the docs describe. Thanks to @Dodothereal. (#711, #1055)
+  `calculator_e336_g001`, the format the docs describe. Thanks to @Dodothereal (#746). (#711, #1055)
   [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#explaining-a-survivor)
 - **Timeout messages told you to raise a limit that was already at the 86400-second maximum.** They now say the limit
   is at the maximum and to lower any reruns or rerun delays, or speed up the tests. This covers the downgraded-timeout
@@ -46,6 +42,8 @@ pipeline is gated end to end.**
 - Require a minor bump when a cache marker changes. (#1070)
 - Fail the release while a `release-blocker` issue is open. (#1066)
 - Run each CI job on the Python version it requests. (#1065)
+- Fix a regression from #1038, before release, where relative path settings in `PYTEST_ADDOPTS` resolved inside the
+  installed package. (#1037, #1067)
 - Reject changelog entry shapes the docs gate and the renderer read differently. (#1063)
 - Add a dry-run tag-release workflow on push to main. (#1061)
 - Add the `prepare_release.py` script that cuts a release branch. (#1054)
