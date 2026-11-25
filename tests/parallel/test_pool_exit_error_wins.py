@@ -214,3 +214,21 @@ class DescribeAbandoningTheWorkersWhenADirectKillIsInterrupted:
             pool._abandon_workers()
 
         assert sorted(signalled) == [100, 200]
+
+    def it_re_raises_the_first_interrupt_when_every_kill_is_interrupted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        raised: list[BaseException] = []
+
+        def interrupted_every_time(_pid: int, _signal: int) -> None:
+            error = KeyboardInterrupt(len(raised))
+            raised.append(error)
+            raise error
+
+        monkeypatch.setattr(pool_module, 'kill_process_trees', lambda _pids: None)
+        monkeypatch.setattr(os, 'kill', interrupted_every_time)
+        pool = WorkerPool(max_workers=2)
+        pool._executor = _RecordingExecutor([100, 200])  # type: ignore[assignment]
+
+        with pytest.raises(KeyboardInterrupt) as excinfo:
+            pool._abandon_workers()
+
+        assert (len(raised), excinfo.value is raised[0]) == (2, True)

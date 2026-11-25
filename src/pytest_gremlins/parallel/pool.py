@@ -203,14 +203,14 @@ def _sigkill_each_despite_interrupts(pids: set[int]) -> None:
     Stopping at a second Ctrl-C would leave the remaining workers running their gremlins, and the executor's exit
     hook would then wait for them (#980).
     """
-    interrupt: BaseException | None = None
+    first_error: BaseException | None = None
     for pid in pids:
         try:
             sigkill_pids([pid])
         except BaseException as error:
-            interrupt = interrupt or error
-    if interrupt is not None:
-        raise interrupt
+            first_error = first_error or error
+    if first_error is not None:
+        raise first_error
 
 
 @dataclass
