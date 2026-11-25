@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.15.0 (2026-11-25)
+
+**Interrupted parallel runs now stop cleanly, gremlin runs read the same config as your session, and the release
+pipeline is gated end to end.**
+
+### Upgrade notes
+
+- **The first run after upgrading rebuilds the cache once.** The runner marker changed, so every cached verdict is
+  dropped and the first run re-runs every gremlin; after that the cache warms again. (#1038)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/architecture/incremental-analysis/#version-compatibility)
+
+### Fix
+
+- **Ctrl-C on a `--gremlin-parallel` run could leave workers running or run every queued gremlin.** However many
+  times you press it, gremlins still waiting in the queue are now dropped and every worker is killed, so the run
+  exits within seconds. (#980, #1082)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#a-hung-worker-cannot-stall-a-parallel-run)
+- **Relative path settings in `PYTEST_ADDOPTS` broke every gremlin in a project with no config file.** With
+  `PYTEST_ADDOPTS='-o pythonpath=src'`, every gremlin scored ERROR because the path was resolved inside the installed
+  package. Gremlin runs now get the absolute path the session resolved. (#1037, #1067)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
+- **A gremlin run could read a different config file than your session.** A child run on one test file could pick up
+  a nested `pytest.ini` your session never read and skip the root `conftest.py`, so verdicts could differ from the
+  baseline. Gremlin runs and the coverage pre-scan now read the config file, rootdir and `confcutdir` your session
+  used. (#1023, #1038)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#flaky-tests-and-pytest-rerunfailures)
+- **The `--gremlin-explain` help showed a bare `g001` instead of a full gremlin id.** It now shows an id such as
+  `calculator_e336_g001`, the format the docs describe. Thanks to @Dodothereal. (#711, #1055)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#explaining-a-survivor)
+- **Timeout messages told you to raise a limit that was already at the 86400-second maximum.** They now say the limit
+  is at the maximum and to lower any reruns or rerun delays, or speed up the tests. This covers the downgraded-timeout
+  warning and the coverage pre-scan notice. (#944, #1040)
+  [docs](https://pytest-gremlins.readthedocs.io/en/latest/guide/configuration/#per-mutant-timeout)
+
+### Internal
+
+- Tag and dispatch `release.yml` from main when a release PR merges. (#1072)
+- Run the release PR version guard from the default branch. (#1071)
+- Require a minor bump when a cache marker changes. (#1070)
+- Fail the release while a `release-blocker` issue is open. (#1066)
+- Run each CI job on the Python version it requests. (#1065)
+- Reject changelog entry shapes the docs gate and the renderer read differently. (#1063)
+- Add a dry-run tag-release workflow on push to main. (#1061)
+- Add the `prepare_release.py` script that cuts a release branch. (#1054)
+- Gate version changes in pull requests with the release PR gates. (#1050)
+- Add steward house rules for PR Steward and `/ship` watches. (#1081)
+
+### Documentation
+
+- Explain why mutation switching is fast, with the code it emits. (#1058)
+- Remove the local release script and make the release docs agree. (#1048)
+
 ## v1.14.3 (2026-11-16)
 
 **Instrumentation no longer hangs when another library has linked AST nodes to their parents.**
