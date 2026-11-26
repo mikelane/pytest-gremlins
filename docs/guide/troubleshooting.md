@@ -319,14 +319,20 @@ These warnings are printed this way:
 | `gremlin pragma at FILE:LINE has both a line-above and same-line pardon` | Two pragmas target one line; the same-line one wins. | Remove one. |
 | `Dead gremlin pragma at line N of FILE` | A pragma sits on a line with no gremlins. | Remove it. |
 | `Skipping A as a mutation target: it is the same file on disk as B` | Two targets are one file (a symlink or hard link); it is mutated once, under B. | List only one of them in the targets. |
-| `Failed to persist history for report at PATH` | The HTML report was written, but its score history file could not be updated. | Check that `history.json` next to the report is a writable file. |
+| `Failed to persist history to PATH for the report at PATH` | The HTML report was written, but its score history file could not be updated. | Check that `history.json` next to the report is a writable file. |
 | `Could not read existing history from PATH` or `Could not load history from PATH` | The history file is unreadable or not valid JSON; the trend starts fresh. | Fix or delete the file. |
 | `Could not read FILE for the Stryker report` | The Stryker report holds an empty source for that file. | Check the file's permissions and encoding. |
 | `Could not run the unmutated control run` or `... to confirm a timeout` | The check that tells a real timeout from a slow machine could not start. | Check that the Python test command can be launched. |
-| `Cannot kill ...; it may outlive the run` and `Cannot run taskkill ...` | A worker process could not be stopped and may keep running. | End the process yourself. |
+| `Not permitted to kill process N; it may outlive the run.` | The operating system refused to stop a worker process or a test command it started. | End the process yourself. |
+| `Cannot kill ...; it may outlive the run.` and `Cannot run taskkill ...` | A worker process could not be stopped and may keep running. | End the process yourself. |
+| `Cannot list the descendants of worker N; its test commands may outlive the run` | The process list could not be read, so the commands a worker started were not stopped. | End the leftover test commands yourself. |
 | `Failed to read coverage data` | The coverage database could not be read, so test selection has less data. | Re-run; check disk space and permissions. |
 | `could not write finished results to the cache` | A cache flush failed; the run continues and retries. | Check disk space and permissions on `.gremlins_cache/`. |
 | `skipped FILE: could not instrument` | The file was not mutation tested. See [below](#warning-a-file-was-skipped-and-not-mutation-tested). | Split the long expression. |
+
+When a warning comes from an exception, the notice ends with the cause in parentheses, as
+`(IsADirectoryError: [Errno 21] Is a directory: ...)`. Read it to see why, for example, a history file could not
+be read.
 
 Warnings raised while pytest starts up (a corrupted cache database, a malformed `pyproject.toml`, no source paths
 discovered) already reach the terminal through Python's default logging output.
