@@ -233,7 +233,7 @@ class DescribeTheConcurrencyGroup:
 
 @pytest.mark.medium
 class DescribeActionPins:
-    def it_pins_checkout_to_the_same_sha_as_release(self) -> None:
+    def it_pins_checkout_to_the_same_sha_as_the_release_workflow(self) -> None:
         assert _checkout()['uses'] == CHECKOUT_PIN
         assert CHECKOUT_PIN in RELEASE_WORKFLOW.read_text()
 

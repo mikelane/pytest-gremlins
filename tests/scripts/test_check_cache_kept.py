@@ -332,13 +332,19 @@ def _index(workflow: str, job: str, text: str) -> int:
 @pytest.mark.medium
 class DescribeWorkflowGate:
     @pytest.mark.parametrize(
-        ('workflow', 'job'),
-        [('ci.yml', 'docs'), ('ci.yml', 'release-pr'), ('release.yml', 'verify-tag')],
+        ('workflow', 'job', 'expected_if'),
+        [
+            ('ci.yml', 'docs', "needs.changes.outputs.changelog == 'true'"),
+            ('ci.yml', 'release-pr', "steps.guard.outputs.version_changed == 'true'"),
+            ('release.yml', 'verify-tag', None),
+        ],
     )
-    def it_never_skips_or_tolerates_failure_of_the_check(self, workflow: str, job: str) -> None:
+    def it_runs_the_check_under_the_expected_condition_and_never_tolerates_failure(
+        self, workflow: str, job: str, expected_if: str | None
+    ) -> None:
         step = _gate_step(workflow, job)
 
-        assert 'if' not in step or workflow == 'ci.yml'
+        assert step.get('if') == expected_if
         assert 'continue-on-error' not in step
 
     def it_runs_in_the_changelog_pr_check_when_the_changelog_changes(self) -> None:

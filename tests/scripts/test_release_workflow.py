@@ -476,8 +476,13 @@ CLAUDE_MD = Path(__file__).resolve().parents[2] / 'CLAUDE.md'
 class DescribeReleaseTriggersInClaudeMd:
     """CLAUDE.md describes the triggers release.yml has: a tag push still starts a release (#1047)."""
 
-    def it_still_starts_a_release_on_a_tag_push(self) -> None:
+    def it_starts_a_release_on_a_tag_push(self) -> None:
         assert _workflow()[True]['push'] == {'tags': ['v*']}
 
     def it_does_not_claim_every_release_run_is_a_dispatch(self) -> None:
         assert 'every run is a dispatch' not in CLAUDE_MD.read_text(encoding='utf-8')
+
+    def it_says_verify_tag_runs_on_a_tag_push_and_a_dispatch(self) -> None:
+        assert 'The `verify-tag` job runs on every release (tag push and dispatch).' in CLAUDE_MD.read_text(
+            encoding='utf-8'
+        )

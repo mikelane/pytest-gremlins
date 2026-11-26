@@ -108,8 +108,8 @@ a code fence or a code span does not count.
 ```
 
 The check runs in the same three places as the release docs gate: the `CHANGELOG.md` check in `ci.yml`, the
-`Release PR Gates` job on the release PR, and the `verify-tag` job of `release.yml`. There is no bypass: no flag, environment
-variable or workflow input skips it. To run it locally, fetch the tags and run
+`Release PR Gates` job on the release PR, and the `verify-tag` job of `release.yml`. There is no bypass: no flag,
+environment variable or workflow input skips it. To run it locally, fetch the tags and run
 `uv run python scripts/check_cache_kept.py --newest`. A lowered marker is rejected by the per-PR check, not by this one.
 
 ## Release CI Gate and wip Tests
