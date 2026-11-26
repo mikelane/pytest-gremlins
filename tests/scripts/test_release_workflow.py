@@ -486,3 +486,10 @@ class DescribeReleaseTriggersInClaudeMd:
         assert 'The `verify-tag` job runs on every release (tag push and dispatch).' in CLAUDE_MD.read_text(
             encoding='utf-8'
         )
+
+    @pytest.mark.parametrize('job', ['verify-tag', 'ci-gate', 'benchmark', 'attrs-compat', 'large-tests'])
+    def it_names_every_job_that_gates_a_hand_pushed_tag_release(self, job: str) -> None:
+        text = ' '.join(CLAUDE_MD.read_text(encoding='utf-8').split())
+        clause = text[text.index('A hand-pushed `v*` tag') :].split('. ', 1)[0]
+
+        assert f'`{job}`' in clause
