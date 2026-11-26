@@ -547,12 +547,27 @@ def _session_for(config: pytest.Config) -> GremlinSession | None:
 
 
 def _install_session(config: pytest.Config, session: GremlinSession) -> None:
-    """Make ``session`` the current session and the one ``config`` owns, and route its marked warnings to it."""
+    """Make ``session`` the current session and the one ``config`` owns.
+
+    Marked warnings reach the session ``config`` owns when they are logged, so installing a second session
+    for the same config (the enabled one replacing the disabled one) needs no second handler.
+    """
     config.stash[_own_session_key] = session
     _set_session(session)
-    notice_handler = TerminalNoticeHandler(lambda notice: _queue_terminal_notice(session, notice))
+    if _notice_handler_key in config.stash:
+        return
+    notice_handler = TerminalNoticeHandler(
+        lambda notice: _queue_terminal_notice(config.stash[_own_session_key], notice),
+        lambda: _is_accepting_notices(config),
+    )
     config.stash[_notice_handler_key] = notice_handler
     logging.getLogger(PACKAGE_LOGGER_NAME).addHandler(notice_handler)
+
+
+def _is_accepting_notices(config: pytest.Config) -> bool:
+    """Return whether ``config``'s session is the current, enabled one, so it will print what it is given."""
+    session = _session_for(config)
+    return session is not None and session.enabled and session is _get_session()
 
 
 def _release_session(config: pytest.Config) -> None:

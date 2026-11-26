@@ -128,7 +128,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'node_id_file.py': '0dc413771fb6c5cff0719deec2e44a7d61581867e567fa7a7dad1f8d6b8cafc6',  # pragma: allowlist secret
     # --
-    'notices.py': '2eeaff9f7475c4a780e5efec1c9abb18f557ed0843f503af7d5e0bd4e83c3505',  # pragma: allowlist secret
+    'notices.py': '24fe49a5fab9bcfb742a1d602cc6dd843cb4460f2eb17a1c1e53c499505725d9',  # pragma: allowlist secret
     # --
     'operators/__init__.py': '95127c7b9b0e9bf0a142c29b7715bce2ea44da38864a26961e6e37855b6f7598',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -170,7 +170,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/worker_kill.py': 'dad44b032ffa72208128b296be6f5f73712afb4847cb82f8905ce1409eda9e63',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '981b9286730e2bd0fb387a7c7d5ed24746d4143b7ff28c73e2bfb0df082807b3',  # pragma: allowlist secret
+    'plugin.py': '01de897f76b9e9f2def677b512a328066c2331c9e23cd5099f8865ff477d2335',  # pragma: allowlist secret
     # --
     'process_tree.py': 'f48a64afd8d30e9aac97f5d7d8ed245ee4f3283b73dc293f7c0f3553cf1a433e',  # pragma: allowlist secret
     # --
