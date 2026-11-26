@@ -493,3 +493,15 @@ class DescribeReleaseTriggersInClaudeMd:
         clause = text[text.index('A hand-pushed `v*` tag') :].split('. ', 1)[0]
 
         assert f'`{job}`' in clause
+
+    def it_names_verify_wheel_which_publish_pypi_needs(self) -> None:
+        text = ' '.join(CLAUDE_MD.read_text(encoding='utf-8').split())
+        clause = text[text.index('A hand-pushed `v*` tag') :].split('. ', 1)[0]
+
+        assert '`verify-wheel`' in clause
+
+    def it_names_the_tag_release_py_checks_a_hand_pushed_tag_skips(self) -> None:
+        text = ' '.join(CLAUDE_MD.read_text(encoding='utf-8').split())
+        clause = '. '.join(text[text.index('A hand-pushed `v*` tag') :].split('. ', 2)[:2])
+
+        assert 'tag_release.py' in clause
