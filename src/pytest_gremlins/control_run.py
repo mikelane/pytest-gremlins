@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from pytest_gremlins import process_tree
 from pytest_gremlins.node_id_file import command_with_node_ids_file
+from pytest_gremlins.notices import TERMINAL_NOTICE
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -127,7 +128,9 @@ def run_unmutated(
     except subprocess.TimeoutExpired:
         return UnmutatedRunOutcome(timed_out=True, seconds=time.monotonic() - started)
     except OSError as launch_error:
-        logger.warning('Could not run the unmutated selection to confirm a timeout: %s', launch_error)
+        logger.warning(
+            'Could not run the unmutated selection to confirm a timeout: %s', launch_error, extra=TERMINAL_NOTICE
+        )
         return UnmutatedRunOutcome(timed_out=False, seconds=time.monotonic() - started, launch_error=str(launch_error))
     return UnmutatedRunOutcome(timed_out=False, seconds=time.monotonic() - started)
 
@@ -175,7 +178,7 @@ def run_control(
     except subprocess.TimeoutExpired:
         return ControlRunOutcome(False, f'control run timed out after {timeout}s', time.monotonic() - started)
     except OSError as launch_error:
-        logger.warning('Could not run the unmutated control run: %s', launch_error)
+        logger.warning('Could not run the unmutated control run: %s', launch_error, extra=TERMINAL_NOTICE)
         return ControlRunOutcome(
             False, f'control run could not be launched: {launch_error}', time.monotonic() - started
         )

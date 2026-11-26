@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 import re
 
+from pytest_gremlins.notices import TERMINAL_NOTICE
+
 logger = logging.getLogger(__name__)
 
 _VALID_REASON_CODES = frozenset({'equivalent', 'untestable', 'out_of_scope'})
@@ -53,6 +55,7 @@ def _validate_pragma(match: re.Match[str], *, lineno: int, file_path: str) -> tu
             lineno,
             reason_code,
             ', '.join(sorted(_VALID_REASON_CODES)),
+            extra=TERMINAL_NOTICE,
         )
         return None
 
@@ -62,6 +65,7 @@ def _validate_pragma(match: re.Match[str], *, lineno: int, file_path: str) -> tu
             ' (expected: # gremlin: pardon[reason] your justification) — pragma ignored',
             file_path,
             lineno,
+            extra=TERMINAL_NOTICE,
         )
         return None
 
@@ -81,6 +85,7 @@ def _resolve_standalone_target(lines: list[str], *, lineno_index: int, lineno: i
             'gremlin pragma at %s:%d is a standalone comment on the last line — no code line below — pragma ignored',
             file_path,
             lineno,
+            extra=TERMINAL_NOTICE,
         )
         return None
 
@@ -90,6 +95,7 @@ def _resolve_standalone_target(lines: list[str], *, lineno_index: int, lineno: i
             'gremlin pragma at %s:%d is not adjacent to a code line (blank line follows) — pragma ignored',
             file_path,
             lineno,
+            extra=TERMINAL_NOTICE,
         )
         return None
 
@@ -166,6 +172,7 @@ def parse_pardoned_lines(source: str, *, file_path: str = '<unknown>') -> dict[i
                 ' — using the same-line pragma (duplicate pardon)',
                 file_path,
                 target,
+                extra=TERMINAL_NOTICE,
             )
         result[target] = value
 

@@ -18,6 +18,7 @@ from typing import (
     Any,
 )
 
+from pytest_gremlins.notices import TERMINAL_NOTICE
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 if TYPE_CHECKING:
@@ -83,7 +84,9 @@ def append_history_entry(
         try:
             existing = json.loads(path.read_text(encoding='utf-8'))
         except (json.JSONDecodeError, OSError):
-            logger.warning('Could not read existing history from %s, starting fresh', path, exc_info=True)
+            logger.warning(
+                'Could not read existing history from %s, starting fresh', path, exc_info=True, extra=TERMINAL_NOTICE
+            )
             existing = []
 
     by_file = {fp: round(fs.percentage, 2) for fp, fs in score.by_file().items()}
@@ -117,7 +120,7 @@ def load_history(history_path: Path) -> list[dict[str, Any]]:
     try:
         result: list[dict[str, Any]] = json.loads(history_path.read_text(encoding='utf-8'))
     except (json.JSONDecodeError, OSError):
-        logger.warning('Could not load history from %s', history_path, exc_info=True)
+        logger.warning('Could not load history from %s', history_path, exc_info=True, extra=TERMINAL_NOTICE)
         return []
     else:
         return result

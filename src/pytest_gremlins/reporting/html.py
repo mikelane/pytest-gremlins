@@ -14,6 +14,7 @@ from typing import (
     Any,
 )
 
+from pytest_gremlins.notices import TERMINAL_NOTICE
 from pytest_gremlins.reporting.diff import (
     _compute_diff,
     _node_to_source,
@@ -176,7 +177,9 @@ class HtmlReporter:
                     history_path=history_path,
                 )
             except Exception:
-                logger.warning('Failed to persist history for report at %s', output_path, exc_info=True)
+                logger.warning(
+                    'Failed to persist history for report at %s', output_path, exc_info=True, extra=TERMINAL_NOTICE
+                )
         history = load_history(history_path)
         output_path.write_text(self.to_html(score, history=history, skipped_files=skipped_files), encoding='utf-8')
         logger.info('HTML report written to %s', output_path)

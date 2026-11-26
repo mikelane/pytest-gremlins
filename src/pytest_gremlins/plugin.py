@@ -106,6 +106,12 @@ from pytest_gremlins.instrumentation.transformer import (
     transform_source,
 )
 from pytest_gremlins.node_id_file import command_with_node_ids_file
+from pytest_gremlins.notices import (
+    PACKAGE_LOGGER_NAME,
+    TERMINAL_NOTICE,
+    TerminalNoticeHandler,
+    neutralize_control_characters,
+)
 from pytest_gremlins.operators.entry_points import (
     GremlinEntryPointWarning,
     discard_warning,
@@ -415,6 +421,7 @@ class GremlinSession:
 _gremlin_session: GremlinSession | None = None
 _displaced_session_key = pytest.StashKey[GremlinSession | None]()
 _own_session_key = pytest.StashKey[GremlinSession]()
+_notice_handler_key = pytest.StashKey[TerminalNoticeHandler]()
 _configured_configs: list[pytest.Config] = []
 
 
@@ -540,9 +547,12 @@ def _session_for(config: pytest.Config) -> GremlinSession | None:
 
 
 def _install_session(config: pytest.Config, session: GremlinSession) -> None:
-    """Make ``session`` the current session and the one ``config`` owns."""
+    """Make ``session`` the current session and the one ``config`` owns, and route its marked warnings to it."""
     config.stash[_own_session_key] = session
     _set_session(session)
+    notice_handler = TerminalNoticeHandler(lambda notice: _queue_terminal_notice(session, notice))
+    config.stash[_notice_handler_key] = notice_handler
+    logging.getLogger(PACKAGE_LOGGER_NAME).addHandler(notice_handler)
 
 
 def _release_session(config: pytest.Config) -> None:
@@ -557,6 +567,9 @@ def _release_session(config: pytest.Config) -> None:
     for configured in _configured_configs:
         if configured.stash[_displaced_session_key] is owned:
             configured.stash[_displaced_session_key] = displaced
+    notice_handler = config.stash.get(_notice_handler_key, None)
+    if notice_handler is not None:
+        logging.getLogger(PACKAGE_LOGGER_NAME).removeHandler(notice_handler)
     try:
         _cleanup_instrumented_dir(owned.instrumented_dir)
         if owned.cache is not None:
@@ -1849,7 +1862,7 @@ def _skip_file(gremlin_session: GremlinSession, file_path: str, reason: str) -> 
 
 def _neutralize_control_characters(text: str) -> str:
     """Replace control characters (such as ESC) so untrusted text cannot drive the terminal."""
-    return ''.join(char if char.isprintable() else '?' for char in text)
+    return neutralize_control_characters(text)
 
 
 def _describe_exception(exc: BaseException) -> str:
@@ -1903,6 +1916,7 @@ def _without_duplicate_origins(source_files: dict[str, str], rootdir: Path) -> t
                 'List only one of them in the gremlin targets to silence this warning',
                 file_path,
                 first_seen[identity],
+                extra=TERMINAL_NOTICE,
             )
             duplicates[first_seen[identity]].append(file_path)
             continue
@@ -4023,7 +4037,7 @@ def _run_tests_with_coverage(
         conn.close()
 
     except (sqlite3.Error, OSError) as exc:  # pragma: no cover
-        logger.warning('Failed to read coverage data: %s', exc)
+        logger.warning('Failed to read coverage data: %s', exc, extra=TERMINAL_NOTICE)
     finally:
         try:
             coverage_db_path.unlink(missing_ok=True)
@@ -5111,7 +5125,24 @@ def _write_file_reports(
     config: pytest.Config,
     score: MutationScore,
 ) -> None:
-    """Write the HTML and JSON reports the session asked for and say where they went."""
+    """Write the HTML and JSON reports the session asked for and say where they went.
+
+    A warning the writers raise (an unreadable history file) is queued as a terminal notice after the summary
+    already printed the queue, so the notices added here are printed before returning.
+    """
+    notices_already_printed = len(gremlin_session.terminal_notices)
+    _write_requested_reports(terminalreporter, gremlin_session, config, score)
+    for notice in gremlin_session.terminal_notices[notices_already_printed:]:
+        terminalreporter.write_line(notice)
+
+
+def _write_requested_reports(
+    terminalreporter: pytest.TerminalReporter,
+    gremlin_session: GremlinSession,
+    config: pytest.Config,
+    score: MutationScore,
+) -> None:
+    """Write each requested report format, saying where it went or why it failed."""
     rootdir = _get_rootdir(config)
 
     if 'html' in gremlin_session.report_formats:
