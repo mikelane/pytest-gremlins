@@ -189,7 +189,8 @@ pr-reviewer agents, check that section against the diff.
 ## Release Process
 
 There is one way to release: prepare the release branch, merge its PR, approve the PyPI deployment. A hand-pushed
-`v*` tag still runs `release.yml`, gated only by `verify-tag` and `ci-gate`; it skips the release PR gates.
+`v*` tag still runs `release.yml`, gated by `verify-tag`, `ci-gate`, `large-tests`, `benchmark`, `attrs-compat`
+and the `pypi` approval; it skips only the release PR version guard (the branch name and the file allowlist).
 
 1. Run `scripts/prepare_release.py` (see "Preparing the release branch"). It creates `release/v<version>` with the
    version bump and a changelog entry to fill in.
