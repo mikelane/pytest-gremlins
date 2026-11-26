@@ -20,7 +20,7 @@ When the version changed, three more rules apply. The push must have added exact
 ``--before`` (the tip of main before the push), or the script refuses, because the release scripts run from that
 commit. The release pull request is looked up (one merged pull request from this repository) before anything is
 tagged or dispatched. With none, the commit was not a release pull request merge: if the tag already peels to
-``--sha`` the ``cut-release.yml`` fallback made it (its tag push runs ``release.yml``), so this is a no-op; with no tag
+``--sha`` another path made it (a tag push runs ``release.yml``), so this is a no-op; with no tag
 the script refuses. A merged pull request from a fork, or more than one, always refuses.
 
 Before tagging, the version guard and the blocker gate run from the *parent* commit's copy (the pre-merge main), never
@@ -245,8 +245,7 @@ def head_ref_from_pulls(pulls_json: str, repository: str) -> str | None:
         repository: ``OWNER/NAME`` of this repository.
 
     Returns:
-        The branch, or None when no pull request was merged into this commit (a commit pushed directly, or by the
-        ``cut-release.yml`` fallback).
+        The branch, or None when no pull request was merged into this commit (a commit pushed directly).
 
     Raises:
         CannotCheckError: If the answer is not a JSON list.
@@ -398,11 +397,10 @@ def release(repo: Path, sha: str, effects: Effects, before: str) -> str:
     pull_request_branch = effects.find_pull_request_branch(sha)
     if pull_request_branch is None:
         if action is Action.DISPATCH_ONLY:
-            return f'{tag} was tagged by another path (cut-release.yml); its tag push runs release.yml'
+            return f'{tag} was tagged by another path; its tag push runs release.yml'
         raise ReleaseRefusedError(
             f'{tag} is not tagged and no pull request was merged into {sha}. A release is tagged only from a merged '
-            'release pull request; cut-release.yml tags its own commit, so a version bump pushed that way is not '
-            'tagged here.'
+            'release pull request, so a version bump pushed any other way is not tagged here.'
         )
     _progress(f'release pull request branch: {pull_request_branch}')
     if action is Action.DISPATCH_ONLY:

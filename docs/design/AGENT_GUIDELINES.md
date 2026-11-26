@@ -710,11 +710,11 @@ Documentation, Security Audit and All Checks Passed checks, linear history, and 
 
 ## Release Process
 
-The release process (changelog format and docs gate, the cache-marker and wip gates, the CI gate, dispatching
-`cut-release.yml`, and the Test PyPI escape hatch) is documented once, in
+The release process (changelog format and docs gate, the cache-marker and wip gates, the CI gate, the release
+branch, and the Test PyPI escape hatch) is documented once, in
 [CLAUDE.md](https://github.com/mikelane/pytest-gremlins/blob/main/CLAUDE.md) under "Release Process". Do not
-duplicate it here. In short: update `CHANGELOG.md` in a PR, then dispatch `cut-release.yml`. Never run
-`cz bump` locally.
+duplicate it here. In short: run `scripts/prepare_release.py`, fill in the changelog entry, merge the release PR, then
+approve the PyPI deployment. Never run `cz bump` by hand.
 
 ### When to Release
 

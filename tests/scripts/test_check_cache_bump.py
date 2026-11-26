@@ -692,6 +692,3 @@ class DescribeWorkflowGate:
         assert _index('release.yml', 'verify-tag', 'git checkout --detach "refs/tags/$RELEASE_TAG"') < _index(
             'release.yml', 'verify-tag', GATE
         )
-
-    def it_is_not_added_to_the_retiring_cut_release_workflow(self) -> None:
-        assert GATE not in (WORKFLOWS / 'cut-release.yml').read_text(encoding='utf-8')

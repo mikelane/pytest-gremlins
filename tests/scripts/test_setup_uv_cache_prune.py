@@ -1,7 +1,7 @@
 """Every setup-uv step that can save a cache prunes it first.
 
 A step saves a cache when ``enable-cache`` is ``true`` or left at its default ``auto``, which counts as on for
-``workflow_dispatch`` runs (cut-release.yml, release.yml and docs.yml are dispatched by hand). Only
+``workflow_dispatch`` runs (release.yml and docs.yml are dispatched by hand). Only
 ``enable-cache: false`` opts out.
 
 setup-uv v9.0.0 changed the ``prune-cache`` default from ``true`` to ``false`` (astral-sh/setup-uv#967). Without

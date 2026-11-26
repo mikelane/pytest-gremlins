@@ -525,14 +525,14 @@ class DescribeATagMadeByAnotherPath:
 
         message = _release(clone, sha, recorder)
 
-        assert message == 'v1.2.3 was tagged by another path (cut-release.yml); its tag push runs release.yml'
+        assert message == 'v1.2.3 was tagged by another path; its tag push runs release.yml'
         assert recorder.calls == [f'find_pull_request_branch {sha}']
 
     def it_refuses_when_no_pull_request_exists_and_there_is_no_tag(self, tmp_path: Path) -> None:
         _, clone, sha = _make_repo(tmp_path, '1.2.2', '1.2.3')
         recorder = Recorder(pull_request_branch=None)
 
-        with pytest.raises(tag_release.ReleaseRefusedError, match='cut-release'):
+        with pytest.raises(tag_release.ReleaseRefusedError, match='no pull request was merged'):
             _release(clone, sha, recorder)
 
         assert recorder.calls == [f'find_pull_request_branch {sha}']
