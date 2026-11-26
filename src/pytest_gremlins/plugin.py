@@ -107,6 +107,7 @@ from pytest_gremlins.instrumentation.transformer import (
 )
 from pytest_gremlins.node_id_file import command_with_node_ids_file
 from pytest_gremlins.notices import (
+    NOTICE_PREFIX,
     PACKAGE_LOGGER_NAME,
     TERMINAL_NOTICE,
     TerminalNoticeHandler,
@@ -1269,7 +1270,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config,
         GremlinSession(
             enabled=True,
-            terminal_notices=[f'pytest-gremlins: warning: {warning}' for warning in config_warnings],
+            terminal_notices=[f'{NOTICE_PREFIX}{warning}' for warning in config_warnings],
             operators=operators,
             report_formats=report_formats,
             target_paths=target_paths,
@@ -5145,9 +5146,9 @@ def _write_file_reports(
     A warning the writers raise (an unreadable history file) is queued as a terminal notice after the summary
     already printed the queue, so the notices added here are printed before returning.
     """
-    notices_already_printed = len(gremlin_session.terminal_notices)
+    printed_notice_count = len(gremlin_session.terminal_notices)
     _write_requested_reports(terminalreporter, gremlin_session, config, score)
-    for notice in gremlin_session.terminal_notices[notices_already_printed:]:
+    for notice in gremlin_session.terminal_notices[printed_notice_count:]:
         terminalreporter.write_line(notice)
 
 

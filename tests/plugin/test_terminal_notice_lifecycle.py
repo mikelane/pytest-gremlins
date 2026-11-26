@@ -1,8 +1,7 @@
-"""Adversarial QA findings for the terminal-notice handler (issue #982).
+"""The terminal-notice handler keeps visible what was visible, and belongs to one session (issue #982).
 
-Each test here failed against e42f7da. They pin behavior the notice handler must not break: warnings that
-were already visible stay visible, the handler is removed with its session, and one session never receives
-another session's notices.
+These tests pin three behaviors: a warning that was already printed before the handler existed is still
+printed, the handler is removed with its session, and one session never receives another session's notices.
 """
 
 from __future__ import annotations
@@ -65,11 +64,11 @@ class DescribeNoticeHandlerLifecycle:
     ) -> None:
         monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
         pytester.makepyfile(target=TARGET, test_target=FAST_TEST)
-        handlers_before = len(_notice_handlers())
+        handler_count_before = len(_notice_handlers())
 
         pytester.inline_run('--gremlins', '--gremlin-targets=target.py', '--collect-only', '-p', 'no:cacheprovider')
 
-        assert len(_notice_handlers()) == handlers_before
+        assert len(_notice_handlers()) == handler_count_before
 
     def it_does_not_queue_an_inner_run_notice_on_the_outer_session(
         self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest

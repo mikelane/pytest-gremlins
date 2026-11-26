@@ -61,23 +61,23 @@ class TerminalNoticeHandler(logging.Handler):
     def __init__(
         self,
         queue_notice: Callable[[str], object],
-        is_accepting: Callable[[], bool] = lambda: True,
+        is_accepting_notices: Callable[[], bool] = lambda: True,
     ) -> None:
         """Create the handler.
 
         Args:
             queue_notice: Receives the finished terminal line for each marked warning.
-            is_accepting: Says whether the session behind ``queue_notice`` will print what it is given.
+            is_accepting_notices: Says whether the session behind ``queue_notice`` will print what it is given.
                 A marked warning that is not accepted is treated like an unmarked one.
         """
         super().__init__(level=logging.WARNING)
         self._queue_notice = queue_notice
-        self._is_accepting = is_accepting
+        self._is_accepting_notices = is_accepting_notices
 
     def emit(self, record: logging.LogRecord) -> None:
         """Queue a marked record, or keep any other record as visible as it was without this handler."""
         try:
-            if getattr(record, 'terminal_notice', False) and self._is_accepting():
+            if getattr(record, 'terminal_notice', False) and self._is_accepting_notices():
                 message = neutralize_control_characters(' '.join(record.getMessage().split()))
                 self._queue_notice(f'{NOTICE_PREFIX}{message}{_describe_cause(record)}')
                 return

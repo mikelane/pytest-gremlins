@@ -34,14 +34,14 @@ class DescribeRuntimeWarningsVisibleByDefault:
         assert 'is the same file on disk as ' in output
 
     @pytest.mark.parametrize(
-        ('pragma', 'expected'),
+        ('pragma', 'expected_reason'),
         [
             ('# gremlin: pardon[no-such-code] because', 'has unknown reason code'),
             ('# gremlin: pardon[equivalent]', 'is missing a justification'),
         ],
     )
     def it_prints_a_notice_when_a_pragma_is_ignored(
-        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, pragma: str, expected: str
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, pragma: str, expected_reason: str
     ) -> None:
         monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
         pytester.makepyfile(target=f'def add(a, b):\n    return a + b  {pragma}\n', test_target=FAST_TEST)
@@ -50,7 +50,7 @@ class DescribeRuntimeWarningsVisibleByDefault:
 
         output = result.stdout.str() + result.stderr.str()
         assert f'{NOTICE_PREFIX}gremlin pragma at' in output
-        assert expected in output
+        assert expected_reason in output
         assert 'pragma ignored' in output
 
     def it_prints_a_notice_when_a_pragma_pardons_a_line_with_no_gremlins(
