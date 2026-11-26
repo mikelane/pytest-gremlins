@@ -178,7 +178,11 @@ class HtmlReporter:
                 )
             except Exception:
                 logger.warning(
-                    'Failed to persist history for report at %s', output_path, exc_info=True, extra=TERMINAL_NOTICE
+                    'Failed to persist history to %s for the report at %s',
+                    history_path,
+                    output_path,
+                    exc_info=True,
+                    extra=TERMINAL_NOTICE,
                 )
         history = load_history(history_path)
         output_path.write_text(self.to_html(score, history=history, skipped_files=skipped_files), encoding='utf-8')

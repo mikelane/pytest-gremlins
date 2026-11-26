@@ -1433,8 +1433,10 @@ class DescribeWriteReportHistoryPersistence:
         assert len(caplog.records) == 1
         record = caplog.records[0]
         assert record.levelno == logging.WARNING
-        assert 'history' in record.message.lower()
-        assert str(output_path) in record.message
+        assert (
+            record.message
+            == f'Failed to persist history to {tmp_path / "history.json"} for the report at {output_path}'
+        )
 
     def it_renders_no_data_placeholder_with_single_history_entry(
         self, make_result: Callable[..., GremlinResult], tmp_path: Path

@@ -79,7 +79,7 @@ class DescribeRuntimeWarningsVisibleByDefault:
         result = pytester.runpytest_subprocess('--gremlins', '--gremlin-targets=target.py', '--gremlin-report=html')
 
         output = result.stdout.str() + result.stderr.str()
-        assert f'{NOTICE_PREFIX}Failed to persist history for report at ' in output
+        assert f'{NOTICE_PREFIX}Failed to persist history to ' in output
 
     def it_prints_a_notice_queued_before_the_reports_once_when_a_report_adds_another(
         self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
@@ -95,4 +95,4 @@ class DescribeRuntimeWarningsVisibleByDefault:
 
         output = result.stdout.str() + result.stderr.str()
         assert output.count('has unknown reason code') == 1
-        assert f'{NOTICE_PREFIX}Failed to persist history for report at ' in output
+        assert f'{NOTICE_PREFIX}Failed to persist history to ' in output
