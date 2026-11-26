@@ -86,3 +86,30 @@ class DescribeNoticeHandlerLifecycle:
         pytester.inline_run('--gremlins', '--gremlin-targets=target.py', '-p', 'no:cacheprovider')
 
         assert outer_session.terminal_notices == outer_notices_before
+
+
+SESSIONFINISH_WARNING_CONFTEST = (
+    'import logging\n'
+    'import pytest\n\n\n'
+    '@pytest.hookimpl(trylast=True)\n'
+    'def pytest_sessionfinish(session):\n'
+    "    logging.getLogger('pytest_gremlins.probe').warning('PROBE-UNMARKED-WARNING')\n"
+)
+
+
+@pytest.mark.medium
+class DescribeWarningsThatWereHiddenBeforeTheNoticeHandler:
+    """An unmarked warning that logging dropped before the notice handler existed stays dropped."""
+
+    def it_keeps_an_unmarked_sessionfinish_warning_hidden_under_log_level_error(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
+        pytester.makepyfile(target=TARGET, test_target=FAST_TEST)
+        pytester.makeconftest(SESSIONFINISH_WARNING_CONFTEST)
+
+        result = pytester.runpytest_subprocess(
+            '--gremlins', '--gremlin-targets=target.py', '--log-level=ERROR', '-p', 'no:cacheprovider'
+        )
+
+        assert 'PROBE-UNMARKED-WARNING' not in result.stderr.str() + result.stdout.str()
