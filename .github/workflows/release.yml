@@ -4,7 +4,8 @@ on:
   push:
     tags:
       - 'v*'
-  # Escape hatch for when Test PyPI is down (see CLAUDE.md "Release Process").
+  # tag-release.yml dispatches this normally; skip_test_pypi is the escape hatch for a Test PyPI outage
+  # (see CLAUDE.md "Release Process").
   workflow_dispatch:
     inputs:
       tag:

@@ -554,7 +554,7 @@ PyPI steps skipped:
    gh workflow run release.yml --repo mikelane/pytest-gremlins -f tag=vX.Y.Z -f skip_test_pypi=true
    ```
 
-- The `verify-tag` job runs on every release (every run is a dispatch). It refuses dispatches not
+- The `verify-tag` job runs on every release (tag push and dispatch). It refuses dispatches not
   from `main`, checks the tag name before fetching anything, and then refuses the run unless
   the tag exists, is annotated, points at a commit, and equals `v` + the `[project].version` in
   `pyproject.toml` at that tag. The tag must already exist (see "Verify the tag landed" above).
