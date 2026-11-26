@@ -33,7 +33,9 @@ class TerminalNoticeHandler(logging.Handler):
 
     Attaching a handler to the package logger stops logging from falling back to ``logging.lastResort``, which
     is what printed unmarked warnings before this handler existed. So every record the handler does not queue
-    is passed to ``lastResort`` exactly when no other handler would have handled it.
+    is passed to ``lastResort`` exactly when logging itself would have used it: when no handler other than a
+    notice handler is on the chain, whatever the levels of the handlers that are. With several notice handlers
+    on the chain, the first one forwards.
     """
 
     def __init__(
@@ -62,14 +64,23 @@ class TerminalNoticeHandler(logging.Handler):
 
     def _fall_back_to_last_resort(self, record: logging.LogRecord) -> None:
         last_resort = logging.lastResort
-        if last_resort is None or record.levelno < last_resort.level or self._another_handler_takes(record):
+        if last_resort is None or record.levelno < last_resort.level or not self._is_last_resort_turn(record):
             return
         last_resort.handle(record)
 
-    def _another_handler_takes(self, record: logging.LogRecord) -> bool:
+    def _is_last_resort_turn(self, record: logging.LogRecord) -> bool:
+        """Say whether ``Logger.callHandlers`` would fall back to ``lastResort`` and this handler is the one to do it.
+
+        ``callHandlers`` falls back only when the chain holds no handler at all, whatever their levels. Other
+        notice handlers are not counted, so the first one on the chain forwards and the rest stay quiet.
+        """
+        first_notice_handler: TerminalNoticeHandler | None = None
         logger: logging.Logger | None = logging.getLogger(record.name)
         while logger is not None:
-            if any(handler is not self and record.levelno >= handler.level for handler in logger.handlers):
-                return True
+            for handler in logger.handlers:
+                if not isinstance(handler, TerminalNoticeHandler):
+                    return False
+                if first_notice_handler is None:
+                    first_notice_handler = handler
             logger = logger.parent if logger.propagate else None
-        return False
+        return first_notice_handler is self

@@ -132,10 +132,32 @@ class DescribeLastResortForwarding:
 
         assert last_resort.messages == ['unmarked']
 
-    def it_forwards_when_the_only_other_handler_is_above_the_record_level(
+    def it_does_not_forward_when_the_only_other_handler_is_above_the_record_level(
         self, package_logger: logging.Logger, last_resort: _Recorder
     ) -> None:
-        package_logger.addHandler(_Recorder(logging.ERROR))
+        other = _Recorder(logging.ERROR)
+        package_logger.addHandler(other)
+
+        package_logger.warning('unmarked')
+
+        assert (other.messages, last_resort.messages) == ([], [])
+
+    def it_forwards_once_when_two_notice_handlers_are_the_only_handlers(
+        self, package_logger: logging.Logger, last_resort: _Recorder, queued: list[str]
+    ) -> None:
+        package_logger.addHandler(TerminalNoticeHandler(queued.append))
+
+        package_logger.warning('unmarked')
+
+        assert last_resort.messages == ['unmarked']
+
+    def it_stops_the_walk_at_a_notice_handler_on_a_non_propagating_logger(
+        self, package_logger: logging.Logger, last_resort: _Recorder, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        parent = _isolated_logger('test_notices_forwarding_parent', monkeypatch)
+        parent.addHandler(_Recorder())
+        package_logger.parent = parent
+        package_logger.propagate = False
 
         package_logger.warning('unmarked')
 
