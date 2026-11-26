@@ -53,6 +53,21 @@ class DescribeRuntimeWarningsVisibleByDefault:
         assert expected in output
         assert 'pragma ignored' in output
 
+    def it_prints_a_notice_when_a_pragma_pardons_a_line_with_no_gremlins(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
+        pytester.makepyfile(
+            target='def add(a, b):\n    x = 1  # gremlin: pardon[equivalent] no gremlin here\n    return a + b\n',
+            test_target=FAST_TEST,
+        )
+
+        result = pytester.runpytest_subprocess('--gremlins', '--gremlin-targets=target.py')
+
+        output = result.stdout.str() + result.stderr.str()
+        assert f'{NOTICE_PREFIX}Dead gremlin pragma at line 2 of ' in output
+        assert 'no gremlins on that line' in output
+
     def it_prints_a_notice_when_the_report_history_cannot_be_written(
         self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -64,4 +79,20 @@ class DescribeRuntimeWarningsVisibleByDefault:
         result = pytester.runpytest_subprocess('--gremlins', '--gremlin-targets=target.py', '--gremlin-report=html')
 
         output = result.stdout.str() + result.stderr.str()
+        assert f'{NOTICE_PREFIX}Failed to persist history for report at ' in output
+
+    def it_prints_a_notice_queued_before_the_reports_once_when_a_report_adds_another(
+        self, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv('COVERAGE_PROCESS_START', raising=False)
+        pytester.makepyfile(
+            target='def add(a, b):\n    return a + b  # gremlin: pardon[no-such-code] because\n', test_target=FAST_TEST
+        )
+        history_as_directory = pytester.path / 'coverage' / 'gremlins' / 'history.json'
+        history_as_directory.mkdir(parents=True)
+
+        result = pytester.runpytest_subprocess('--gremlins', '--gremlin-targets=target.py', '--gremlin-report=html')
+
+        output = result.stdout.str() + result.stderr.str()
+        assert output.count('has unknown reason code') == 1
         assert f'{NOTICE_PREFIX}Failed to persist history for report at ' in output

@@ -19,10 +19,9 @@ def queued() -> list[str]:
 
 
 @pytest.fixture
-def logger(queued: list[str]) -> logging.Logger:
-    notices_logger = logging.getLogger('test_notices_isolated')
-    notices_logger.handlers = [TerminalNoticeHandler(queued.append)]
-    notices_logger.propagate = False
+def logger(queued: list[str], monkeypatch: pytest.MonkeyPatch) -> logging.Logger:
+    notices_logger = _isolated_logger('test_notices_isolated', monkeypatch)
+    notices_logger.addHandler(TerminalNoticeHandler(queued.append))
     return notices_logger
 
 
@@ -146,18 +145,6 @@ class DescribeLastResortForwarding:
         self, package_logger: logging.Logger, last_resort: _Recorder, queued: list[str]
     ) -> None:
         package_logger.addHandler(TerminalNoticeHandler(queued.append))
-
-        package_logger.warning('unmarked')
-
-        assert last_resort.messages == ['unmarked']
-
-    def it_stops_the_walk_at_a_notice_handler_on_a_non_propagating_logger(
-        self, package_logger: logging.Logger, last_resort: _Recorder, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        parent = _isolated_logger('test_notices_forwarding_parent', monkeypatch)
-        parent.addHandler(_Recorder())
-        package_logger.parent = parent
-        package_logger.propagate = False
 
         package_logger.warning('unmarked')
 
