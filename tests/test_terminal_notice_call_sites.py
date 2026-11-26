@@ -125,6 +125,38 @@ class DescribeWorkerKillWarningsAreTerminalNotices:
         assert record.getMessage() == expected
         assert _is_terminal_notice(record)
 
+    def it_marks_a_failed_descendant_listing_as_a_terminal_notice(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(worker_kill, '_children_by_parent', lambda: None)
+        caplog.set_level(logging.WARNING, logger='pytest_gremlins.parallel.worker_kill')
+
+        worker_kill.descendants_of(4242)
+
+        record = _only_warning(caplog)
+        assert record.getMessage() == (
+            'Cannot list the descendants of worker 4242: neither `ps` nor /proc gave a process list; '
+            'its test commands may outlive the run'
+        )
+        assert _is_terminal_notice(record)
+
+    def it_marks_a_crashed_descendant_walk_as_a_terminal_notice(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def crash(_root_pid: int) -> list[int]:
+            raise RuntimeError('walk crashed')
+
+        monkeypatch.setattr(worker_kill, 'descendants_of', crash)
+        caplog.set_level(logging.WARNING, logger='pytest_gremlins.parallel.worker_kill')
+
+        worker_kill.kill_children_of([4242])
+
+        record = _only_warning(caplog)
+        assert (
+            record.getMessage() == 'Cannot list the descendants of worker 4242; its test commands may outlive the run'
+        )
+        assert _is_terminal_notice(record)
+
 
 @pytest.mark.medium
 class DescribeTaskkillWarningIsTerminalNotice:

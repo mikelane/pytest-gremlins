@@ -168,7 +168,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/worker_kill.py': 'dad44b032ffa72208128b296be6f5f73712afb4847cb82f8905ce1409eda9e63',  # pragma: allowlist secret  # noqa: E501
+    'parallel/worker_kill.py': '2b9f161008e45cf04644e26db8d21a407cb31100f4d62e5fe23c6e4807e228cf',  # pragma: allowlist secret  # noqa: E501
     # --
     'plugin.py': 'f4242c64ed5dcefdbce3237d556615610a6426afdc35b439779a57a0de7ca7b9',  # pragma: allowlist secret
     # --

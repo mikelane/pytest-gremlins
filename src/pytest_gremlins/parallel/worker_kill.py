@@ -70,7 +70,12 @@ def kill_children_of(root_pids: Iterable[int]) -> None:
         try:
             sigkill_pids(descendants_of(root_pid))
         except Exception:
-            logger.warning('Cannot list the descendants of worker %s.', root_pid, exc_info=True)
+            logger.warning(
+                'Cannot list the descendants of worker %s; its test commands may outlive the run',
+                root_pid,
+                exc_info=True,
+                extra=TERMINAL_NOTICE,
+            )
 
 
 def _kill_signal() -> int:
@@ -116,7 +121,12 @@ def descendants_of(root_pid: int) -> list[int]:
     """Return every descendant pid of ``root_pid`` (POSIX), found through the parent links of the process table."""
     children_by_parent = _children_by_parent()
     if children_by_parent is None:
-        logger.warning('Cannot list the descendants of worker %s: neither `ps` nor /proc gave a process list', root_pid)
+        logger.warning(
+            'Cannot list the descendants of worker %s: neither `ps` nor /proc gave a process list; '
+            'its test commands may outlive the run',
+            root_pid,
+            extra=TERMINAL_NOTICE,
+        )
         return []
     found: list[int] = []
     frontier = [root_pid]
