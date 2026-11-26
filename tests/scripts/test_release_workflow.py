@@ -467,3 +467,17 @@ class DescribeReleaseWorkflowCiGate:
 
     def it_keeps_every_release_only_job_in_front_of_the_build(self) -> None:
         assert {'benchmark', 'attrs-compat', 'large-tests'} <= set(_needs(_jobs()['build']))
+
+
+CLAUDE_MD = Path(__file__).resolve().parents[2] / 'CLAUDE.md'
+
+
+@pytest.mark.medium
+class DescribeReleaseTriggersInClaudeMd:
+    """CLAUDE.md describes the triggers release.yml has: a tag push still starts a release (#1047)."""
+
+    def it_still_starts_a_release_on_a_tag_push(self) -> None:
+        assert _workflow()[True]['push'] == {'tags': ['v*']}
+
+    def it_does_not_claim_every_release_run_is_a_dispatch(self) -> None:
+        assert 'every run is a dispatch' not in CLAUDE_MD.read_text(encoding='utf-8')
