@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from types import MappingProxyType
 
 import pytest
 
@@ -48,6 +49,57 @@ class DescribeTerminalNoticeHandler:
         logger.warning('bad\x1b[31m path\n  continued', extra=TERMINAL_NOTICE)
 
         assert queued == [f'{NOTICE_PREFIX}bad?[31m path continued']
+
+    def it_appends_the_cause_of_a_marked_warning_logged_with_exc_info(
+        self, logger: logging.Logger, queued: list[str]
+    ) -> None:
+        cause = IsADirectoryError(21, 'Is a directory')
+
+        logger.warning('Could not read %s', 'history.json', exc_info=cause, extra=TERMINAL_NOTICE)
+
+        assert queued == [f'{NOTICE_PREFIX}Could not read history.json (IsADirectoryError: [Errno 21] Is a directory)']
+
+    def it_names_only_the_type_of_a_cause_that_has_no_message(self, logger: logging.Logger, queued: list[str]) -> None:
+        logger.warning('Could not read', exc_info=TimeoutError(), extra=TERMINAL_NOTICE)
+
+        assert queued == [f'{NOTICE_PREFIX}Could not read (TimeoutError)']
+
+    def it_neutralizes_control_characters_in_the_cause(self, logger: logging.Logger, queued: list[str]) -> None:
+        logger.warning('Could not read', exc_info=ValueError('bad\x1b[31m\n  value'), extra=TERMINAL_NOTICE)
+
+        assert queued == [f'{NOTICE_PREFIX}Could not read (ValueError: bad?[31m value)']
+
+    def it_adds_no_cause_when_exc_info_holds_no_exception(self, logger: logging.Logger, queued: list[str]) -> None:
+        logger.warning('Could not read', exc_info=(None, None, None), extra=TERMINAL_NOTICE)
+
+        assert queued == [f'{NOTICE_PREFIX}Could not read']
+
+    def it_reports_a_failing_queue_through_handle_error_instead_of_raising(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def refuse(_notice: str) -> None:
+            raise RuntimeError('queue is broken')
+
+        handled: list[logging.LogRecord] = []
+        handler = TerminalNoticeHandler(refuse)
+        monkeypatch.setattr(handler, 'handleError', handled.append)
+        record = logging.LogRecord('n', logging.WARNING, __file__, 1, 'msg', None, None)
+        record.terminal_notice = True
+
+        handler.emit(record)
+
+        assert handled == [record]
+
+
+@pytest.mark.small
+class DescribeTerminalNoticeMarker:
+    def it_is_a_read_only_mapping_marking_the_record(self) -> None:
+        assert isinstance(TERMINAL_NOTICE, MappingProxyType)
+        assert dict(TERMINAL_NOTICE) == {'terminal_notice': True}
+
+    def it_cannot_be_modified(self) -> None:
+        with pytest.raises(TypeError):
+            TERMINAL_NOTICE['terminal_notice'] = False  # type: ignore[index]
 
 
 class _Recorder(logging.Handler):

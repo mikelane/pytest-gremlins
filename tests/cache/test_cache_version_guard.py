@@ -128,7 +128,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'node_id_file.py': '0dc413771fb6c5cff0719deec2e44a7d61581867e567fa7a7dad1f8d6b8cafc6',  # pragma: allowlist secret
     # --
-    'notices.py': 'de2dd7734f6b43ea6a004844802527949000fe624ab5b61c724aa8c4dfe96b1d',  # pragma: allowlist secret
+    'notices.py': '284e7db0a6864f2e3aa5110c381e3550ce87c4da7e396b5d748861e51273eeb8',  # pragma: allowlist secret
     # --
     'operators/__init__.py': '95127c7b9b0e9bf0a142c29b7715bce2ea44da38864a26961e6e37855b6f7598',  # pragma: allowlist secret  # noqa: E501
     # --

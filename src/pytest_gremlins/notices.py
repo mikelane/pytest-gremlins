@@ -10,6 +10,7 @@ reads logs.
 from __future__ import annotations
 
 import logging
+from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
     Final,
@@ -19,13 +20,32 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 PACKAGE_LOGGER_NAME: Final = 'pytest_gremlins'
-TERMINAL_NOTICE: Final = {'terminal_notice': True}
+TERMINAL_NOTICE: Final = MappingProxyType({'terminal_notice': True})
+"""The ``extra=`` that marks a warning for the terminal.
+
+The marked message is printed to the terminal as written, so never interpolate environment values, command
+arguments or credential-bearing URLs into it.
+"""
 NOTICE_PREFIX: Final = 'pytest-gremlins: warning: '
 
 
 def neutralize_control_characters(text: str) -> str:
     """Replace control characters (such as ESC) so untrusted text cannot drive the terminal."""
     return ''.join(char if char.isprintable() else '?' for char in text)
+
+
+def _describe_cause(record: logging.LogRecord) -> str:
+    """Render the exception logged with ``exc_info`` as `` (Type: message)`` on one line, or ``''`` without one."""
+    cause = record.exc_info[1] if record.exc_info else None
+    if cause is None:
+        return ''
+    try:
+        raw_message = str(cause)
+    except Exception:
+        raw_message = ''
+    message = neutralize_control_characters(' '.join(raw_message.split()))
+    description = f'{type(cause).__name__}: {message}' if message else type(cause).__name__
+    return f' ({description})'
 
 
 class TerminalNoticeHandler(logging.Handler):
@@ -56,11 +76,14 @@ class TerminalNoticeHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         """Queue a marked record, or keep any other record as visible as it was without this handler."""
-        if getattr(record, 'terminal_notice', False) and self._is_accepting():
-            message = neutralize_control_characters(' '.join(record.getMessage().split()))
-            self._queue_notice(f'{NOTICE_PREFIX}{message}')
-            return
-        self._fall_back_to_last_resort(record)
+        try:
+            if getattr(record, 'terminal_notice', False) and self._is_accepting():
+                message = neutralize_control_characters(' '.join(record.getMessage().split()))
+                self._queue_notice(f'{NOTICE_PREFIX}{message}{_describe_cause(record)}')
+                return
+            self._fall_back_to_last_resort(record)
+        except Exception:
+            self.handleError(record)
 
     def _fall_back_to_last_resort(self, record: logging.LogRecord) -> None:
         last_resort = logging.lastResort
