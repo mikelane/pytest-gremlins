@@ -213,6 +213,27 @@ def _sigkill_each_despite_interrupts(pids: set[int]) -> None:
         raise first_error
 
 
+def kill_workers_and_their_trees(worker_pids: set[int]) -> None:
+    """End every worker and, best effort, the test commands below it; shared by both pools.
+
+    The tree kill goes first. If it fails, the descendants are killed on their own. Whatever happens, every
+    worker is then SIGKILLed, even when a second interrupt lands mid-way (#980).
+    """
+    try:
+        kill_process_trees(worker_pids)
+    except Exception:
+        logger.warning('Cannot end the process trees of the pool workers; killing descendants.', exc_info=True)
+        kill_children_of(worker_pids)
+    finally:
+        _sigkill_each_despite_interrupts(worker_pids)
+
+
+def worker_pids_of(executor: ProcessPoolExecutor) -> set[int]:
+    """Return the pids of the workers ``executor`` has started."""
+    worker_processes = getattr(executor, '_processes', None) or {}
+    return {int(pid) for pid in worker_processes}
+
+
 @dataclass
 class _Job:
     """One submitted gremlin: what to run again if its executor is replaced, and where it stands."""
@@ -425,19 +446,9 @@ class WorkerPool:
                 len(worker_pids),
                 sorted(worker_pids),
             )
-            self._kill_workers_and_their_trees(worker_pids)
+            kill_workers_and_their_trees(worker_pids)
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
-
-    @staticmethod
-    def _kill_workers_and_their_trees(worker_pids: set[int]) -> None:
-        try:
-            kill_process_trees(worker_pids)
-        except Exception:
-            logger.warning('Cannot end the process trees of the pool workers; killing descendants.', exc_info=True)
-            kill_children_of(worker_pids)
-        finally:
-            _sigkill_each_despite_interrupts(worker_pids)
 
     def _start_executor(self) -> None:
         context = multiprocessing.get_context()
@@ -557,6 +568,4 @@ class WorkerPool:
 
     def _worker_pids(self, executor: ProcessPoolExecutor) -> set[int]:
         """Return the pids of every worker of ``executor``, including ones whose start report is not read yet."""
-        worker_processes = getattr(executor, '_processes', None) or {}
-        pids = {int(pid) for pid in worker_processes}
-        return pids | {job.pid for job in self._unfinished_jobs() if job.pid is not None}
+        return worker_pids_of(executor) | {job.pid for job in self._unfinished_jobs() if job.pid is not None}

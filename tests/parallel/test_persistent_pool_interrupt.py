@@ -12,7 +12,7 @@ from unittest.mock import (
 
 import pytest
 
-from pytest_gremlins.parallel import persistent_pool
+from pytest_gremlins.parallel import pool as pool_module
 from pytest_gremlins.parallel.persistent_pool import PersistentWorkerPool
 
 WORKER_PIDS = {4101, 4102}
@@ -36,10 +36,15 @@ def pool(executor: MagicMock) -> PersistentWorkerPool:
 @pytest.fixture
 def kills() -> Iterator[dict[str, MagicMock]]:
     with (
-        patch.object(persistent_pool, 'kill_process_trees') as trees,
-        patch.object(persistent_pool, 'sigkill_pids') as pids,
+        patch.object(pool_module, 'kill_process_trees') as trees,
+        patch.object(pool_module, 'sigkill_pids') as pids,
+        patch.object(pool_module, 'kill_children_of') as children,
     ):
-        yield {'trees': trees, 'pids': pids}
+        yield {'trees': trees, 'pids': pids, 'children': children}
+
+
+def killed_pids(kills: dict[str, MagicMock]) -> set[int]:
+    return {pid for call in kills['pids'].call_args_list for pid in call.args[0]}
 
 
 @pytest.mark.small
@@ -64,7 +69,7 @@ class DescribeLeavingThePoolOnAnError:
 
         pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
 
-        assert set(kills['pids'].call_args.args[0]) == WORKER_PIDS
+        assert killed_pids(kills) == WORKER_PIDS
 
     @pytest.mark.usefixtures('kills')
     def it_marks_the_pool_as_stopped(self, pool: PersistentWorkerPool) -> None:
@@ -77,7 +82,7 @@ class DescribeLeavingThePoolOnAnError:
     ) -> None:
         pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
 
-        assert set(kills['pids'].call_args.args[0]) == WORKER_PIDS
+        assert killed_pids(kills) == WORKER_PIDS
 
     def it_cancels_queued_work_when_the_tree_kill_is_interrupted(
         self, pool: PersistentWorkerPool, executor: MagicMock, kills: dict[str, MagicMock]
@@ -97,7 +102,26 @@ class DescribeLeavingThePoolOnAnError:
         with pytest.raises(KeyboardInterrupt):
             pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
 
-        assert set(kills['pids'].call_args.args[0]) == WORKER_PIDS
+        assert killed_pids(kills) == WORKER_PIDS
+
+    def it_kills_the_descendants_if_the_tree_kill_fails(
+        self, pool: PersistentWorkerPool, kills: dict[str, MagicMock]
+    ) -> None:
+        kills['trees'].side_effect = OSError('ps failed')
+
+        pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+        assert set(kills['children'].call_args.args[0]) == WORKER_PIDS
+
+    def it_sigkills_the_remaining_workers_when_a_second_interrupt_lands_mid_kill(
+        self, pool: PersistentWorkerPool, kills: dict[str, MagicMock]
+    ) -> None:
+        kills['pids'].side_effect = [KeyboardInterrupt, None]
+
+        with pytest.raises(KeyboardInterrupt):
+            pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+        assert killed_pids(kills) == WORKER_PIDS
 
     def it_kills_nothing_when_the_pool_never_started(self, kills: dict[str, MagicMock]) -> None:
         never_started = PersistentWorkerPool(max_workers=2)

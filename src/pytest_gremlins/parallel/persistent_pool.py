@@ -49,12 +49,12 @@ from pytest_gremlins.parallel.lightweight import (
     build_lightweight_command,
     describe_runner_error,
 )
-from pytest_gremlins.parallel.pool import WorkerResult
-from pytest_gremlins.parallel.pool_config import PoolConfig
-from pytest_gremlins.parallel.worker_kill import (
-    kill_process_trees,
-    sigkill_pids,
+from pytest_gremlins.parallel.pool import (
+    WorkerResult,
+    kill_workers_and_their_trees,
+    worker_pids_of,
 )
+from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.xdist_options import env_without_xdist_addopts
 
@@ -351,20 +351,17 @@ class PersistentWorkerPool:
         executor, self._executor = self._executor, None
         if executor is None:
             return
-        worker_pids = {int(pid) for pid in getattr(executor, '_processes', None) or {}}
         try:
-            self._kill_workers_and_their_trees(worker_pids)
+            worker_pids = worker_pids_of(executor)
+            logger.warning(
+                'The run is ending on an error: killing %d pool worker(s) (pids %s) and their test commands '
+                'instead of waiting for them.',
+                len(worker_pids),
+                sorted(worker_pids),
+            )
+            kill_workers_and_their_trees(worker_pids)
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
-
-    @staticmethod
-    def _kill_workers_and_their_trees(worker_pids: set[int]) -> None:
-        try:
-            kill_process_trees(worker_pids)
-        except Exception:
-            logger.warning('Cannot end the process trees of the pool workers; killing the workers.', exc_info=True)
-        finally:
-            sigkill_pids(worker_pids)
 
     def _start(self) -> None:
         """Start the worker processes.

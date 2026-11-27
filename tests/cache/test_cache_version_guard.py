@@ -160,9 +160,9 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/lightweight.py': '72dd62804a24be6334d38305fdd058fe70c537e445a73329d1e11c81f22482db',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/persistent_pool.py': '0339648490d3301437eb4df8996e2b4a2a2280764b7eaa78f3c53caab7776fab',  # pragma: allowlist secret  # noqa: E501
+    'parallel/persistent_pool.py': '23c42a3ca8b777a7ce50d50d02cb7636d0dc2d069899fe005a8c76e759bac619',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/pool.py': '89896eff5a97987c20b40cce19cc83527d6bfa0bd7340a8926beabe6340585fb',  # pragma: allowlist secret
+    'parallel/pool.py': '73fda12a9b583eacdcb2650323884a4368562e3b5c4a140d8a07ea4b50f1e5b6',  # pragma: allowlist secret
     # --
     'parallel/pool_config.py': '92d388fc68203d1e6a15ef69ab96ade058d9c3c9f3fb8a86f444f57c8e0fd74a',  # pragma: allowlist secret  # noqa: E501
     # --
