@@ -49,7 +49,11 @@ from pytest_gremlins.parallel.lightweight import (
     build_lightweight_command,
     describe_runner_error,
 )
-from pytest_gremlins.parallel.pool import WorkerResult
+from pytest_gremlins.parallel.pool import (
+    WorkerResult,
+    abandon_executor,
+    worker_pids_of,
+)
 from pytest_gremlins.parallel.pool_config import PoolConfig
 from pytest_gremlins.reporting.results import GremlinResultStatus
 from pytest_gremlins.xdist_options import env_without_xdist_addopts
@@ -328,8 +332,26 @@ class PersistentWorkerPool:
         exc_val: BaseException | None,
         exc_tb: object,
     ) -> None:
-        """Exit context manager, shutting down workers."""
+        """Exit context manager, shutting down workers.
+
+        Leaving on an error (``KeyboardInterrupt``, or ``GeneratorExit`` from a closed generator) means the
+        collector stopped, so the queue is cancelled and the workers are killed with their test commands instead
+        of being waited for (#1092).
+        """
+        if exc_type is not None:
+            self._abandon_workers()
         self._shutdown()
+
+    def _abandon_workers(self) -> None:
+        """Kill every worker and its process tree, and cancel the queued batches, without waiting on either.
+
+        The executor is detached first; the queue is cancelled even if a kill is interrupted, or the executor's
+        exit hook would run every queued batch.
+        """
+        executor, self._executor = self._executor, None
+        if executor is None:
+            return
+        abandon_executor(executor, worker_pids_of)
 
     def _start(self) -> None:
         """Start the worker processes.

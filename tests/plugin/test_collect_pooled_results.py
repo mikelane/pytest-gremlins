@@ -10,6 +10,7 @@ from collections.abc import (
 from concurrent.futures import Future
 from pathlib import Path
 from unittest.mock import (
+    MagicMock,
     create_autospec,
     patch,
 )
@@ -463,6 +464,43 @@ class DescribeCollectBatchResults:
         assert cache_calls == ['g1']
         cache.flush.assert_called_once_with()  # type: ignore[attr-defined]
 
+    def it_closes_the_batch_source_when_an_interrupt_lands_between_yields(
+        self, gremlin_session: GremlinSession
+    ) -> None:
+        closed: list[bool] = []
+
+        def suspended_between_batches() -> Iterator[list[WorkerResult]]:
+            try:
+                yield [WorkerResult('g1', GremlinResultStatus.SURVIVED)]
+                yield [WorkerResult('g2', GremlinResultStatus.SURVIVED)]
+            finally:
+                closed.append(True)
+
+        with (
+            patch.object(plugin, '_cache_final_worker_result', side_effect=KeyboardInterrupt),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            _collect_batches(suspended_between_batches(), gremlin_session)
+
+        assert closed == [True]
+
+    @pytest.mark.usefixtures('cache_calls')
+    def it_flushes_the_cache_when_closing_the_batches_raises(
+        self, gremlin_session: GremlinSession, cache: IncrementalCache
+    ) -> None:
+        class BatchesWhoseCloseIsInterrupted:
+            def __iter__(self) -> Iterator[list[WorkerResult]]:
+                yield [WorkerResult('g1', GremlinResultStatus.SURVIVED)]
+                raise KeyboardInterrupt
+
+            def close(self) -> None:
+                raise KeyboardInterrupt  # a second Ctrl-C lands while the workers are being killed
+
+        with pytest.raises(KeyboardInterrupt):
+            _collect_batches(BatchesWhoseCloseIsInterrupted(), gremlin_session)  # type: ignore[arg-type]
+
+        cache.flush.assert_called_once_with()  # type: ignore[attr-defined]
+
     def it_flushes_on_the_interval_after_a_batch_while_the_run_continues(
         self, gremlin_session: GremlinSession, cache: IncrementalCache, cache_calls: list[str]
     ) -> None:
@@ -489,3 +527,28 @@ class DescribeCollectBatchResults:
         _collect_batches([[WorkerResult('g1', GremlinResultStatus.SURVIVED)]], gremlin_session)
 
         cache.flush.assert_not_called()  # type: ignore[attr-defined]
+
+
+@pytest.mark.small
+class DescribeCloseIfClosable:
+    def it_closes_a_source_that_has_a_close_method(self) -> None:
+        source = MagicMock(spec=['close'])
+
+        plugin._close_if_closable(source)
+
+        source.close.assert_called_once_with()
+
+    def it_leaves_a_list_alone(self) -> None:
+        batches: list[list[WorkerResult]] = [[WorkerResult('g1', GremlinResultStatus.SURVIVED)]]
+
+        plugin._close_if_closable(batches)
+
+        assert batches == [[WorkerResult('g1', GremlinResultStatus.SURVIVED)]]
+
+    def it_ignores_a_close_attribute_that_is_not_callable(self) -> None:
+        source = MagicMock(spec=[])
+        source.close = 'not callable'
+
+        plugin._close_if_closable(source)
+
+        assert source.close == 'not callable'
