@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
+import logging
 from unittest.mock import (
     MagicMock,
     create_autospec,
@@ -43,7 +44,7 @@ def kills() -> Iterator[dict[str, MagicMock]]:
         yield {'trees': trees, 'pids': pids, 'children': children}
 
 
-def killed_pids(kills: dict[str, MagicMock]) -> set[int]:
+def sigkilled_pids(kills: dict[str, MagicMock]) -> set[int]:
     return {pid for call in kills['pids'].call_args_list for pid in call.args[0]}
 
 
@@ -69,7 +70,7 @@ class DescribeLeavingThePoolOnAnError:
 
         pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
 
-        assert killed_pids(kills) == WORKER_PIDS
+        assert sigkilled_pids(kills) == WORKER_PIDS
 
     @pytest.mark.usefixtures('kills')
     def it_marks_the_pool_as_stopped(self, pool: PersistentWorkerPool) -> None:
@@ -82,7 +83,7 @@ class DescribeLeavingThePoolOnAnError:
     ) -> None:
         pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
 
-        assert killed_pids(kills) == WORKER_PIDS
+        assert sigkilled_pids(kills) == WORKER_PIDS
 
     def it_cancels_queued_work_when_the_tree_kill_is_interrupted(
         self, pool: PersistentWorkerPool, executor: MagicMock, kills: dict[str, MagicMock]
@@ -102,7 +103,7 @@ class DescribeLeavingThePoolOnAnError:
         with pytest.raises(KeyboardInterrupt):
             pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
 
-        assert killed_pids(kills) == WORKER_PIDS
+        assert sigkilled_pids(kills) == WORKER_PIDS
 
     def it_kills_the_descendants_if_the_tree_kill_fails(
         self, pool: PersistentWorkerPool, kills: dict[str, MagicMock]
@@ -121,7 +122,24 @@ class DescribeLeavingThePoolOnAnError:
         with pytest.raises(KeyboardInterrupt):
             pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
 
-        assert killed_pids(kills) == WORKER_PIDS
+        assert sigkilled_pids(kills) == WORKER_PIDS
+
+    @pytest.mark.usefixtures('kills')
+    def it_warns_which_workers_it_kills(self, pool: PersistentWorkerPool, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.WARNING, logger='pytest_gremlins.parallel.persistent_pool'):
+            pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+        assert 'killing 2 pool worker(s) (pids [4101, 4102])' in caplog.text
+
+    def it_cancels_queued_work_when_no_worker_process_exists_yet(
+        self, pool: PersistentWorkerPool, executor: MagicMock, kills: dict[str, MagicMock]
+    ) -> None:
+        executor._processes = None
+
+        pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+        kills['trees'].assert_called_once_with(set())
+        executor.shutdown.assert_called_once_with(wait=False, cancel_futures=True)
 
     def it_kills_nothing_when_the_pool_never_started(self, kills: dict[str, MagicMock]) -> None:
         never_started = PersistentWorkerPool(max_workers=2)
