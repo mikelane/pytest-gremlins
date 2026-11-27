@@ -124,6 +124,17 @@ class DescribeLeavingThePoolOnAnError:
 
         assert sigkilled_pids(kills) == WORKER_PIDS
 
+    def it_sigkills_every_worker_when_a_second_interrupt_hits_the_abandon_warning(
+        self, pool: PersistentWorkerPool, kills: dict[str, MagicMock]
+    ) -> None:
+        with (
+            patch.object(logging.Logger, 'warning', side_effect=KeyboardInterrupt),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+        assert sigkilled_pids(kills) == WORKER_PIDS
+
     @pytest.mark.usefixtures('kills')
     def it_warns_which_workers_it_kills(self, pool: PersistentWorkerPool, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level(logging.WARNING, logger='pytest_gremlins.parallel.persistent_pool'):

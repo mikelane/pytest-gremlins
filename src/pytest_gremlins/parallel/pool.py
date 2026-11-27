@@ -234,6 +234,29 @@ def worker_pids_of(executor: ProcessPoolExecutor) -> set[int]:
     return {int(pid) for pid in worker_processes}
 
 
+def abandon_executor(
+    executor: ProcessPoolExecutor, worker_pids_of_executor: Callable[[ProcessPoolExecutor], set[int]]
+) -> None:
+    """Kill ``executor``'s workers and cancel its queue without waiting on either; shared by both pools.
+
+    The queue is cancelled even if anything below is interrupted, or the executor's exit hook would run every
+    queued gremlin (#980). Once the pids are known, the kill runs even if a second Ctrl-C hits the warning (#1092).
+    """
+    try:
+        worker_pids = worker_pids_of_executor(executor)
+        try:
+            logger.warning(
+                'The run is ending on an error: killing %d pool worker(s) (pids %s) and their test commands '
+                'instead of waiting for them.',
+                len(worker_pids),
+                sorted(worker_pids),
+            )
+        finally:
+            kill_workers_and_their_trees(worker_pids)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
 @dataclass
 class _Job:
     """One submitted gremlin: what to run again if its executor is replaced, and where it stands."""
@@ -438,17 +461,7 @@ class WorkerPool:
         executor, self._executor = self._executor, None
         if executor is None:
             return
-        try:
-            worker_pids = self._worker_pids(executor)
-            logger.warning(
-                'The run is ending on an error: killing %d pool worker(s) (pids %s) and their test commands '
-                'instead of waiting for them.',
-                len(worker_pids),
-                sorted(worker_pids),
-            )
-            kill_workers_and_their_trees(worker_pids)
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+        abandon_executor(executor, self._worker_pids)
 
     def _start_executor(self) -> None:
         context = multiprocessing.get_context()

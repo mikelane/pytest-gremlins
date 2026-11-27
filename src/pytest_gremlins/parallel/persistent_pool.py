@@ -51,7 +51,7 @@ from pytest_gremlins.parallel.lightweight import (
 )
 from pytest_gremlins.parallel.pool import (
     WorkerResult,
-    kill_workers_and_their_trees,
+    abandon_executor,
     worker_pids_of,
 )
 from pytest_gremlins.parallel.pool_config import PoolConfig
@@ -351,17 +351,7 @@ class PersistentWorkerPool:
         executor, self._executor = self._executor, None
         if executor is None:
             return
-        try:
-            worker_pids = worker_pids_of(executor)
-            logger.warning(
-                'The run is ending on an error: killing %d pool worker(s) (pids %s) and their test commands '
-                'instead of waiting for them.',
-                len(worker_pids),
-                sorted(worker_pids),
-            )
-            kill_workers_and_their_trees(worker_pids)
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+        abandon_executor(executor, worker_pids_of)
 
     def _start(self) -> None:
         """Start the worker processes.

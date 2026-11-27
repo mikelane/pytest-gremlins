@@ -190,6 +190,25 @@ class DescribeAbandoningTheWorkersWhenInterruptedBeforeTheKills:
 
         assert executor.shutdowns == [(False, True)]
 
+    def it_still_kills_the_workers_when_the_abandon_warning_is_interrupted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def interrupted(*_args: object, **_kwargs: object) -> None:
+            raise KeyboardInterrupt
+
+        killed: list[int] = []
+        monkeypatch.setattr(pool_module.logger, 'warning', interrupted)
+        monkeypatch.setattr(pool_module, 'kill_process_trees', lambda _pids: None)
+        monkeypatch.setattr(pool_module, 'sigkill_pids', killed.extend)
+        pool = WorkerPool(max_workers=1)
+        executor = _RecordingExecutor([100, 200])
+        pool._executor = executor  # type: ignore[assignment]
+
+        with pytest.raises(KeyboardInterrupt):
+            pool._abandon_workers()
+
+        assert (sorted(killed), executor.shutdowns) == ([100, 200], [(False, True)])
+
 
 @pytest.mark.small
 class DescribeAbandoningTheWorkersWhenADirectKillIsInterrupted:
