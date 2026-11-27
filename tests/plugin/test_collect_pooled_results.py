@@ -483,6 +483,23 @@ class DescribeCollectBatchResults:
 
         assert closed == [True]
 
+    @pytest.mark.usefixtures('cache_calls')
+    def it_flushes_the_cache_when_closing_the_batches_raises(
+        self, gremlin_session: GremlinSession, cache: IncrementalCache
+    ) -> None:
+        class BatchesWhoseCloseIsInterrupted:
+            def __iter__(self) -> Iterator[list[WorkerResult]]:
+                yield [WorkerResult('g1', GremlinResultStatus.SURVIVED)]
+                raise KeyboardInterrupt
+
+            def close(self) -> None:
+                raise KeyboardInterrupt  # a second Ctrl-C lands while the workers are being killed
+
+        with pytest.raises(KeyboardInterrupt):
+            _collect_batches(BatchesWhoseCloseIsInterrupted(), gremlin_session)  # type: ignore[arg-type]
+
+        cache.flush.assert_called_once_with()  # type: ignore[attr-defined]
+
     def it_flushes_on_the_interval_after_a_batch_while_the_run_continues(
         self, gremlin_session: GremlinSession, cache: IncrementalCache, cache_calls: list[str]
     ) -> None:

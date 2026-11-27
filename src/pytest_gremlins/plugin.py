@@ -4146,8 +4146,10 @@ def _collect_batch_results(
             flusher.flush_if_due()
     finally:
         # A generator left suspended by an interrupt would close its pool only on garbage collection (#1092).
-        _close_if_closable(batches)
-        flusher.flush()
+        try:
+            _close_if_closable(batches)
+        finally:
+            flusher.flush()
     return unconfirmed, early_cached_ids
 
 
