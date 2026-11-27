@@ -25,6 +25,7 @@ from pytest_gremlins.parallel.exit_codes import COLLECTION_KILLING_TEST
 from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.plugin import (
     GremlinSession,
+    _collect_batch_results,
     _collect_pooled_results,
     _confirm_and_cache_pooled_results,
 )
@@ -371,3 +372,120 @@ class DescribeConfirmAndCachePooledResults:
             ('g1', GremlinResultStatus.SURVIVED),
             ('g2', GremlinResultStatus.ZAPPED),
         ]
+
+
+def _collect_batches(
+    batches: Iterator[list[WorkerResult]] | list[list[WorkerResult]], gremlin_session: GremlinSession
+) -> tuple[list[GremlinResult], set[str]]:
+    ids = ['g1', 'g2', 'g3']
+    return _collect_batch_results(
+        batches,
+        {gremlin_id: _gremlin(gremlin_id) for gremlin_id in ids},
+        {gremlin_id: _tests_for(gremlin_id) for gremlin_id in ids},
+        gremlin_session,
+    )
+
+
+@pytest.mark.small
+class DescribeCollectBatchResults:
+    def it_caches_final_verdicts_from_every_batch(
+        self, gremlin_session: GremlinSession, cache: IncrementalCache, cache_calls: list[str]
+    ) -> None:
+        unconfirmed, cached = _collect_batches(
+            [
+                [WorkerResult('g1', GremlinResultStatus.SURVIVED)],
+                [WorkerResult('g2', GremlinResultStatus.ZAPPED, killing_test='tests/test_a.py::test_a')],
+            ],
+            gremlin_session,
+        )
+
+        assert cached == {'g1', 'g2'}
+        assert sorted(cache_calls) == ['g1', 'g2']
+        assert [(r.gremlin.gremlin_id, r.status) for r in unconfirmed] == [
+            ('g1', GremlinResultStatus.SURVIVED),
+            ('g2', GremlinResultStatus.ZAPPED),
+        ]
+        cache.flush.assert_called_once_with()  # type: ignore[attr-defined]
+
+    def it_returns_a_timeout_unconfirmed_and_uncached(
+        self, gremlin_session: GremlinSession, cache_calls: list[str]
+    ) -> None:
+        unconfirmed, cached = _collect_batches([[WorkerResult('g1', GremlinResultStatus.TIMEOUT)]], gremlin_session)
+
+        assert cached == set()
+        assert cache_calls == []
+        assert [(r.gremlin.gremlin_id, r.status) for r in unconfirmed] == [('g1', GremlinResultStatus.TIMEOUT)]
+
+    def it_does_not_cache_a_collection_kill_before_it_is_confirmed(
+        self, gremlin_session: GremlinSession, cache_calls: list[str]
+    ) -> None:
+        unconfirmed, cached = _collect_batches(
+            [[WorkerResult('g1', GremlinResultStatus.ZAPPED, killing_test=COLLECTION_KILLING_TEST)]], gremlin_session
+        )
+
+        assert cached == set()
+        assert cache_calls == []
+        assert [r.gremlin.gremlin_id for r in unconfirmed] == ['g1']
+
+    def it_skips_a_worker_result_for_an_unknown_gremlin(
+        self, gremlin_session: GremlinSession, cache_calls: list[str]
+    ) -> None:
+        unconfirmed, cached = _collect_batches(
+            [[WorkerResult('unknown', GremlinResultStatus.SURVIVED), WorkerResult('g1', GremlinResultStatus.SURVIVED)]],
+            gremlin_session,
+        )
+
+        assert cached == {'g1'}
+        assert cache_calls == ['g1']
+        assert [r.gremlin.gremlin_id for r in unconfirmed] == ['g1']
+
+    def it_ignores_an_idle_tick_batch_that_holds_no_results(
+        self, gremlin_session: GremlinSession, cache_calls: list[str]
+    ) -> None:
+        unconfirmed, cached = _collect_batches(
+            [[], [WorkerResult('g1', GremlinResultStatus.SURVIVED)], []], gremlin_session
+        )
+
+        assert cached == {'g1'}
+        assert cache_calls == ['g1']
+        assert [r.gremlin.gremlin_id for r in unconfirmed] == ['g1']
+
+    def it_flushes_the_cache_when_a_later_batch_is_interrupted(
+        self, gremlin_session: GremlinSession, cache: IncrementalCache, cache_calls: list[str]
+    ) -> None:
+        def interrupted_after_one_batch() -> Iterator[list[WorkerResult]]:
+            yield [WorkerResult('g1', GremlinResultStatus.SURVIVED)]
+            raise KeyboardInterrupt
+
+        with pytest.raises(KeyboardInterrupt):
+            _collect_batches(interrupted_after_one_batch(), gremlin_session)
+
+        assert cache_calls == ['g1']
+        cache.flush.assert_called_once_with()  # type: ignore[attr-defined]
+
+    def it_flushes_on_the_interval_after_a_batch_while_the_run_continues(
+        self, gremlin_session: GremlinSession, cache: IncrementalCache, cache_calls: list[str]
+    ) -> None:
+        flushes_before_second_batch: list[int] = []
+
+        def two_batches() -> Iterator[list[WorkerResult]]:
+            yield [WorkerResult('g1', GremlinResultStatus.SURVIVED)]
+            flushes_before_second_batch.append(cache.flush.call_count)  # type: ignore[attr-defined]
+            yield [WorkerResult('g2', GremlinResultStatus.SURVIVED)]
+
+        flusher = PeriodicFlusher(cache.flush, every_results=100, every_seconds=0.0)
+        with patch.object(plugin, '_cache_flusher_for', return_value=flusher):
+            _collect_batches(two_batches(), gremlin_session)
+
+        assert cache_calls == ['g1', 'g2']
+        assert flushes_before_second_batch == [1]
+
+    @pytest.mark.usefixtures('cache_calls')
+    def it_does_not_flush_the_cache_when_caching_is_off(
+        self, gremlin_session: GremlinSession, cache: IncrementalCache
+    ) -> None:
+        gremlin_session.cache_enabled = False
+
+        _collect_batches([[WorkerResult('g1', GremlinResultStatus.SURVIVED)]], gremlin_session)
+
+        cache.flush.assert_not_called()  # type: ignore[attr-defined]

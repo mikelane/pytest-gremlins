@@ -61,7 +61,10 @@ from pytest_gremlins.cache.incremental import (
     RerunBudget,
     subprocess_optimize_level,
 )
-from pytest_gremlins.cache.periodic_flush import PeriodicFlusher
+from pytest_gremlins.cache.periodic_flush import (
+    FLUSH_EVERY_SECONDS,
+    PeriodicFlusher,
+)
 from pytest_gremlins.config import (
     DEFAULT_PRESCAN_WORKERS,
     MAX_PRESCAN_WORKERS,
@@ -184,6 +187,7 @@ from pytest_gremlins.xdist_options import (
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
+        Iterable,
         Mapping,
         Sequence,
     )
@@ -4112,6 +4116,39 @@ def _decode_numbits(numbits: bytes) -> list[int]:
     ]
 
 
+def _collect_batch_results(
+    batches: Iterable[list[WorkerResult]],
+    gremlin_by_id: Mapping[str, Gremlin],
+    gremlin_tests: Mapping[str, list[str]],
+    gremlin_session: GremlinSession,
+) -> tuple[list[GremlinResult], set[str]]:
+    """Take each batch as it returns, caching final verdicts at once (#979); return all results and the ids cached.
+
+    Uses the same flusher and finalness rule as :func:`_collect_pooled_results`, so a killed batch run keeps
+    the batches that finished. The flush also runs when anything, including ``KeyboardInterrupt``, propagates.
+    """
+    unconfirmed: list[GremlinResult] = []
+    early_cached_ids: set[str] = set()
+    flusher = _cache_flusher_for(gremlin_session)
+    try:
+        for batch_results in batches:
+            for worker_result in batch_results:
+                gremlin_id = worker_result.gremlin_id
+                if gremlin_id not in gremlin_by_id:
+                    continue
+
+                gremlin = gremlin_by_id[gremlin_id]
+                selected_tests = gremlin_tests[gremlin_id]
+                unconfirmed.append(_result_from_worker(gremlin, worker_result, selected_tests))
+                if _cache_final_worker_result(gremlin, worker_result, selected_tests, gremlin_session):
+                    early_cached_ids.add(gremlin_id)
+                    flusher.note_result()
+            flusher.flush_if_due()
+    finally:
+        flusher.flush()
+    return unconfirmed, early_cached_ids
+
+
 def _run_batch_mutation_testing(  # pragma: no cover
     session: pytest.Session,
     gremlin_session: GremlinSession,
@@ -4199,24 +4236,21 @@ def _run_batch_mutation_testing(  # pragma: no cover
         timeout=gremlin_session.mutant_timeout,
     )
 
-    worker_results = executor.execute(
-        gremlin_ids=gremlins_to_test,
-        test_command=test_command,
-        rootdir=str(rootdir),
-        instrumented_dir=instrumented_dir_str,
-        env_vars={},
-    )
-
     results: list[GremlinResult] = list(cached_results)
-
     batch_node_ids = _node_ids_for_tests(all_covering_tests, gremlin_session)
-    unconfirmed: list[GremlinResult] = []
-    for worker_result in worker_results:
-        gremlin_id = worker_result.gremlin_id
-        if gremlin_id not in gremlin_by_id:
-            continue
-
-        unconfirmed.append(_result_from_worker(gremlin_by_id[gremlin_id], worker_result, gremlin_tests[gremlin_id]))
+    unconfirmed, early_cached_ids = _collect_batch_results(
+        executor.execute_batches(
+            gremlin_ids=gremlins_to_test,
+            test_command=test_command,
+            rootdir=str(rootdir),
+            instrumented_dir=instrumented_dir_str,
+            env_vars={},
+            idle_tick_seconds=FLUSH_EVERY_SECONDS,
+        ),
+        gremlin_by_id,
+        gremlin_tests,
+        gremlin_session,
+    )
 
     # Batch runs every gremlin with the one unified command, so that is the selection to confirm.
     _prefill_collection_kill_confirmations([(r, batch_node_ids) for r in unconfirmed], gremlin_session, rootdir)
@@ -4225,6 +4259,8 @@ def _run_batch_mutation_testing(  # pragma: no cover
             unconfirmed_result, test_command, batch_node_ids, gremlin_session, rootdir
         )
         results.append(gremlin_result)
+        if unconfirmed_result.gremlin.gremlin_id in early_cached_ids:
+            continue
         _cache_gremlin_result(
             unconfirmed_result.gremlin, unconfirmed_result.selected_tests, gremlin_result, gremlin_session
         )

@@ -17,7 +17,11 @@ Optimizations (PR #52):
 
 from __future__ import annotations
 
-from concurrent.futures import as_completed
+from collections.abc import Iterator
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    wait,
+)
 import os
 from typing import (
     TYPE_CHECKING,
@@ -148,10 +152,7 @@ class BatchExecutor:
         instrumented_dir: str | None,
         env_vars: dict[str, str],
     ) -> list[WorkerResult]:
-        """Execute gremlin tests in batches.
-
-        Creates a PersistentWorkerPool using the configured PoolConfig,
-        partitions gremlins into batches, and executes them in parallel.
+        """Execute gremlin tests in batches and return every result at once.
 
         Args:
             gremlin_ids: List of gremlin IDs to test.
@@ -163,18 +164,46 @@ class BatchExecutor:
         Returns:
             List of WorkerResult for each tested gremlin.
         """
+        return [
+            result
+            for batch_results in self.execute_batches(gremlin_ids, test_command, rootdir, instrumented_dir, env_vars)
+            for result in batch_results
+        ]
+
+    def execute_batches(
+        self,
+        gremlin_ids: list[str],
+        test_command: list[str],
+        rootdir: str,
+        instrumented_dir: str | None,
+        env_vars: dict[str, str],
+        *,
+        idle_tick_seconds: float | None = None,
+    ) -> Iterator[list[WorkerResult]]:
+        """Execute gremlin tests in batches, yielding each batch's results as that batch finishes.
+
+        Creates a PersistentWorkerPool using the configured PoolConfig,
+        partitions gremlins into batches, and executes them in parallel. A caller that
+        handles each yielded batch at once (caching its verdicts, say) keeps that work
+        if the run is interrupted before the last batch returns (#979).
+
+        Args:
+            gremlin_ids: List of gremlin IDs to test.
+            test_command: Command to run tests.
+            rootdir: Root directory for test execution.
+            instrumented_dir: Directory with instrumented sources (or None).
+            env_vars: Additional environment variables to set.
+            idle_tick_seconds: When set, an empty list is yielded each time this long passes with no batch
+                finishing, so a caller can run its timers (a periodic cache flush) while a slow batch runs.
+
+        Yields:
+            The WorkerResult list of one batch, in the order batches complete; an empty list on an idle tick.
+        """
         batches = self.partition(gremlin_ids)
 
         if not batches:
-            return []
+            return
 
-        all_env_vars = dict(env_vars)
-        if instrumented_dir is not None:
-            all_env_vars['PYTEST_GREMLINS_SOURCES_FILE'] = f'{instrumented_dir}/sources.json'
-
-        all_results: list[WorkerResult] = []
-
-        # Create pool using config for optimal settings
         pool = PersistentWorkerPool.from_config(self._config)
 
         with pool:
@@ -189,8 +218,10 @@ class BatchExecutor:
                 for batch in batches
             }
 
-            for future in as_completed(futures):
-                batch_results = future.result()
-                all_results.extend(batch_results)
-
-        return all_results
+            pending = set(futures)
+            while pending:
+                done, pending = wait(pending, timeout=idle_tick_seconds, return_when=FIRST_COMPLETED)
+                if not done:
+                    yield []
+                for future in done:
+                    yield future.result()
