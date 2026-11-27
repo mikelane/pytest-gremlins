@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 from pytest_gremlins.instrumentation.gremlin import Gremlin
 from pytest_gremlins.instrumentation.pragma import parse_pardoned_lines
+from pytest_gremlins.notices import TERMINAL_NOTICE
 from pytest_gremlins.operators import (
     ArithmeticOperator,
     BooleanOperator,
@@ -647,6 +648,7 @@ def transform_source(
                 'Dead gremlin pragma at line %d of %s: no gremlins on that line',
                 line_number,
                 file_path,
+                extra=TERMINAL_NOTICE,
             )
 
     resolved_gremlins: list[Gremlin] = []

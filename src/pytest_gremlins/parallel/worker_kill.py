@@ -19,6 +19,8 @@ import signal
 import subprocess
 import sys
 
+from pytest_gremlins.notices import TERMINAL_NOTICE
+
 logger = logging.getLogger(__name__)
 
 _PS_TIMEOUT_SECONDS = 10
@@ -68,7 +70,12 @@ def kill_children_of(root_pids: Iterable[int]) -> None:
         try:
             sigkill_pids(descendants_of(root_pid))
         except Exception:
-            logger.warning('Cannot list the descendants of worker %s.', root_pid, exc_info=True)
+            logger.warning(
+                'Cannot list the descendants of worker %s; its test commands may outlive the run',
+                root_pid,
+                exc_info=True,
+                extra=TERMINAL_NOTICE,
+            )
 
 
 def _kill_signal() -> int:
@@ -83,10 +90,12 @@ def _signal_or_warn(send: Callable[[int, int], None], target: int, kind: str) ->
     except ProcessLookupError:
         pass
     except PermissionError:
-        logger.warning('Not permitted to kill %s %s; it may outlive the run.', kind, target)
+        logger.warning('Not permitted to kill %s %s; it may outlive the run.', kind, target, extra=TERMINAL_NOTICE)
     except OSError as error:
         if getattr(error, 'winerror', None) != _WINERROR_INVALID_PARAMETER:
-            logger.warning('Cannot kill %s %s (%s); it may outlive the run.', kind, target, error)
+            logger.warning(
+                'Cannot kill %s %s (%s); it may outlive the run.', kind, target, error, extra=TERMINAL_NOTICE
+            )
 
 
 def _groups_to_signal(root_pid: int, descendants: list[int]) -> set[int]:
@@ -112,7 +121,12 @@ def descendants_of(root_pid: int) -> list[int]:
     """Return every descendant pid of ``root_pid`` (POSIX), found through the parent links of the process table."""
     children_by_parent = _children_by_parent()
     if children_by_parent is None:
-        logger.warning('Cannot list the descendants of worker %s: neither `ps` nor /proc gave a process list', root_pid)
+        logger.warning(
+            'Cannot list the descendants of worker %s: neither `ps` nor /proc gave a process list; '
+            'its test commands may outlive the run',
+            root_pid,
+            extra=TERMINAL_NOTICE,
+        )
         return []
     found: list[int] = []
     frontier = [root_pid]
@@ -190,4 +204,9 @@ def _taskkill_tree(root_pid: int) -> None:
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        logger.warning('Cannot run taskkill on worker %s; its test command may outlive it.', root_pid, exc_info=True)
+        logger.warning(
+            'Cannot run taskkill on worker %s; its test command may outlive it.',
+            root_pid,
+            exc_info=True,
+            extra=TERMINAL_NOTICE,
+        )

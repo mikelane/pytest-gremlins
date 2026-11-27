@@ -16,6 +16,7 @@ import tokenize
 from typing import TYPE_CHECKING
 
 import pytest_gremlins
+from pytest_gremlins.notices import TERMINAL_NOTICE
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 if TYPE_CHECKING:
@@ -71,7 +72,12 @@ def read_source(file_path: str) -> str:
         with tokenize.open(file_path) as source_stream:
             return source_stream.read()
     except (OSError, UnicodeError, SyntaxError, LookupError):
-        logger.warning('Could not read %s for the Stryker report; exporting empty source', file_path, exc_info=True)
+        logger.warning(
+            'Could not read %s for the Stryker report; exporting empty source',
+            file_path,
+            exc_info=True,
+            extra=TERMINAL_NOTICE,
+        )
         return ''
 
 

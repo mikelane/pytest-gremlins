@@ -106,6 +106,13 @@ from pytest_gremlins.instrumentation.transformer import (
     transform_source,
 )
 from pytest_gremlins.node_id_file import command_with_node_ids_file
+from pytest_gremlins.notices import (
+    NOTICE_PREFIX,
+    PACKAGE_LOGGER_NAME,
+    TERMINAL_NOTICE,
+    TerminalNoticeHandler,
+    neutralize_control_characters,
+)
 from pytest_gremlins.operators.entry_points import (
     GremlinEntryPointWarning,
     discard_warning,
@@ -415,6 +422,7 @@ class GremlinSession:
 _gremlin_session: GremlinSession | None = None
 _displaced_session_key = pytest.StashKey[GremlinSession | None]()
 _own_session_key = pytest.StashKey[GremlinSession]()
+_notice_handler_key = pytest.StashKey[TerminalNoticeHandler]()
 _configured_configs: list[pytest.Config] = []
 
 
@@ -540,9 +548,27 @@ def _session_for(config: pytest.Config) -> GremlinSession | None:
 
 
 def _install_session(config: pytest.Config, session: GremlinSession) -> None:
-    """Make ``session`` the current session and the one ``config`` owns."""
+    """Make ``session`` the current session and the one ``config`` owns.
+
+    Marked warnings reach the session ``config`` owns when they are logged, so installing a second session
+    for the same config (the enabled one replacing the disabled one) needs no second handler.
+    """
     config.stash[_own_session_key] = session
     _set_session(session)
+    if _notice_handler_key in config.stash:
+        return
+    notice_handler = TerminalNoticeHandler(
+        lambda notice: _queue_terminal_notice(config.stash[_own_session_key], notice),
+        lambda: _is_accepting_notices(config),
+    )
+    config.stash[_notice_handler_key] = notice_handler
+    logging.getLogger(PACKAGE_LOGGER_NAME).addHandler(notice_handler)
+
+
+def _is_accepting_notices(config: pytest.Config) -> bool:
+    """Return whether ``config``'s session is the current, enabled one, so it will print what it is given."""
+    session = _session_for(config)
+    return session is not None and session.enabled and session is _get_session()
 
 
 def _release_session(config: pytest.Config) -> None:
@@ -557,6 +583,9 @@ def _release_session(config: pytest.Config) -> None:
     for configured in _configured_configs:
         if configured.stash[_displaced_session_key] is owned:
             configured.stash[_displaced_session_key] = displaced
+    notice_handler = config.stash.get(_notice_handler_key, None)
+    if notice_handler is not None:
+        logging.getLogger(PACKAGE_LOGGER_NAME).removeHandler(notice_handler)
     try:
         _cleanup_instrumented_dir(owned.instrumented_dir)
         if owned.cache is not None:
@@ -1241,7 +1270,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config,
         GremlinSession(
             enabled=True,
-            terminal_notices=[f'pytest-gremlins: warning: {warning}' for warning in config_warnings],
+            terminal_notices=[f'{NOTICE_PREFIX}{warning}' for warning in config_warnings],
             operators=operators,
             report_formats=report_formats,
             target_paths=target_paths,
@@ -1849,7 +1878,7 @@ def _skip_file(gremlin_session: GremlinSession, file_path: str, reason: str) -> 
 
 def _neutralize_control_characters(text: str) -> str:
     """Replace control characters (such as ESC) so untrusted text cannot drive the terminal."""
-    return ''.join(char if char.isprintable() else '?' for char in text)
+    return neutralize_control_characters(text)
 
 
 def _describe_exception(exc: BaseException) -> str:
@@ -1903,6 +1932,7 @@ def _without_duplicate_origins(source_files: dict[str, str], rootdir: Path) -> t
                 'List only one of them in the gremlin targets to silence this warning',
                 file_path,
                 first_seen[identity],
+                extra=TERMINAL_NOTICE,
             )
             duplicates[first_seen[identity]].append(file_path)
             continue
@@ -2883,10 +2913,39 @@ def _skip_mutation_unless_baseline_is_green(gremlin_session: GremlinSession, exi
     return True
 
 
+def _encodable_for_stdout(text: str) -> str:
+    """Return ``text`` with any character the current stdout cannot encode replaced, so printing never raises.
+
+    A character the stdout encoding cannot hold is replaced by its backslash escape. Stdout with no known encoding is
+    treated as UTF-8.
+
+    Args:
+        text: The text about to be printed.
+
+    Returns:
+        ``text``, unchanged when stdout can encode it.
+
+    Examples:
+        >>> import sys
+        >>> from unittest import mock
+        >>> dash = chr(0x2014)
+        >>> with mock.patch.object(sys, 'stdout', mock.Mock(encoding='ascii')):
+        ...     escaped = _encodable_for_stdout(f'a {dash} b')
+        >>> escaped == 'a ' + chr(92) + 'u2014 b'
+        True
+        >>> with mock.patch.object(sys, 'stdout', mock.Mock(encoding='utf-8')):
+        ...     kept = _encodable_for_stdout(f'a {dash} b')
+        >>> kept == f'a {dash} b'
+        True
+    """
+    encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+    return text.encode(encoding, errors='backslashreplace').decode(encoding, errors='replace')
+
+
 def _print_terminal_notices(gremlin_session: GremlinSession) -> None:
     """Print the queued terminal notices for paths that disable the session before the summary hook."""
     for notice in gremlin_session.terminal_notices:
-        print(notice)
+        print(_encodable_for_stdout(notice))
 
 
 def _maybe_short_circuit_for_explain(gremlin_session: GremlinSession) -> bool:
@@ -4023,7 +4082,7 @@ def _run_tests_with_coverage(
         conn.close()
 
     except (sqlite3.Error, OSError) as exc:  # pragma: no cover
-        logger.warning('Failed to read coverage data: %s', exc)
+        logger.warning('Failed to read coverage data: %s', exc, extra=TERMINAL_NOTICE)
     finally:
         try:
             coverage_db_path.unlink(missing_ok=True)
@@ -5111,7 +5170,24 @@ def _write_file_reports(
     config: pytest.Config,
     score: MutationScore,
 ) -> None:
-    """Write the HTML and JSON reports the session asked for and say where they went."""
+    """Write the HTML and JSON reports the session asked for and say where they went.
+
+    A warning the writers raise (an unreadable history file) is queued as a terminal notice after the summary
+    already printed the queue, so the notices added here are printed before returning.
+    """
+    printed_notice_count = len(gremlin_session.terminal_notices)
+    _write_requested_reports(terminalreporter, gremlin_session, config, score)
+    for notice in gremlin_session.terminal_notices[printed_notice_count:]:
+        terminalreporter.write_line(notice)
+
+
+def _write_requested_reports(
+    terminalreporter: pytest.TerminalReporter,
+    gremlin_session: GremlinSession,
+    config: pytest.Config,
+    score: MutationScore,
+) -> None:
+    """Write each requested report format, saying where it went or why it failed."""
     rootdir = _get_rootdir(config)
 
     if 'html' in gremlin_session.report_formats:

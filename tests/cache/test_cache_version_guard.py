@@ -80,7 +80,7 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'config.py': 'f6f54470b3eaa24032742ef90b9b36df7b7215c9d9802b0dcb411b870891cde3',  # pragma: allowlist secret
     # --
-    'control_run.py': '64aed4241657eb3c9b7de7d56d5a63760bc01fe5dfb98495ac322aba36528762',  # pragma: allowlist secret
+    'control_run.py': 'dfb60aabe94cc7967f9253882296be631b862991cddae5b2bd5cfd7155df7ddc',  # pragma: allowlist secret
     # --
     'coverage/__init__.py': 'aafaa74217e1e3936ede3a3506ba602f27eb43416b0b4b2ebbcadd1817d35854',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -116,17 +116,19 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'instrumentation/origin_finder.py': '1c5e5f295e6d6f6f5f27ab978665e7a35e939e3c9bffd71a6c4e2d6b4eaab5dc',  # pragma: allowlist secret  # noqa: E501
     # --
-    'instrumentation/pragma.py': 'c62fc42dce8d590bd58fa84e35183957ac428019b1c7227ea15ef2c4fbcf5597',  # pragma: allowlist secret  # noqa: E501
+    'instrumentation/pragma.py': 'fe53352750dbf09687d29f5b89fc8cdb7c4c24310a01510ae6755212fc497c07',  # pragma: allowlist secret  # noqa: E501
     # --
     'instrumentation/spawn_hook.py': '160a3d6b0bd717a1739e2d7a300067a8a2aaba6f3dcbdd343bed67d65ce57922',  # pragma: allowlist secret  # noqa: E501
     # --
     'instrumentation/switcher.py': '602bef0ec33b9e4f0edbb24db1497f2d9fbf57952662a5f11ec51dee262cff0e',  # pragma: allowlist secret  # noqa: E501
     # --
-    'instrumentation/transformer.py': '1f9e4f3cf7d1df89a24c9a34a2098f6e5cfa0d7ebeb72d93f7302851f5d49a23',  # pragma: allowlist secret  # noqa: E501
+    'instrumentation/transformer.py': '730f93fbeed9c16fe6d39897106c1af7ba31be395fa43cf079b61db4db077d94',  # pragma: allowlist secret  # noqa: E501
     # --
     'node_id_args.py': 'd8a6f83045811ffe0c9513e74a15278966c62071db6f3722b1ebc5359c073bb9',  # pragma: allowlist secret
     # --
     'node_id_file.py': '0dc413771fb6c5cff0719deec2e44a7d61581867e567fa7a7dad1f8d6b8cafc6',  # pragma: allowlist secret
+    # --
+    'notices.py': '70dbbe545af63e980d8f9649705feeacb0edaf1da2a5127afa2e76eacec7b0f5',  # pragma: allowlist secret
     # --
     'operators/__init__.py': '95127c7b9b0e9bf0a142c29b7715bce2ea44da38864a26961e6e37855b6f7598',  # pragma: allowlist secret  # noqa: E501
     # --
@@ -166,9 +168,9 @@ RECORDED_DIGESTS: dict[str, str] = {
     # --
     'parallel/runner_eligibility.py': 'fc7e0151bb1be877e4234efcd32ec1e1a1322f2a3666f72f3d75caf4e1771423',  # pragma: allowlist secret  # noqa: E501
     # --
-    'parallel/worker_kill.py': '04582134f7fa45932ce0c9cb2a6108017f2714571401e01ae5374c2f0b27339d',  # pragma: allowlist secret  # noqa: E501
+    'parallel/worker_kill.py': '2b9f161008e45cf04644e26db8d21a407cb31100f4d62e5fe23c6e4807e228cf',  # pragma: allowlist secret  # noqa: E501
     # --
-    'plugin.py': '1cdbf18254812fbda012f8fbe838f92b959c14330df2c1f594e63cead5a52d40',  # pragma: allowlist secret
+    'plugin.py': '42d79b56df649d37d9b5fdcb0db5940d8bba3cf1f4f1d5e4fe42621698a19d39',  # pragma: allowlist secret
     # --
     'process_tree.py': 'f48a64afd8d30e9aac97f5d7d8ed245ee4f3283b73dc293f7c0f3553cf1a433e',  # pragma: allowlist secret
     # --
