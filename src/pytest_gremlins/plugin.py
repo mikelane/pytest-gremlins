@@ -2948,7 +2948,7 @@ def _encodable_for_stdout(text: str) -> str:
     return text.encode(encoding, errors='backslashreplace').decode(encoding, errors='replace')
 
 
-def _print_to_stdout(text: str = '') -> None:
+def _print_to_stdout(text: str) -> None:
     """Print ``text`` to stdout, escaping any character the stdout encoding cannot hold.
 
     Args:
