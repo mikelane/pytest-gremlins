@@ -72,6 +72,40 @@ class DescribeLeavingThePoolOnAnError:
 
         assert pool.is_running is False
 
+    def it_sigkills_the_workers_after_a_successful_tree_kill(
+        self, pool: PersistentWorkerPool, kills: dict[str, MagicMock]
+    ) -> None:
+        pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+        assert set(kills['pids'].call_args.args[0]) == WORKER_PIDS
+
+    def it_cancels_queued_work_when_the_tree_kill_is_interrupted(
+        self, pool: PersistentWorkerPool, executor: MagicMock, kills: dict[str, MagicMock]
+    ) -> None:
+        kills['trees'].side_effect = KeyboardInterrupt
+
+        with pytest.raises(KeyboardInterrupt):
+            pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+        executor.shutdown.assert_called_once_with(wait=False, cancel_futures=True)
+
+    def it_sigkills_the_workers_when_the_tree_kill_is_interrupted(
+        self, pool: PersistentWorkerPool, kills: dict[str, MagicMock]
+    ) -> None:
+        kills['trees'].side_effect = KeyboardInterrupt
+
+        with pytest.raises(KeyboardInterrupt):
+            pool.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+        assert set(kills['pids'].call_args.args[0]) == WORKER_PIDS
+
+    def it_kills_nothing_when_the_pool_never_started(self, kills: dict[str, MagicMock]) -> None:
+        never_started = PersistentWorkerPool(max_workers=2)
+
+        never_started.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
+
+        kills['trees'].assert_not_called()
+
 
 @pytest.mark.small
 class DescribeLeavingThePoolNormally:
@@ -82,3 +116,8 @@ class DescribeLeavingThePoolNormally:
 
         executor.shutdown.assert_called_once_with(wait=True)
         kills['trees'].assert_not_called()
+
+    def it_does_not_sigkill_the_workers(self, pool: PersistentWorkerPool, kills: dict[str, MagicMock]) -> None:
+        pool.__exit__(None, None, None)
+
+        kills['pids'].assert_not_called()

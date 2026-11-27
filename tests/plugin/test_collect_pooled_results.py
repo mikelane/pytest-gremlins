@@ -10,6 +10,7 @@ from collections.abc import (
 from concurrent.futures import Future
 from pathlib import Path
 from unittest.mock import (
+    MagicMock,
     create_autospec,
     patch,
 )
@@ -526,3 +527,28 @@ class DescribeCollectBatchResults:
         _collect_batches([[WorkerResult('g1', GremlinResultStatus.SURVIVED)]], gremlin_session)
 
         cache.flush.assert_not_called()  # type: ignore[attr-defined]
+
+
+@pytest.mark.small
+class DescribeCloseIfClosable:
+    def it_closes_a_source_that_has_a_close_method(self) -> None:
+        source = MagicMock(spec=['close'])
+
+        plugin._close_if_closable(source)
+
+        source.close.assert_called_once_with()
+
+    def it_leaves_a_list_alone(self) -> None:
+        batches: list[list[WorkerResult]] = [[WorkerResult('g1', GremlinResultStatus.SURVIVED)]]
+
+        plugin._close_if_closable(batches)
+
+        assert batches == [[WorkerResult('g1', GremlinResultStatus.SURVIVED)]]
+
+    def it_ignores_a_close_attribute_that_is_not_callable(self) -> None:
+        source = MagicMock(spec=[])
+        source.close = 'not callable'
+
+        plugin._close_if_closable(source)
+
+        assert source.close == 'not callable'
