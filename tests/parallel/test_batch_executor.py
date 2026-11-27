@@ -7,7 +7,11 @@ across workers, and aggregates results.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from contextlib import closing
+from typing import (
+    TYPE_CHECKING,
+    cast,
+)
 
 import pytest
 
@@ -16,6 +20,7 @@ from pytest_gremlins.parallel.pool import WorkerResult
 from pytest_gremlins.reporting.results import GremlinResultStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
 
 
@@ -221,15 +226,18 @@ class DescribeBatchExecutorStreaming:
         """A slow batch does not stop the caller from running its timers: idle ticks yield an empty list."""
         executor = BatchExecutor(batch_size=1, max_workers=1)
 
-        first = next(
-            executor.execute_batches(
-                gremlin_ids=['g001'],
-                test_command=['python', '-c', 'import time; time.sleep(2)'],
-                rootdir=str(tmp_path),
-                instrumented_dir=None,
-                env_vars={},
-                idle_tick_seconds=0.05,
-            )
+        batches = executor.execute_batches(
+            gremlin_ids=['g001'],
+            test_command=['python', '-c', 'import time; time.sleep(2)'],
+            rootdir=str(tmp_path),
+            instrumented_dir=None,
+            env_vars={},
+            idle_tick_seconds=0.05,
         )
+
+        with closing(
+            cast('Generator[list[WorkerResult], None, None]', batches)
+        ):  # closing shuts the pool down instead of leaving it to the garbage collector
+            first = next(batches)
 
         assert first == []

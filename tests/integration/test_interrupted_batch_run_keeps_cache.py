@@ -135,7 +135,9 @@ class DescribeKilledBatchRun:
         leftover = wait_until_no_process_has_env_marker(f'{_RUN_MARKER_NAME}={_RUN_MARKER_VALUE}')
         kill_all_quietly(leftover)
 
-        assert (rows_kept > 0, hits == rows_kept, leftover) == (True, True, [])
+        assert rows_kept > 0
+        assert hits == rows_kept
+        assert leftover == []
 
 
 def _first_cache_hit_count(process: subprocess.Popen[bytes]) -> int:

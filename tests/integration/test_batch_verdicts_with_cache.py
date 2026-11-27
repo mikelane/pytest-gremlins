@@ -59,7 +59,9 @@ class DescribeBatchVerdictsWithTheCache:
             *_BASE_ARGS, '--gremlin-batch', '--gremlin-cache', *batch_args, '-p', 'no:cacheprovider'
         )
 
-        assert _verdict_counts(batch.stdout.str()) == _verdict_counts(sequential.stdout.str())
+        zapped, survived = _verdict_counts(sequential.stdout.str())
+        assert zapped + survived > 0  # a run that tested nothing would match any batch run vacuously
+        assert _verdict_counts(batch.stdout.str()) == (zapped, survived)
 
     def it_reports_the_same_verdicts_from_a_warm_cache(self, pytester_with_markers: pytest.Pytester) -> None:
         pytester_with_markers.makepyfile(calc=_CALC, test_calc=_TESTS)
@@ -68,4 +70,6 @@ class DescribeBatchVerdictsWithTheCache:
         cold = pytester_with_markers.runpytest_subprocess(*args)
         warm = pytester_with_markers.runpytest_subprocess(*args)
 
-        assert _verdict_counts(warm.stdout.str()) == _verdict_counts(cold.stdout.str())
+        zapped, survived = _verdict_counts(cold.stdout.str())
+        assert zapped + survived > 0  # a run that tested nothing would match any warm run vacuously
+        assert _verdict_counts(warm.stdout.str()) == (zapped, survived)
