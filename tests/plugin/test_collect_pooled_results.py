@@ -463,6 +463,26 @@ class DescribeCollectBatchResults:
         assert cache_calls == ['g1']
         cache.flush.assert_called_once_with()  # type: ignore[attr-defined]
 
+    def it_closes_the_batch_source_when_an_interrupt_lands_between_yields(
+        self, gremlin_session: GremlinSession
+    ) -> None:
+        closed: list[bool] = []
+
+        def suspended_between_batches() -> Iterator[list[WorkerResult]]:
+            try:
+                yield [WorkerResult('g1', GremlinResultStatus.SURVIVED)]
+                yield [WorkerResult('g2', GremlinResultStatus.SURVIVED)]
+            finally:
+                closed.append(True)
+
+        with (
+            patch.object(plugin, '_cache_final_worker_result', side_effect=KeyboardInterrupt),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            _collect_batches(suspended_between_batches(), gremlin_session)
+
+        assert closed == [True]
+
     def it_flushes_on_the_interval_after_a_batch_while_the_run_continues(
         self, gremlin_session: GremlinSession, cache: IncrementalCache, cache_calls: list[str]
     ) -> None:

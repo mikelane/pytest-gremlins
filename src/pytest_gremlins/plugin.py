@@ -4145,8 +4145,17 @@ def _collect_batch_results(
                     flusher.note_result()
             flusher.flush_if_due()
     finally:
+        # A generator left suspended by an interrupt would close its pool only on garbage collection (#1092).
+        _close_if_closable(batches)
         flusher.flush()
     return unconfirmed, early_cached_ids
+
+
+def _close_if_closable(source: object) -> None:
+    """Close ``source`` now when it is a generator or anything else with ``close``; lists are left alone."""
+    close = getattr(source, 'close', None)
+    if callable(close):
+        close()
 
 
 def _run_batch_mutation_testing(  # pragma: no cover
