@@ -2699,7 +2699,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
                 if gremlin_session.skipped_files
                 else 'Check your `paths`/`--gremlin-targets` configuration.'
             )
-            print(f'--gremlin-explain: no gremlins were generated in this session (nothing to explain). {cause}')
+            _print_to_stdout(
+                f'--gremlin-explain: no gremlins were generated in this session (nothing to explain). {cause}'
+            )
             gremlin_session.enabled = False
         return
 
@@ -2946,10 +2948,19 @@ def _encodable_for_stdout(text: str) -> str:
     return text.encode(encoding, errors='backslashreplace').decode(encoding, errors='replace')
 
 
+def _print_to_stdout(text: str) -> None:
+    """Print ``text`` to stdout, escaping any character the stdout encoding cannot hold.
+
+    Args:
+        text: The line to print.
+    """
+    print(_encodable_for_stdout(text))
+
+
 def _print_terminal_notices(gremlin_session: GremlinSession) -> None:
     """Print the queued terminal notices for paths that disable the session before the summary hook."""
     for notice in gremlin_session.terminal_notices:
-        print(_encodable_for_stdout(notice))
+        _print_to_stdout(notice)
 
 
 def _maybe_short_circuit_for_explain(gremlin_session: GremlinSession) -> bool:
@@ -4567,7 +4578,7 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
 
     if target_gremlin is None:
         skipped_hint = ' Files were skipped (see above).' if gremlin_session.skipped_files else ''
-        print(
+        _print_to_stdout(
             f'--gremlin-explain: no gremlin with id {target_id!r} in this session. '
             f'Run with --gremlins (without --gremlin-explain) to see the full list of '
             f'gremlin ids in the progress log.{skipped_hint}'
@@ -4584,10 +4595,10 @@ def _emit_selection_explainer(gremlin_session: GremlinSession) -> None:
     _print_explainer_header(target_gremlin, covering, selected)
 
     if gremlin_session.no_coverage_filter:
-        print('  Note: coverage filter disabled -- all tests selected (--gremlin-no-coverage-filter).')
+        _print_to_stdout('  Note: coverage filter disabled -- all tests selected (--gremlin-no-coverage-filter).')
 
     if not covering_minus_selected and not selected_minus_runnable:
-        print(
+        _print_to_stdout(
             '  Result: selection is consistent with covering set (no drift). '
             'If this gremlin still survived, the cause is elsewhere (e.g. a weak '
             'assertion in the covering tests).'
@@ -4626,14 +4637,14 @@ def _pluralize_test_count(count: int) -> str:
 
 def _print_explainer_header(gremlin: Gremlin, covering: set[str], selected: list[str]) -> None:
     """Print the banner plus the covering and selected lists for the diagnostic."""
-    print(f'--gremlin-explain: diagnostic for {gremlin.gremlin_id}')
-    print(f'  file: {gremlin.file_path}:{gremlin.line_number}')
-    print(f'  Covering set ({_pluralize_test_count(len(covering))}):')
+    _print_to_stdout(f'--gremlin-explain: diagnostic for {gremlin.gremlin_id}')
+    _print_to_stdout(f'  file: {gremlin.file_path}:{gremlin.line_number}')
+    _print_to_stdout(f'  Covering set ({_pluralize_test_count(len(covering))}):')
     for key in sorted(covering):
-        print(f'    {key!r}')
-    print(f'  Selected list ({_pluralize_test_count(len(selected))}):')
+        _print_to_stdout(f'    {key!r}')
+    _print_to_stdout(f'  Selected list ({_pluralize_test_count(len(selected))}):')
     for key in selected:
-        print(f'    {key!r}')
+        _print_to_stdout(f'    {key!r}')
 
 
 def _close_matches_display(needle: str, haystack: list[str]) -> str:
@@ -4646,21 +4657,21 @@ def _print_dropped_tests(dropped: list[str], runnable_candidates: list[str]) -> 
     """Print the covering-minus-selected breakdown with close-match hints."""
     if not dropped:
         return
-    print(f'  Covering minus selected ({len(dropped)} dropped):')
+    _print_to_stdout(f'  Covering minus selected ({len(dropped)} dropped):')
     for key in dropped:
-        print(f'    dropped    : {key!r}')
-        print(f'    stripped   : {strip_marker_suffix(key)!r}')
-        print(f'    close match: {_close_matches_display(key, runnable_candidates)}')
+        _print_to_stdout(f'    dropped    : {key!r}')
+        _print_to_stdout(f'    stripped   : {strip_marker_suffix(key)!r}')
+        _print_to_stdout(f'    close match: {_close_matches_display(key, runnable_candidates)}')
 
 
 def _print_unrunnable_selections(orphans: list[str], runnable_candidates: list[str]) -> None:
     """Print selections that can't be matched back to ``test_node_ids``."""
     if not orphans:
         return
-    print(f'  Selected but not in test_node_ids ({len(orphans)}):')
+    _print_to_stdout(f'  Selected but not in test_node_ids ({len(orphans)}):')
     for key in orphans:
-        print(f'    selected   : {key!r}')
-        print(f'    close match: {_close_matches_display(key, runnable_candidates)}')
+        _print_to_stdout(f'    selected   : {key!r}')
+        _print_to_stdout(f'    close match: {_close_matches_display(key, runnable_candidates)}')
 
 
 def _split_gremlins_needing_a_run(
