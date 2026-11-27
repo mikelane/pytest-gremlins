@@ -2913,10 +2913,39 @@ def _skip_mutation_unless_baseline_is_green(gremlin_session: GremlinSession, exi
     return True
 
 
+def _encodable_for_stdout(text: str) -> str:
+    """Return ``text`` with any character the current stdout cannot encode replaced, so printing never raises.
+
+    A character the stdout encoding cannot hold is replaced by its backslash escape. Stdout with no known encoding is
+    treated as UTF-8.
+
+    Args:
+        text: The text about to be printed.
+
+    Returns:
+        ``text``, unchanged when stdout can encode it.
+
+    Examples:
+        >>> import sys
+        >>> from unittest import mock
+        >>> dash = chr(0x2014)
+        >>> with mock.patch.object(sys, 'stdout', mock.Mock(encoding='ascii')):
+        ...     escaped = _encodable_for_stdout(f'a {dash} b')
+        >>> escaped == 'a ' + chr(92) + 'u2014 b'
+        True
+        >>> with mock.patch.object(sys, 'stdout', mock.Mock(encoding='utf-8')):
+        ...     kept = _encodable_for_stdout(f'a {dash} b')
+        >>> kept == f'a {dash} b'
+        True
+    """
+    encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+    return text.encode(encoding, errors='backslashreplace').decode(encoding, errors='replace')
+
+
 def _print_terminal_notices(gremlin_session: GremlinSession) -> None:
     """Print the queued terminal notices for paths that disable the session before the summary hook."""
     for notice in gremlin_session.terminal_notices:
-        print(notice)
+        print(_encodable_for_stdout(notice))
 
 
 def _maybe_short_circuit_for_explain(gremlin_session: GremlinSession) -> bool:
