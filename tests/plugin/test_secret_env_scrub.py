@@ -78,7 +78,6 @@ class DescribeSecretEnvNames:
             'TWINE_USERNAME',
             'FAKE_SECRET_TOKEN',
             'lowercase_api_key',
-            'RELEASE_PAT',
             'GITHUB_PAT',
             'OPENAI_APIKEY',
             'GPG_PASSPHRASE',

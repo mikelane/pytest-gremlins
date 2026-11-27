@@ -17,7 +17,7 @@ import yaml
 
 WORKFLOW = Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'tag-release.yml'
 CHECKOUT_PIN = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
-CUT_RELEASE_WORKFLOW = WORKFLOW.with_name('cut-release.yml')
+RELEASE_WORKFLOW = WORKFLOW.with_name('release.yml')
 SCRIPTS = Path(__file__).resolve().parents[2] / 'scripts'
 JOB_PERMISSIONS = {'contents': 'write', 'actions': 'write', 'issues': 'read', 'pull-requests': 'read'}
 EXPORTED_SCRIPTS = (
@@ -138,7 +138,6 @@ class DescribeThePrivileges:
 
     def it_uses_no_personal_access_token(self) -> None:
         assert 'secrets.' not in WORKFLOW.read_text()
-        assert 'RELEASE_PAT' not in WORKFLOW.read_text()
 
     def it_does_not_persist_checkout_credentials(self) -> None:
         assert _checkout()['with']['persist-credentials'] is False
@@ -234,9 +233,9 @@ class DescribeTheConcurrencyGroup:
 
 @pytest.mark.medium
 class DescribeActionPins:
-    def it_pins_checkout_to_the_same_sha_as_cut_release(self) -> None:
+    def it_pins_checkout_to_the_same_sha_as_the_release_workflow(self) -> None:
         assert _checkout()['uses'] == CHECKOUT_PIN
-        assert CHECKOUT_PIN in CUT_RELEASE_WORKFLOW.read_text()
+        assert CHECKOUT_PIN in RELEASE_WORKFLOW.read_text()
 
     def it_pins_every_action_to_a_full_commit_sha(self) -> None:
         action_references = [str(step['uses']) for step in _steps() if 'uses' in step]

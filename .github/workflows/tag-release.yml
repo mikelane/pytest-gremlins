@@ -2,7 +2,7 @@ name: Tag Release
 
 # On every push to main (#1046): when the pushed commit is the one that changed [project].version, create the annotated
 # tag v<version> and dispatch release.yml for it. All logic lives in scripts/tag_release.py, which has its own tests;
-# its docstring holds the state table. cut-release.yml stays as the fallback until #1047.
+# its docstring holds the state table.
 #
 # No personal access token is involved. The job's own token pushes the tag through the REST API, and a tag created
 # with GITHUB_TOKEN does not fire release.yml's tag-push trigger, so the explicit dispatch of release.yml is the only

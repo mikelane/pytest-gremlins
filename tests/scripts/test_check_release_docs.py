@@ -985,9 +985,8 @@ class DescribeReleaseWorkflowGate:
 
         assert all('verify-tag' in _ancestors(jobs, job_id) for job_id in others)
 
-    @pytest.mark.parametrize('workflow', ['release.yml', 'cut-release.yml'])
-    def it_has_no_input_that_mentions_the_docs_check(self, workflow: str) -> None:
-        document = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding='utf-8'))
+    def it_has_no_input_that_mentions_the_docs_check(self) -> None:
+        document = yaml.safe_load((WORKFLOWS / 'release.yml').read_text(encoding='utf-8'))
         inputs = document[True]['workflow_dispatch']['inputs']
 
         assert not [name for name in inputs if 'doc' in name.lower()]
@@ -998,24 +997,27 @@ class DescribeReleaseWorkflowGate:
         assert 'skip_test_pypi' not in str(step)
 
 
+RELEASE_PR_GATE_COMMAND = 'check_release_docs.py "$VERSION"'
+
+
 @pytest.mark.medium
-class DescribeCutReleaseWorkflowGate:
-    def it_runs_the_check_before_the_version_is_bumped(self) -> None:
-        gate = _step_index('cut-release.yml', 'cut-release', GATE_COMMAND)
-        bump = _step_index('cut-release.yml', 'cut-release', 'cz bump --yes')
+class DescribeReleasePullRequestWorkflowGate:
+    def it_runs_the_check_only_when_the_version_changed_with_the_version_from_the_guard(self) -> None:
+        step = _steps('ci.yml', 'release-pr')[_step_index('ci.yml', 'release-pr', RELEASE_PR_GATE_COMMAND)]
 
-        assert gate < bump
+        assert step['if'] == "steps.guard.outputs.version_changed == 'true'"
+        assert step['env'] == {'VERSION': '${{ steps.guard.outputs.version }}'}
+        assert '"$VERSION"' in step['run']
 
-    def it_asks_commitizen_for_the_version_the_bump_will_produce(self) -> None:
-        step = _steps('cut-release.yml', 'cut-release')[_step_index('cut-release.yml', 'cut-release', GATE_COMMAND)]
+    def it_never_tolerates_failure_of_the_check(self) -> None:
+        step = _steps('ci.yml', 'release-pr')[_step_index('ci.yml', 'release-pr', RELEASE_PR_GATE_COMMAND)]
 
-        assert 'cz bump --get-next' in step['run']
-
-    def it_never_skips_or_tolerates_failure_of_the_check(self) -> None:
-        step = _steps('cut-release.yml', 'cut-release')[_step_index('cut-release.yml', 'cut-release', GATE_COMMAND)]
-
-        assert 'if' not in step
         assert 'continue-on-error' not in step
+
+    def it_builds_the_docs_site_before_the_check(self) -> None:
+        build = _step_index('ci.yml', 'release-pr', 'mkdocs build --strict')
+
+        assert build < _step_index('ci.yml', 'release-pr', RELEASE_PR_GATE_COMMAND)
 
 
 @pytest.mark.medium

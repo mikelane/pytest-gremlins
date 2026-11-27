@@ -4,7 +4,8 @@ on:
   push:
     tags:
       - 'v*'
-  # Escape hatch for when Test PyPI is down (see CLAUDE.md "Release Process").
+  # tag-release.yml dispatches this normally; skip_test_pypi is the escape hatch for a Test PyPI outage
+  # (see CLAUDE.md "Release Process").
   workflow_dispatch:
     inputs:
       tag:
@@ -61,7 +62,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ">=0.13.0"
           prune-cache: true
@@ -156,7 +157,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ">=0.13.0"
           enable-cache: true
@@ -237,7 +238,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ">=0.13.0"
           enable-cache: true
@@ -289,7 +290,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ">=0.13.0"
           enable-cache: true
@@ -318,7 +319,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ">=0.13.0"
           enable-cache: true
@@ -370,7 +371,7 @@ jobs:
       UV_PYTHON: '3.12'
     steps:
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ">=0.13.0"
           prune-cache: true
@@ -421,7 +422,7 @@ jobs:
       UV_PYTHON: '3.12'
     steps:
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ">=0.13.0"
           prune-cache: true
@@ -509,7 +510,7 @@ jobs:
           path: benchmark-results/
 
       - name: Install uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ">=0.13.0"
           prune-cache: true
