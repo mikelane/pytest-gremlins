@@ -15,6 +15,12 @@ FAST_TEST = (
 NOTICE_PREFIX = 'pytest-gremlins: warning: '
 
 
+@pytest.fixture(autouse=True)
+def utf8_child_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make child pytest processes write UTF-8 so the parent decodes their notices on Windows (cp1252 otherwise)."""
+    monkeypatch.setenv('PYTHONIOENCODING', 'utf-8')
+
+
 @pytest.mark.medium
 class DescribeRuntimeWarningsVisibleByDefault:
     """Each actionable runtime warning is printed without any logging option."""
