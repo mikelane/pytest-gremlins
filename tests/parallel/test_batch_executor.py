@@ -179,3 +179,40 @@ sys.exit(0)
         # Test passes if sources file was set correctly
         assert len(results) == 1
         assert results[0].status == GremlinResultStatus.SURVIVED
+
+
+@pytest.mark.medium
+class DescribeBatchExecutorStreaming:
+    """Tests for handing each batch to the caller as soon as it finishes (#979)."""
+
+    def it_yields_one_list_per_batch(self, tmp_path: Path) -> None:
+        """Execute_batches yields each batch's results separately instead of one flat list."""
+        executor = BatchExecutor(batch_size=2, max_workers=1)
+
+        batches = list(
+            executor.execute_batches(
+                gremlin_ids=['g001', 'g002', 'g003'],
+                test_command=['python', '-c', 'pass'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+        )
+
+        assert sorted(sorted(r.gremlin_id for r in batch) for batch in batches) == [['g001', 'g002'], ['g003']]
+
+    def it_yields_nothing_for_empty_gremlin_ids(self, tmp_path: Path) -> None:
+        """Execute_batches yields no batches when there is nothing to test."""
+        executor = BatchExecutor(batch_size=2, max_workers=1)
+
+        batches = list(
+            executor.execute_batches(
+                gremlin_ids=[],
+                test_command=['python', '-c', 'pass'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+            )
+        )
+
+        assert batches == []
