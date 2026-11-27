@@ -332,13 +332,19 @@ def _index(workflow: str, job: str, text: str) -> int:
 @pytest.mark.medium
 class DescribeWorkflowGate:
     @pytest.mark.parametrize(
-        ('workflow', 'job'),
-        [('ci.yml', 'docs'), ('cut-release.yml', 'cut-release'), ('release.yml', 'verify-tag')],
+        ('workflow', 'job', 'expected_if'),
+        [
+            ('ci.yml', 'docs', "needs.changes.outputs.changelog == 'true'"),
+            ('ci.yml', 'release-pr', "steps.guard.outputs.version_changed == 'true'"),
+            ('release.yml', 'verify-tag', None),
+        ],
     )
-    def it_never_skips_or_tolerates_failure_of_the_check(self, workflow: str, job: str) -> None:
+    def it_runs_the_check_under_the_expected_condition_and_never_tolerates_failure(
+        self, workflow: str, job: str, expected_if: str | None
+    ) -> None:
         step = _gate_step(workflow, job)
 
-        assert 'if' not in step or workflow == 'ci.yml'
+        assert step.get('if') == expected_if
         assert 'continue-on-error' not in step
 
     def it_runs_in_the_changelog_pr_check_when_the_changelog_changes(self) -> None:
@@ -352,13 +358,12 @@ class DescribeWorkflowGate:
 
         assert checkout['with'] == {'fetch-depth': 0}
 
-    def it_checks_the_version_commitizen_will_bump_to_before_the_version_is_bumped(self) -> None:
-        step = _gate_step('cut-release.yml', 'cut-release')
+    def it_checks_the_release_pr_version_only_when_the_version_changed_with_the_version_from_the_guard(self) -> None:
+        step = _gate_step('ci.yml', 'release-pr')
 
-        assert 'cz bump --get-next' in str(step['run'])
-        assert _index('cut-release.yml', 'cut-release', GATE) < _index(
-            'cut-release.yml', 'cut-release', 'cz bump --yes'
-        )
+        assert step['if'] == "steps.guard.outputs.version_changed == 'true'"
+        assert step['env'] == {'VERSION': '${{ steps.guard.outputs.version }}'}
+        assert '"$VERSION"' in str(step['run'])
 
     def it_checks_the_tag_being_released_after_checking_it_out(self) -> None:
         checkout = _index('release.yml', 'verify-tag', 'git checkout --detach "refs/tags/$RELEASE_TAG"')

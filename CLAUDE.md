@@ -175,9 +175,8 @@ the next run only re-tests what changed.
 - `.pre-commit-config.yaml` - Pre-commit hooks
 - `.github/workflows/ci.yml` - CI pipeline
 - `.github/workflows/release.yml` - Release pipeline with Test PyPI
-- `.github/workflows/tag-release.yml` - Tags a merged release commit and dispatches release.yml (primary path)
+- `.github/workflows/tag-release.yml` - Tags a merged release commit and dispatches release.yml
 - `scripts/tag_release.py` - The state table and gates behind `tag-release.yml`
-- `.github/workflows/cut-release.yml` - Fallback one-click version bump + tag (triggers release.yml; #1047 deletes it)
 
 ## Docs Freshness
 
@@ -189,10 +188,23 @@ pr-reviewer agents, check that section against the diff.
 
 ## Release Process
 
+There is one way to release: prepare the release branch, merge its PR, approve the PyPI deployment. A hand-pushed
+`v*` tag still runs `release.yml`, gated by `verify-tag`, `ci-gate`, `large-tests`, `benchmark`, `attrs-compat`,
+`verify-wheel` and the `pypi` approval. It skips the release PR version guard and the `tag_release.py` commit checks
+(the tag on the version-changing commit, from exactly one merged pull request), so do not push release tags by hand.
+
+1. Run `scripts/prepare_release.py` (see "Preparing the release branch"). It creates `release/v<version>` with the
+   version bump and a changelog entry to fill in.
+2. Fill in the entry, commit signed, push and open the PR. The `Release PR Gates` job checks it.
+3. Merge the PR. `tag-release.yml` tags the merge commit and dispatches `release.yml` (see "Tag release").
+4. Approve the `pypi` environment deployment when `release.yml` asks for it.
+
+Never run `cz bump` by hand: the `no-commit-to-branch` pre-commit hook blocks commits to `main` and leaves a dirty
+version bump to revert. `prepare_release.py` runs it for you with `--files-only`.
+
 **Update CHANGELOG.md in the release PR.** `scripts/prepare_release.py` writes the `## vX.Y.Z (date)` entry above
 the most recent section, in the format below; fill it in before the release PR merges. The PR fails CI until the entry
-passes the release docs gate. (On the `cut-release.yml` fallback the entry goes in an earlier PR, merged before the
-dispatch, because that workflow's guard fails when there are no commits since the last tag.)
+passes the release docs gate.
 
 **Changelog format and the docs gate.** Every release entry in `CHANGELOG.md` is gated. Each bullet under
 `### Upgrade notes`, `### Feature` and `### Fix` must end with either a docs reference or an exemption:
@@ -338,7 +350,7 @@ or anchor that is not in the site. It exits 2 when it could not run. It runs in 
 1. `ci.yml`, whenever a PR changes `CHANGELOG.md`, against the topmost entry, so the changelog PR fails
    first. `--newest` picks that entry by the same heading rule the check uses, where the `v` is optional. If the
    topmost `##` heading is not a version entry (`## Unreleased`), it exits 2 rather than checking an older entry.
-2. `cut-release.yml`, before the tag is created, against the version `cz bump --get-next` reports.
+2. The `Release PR Gates` job (`release-pr` in `ci.yml`), on the release PR, against the version in its branch.
 3. The `verify-tag` job of `release.yml`, against the tagged commit. Every other job in that workflow depends on
    `verify-tag`, so a failing check blocks the publish however the release was started.
 
@@ -357,9 +369,9 @@ being released. If it changed and neither `CACHE_VERSION` nor `RUNNER_FIDELITY_V
 tag, the release fails unless the entry has a `(cache kept: <reason>)` line with a non-empty reason. Put the line in the
 entry's prose before its first `###` heading; it is accepted nowhere else, because the docs gate allows only list items
 under the gated headings. The reason is public and is reviewed in the changelog PR. It runs in the same three places as
-the docs gate (`ci.yml` on a `CHANGELOG.md` change with `--newest`, `cut-release.yml`, and `verify-tag`), exits 1 naming
-the changed files, exits 2 when it could not run, and has no bypass. With `--newest`, a topmost entry that is already
-tagged passes; the changes after it are checked once the next entry is added.
+the docs gate (`ci.yml` on a `CHANGELOG.md` change with `--newest`, the `Release PR Gates` job, and `verify-tag`),
+exits 1 naming the changed files, exits 2 when it could not run, and has no bypass. With `--newest`, a topmost entry
+that is already tagged passes; the changes after it are checked once the next entry is added.
 
 **Cache marker changes need a minor release.** Raising `CACHE_VERSION` or `RUNNER_FIDELITY_VERSION` throws away every
 user's warm cache, so the first run after upgrading is cold, and a patch release must not do that.
@@ -381,9 +393,8 @@ the tag; `1.15.0.post1` and `1.15.0+local` are not prereleases, and a version th
 else about the wording is checked; the docs gate still wants a docs link or a `(no docs: <reason>)` exemption on
 that bullet. It runs in the `Release PR Gates` job right after the cache gate (only when the version changed) and in
 `verify-tag` after it, takes the version like the cache gate does (and `--newest` is supported, with the same
-already-tagged pass), exits 1 naming each problem, exits 2 when it could not run, and has no bypass. `cut-release.yml`
-does not run it, because #1047 retires that workflow. The hotfix case, a patch release cut from an older tag that
-changes a marker, is tracked in #1015.
+already-tagged pass), exits 1 naming each problem, exits 2 when it could not run, and has no bypass. The hotfix case,
+a patch release cut from an older tag that changes a marker, is tracked in #1015.
 <!-- cspell:ignore rebuil -->
 
 **Release CI gate and wip gate.** `release.yml` does not rerun the OS x Python test matrix. Its `ci-gate` job runs
@@ -408,7 +419,7 @@ predates these gate scripts fails closed, because the gate scripts do not exist 
 
 **Release blocker gate.** An open issue (or pull request) labeled `release-blocker` fails the release.
 `scripts/check_no_release_blockers.py` looks the label up, then lists the open items that carry it. It runs in
-`cut-release.yml` before the tag is created and in the `verify-tag` job of `release.yml`, so it also fails a
+`tag-release.yml` before the tag is created and in the `verify-tag` job of `release.yml`, so it also fails a
 re-dispatch of `release.yml` that would finish a half-published release; the fix is the same. It prints each blocker as
 `#N title` and exits 1. Exit 2 means it could not run (no token, API error, malformed answer), never a pass, and a
 deleted or renamed label is exit 2 too, because an empty listing would otherwise pass without checking anything. There
@@ -436,8 +447,7 @@ prerelease included, e.g. `release/v1.15.0b0`), change only `pyproject.toml`, `u
 `src/pytest_gremlins/__init__.py` and `CHANGELOG.md`, and have a topmost changelog entry for that version. Only then
 does the job run the docs gate, the cache gate, the cache-bump gate and the wip gate, so this is the place where the
 release PR gets checked, and a `wip` test never blocks an ordinary pull request. A version that is not PEP 440 shaped,
-or a missing or non-literal `__version__`, exits 2. Exit 2 is never a pass, and there is no bypass. The
-`cut-release.yml` path above is unchanged for now.
+or a missing or non-literal `__version__`, exits 2. Exit 2 is never a pass, and there is no bypass.
 
 **Preparing the release branch.** `uv run python scripts/prepare_release.py [--increment PATCH|MINOR|MAJOR]
 [--prerelease alpha|beta|rc]` builds the release branch locally. It refuses on `main`, with a dirty tree, when HEAD is
@@ -464,10 +474,10 @@ rebuild. The placeholder does not contain the words the cache-bump gate looks fo
 writes the sentence. If the markers cannot be compared (no reachable `v*` tag, or an unreadable marker file), it warns
 on stderr and continues without the minor bump or the placeholder, and the cache-bump gate still checks the release PR.
 It never commits, tags or pushes: fill in the entry, add a `(cache kept: <reason>)` line if the cache gate needs one,
-commit signed, push and open the PR. Merging it starts the primary release path: `tag-release.yml` tags the merge
-commit and dispatches `release.yml` (next paragraph). `cut-release.yml` remains the fallback (#1047 deletes it).
+commit signed, push and open the PR. Merging it starts `tag-release.yml`, which tags the merge
+commit and dispatches `release.yml` (next paragraph).
 
-**Tag release.** `.github/workflows/tag-release.yml` runs on every push to `main` and is the primary way a release
+**Tag release.** `.github/workflows/tag-release.yml` runs on every push to `main` and is how a release
 starts: `scripts/prepare_release.py` -> `release/v<version>` PR (the `Release PR Gates` job checks it) -> merge ->
 `tag-release.yml` tags the merge commit and dispatches `release.yml` -> the `pypi` environment approval. The YAML is thin:
 it checks out two commits (`fetch-depth: 2`, `persist-credentials: false`), exports `tag_release.py` and the scripts it
@@ -491,7 +501,7 @@ the peeled commit is what is compared):
 
 For the version-changing rows the script first looks up the release pull request (`GET /commits/{sha}/pulls`). With
 exactly one merged pull request from this repository, the rows above apply. With none and the tag peeling to this commit,
-the `cut-release.yml` fallback made it (its own tag push runs `release.yml`): a no-op, exit 0. With none and no tag, it
+the tag came from some other path and its push runs `release.yml`: a no-op, exit 0. With none and no tag, it
 fails (exit 1). A merged pull request from a fork, or more than one, always fails.
 
 Any failed lookup or API call exits 2 and tags nothing. Only the version-changing commit is tagged. Before tagging, the
@@ -518,32 +528,17 @@ tagged"), so only the release commit's own red run shows it. Either way, re-run 
 `tag-release.yml` run (`gh run rerun <run-id>`): it re-evaluates that same SHA and `BEFORE`, and tags or dispatches as
 the table says. Cut a new release only if that cannot work.
 
-**Fallback -- cut a release with `cut-release.yml`.** Use it only when `tag-release.yml` cannot (until #1047 deletes it).
-`cz bump` runs only through `scripts/prepare_release.py` (`--files-only`, no commit or tag) or on the Actions runner in
-this workflow; never run a full `cz bump` by hand: the `no-commit-to-branch` pre-commit hook blocks commits to `main`
-and leaves a dirty version bump to revert.
-
-```bash
-gh workflow run cut-release.yml --repo mikelane/pytest-gremlins
-```
-
-This runs `cz bump` on the GitHub Actions runner (no local hooks), commits the version,
-creates an annotated tag, and pushes -- which triggers `release.yml`.
-
-**Verify the tag landed** (either path):
+**Verify the tag landed:**
 
 ```bash
 git fetch --tags
 git ls-remote --tags origin | tail -5
 ```
 
-On the `cut-release.yml` fallback path, if the tag is missing, `--follow-tags` silently skipped a lightweight tag.
-Root cause: `[tool.commitizen]` must have `annotated_tag = true`. Without it, commitizen creates
-lightweight tags that `--follow-tags` ignores. `tag-release.yml` does not use `cz` or `--follow-tags`: it creates
-annotated tags through the API.
+`tag-release.yml` creates annotated tags through the API; it does not use `cz` or `--follow-tags`. If the tag is
+missing, see "Recovery" under "Tag release".
 
-**Escape hatch -- Test PyPI is down.** `release.yml` normally runs from the dispatch `tag-release.yml` makes (or from
-the tag push on the `cut-release.yml` fallback path) and gates
+**Escape hatch -- Test PyPI is down.** `release.yml` normally runs from the dispatch `tag-release.yml` makes and gates
 PyPI on a Test PyPI publish and install check. If test.pypi.org is unavailable (it returned
 503 to GitHub runners for v1.11.1), re-run the release against the existing tag with the Test
 PyPI steps skipped:
@@ -580,11 +575,6 @@ PyPI steps skipped:
   built wheel into a fresh venv and comparing its `__version__` to the tag.
 - Omit `skip_test_pypi` (or pass `false`) to re-run the full chain, Test PyPI included.
 - The GitHub Release is created for `tag`, not for the branch the workflow was dispatched from.
-
-**RELEASE_PAT secret**: Only the fallback `cut-release.yml` needs it; `tag-release.yml` uses no personal access
-token. It requires a `RELEASE_PAT` repo secret with
-`contents: write` and `workflows: write` scopes. Set it to never expire — an expired
-PAT causes a silent checkout failure with no useful error message.
 
 ## Demo Videos
 

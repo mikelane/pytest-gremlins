@@ -107,9 +107,9 @@ a code fence or a code span does not count.
 ### Fix
 ```
 
-The check runs in the same three places as the release docs gate: the `CHANGELOG.md` check in `ci.yml`, `cut-release.yml`
-before the tag is created, and the `verify-tag` job of `release.yml`. There is no bypass: no flag, environment
-variable or workflow input skips it. To run it locally, fetch the tags and run
+The check runs in the same three places as the release docs gate: the `CHANGELOG.md` check in `ci.yml`, the
+`Release PR Gates` job on the release PR, and the `verify-tag` job of `release.yml`. There is no bypass: no flag,
+environment variable or workflow input skips it. To run it locally, fetch the tags and run
 `uv run python scripts/check_cache_kept.py --newest`. A lowered marker is rejected by the per-PR check, not by this one.
 
 ## Release CI Gate and wip Tests
@@ -150,7 +150,7 @@ run the check locally, run `uv run python scripts/check_no_wip_tests.py`.
 ## Release Blockers
 
 A release fails while any open issue or pull request carries the `release-blocker` label. Put the label on an issue
-that must be fixed before the next release. `scripts/check_no_release_blockers.py` checks it in `cut-release.yml`,
+that must be fixed before the next release. `scripts/check_no_release_blockers.py` checks it in `tag-release.yml`,
 before the tag is created, and in the `verify-tag` job of `release.yml`. The second run also covers a re-dispatch of
 `release.yml` that would finish a half-published release. The check prints each open blocker as `#N title` and fails.
 If the label has been deleted or renamed, or GitHub cannot be reached, the check fails too (it never passes without
