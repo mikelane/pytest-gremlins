@@ -18,7 +18,10 @@ Optimizations (PR #52):
 from __future__ import annotations
 
 from collections.abc import Iterator
-from concurrent.futures import as_completed
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    wait,
+)
 import os
 from typing import (
     TYPE_CHECKING,
@@ -174,6 +177,8 @@ class BatchExecutor:
         rootdir: str,
         instrumented_dir: str | None,
         env_vars: dict[str, str],
+        *,
+        idle_tick_seconds: float | None = None,
     ) -> Iterator[list[WorkerResult]]:
         """Execute gremlin tests in batches, yielding each batch's results as that batch finishes.
 
@@ -188,9 +193,11 @@ class BatchExecutor:
             rootdir: Root directory for test execution.
             instrumented_dir: Directory with instrumented sources (or None).
             env_vars: Additional environment variables to set.
+            idle_tick_seconds: When set, an empty list is yielded each time this long passes with no batch
+                finishing, so a caller can run its timers (a periodic cache flush) while a slow batch runs.
 
         Yields:
-            The WorkerResult list of one batch, in the order batches complete.
+            The WorkerResult list of one batch, in the order batches complete; an empty list on an idle tick.
         """
         batches = self.partition(gremlin_ids)
 
@@ -211,5 +218,10 @@ class BatchExecutor:
                 for batch in batches
             }
 
-            for future in as_completed(futures):
-                yield future.result()
+            pending = set(futures)
+            while pending:
+                done, pending = wait(pending, timeout=idle_tick_seconds, return_when=FIRST_COMPLETED)
+                if not done:
+                    yield []
+                for future in done:
+                    yield future.result()

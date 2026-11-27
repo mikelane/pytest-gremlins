@@ -216,3 +216,20 @@ class DescribeBatchExecutorStreaming:
         )
 
         assert batches == []
+
+    def it_yields_an_empty_batch_when_the_wait_ticks_with_nothing_finished(self, tmp_path: Path) -> None:
+        """A slow batch does not stop the caller from running its timers: idle ticks yield an empty list."""
+        executor = BatchExecutor(batch_size=1, max_workers=1)
+
+        first = next(
+            executor.execute_batches(
+                gremlin_ids=['g001'],
+                test_command=['python', '-c', 'import time; time.sleep(2)'],
+                rootdir=str(tmp_path),
+                instrumented_dir=None,
+                env_vars={},
+                idle_tick_seconds=0.05,
+            )
+        )
+
+        assert first == []
